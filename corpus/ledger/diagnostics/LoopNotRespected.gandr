@@ -1,12 +1,9 @@
 /// `LoopNotRespected`: a case over a sort its words loop at is not shown to respect one of the loops.
-data Circle : Type where {
+data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
-}
 
 @[ refuses("LoopNotRespected") ]
-def contractible(x : Circle) -> -F Path[.A = Circle](Base, x) {
-  match x {
-    Base => Path.here(Base)
-  }
-}
+def contractible(x : Circle) -> -F Path[.A = Circle](Base, x) =
+  match x
+    | Base => Path.here Base

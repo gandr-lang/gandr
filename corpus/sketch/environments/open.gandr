@@ -14,19 +14,16 @@
 import "./merge.gandr";
 
 /// The command line a build runs, which reads its fields from the configuration.
-def commandLine(c : Model(#{ jobs : Nat; profile : Profile; triple : Triple })) -> List(String) {
-  open c;
-  #["build", "--jobs", show(jobs), "--profile", show(profile), "--target", show(triple)]
-}
+def commandLine(c : Model(*{ jobs : Nat; profile : Profile; triple : Triple })) -> List(String) =
+  open c
+  #["build", "--jobs", show jobs, "--profile", show profile, "--target", show triple]
 
 /// The area of a rectangle given as an environment literal.
-def area() -> Nat {
-  open #{ .width = 3, .height = 4 };
+def area() -> Nat =
+  open *{ .width = 3, .height = 4 };
   width * height
-}
 
 /// Converts feet to metres by a table that a reader yields as a module.
-def metres(feet : Rational) -> Rational {
+def metres(feet : Rational) -> Rational =
   open #units{ foot = 0.3048 m };
   feet * foot
-}

@@ -6,18 +6,17 @@
 import std.process;
 
 /// Hands back the thunk it is lent, kept in the same region.
-def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) { pure k }
+def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) { pure k }
 
 /// Binds what `pass` hands back at a type kept in no region.
 @[ refuses("TypeMismatch") ]
-def outlived() -> Integer {
-  var s = 4;
+def outlived() -> Integer =
+  var s = 4
   handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w { pure thunk { pure w } };
-    let back : () => Integer = pass(k);
+    let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
+    let back : () -> Integer = pass k;
     force back
   } with {
-    pure(x) => pure x,
-    oper exit(code, rest) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, rest) => pure 0
   }
-}

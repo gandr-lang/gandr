@@ -1,27 +1,27 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:38:22
+   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:33:24
    │
-35 │    def restored(l : Ints) -> Path(listOf(tagsOf(l)), l) {
-   │    │            ─ checked against `(a : Ints) -> -F Path[.A = Ints](listOf(tagsOf(a)), a)`; while checking the body of this function; binds l : Ints
+30 │    def restored(l : Ints) -> Path(listOf (tagsOf l), l) =
+   │    │            ─ checked against `(a : Ints) -> -F Path[.A = Ints](listOf (tagsOf a), a)`; while checking the body of this function; binds l : Ints
    │ ┌──┘
    │ │
-36 │ │┌   match l {
-37 │ ││     Nil => Path.here(Nil),
-38 │ ││     Cons(x, rest) => Path.here(Cons(x, rest))
-   │ ││                      ━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
-39 │ ││   }
-   │ │└───┘ checked against `-F Path[.A = Ints](listOf(tagsOf(l)), l)`; while checking the body of this function; binds x : i32, rest : Ints
-40 │ │  }
-   │ └──┘ checked against `(a : Ints) => Path[.A = Ints](listOf(tagsOf(a)), a)`; while checking the body of this thunk
+31 │ │┌   match l
+32 │ ││     | Nil => Path.here Nil
+33 │ ││     | Cons(x, rest) => Path.here (Cons x rest)
+   │ ││                        ┯━━━━━━━━━━━━━━━━━━━━━│
+   │ └│────────────────────────│─────────────────────│
+   │  └────────────────────────│─────────────────────checked against `(a : Ints) -> Path[.A = Ints](listOf (tagsOf a), a)`; while checking the body of this thunk
+   │                           │                     checked against `-F Path[.A = Ints](listOf (tagsOf l), l)`; while checking the body of this function; binds x : i32, rest : Ints
+   │                           not both endpoints of the path
    │
    ├ note: `restored` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EquivUnsupported]: `equiv` needs two closed pure translators between types built from units, integers, strings, tuples, sums, lists and data types that do not hold themselves
-   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:44:47
+   ╭▸ corpus/pathological/layouts/ribbit-list.gandr:37:47
    │
-44 │ def decided : Path[.A = Type](Ints, Packed) = equiv(pack, unpack);
-   │                                               ━━━━━━━━━━━━━━━━━━━ translators outside the rule's fragment: found `Ints`
+37 │ def decided : Path[.A = Type](Ints, Packed) = equiv packInts unpack;
+   │                                               ━━━━━━━━━━━━━━━━━━━━━ translators outside the rule's fragment: found `Ints`
    │
    ├ note: `decided` is refused with EquivUnsupported, as its expectation states
    ╰ note: tracked by #1316 <https://github.com/gandr-lang/gandr/issues/1316>

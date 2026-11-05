@@ -34,18 +34,18 @@ use gandr_surface_syntax::SourceText;
 /// Every pair of the table in the explicit spelling, nested and
 /// parenthesised where the sugar needs it.
 const EXPLICIT: &str = "\
-def pair : #{Integer, String};
-def triple : #{Integer, String, Unit};
-def choice : +{Integer, #{String, Unit}};
-def nested : #{+{Integer, String}, Unit};
+def pair : *{Integer, String};
+def triple : *{Integer, String, Unit};
+def choice : +{Integer, *{String, Unit}};
+def nested : *{+{Integer, String}, Unit};
 def lazy : +U &{-F Integer, -F Integer, -F String};
 def right : +U &{-F Integer, &{-F Integer, -F String}};
 def mixed : +U &{&{-F Integer, -F Integer}, -F String};
 def step : +U (Integer -> String -> -F Unit);
 def dependent : +U ((a : Type) -> a -> -F a);
 def thunked : +U (-F Integer);
-def returned : +U (Integer -> -F #{Integer, String});
-def tuple = #{1, #{2, \"b\"}};
+def returned : +U (Integer -> -F *{Integer, String});
+def tuple = *{1, *{2, \"b\"}};
 ";
 
 /// [`EXPLICIT`] in the sugared spelling, as the presentation printer
@@ -58,11 +58,11 @@ def nested : (Integer + String) * Unit;
 def lazy : +U (-F Integer & -F Integer & -F String);
 def right : +U (-F Integer & (-F Integer & -F String));
 def mixed : +U ((-F Integer & -F Integer) & -F String);
-def step : (Integer, String) => Unit;
-def dependent : (a : Type, a) => a;
-def thunked : () => Integer;
-def returned : Integer => Integer * String;
-def tuple = (1, (2, \"b\"));
+def step : (Integer, String) -> Unit;
+def dependent : (a : Type, a) -> a;
+def thunked : () -> Integer;
+def returned : Integer -> Integer * String;
+def tuple = *{1, *{2, \"b\"}};
 ";
 
 /// The built-in grammar.
@@ -187,13 +187,13 @@ theory Counting where {
         (
             Form::Sugared,
             "\
-def step : Integer => Integer;
+def step : Integer -> Integer;
 def lazy : +U (-F Integer & -F Integer);
 def noted : +U[/* every use */ ω] (-F Integer);
 def once : +U[1] (Integer -> -F Integer);
 theory Counting where {
   sort T : Type;
-  oper next : T => T;
+  oper next : T -> T;
   oper add : +U (T -> T -> -F T);
 }
 ",
@@ -232,14 +232,14 @@ fn a_law_keeps_its_statement_in_either_form_2384()
 theory Lawful where {
   sort C : Type;
   oper next : +U (C -> -F C);
-  law trivial : (a : C) => Path[.A = Bool](true, true);
+  law trivial : (a : C) -> Path[.A = Bool](true, true);
 }
 ";
     let sugared = "\
 theory Lawful where {
   sort C : Type;
-  oper next : C => C;
-  law trivial : (a : C) => Path[.A = Bool](true, true);
+  oper next : C -> C;
+  law trivial : (a : C) -> Path[.A = Bool](true, true);
 }
 ";
     for (source, form, expected) in [
@@ -267,24 +267,24 @@ fn a_tail_return_is_left_out_where_the_lowering_would_infer_it_1327()
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
 def succeeded(n : Nat) -> -F Nat {
-  return Succ(n)
+  return Succ n
 }
 
 def early(k : Nat) -> -F Nat {
   match k {
-    Zero => return k,
-    Succ(j) => {
+    | Zero => return k
+    | Succ(j) => {
       let q = match j {
-        Zero => return j,
-        Succ(r) => pure r,
+        | Zero => return j
+        | Succ(r) => pure r
       };
       pure q
-    },
+    }
   }
 }
 
 def computed(n : Nat) -> -F Nat {
-  return succeeded(n)
+  return succeeded n
 }
 
 def stated(n : Nat) -> -F Nat {
@@ -292,13 +292,13 @@ def stated(n : Nat) -> -F Nat {
 }
 
 def nested(n : Nat) -> -F (+U (Nat -> -F Nat)) {
-  return thunk { fun (x) { return Succ(x) } }
+  return thunk { fun (x) { return Succ x } }
 }
 
 def blocked(n : Nat) -> -F Nat {
   match n {
-    Zero => { let y = succeeded(n); return y },
-    Succ(p) => p,
+    | Zero => { let y = succeeded n; return y }
+    | Succ(p) => p
   }
 }
 
@@ -315,38 +315,38 @@ def asked(n : Nat) -> -F Nat {
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
 def succeeded(n : Nat) -> Nat {
-  Succ(n)
+  Succ n
 }
 
 def early(k : Nat) -> Nat {
   match k {
-    Zero => k,
-    Succ(j) => {
+    | Zero => k
+    | Succ(j) => {
       let q = match j {
-        Zero => return j,
-        Succ(r) => pure r,
+        | Zero => return j
+        | Succ(r) => pure r
       };
       pure q
-    },
+    }
   }
 }
 
 def computed(n : Nat) -> Nat {
-  return succeeded(n)
+  return succeeded n
 }
 
 def stated(n : Nat) -> Nat {
   return n;
 }
 
-def nested(n : Nat) -> Nat => Nat {
-  thunk { fun (x) { Succ(x) } }
+def nested(n : Nat) -> Nat -> Nat {
+  thunk { fun (x) { Succ x } }
 }
 
 def blocked(n : Nat) -> Nat {
   match n {
-    Zero => { let y = succeeded(n); y },
-    Succ(p) => p,
+    | Zero => { let y = succeeded n; y }
+    | Succ(p) => p
   }
 }
 
@@ -386,7 +386,7 @@ def pass[r : Region](k : (+U (-F Integer)) at r) -> -F ((+U (-F Integer)) at r) 
 }
 ";
     let sugared = "\
-def pass[r : Region](k : (() => Integer) at r) -> -F ((() => Integer) at r) {
+def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) {
   pure k
 }
 ";
@@ -414,19 +414,19 @@ def both() -> -F [Partial, std.process.Exit.Eff] Integer {
 }
 
 def pair() -> -F [Partial] (Integer * Integer) {
-  pure (1, 2)
+  pure *{1, 2}
 }
 
 def apply(k : +U (Unit -> -F [Partial] Unit)) -> -F [Partial] Unit {
-  k(unit)
+  k *{}
 }
 
 def tailed[r : Row]() -> -F [Partial | r] Unit {
-  pure unit
+  pure *{}
 }
 
 def open[r : Row]() -> -F [r] Unit {
-  pure unit
+  pure *{}
 }
 ";
     let sugared = "\
@@ -437,19 +437,19 @@ def both() -> [Partial, std.process.Exit.Eff] Integer {
 }
 
 def pair() -> [Partial] (Integer * Integer) {
-  pure (1, 2)
+  pure *{1, 2}
 }
 
 def apply(k : +U (Unit -> -F [Partial] Unit)) -> [Partial] Unit {
-  k(unit)
+  k *{}
 }
 
 def tailed[r : Row]() -> [Partial | r] Unit {
-  pure unit
+  pure *{}
 }
 
 def open[r : Row]() -> [r] Unit {
-  pure unit
+  pure *{}
 }
 ";
     assert_eq!(
@@ -471,30 +471,30 @@ fn a_labelled_result_row_is_written_before_its_type_2271()
 import std.io;
 
 def say() -> -F [out : std.io.Console.Eff] Unit {
-  out.print(\"said\")
+  out.print \"said\"
 }
 
 def both() -> -F [Partial, out : std.io.Console.Eff] Unit {
-  out.print(\"said\")
+  out.print \"said\"
 }
 
 def tailed[r : Row]() -> -F [d : std.io.Console.Eff, Partial | r] Unit {
-  pure unit
+  pure *{}
 }
 ";
     let sugared = "\
 import std.io;
 
 def say() -> [out : std.io.Console.Eff] Unit {
-  out.print(\"said\")
+  out.print \"said\"
 }
 
 def both() -> [Partial, out : std.io.Console.Eff] Unit {
-  out.print(\"said\")
+  out.print \"said\"
 }
 
 def tailed[r : Row]() -> [d : std.io.Console.Eff, Partial | r] Unit {
-  pure unit
+  pure *{}
 }
 ";
     assert_eq!(
@@ -521,24 +521,24 @@ fn a_value_function_alias_is_written_at_its_shortest_1327()
 {
     let grammar = grammar();
     let source = "\
-def step : (Integer) => Integer ;
-def named : (x : Integer) => Integer ;
-def nested : ((Integer)) => Integer ;
-def twice : (Integer) => (Integer) => Integer ;
-def unread : (a : Type, b : Integer) => a ;
-def pair : (Integer, String) => Unit ;
-def dependent : (a : Type, a) => a ;
-def noted : (/* the count */ Integer) => Integer ;
+def step : (Integer) -> Integer ;
+def named : (x : Integer) -> Integer ;
+def nested : ((Integer)) -> Integer ;
+def twice : (Integer) -> ((Integer) -> Integer) ;
+def unread : (a : Type, b : Integer) -> a ;
+def pair : (Integer, String) -> Unit ;
+def dependent : (a : Type, a) -> a ;
+def noted : (/* the count */ Integer) -> Integer ;
 ";
     let sugared = "\
-def step : Integer => Integer;
-def named : Integer => Integer;
-def nested : Integer => Integer;
-def twice : Integer => Integer => Integer;
-def unread : (a : Type, Integer) => a;
-def pair : (Integer, String) => Unit;
-def dependent : (a : Type, a) => a;
-def noted : (/* the count */ Integer) => Integer;
+def step : Integer -> Integer;
+def named : Integer -> Integer;
+def nested : Integer -> Integer;
+def twice : Integer -> (Integer -> Integer);
+def unread : (a : Type, Integer) -> a;
+def pair : (Integer, String) -> Unit;
+def dependent : (a : Type, a) -> a;
+def noted : (/* the count */ Integer) -> Integer;
 ";
     assert_eq!(
         spelled(&grammar, source, Form::Sugared, Selection::Every),
@@ -568,23 +568,21 @@ fn the_path_composite_moves_both_ways()
 {
     let grammar = grammar();
     let sugared = format!(
-        "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](Path.step(loop, Path.step(loop, loop)), Path.here(Base)) ;\n"
+        "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](Path.step loop (Path.step loop loop), Path.here Base) ;\n"
     );
     let explicit = format!(
         "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk(
-    fun (a) {{ type(Path[.A = Circle](Base, a)) }},
-    Path.walk(fun (a) {{ type(Path[.A = Circle](Base, a)) }}, loop, loop),
-    loop
-  ),
-  Path.here(Base)
+  Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) (Path.walk (fun (a) {{
+    type(Path[.A = Circle](Base, a))
+  }}) loop loop) loop,
+  Path.here Base
 );
 "
     );
     let back = format!(
         "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step(loop, Path.step(loop, loop)),
-  Path.here(Base)
+  Path.step loop (Path.step loop loop),
+  Path.here Base
 );
 "
     );
@@ -618,8 +616,8 @@ fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
-  Path.ap((thunk { fun (q : Path[.A = A](x, y)) { Path.step(q, g) } } : Path[.A = A](x, y) => Path[.A = A](x, z)), a)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
+  Path.ap (thunk { fun (q : Path[.A = A](x, y)) { Path.step q g } } : Path[.A = A](x, y) -> Path[.A = A](x, z)) a
 }
 ";
     let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
@@ -651,13 +649,13 @@ fn a_stated_binder_in_cong_formats_once_as_explicit_4671()
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
-  Path.ap(fun (q : Path[.A = A](x, y)) { Path.step(q, g) }, a)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
+  Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a
 }
 ";
     let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
     assert!(
-        once.contains("= pure b;\n"),
+        once.contains("= pure b;") && !once.contains("pure b ;"),
         "the motive's bind touches its `;`: {once}"
     );
     assert_eq!(
@@ -672,7 +670,7 @@ fn a_stated_binder_in_cong_formats_once_as_explicit_4671()
 /// reflexivity the lowering derived, spelled as the printer spells them;
 /// sugared back, the transport is the operation again, the map as written.
 /// #1003: the inverse is taken at the circle's point, where the reflexivity
-/// it moves is the empty word a written `Path.here(Base)` reads as.
+/// it moves is the empty word a written `Path.here Base` reads as.
 #[test]
 fn an_inverse_and_an_action_on_a_path_move_both_ways_778()
 {
@@ -682,9 +680,9 @@ fn an_inverse_and_an_action_on_a_path_move_both_ways_778()
   x
 }}
 
-def undone : Path[.A = Path[.A = Circle](Base, Base)](Path.back(loop), Path.back(loop)) ;
+def undone : Path[.A = Path[.A = Circle](Base, Base)](Path.back loop, Path.back loop) ;
 
-def spun : Path[.A = Path[.A = Circle](Base, Base)](Path.ap(spin, loop), Path.ap(spin, loop)) ;
+def spun : Path[.A = Path[.A = Circle](Base, Base)](Path.ap spin loop, Path.ap spin loop) ;
 "
     );
     let explicit = format!(
@@ -693,13 +691,13 @@ def spun : Path[.A = Path[.A = Circle](Base, Base)](Path.ap(spin, loop), Path.ap
 }}
 
 def undone : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk(fun (a) {{ type(Path[.A = Circle](a, Base)) }}, loop, Path.here(Base)),
-  Path.walk(fun (a) {{ type(Path[.A = Circle](a, Base)) }}, loop, Path.here(Base))
+  Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) loop (Path.here Base),
+  Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) loop (Path.here Base)
 );
 
 def spun : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk(fun (a) {{ type(Path[.A = Circle](spin(Base), spin(a))) }}, loop, Path.here(spin(Base))),
-  Path.walk(fun (a) {{ type(Path[.A = Circle](spin(Base), spin(a))) }}, loop, Path.here(spin(Base)))
+  Path.walk (fun (a) {{ type(Path[.A = Circle](spin Base, spin a)) }}) loop (Path.here (spin Base)),
+  Path.walk (fun (a) {{ type(Path[.A = Circle](spin Base, spin a)) }}) loop (Path.here (spin Base))
 );
 "
     );
@@ -709,13 +707,13 @@ def spun : Path[.A = Path[.A = Circle](Base, Base)](
 }}
 
 def undone : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.back(loop),
-  Path.back(loop)
+  Path.back loop,
+  Path.back loop
 );
 
 def spun : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.ap(spin, loop),
-  Path.ap(spin, loop)
+  Path.ap spin loop,
+  Path.ap spin loop
 );
 "
     );
@@ -749,20 +747,20 @@ fn an_action_under_a_quoted_motive_moves_both_ways_4645()
   f1 : Path[.A = A](x, y),
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
-  F : Path[.A = A](x, y) => Path[.A = A](x, w)
-) -> Path[.A = Path[.A = Path[.A = A](x, w)](F(f1), F(f2))](Path.ap(F, a), Path.ap(F, a)) {
-  Path.here(Path.ap(F, a))
+  F : Path[.A = A](x, y) -> Path[.A = A](x, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](F f1, F f2)](Path.ap F a, Path.ap F a) {
+  Path.here (Path.ap F a)
 }
 ";
     let explicit = spelled(&grammar, source, Form::Explicit, Selection::Every);
     assert!(
-        explicit.contains("{ type(Path[.A = Path[.A = A](x, w)](F(f1), F(b))) }"),
+        explicit.contains("{ type(Path[.A = Path[.A = A](x, w)](F f1, F b)) }"),
         "the motive is quoted: {explicit}"
     );
     let back = spelled(&grammar, explicit.as_str(), Form::Sugared, Selection::Every);
     assert_eq!(
         (
-            back.matches("Path.ap(F, a)").count(),
+            back.matches("Path.ap F a").count(),
             back.contains("Path.walk")
         ),
         (3_usize, false),
@@ -779,21 +777,19 @@ fn a_composite_read_as_a_value_moves_both_ways_985()
 {
     let grammar = grammar();
     let sugared = format!(
-        "{CIRCLE}def two : Path[.A = Circle](Base, Base) = Path.step(loop, loop);
+        "{CIRCLE}def two : Path[.A = Circle](Base, Base) = Path.step loop loop;
 
-def undone : Path[.A = Circle](Base, Base) = Path.back(Path.step(loop, loop));
+def undone : Path[.A = Circle](Base, Base) = Path.back (Path.step loop loop);
 "
     );
     let explicit = format!(
         "{CIRCLE}def two : Path[.A = Circle](Base, Base);
-def two = Path.walk(fun (a) {{ type(Path[.A = Circle](Base, a)) }}, loop, loop);
+def two = Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) loop loop;
 
 def undone : Path[.A = Circle](Base, Base);
-def undone = Path.walk(
-  fun (a) {{ type(Path[.A = Circle](a, Base)) }},
-  Path.walk(fun (a) {{ type(Path[.A = Circle](Base, a)) }}, loop, loop),
-  Path.here(Base)
-);
+def undone = Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) (Path.walk (fun (a) {{
+  type(Path[.A = Circle](Base, a))
+}}) loop loop) (Path.here Base);
 "
     );
     for (source, form, expected) in [
@@ -819,7 +815,7 @@ fn a_transport_standing_as_a_computation_keeps_its_spelling()
     let grammar = grammar();
     let source = format!(
         "{CIRCLE}def twice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {{
-  Path.walk(fun (a) {{ type(Path[.A = Circle](Base, a)) }}, p, p)
+  Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) p p
 }}
 "
     );
@@ -842,12 +838,12 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
 {
     let grammar = grammar();
     for body in [
-        "Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, p, p), p)",
-        "Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, p, Path.walk(fun (a) { type(Path[.A = Circle](a, Base)) }, \
-         Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, p, p), Path.here(Base)))",
+        "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) (Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p p) p",
+        "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p (Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) \
+         (Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p p) (Path.here Base))",
     ] {
         let source = format!(
-            "{CIRCLE}def twice(p: Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) \
+            "{CIRCLE}def twice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) \
              {{\n  {body}\n}}\n"
         );
         let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
@@ -897,36 +893,36 @@ fn a_bare_checks_block_before_its_declaration_s_line_is_stripped_once_3049()
 }
 
 /// A parenthesised list after a rule's `<=>` is the rule's outputs, not a
-/// tuple: the explicit form keeps it, while a tuple read as a value beside it
-/// is written `#{…}`.
+/// tuple: the explicit form keeps it, and a record read as a value beside it
+/// stays `*{…}`.
 #[test]
 fn a_rule_s_outputs_are_not_a_tuple()
 {
     let grammar = grammar();
     let rules = "data NatDiv : Type where {\n  | Zero : NatDiv\n  | Succ : (n : NatDiv) --> NatDiv\n  \
                  oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);\n  rule : \
-                 divmod(m, Zero) <=> (Zero, m);\n}\n\n";
+                 divmod m Zero <=> (Zero, m);\n}\n\n";
     assert_eq!(
         spelled(
             &grammar,
-            format!("{rules}def pair = (1, 2) ;\n").as_str(),
+            format!("{rules}def pair = *{{1, 2}} ;\n").as_str(),
             Form::Explicit,
             Selection::Every
         ),
-        format!("{rules}def pair = #{{1, 2}};\n")
+        format!("{rules}def pair = *{{1, 2}};\n")
     );
 }
 
 /// A parenthesised list after an unbiased composite's shape is its cells, not
-/// a tuple: the explicit form keeps it, and withdraws nothing, while a tuple
-/// read as a value beside it is written `#{…}` (#3957).
+/// a tuple: the explicit form keeps it, and withdraws nothing, while a record
+/// read as a value beside it stays `*{…}` (#3957).
 #[test]
 fn a_composite_s_cells_are_not_a_tuple_3957()
 {
     let grammar = grammar();
     let source = "def cells(a : Type, x : a, y : a, z : a, w : a, p : Path[.A = a](x, y), q : Path[.A = a](\
-                  y, z), r : Path[.A = a](z, w)) -> Path[.A = a](x, w) {\n  compose[5, 7](chain(3), (p, \
-                  q, r))\n}\n\ndef pair = (1, 2) ;\n";
+                  y, z), r : Path[.A = a](z, w)) -> Path[.A = a](x, w) {\n  compose[5, 7] (chain 3) (p, \
+                  q, r)\n}\n\ndef pair = *{1, 2} ;\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -940,11 +936,11 @@ fn a_composite_s_cells_are_not_a_tuple_3957()
     );
     let text = formatted.into_text();
     assert!(
-        text.contains("compose[5, 7](chain(3), (p, q, r))"),
+        text.contains("compose[5, 7] (chain 3) (p, q, r)"),
         "the cells stay a list: {text}"
     );
     assert!(
-        text.contains("def pair = #{1, 2};"),
+        text.contains("def pair = *{1, 2};"),
         "a tuple is braced: {text}"
     );
 }
@@ -956,8 +952,8 @@ fn a_fill_s_cells_are_not_a_tuple_4075()
 {
     let grammar = grammar();
     let source = "def lifted(a : Type, x : a, y : a, z : a, fa : Path[.A = a](x, y), g : Path[.A = a](y, \
-                  z)) -> Path[.A = a](x, z) {\n  fill[5, 7](chain(2), selfComposite(a, x, y, z), (fa, \
-                  g))\n}\n";
+                  z)) -> Path[.A = a](x, z) {\n  fill[5, 7] (chain 2) (selfComposite a x y z) (fa, \
+                  g)\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -971,22 +967,22 @@ fn a_fill_s_cells_are_not_a_tuple_4075()
     );
     let text = formatted.into_text();
     assert!(
-        text.contains("fill[5, 7](chain(2), selfComposite(a, x, y, z), (fa, g))"),
+        text.contains("fill[5, 7] (chain 2) (selfComposite a x y z) (fa, g)"),
         "the cells stay a list: {text}"
     );
 }
 
 /// A parenthesised list inside a level-two shape, `chain(m, (a₁, …, aₘ))`,
 /// is its column heights, not a tuple: the explicit form keeps the
-/// whisker's shape and withdraws nothing, while a tuple read as a value
-/// beside it is written `#{…}` (#4475).
+/// whisker's shape and withdraws nothing, while a record read as a value
+/// beside it stays `*{…}` (#4475).
 #[test]
 fn a_level_two_shape_s_heights_are_not_a_tuple_4475()
 {
     let grammar = grammar();
     let source = "def w(a : Type, x : a, y : a, z : a, fm : Path[.A = a](x, y), fp : Path[.A = a](x, y), fa \
                   : Path[.A = Path[.A = a](x, y)](fm, fp), g : Path[.A = a](y, z)) -> Path[.A = a](x, z) {\n  \
-                  compose[5, 11](chain(2, (1, 0)), (fa, g))\n}\n\ndef pair = (1, 0) ;\n";
+                  compose[5, 11] (chain 2 (1, 0)) (fa, g)\n}\n\ndef pair = *{1, 0} ;\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -1000,11 +996,11 @@ fn a_level_two_shape_s_heights_are_not_a_tuple_4475()
     );
     let text = formatted.into_text();
     assert!(
-        text.contains("compose[5, 11](chain(2, (1, 0)), (fa, g))"),
+        text.contains("compose[5, 11] (chain 2 (1, 0)) (fa, g)"),
         "the heights stay a list: {text}"
     );
     assert!(
-        text.contains("def pair = #{1, 0};"),
+        text.contains("def pair = *{1, 0};"),
         "a tuple is braced: {text}"
     );
 }
@@ -1017,9 +1013,9 @@ fn a_composite_of_flows_keeps_its_then()
     let grammar = grammar();
     let source = "module Evolution where {\n  type Old = +{ report : !String. end };\n  type New = +{ \
                   report : !String. end, pause : end };\n  def sub : Flow[.A = Type](Old, New);\n  \
-                  def sub = Flow.sim(Old, New);\n  def kept : Flow[.A = Type](Old, Old);\n  def kept = \
-                  Flow.stay(Old);\n  def widened() -> -F Flow[.A = Type](Old, New) {\n    become Path.step(kept, \
-                  sub)\n  }\n}\n";
+                  def sub = Flow.sim Old New;\n  def kept : Flow[.A = Type](Old, Old);\n  def kept = \
+                  Flow.stay Old;\n  def widened() -> -F Flow[.A = Type](Old, New) {\n    become Path.step kept \
+                  sub\n  }\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid_out = format(&grammar, &parsed, FormatOptions::default())
         .expect("the source lays out")
@@ -1042,12 +1038,12 @@ fn a_transport_along_no_path_motive_keeps_its_spelling()
 {
     let grammar = grammar();
     for value in [
-        "Path.walk(fun (a) { Integer }, loop, 5)",
-        "Path.walk(+U (Circle -> -F Integer), loop, 5)",
-        "Path.walk(fun (a) { type(Path[.A = Circle](a, a)) }, loop, Path.here(Base))",
-        "Path.walk(fun (a) { type(Path[.A = Circle](Base, Base)) }, loop, Path.here(Base))",
-        "Path.walk(fun (a) { type(Path[.A = Circle](a, Base)) }, loop, loop)",
-        "Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, loop)",
+        "Path.walk (fun (a) { Integer }) loop 5",
+        "Path.walk (+U (Circle -> -F Integer)) loop 5",
+        "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop (Path.here Base)",
+        "Path.walk (fun (a) { type(Path[.A = Circle](Base, Base)) }) loop (Path.here Base)",
+        "Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) loop loop",
+        "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop",
     ] {
         let source = format!("{CIRCLE}def m : Integer = {value};\n");
         assert_eq!(
@@ -1066,11 +1062,11 @@ fn a_composite_under_a_parameter_takes_its_motive_803()
 {
     let grammar = grammar();
     let source = format!(
-        "{CIRCLE}def onward(x: Circle, q: Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {{
+        "{CIRCLE}def onward(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {{
   Path.step(q, Path.here(Base))
 }}
 
-def stated(x: Circle, q: Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](Path.step(q, Path.here(Base)), Path.step(q, Path.here(Base))) {{
+def stated(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](Path.step(q, Path.here(Base)), Path.step(q, Path.here(Base))) {{
   Path.here(Path.step(q, Path.here(Base)))
 }}
 "
@@ -1089,14 +1085,14 @@ def stated(x: Circle, q: Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = C
         }
 
         def onward(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {
-          Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q)
+          Path.step (q, Path.here (Base))
         }
 
         def stated(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](
-          Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q),
-          Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q)
+          Path.step (q, Path.here (Base)),
+          Path.step (q, Path.here (Base))
         ) {
-          Path.here(Path.walk(fun (a) { type(Path[.A = Circle](x, a)) }, Path.here(Base), q))
+          Path.here (Path.step (q, Path.here (Base)))
         }
     "#]]
     .assert_eq(formatted.text().as_ref());
@@ -1111,11 +1107,11 @@ fn a_composite_beside_a_call_takes_its_own_motive_3772()
 {
     let grammar = grammar();
     let source = format!(
-        "{CIRCLE}def twice(q: Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
+        "{CIRCLE}def twice(q : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
   Path.here(Path.step(q, q))
 }}
 
-def beside(q: Path[.A = Circle](Base, Base), r: Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q))) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
+def beside(q : Path[.A = Circle](Base, Base), r : Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q))) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
   Path.step(r, twice(q))
 }}
 "
@@ -1134,32 +1130,17 @@ def beside(q: Path[.A = Circle](Base, Base), r: Path[.A = Path[.A = Circle](Base
         }
 
         def twice(q : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](
-          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q),
-          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q)
+          Path.step (q, q),
+          Path.step (q, q)
         ) {
-          Path.here(Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q))
+          Path.here (Path.step (q, q))
         }
 
         def beside(
           q : Path[.A = Circle](Base, Base),
-          r : Path[.A = Path[.A = Circle](Base, Base)](
-            Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q),
-            Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q)
-          )
-        ) -> -F Path[.A = Path[.A = Circle](Base, Base)](
-          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q),
-          Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, q, q)
-        ) {
-          Path.walk(
-            fun (a) {
-              type(Path[.A = Path[.A = Circle](Base, Base)](
-                Path.walk(fun (b) { type(Path[.A = Circle](Base, b)) }, q, q),
-                a
-              ))
-            },
-            twice(q),
-            r
-          )
+          r : Path[.A = Path[.A = Circle](Base, Base)](Path.step (q, q), Path.step (q, q))
+        ) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step (q, q), Path.step (q, q)) {
+          Path.step (r, twice (q))
         }
     "#]]
     .assert_eq(formatted.text().as_ref());
@@ -1176,28 +1157,28 @@ fn a_functor_s_composite_takes_no_motive_from_its_instantiation_2166()
     let source = "theory Semi where {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
-  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));
+  rule assoc : mul (mul x y) z ==> mul x (mul y z);
 }
 
 module Reassociating(S : Model(Semi)) where {
   def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path[.A = S.M](
-    S.mul(x, S.mul(y, z)),
-    S.mul(S.mul(x, y), z)
+    S.mul x (S.mul y z),
+    S.mul (S.mul x y) z
   ) {
-    Path.back(S.assoc(x, y, z))
+    Path.back (S.assoc x y z)
   }
 }
 
 module OnePoint : Model(Semi) where {
   type M = Unit;
 
-  def mul(a : Unit, b : Unit) -> -F Unit { unit }
+  def mul(a : Unit, b : Unit) -> -F Unit { *{} }
 
   def assoc(x : Unit, y : Unit, z : Unit) -> -F Path[.A = Unit](
-    mul(mul(x, y), z),
-    mul(x, mul(y, z))
+    mul (mul x y) z,
+    mul x (mul y z)
   ) {
-    Path.here(unit)
+    Path.here *{}
   }
 }
 
@@ -1219,9 +1200,9 @@ module OnePointReassociated = Reassociating(OnePoint);
 fn a_composite_of_types_sugars_back_803()
 {
     let grammar = grammar();
-    let source = "def joined(a: Type, b: Type, c: Type, p: Path[.A = Type](a, b), q: Path[.A = Type](b, c)) -> -F \
-                  Path[.A = Path[.A = Type](a, c)](Path.walk(fun (d) { type(Path[.A = Type](a, d)) }, q, p), Path.walk(fun (d) { \
-                  type(Path[.A = Type](a, d)) }, q, p)) {\n  Path.here(Path.walk(fun (d) { type(Path[.A = Type](a, d)) }, q, p))\n}\n";
+    let source = "def joined(a : Type, b : Type, c : Type, p : Path[.A = Type](a, b), q : Path[.A = Type](b, c)) -> -F \
+                  Path[.A = Path[.A = Type](a, c)](Path.walk (fun (d) { type(Path[.A = Type](a, d)) }) q p, Path.walk (fun (d) { \
+                  type(Path[.A = Type](a, d)) }) q p) {\n  Path.here (Path.walk (fun (d) { type(Path[.A = Type](a, d)) }) q p)\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1236,8 +1217,8 @@ fn a_composite_of_types_sugars_back_803()
           c : Type,
           p : Path[.A = Type](a, b),
           q : Path[.A = Type](b, c)
-        ) -> Path[.A = Path[.A = Type](a, c)](Path.step(p, q), Path.step(p, q)) {
-          Path.here(Path.step(p, q))
+        ) -> Path[.A = Path[.A = Type](a, c)](Path.step p q, Path.step p q) {
+          Path.here (Path.step p q)
         }
     "#]]
     .assert_eq(formatted.text().as_ref());
@@ -1259,14 +1240,13 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 
-def kept(a: Nat, b: Nat, q: Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
-  become Path.walk(
-    +U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Path[.A = Nat](y, a)),
-    q,
-    Path.here(a),
-    Path.here(q),
-    Path.here(a)
-  )
+def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
+  become Path.walk
+    (+U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Path[.A = Nat](y, a)))
+    q
+    (Path.here a)
+    (Path.here q)
+    (Path.here a)
 }
 ";
     let parsed = parse(&grammar, SourceText::from(argument)).expect("the source parses");
@@ -1283,13 +1263,12 @@ def kept(a: Nat, b: Nat, q: Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
         }
 
         def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
-          become Path.walk(
-            (y : Nat, Path[.A = Nat](a, y)) => Path[.A = Nat](y, a),
-            q,
-            Path.here(a),
-            Path.here(q),
-            Path.here(a)
-          )
+          become Path.walk
+            ((y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a))
+            q
+            (Path.here a)
+            (Path.here q)
+            (Path.here a)
         }
     "#]]
     .assert_eq(formatted.text().as_ref());
@@ -1300,7 +1279,7 @@ def suspended : Type -> Type;
 def suspended = fun (X) { +U (-F X) };
 ";
     let sugared = "\
-def motive : Type -> Type = fun (X) { X => X };
+def motive : Type -> Type = fun (X) { X -> X };
 def suspended : Type -> Type = fun (X) { +U (-F X) };
 ";
     for (source, form, expected) in [
@@ -1326,7 +1305,7 @@ fn a_manifest_carrier_is_parenthesised_as_the_printer_writes_it_2246()
     let explicit =
         format!("{theory}def endo : Model(Pointed) with sort M = +U (Integer -> -F Integer);\n");
     let sugared =
-        format!("{theory}def endo : Model(Pointed) with sort M = (Integer => Integer);\n");
+        format!("{theory}def endo : Model(Pointed) with sort M = (Integer -> Integer);\n");
     for (source, form, expected) in [
         (&explicit, Form::Sugared, &sugared),
         (&sugared, Form::Explicit, &explicit),
@@ -1352,12 +1331,12 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 
-def onType(t: Type) -> -F Type {
+def onType(t : Type) -> -F Type {
   return (+U (t -> -F t))
 }
 
-def flat(a: Nat, b: Nat, q: Path[.A = Nat](a, b), v: Nat) -> -F Nat {
-  become Path.walk(+U (Nat -> -F Nat), q, v, v, v)
+def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> -F Nat {
+  become Path.walk (+U (Nat -> -F Nat)) q v v v
 }
 ";
     expect![[r#"
@@ -1367,11 +1346,11 @@ def flat(a: Nat, b: Nat, q: Path[.A = Nat](a, b), v: Nat) -> -F Nat {
         }
 
         def onType(t : Type) -> Type {
-          return (t => t)
+          return (t -> t)
         }
 
         def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> Nat {
-          become Path.walk(Nat => Nat, q, v, v, v)
+          become Path.walk (Nat -> Nat) q v v v
         }
     "#]]
     .assert_eq(&spelled(
@@ -1390,14 +1369,14 @@ fn a_sugared_source_keeps_every_comment_with_its_construct()
     let grammar = grammar();
     let source = "\
 /// A choice, the second arm a pair.
-def choice : +{Integer, /* a pair */ #{String, Unit}};
+def choice : +{Integer, /* a pair */ *{String, Unit}};
 
 def both : +U &{
   -F Integer, // eager first
   -F String
 };
 
-def pair = #{1, /* second */ \"a\"};
+def pair = *{1, /* second */ \"a\"};
 ";
     let sugared = "\
 /// A choice, the second arm a pair.
@@ -1408,7 +1387,7 @@ def both : +U (
   -F String
 );
 
-def pair = (1, /* second */ \"a\");
+def pair = *{1, /* second */ \"a\"};
 ";
     assert_eq!(
         spelled(&grammar, source, Form::Sugared, Selection::Every),
@@ -1431,12 +1410,12 @@ fn a_declared_form_wins_over_the_option()
             "explicit",
             Form::Sugared,
             "Integer * String",
-            "#{Integer, String}",
+            "*{Integer, String}",
         ),
         (
             "sugared",
             Form::Explicit,
-            "#{Integer, String}",
+            "*{Integer, String}",
             "Integer * String",
         ),
     ] {
@@ -1460,11 +1439,11 @@ fn a_match_over_a_stated_sum_is_sugared_791()
     let grammar = grammar();
     let matched = |stated: &str, exit: &str, result: &str| {
         format!(
-            "def pick(t : {stated}) -> {result} {{\n  match t {{\n    +{{.1 = x}} => {exit}x,\n    _ => {exit}0\n  }}\n}}"
+            "def pick(t : {stated}) -> {result} {{\n  match t {{\n    | +{{.1 = x}} => {exit}x\n    | _ => {exit}0\n  }}\n}}"
         )
     };
     let source = format!(
-        "{}\n\ndef pair : #{{Integer, String}} ;\n",
+        "{}\n\ndef pair : *{{Integer, String}} ;\n",
         matched("+{Integer, Integer}", "return ", "-F Integer")
     );
     let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
@@ -1496,8 +1475,8 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 {
     let grammar = grammar();
     let source = "data Color : Type where {\n  | Red : Color\n  | Green : Color\n}\n\ndef sketch(c : \
-                  Color) -> -F Integer {\n  match c {\n    Red => return 0,\n    Green => ?\n  \
-                  }\n}\n\ndef pair : #{Integer, String};\n";
+                  Color) -> -F Integer {\n  match c {\n    | Red => return 0\n    | Green => ?\n  \
+                  }\n}\n\ndef pair : *{Integer, String};\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1508,7 +1487,7 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
         (formatted.text().as_ref(), formatted.withdrawn()),
         (
             source
-                .replace("#{Integer, String}", "Integer * String")
+                .replace("*{Integer, String}", "Integer * String")
                 .replace("-> -F Integer", "-> Integer")
                 .replace("return 0", "0")
                 .as_str(),
@@ -1524,7 +1503,7 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 fn an_importing_source_is_rewritten_beside_its_imports()
 {
     let grammar = grammar();
-    let source = "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](Path.step(loop, loop), Path.here(Base));\n";
+    let source = "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](Path.step loop loop, Path.here Base);\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -1548,8 +1527,8 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     assert_eq!(
         formatted.into_text(),
         "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk(fun (a) { type(Path[.A = Circle](Base, a)) }, loop, loop),
-  Path.here(Base)
+  Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop loop,
+  Path.here Base
 );
 "
     );
@@ -1584,13 +1563,13 @@ data Nat : Type where {
 }
 
 def next(n : Nat) -> -F Nat {
-  Succ(n)
+  Succ n
 }
 
-def stay : (a : Nat) => Path[.A = Nat](a, a) ;
+def stay : (a : Nat) -> Path[.A = Nat](a, a) ;
 
-def stayUp(a : Nat) -> -F Path[.A = Nat](Succ(a), Succ(a)) {
-  Path.step(Path.ap(next, Flow.stay(a)), Path.here(Succ(a)))
+def stayUp(a : Nat) -> -F Path[.A = Nat](Succ a, Succ a) {
+  Path.step (Path.ap next (Flow.stay a)) (Path.here (Succ a))
 }
 ";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
@@ -1621,15 +1600,15 @@ def stayUp(a : Nat) -> -F Path[.A = Nat](Succ(a), Succ(a)) {
 fn a_selection_runs_only_the_rewrites_it_names()
 {
     let grammar = grammar();
-    let source = "def pair : Integer * String ;\ndef tuple = (1, 2) ;\n";
+    let source = "def pair : Integer * String ;\ndef choice : Integer + String ;\n";
     assert_eq!(
         spelled(
             &grammar,
             source,
             Form::Explicit,
-            Selection::Only(&[RewriteName::Tuple])
+            Selection::Only(&[RewriteName::Sum])
         ),
-        "def pair : Integer * String;\ndef tuple = #{1, 2};\n"
+        "def pair : Integer * String;\ndef choice : +{Integer, String};\n"
     );
 }
 
@@ -1640,10 +1619,10 @@ fn a_selection_runs_only_the_rewrites_it_names()
 fn a_respaced_root_expression_keeps_the_rewrite_beside_it()
 {
     let grammar = grammar();
-    let source = "def pair : Integer * String;\ndef s = #{b = 1};\n#{ s | b = 2 }\n";
+    let source = "def pair : Integer * String;\ndef s = *{b = 1};\n*{ s | b = 2 }\n";
     assert_eq!(
         spelled(&grammar, source, Form::Explicit, Selection::Every),
-        "def pair : #{Integer, String};\ndef s = #{b = 1};\n#{s | b = 2}\n"
+        "def pair : *{Integer, String};\ndef s = *{b = 1};\n*{s | b = 2}\n"
     );
 }
 
@@ -1709,9 +1688,9 @@ fn a_linear_run_follows_the_checker_s_elaborations()
     let grammar = grammar();
     let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                   \n\
-                  def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
+                  def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
                   \n\
-                  def field(n : Nat) -> Nat {\n  let m = twice(n);\n  Succ(m)\n}\n";
+                  def field(n : Nat) -> Nat {\n  let m = twice n;\n  Succ m\n}\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1731,7 +1710,7 @@ fn a_linear_run_follows_the_checker_s_elaborations()
             .collect();
         (formatted.into_text(), withdrawn)
     };
-    let written = source.replace("\n  let m = twice(n);\n  Succ(m)\n", "\n  Succ(twice(n))\n");
+    let written = source.replace("\n  let m = twice n;\n  Succ m\n", "\n  Succ (twice n)\n");
     assert_eq!(
         format(Answer::Alike),
         (written, Vec::new()),
@@ -1763,9 +1742,9 @@ fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
     let grammar = grammar();
     let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                   \n\
-                  def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
+                  def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
                   \n\
-                  def again(n : Nat) -> Nat { return twice(n) }\n";
+                  def again(n : Nat) -> Nat { return twice n }\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1791,7 +1770,7 @@ fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
     };
     assert_eq!(
         format(Some(Answer::Alike)),
-        (source.replace("return twice(n)", "twice(n)"), Vec::new()),
+        (source.replace("return twice n", "twice n"), Vec::new()),
         "elaborated alike, the tail is the call"
     );
     assert_eq!(
@@ -1823,23 +1802,23 @@ fn the_runs_ending_a_block_are_written_away_together()
     let grammar = grammar();
     let head = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                 \n\
-                def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
+                def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
                 \n\
-                def both(m : Nat, k : Nat) -> Nat { Succ(m) }\n\
+                def both(m : Nat, k : Nat) -> Nat { Succ m }\n\
                 \n\
                 def field(n : Nat) -> Nat {\n";
     for (body, written) in [
         (
-            "  let m = twice(n) ;\n  let k = twice(n) ;\n  both(m, k)\n",
-            "  both(twice(n), twice(n))\n",
+            "  let m = twice n ;\n  let k = twice n ;\n  both m k\n",
+            "  both (twice n) (twice n)\n",
         ),
         (
-            "  let m = twice(n) ;\n  // between\n  let k = twice(n) ;\n  both(m, k)\n",
-            "  // between\n  both(twice(n), twice(n))\n",
+            "  let m = twice n ;\n  // between\n  let k = twice n ;\n  both m k\n",
+            "  // between\n  both (twice n) (twice n)\n",
         ),
         (
-            "  let m = twice(n) ;\n  let k = twice(m) ;\n  both(k, m)\n",
-            "  let m = twice(n);\n  both(twice(m), m)\n",
+            "  let m = twice n ;\n  let k = twice m ;\n  both k m\n",
+            "  let m = twice n;\n  both (twice m) m\n",
         ),
     ] {
         let source = format!("{head}{body}}}\n");
@@ -1871,22 +1850,22 @@ fn a_branch_s_runs_are_written_away_and_its_block_with_them_1935()
     let grammar = grammar();
     let head = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                 \n\
-                def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
+                def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
                 \n\
-                def both(m : Nat, k : Nat) -> Nat { Succ(m) }\n\
+                def both(m : Nat, k : Nat) -> Nat { Succ m }\n\
                 \n";
     for (body, written) in [
         (
-            "def armed(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { let d = twice(b) ; Succ(d) } } }\n",
-            "def armed(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => Succ(twice(b)) } }\n",
+            "def armed(a : Nat) -> Nat { match a { | Zero => Zero | Succ(b) => { let d = twice b ; Succ d } } }\n",
+            "def armed(a : Nat) -> Nat { match a { | Zero => Zero | Succ(b) => Succ (twice b) } }\n",
         ),
         (
-            "def paired(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { let e = twice(b) ; let f = twice(Zero) ; both(e, f) } } }\n",
-            "def paired(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => both(twice(b), twice(Zero)) } }\n",
+            "def paired(a : Nat) -> Nat { match a { | Zero => Zero | Succ(b) => { let e = twice b ; let f = twice Zero ; both e f } } }\n",
+            "def paired(a : Nat) -> Nat { match a { | Zero => Zero | Succ(b) => both (twice b) (twice Zero) } }\n",
         ),
         (
-            "def reread(a : Nat) -> Nat { match a { Zero => Zero, Succ(b) => { let g = twice(b) ; let h = twice(g) ; both(h, g) } } }\n",
-            "def reread(a : Nat) -> Nat {\n  match a { Zero => Zero, Succ(b) => { let g = twice(b); both(twice(g), g) } }\n}\n",
+            "def reread(a : Nat) -> Nat { match a { | Zero => Zero | Succ(b) => { let g = twice b ; let h = twice g ; both h g } } }\n",
+            "def reread(a : Nat) -> Nat {\n  match a { | Zero => Zero | Succ(b) => { let g = twice b; both (twice g) g } }\n}\n",
         ),
     ] {
         let source = format!("{head}{body}");
@@ -1974,7 +1953,6 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "product",
             "sum",
             "lazy-product",
-            "tuple",
             "value-function",
             "default-grade",
             "path-composite",
@@ -2006,12 +1984,12 @@ fn a_rewrite_is_checked_beside_every_kind_of_declaration()
                   \n\
                   world seat;\n\
                   \n\
-                  module Pair :> #{ type Kept, one : Kept } where {\n  type Kept = Integer;\n  def \
+                  module Pair :> *{ type Kept, one : Kept } where {\n  type Kept = Integer;\n  def \
                   one = 1;\n}\n\
                   \n\
                   def lost() -> Integer { migrate [nowhere] { pure 1 } }\n\
                   \n\
-                  def pair : #{Integer, String};\n";
+                  def pair : *{Integer, String};\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -2021,7 +1999,7 @@ fn a_rewrite_is_checked_beside_every_kind_of_declaration()
     assert_eq!(formatted.withdrawn(), &[]);
     assert_eq!(
         formatted.into_text(),
-        source.replace("#{Integer, String}", "Integer * String")
+        source.replace("*{Integer, String}", "Integer * String")
     );
 }
 
@@ -2035,11 +2013,11 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
     let grammar = grammar();
     let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                   \n\
-                  def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
+                  def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
                   \n\
                   def call(f : +U (-F Nat)) -> Nat { force f }\n\
                   \n\
-                  def field(n : Nat) -> Nat { call(thunk { twice(n) }) }\n";
+                  def field(n : Nat) -> Nat { call (thunk { twice n }) }\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -2063,11 +2041,11 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
             .collect();
         (formatted.into_text(), withdrawn)
     };
-    let aliased = source.replace("+U (-F Nat)", "() => Nat");
+    let aliased = source.replace("+U (-F Nat)", "() -> Nat");
     assert_eq!(
         format(Some(Answer::Alike)),
         (
-            aliased.replace("call(thunk { twice(n) })", "call(twice(n))"),
+            aliased.replace("call (thunk { twice n })", "call (twice n)"),
             Vec::new()
         ),
         "elaborated alike, the thunk is left for the checker to insert"
@@ -2087,23 +2065,23 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
     // body.
     for (body, written) in [
         (
-            "thunk { become twice(n) }",
-            "call(thunk { become twice(n) })",
+            "thunk { become twice n }",
+            "call (thunk { become twice n })",
         ),
         (
-            "thunk // owned\n  { twice(n) }",
-            "call(\n  thunk // owned\n  { twice(n) }\n)",
+            "thunk // owned\n  { twice n }",
+            "call (\n  thunk // owned\n  { twice n }\n)",
         ),
         (
-            "thunk { let m = twice(n) ; return m }",
-            "call(thunk { let m = twice(n); m })",
+            "thunk { let m = twice n ; return m }",
+            "call (thunk { let m = twice n; m })",
         ),
         (
-            "thunk {\n    // kept\n    twice(n)\n  }",
-            "call(\n  // kept\n  twice(n)\n)",
+            "thunk {\n    // kept\n    twice n\n  }",
+            "call (\n  // kept\n  twice n\n)",
         ),
     ] {
-        let source = source.replace("thunk { twice(n) }", body);
+        let source = source.replace("thunk { twice n }", body);
         let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
         let oracle = Oracle {
             answer: Answer::Alike,
@@ -2113,7 +2091,7 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
             .expect("the source formats");
         assert_eq!(
             formatted.into_text(),
-            aliased.replace("call(thunk { twice(n) })", written),
+            aliased.replace("call (thunk { twice n })", written),
             "{body}"
         );
     }
@@ -2134,19 +2112,19 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
                   /// Becomes a call.\n\
                   @[ runs(\"2\") ]\n\
                   def becomes : +U (-F Integer) ;\n\
-                  def becomes = thunk { become twice(1) } ;\n\
+                  def becomes = thunk { become twice 1 } ;\n\
                   \n\
-                  def block : () => Integer ;\n\
-                  def block = thunk { let m = twice(1) ; return m } ;\n\
+                  def block : () -> Integer ;\n\
+                  def block = thunk { let m = twice 1 ; return m } ;\n\
                   \n\
-                  def pair : () => Integer * Integer ;\n\
-                  def pair = thunk { return (1, 2) } ;\n\
+                  def pair : () -> Integer * Integer ;\n\
+                  def pair = thunk { return *{1, 2} } ;\n\
                   \n\
-                  def commented : () => Integer ;\n\
-                  def commented = thunk {\n  // kept\n  become twice(2)\n} ;\n\
+                  def commented : () -> Integer ;\n\
+                  def commented = thunk {\n  // kept\n  become twice 2\n} ;\n\
                   \n\
                   def graded : +U[1] (-F Integer) ;\n\
-                  def graded = thunk[1] { become twice(3) } ;\n\
+                  def graded = thunk[1] { become twice 3 } ;\n\
                   \n\
                   def value : Integer ;\n\
                   def value = 3 ;\n";
@@ -2177,19 +2155,19 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
 
         /// Becomes a call.
         @[ runs("2") ]
-        def becomes() -> Integer { become twice(1) }
+        def becomes() -> Integer { become twice 1 }
 
-        def block() -> Integer { let m = twice(1); m }
+        def block() -> Integer { let m = twice 1; m }
 
-        def pair() -> Integer * Integer { (1, 2) }
+        def pair() -> Integer * Integer { *{1, 2} }
 
-        def commented : () => Integer = thunk {
+        def commented : () -> Integer = thunk {
           // kept
-          become twice(2)
+          become twice 2
         };
 
         def graded : +U[1] (-F Integer);
-        def graded = thunk[1] { become twice(3) };
+        def graded = thunk[1] { become twice 3 };
 
         def value : Integer = 3;
     "#]]
@@ -2199,20 +2177,20 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
 
         /// Becomes a call.
         @[ runs("2") ]
-        def becomes() -> -F Integer { become twice(1) }
+        def becomes() -> -F Integer { become twice 1 }
 
-        def block() -> -F Integer { let m = twice(1); return m }
+        def block() -> -F Integer { let m = twice 1; return m }
 
-        def pair() -> -F #{Integer, Integer} { return #{1, 2} }
+        def pair() -> -F *{Integer, Integer} { return *{1, 2} }
 
         def commented : +U (-F Integer);
         def commented = thunk {
           // kept
-          become twice(2)
+          become twice 2
         };
 
         def graded : +U[1] (-F Integer);
-        def graded = thunk[1] { become twice(3) };
+        def graded = thunk[1] { become twice 3 };
 
         def value : Integer;
         def value = 3;
@@ -2234,22 +2212,22 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
     let source = "def identity : +U (Integer -> -F Integer) ;\n\
                   def identity = thunk { fun (n) { return n } } ;\n\
                   \n\
-                  def add : (Integer, Integer) => Integer ;\n\
+                  def add : (Integer, Integer) -> Integer ;\n\
                   def add = thunk { fun (a) { fun (b) { return (a + b) } } } ;\n\
                   \n\
                   def named : +U ((x : Integer) -> -F Integer) ;\n\
                   def named = thunk { fun (x) { return x } } ;\n\
                   \n\
-                  def stated : Integer => Integer ;\n\
+                  def stated : Integer -> Integer ;\n\
                   def stated = thunk { fun (x : Integer) { return x } } ;\n\
                   \n\
                   def short : +U (Integer -> Integer -> -F Integer) ;\n\
-                  def short = thunk { fun (a) { become add(a) } } ;\n\
+                  def short = thunk { fun (a) { become add a } } ;\n\
                   \n\
                   def renamed : +U ((x : Integer) -> -F Integer) ;\n\
                   def renamed = thunk { fun (y) { return y } } ;\n\
                   \n\
-                  def mistyped : Integer => Integer ;\n\
+                  def mistyped : Integer -> Integer ;\n\
                   def mistyped = thunk { fun (x : String) { return 1 } } ;\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form| {
@@ -2272,13 +2250,13 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
 
         def named(x : Integer) -> Integer { x }
 
-        def stated : Integer => Integer = thunk { fun (x : Integer) { x } };
+        def stated : Integer -> Integer = thunk { fun (x : Integer) { x } };
 
-        def short : (Integer, Integer) => Integer = thunk { fun (a) { become add(a) } };
+        def short : (Integer, Integer) -> Integer = thunk { fun (a) { become add a } };
 
         def renamed(y : Integer) -> Integer { y }
 
-        def mistyped : Integer => Integer = thunk { fun (x : String) { 1 } };
+        def mistyped : Integer -> Integer = thunk { fun (x : String) { 1 } };
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
@@ -2292,7 +2270,7 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
         def stated = thunk { fun (x : Integer) { return x } };
 
         def short : +U (Integer -> Integer -> -F Integer);
-        def short = thunk { fun (a) { become add(a) } };
+        def short = thunk { fun (a) { become add a } };
 
         def renamed : +U ((x : Integer) -> -F Integer);
         def renamed = thunk { fun (y) { return y } };
@@ -2434,7 +2412,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
                   \x20 // parts them\n\
                   \x20 def three = 3 ;\n\
                   \n\
-                  \x20 def four : () => Integer ;\n\
+                  \x20 def four : () -> Integer ;\n\
                   \x20 def four = thunk { 4 } ;\n\
                   \n\
                   \x20 module Inner where {\n\
@@ -2510,13 +2488,13 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
     let grammar = grammar();
     let source = "def inc(x : Integer) -> -F Integer { x + 1 }\n\
                   \n\
-                  def pair() -> -F (Integer * Integer) { (1, 2) }\n\
+                  def pair() -> -F (Integer * Integer) { *{1, 2} }\n\
                   \n\
                   def spin(x : Integer) -> -F [Partial] Integer { x }\n\
                   \n\
                   def call(f : +U (-F Integer)) -> -F Integer { force f }\n\
                   \n\
-                  def four : () => Integer ;\n\
+                  def four : () -> Integer ;\n\
                   def four = thunk { 4 } ;\n\
                   \n\
                   module Kept where {\n\
@@ -2539,11 +2517,11 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
     expect![[r#"
         def inc(x : Integer) -> Integer { x + 1 }
 
-        def pair() -> Integer * Integer { (1, 2) }
+        def pair() -> Integer * Integer { *{1, 2} }
 
         def spin(x : Integer) -> [Partial] Integer { x }
 
-        def call(f : () => Integer) -> Integer { force f }
+        def call(f : () -> Integer) -> Integer { force f }
 
         def four() -> Integer { 4 }
 
@@ -2555,7 +2533,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
     expect![[r#"
         def inc(x : Integer) -> -F Integer { x + 1 }
 
-        def pair() -> -F #{Integer, Integer} { #{1, 2} }
+        def pair() -> -F *{Integer, Integer} { *{1, 2} }
 
         def spin(x : Integer) -> -F [Partial] Integer { x }
 
@@ -2578,10 +2556,10 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
 {
     let grammar = grammar();
-    let source = "def identity : Integer => Integer ;\n\
+    let source = "def identity : Integer -> Integer ;\n\
                   def identity = fun (x) { x } ;\n\
                   \n\
-                  def add : (Integer, Integer) => Integer ;\n\
+                  def add : (Integer, Integer) -> Integer ;\n\
                   def add = fun (a) { fun (b) { a + b } } ;\n";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form, answer: Option<Answer>| {
@@ -2619,9 +2597,9 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
     "#]]
     .assert_eq(&laid(Form::Explicit, Some(Answer::Alike)));
     expect![[r#"
-        def identity : Integer => Integer = fun (x) { x };
+        def identity : Integer -> Integer = fun (x) { x };
 
-        def add : (Integer, Integer) => Integer = fun (a) { fun (b) { a + b } };
+        def add : (Integer, Integer) -> Integer = fun (a) { fun (b) { a + b } };
     "#]]
     .assert_eq(&laid(Form::Sugared, None));
 }

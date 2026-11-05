@@ -29,73 +29,69 @@ import "../../model/effects/tree.gandr" ;
 /// unit. A read hands the initial state to what runs after, and a store runs
 /// what follows from the stored value.
 @[ checks ]
-def incrObserved() -> ((Unit, Integer) => Type, Integer) => Type {
+def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
   handle st : StateLaws with sort S = Integer {
-    let n = st.get();
-    st.put(n + 1);
-    pure fun (q) { fun (s) { q(unit, s) } }
+    let n = st.get ();
+    st.put (n + 1);
+    pure fun (q) { fun (s) { q (*{}) s } }
   } with {
-    pure(w) => pure w,
-    oper get(k) => pure fun (q) { fun (s) { let w = k(s); w(q, s) } },
-    oper put(s, k) => pure fun (q) { fun (_old) { let w = k(unit); w(q, s) } }
+    | pure(w) => pure w
+    | oper get(k) => pure fun (q) { fun (s) { let w = k s; w q s } }
+    | oper put(s, k) => pure fun (q) { fun (_old) { let w = k (*{}); w q s } }
   }
-}
 
 /// The increment as a tree.
-def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fun (n) {
-  (Op(Left(Put(n + 1)), fun (_u) {
-    (Done(unit) : Prog(Either(StateOp, Void), Unit))
+def incrTree : Prog(Either(StateOp, Void), Unit) = Op (Left Get) (fun (n) {
+  (Op (Left (Put (n + 1))) (fun (_u) {
+    (Done (*{}) : Prog(Either(StateOp, Void), Unit))
   }) : Prog(Either(StateOp, Void), Unit))
 }) ;
 
 /// The observation as a fold of the tree.
 def rec wp(
   p : Prog(Either(StateOp, Void), Unit),
-  post : (Unit, Integer) => Type,
+  post : (Unit, Integer) -> Type,
   s : Integer
-) -> Type {
-  match p {
-    Done(x) => post(x, s),
-    Op(o, k) => match o {
-      Left(Get) => wp[<](k(s), post, s),
-      Left(Put(t)) => wp[<](k(0), post, t),
-      Right(none) => match none {}
-    }
-  }
-}
+) -> Type =
+  match p
+    | Done(x) => post x s
+    | Op(o, k) => match o
+      | Left(Get) => wp[<] (k s) post s
+      | Left(Put(t)) => wp[<] (k 0) post t
+      | Right(none) => match none {}
 
 /// The increment's specification: the postcondition at the unit and the
 /// successor of the initial state.
-def incrSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 1) }
+def incrSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) (s + 1) }
 
 /// The counter ends at one.
-def isOne(_x : Unit, s : Integer) -> Type { return Path(s, 1) }
+def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }
 
 /// The increment paired with evidence that its transformer is below its
 /// specification at `isOne`.
 @[ checks ]
-def incrSpecified : #{
+def incrSpecified : *{
   m : Prog(Either(StateOp, Void), Unit),
-  meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)
-} = (incrTree, fun (s) { fun (h) { h } }) ;
+  meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
+} = *{incrTree, fun (s) { fun (h) { h } }} ;
 
 /// The increment paired with evidence at every postcondition: the
 /// specification's call over the successor computed first and the fold's
 /// over the successor held read as one call.
 @[ checks ]
-def incrSpecifiedEverywhere : #{
+def incrSpecifiedEverywhere : *{
   m : Prog(Either(StateOp, Void), Unit),
-  meets : (post : (Unit, Integer) => Type, s : Integer, incrSpec(post, s)) => wp(m, post, s)
-} = (incrTree, fun (post) { fun (s) { fun (h) { h } } }) ;
+  meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
+} = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }} ;
 
 /// The return specification: the postcondition at the unit and the initial
 /// state.
-def retSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s) }
+def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) s }
 
 /// The stopped program paired with evidence below the return specification
 /// at every postcondition.
 @[ checks ]
-def doneSpecified : #{
+def doneSpecified : *{
   m : Prog(Either(StateOp, Void), Unit),
-  meets : (post : (Unit, Integer) => Type, s : Integer, retSpec(post, s)) => wp(m, post, s)
-} = ((Done(unit) : Prog(Either(StateOp, Void), Unit)), fun (post) { fun (s) { fun (h) { h } } }) ;
+  meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)
+} = *{(Done (*{}) : Prog(Either(StateOp, Void), Unit)), fun (post) { fun (s) { fun (h) { h } } }} ;

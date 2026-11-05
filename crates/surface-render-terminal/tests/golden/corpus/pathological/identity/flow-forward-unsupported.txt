@@ -1,8 +1,8 @@
 error[ForwardUnsupported]: `Flow.into` cannot image this translator at every input
-   ╭▸ corpus/pathological/identity/flow-forward-unsupported.gandr:22:43
+   ╭▸ corpus/pathological/identity/flow-forward-unsupported.gandr:20:43
    │
-22 │   def scrub : Flow[.A = Type](Old, New) = Flow.into(anonymise);
-   │                                           ━━━━━━━━━━━━━━━━━━━━ a translator the rule cannot image
+20 │   def scrub : Flow[.A = Type](Old, New) = Flow.into anonymise;
+   │                                           ━━━━━━━━━━━━━━━━━━━ a translator the rule cannot image
    │
    ├ note: `scrub` is refused with ForwardUnsupported, as its expectation states
    ╰ note: tracked by #1835 <https://github.com/gandr-lang/gandr/issues/1835>

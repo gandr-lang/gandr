@@ -1,0 +1,904 @@
+//! The layout pass: a column stack over the labeled stream, which writes the
+//! braces and separators a block's indentation implies.
+//!
+//! A layout block opens at an opener whose line ends with it, at the column
+//! of the next line's first token. A line at the block's column begins a new
+//! item, and a line left of the column closes the block. A word at column
+//! zero closes every block and every open bracket, so a fault stays in its
+//! own declaration.
+//!
+//! | opener | block | separator |
+//! | --- | --- | --- |
+//! | `=` ending a `def` head that has a `->` result | a statement body | `;` |
+//! | `match` whose head ends its line with no `{` | an arm list | none: a line-leading `\|` separates arms |
+//! | `where` ending its line | a declaration body | `;`, and one before the block's close |
+//! | an explicit `{` | a statement block | `;` |
+//! | an explicit `{` after `where` | a declaration body | `;`, and one before the `}` |
+//! | the source | its declarations | `;` after a `def` only, none at the end |
+//!
+//! The pass writes zero-width tokens the molder reads as `{`, `;` and `}`, so
+//! the grammar takes them as the braces it already knows. A body's `=` is
+//! relabeled as the block's `{`, and the body is then the braced body.
+//!
+//! An item ends with a separator only when it needs one. An item a
+//! line-leading `|` begins is a constructor, a clause or an arm, which the
+//! next item's head ends. An item already ends at a `;`, a `,`, an opening
+//! brace or an explicit `}`, and a declaration also ends at a block's
+//! virtual close, as a braced declaration ends at its brace. A declaration
+//! body ends only an item a word begins that holds more than that word, so
+//! a stray token stays in its own item. The top level ends only a `def`, the
+//! one top-level form a layout body writes without its `;`, and the end of
+//! the source ends nothing, so a source cut short stays open where it stops.
+//! No separator is written before a closer or a line-leading `|`, or after an
+//! attribute.
+//!
+//! Inside parentheses, brackets, shell blocks, attributes and the other
+//! bracketed forms no opener opens and no separator is written.
+
+use alloc::vec::Vec;
+
+use anodized::spec;
+
+use super::Lexeme;
+use super::SourceBytes;
+use super::Token;
+use crate::meld::primitive_copy_wrapper;
+
+/// What ends the items of a block.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Sep
+{
+    /// Statements: `;` between them.
+    Semi,
+    /// Declarations in a body: `;` after each, the last one included.
+    Decl,
+    /// The source's declarations: `;` after a `def`.
+    Top,
+    /// Arms: nothing, as a line-leading `|` separates arms.
+    Arms,
+}
+
+/// What kind of bracket or block a frame is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Kind
+{
+    /// A layout block at its column.
+    Layout
+    {
+        /// The column of the block's first token.
+        column: u32,
+    },
+    /// An explicit host brace `{`, with the column of its first token once
+    /// one is read.
+    Brace
+    {
+        /// The column its items stand at.
+        column: Option<u32>,
+    },
+    /// A parenthesis, a bracket, a shell block, an attribute, or a brace
+    /// some sigil leads.
+    Plain,
+}
+
+/// How far a `def` head has read toward its body's `=`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Opener
+{
+    /// No `def` head waits for its `=`.
+    #[default]
+    None,
+    /// A `def` began the item.
+    Def,
+    /// The `def` head has met `->` after its parameters.
+    Arrow,
+}
+
+/// What began an item.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Lead
+{
+    /// Any other token.
+    #[default]
+    Other,
+    /// A line-leading `|`: a constructor, a clause or an arm.
+    Bar,
+    /// A word, as a declaration's keyword is.
+    Word,
+}
+
+/// What the current item of a block has read.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Head
+{
+    /// How far its `def` head has read.
+    opener: Opener,
+    /// The item is a `def`.
+    defined: bool,
+    /// What began the item.
+    lead: Lead,
+    /// The item holds a token after its first.
+    more: bool,
+}
+
+impl Head
+{
+    /// The head of an item whose first token is of `lexeme`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn begun(lexeme: Lexeme) -> Self
+    {
+        Self {
+            lead: if lexeme == Lexeme::ArmBar {
+                Lead::Bar
+            }
+            else if lexeme == Lexeme::LowerWord {
+                Lead::Word
+            }
+            else {
+                Lead::Other
+            },
+            ..Self::default()
+        }
+    }
+}
+
+/// One open bracket or layout block, and its current item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Frame
+{
+    /// The bracket or block.
+    kind: Kind,
+    /// What ends its items.
+    sep: Sep,
+    /// Its current item.
+    head: Head,
+}
+
+impl Frame
+{
+    /// A frame of `kind` whose items `sep` ends, before its first item.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(
+        kind: Kind,
+        sep: Sep,
+    ) -> Self
+    {
+        Self {
+            kind,
+            sep,
+            head: Head::default(),
+        }
+    }
+}
+
+/// What follows the tokens [`lay_out`] lays out.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Next
+{
+    /// The end of the source, which ends no top-level item.
+    End,
+    /// A word or an attribute at column zero, which closes every block and
+    /// ends the top-level item before it.
+    Reset,
+}
+
+/// An opener waiting for the next significant token.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pending
+{
+    /// Nothing waits.
+    None,
+    /// A `def` body's `=`, at its index in the stream.
+    Body
+    {
+        /// The `=`'s index.
+        at: usize,
+        /// The indentation of the opener's line.
+        indent: u32,
+    },
+    /// A `where` that opens a declaration body.
+    Members
+    {
+        /// The indentation of the opener's line.
+        indent: u32,
+    },
+    /// A `match` whose arms may open at the next line at its depth.
+    Arms
+    {
+        /// The frame depth the `match` stands at.
+        depth: usize,
+        /// The indentation of the opener's line.
+        indent: u32,
+    },
+}
+
+/// The last significant token the pass met or wrote.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Prev<'bytes>
+{
+    /// No token yet.
+    Start,
+    /// A token the pass wrote, or a `=` it relabeled as an opener.
+    Virtual(Lexeme),
+    /// A token of the source, with its bytes.
+    Written(Lexeme, &'bytes [u8]),
+}
+
+/// A zero-width token the pass writes before the token at `before`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Insertion
+{
+    /// The index in the stream the token goes before.
+    before: usize,
+    /// The token.
+    token: Token,
+}
+
+primitive_copy_wrapper!(
+    /// Whether an item needs a separator to end it.
+    struct Unended(bool);
+);
+
+/// The insertions the pass plans, and where the last significant token ends.
+#[derive(Debug)]
+struct Plan<'bytes>
+{
+    /// The insertions, by ascending `before`.
+    planned: Vec<Insertion>,
+    /// The index after the last significant token.
+    after: usize,
+    /// The byte offset where the last significant token ends.
+    end: u32,
+    /// The last significant token met or written.
+    prev: Prev<'bytes>,
+}
+
+impl Plan<'_>
+{
+    /// Plan a zero-width `lexeme` right after the last significant token,
+    /// before the space that follows it, so a block ends where its last token
+    /// does and a comment after it stays outside.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &mut self,
+        lexeme: Lexeme,
+    )
+    {
+        self.planned.push(Insertion {
+            before: self.after,
+            token: Token {
+                lexeme,
+                start: self.end,
+                end: self.end,
+            },
+        });
+        self.prev = Prev::Virtual(lexeme);
+    }
+
+    /// Whether `frame`'s current item needs a separator to end it, after the
+    /// last significant token.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unended(
+        &self,
+        frame: &Frame,
+    ) -> Unended
+    {
+        let item = frame.head;
+        let declaration = matches!(frame.sep, Sep::Decl | Sep::Top);
+        let ended = match self.prev {
+            Prev::Start => true,
+            Prev::Virtual(lexeme) => {
+                matches!(lexeme, Lexeme::LayoutOpen | Lexeme::LayoutSemi)
+                    || (declaration && lexeme == Lexeme::LayoutClose)
+            },
+            Prev::Written(lexeme, spelled) => {
+                (lexeme == Lexeme::Punct && matches!(spelled, b";" | b"," | b"{" | b"}"))
+                    // A string left open: its interior ends nothing.
+                    || matches!(
+                        lexeme,
+                        Lexeme::StringFragment
+                            | Lexeme::ShellStringFragment
+                            | Lexeme::EscapeSequence
+                    )
+            },
+        };
+        let wanted = match frame.sep {
+            Sep::Semi => true,
+            Sep::Decl => item.lead == Lead::Word && item.more,
+            Sep::Top => item.defined,
+            Sep::Arms => false,
+        };
+        Unended(wanted && item.lead != Lead::Bar && !ended)
+    }
+
+    /// Close the layout block `frame` is: a declaration body's last item
+    /// takes its `;` first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn close(
+        &mut self,
+        frame: &Frame,
+    )
+    {
+        if frame.sep == Sep::Decl && bool::from(self.unended(frame)) {
+            self.place(Lexeme::LayoutSemi);
+        }
+        self.place(Lexeme::LayoutClose);
+    }
+}
+
+/// Write the layout blocks of `bytes` into its labeled and arm-marked
+/// `tokens`, in place.
+///
+/// # Specification
+/// - requires: `tokens` are [`super::label`]'s tokens of `bytes` before layout,
+///   arm bars marked.
+/// - ensures: every token of `tokens` stays, in order, with its span; a `=`
+///   that opens a body is relabeled [`Lexeme::LayoutOpen`]; every other added
+///   token is a zero-width [`Lexeme::LayoutOpen`], [`Lexeme::LayoutSemi`] or
+///   [`Lexeme::LayoutClose`] at the end of the significant token before it, so
+///   the spans still tile the source.
+/// - panics: none.
+/// - executable: none — the clauses compare the stream with itself before the
+///   pass, which the witnesses do over each rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each opener, the column rule in a layout block, in a
+///   brace and at the top level, a dedent, a word at column zero, each place a
+///   separator is left out, and a declaration body's last `;` write their
+///   tokens; a rule left out or misplaced changes a witness's marks.
+/// - witness: `label::layout::tests::a_line_final_opener_opens_a_block_at_the_next_column`
+/// - witness: `label::layout::tests::a_line_at_the_column_ends_a_statement`
+/// - witness: `label::layout::tests::a_declaration_ends_where_its_form_needs_its_semicolon`
+/// - witness: `label::layout::tests::a_word_at_column_zero_closes_every_block`
+/// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+#[expect(clippy::too_many_lines, reason = "one column-stack state machine")]
+pub(super) fn lay_out(
+    bytes: SourceBytes<'_>,
+    tokens: &mut Vec<Token>,
+    next: Next,
+)
+{
+    let text = |token: &Token| {
+        bytes
+            .0
+            .get(
+                usize::try_from(token.start).unwrap_or(usize::MAX)
+                    .. usize::try_from(token.end).unwrap_or(usize::MAX),
+            )
+            .unwrap_or_default()
+    };
+    let mut plan = Plan {
+        planned: Vec::new(),
+        after: 0,
+        end: 0,
+        prev: Prev::Start,
+    };
+    let mut frames: Vec<Frame> = alloc::vec![Frame::new(Kind::Layout { column: 0 }, Sep::Top)];
+    let mut line_start;
+    let mut line_begin = 0_u32;
+    let mut line_indent = 0_u32;
+    let mut pending = Pending::None;
+    let mut before_arrow: &[u8] = b"";
+    let mut attribute: Option<usize> = None;
+    let mut after_attribute = false;
+    let mut restart = false;
+    for index in 0 .. tokens.len() {
+        let Some(&token) = tokens.get(index)
+        else {
+            break;
+        };
+        if token.lexeme == Lexeme::Space {
+            continue;
+        }
+        // A line starts at this token when a newline stands in the space
+        // since the last significant token. The search runs back from the
+        // token and stops at the first newline, past the indentation only.
+        let newline = if token.start == plan.end {
+            None
+        }
+        else {
+            let gap = usize::try_from(plan.end).unwrap_or(usize::MAX)
+                .. usize::try_from(token.start).unwrap_or(usize::MAX);
+            bytes
+                .0
+                .get(gap.clone())
+                .unwrap_or_default()
+                .iter()
+                .rposition(|&byte| byte == b'\n')
+                .map(|newline| gap.start.saturating_add(newline).saturating_add(1))
+        };
+        line_start = newline.is_some() || plan.after == 0;
+        if let Some(begin) = newline {
+            line_begin = u32::try_from(begin).unwrap_or(u32::MAX);
+        }
+        let punct = matches!(
+            token.lexeme,
+            Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose
+        );
+        // A token inside a line that is no bracket, no punctuation and no
+        // opener's keyword, met while no opener waits, only extends the item.
+        if !line_start
+            && !punct
+            && (token.lexeme != Lexeme::LowerWord
+                || !matches!(token.end.saturating_sub(token.start), 3 | 5))
+            && !restart
+            && pending == Pending::None
+            && let Some(frame) = frames.last_mut()
+            && !matches!(frame.kind, Kind::Brace { column: None })
+        {
+            frame.head.more = true;
+            after_attribute = false;
+            plan.prev = Prev::Written(token.lexeme, b"");
+            plan.after = index.saturating_add(1);
+            plan.end = token.end;
+            before_arrow = b"";
+            continue;
+        }
+        let column = token.start.saturating_sub(line_begin);
+        let spelled = text(&token);
+        let closer = punct && matches!(spelled, b")" | b"]" | b"}");
+        let brace = token.lexeme == Lexeme::Punct && spelled == b"{";
+        let members = matches!(pending, Pending::Members { .. });
+        let mut opened = false;
+        let mut open = |frames: &mut Vec<Frame>, plan: &mut Plan<'_>, indent: u32, sep: Sep| {
+            if column > indent {
+                frames.push(Frame::new(Kind::Layout { column }, sep));
+                opened = true;
+            }
+            else {
+                plan.place(Lexeme::LayoutClose);
+            }
+        };
+        match pending {
+            Pending::Body { at, indent } => {
+                pending = Pending::None;
+                if line_start {
+                    if let Some(equals) = tokens.get_mut(at) {
+                        equals.lexeme = Lexeme::LayoutOpen;
+                    }
+                    plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
+                    open(&mut frames, &mut plan, indent, Sep::Semi);
+                }
+            },
+            Pending::Members { indent } => {
+                pending = Pending::None;
+                if line_start && !brace {
+                    plan.place(Lexeme::LayoutOpen);
+                    open(&mut frames, &mut plan, indent, Sep::Decl);
+                }
+            },
+            Pending::Arms { depth, indent } => {
+                if line_start && frames.len() == depth && !brace {
+                    pending = Pending::None;
+                    plan.place(Lexeme::LayoutOpen);
+                    open(&mut frames, &mut plan, indent, Sep::Arms);
+                }
+            },
+            Pending::None => {},
+        }
+        // A word or an attribute at column zero resets: it closes every
+        // block and every bracket, a brace that waits for its first item
+        // included.
+        let reset = bool::from(super::resets(bytes, token));
+        if !reset
+            && let Some(&mut Frame {
+                kind:
+                    Kind::Brace {
+                        column: ref mut first @ None,
+                    },
+                ..
+            }) = frames.last_mut()
+        {
+            *first = Some(column);
+            opened = true;
+        }
+        // A block's first line begins its first item.
+        let mut begins = opened;
+        if reset {
+            // A declaration at column zero closes every block, a bracket left
+            // open included, so a fault stays in its own declaration.
+            while frames.len() > 1
+                && let Some(frame) = frames.pop()
+            {
+                if matches!(frame.kind, Kind::Layout { .. }) {
+                    plan.close(&frame);
+                }
+            }
+            attribute = None;
+            pending = Pending::None;
+        }
+        if line_start {
+            line_indent = column;
+        }
+        if line_start && !opened {
+            while frames.len() > 1
+                && let Some(&frame) = frames.last()
+                && let Kind::Layout { column: block } = frame.kind
+                && column < block
+            {
+                plan.close(&frame);
+                frames.pop();
+            }
+            if let Some(&frame) = frames.last()
+                && match frame.kind {
+                    Kind::Layout { column: block }
+                    | Kind::Brace {
+                        column: Some(block),
+                    } => block == column,
+                    Kind::Brace { column: None } | Kind::Plain => false,
+                }
+                && !closer
+            {
+                if frame.sep != Sep::Arms
+                    && !after_attribute
+                    && token.lexeme != Lexeme::ArmBar
+                    && bool::from(plan.unended(&frame))
+                {
+                    plan.place(Lexeme::LayoutSemi);
+                }
+                begins = true;
+            }
+        }
+        if let Some(frame) = frames.last_mut() {
+            if begins || restart {
+                frame.head = Head::begun(token.lexeme);
+            }
+            else {
+                frame.head.more = true;
+            }
+        }
+        restart = false;
+        let opener_allowed = frames
+            .last()
+            .is_some_and(|frame| matches!(frame.kind, Kind::Layout { .. } | Kind::Brace { .. }));
+        if closer {
+            while frames.len() > 1
+                && let Some(&frame) = frames.last()
+                && matches!(frame.kind, Kind::Layout { .. })
+            {
+                plan.close(&frame);
+                frames.pop();
+            }
+            if frames.len() > 1
+                && let Some(frame) = frames.pop()
+                && frame.sep == Sep::Decl
+                && bool::from(plan.unended(&frame))
+            {
+                plan.place(Lexeme::LayoutSemi);
+            }
+            if let Pending::Arms { depth, .. } = pending
+                && frames.len() < depth
+            {
+                pending = Pending::None;
+            }
+        }
+        else if punct
+            && (spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{"))
+        {
+            if attribute.is_none() && matches!(spelled, b"@[" | b"@![") {
+                attribute = Some(frames.len());
+            }
+            frames.push(if brace {
+                Frame::new(
+                    Kind::Brace { column: None },
+                    if members { Sep::Decl } else { Sep::Semi },
+                )
+            }
+            else {
+                Frame::new(Kind::Plain, Sep::Semi)
+            });
+            if let Pending::Arms { depth, .. } = pending
+                && frames.len() == depth.saturating_add(1)
+                && brace
+            {
+                pending = Pending::None;
+            }
+        }
+        else if token.lexeme == Lexeme::LowerWord && opener_allowed {
+            match spelled {
+                b"def" => {
+                    if let Some(frame) = frames.last_mut() {
+                        frame.head.opener = Opener::Def;
+                        frame.head.defined = true;
+                    }
+                },
+                b"match" => {
+                    pending = Pending::Arms {
+                        depth: frames.len(),
+                        indent: line_indent,
+                    };
+                },
+                b"where" => {
+                    pending = Pending::Members {
+                        indent: line_indent,
+                    };
+                },
+                _ => {},
+            }
+        }
+        else if token.lexeme == Lexeme::Punct {
+            match spelled {
+                b"->" => {
+                    if let Some(frame) = frames.last_mut()
+                        && frame.head.opener == Opener::Def
+                        && matches!(before_arrow, b")" | b"]")
+                    {
+                        frame.head.opener = Opener::Arrow;
+                    }
+                },
+                b"=" => {
+                    if let Some(frame) = frames.last_mut() {
+                        if frame.head.opener == Opener::Arrow && opener_allowed {
+                            pending = Pending::Body {
+                                at: index,
+                                indent: line_indent,
+                            };
+                        }
+                        frame.head.opener = Opener::None;
+                    }
+                },
+                b";" | b"," => {
+                    // A `;` ends the item, and the next token begins the
+                    // next. A `,` separates within an item: a clause's
+                    // patterns, a call's arguments.
+                    restart = spelled == b";";
+                    if let Pending::Arms { depth, .. } = pending
+                        && depth == frames.len()
+                    {
+                        pending = Pending::None;
+                    }
+                },
+                _ => {},
+            }
+        }
+        after_attribute = closer && attribute == Some(frames.len());
+        if after_attribute {
+            attribute = None;
+        }
+        plan.prev = Prev::Written(token.lexeme, spelled);
+        plan.after = index.saturating_add(1);
+        plan.end = token.end;
+        before_arrow = spelled;
+    }
+    // A reset settles a waiting opener as any line at column zero does: no
+    // block opens left of its opener's line, so the block closes at once.
+    if next == Next::Reset {
+        match pending {
+            Pending::Body { at, .. } => {
+                if let Some(equals) = tokens.get_mut(at) {
+                    equals.lexeme = Lexeme::LayoutOpen;
+                }
+                plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
+                plan.place(Lexeme::LayoutClose);
+            },
+            Pending::Members { .. } => {
+                plan.place(Lexeme::LayoutOpen);
+                plan.place(Lexeme::LayoutClose);
+            },
+            Pending::Arms { depth, .. } if frames.len() == depth => {
+                plan.place(Lexeme::LayoutOpen);
+                plan.place(Lexeme::LayoutClose);
+            },
+            Pending::Arms { .. } | Pending::None => {},
+        }
+    }
+    // What follows closes every block. The end of the source ends no
+    // top-level item, so a source cut short stays open where it stops, for
+    // the closings and the continuations an editor reads there. A reset ends
+    // the item before it as the column rule does.
+    while frames.len() > 1
+        && let Some(frame) = frames.pop()
+    {
+        if matches!(frame.kind, Kind::Layout { .. }) {
+            plan.close(&frame);
+        }
+    }
+    if next == Next::Reset
+        && !after_attribute
+        && let Some(base) = frames.first()
+        && bool::from(plan.unended(base))
+    {
+        plan.place(Lexeme::LayoutSemi);
+    }
+    insert(tokens, &plan.planned);
+}
+
+/// Write each of `planned` into `tokens` before the token it names, in place:
+/// the vector grows once and every token moves at most once.
+///
+/// # Specification
+/// - requires: `planned` is ascending by `before`, each at most `tokens.len()`.
+/// - ensures: `tokens` is its old tokens with each insertion before the old
+///   token at its `before`, insertions at one place in their order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`lay_out`], whose witnesses place several tokens at
+///   one place and tokens at the stream's end.
+/// - witness: `label::layout::tests::a_word_at_column_zero_closes_every_block`
+#[spec(captures: before = tokens.len(), ensures: |_| tokens.len() == before.saturating_add(planned.len()))]
+fn insert(
+    tokens: &mut Vec<Token>,
+    planned: &[Insertion],
+)
+{
+    let Some(&filler) = planned.first().map(|insertion| &insertion.token)
+    else {
+        return;
+    };
+    let mut read = tokens.len();
+    tokens.resize(read.saturating_add(planned.len()), filler);
+    for (shift, insertion) in (1 ..= planned.len()).rev().zip(planned.iter().rev()) {
+        let before = insertion.before.min(read);
+        tokens.copy_within(before .. read, before.saturating_add(shift));
+        if let Some(slot) = tokens.get_mut(before.saturating_add(shift).saturating_sub(1)) {
+            *slot = insertion.token;
+        }
+        read = before;
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::String;
+
+    use gandr_surface_syntax::SourceFragment;
+
+    use super::Lexeme;
+    use crate::label::label;
+
+    /// `src` with each layout token marked where it stands.
+    ///
+    /// # Specification
+    /// trivial.
+    fn marked<'text>(src: impl Into<SourceFragment<'text>>) -> String
+    {
+        let src: SourceFragment<'text> = src.into();
+        let text = AsRef::<str>::as_ref(&src);
+        let mut out = String::new();
+        for token in label(src) {
+            let spelled = text
+                .get(
+                    usize::try_from(token.start).unwrap_or(usize::MAX)
+                        .. usize::try_from(token.end).unwrap_or(usize::MAX),
+                )
+                .unwrap_or_default();
+            if token.lexeme == Lexeme::LayoutOpen && token.start < token.end {
+                out.push('⟪');
+                out.push_str(spelled);
+                out.push_str("→{⟫");
+            }
+            else if token.lexeme == Lexeme::LayoutOpen {
+                out.push_str("⟪{⟫");
+            }
+            else if token.lexeme == Lexeme::LayoutSemi {
+                out.push_str("⟪;⟫");
+            }
+            else if token.lexeme == Lexeme::LayoutClose {
+                out.push_str("⟪}⟫");
+            }
+            else {
+                out.push_str(spelled);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_line_final_opener_opens_a_block_at_the_next_column()
+    {
+        // A body's `=` is the block's brace.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  let y = x\n  y\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  let y = x⟪;⟫\n  y⟪}⟫\n"
+        );
+        // A `=` with its body on its own line opens nothing.
+        assert_eq!(
+            marked("def f(x : A) -> A = x;\n"),
+            "def f(x : A) -> A = x;\n"
+        );
+        // A `match` head ending its line opens its arms, which take no
+        // separator.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  match x\n    | a => a\n    | b => b\n}\n"),
+            "def f(x : A) -> A {\n  match x⟪{⟫\n    | a => a\n    | b => b⟪}⟫\n}\n"
+        );
+        // A `match` whose head takes its brace opens nothing.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  match x {\n    | a => a\n  }\n}\n"),
+            "def f(x : A) -> A {\n  match x {\n    | a => a\n  }\n}\n"
+        );
+        // A `where` ending its line opens a declaration body.
+        assert_eq!(
+            marked("theory S where\n  sort A : Type\n  sort B : Type\n"),
+            "theory S where⟪{⟫\n  sort A : Type⟪;⟫\n  sort B : Type⟪;⟫⟪}⟫\n"
+        );
+        // A line no further right than the opener's closes the block it
+        // opens at once.
+        assert_eq!(
+            marked("def f(x : A) -> A =\ndef g(x : A) -> A = x;\n"),
+            "def f(x : A) -> A ⟪=→{⟫⟪}⟫\ndef g(x : A) -> A = x;\n"
+        );
+    }
+
+    #[test]
+    fn a_line_at_the_column_ends_a_statement()
+    {
+        // Inside an explicit brace the column rule separates statements, and
+        // a `;` already written takes no second one.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  let y = x;\n  let z = y\n  z\n}\n"),
+            "def f(x : A) -> A {\n  let y = x;\n  let z = y⟪;⟫\n  z\n}\n"
+        );
+        // A block-like statement ends at its brace; a continuation indented
+        // past the column continues it; a comment after a statement stays
+        // outside the separator.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  if x { a } else { b }\n  g x\n    y // c\n  z\n}\n"),
+            "def f(x : A) -> A {\n  if x { a } else { b }\n  g x\n    y⟪;⟫ // c\n  z\n}\n"
+        );
+        // A line-leading bar and a closer take no separator; a sigil's brace
+        // is no statement block.
+        assert_eq!(
+            marked("data D {\n  | a\n  | b\n}\ndef r() -> R { *{\n  x = 1\n  y = 2\n} }\n"),
+            "data D {\n  | a\n  | b\n}\ndef r() -> R { *{\n  x = 1\n  y = 2\n} }\n"
+        );
+    }
+
+    #[test]
+    fn a_declaration_ends_where_its_form_needs_its_semicolon()
+    {
+        // In a brace after `where` a constructor is ended by the next
+        // member's head, a member after a `;` is not ended twice, and the last
+        // member takes its `;` before the brace.
+        assert_eq!(
+            marked(
+                "data D : Type where {\n  | A : D\n  oper p : D;\n  rule : A ==> p\n  rule : p ==> A\n}\n"
+            ),
+            "data D : Type where {\n  | A : D\n  oper p : D;\n  rule : A ==> p⟪;⟫\n  rule : p ==> A⟪;⟫\n}\n"
+        );
+        // Members on one line stay one item.
+        assert_eq!(
+            marked("theory S where {\n  sort A : Type sort B : Type\n}\n"),
+            "theory S where {\n  sort A : Type sort B : Type⟪;⟫\n}\n"
+        );
+        // A declaration at column zero ends a `def` before it, whose value
+        // form takes a `;`, and nothing else: an attribute, a lone word and a
+        // form that takes no `;` stay whole.
+        assert_eq!(
+            marked(
+                "def f(x : A) -> A = x\n@[checks]\ndef g(x : A) -> A = x\noper h : A\n§\nrelease x ;\n"
+            ),
+            "def f(x : A) -> A = x⟪;⟫\n@[checks]\ndef g(x : A) -> A = x⟪;⟫\noper h : A\n§\nrelease x ;\n"
+        );
+        // The end of the source ends nothing, so a source cut short stays
+        // open where it stops.
+        assert_eq!(marked("def f(x : A) -> A = x"), "def f(x : A) -> A = x");
+    }
+
+    #[test]
+    fn a_word_at_column_zero_closes_every_block()
+    {
+        // A dedent closes the blocks right of the line, and a word at column
+        // zero closes every block, a bracket left open included.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  match x\n    | a => g(a\n  y\ndef h(x : A) -> A = x;\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n    | a => g(a\n  y⟪}⟫⟪}⟫\ndef h(x : A) -> A = x;\n"
+        );
+        // The end of the source closes every block.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  match x\n    | a => a"),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n    | a => a⟪}⟫⟪}⟫"
+        );
+    }
+}

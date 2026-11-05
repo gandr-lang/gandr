@@ -14,47 +14,40 @@
 import "./data-base.gandr";
 
 /// Grids of integers, indexed by their rows and their columns.
-pub data Grid : (r : Nat, c : Nat) --> Type where {
+pub data Grid : (r : Nat, c : Nat) --> Type where
   /// The empty grid, at no row and no column.
   | GNil : Grid(Zero, Zero)
   /// A grid and one more row, whose last cell is `cell`.
   | GRow : (r : Nat, c : Nat, cell : Integer, rest : Grid(r, c)) --> Grid(Succ(r), c)
   /// A grid and one more column, whose last cell is `cell`.
   | GCol : (r : Nat, c : Nat, cell : Integer, rest : Grid(r, c)) --> Grid(r, Succ(c))
-}
 
 /// The last cell of a grid of at least one row. `GNil` stands at no row, and
 /// the case omits its arm at the first index.
-def rowCell(n : Nat, m : Nat, g : Grid(Succ(n), m)) -> Integer {
-  match g {
-    GRow(r, c, cell, rest) => cell,
-    GCol(r, c, cell, rest) => cell
-  }
-}
+def rowCell(n : Nat, m : Nat, g : Grid(Succ(n), m)) -> Integer =
+  match g
+    | GRow(r, c, cell, rest) => cell
+    | GCol(r, c, cell, rest) => cell
 
 /// The last cell of a grid of at least one column. `GNil` stands at no
 /// column, and the case omits its arm at the second index.
-def colCell(n : Nat, m : Nat, g : Grid(m, Succ(n))) -> Integer {
-  match g {
-    GRow(r, c, cell, rest) => cell,
-    GCol(r, c, cell, rest) => cell
-  }
-}
+def colCell(n : Nat, m : Nat, g : Grid(m, Succ(n))) -> Integer =
+  match g
+    | GRow(r, c, cell, rest) => cell
+    | GCol(r, c, cell, rest) => cell
 
 /// A grid of one row and one column.
-def corner() -> Grid(Succ(Zero), Succ(Zero)) {
-  GRow(
-    Zero,
-    Succ(Zero),
-    4,
-    (GCol(Zero, Zero, 7, (GNil : Grid(Zero, Zero))) : Grid(Zero, Succ(Zero)))
-  )
-}
+def corner() -> Grid(Succ(Zero), Succ(Zero)) =
+  GRow
+    Zero
+    (Succ Zero)
+    4
+    (GCol Zero Zero 7 (GNil : Grid(Zero, Zero)) : Grid(Zero, Succ(Zero)))
 
 /// The last cell of the corner as a row.
 @[ runs("4") ]
-def cornerRow() -> Integer { rowCell(Zero, Succ(Zero), corner()) }
+def cornerRow() -> Integer { rowCell Zero (Succ Zero) (corner ()) }
 
 /// The last cell of the corner as a column.
 @[ runs("4") ]
-def cornerCol() -> Integer { colCell(Zero, Succ(Zero), corner()) }
+def cornerCol() -> Integer { colCell Zero (Succ Zero) (corner ()) }

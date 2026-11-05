@@ -4,18 +4,16 @@
 /// `fresh` returns a `Name`: an atom is compared and swapped, never produced,
 /// so the description check refuses the output by name (`AtomResult`).
 @[ refuses("IllFormedDescription") ]
-theory Minting where {
+theory Minting where
   sort Name : Atom;
   sort Tm : Type;
   oper fresh : (t : Tm) --> Name;
-}
 
 /// A port binds a variable of the atom sort `Name`: `pi+` binds a variable of
 /// a representable sort (`NonRepresentableBinder`); an atom is abstracted by
 /// `bind` instead (`model/desc/bind-port.gandr`).
 @[ refuses("IllFormedDescription") ]
-theory AtomBinder where {
+theory AtomBinder where
   sort Name : Atom;
   sort Tm : Type;
   oper abs : (t : pi+ (x : Name). Tm) --> Tm;
-}

@@ -22,32 +22,29 @@ import "../../model/worlds/seat-and-operator.gandr";
 /// A handle to a thunk over the dispatch is refused: what it holds is not
 /// open.
 @[ refuses("NotOpen.Capture") ]
-@[ entry((operator, seat)) ]
-def heldThunk() -> -F ((() => Seat.Dispatch) at seat) {
+@[ entry(*{operator, seat}) ]
+def heldThunk() -> -F ((() -> Seat.Dispatch) at seat) =
   migrate [seat] {
     let task = Seat.task;
     (hold thunk { pure task })
   }
-}
 
 /// A handle to a record holding that thunk is refused: one field is not
 /// open, so the record is not.
 @[ refuses("NotOpen.Capture") ]
-@[ entry((operator, seat)) ]
-def heldRecord() -> -F (#{done : Integer, later : () => Seat.Dispatch} at seat) {
+@[ entry(*{operator, seat}) ]
+def heldRecord() -> -F (*{done : Integer, later : () -> Seat.Dispatch} at seat) =
   migrate [seat] {
     let task = Seat.task;
-    (hold #{done = 3, later = thunk { pure task }})
+    (hold *{done = 3, later = thunk { pure task }})
   }
-}
 
 /// The same record without a handle is refused as immobile: a former met
 /// directly fails authority first.
 @[ refuses("Immobile.Capture") ]
-@[ entry((operator, seat)) ]
-def bareRecord() -> #{done : Integer, later : () => Seat.Dispatch} {
+@[ entry(*{operator, seat}) ]
+def bareRecord() -> *{done : Integer, later : () -> Seat.Dispatch} =
   migrate [seat] {
     let task = Seat.task;
-    pure #{done = 3, later = thunk { pure task }}
+    pure *{done = 3, later = thunk { pure task }}
   }
-}

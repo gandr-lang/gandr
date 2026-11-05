@@ -20,7 +20,6 @@ pub data Handle : Type #spec{
     | opened before read
     | closed once
   }
-} where {
+} where
   /// A descriptor the kernel issued.
   | Open : (fd : Integer) --> Handle
-}

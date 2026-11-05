@@ -1,38 +1,31 @@
 @[ refuses("TypeMismatch") ]
-def wrong_side(m : +U &{get : -F Integer, put : -F String}) -> Integer {
+def wrong_side(m : +U &{get : -F Integer, put : -F String}) -> Integer =
   m.put
-}
 
 @[ refuses("TypeMismatch") ]
-def swapped(n : Integer) -> &{get : -F Integer, put : -F String} {
+def swapped(n : Integer) -> &{get : -F Integer, put : -F String} =
   &{.get => "s", .put => n}
-}
 
 @[ refuses("UnresolvedName") ]
-def missing_label(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
+def missing_label(m : +U &{get : -F Integer, put : -F String}) -> -F Integer =
   m.size
-}
 
 /// A position past the last entry: a lazy record of two has `0` and `1`.
 @[ refuses("UnresolvedName") ]
-def past_the_end(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
+def past_the_end(m : +U &{get : -F Integer, put : -F String}) -> -F Integer =
   m.2
-}
 
 /// A lazy product chain names no entry; its entries are observed by
 /// position only.
 @[ refuses("UnresolvedName") ]
-def chain_label(m : +U (-F Integer & -F String)) -> -F Integer {
+def chain_label(m : +U (-F Integer & -F String)) -> -F Integer =
   m.get
-}
 
 /// An entry by position is typed as the entry it places.
 @[ refuses("TypeMismatch") ]
-def wrong_place(m : +U &{get : -F Integer, put : -F String}) -> Integer {
+def wrong_place(m : +U &{get : -F Integer, put : -F String}) -> Integer =
   m.1
-}
 
 @[ refuses("OutOfFragment.WrongSort") ]
-def not_a_record(m : +U (-F Integer)) -> -F Integer {
+def not_a_record(m : +U (-F Integer)) -> -F Integer =
   become m.get
-}

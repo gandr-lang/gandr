@@ -22,12 +22,10 @@ def unitVariable(
   m : Path[.A = A](x, z),
   r : Path[.A = Path[.A = A](x, z)](f, m)
 ) -> Path[.A = Path[.A = Path[.A = A](x, z)](f, m)](
-  Path.walk(
-    fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step(f, Path.here(z)), c)) },
-    r,
-    Path.here(f)
-  ),
-  Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](f, c)) }, r, Path.here(f))
-) {
-  Path.here(Path.walk(fun (c) { type(Path[.A = Path[.A = A](x, z)](f, c)) }, r, Path.here(f)))
-}
+  Path.walk
+    (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step f (Path.here z), c)) })
+    r
+    (Path.here f),
+  Path.walk (fun (c) { type(Path[.A = Path[.A = A](x, z)](f, c)) }) r (Path.here f)
+) =
+  Path.here (Path.walk (fun (c) { type(Path[.A = Path[.A = A](x, z)](f, c)) }) r (Path.here f))

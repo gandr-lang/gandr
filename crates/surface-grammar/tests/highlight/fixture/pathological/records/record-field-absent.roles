@@ -4,7 +4,7 @@
 162..165 Keyword "def"
 166..170 FunctionDef "pair"
 171..172 Other "="
-173..175 Other "#{"
+173..175 Other "*{"
 175..176 Variable "x"
 177..178 Other "="
 179..180 Number "1"

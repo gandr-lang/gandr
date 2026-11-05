@@ -1,2 +1,2 @@
-#{"abcdefghijklmnopq",
+*{"abcdefghijklmnopq",
   "rstuvwxyzabcdefgh"}

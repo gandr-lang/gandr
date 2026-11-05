@@ -737,7 +737,9 @@ impl<'grammar, 'text> Written<'grammar, 'text>
             else {
                 continue;
             };
-            if token.lexeme == Lexeme::Space {
+            // A space, and the zero-width `;` and `}` the layout pass writes,
+            // are layout and no word.
+            if token.lexeme == Lexeme::Space || start == end {
                 continue;
             }
             let punctuation = punctuation(token.lexeme, TokenText::from(text));
@@ -1203,6 +1205,9 @@ fn typed(tile: TileLabel) -> Spelled
         | Lexeme::SubshellClose
         | Lexeme::FileDescriptor
         | Lexeme::ArmBar
+        | Lexeme::LayoutOpen
+        | Lexeme::LayoutSemi
+        | Lexeme::LayoutClose
         | Lexeme::Space
         | Lexeme::Unknown => false,
     };
@@ -1930,7 +1935,10 @@ impl Labeled<'_>
     /// - requires: nothing.
     /// - ensures: [`Slot::Filled`] when the text ends in a comment, a string or
     ///   a shebang line; otherwise the slot [`ghost`](Self::ghost) reads at the
-    ///   text's end, from the top-level form the text ends molded alone.
+    ///   text's end, from the top-level form the text ends molded alone, with
+    ///   the layout the text ends in read at the cursor ([`at_cursor`]): a
+    ///   block open at the cursor's column stays open, as a written `{` the
+    ///   text has not closed does, and one the cursor stands outside closes.
     /// - fails: never.
     /// - panics: none.
     /// - intension: one molding of the form the text ends and one bounded walk
@@ -1938,8 +1946,10 @@ impl Labeled<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the completion witnesses read a value, a computation,
-    ///   a type, a pattern and an item slot, and a binding name's slot filled.
+    ///   a type, a pattern and an item slot, and a binding name's slot filled;
+    ///   a layout body and its braced spelling offer the same names.
     /// - witness: `complete::tests::each_slot_offers_its_own_names`
+    /// - witness: `complete::tests::a_layout_body_offers_as_its_braces_do_4853`
     #[must_use]
     #[spec(ensures: |ret| lead(self.text, self.labeling.tokens()) == Lead::Code || ret == Slot::Filled)]
     pub fn slot(
@@ -1947,10 +1957,11 @@ impl Labeled<'_>
         grammar: &Pbg,
     ) -> Slot
     {
-        let tokens = self.labeling.tokens();
-        if lead(self.text, tokens) != Lead::Code {
+        if lead(self.text, self.labeling.tokens()) != Lead::Code {
             return Slot::Filled;
         }
+        let tokens = at_cursor(self);
+        let tokens = tokens.as_slice();
         let mut molder = Molder::new(grammar);
         let mut state = MeldState::new(grammar);
         if let Some(&form) = molder.form_runs(tokens, self.text).last() {
@@ -1966,6 +1977,57 @@ impl Labeled<'_>
         )
     }
 }
+
+/// The tokens of `labeled`, a text cut at a cursor, with the layout read as if
+/// the cursor wrote a word: the text goes on past the cut, so a layout block
+/// is closed or separated there only as the next word's column says, and not
+/// because the text ends.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the labeling of `labeled`'s text followed by [`STAND_IN`], up to
+///   the stand-in's own token: each zero-width `;` and `}` the layout pass
+///   writes before the stand-in is kept, and each it writes after it is not. A
+///   word the stand-in lengthens, the cursor inside it, ends at the cut, as the
+///   text writes it.
+/// - fails: never.
+/// - panics: none.
+/// - economy: one copy of the tokens and one rescan from the cut's line
+///   ([`Labeling::relabel`]).
+/// - executable: none — a clause would relabel the text again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Labeled::slot`]: a layout body after `return` and
+///   after an operator offers the names of its braced spelling, and a cursor at
+///   column zero after a layout source's last declaration is at the top level.
+/// - witness: `complete::tests::a_layout_body_offers_as_its_braces_do_4853`
+/// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
+fn at_cursor(labeled: &Labeled<'_>) -> Vec<Token>
+{
+    let text = <&str>::from(labeled.text);
+    let mut probe = String::with_capacity(text.len().saturating_add(STAND_IN.len()));
+    probe.push_str(text);
+    probe.push_str(STAND_IN);
+    let (labeling, _relabeled) = labeled.labeling.clone().relabel(
+        SourceFragment::from(text),
+        SourceFragment::from(probe.as_str()),
+    );
+    let cut = u32::try_from(text.len()).unwrap_or(u32::MAX);
+    let mut kept = Vec::with_capacity(labeling.tokens().len());
+    for &token in labeling.tokens() {
+        if token.end > cut || (token.start == cut && token.start < token.end) {
+            if token.start < cut {
+                kept.push(Token { end: cut, ..token });
+            }
+            break;
+        }
+        kept.push(token);
+    }
+    kept
+}
+
+/// The word [`at_cursor`] writes at the cursor to read the layout there.
+const STAND_IN: &str = "x";
 
 /// The ghost texts `grammar`, whose forms are `forms`, offers at byte `at` of
 /// `text`, best first.
@@ -2333,7 +2395,7 @@ mod tests
     fn the_defect_rows_answer_as_wanted()
     {
         let tools = tools();
-        let body = "def f(x: Integer) -> -F Integer {";
+        let body = "def f(x : Integer) -> -F Integer {";
         // The body's closer is written, on the cursor's line or the next: the
         // body's contents are what is missing, and no `}` is repeated.
         for after in ["}", "\n}"] {
@@ -2351,7 +2413,7 @@ mod tests
         // An open signature offers the body, and the return type before it.
         let found = between(
             &tools,
-            SourceText::from("def f(x: Integer"),
+            SourceText::from("def f(x : Integer"),
             SourceText::from(""),
         );
         assert_eq!(
@@ -2402,7 +2464,7 @@ mod tests
         for (before, after, first) in [
             ("def x = thunk { return", " }", " ${1:value}"),
             ("def x = thunk {", " }", " ${1:computation}"),
-            ("def f(x: Nat) -> -F Nat { let y = ", "", "${1:value}; \\}"),
+            ("def f(x : Nat) -> -F Nat { let y = ", "", "${1:value}; \\}"),
             ("def g :", "", " ${1:type};"),
             ("def g : Integer ≃", "", " ${1:type};"),
             ("def g : Integer <~>", "", " ${1:type};"),
@@ -2410,9 +2472,9 @@ mod tests
             ("def g : Integer ⇝", "", " ${1:type};"),
             ("def g : Integer ~~>", "", " ${1:type};"),
             (
-                "def f(x: Nat) -> -F Nat {\n  match x {",
+                "def f(x : Nat) -> -F Nat {\n  match x {",
                 " }\n}",
-                " ${1:pattern} => ${2:computation}",
+                " | ${1:pattern} => ${2:computation}",
             ),
             ("module M where {", "\n}", " ${1:member}"),
             ("", "", "def ${1:identifier} : ${2:type};"),
@@ -2436,7 +2498,7 @@ mod tests
     {
         let text = concat!(
             "/// A doc line.\n",
-            "def greet(name: String) -> -F String {\n",
+            "def greet(name : String) -> -F String {\n",
             "  /* a block\n",
             "     comment */ return \"hello ${name}, \\\"quoted\\\" ${ { 1 } }\";\n",
             "}\n",
@@ -2490,8 +2552,14 @@ mod tests
         let tools = tools();
         for (before, first) in [
             ("def x = 1; // note", "\ndef ${1:identifier} : ${2:type};"),
-            ("def x = 1; /* note", " */ def ${1:identifier} : ${2:type};"),
-            ("def x = 1; /* note */", " def ${1:identifier} : ${2:type};"),
+            (
+                "def x = 1; /* note /* note /* note /* note",
+                " */ def ${1:identifier} : ${2:type};",
+            ),
+            (
+                "def x = 1; /* note */ /* note */ /* note */ /* note */",
+                " def ${1:identifier} : ${2:type};",
+            ),
             ("def x = // note", "\n${1:value};"),
         ] {
             let found = between(&tools, SourceText::from(before), SourceText::from(""));
@@ -2514,11 +2582,11 @@ mod tests
         let tools = tools();
         let mut rendered = String::new();
         for (before, after) in [
-            ("def f(x: Integer) -> -F Integer {", "\n}"),
-            ("def f(x: Integer", ""),
+            ("def f(x : Integer) -> -F Integer {", "\n}"),
+            ("def f(x : Integer", ""),
             ("def x = (", ")"),
             ("def x = ", "answer;"),
-            ("def f(x: Nat) -> -F Nat {\n  match x {", " }\n}"),
+            ("def f(x : Nat) -> -F Nat {\n  match x {", " }\n}"),
             ("data Nat : Type where {\n  | Zero", "\n}"),
             ("def x = (", ") + 1;"),
             ("def x = (", "1 + 2)"),
@@ -2542,7 +2610,7 @@ mod tests
             }
         }
         expect![[r##"
-            "def f(x: Integer) -> -F Integer {" ‸ "\n}"
+            "def f(x : Integer) -> -F Integer {" ‸ "\n}"
               " ${1:computation}"
               " pure ${1:value}"
               " return ${1:value}"
@@ -2551,8 +2619,9 @@ mod tests
               " import ${1:identifier};"
               " force ${1:value}"
               " ${1:computation} = ${2:value};"
-            "def f(x: Integer" ‸ ""
+            "def f(x : Integer" ‸ ""
               ") { ${1:computation} \\}"
+              ") = ${1:value};"
               ") -> ${1:type} { ${2:computation} \\}"
               ", ${1:identifier}) { ${2:computation} \\}"
               ", ${1:type_variable}) { ${2:computation} \\}"
@@ -2575,15 +2644,9 @@ mod tests
               "pure "
               "return "
               "become "
-            "def f(x: Nat) -> -F Nat {\n  match x {" ‸ " }\n}"
-              " ${1:pattern} => ${2:computation}"
-              " _ => ${1:computation}"
+            "def f(x : Nat) -> -F Nat {\n  match x {" ‸ " }\n}"
               " | ${1:pattern} => ${2:computation}"
-              " (. ${1:identifier}) => ${2:computation}"
-              " ${1:pattern} => ${2:computation}, ${3:pattern} => ${4:computation}"
-              " ${1:pattern} => ${2:computation}, | ${3:pattern} => ${4:computation}"
-              " #{ ${1:pattern} \\} => ${2:computation}"
-              " | ${1:pattern} => ${2:computation}, ${3:pattern} => ${4:computation}"
+              " | ${1:pattern} => ${2:computation} | ${3:pattern} => ${4:computation}"
             "data Nat : Type where {\n  | Zero" ‸ "\n}"
               " : ${1:type}"
               " : ${1:type} --> ${2:type}"

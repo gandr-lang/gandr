@@ -16,7 +16,6 @@ pub world operator;
 pub world seat;
 
 /// The seat computes forty-two, and the answer crosses back.
-@[ entry((operator, seat)), runs("42") ]
-def there() -> Integer {
+@[ entry(*{operator, seat}), runs("42") ]
+def there() -> Integer =
   migrate [seat] { pure (6 * 7) }
-}

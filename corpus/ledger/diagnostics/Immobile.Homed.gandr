@@ -8,12 +8,10 @@ world seat;
 /// The seat's own work, homed at the seat.
 @[ checks ]
 @[ entry(seat) ]
-def pending() -> Integer {
+def pending() -> Integer =
   pure 3
-}
 
 @[ refuses("Immobile.Homed") ]
-@[ entry((operator, seat)) ]
-def homed() -> () => Integer {
-  migrate [seat] { pure thunk { pending() } }
-}
+@[ entry(*{operator, seat}) ]
+def homed() -> () -> Integer =
+  migrate [seat] { pure thunk { pending () } }

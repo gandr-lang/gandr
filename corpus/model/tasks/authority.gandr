@@ -13,23 +13,21 @@ import std.process;
 
 /// A task reading through its parent's capability and handing back what it
 /// read.
-def reader(c : Cap { read }) -> [std.fs.Eff] Unit {
+def reader(c : Cap { read }) -> [std.fs.Eff] Unit =
   let found = fork (task : Task.Join) {
-    let text = c.read(Task.notes);
+    let text = c.read Task.notes;
     send(task, text);
     close(task)
   };
-  let text = recv(found);
+  let text = recv(found)
   close(found)
-}
 
 /// A parent exiting through its capability while its task's end is open.
-def exiter(c : Cap { exit }) -> [std.process.Exit.Eff] Unit {
+def exiter(c : Cap { exit }) -> [std.process.Exit.Eff] Unit =
   let found = fork (task : Task.Join) {
     send(task, Task.notes);
     close(task)
   };
-  c.exit(1);
-  let text = recv(found);
+  c.exit 1
+  let text = recv(found)
   close(found)
-}

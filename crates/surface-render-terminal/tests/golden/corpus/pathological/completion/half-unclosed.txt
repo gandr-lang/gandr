@@ -1,7 +1,7 @@
 error[LinearResidue]: the endpoint is not closed before the fork half or receive body that bound it ends
    ╭▸ corpus/pathological/completion/half-unclosed.gandr:13:3
    │
-12 │ ┌ def halfUnclosed() -> Unit {
+12 │ ┌ def halfUnclosed() -> Unit =
 13 │ │   let pending = fork (target : Ring.Submission) {
    │ │   ┯━━
    │ │   │
@@ -10,9 +10,9 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
 14 │ │     let sqe = recv(target);
 15 │ │     send(target, Ring.done);
    ┆ ┆
+26 │ │   close(pending)
 27 │ │   close(cancel)
-28 │ │ }
-   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+   │ └───────────────┘ checked against `() -> Unit`; while checking the body of this thunk
    │
    ├ note: `halfUnclosed` is refused with LinearResidue, as its expectation states
    ╰ help: close the endpoint before the fork half or receive body that bound it ends

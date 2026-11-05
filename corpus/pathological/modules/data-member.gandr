@@ -11,22 +11,20 @@
 // - see: corpus/model/modules/data-member.gandr
 
 /// A module holding a family of one constructor.
-module M where {
+module M where
   /// A box holding one number.
-  data Box : Type where {
+  data Box : Type where
     /// The box around `x`.
     | B : (x : Integer) --> Box
-  }
-}
 
 /// A constructor the module does not hold.
 @[ refuses("UnknownMember") ]
-def nope : M.Box = M.Nope(1);
+def nope : M.Box = M.Nope 1;
 
 /// A constructor the module's family does not declare.
 @[ refuses("UnknownMember") ]
-def under : M.Box = M.Box.Nope(1);
+def under : M.Box = M.Box.Nope 1;
 
 /// The module's constructor, which a client writes bare outside the module.
 @[ refuses("UnresolvedName") ]
-def bare : M.Box = B(3);
+def bare : M.Box = B 3;

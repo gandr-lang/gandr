@@ -6,27 +6,23 @@
 // - see: #1225
 
 /// A carrier with a unit.
-theory Pointed where {
+theory Pointed where
   sort M : Type;
   oper point : () --> M;
-}
 
 /// A carrier with a multiplication.
-theory Magma where {
+theory Magma where
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
-}
 
 /// The pair joined once.
-theory UnitalMagma where {
+theory UnitalMagma where
   include Pointed;
   include Magma;
-}
 
 /// The pair joined again beside the first: `Pointed` and `Magma` now have
 /// two joins, neither reaching the other.
 @[ refuses("MalformedForm") ]
-theory MagmaWithUnit where {
+theory MagmaWithUnit where
   include Pointed;
   include Magma;
-}

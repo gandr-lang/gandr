@@ -2055,8 +2055,9 @@ impl<'arena> CoreSource<'arena>
     ///   as nodes of their families and its names spelled: a primitive by its
     ///   prelude function's name, an operation and a record field by their own,
     ///   a scope by its interface's; the binary composite returned as the fold
-    ///   `Path.step(p, q)` writes; a hole and a mark as the honest set's, and
-    ///   an id the arena does not hold as dangling.
+    ///   `Path.step(p, q)` writes; a hole and a mark as the honest set's, a
+    ///   return of several values as several results, and an id the arena does
+    ///   not hold as dangling.
     /// - provides: the computation half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -2070,6 +2071,7 @@ impl<'arena> CoreSource<'arena>
     #[spec(ensures: |ret| match (self.arena.computation(self.written(id)), ret) {
         | (Some(&Computation::Hole(_)), Former::Unreadable(Unreadable::Hole))
         | (Some(&Computation::Mark { .. }), Former::Unreadable(Unreadable::Mark))
+        | (Some(&Computation::ReturnAll(_)), Former::Unreadable(Unreadable::SeveralResults))
         | (None, Former::Unreadable(Unreadable::Dangling)) => true,
         | (Some(&Computation::Return(value)), Former::Return(actual))
         | (Some(&Computation::Force(value)), Former::Force(actual))
@@ -3874,12 +3876,12 @@ mod tests
         };
         assert_eq!(
             print(&CoreSource::new(&arena, &names)),
-            "fun (a) { let b = f(a) ; f(b) }",
+            "fun (a) { let b = f a ; f b }",
             "unrestored, the minted bind is read"
         );
         assert_eq!(
             print(&CoreSource::new(&arena, &names).restoring(&restoration)),
-            "fun (a) { f(f(a)) }",
+            "fun (a) { f (f a) }",
             "restored, the run is read as written"
         );
         assert!(matches!(

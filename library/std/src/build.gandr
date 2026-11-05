@@ -41,7 +41,7 @@ pub theory Versioned where {
 /// its workspace's model. A constraint is content, so the package's address
 /// digests it. Each list is one line of `,`-separated entries, none when it
 /// is empty, until an operation's port can be a list.
-pub theory Toolchain where {
+pub theory Toolchain where
   /// The least language version the sources target, `>= 0.3`, or empty for
   /// any.
   oper gandr : String;
@@ -51,15 +51,13 @@ pub theory Toolchain where {
   /// The systems the package builds on, each `<architecture>-<os>` as
   /// `x86_64-linux`, or empty for any.
   oper systems : String;
-}
 
 /// What a package and a workspace both state: the version they release at
 /// and what they ask of the toolchain. `Gandr.Package` and `Gandr.Workspace`
 /// include it, so each takes the two theories it joins once.
-pub theory Project where {
+pub theory Project where
   include Versioned;
   include Toolchain;
-}
 
 /// How a package's sources look: the `[presentation]` table of its
 /// `package.gandr.toml`. The user's configuration file writes the same table, and a
@@ -110,14 +108,12 @@ pub theory Gandr.Package where {
 /// `members` it names. The checker writes the `workspace.gandr.toml` of the
 /// workspace from this model. Its members' package sources import it and read
 /// what it states.
-pub theory Gandr.Workspace where {
+pub theory Gandr.Workspace where
   include Project;
-}
 
 /// A module of a package: a source below its package source. Its path from the
 /// package's root names it, with `.` between segments, as `text.greet`. The
 /// manifest lists each in `modules`. No source declares a model of it yet.
-pub theory Gandr.Module where {
+pub theory Gandr.Module where
   /// The module's path, with `.` between its segments.
   oper path : String;
-}

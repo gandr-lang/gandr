@@ -1,23 +1,21 @@
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/data/following.gandr:18:67
+   ╭▸ corpus/pathological/data/following.gandr:18:68
    │
-15 │    def rec halvedThroughPlus(n : Nat) -> Nat {
+15 │    def rec halvedThroughPlus(n : Nat) -> Nat =
    │    │                         ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-16 │ │┌   match n {
-17 │ ││     Zero => Zero,
-18 │ ││     Succ(p) => { let q = plus(Zero, p); Succ(halvedThroughPlus[<](q)) }
-   │ ││                  ┬──                    ┬────┬────────────────────┯──
-   │ ││                  │                      │    │                    │
-   │ ││                  │                      │    │                    not below the stage its recursion wants
-   │ ││                  │                      │    checked against `Nat`; while checking the argument of this application
-   │ ││                  │                      checked against `-F Nat`; while finishing the type of this
-   │ ││                  checked against `-F Nat`; while checking the body under this binding; binds _ : Nat
-19 │ ││   }
-   │ │└───┘ checked against `-F Nat`; while checking the body of this function; binds p : Nat
-20 │ │  }
-   │ └──┘ checked against `Nat => Nat`; while checking the body of this function; binds halvedThroughPlus : Nat => Nat
+16 │ │┌   match n
+17 │ ││     | Zero => Zero
+18 │ ││     | Succ(p) => { let q = plus Zero p; Succ (halvedThroughPlus[<] q) }
+   │ ││                    ┬──                  ┬─────┬────────────────────┯─ │
+   │ └│────────────────────│────────────────────│─────│────────────────────│──│
+   │  └────────────────────│────────────────────│─────│────────────────────│──checked against `Nat -> Nat`; while checking the body of this function; binds halvedThroughPlus : Nat -> Nat
+   │                       │                    │     │                    │  checked against `-F Nat`; while checking the body of this function; binds p : Nat
+   │                       │                    │     │                    not below the stage its recursion wants
+   │                       │                    │     checked against `Nat`; while checking the argument of this application
+   │                       │                    checked against `-F Nat`; while finishing the type of this
+   │                       checked against `-F Nat`; while checking the body under this binding; binds _ : Nat
    │
    ├ note: `halvedThroughPlus` is refused with StageNotBelow, as its expectation states
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

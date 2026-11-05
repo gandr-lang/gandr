@@ -23,7 +23,6 @@ use super::ArmAt;
 use super::CaseForm;
 use super::CaseIndex;
 use super::Depth;
-use super::Former;
 use super::Lowerer;
 use super::Over;
 use super::ParameterAt;
@@ -92,17 +91,18 @@ pub(in crate::lower) struct Columns
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Read a clause tail's stated type, `: (A, …) => C where`, under `frame`,
+    /// Read a clause tail's stated type, `: (A, …) -> C where`, under `frame`,
     /// and bind one parameter per column.
     ///
     /// # Specification
     /// - requires: `cursor` stands at the tail's `:`, after every written
     ///   parameter and the function's own name bound.
-    /// - ensures: a value function space `(A1, …, An) => C` gives `n` columns
-    ///   at `A1` to `An`, each read as a value type under `frame` and bound as
-    ///   an unnamed parameter in a frame extending the one before it, and `C`
-    ///   is read as the result under `frame`; any other type gives no column
-    ///   and is itself the result. The cursor then stands past `where`.
+    /// - ensures: a box `(A1, …, An) -> C`, or its bridge spelling with `=>`,
+    ///   as [`Self::boxes`] reads one, gives `n` columns at `A1` to `An`, each
+    ///   read as a value type under `frame` and bound as an unnamed parameter
+    ///   in a frame extending the one before it, and `C` is read as the result
+    ///   under `frame`; any other type gives no column and is itself the
+    ///   result. The cursor then stands past `where`.
     /// - provides: the parameters [`Self::clauses`] matches.
     /// - fails: a fault naming the function form for a hole or tile out of
     ///   shape, and the domain list's own refusal.
@@ -115,6 +115,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — two columns over `Nat` lower to two lambdas whose
     ///   arrows are the stated type's.
     /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(
         captures: before = self.parameters.len(),
         ensures: |ret| ret.as_ref().map_or(true, |columns| columns.parameters.start == before
@@ -133,7 +134,8 @@ impl<'source> Lowerer<'_, 'source>
         closed(function, cursor, TileName::WHERE)?;
         let mut domains = Vec::new();
         let mut result = stated.node;
-        if let Some((_, Former::ValueFunctionType)) = self.form_at(stated)? {
+        if self.boxes(stated.node)?.0 {
+            let tile = TileName::ARROW;
             let mut pieces = Pieces::new();
             read_pieces(self.pbg, self.tree, stated.node, &mut pieces)?;
             if let Maybe::Present(repaired) = pieces.repair {
@@ -141,7 +143,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             let mut arrow = Cursor::new(&pieces.pieces, stated.span);
             let domain = function.one(arrow.operands())?;
-            closed(function, &mut arrow, TileName::FAT_ARROW)?;
+            closed(function, &mut arrow, tile)?;
             let codomain = function.one(arrow.operands())?;
             let start = self.operands.len();
             let listed = self.domains(domain);

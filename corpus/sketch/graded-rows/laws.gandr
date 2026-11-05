@@ -13,17 +13,16 @@
 
 /// Choice with its graded laws.
 @[graded(Count)]
-theory Choice where {
+theory Choice where
   /// The run fails with no result.
   oper fail : () --> Unit;
   /// The run splits into two.
   oper or : (x : Unit, y : Unit) --> Unit;
   /// A branch that gives at most one result absorbs the other.
-  rule cuts : or(x, y) <=> x where { x : [Choice <= 1] };
+  rule cuts : or x y <=> x where { x : [Choice <= 1] };
   /// Choice reassociates when its left branch is deterministic and its middle
   /// allocates nothing.
-  rule assoc : or(or(x, y), z) <=> or(x, or(y, z)) where {
+  rule assoc : or (or x y) z <=> or x (or y z) where {
     | x : [Choice = 1]
     | y : [Alloc <= 0]
   };
-}

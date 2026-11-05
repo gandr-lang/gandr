@@ -265,9 +265,9 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
         "def answer = 42;",
         "1 + 2 * 3",
         "- x",
-        "pure -y",
+        "pure - y",
         "def id = x;",
-        "def nested = comp(id(a), f);",
+        "def nested = comp (id a) f;",
     ];
     for &src in clean {
         let result = parse(pbg, SourceText::from(src))?;
@@ -413,7 +413,7 @@ fn value_statement_uses_let_keyword() -> Result<(), Box<dyn Error>>
     let written = [
         "def use() -> -F Integer { let value = expression; pure value }",
         "def use() -> -F Integer { let value : Integer = expression; pure value }",
-        "def use() -> -F Integer { let (a, b) = expression; pure a }",
+        "def use() -> -F Integer { let *{a, b} = expression; pure a }",
     ];
     for src in written {
         let result = parse(pbg, SourceText::from(src))?;
@@ -460,8 +460,8 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
         "if flag -> -F Integer { pure 1 } else { pure 2 }",
         "if flag -> -F Integer { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
         "if flag { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
-        "match subject -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
-        "match subject with view -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject -> -F Integer { | Inl(x) => pure x | Inr(y) => pure y }",
+        "match subject with view -> -F Integer { | Inl(x) => pure x | Inr(y) => pure y }",
         "match subject -> -F Integer { }",
         "if flag -> +U[1] (-F Integer) -> -F Integer { pure f } else { pure g }",
     ];
@@ -480,7 +480,7 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
 
     let bare = [
         "if flag { pure 1 } else { pure 2 }",
-        "match subject { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject { | Inl(x) => pure x | Inr(y) => pure y }",
     ];
     for src in bare {
         let result = parse(pbg, SourceText::from(src))?;
@@ -624,13 +624,13 @@ fn theory_data_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn
 /// `=>`, a `let` statement's `=`, and the `<=` / `==` comparisons all still
 /// mold exactly as before. This is the parser half of the lexical check; the
 /// labeler half is
-/// `label::tests::circuit_arrows_munch_past_the_shorter_tiles_they_extend`.
+/// `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`.
 #[test]
 fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     let unchanged: &[&str] = &[
-        "match x { A => 1, B => 2 }",
+        "match x { | A => 1 | B => 2 }",
         "def bind() -> -F Integer { let value = action; pure value }",
         "def le() -> -F Boolean { return a <= b }",
         "def eq() -> -F Boolean { return a == b }",
@@ -754,8 +754,8 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
         "def node = 1;",
         "def feed = 1;",
         "def use() -> -F Integer { let node = 1; pure node }",
-        "def project(sort: Integer) -> -F Integer { return sort }",
-        "def record = #{ node = 1, feed = 2 };",
+        "def project(sort : Integer) -> -F Integer { return sort }",
+        "def record = *{ node = 1, feed = 2 };",
     ];
     for &src in binding {
         let result = parse(pbg, SourceText::from(src))?;
@@ -845,13 +845,13 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     }
     // The terminator is load-bearing, not merely admitted: an unterminated
     // member flags a repair rather than silently closing against the next
-    // member's lead.
+    // member's lead. Members on their own lines are separated by their
+    // column, so the two share a line here.
     let unterminated = parse(
         pbg,
         SourceText::from(
             r#"theory S where {
-  sort Nat : Type
-  sort T : Type;
+  sort Nat : Type sort T : Type;
 }
 "#,
         ),
@@ -1004,7 +1004,7 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
     // (#1058).
     ("fixture/pathological/modules/stray-root-child.gandr", &[
         (Oblig::UnmoldedTok, "mu"),
-        (Oblig::UnmoldedTok, "\u{a7}"),
+        (Oblig::UnmoldedTok, "\u{1}"),
         (Oblig::MissingTile, "release"),
         (Oblig::MissingTile, "def"),
         (Oblig::MissingTile, "="),
@@ -1018,8 +1018,6 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
             (Oblig::MissingTile, ")"),
             (Oblig::MissingTile, "{"),
             (Oblig::MissingTile, ","),
-            (Oblig::MissingTile, "Some"),
-            (Oblig::MissingTile, "}"),
         ],
     ),
 ];
@@ -1173,8 +1171,8 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
         // the `;` instead, flagging a `MissingTile`; the operator-completion
         // path is exercised directly here, where it is the sole repair.)
         ("pure 1 +", Oblig::MissingMeld),
-        // A stray byte the grammar has no tile for.
-        ("def x = 1 ^ 2;", Oblig::UnmoldedTok),
+        // A stray run the grammar has no tile for.
+        ("def x = 1 ′ 2;", Oblig::UnmoldedTok),
         // An unterminated string force-closes.
         ("def x = \"open", Oblig::MissingTile),
         // A tile standing where its form's earlier tiles are absent: an `=`
@@ -1330,7 +1328,7 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
 #[test]
 fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Error>>
 {
-    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      let d : Cap {exit} at e c ;\n      let f : Cap {exit} at c = e ;\n      return unit\n    } with {\n      pure(x) => return x,\n      oper exit(code, k) => return unit\n    }\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return unit\n  }\n}\n";
+    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      let d : Cap {exit} at e c ;\n      let f : Cap {exit} at c = e ;\n      return *{}\n    } with {\n      | pure(x) => return x\n      | oper exit(code, k) => return *{}\n    }\n  } with {\n    | pure(x) => return x\n    | oper exit(code, k) => return *{}\n  }\n}\n";
     let result = parse(built(), SourceText::from(source))?;
     let next = source
         .find("let f")
@@ -1497,7 +1495,7 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {
-    let source = "def bad = 1 ^ 2;\ndef good = 2;";
+    let source = "def bad = 1 ′ 2;\ndef good = 2;";
     let first = parse(built(), SourceText::from(source))?;
     assert!(
         first
@@ -1838,6 +1836,52 @@ fn minimization_prefers_clean_readings() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+/// A product opens with its own sign, `*{`: a record, a record type, a module
+/// signature, a pattern and a sub-record selection alike, and the retired
+/// spelling `#{` owes a repair. The sum and the lazy record open with `+{`
+/// and `&{`, one tile each (#4853).
+#[test]
+fn a_product_opens_with_its_own_sign() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built();
+    let labels = |source: &str| -> Result<Vec<String>, Box<dyn Error>> {
+        let parsed = parse(pbg, SourceText::from(source))?;
+        assert!(
+            bool::from(parsed.is_clean()),
+            "{source:?} molds clean: {:?}",
+            parsed.obligations()
+        );
+        let tree = parsed.tree();
+        Ok(tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .map(|node| format!("{:?}", node.label()))
+            .collect())
+    };
+    for source in [
+        "def point = *{.x = 1, .y = 2};",
+        "def pair : *{Integer, Integer};",
+        "module M : *{ x : Integer } where { def x = 1; }",
+        "def first(p : *{Integer, Integer}) -> -F Integer { match p { | *{a, b} => return a } }",
+        "def picked = r.*{ .a };",
+    ] {
+        labels(source)?;
+        let retired = source.replace("*{", "#{");
+        assert!(
+            !bool::from(parse(pbg, SourceText::from(retired.as_str()))?.is_clean()),
+            "the retired spelling {retired:?} owes a repair"
+        );
+    }
+    for source in [
+        "def ok = +{.ok = 1};",
+        "def sum : +{ok : Integer, err : String};",
+        "def lazy = &{.get => pure 1};",
+    ] {
+        labels(source)?;
+    }
+    Ok(())
+}
+
 #[test]
 fn remolding_makes_dash_prefix_or_infix_by_context() -> Result<(), Box<dyn Error>>
 {
@@ -1860,10 +1904,11 @@ fn remolding_makes_dash_prefix_or_infix_by_context() -> Result<(), Box<dyn Error
         "infix `-` melds two operands and the operator"
     );
 
-    // At expression start (`ret -y`, `-y`), `-` molds prefix (unary): the
+    // At expression start (`pure - y`, `- y`), `-` molds prefix (unary): the
     // meld carries the operator and its single right operand (two children),
-    // and the parse is clean — no missing-left obligation.
-    for src in ["pure -y", "-y"] {
+    // and the parse is clean — no missing-left obligation. The operator is
+    // spaced from its operand, which `-y` would read as one name.
+    for src in ["pure - y", "- y"] {
         let prefix = parse(pbg, SourceText::from(src))?;
         let prefix_meld =
             find_meld_with_tile(prefix.tree(), prefix.tree().root(), TileText::from("-"))
@@ -2409,17 +2454,15 @@ fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Box<dyn Error>>
     let pbg = built();
     for (src, inline) in [
         (
-            "def g() -> -F Integer { run f(x); pure 0 }",
+            "def g() -> -F Integer { run f x; pure 0 }",
             [true].as_slice(),
         ),
-        ("def g() -> -F Integer { let v = run f(x); pure v }", &[
-            true,
-        ]),
+        ("def g() -> -F Integer { let v = run f x; pure v }", &[true]),
         (
-            "def g() -> -F Integer { let r = f(run h(x)); pure g(run f(r), r) }",
+            "def g() -> -F Integer { let r = f (run h x); pure g (run f r) r }",
             &[true, true],
         ),
-        ("def g() -> -F Nat { Succ(run plus(n, p)) }", &[true]),
+        ("def g() -> -F Nat { Succ (run plus n p) }", &[true]),
     ] {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(

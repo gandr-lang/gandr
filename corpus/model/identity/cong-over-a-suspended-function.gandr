@@ -19,9 +19,7 @@ def whiskeredBySuspension(
   f2 : Path(x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path(y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
-  Path.ap(
-    (thunk { fun (q : Path[.A = A](x, y)) { Path.step(q, g) } } : Path(x, y) => Path(x, z)),
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
+  Path.ap
+    (thunk { fun (q : Path[.A = A](x, y)) { Path.step q g } } : Path(x, y) -> Path(x, z))
     a
-  )
-}

@@ -1,5 +1,4 @@
 /// `labelled_sum_expression`: a labelled sum injection.
 @[ checks ]
-def one() -> -F +{Integer} {
+def one() -> -F +{Integer} =
   return +{.0 = 1}
-}

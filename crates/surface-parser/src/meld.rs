@@ -523,8 +523,9 @@ impl SourceSpan
 /// A tile the source left out, written into a copy of the source so the copy
 /// molds without a repair, and read back as the close the melder mints.
 ///
-/// The copy holds the tile's bytes over `at .. after`; every other byte of the
-/// copy is the source's, those past the tile shifted by its width.
+/// The copy holds the tile's bytes over `at .. after`, with the space it is
+/// written with to stand as a token of its own; every other byte of the copy
+/// is the source's, those past the tile shifted by its width.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Splice
 {
@@ -604,8 +605,8 @@ impl Splice
     }
 
     /// The source leaf the copy's leaf `label` over `span` reads as: the tile
-    /// the splice begins with is the minted tile, empty at `at`; any other leaf
-    /// is itself, shifted.
+    /// the splice writes is the minted tile, empty at `at`; any other leaf is
+    /// itself, shifted.
     ///
     /// # Specification
     /// trivial.
@@ -615,7 +616,7 @@ impl Splice
         span: SourceSpan,
     ) -> (NodeLabel, SourceSpan)
     {
-        if span.start.0 == self.at.0
+        if self.at.0 <= span.start.0
             && span.end.0 <= self.after.0
             && matches!(label, NodeLabel::Tile(_))
         {
@@ -627,7 +628,7 @@ impl Splice
     }
 
     /// Whether the copy's leaf `label` over `span` is layout the copy wrote
-    /// with its tile — the space after a keyword — which the source never had.
+    /// with its tile — the space around it — which the source never had.
     ///
     /// # Specification
     /// trivial.
@@ -639,7 +640,7 @@ impl Splice
     {
         WrittenLayout(
             matches!(label, NodeLabel::Space)
-                && self.at.0 < span.start.0
+                && self.at.0 <= span.start.0
                 && span.start.0 < span.end.0
                 && span.end.0 <= self.after.0,
         )
@@ -1849,12 +1850,14 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// [`push`](Self::push) a tile of `mold` over `text`, borrowing the text:
-    /// the molder's dry-runs push without owning a [`MoldedTile`].
+    /// the molder's dry-runs push without owning a [`MoldedTile`]. An
+    /// expression operand right after an expression operand is applied to it,
+    /// `f x`: the application tile no lexeme spells is pushed first.
     ///
     /// # Specification
     /// - requires: none; `mold` may be arbitrary.
     /// - ensures: the state [`push`](Self::push) of a tile of `mold` and `text`
-    ///   reaches.
+    ///   reaches, after the application tile [`Self::juxtaposed`] names.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1863,8 +1866,38 @@ impl<'pbg> MeldState<'pbg>
     ///   drift between the two changes the corpus trees.
     /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
     #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(<&str>::from(text)) && (self.pbg.mold(mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
     pub(crate) fn push_text(
+        &mut self,
+        mold: MoldId,
+        text: TileText<'_>,
+    )
+    {
+        if let Ok(def) = self.pbg.mold(mold)
+            && let Some(application) = self.juxtaposed(mold, def.sort)
+        {
+            self.push_molded(application, TileText::from(""));
+        }
+        self.push_molded(mold, text);
+    }
+
+    /// Push one tile of `mold` over `text` through the machine: Shift,
+    /// Reduce or Degrout.
+    ///
+    /// # Specification
+    /// - requires: none; `mold` may be arbitrary.
+    /// - ensures: `text` is appended to the source; a mold `pbg` holds is
+    ///   pushed as its kind decides, and any other is buffered as
+    ///   [`Oblig::UnmoldedTok`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::push_text`], which pushes every tile here.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(<&str>::from(text)) && (self.pbg.mold(mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
+    fn push_molded(
         &mut self,
         mold: MoldId,
         text: TileText<'_>,
@@ -1923,6 +1956,74 @@ impl<'pbg> MeldState<'pbg>
                 });
             },
         }
+    }
+
+    /// The application tile to push before a tile of `mold` and `sort`, when
+    /// the tile opens an expression operand right after one: `f x`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the grammar's application mold exactly when `mold` is no
+    ///   application, `sort` is the expression sort, `mold` starts an operand
+    ///   by itself, the slope's top is a complete expression operand whose
+    ///   source does not end in `}` or opens with a connective's opener `*{`,
+    ///   `+{`, `&{` or `#{`, a form is open, and the open form is no shell
+    ///   form. `None` otherwise.
+    /// - panics: none.
+    /// - economy: a few comparisons, three byte reads and one binary search of
+    ///   the shell openers. No string is compared.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `f x y` applies twice, a shell block's words stay
+    ///   flat, `if c { a } else { b } x` stays two statements, a braced value
+    ///   `*{}` or `+{.l = a}` takes the next argument, a call `f(x)` stays a
+    ///   call, and two stray words at the root stay strays.
+    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
+    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application() && application != mold && sort == Sort::Expression))]
+    fn juxtaposed(
+        &self,
+        mold: MoldId,
+        sort: Sort,
+    ) -> Option<MoldId>
+    {
+        let application = self.pbg.application()?;
+        if mold == application || sort != Sort::Expression {
+            return None;
+        }
+        if !matches!(
+            self.classify(mold),
+            Kind::Operand
+                | Kind::FormStart { absorb_left: false }
+                | Kind::Operator(OpShape::Prefix)
+        ) {
+            return None;
+        }
+        let top = self.stack.last()?;
+        if top.role != Role::Operand || top.sort != Sort::Expression {
+            return None;
+        }
+        // A block-like statement ends at its brace, as Rust's does: `if c { a }
+        // else { b } x` is two statements. A braced value opens with its
+        // connective's sign, and no statement does.
+        let bytes = self.source.as_bytes();
+        let last = usize::try_from(top.end).ok()?.checked_sub(1)?;
+        let start = usize::try_from(top.start).ok()?;
+        let braced_value = matches!(
+            bytes.get(start .. start.saturating_add(2)),
+            Some(&[b'*' | b'+' | b'&' | b'#', b'{'])
+        );
+        if bytes.get(last) == Some(&b'}') && !braced_value {
+            return None;
+        }
+        // The root holds declarations alone, so two words side by side there
+        // are strays, never an application. A shell form's words stay flat
+        // side by side.
+        let open = self.open_form_mold()?;
+        if self.pbg.flat_openers().binary_search(&open).is_ok() {
+            return None;
+        }
+
+        Some(application)
     }
 
     /// Push a tile of `mold` over no text, owed as a missing tile at the
@@ -11022,9 +11123,9 @@ mod tests
         let sources = [
             "#!{ echo a b c d e f; ls | grep x && echo y; }",
             "#!{ [ cd d; ls ] | sort; echo ${x}${y} \"z $w\"; }",
-            "def f(x: Integer) -> -F Integer { return (x * x + 1) }",
-            "data Tree(a) where { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
-            "def s = \"a ${ f(\"${x}\") } b\";",
+            "def f(x : Integer) -> -F Integer { return (x * x + 1) }",
+            "data Tree(a) where { Leaf, Node(l : Tree(a), v : a, r : Tree(a)) }",
+            "def s = \"a ${ f \"${x}\" } b\";",
             "match v { Inl(x) => x, Inr(y) => y }",
             "#!{ echo unclosed",
             ") } ] stray closers",
@@ -11281,8 +11382,8 @@ mod tests
             Ok(spans)
         };
         assert_eq!(
-            vec!["access c as v { abort(v) } unwind { pure unit }".to_owned()],
-            accesses("def g() -> Integer { access c as v { abort(v) } unwind { pure unit } }")?,
+            vec!["access c as v { abort(v) } unwind { pure *{} }".to_owned()],
+            accesses("def g() -> Integer { access c as v { abort(v) } unwind { pure *{} } }")?,
             "the `unwind` clause continues the access after its block"
         );
         assert_eq!(
@@ -11302,7 +11403,7 @@ mod tests
     {
         let pbg = built_in()?;
         let source = "// lead\ndef x = 1; // trail\n\n// alone\n\n// first\n// second\ndef w = 2;\n\
-                      def f(x: Integer) -> -F Integer {\n  // above\n  return x\n}\n\
+                      def f(x : Integer) -> -F Integer {\n  // above\n  return x\n}\n\
                       def y = #[ /* empty */ ];\ndef z = 1 /* one */;\n";
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
         assert_eq!(crate::testing::reconstruct(&tree), source);
@@ -11445,7 +11546,7 @@ mod tests
     fn an_inner_run_documents_what_it_stands_in_1365() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let source = "//! s\n//! t\n/// a\ndef x = 1;\n//! u\ndef f(x: Integer) -> -F Integer {\n  \
+        let source = "//! s\n//! t\n/// a\ndef x = 1;\n//! u\ndef f(x : Integer) -> -F Integer {\n  \
                       //! inner\n  return x\n}\n";
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
         assert_eq!(crate::testing::reconstruct(&tree), source);
@@ -11473,7 +11574,7 @@ mod tests
             ("/// a".to_owned(), "def x = 1;".to_owned()),
             (
                 "//! inner".to_owned(),
-                "def f(x: Integer) -> -F Integer {\n  //! inner\n  return x\n}".to_owned()
+                "def f(x : Integer) -> -F Integer {\n  //! inner\n  return x\n}".to_owned()
             ),
         ]);
         Ok(())

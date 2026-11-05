@@ -6,7 +6,7 @@ error[TacticRefused]: the tactic `assumption` reaches a goal whose type no binde
   │ │        │                      │
   │ │        │                      a splice its tactic does not answer
   │ │        checked against `Unit -> -F Integer`; while checking the body of this function; binds u : Unit
-  │ checked against `Unit => Integer`; while checking the body of this thunk
+  │ checked against `Unit -> Integer`; while checking the body of this thunk
   │
   ├ note: `none` is refused with TacticRefused, as its expectation states
   ╰ help: replace the tactic with a proof term

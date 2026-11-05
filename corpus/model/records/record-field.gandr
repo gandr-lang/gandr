@@ -4,11 +4,11 @@
 // one is read: a body, a bind, a path's endpoint.
 
 /// A record holding a record, no type written for either.
-def nest = #{tag = "t", inner = #{x = 1, y = 2}};
+def nest = *{tag = "t", inner = *{x = 1, y = 2}};
 
 /// The field `inner` of `nest`, a record.
-@[ runs("#{.x = 1, .y = 2}") ]
-def innerOf() -> #{x : Integer, y : Integer} { nest.inner }
+@[ runs("*{.x = 1, .y = 2}") ]
+def innerOf() -> *{x : Integer, y : Integer} { nest.inner }
 
 /// A field of a field: the inner projection runs, and the outer one reads
 /// the record it returns.
@@ -17,16 +17,14 @@ def deepField() -> Integer { nest.inner.y }
 
 /// A field of the record a run binds, its type written nowhere.
 @[ runs("1") ]
-def boundField() -> Integer {
-  let held = nest.inner;
+def boundField() -> Integer =
+  let held = nest.inner
   held.x
-}
 
 /// The record rebuilt from its fields is the record: η, a path whose
 /// endpoints read the fields off `nest`.
-def rebuilt() -> Path[.A = #{tag : String, inner : #{x : Integer, y : Integer}}](
-  #{.tag = nest.tag, .inner = nest.inner},
+def rebuilt() -> Path[.A = *{tag : String, inner : *{x : Integer, y : Integer}}](
+  *{.tag = nest.tag, .inner = nest.inner},
   nest
-) {
-  Path.here(nest)
-}
+) =
+  Path.here nest

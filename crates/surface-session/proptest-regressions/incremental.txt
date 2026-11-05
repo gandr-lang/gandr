@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc e81a7c6b75f5c5c1267c9dd6ba204cc940a6fad7a15d44e7c1d80cd5a740acf6 # shrinks to (statements, edits) = ([Stmt { name: 0, ascription: None, body: Int(0) }], [Replace(0, Stmt { name: 0, ascription: None, body: Int(0) })])
+cc fb8e880dafc0101f96378a1cb7c8d83f4dd79a59add6a8ee5bed8ec3a228987b # shrinks to (statements, edits) = ([Stmt { name: 0, ascription: None, body: Int(0) }], [Insert(0, Stmt { name: 0, ascription: None, body: Function(0) })])

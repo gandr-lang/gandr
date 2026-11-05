@@ -8,18 +8,16 @@
 /// description check refuses the binder, and its refusal names the sort `Tm`
 /// and the port `t`.
 @[ refuses("IllFormedDescription") ]
-theory Unbindable where {
+theory Unbindable where
   sort Tm : Type;
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
-}
 
 /// A sort's index is a plain variable: an operation's input port binds, an
 /// index does not.
 @[ refuses("MalformedForm") ]
-theory BoundIndex where {
+theory BoundIndex where
   sort Tm : Type+;
   sort Scoped(i : pi+ (x : Tm). Tm) : Type;
-}
 
 /// The universe of representable sorts classifies a sort member only.
 @[ refuses("OutOfFragment.Misplaced") ]

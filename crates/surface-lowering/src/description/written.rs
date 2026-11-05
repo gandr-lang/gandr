@@ -53,7 +53,7 @@ quenchant_shape::reason_enum! {
         /// The reason a member is unnamed.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
         pub enum Absent {
-            /// A `data` family's rule, `rule : add(Zero, n) ==> n`, which names
+            /// A `data` family's rule, `rule : add Zero n ==> n`, which names
             /// its operation rather than itself.
             Anonymous,
             /// A member an `ext` member generates, an operation or a law,

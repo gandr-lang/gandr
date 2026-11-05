@@ -14,74 +14,68 @@ pub data Words : Type where {
   | Nil : Words
   | Loop : (x : Words) --> Words
   | Unloop : (x : Words) --> Words
-  rule : Loop(Unloop(x)) <=> x;
-  rule : Unloop(Loop(x)) <=> x;
+  rule : Loop (Unloop x) <=> x;
+  rule : Unloop (Loop x) <=> x;
 }
 
 /// A function that builds a word: one more loop.
-pub def around(c : Words) -> Words {
-  Loop(c)
-}
+pub def around(c : Words) -> Words =
+  Loop c
 
 /// A run returns the word it builds.
-@[ runs("Loop(Loop(Nil))") ]
-def built() -> Words { around(Loop(Nil)) }
+@[ runs("Loop (Loop Nil)") ]
+def built() -> Words { around (Loop Nil) }
 
 /// Conversion reads a word by its normal form: a cancelled loop is a loop.
-def cancelled_word : Path[.A = Words](Loop(Unloop(Loop(Nil))), Loop(Nil)) = Path.here(Loop(Nil));
+def cancelled_word : Path[.A = Words](Loop (Unloop (Loop Nil)), Loop Nil) = Path.here (Loop Nil);
 
 /// A path between words stands at the path between their normal forms.
-def respelled : Path[.A = Words](Loop(Nil), Loop(Nil)) = cancelled_word;
+def respelled : Path[.A = Words](Loop Nil, Loop Nil) = cancelled_word;
 
 /// Two words that both cancel to the empty word are one word.
-def both_cancel : Path[.A = Words](Unloop(Loop(Nil)), Loop(Unloop(Nil))) = Path.here(Nil);
+def both_cancel : Path[.A = Words](Unloop (Loop Nil), Loop (Unloop Nil)) = Path.here Nil;
 
 /// No rule identifies a loop with the empty word.
 @[ refuses("EndpointMismatch") ]
-def loop_not_nil : Path[.A = Words](Loop(Nil), Nil) = Path.here(Nil);
+def loop_not_nil : Path[.A = Words](Loop Nil, Nil) = Path.here Nil;
 
 /// A case that tells a loop from its inverse, refused: `Unloop(Loop(Nil))`
 /// and `Loop(Unloop(Nil))` are one word, which it would read as 2 and 1.
 @[ refuses("RuleNotRespected") ]
-def tell_words(c : Words) -> Integer {
-  match c {
-    Nil => 0,
-    Loop(x) => 1,
-    Unloop(x) => 2
-  }
-}
+def tell_words(c : Words) -> Integer =
+  match c
+    | Nil => 0
+    | Loop(x) => 1
+    | Unloop(x) => 2
 
 /// The path from 2 to 1 that `tell_words` would carry `both_cancel` to; with
 /// `tell_words` refused its applications do not compute, and the endpoints
 /// differ.
 @[ refuses("EndpointMismatch") ]
-def two_is_one() -> Path[.A = Integer](2, 1) {
-  Path.ap(tell_words, both_cancel)
-}
+def two_is_one() -> Path[.A = Integer](2, 1) =
+  Path.ap tell_words both_cancel
 
 /// The mirror: a loop for an inverse and an inverse for a loop. At
 /// `Loop(Unloop(x))` it builds `Unloop(Loop(mirror(x)))`, which the second
 /// rule reads as `mirror(x)`, so it respects both rules and is admitted.
-def rec mirror(c : Words) -> Words {
-  match c {
-    Nil => Nil,
-    Loop(x) => Unloop(mirror[<](x)),
-    Unloop(x) => Loop(mirror[<](x))
-  }
-}
+def rec mirror(c : Words) -> Words =
+  match c
+    | Nil => Nil
+    | Loop(x) => Unloop (mirror[<] x)
+    | Unloop(x) => Loop (mirror[<] x)
 
 /// The mirror of a loop is its inverse.
-@[ runs("Unloop(Nil)") ]
-def mirrored() -> Words { mirror(Loop(Nil)) }
+@[ runs("Unloop Nil") ]
+def mirrored() -> Words { mirror (Loop Nil) }
 
 /// Conversion runs an admitted fold at a closed word. Read by its normal
 /// form, `Loop(Unloop(Nil))` is `Nil`, whose mirror is `Nil`; unfolded
 /// letter by letter, the mirror is `Unloop(Loop(Nil))`, which is `Nil`
 /// again. The two readings agree because the mirror respects the rules.
-def mirror_cancelled : Path[.A = Words](mirror(Loop(Unloop(Nil))), Nil) = Path.here(Nil);
+def mirror_cancelled : Path[.A = Words](mirror (Loop (Unloop Nil)), Nil) = Path.here Nil;
 
 /// The mirror of a respelled loop is the inverse of the loop.
 def mirror_respelled : Path[.A = Words](
-  mirror(Loop(Unloop(Loop(Nil)))),
-  Unloop(Nil)
-) = Path.here(Unloop(Nil));
+  mirror (Loop (Unloop (Loop Nil))),
+  Unloop Nil
+) = Path.here (Unloop Nil);

@@ -65,8 +65,8 @@
 //! # The form a source is spelled in
 //!
 //! A source is spelled in the surface's sugared form, `A * B`, `(a, b)`,
-//! `A => B`, or in the explicit form, every former the sugar stands for
-//! written out: `#{A, B}`, `#{a, b}`, `+U (A -> -F B)`. [`FormatOptions::form`]
+//! `(A) -> B`, or in the explicit form, every former the sugar stands for
+//! written out: `*{A, B}`, `*{a, b}`, `+U (A -> -F B)`. [`FormatOptions::form`]
 //! asks for a [`Form`] — [`Form::Explicit`] or [`Form::Sugared`], or
 //! [`Form::Source`], the source's own spelling, by default — and a source
 //! states its own at its head, as an entry of an attribute block on its first
@@ -92,18 +92,18 @@
 //! early `return`, one an `explicit_exits` attribute asks for and every
 //! written `become` keep their keyword, and the explicit form writes none it
 //! was not given. A value-function alias written longer than the printer
-//! writes it, `(A) => B` or `(x : A) => B` where nothing reads `x`, is sugared
-//! to its shortest, `A => B`. The `let x = c ;` statements ending a block
+//! writes it, `(x : A) -> B` where nothing reads `x`, is sugared to its
+//! shortest, `A -> B`. The `let x = c ;` statements ending a block
 //! whose binders its tail reads once each, first and in order, are written
 //! away, each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`), a
 //! match branch's as any other's; a block left with no statement is written as
 //! its one computation where that computation fits without the braces. A
 //! `thunk { e }` of one computation, no grade and no statement written, is
 //! written `e` where the checker would insert the thunk: where it checks `e`
-//! against a thunk type. A call of a reduct, `T.S(m)` where a theory `T`
-//! includes `S`, is written `m` where the checker would apply the reduct:
+//! against a thunk type. An application of a reduct, `T.S m` where a theory
+//! `T` includes `S`, is written `m` where the checker would apply the reduct:
 //! where a model of `T` stands where a model of `S` is asked; the explicit
-//! form writes each reduct the checker applies, `m` as `T.S(m)` (the
+//! form writes each reduct the checker applies, `m` as `T.S (m)` (the
 //! `reduct` module). Each moves its form on the concrete syntax tree: its
 //! operands and their comments are kept, its own tiles are the other
 //! spelling's, each comment it owns goes before the operand it preceded, and
@@ -113,23 +113,22 @@
 //!
 //! | rewrite          | explicit                | sugared         |
 //! | ---------------- | ----------------------- | --------------- |
-//! | `product`        | `#{A, B, …}`            | `A * B * …`     |
+//! | `product`        | `*{A, B, …}`            | `A * B * …`     |
 //! | `sum`            | `+{A, B, …}`            | `A + B + …`     |
 //! | `lazy-product`   | `&{C, D}`               | `C & D`         |
-//! | `tuple`          | `#{a, b, …}`            | `(a, b, …)`     |
-//! | `value-function` | `+U ((x : A) -> B -> -F C)` | `(x : A, B) => C` |
+//! | `value-function` | `+U ((x : A) -> B -> -F C)` | `(x : A, B) -> C` |
 //! | `default-grade`  | `+U B`, from `+U[ω] B`  | `+U B`, from `+U[ω] B` |
 //! | `path-composite` | `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)` | `Path.step(p, q)` |
 //! | `path-inverse`   | `Path.walk(fun (y) { Path[.A = A](y, a) }, p, Path.here(a))` | `Path.back(p)` |
 //! | `path-action`    | `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p, Path.here(f(a)))` | `Path.ap(f, p)` |
 //! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
 //! | `inserted-returner` | `-> -F B`, as written | `-> B`, at a definition's result |
-//! | `short-alias`    | `(x : A) => B`, as written | `A => B`, `x` unread |
-//! | `linear-run`     | `let x = c ; f(x)`, as written | `f(c)`, beside a checker |
+//! | `short-alias`    | `(x : A) -> B`, as written | `A -> B`, `x` unread |
+//! | `linear-run`     | `let x = c ; f x`, as written | `f c`, beside a checker |
 //! | `inserted-thunk` | `thunk { e }`, as written | `e`, beside a checker |
-//! | `inserted-reduct` | `T.S(m)`, beside a checker | `m`, beside a checker |
+//! | `inserted-reduct` | `T.S (m)`, beside a checker | `m`, beside a checker |
 //! | `inserted-forget` | `forget[sort C = A](m) at Model(T)`, beside a checker | `m`, beside a checker |
-//! | `function-form`  | `def f() -> -F B { c }`, from `def f : +U (-F B) ; def f = thunk { c } ;` | `def f() -> B { c }`, from `def f : () => B ; def f = thunk { c } ;` |
+//! | `function-form`  | `def f() -> -F B { c }`, from `def f : +U (-F B) ; def f = thunk { c } ;` | `def f() -> B { c }`, from `def f : () -> B ; def f = thunk { c } ;` |
 //! | `joined-definition` | `def x : T ; def x = e ;`, from `def x : T = e ;` | `def x : T = e ;`, the definition directly after |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
@@ -236,7 +235,7 @@
 //! flows is its own explicit spelling and stays. The sugared form writes
 //! `Path.step` for the same transports, those the lowering returns at a
 //! composite, as the printer does: a transport a body runs as written stays
-//! `Path.walk(…)`.
+//! `Path.walk …`.
 //!
 //! - Choice: the motive spelled by the shared printer from the lowering the
 //!   meaning check already runs, so the explicit spelling is the printer's
@@ -1845,7 +1844,10 @@ fn kept<'source>(comment: &Comment<'source>) -> (SourceFragment<'source>, Commen
     (attachment.text, attachment.kind, attachment.role)
 }
 
-/// The tokens and comments of `leaves`, in order.
+/// The tokens and comments of `leaves`, in order. An empty tile, as the one a
+/// juxtaposition holds or a layout block's virtual separator, is no material:
+/// no source writes it, so a rewrite that writes `f a` leaves it to the parse,
+/// and the tree digest and the lowering keep the structure it marks.
 ///
 /// # Specification
 /// trivial.
@@ -1855,7 +1857,7 @@ fn material<'leaves, 'source>(
 {
     leaves
         .iter()
-        .filter(|leaf| leaf.material != Material::Whitespace)
+        .filter(|leaf| leaf.material != Material::Whitespace && !<&str>::from(leaf.text).is_empty())
         .map(|leaf| (leaf.material, leaf.text))
 }
 

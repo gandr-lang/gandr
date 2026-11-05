@@ -1,8 +1,8 @@
 error[MalformedForm]: a keyword or symbol of this access expression is out of place
-   ╭▸ corpus/pathological/control/accessor-shared.gandr:28:38
+   ╭▸ corpus/pathological/control/accessor-shared.gandr:25:37
    │
-28 │   access shared c as w { pure unit } unwind { pure unit }
-   │                                      ━━━━━━ out of place
+25 │   access shared c as w { pure *{} } unwind { pure *{} }
+   │                                     ━━━━━━ out of place
    │
    ├ note: `unwound` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the access expression
@@ -10,50 +10,47 @@ error[MalformedForm]: a keyword or symbol of this access expression is out of pl
 error[HeldLent]: the held value is lent to an `access` here, which ends before it can be read
   ╭▸ corpus/pathological/control/accessor-shared.gandr:6:26
   │
-4 │ ┌ def frozen() -> Unit {
-5 │ │   var c = 0;
+4 │ ┌ def frozen() -> Unit =
+5 │ │   var c = 0
   │ │   ─── checked against `-F Unit`; while checking the scope of this hold
 6 │ │   access shared c as w { access c as v { resume(v, w) } }
-  │ │   ┬──────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──
-  │ │   │                      │
-  │ │   │                      a held value lent to an access
-  │ │   checked against `-F Unit`; while checking the body of this access
-7 │ │ }
-  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │ │   ┬──────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─│
+  │ └───│──────────────────────│──────────────────────────────┤
+  │     │                      │                              checked against `() -> Unit`; while checking the body of this thunk
+  │     │                      a held value lent to an access
+  │     checked against `-F Unit`; while checking the body of this access
   │
   ├ note: `frozen` is refused with HeldLent, as its expectation states
   ╰ help: use the held value only after the `access` that lends it ends
 
 error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view is read-only and ends with its body
-   ╭▸ corpus/pathological/control/accessor-shared.gandr:13:26
+   ╭▸ corpus/pathological/control/accessor-shared.gandr:12:26
    │
-11 │ ┌ def written() -> Unit {
-12 │ │   var c = 0;
+10 │ ┌ def written() -> Unit =
+11 │ │   var c = 0
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-13 │ │   access shared c as w { resume(w, 1) }
-   │ │   ┬──────────────────────┯━━━━━━━━━━━──
-   │ │   │                      │
-   │ │   │                      a shared view, which is read-only
-   │ │   checked against `-F Unit`; while checking the body of this access
-14 │ │ }
-   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+12 │ │   access shared c as w { resume(w, 1) }
+   │ │   ┬──────────────────────┯━━━━━━━━━━━─│
+   │ └───│──────────────────────│────────────┤
+   │     │                      │            checked against `() -> Unit`; while checking the body of this thunk
+   │     │                      a shared view, which is read-only
+   │     checked against `-F Unit`; while checking the body of this access
    │
    ├ note: `written` is refused with ViewReadOnly, as its expectation states
    ╰ help: end the shared view with its body, without `resume` or `abort`
 
 error[ViewReadOnly]: `resume` and `abort` end an exclusive view; a shared view is read-only and ends with its body
-   ╭▸ corpus/pathological/control/accessor-shared.gandr:20:26
+   ╭▸ corpus/pathological/control/accessor-shared.gandr:18:26
    │
-18 │ ┌ def aborted() -> Unit {
-19 │ │   var c = 0;
+16 │ ┌ def aborted() -> Unit =
+17 │ │   var c = 0
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-20 │ │   access shared c as w { abort(w) }
-   │ │   ┬──────────────────────┯━━━━━━━──
-   │ │   │                      │
-   │ │   │                      a shared view, which is read-only
-   │ │   checked against `-F Unit`; while checking the body of this access
-21 │ │ }
-   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+18 │ │   access shared c as w { abort(w) }
+   │ │   ┬──────────────────────┯━━━━━━━─│
+   │ └───│──────────────────────│────────┤
+   │     │                      │        checked against `() -> Unit`; while checking the body of this thunk
+   │     │                      a shared view, which is read-only
+   │     checked against `-F Unit`; while checking the body of this access
    │
    ├ note: `aborted` is refused with ViewReadOnly, as its expectation states
    ╰ help: end the shared view with its body, without `resume` or `abort`

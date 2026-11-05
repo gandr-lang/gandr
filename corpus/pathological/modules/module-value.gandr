@@ -10,7 +10,7 @@
 /// - see: `model/modules/module-value.gandr` — the ascribed twin
 
 /// A ticker: a carrier, a start and a step.
-theory Ticker where {
+theory Ticker where
   /// The carrier.
   sort C : Type;
 
@@ -18,10 +18,9 @@ theory Ticker where {
   oper start : () --> C;
   /// One step.
   oper step : (c : C) --> C;
-}
 
 /// The ticker's members with no ascription.
-module Bare where {
+module Bare where
   /// The carrier.
   type C = Integer;
 
@@ -30,7 +29,6 @@ module Bare where {
 
   /// One more.
   def step(n : Integer) -> Integer { n + 1 }
-}
 
 /// The unascribed module, named as a ticker.
 @[ refuses("UnresolvedName") ]

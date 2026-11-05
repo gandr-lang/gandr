@@ -1,16 +1,16 @@
 error[UnresolvedTypeHead]: no type named `Missing` is written bare
-   ╭▸ corpus/pathological/worlds/offered.gandr:41:13
+   ╭▸ corpus/pathological/worlds/offered.gandr:39:13
    │
-41 │ pub offers [Missing];
+39 │ pub offers [Missing];
    │             ━━━━━━━ no type head of this name and arity
    │
    ├ note: `offers` is refused with UnresolvedTypeHead, as its expectation states
    ╰ help: declare a type named `Missing`, or import the module that exports it
 
 error[DuplicateDefinition]: `std.io.Console.Eff` is defined twice
-   ╭▸ corpus/pathological/worlds/offered.gandr:45:33
+   ╭▸ corpus/pathological/worlds/offered.gandr:43:33
    │
-45 │ pub offers [std.io.Console.Eff, std.io.Console.Eff];
+43 │ pub offers [std.io.Console.Eff, std.io.Console.Eff];
    │             ┬─────────────────  ━━━━━━━━━━━━━━━━━━ written again here
    │             │
    │             first written here
@@ -19,21 +19,21 @@ error[DuplicateDefinition]: `std.io.Console.Eff` is defined twice
    ╰ help: give each definition of `std.io.Console.Eff` its own name, or delete one of them
 
 error[DuplicateDefinition]: `offers` is defined twice
-   ╭▸ corpus/pathological/worlds/offered.gandr:53:5
+   ╭▸ corpus/pathological/worlds/offered.gandr:51:5
    │
-49 │ pub offers [store = Absent];
+47 │ pub offers [store = Absent];
    │     ──────────────────────── first written here
    ┆
-53 │ pub offers [store = Echo];
+51 │ pub offers [store = Echo];
    │     ━━━━━━━━━━━━━━━━━━━━━━ written again here
    │
    ├ note: `offers` is refused with DuplicateDefinition, as its expectation states
    ╰ help: give each definition of `offers` its own name, or delete one of them
 
 error[UnresolvedName]: `Absent` is not defined
-   ╭▸ corpus/pathological/worlds/offered.gandr:49:21
+   ╭▸ corpus/pathological/worlds/offered.gandr:47:21
    │
-49 │ pub offers [store = Absent];
+47 │ pub offers [store = Absent];
    │                     ━━━━━━ not found in this scope
    │
    ├ note: `offers` is refused with UnresolvedName, as its expectation states

@@ -16,7 +16,7 @@ import std.foreign.rust (Thir);
 
 /// The places of a language family with owned memory: allocate, read,
 /// write and free.
-pub theory Places where {
+pub theory Places where
   /// A place in memory.
   sort Place : Type;
   /// A value a place holds.
@@ -29,25 +29,20 @@ pub theory Places where {
   oper store(p : Place, v : Val) -> Unit;
   /// `p` given back.
   oper free(p : Place) -> Unit;
-}
 
 /// THIR's meaning, which folds each node into the specification monad over
 /// `Places`.
-pub def wp(e : Thir.Expr) -> Spec(Places, Thir.Value) {
-  match e {
-    Thir.Expr.Deref(p) => Places.load(place(p)),
-    Thir.Expr.Assign(p, v) => Places.store(place(p), wp(v)),
-    Thir.Expr.Return(v) => Spec.exit(wp(v)),
-    Thir.Expr.Call(f, args) => Spec.call(f, map(args, wp))
-  }
-}
+pub def wp(e : Thir.Expr) -> Spec(Places, Thir.Value) =
+  match e
+    | Thir.Expr.Deref(p) => Places.load (place p)
+    | Thir.Expr.Assign(p, v) => Places.store (place p) (wp v)
+    | Thir.Expr.Return(v) => Spec.exit (wp v)
+    | Thir.Expr.Call(f, args) => Spec.call f (map args wp)
 
 /// A second analysis over the same data: the places each expression
 /// borrows, and whether mutably.
-pub def borrows(e : Thir.Expr) -> List(#{place : Thir.Place, mutable : Bool}) {
-  match e {
-    Thir.Expr.Borrow(p, kind) => #[#{place = p, mutable = kind == Thir.BorrowKind.Mut}],
-    Thir.Expr.Call(_f, args) => concatMap(args, borrows),
-    _ => #[]
-  }
-}
+pub def borrows(e : Thir.Expr) -> List(*{place : Thir.Place, mutable : Bool}) =
+  match e
+    | Thir.Expr.Borrow(p, kind) => #[*{place = p, mutable = kind == Thir.BorrowKind.Mut}]
+    | Thir.Expr.Call(_f, args) => concatMap args borrows
+    | _ => #[]

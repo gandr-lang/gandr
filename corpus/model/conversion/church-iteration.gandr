@@ -19,17 +19,14 @@ import "../data/data-base.gandr";
 import "./conversion-base.gandr";
 
 /// Apply `s` to `z` as many times as `n` counts.
-def rec iterate(n : Nat, s : Nat => Nat, z : Nat) -> Nat {
-  match n {
-    Zero => z,
-    Succ(m) => s(iterate[<](m, s, z))
-  }
-}
+def rec iterate(n : Nat, s : Nat -> Nat, z : Nat) -> Nat =
+  match n
+    | Zero => z
+    | Succ(m) => s (iterate[<] m s z)
 
 /// Sixteen sixteens count as many applications as two products of sixteen and eight.
-def countsCommute(s : Nat => Nat, z : Nat) -> Path(
-  iterate(times(sixteen, sixteen), s, z),
-  iterate(plus(times(sixteen, eight), times(eight, sixteen)), s, z)
-) {
-  Path.here(iterate(times(sixteen, sixteen), s, z))
-}
+def countsCommute(s : Nat -> Nat, z : Nat) -> Path(
+  iterate (times sixteen sixteen) s z,
+  iterate (plus (times sixteen eight) (times eight sixteen)) s z
+) =
+  Path.here (iterate (times sixteen sixteen) s z)

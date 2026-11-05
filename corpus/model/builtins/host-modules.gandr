@@ -7,22 +7,21 @@
 /// A file written, read back, globbed and stated in a fresh directory, beside
 /// the working directory, the tracked files and the search path.
 @[ refuses("OutOfFragment.projection_expression") ]
-def tour() -> -F #{content : String, name : String, ext : String, kind : String} {
-  let dir = fs.tempdir();
-  let nested = path.join(dir, "nested");
-  fs.mkdir(nested);
-  let file = path.join(nested, "greeting.txt");
-  fs.write(file, "hello from gandr");
-  let content = fs.read(file);
-  let matches = fs.glob(path.join(nested, "*.txt"));
-  let stat = fs.stat(file);
-  let cwd = fs.cwd();
-  let tracked = fs.ls_files(".");
-  let path_entries = env.path();
-  pure #{
+def tour() -> -F *{content : String, name : String, ext : String, kind : String} =
+  let dir = fs.tempdir ()
+  let nested = path.join dir "nested"
+  fs.mkdir nested
+  let file = path.join nested "greeting.txt"
+  fs.write file "hello from gandr"
+  let content = fs.read file
+  let matches = fs.glob (path.join nested "*.txt")
+  let stat = fs.stat file
+  let cwd = fs.cwd ()
+  let tracked = fs.ls_files "."
+  let path_entries = env.path ()
+  pure *{
     content = content,
-    name = path.basename(file),
-    ext = path.extension(file),
+    name = path.basename file,
+    ext = path.extension file,
     kind = stat.kind
   }
-}

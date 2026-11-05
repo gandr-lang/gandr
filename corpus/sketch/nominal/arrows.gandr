@@ -15,27 +15,23 @@
 import std.nominal (Fresh, fresh, Abs);
 
 /// Applies a function exactly once.
-def once[a : Type, b : Type](f : a ->[1] b, x : a) -> b {
-  f(x)
-}
+def once[a : Type, b : Type](f : a ->[1] b, x : a) -> b =
+  f x
 
 /// Applies a function to every element, as often as the list is long.
-def mapAll[a : Type, b : Type](f : a ->[ω] b, xs : List(a)) -> List(b) {
-  map(f, xs)
-}
+def mapAll[a : Type, b : Type](f : a ->[ω] b, xs : List(a)) -> List(b) =
+  map f xs
 
 /// A term with one bound variable, its body an abstraction over a fresh name.
-pub data Lam : Type where {
+pub data Lam : Type where
   /// A variable.
   | Var : (n : Name) --> Lam
   /// An abstraction over a name.
   | Abs : (body : (x : Name) ->[#] Lam) --> Lam
   /// An application.
   | App : (f : Lam, a : Lam) --> Lam
-}
 
 /// The identity function, its bound variable named for diagnostics.
-def identity() -> [Fresh] (Lam, String) {
-  let body = fun (x) { Var(x) };
-  (Abs(body), ~name(x))
-}
+def identity() -> [Fresh] *{Lam, String} =
+  let body = fun (x) { Var x };
+  *{Abs body, ~name x}

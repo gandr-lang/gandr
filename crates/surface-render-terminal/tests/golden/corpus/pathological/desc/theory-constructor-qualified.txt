@@ -1,8 +1,8 @@
 error[UnresolvedName]: `Lam` is not defined
-   ╭▸ corpus/pathological/desc/theory-constructor-qualified.gandr:16:10
+   ╭▸ corpus/pathological/desc/theory-constructor-qualified.gandr:15:12
    │
-16 │     Tree.Lam(body) => 1,
-   │          ━━━ not found in this scope
+15 │     | Tree.Lam(body) => 1
+   │            ━━━ not found in this scope
    │
    ├ note: `lambda` is refused with UnresolvedName, as its expectation states
    ╰ help: define `Lam`, or import the module that exports it

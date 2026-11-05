@@ -14,7 +14,7 @@
 /// [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
 /// A ticker: a carrier, a start and a step.
-theory Ticker where {
+theory Ticker where
   /// The carrier.
   sort C : Type;
 
@@ -22,10 +22,9 @@ theory Ticker where {
   oper start : () --> C;
   /// One step.
   oper step : (c : C) --> C;
-}
 
 /// A ticker on the integers, ascribed transparently.
-module Up : Model(Ticker) where {
+module Up : Model(Ticker) where
   /// The carrier.
   type C = Integer;
 
@@ -34,7 +33,6 @@ module Up : Model(Ticker) where {
 
   /// One more.
   def step(n : Integer) -> Integer { n + 1 }
-}
 
 /// The ticker as a value, written with `pack`.
 def packed : Model(Ticker) = pack Up at Model(Ticker);
@@ -43,14 +41,13 @@ def packed : Model(Ticker) = pack Up at Model(Ticker);
 def named : Model(Ticker) = Up;
 
 /// The two spellings are one value.
-def namedIsPacked() -> Path(named, packed) { Path.here(named) }
+def namedIsPacked() -> Path(named, packed) { Path.here named }
 
 /// One step of any ticker, through its model.
-def ticked(c : Model(Ticker), n : c.C) -> c.C {
-  let step = c.step;
-  step(n)
-}
+def ticked(c : Model(Ticker), n : c.C) -> c.C =
+  let step = c.step
+  step n
 
 /// The module, passed by its name to a function taking a ticker.
 @[ runs("2") ]
-def upTicked() -> Integer { ticked(Up, 1) }
+def upTicked() -> Integer { ticked Up 1 }

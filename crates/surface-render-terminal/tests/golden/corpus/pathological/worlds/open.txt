@@ -1,47 +1,50 @@
 error[NotOpen.Capture]: a thunk crossing to another world captures this, but its type is not open
    ╭▸ corpus/pathological/worlds/open.gandr:29:24
    │
-26 │ ┌  def heldThunk() -> -F ((() => Seat.Dispatch) at seat) {
+26 │ ┌  def heldThunk() -> -F ((() -> Seat.Dispatch) at seat) =
 27 │ │┌   migrate [seat] {
 28 │ ││     let task = Seat.task;
 29 │ ││     (hold thunk { pure task })
    │ ││                        ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
 30 │ ││   }
-   │ │└───┘ checked against `-F ((() => Seat.Dispatch) at seat)`; while checking the body of this migration at its world
-31 │ │  }
-   │ └──┘ checked against `() => (() => Seat.Dispatch) at seat`; while checking the body of this thunk
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> (() -> Seat.Dispatch) at seat`; while checking the body of this thunk
+   │      checked against `-F ((() -> Seat.Dispatch) at seat)`; while checking the body of this migration at its world
    │
    ├ note: `heldThunk` is refused with NotOpen.Capture, as its expectation states
    ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature
 
 error[NotOpen.Capture]: a thunk crossing to another world captures this, but its type is not open
-   ╭▸ corpus/pathological/worlds/open.gandr:40:44
+   ╭▸ corpus/pathological/worlds/open.gandr:39:44
    │
-37 │ ┌  def heldRecord() -> -F (#{done : Integer, later : () => Seat.Dispatch} at seat) {
-38 │ │┌   migrate [seat] {
-39 │ ││     let task = Seat.task;
-40 │ ││     (hold #{done = 3, later = thunk { pure task }})
+36 │ ┌  def heldRecord() -> -F (*{done : Integer, later : () -> Seat.Dispatch} at seat) =
+37 │ │┌   migrate [seat] {
+38 │ ││     let task = Seat.task;
+39 │ ││     (hold *{done = 3, later = thunk { pure task }})
    │ ││                                            ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
-41 │ ││   }
-   │ │└───┘ checked against `-F (#{done : Integer, later : () => Seat.Dispatch} at seat)`; while checking the body of this migration at its world
-42 │ │  }
-   │ └──┘ checked against `() => #{done : Integer, later : () => Seat.Dispatch} at seat`; while checking the body of this thunk
+40 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> *{done : Integer, later : () -> Seat.Dispatch} at seat`; while checking the body of this thunk
+   │      checked against `-F (*{done : Integer, later : () -> Seat.Dispatch} at seat)`; while checking the body of this migration at its world
    │
    ├ note: `heldRecord` is refused with NotOpen.Capture, as its expectation states
    ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature
 
 error[Immobile.Capture]: a thunk crossing to another world captures this, but its type is not mobile
-   ╭▸ corpus/pathological/worlds/open.gandr:51:43
+   ╭▸ corpus/pathological/worlds/open.gandr:49:43
    │
-48 │ ┌  def bareRecord() -> #{done : Integer, later : () => Seat.Dispatch} {
-49 │ │┌   migrate [seat] {
-50 │ ││     let task = Seat.task;
-51 │ ││     pure #{done = 3, later = thunk { pure task }}
+46 │ ┌  def bareRecord() -> *{done : Integer, later : () -> Seat.Dispatch} =
+47 │ │┌   migrate [seat] {
+48 │ ││     let task = Seat.task;
+49 │ ││     pure *{done = 3, later = thunk { pure task }}
    │ ││                                           ━━━━ a capture whose type holds a former that is not mobile: found `Seat.Dispatch`
-52 │ ││   }
-   │ │└───┘ checked against `-F #{done : Integer, later : () => Seat.Dispatch}`; while checking the body of this migration at its world
-53 │ │  }
-   │ └──┘ checked against `() => #{done : Integer, later : () => Seat.Dispatch}`; while checking the body of this thunk
+50 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> *{done : Integer, later : () -> Seat.Dispatch}`; while checking the body of this thunk
+   │      checked against `-F *{done : Integer, later : () -> Seat.Dispatch}`; while checking the body of this migration at its world
    │
    ├ note: `bareRecord` is refused with Immobile.Capture, as its expectation states
    ╰ help: capture only data in a thunk the migration returns, or mark the abstract type `mobile` in its signature

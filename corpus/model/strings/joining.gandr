@@ -19,16 +19,16 @@ import std.string (empty, concat, isEmpty);
 
 /// `greeted` joins a greeting and a name.
 @[ runs("\"hello, ada\"") ]
-def greeted() -> String { concat("hello, ", "ada") }
+def greeted() -> String { concat "hello, " "ada" }
 
 /// `paddedLeft` joins the empty string before a word, which leaves the word.
 @[ runs("\"ada\"") ]
-def paddedLeft() -> String { concat(empty, "ada") }
+def paddedLeft() -> String { concat empty "ada" }
 
 /// `blank` asks whether the empty string joined to itself is empty.
-@[ runs("+{.0 = unit}") ]
-def blank() -> Bool { isEmpty(concat(empty, empty)) }
+@[ runs("+{.0 = *{}}") ]
+def blank() -> Bool { isEmpty (concat empty empty) }
 
 /// `worded` asks whether a word is empty.
-@[ runs("+{.1 = unit}") ]
-def worded() -> Bool { isEmpty("ada") }
+@[ runs("+{.1 = *{}}") ]
+def worded() -> Bool { isEmpty "ada" }

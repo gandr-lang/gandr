@@ -1,9 +1,8 @@
 @[ refuses("MalformedForm") ]
-theory Wide where {
+theory Wide where
   sort Nat : Type;
   oper tee : (a : Nat) --> (b : Nat, c : Nat);
 
   rule split : (data x : Nat) ==> (z : Nat) {
     node : tee(x) --> (z, w);
   };
-}

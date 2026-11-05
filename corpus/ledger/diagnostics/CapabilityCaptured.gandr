@@ -1,5 +1,5 @@
 /// `CapabilityCaptured`: a migration under a former that may run it other than once.
-module Seat :> #{
+module Seat :> *{
   type Dispatch,
   mobile type Report,
   type Handoff,
@@ -32,7 +32,6 @@ world operator ;
 world seat ;
 
 @[ refuses("CapabilityCaptured") ]
-@[ entry((operator, seat)) ]
-def suspended() -> -F (() => Seat.Report) {
+@[ entry(*{operator, seat}) ]
+def suspended() -> -F (() -> Seat.Report) =
   pure thunk { migrate [seat] { pure Seat.progress } }
-}

@@ -19,19 +19,17 @@ import "./solver.gandr";
 import std.io (print);
 
 /// One line of the report for one obligation's outcome.
-def line(name : String, o : Outcome(Goal)) -> String {
+def line(name : String, o : Outcome(Goal)) -> String =
   match o {
-    evidence(cert) => name ++ ": discharged by " ++ cert.solver,
-    counterexample(m) => name ++ ": fails at " ++ show(m),
-    refused(reason) => name ++ ": the solver refused it, " ++ reason,
+    evidence cert -> name ++ ": discharged by " ++ cert.solver,
+    counterexample m => name ++ ": fails at " ++ show m,
+    refused reason => name ++ ": the solver refused it, " ++ reason,
     inconclusive => name ++ ": open"
   }
-}
 
 /// Asks the checked solver about every goal and prints one line for each.
-def report(goals : List((String, Goal))) -> [Smt, Console] Unit {
-  forEach(goals, fun ((name, g)) {
-    let o = checkedZ3.ask(Query.valid(g));
-    print(line(name, o))
+def report(goals : List(*{String, Goal})) -> [Smt, Console] Unit =
+  forEach goals (fun (*{name, g}) {
+    let o = checkedZ3.ask (Query.valid g);
+    print (line name o)
   })
-}

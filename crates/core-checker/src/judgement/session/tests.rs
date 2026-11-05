@@ -701,8 +701,8 @@ fn exit(
     arena.computation_exercise(capability, host.proc.clone(), "exit".into(), code)
 }
 
-/// `handle c : Proc { subject } with { pure(x) => pure x, exit(code, k) =>
-/// body }`.
+/// `handle c : Proc { subject } with { | pure(x) => pure x | oper exit(code, k)
+/// => body }`.
 ///
 /// # Specification
 /// trivial.
@@ -723,8 +723,8 @@ fn answering(
     arena.computation_scope(host.proc.clone(), subject, passes, clauses)
 }
 
-/// `handle c : Proc { subject } with { pure(x) => pure x, exit(code, k) =>
-/// pure unit }`, its clause dropping the continuation, and the clause's body.
+/// `handle c : Proc { subject } with { | pure(x) => pure x | oper exit(code, k)
+/// => pure *{} }`, its clause dropping the continuation, and the clause's body.
 ///
 /// # Specification
 /// trivial.

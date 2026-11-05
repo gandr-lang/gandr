@@ -15,8 +15,7 @@ extern "c" from "./testlib" as testlib {
 /// Twenty-one added to itself and a string measured; the lowering reads no
 /// projection yet, and `testlib` is the extern block's.
 @[ refuses("OutOfFragment.projection_expression") ]
-def measured() -> -F (i64 * i64) {
-  let doubled = testlib.gandr_test_add(21i64, 21i64);
-  let length = testlib.gandr_test_strlen("hello");
-  pure (doubled, length)
-}
+def measured() -> -F (i64 * i64) =
+  let doubled = testlib.gandr_test_add 21i64 21i64
+  let length = testlib.gandr_test_strlen "hello"
+  pure *{doubled, length}

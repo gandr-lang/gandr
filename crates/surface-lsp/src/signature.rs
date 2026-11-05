@@ -72,9 +72,6 @@ use crate::protocol::SignatureHelp;
 use crate::protocol::SignatureInformation;
 use crate::reading::Reading;
 
-/// The rule of a value's call, `f(a, b)`.
-const CALL: &str = "call_expression";
-
 /// The rule of a family's application, `List(a)`.
 const APPLICATION: &str = "type_application";
 
@@ -93,25 +90,24 @@ const ENCLOSING: [&str; 2] = ["u_type", PARENTHESES];
 /// The rule of a parenthesised type, a wrapper or a telescope.
 const PARENTHESES: &str = "parenthesized_type";
 
-/// The rule of a computation's function type, `A -> B`.
+/// The rule of a function type, `A -> B` or `(a : A) -> B`.
 const ARROW: &str = "function_type";
 
-/// The rule of a value's function type over a telescope, `(a : A) => B`.
-const VALUE_ARROW: &str = "value_function_type";
-
-/// One call the parser molded: its head, where its arguments open, the commas
-/// between them and the parenthesis closing them.
+/// One call the parser molded: its head, where its arguments open, where each
+/// argument after the first starts to be written, and where the call closes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Call
 {
     /// The bytes of the head.
     head: ByteSpan,
-    /// Just past the `(` opening the arguments.
+    /// Just past the `(` opening the arguments, or the start of a spine's
+    /// first argument.
     open: ByteOffset,
-    /// The start of each `,` between the arguments, ascending.
+    /// The start of each `,` between the arguments, or the end of each of a
+    /// spine's arguments but the last, ascending.
     separators: Vec<ByteOffset>,
-    /// The start of the written `)`, or, when the parser closed the call, the
-    /// end of the form it molded.
+    /// The start of the written `)`, or, when the parser closed the call or
+    /// the call is a spine, the end of the form it molded.
     close: ByteOffset,
     /// The position of the innermost call holding this one, among the calls
     /// in order.
@@ -141,20 +137,24 @@ impl Calls
     ///
     /// # Specification
     /// - requires: `tree` was parsed under `grammar`.
-    /// - ensures: one call per molded call or family application that writes an
-    ///   opening `(` among its own tiles: its first child as its head, its own
-    ///   `,` tiles as separators, its own `)` as its close, or the form's end
-    ///   when the parser closed it; ascending by opening, each naming the
-    ///   innermost call holding it.
+    /// - ensures: one call per application spine, `f x y`: its head, the start
+    ///   of its first argument as its opening, the end of each argument but the
+    ///   last as a separator, and its end as its close; and one call per family
+    ///   application that writes an opening `(` among its own tiles: its first
+    ///   child as its head, its own `,` tiles as separators, its own `)` as its
+    ///   close, or the form's end when the parser closed it. Ascending by
+    ///   opening, each naming the innermost call holding it; a spine's inner
+    ///   applications are no calls of their own.
     /// - provides: the calls a reading keeps for signature help.
     /// - fails: never.
     /// - panics: none.
     /// - intension: one walk of the tree with an explicit stack and one sort.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a nested call, a call in a call's head, a family's
-    ///   application and a call the parser closed are each found where they are
-    ///   written.
+    /// - hypothesis: L3 — a nested spine, a spine in an argument's parentheses,
+    ///   a recursive call and a family's application are each found where they
+    ///   are written, and each spine's argument is counted where the position
+    ///   stands.
     /// - witness: `signature::tests::the_innermost_call_answers_with_its_argument`
     #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if first.open <= second.open)))]
     #[must_use]
@@ -166,6 +166,13 @@ impl Calls
         let mut found: Vec<Call> = Vec::new();
         let mut pending: Vec<(NodeIndex, Option<usize>)> = Vec::from([(tree.root(), None)]);
         while let Some((at, holder)) = pending.pop() {
+            if let Some((mut written, parts)) = spine(grammar, tree, at) {
+                written.holder = holder;
+                found.push(written);
+                let holder = Some(found.len().saturating_sub(1));
+                pending.extend(parts.into_iter().map(|part| (part, holder)));
+                continue;
+            }
             let holder = call(grammar, tree, at).map_or(holder, |mut written| {
                 written.holder = holder;
                 found.push(written);
@@ -242,7 +249,8 @@ impl Calls
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Argument(pub usize);
 
-/// The call the form at `at` is, when it is one that writes its opening `(`.
+/// The call the form at `at` is, when it is a family's application that
+/// writes its opening `(`.
 ///
 /// # Specification
 /// trivial.
@@ -258,7 +266,7 @@ fn call(
         return None;
     };
     let rule = grammar.rule_of(mold).ok()?.name().0;
-    if rule != CALL && rule != APPLICATION {
+    if rule != APPLICATION {
         return None;
     }
     let mut head = None;
@@ -305,6 +313,88 @@ fn call(
         close,
         holder: None,
     })
+}
+
+/// The call the application spine at `at` writes, `f x y`, and the parts the
+/// walk reads below it: its head, then its arguments.
+///
+/// # Specification
+/// - requires: `tree` was parsed under `grammar`.
+/// - ensures: when `at` is an application whose left operands down to its head
+///   are applications, each with its three parts written, the call with the
+///   innermost left operand as its head, the start of the first argument as its
+///   opening, the end of each argument but the last as a separator, and the end
+///   of `at` as its close; none otherwise.
+/// - panics: none.
+/// - economy: one walk down the spine's left edge.
+/// - executable: none — a clause would walk the spine again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Calls::of`].
+/// - witness: `signature::tests::the_innermost_call_answers_with_its_argument`
+fn spine(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+) -> Option<(Call, Vec<NodeIndex>)>
+{
+    let application = grammar.application()?;
+    let applied = |position: NodeIndex| {
+        tree.node(position)
+            .is_some_and(|node| node.label() == NodeLabel::Meld(application))
+    };
+    if !applied(at) {
+        return None;
+    }
+    let close = tree.node(at)?.span().end();
+    // The arguments are met last to first, then reversed.
+    let mut parts: Vec<NodeIndex> = Vec::new();
+    let mut position = at;
+    let head = loop {
+        let mut written = tree.children(position).filter(|&child| {
+            tree.node(child)
+                .is_some_and(|node| !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc))
+        });
+        let (Some(left), Some(_), Some(right), None) = (
+            written.next(),
+            written.next(),
+            written.next(),
+            written.next(),
+        )
+        else {
+            return None;
+        };
+        parts.push(right);
+        if applied(left) {
+            position = left;
+        }
+        else {
+            break left;
+        }
+    };
+    parts.push(head);
+    parts.reverse();
+    let spans: Vec<ByteSpan> = parts
+        .iter()
+        .filter_map(|&part| tree.node(part).map(Node::span))
+        .collect();
+    let (&head_span, arguments) = spans.split_first()?;
+    let open = arguments.first()?.start();
+    let separators = arguments
+        .iter()
+        .take(arguments.len().saturating_sub(1))
+        .map(|argument| argument.end())
+        .collect();
+    Some((
+        Call {
+            head: head_span,
+            open,
+            separators,
+            close,
+            holder: None,
+        },
+        parts,
+    ))
 }
 
 /// A run of a label: where a piece or a parameter starts and ends in it, in
@@ -364,17 +454,19 @@ impl Signature
         self.documentation.as_deref().map(SourceText::from)
     }
 
-    /// A call of `name` with each parameter a tab stop, as a snippet: the stop
-    /// holds the name the parameter declares, or what it writes when it
-    /// declares none.
+    /// A call of `name` with each parameter a tab stop, as a snippet, written
+    /// as `calling` says: the stop holds the name the parameter declares, or
+    /// what it writes when it declares none.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: none for a head with no parameters; otherwise `name`, `(`,
-    ///   one stop per parameter in written order, numbered from 1 and separated
-    ///   by `, `, then `)` and the final stop `$0`. A stop's text is the
-    ///   parameter's text before its first ` : ` when it has one and its whole
-    ///   text otherwise, escaped for the snippet syntax, as `name` is.
+    /// - ensures: none for a head with no parameters; otherwise `name`, then
+    ///   one stop per parameter in written order, numbered from 1 — each after
+    ///   a space when [`Calling::Juxtaposed`], or between `(` and `)` and
+    ///   separated by `, ` when [`Calling::Applied`] — then the final stop
+    ///   `$0`. A stop's text is the parameter's text before its first ` : `
+    ///   when it has one and its whole text otherwise, escaped for the snippet
+    ///   syntax, as `name` is.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -383,11 +475,12 @@ impl Signature
     ///   constructor, the unnamed domains of a thunk, and a head with none.
     /// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
     #[spec(ensures: |ret| ret.is_none() == self.parameters.is_empty()
-        && ret.as_ref().is_none_or(|snippet| snippet.ends_with(")$0")
+        && ret.as_ref().is_none_or(|snippet| snippet.ends_with("$0")
             && snippet.matches("${").count() >= self.parameters.len()))]
     pub(crate) fn called(
         &self,
         name: SourceText<'_>,
+        calling: Calling,
     ) -> Option<String>
     {
         if self.parameters.is_empty() {
@@ -395,10 +488,14 @@ impl Signature
         }
         let mut snippet = String::new();
         escape_into(&mut snippet, name);
-        snippet.push('(');
+        if calling == Calling::Applied {
+            snippet.push('(');
+        }
         for (stop, parameter) in (1_usize ..).zip(&self.parameters) {
-            if stop > 1 {
-                snippet.push_str(", ");
+            match calling {
+                Calling::Juxtaposed => snippet.push(' '),
+                Calling::Applied if stop > 1 => snippet.push_str(", "),
+                Calling::Applied => {},
             }
             let written = self
                 .label
@@ -411,9 +508,23 @@ impl Signature
             escape_into(&mut snippet, SourceText::from(held));
             snippet.push('}');
         }
-        snippet.push_str(")$0");
+        if calling == Calling::Applied {
+            snippet.push(')');
+        }
+        snippet.push_str("$0");
         Some(snippet)
     }
+}
+
+/// How a call is written: a value's call as a juxtaposed spine, `f x y`, a
+/// family's application in its parentheses, `List(a)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Calling
+{
+    /// `f x y`.
+    Juxtaposed,
+    /// `List(a)`.
+    Applied,
 }
 
 /// One head: the source holding its name and the name's span in that source's
@@ -1590,9 +1701,9 @@ fn entries(
 }
 
 /// Each parameter the function type at `at` takes, read through the thunks
-/// and parentheses around it, outermost first: the domain of each `->`,
-/// undocumented, and each entry of the parenthesised telescope before each
-/// `=>`; none when `at` is no function type.
+/// and parentheses around it, outermost first: each entry of the
+/// parenthesised telescope before each `->`, with its documentation, or the
+/// domain whole when it is no telescope; none when `at` is no function type.
 ///
 /// # Specification
 /// trivial.
@@ -1617,15 +1728,6 @@ fn domains(
                 at = inner;
             },
             (ARROW, &[domain, .., codomain]) => {
-                found.extend(tree.node(domain).map(|node| Entry {
-                    span: node.span(),
-                    named: None,
-                    documentation: None,
-                }));
-                function = Some(());
-                at = codomain;
-            },
-            (VALUE_ARROW, &[domain, .., codomain]) => {
                 found.extend(telescope(grammar, tree, domain));
                 function = Some(());
                 at = codomain;
@@ -1795,27 +1897,25 @@ fn telescope(
 ///
 /// # Specification
 /// - requires: `reading` and `hovering` were read off `text`.
-/// - ensures: for the innermost call whose arguments hold the position, read
-///   back over the whitespace before it so a call the parser closed at the end
-///   of what is written still holds the blank typed after it ([`Calls::at`]),
-///   when the type table refers its head's first byte to a declaration or
-///   constructor whose head the hovering keeps: that head as the one signature,
-///   active, with its documentation as markdown, each parameter as its start
-///   and end in the label counted in UTF-16 code units when `offsets` holds or
-///   as its text otherwise, with the documentation written before it as
-///   markdown when it has any, and the argument the position writes as the
-///   active parameter, `null` past the last parameter; Nothing otherwise.
+/// - ensures: for the innermost call whose arguments hold the position
+///   ([`Calls::at`]), when the type table refers its head's first byte to a
+///   declaration or constructor whose head the hovering keeps: that head as the
+///   one signature, active, with its documentation as markdown, each parameter
+///   as its start and end in the label counted in UTF-16 code units when
+///   `offsets` holds or as its text otherwise, with the documentation written
+///   before it as markdown when it has any, and the argument the position
+///   writes as the active parameter, `null` past the last parameter; Nothing
+///   otherwise.
 /// - provides: the answer to `textDocument/signatureHelp`.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a function's call at each argument, a constructor applied
-///   to no field yet, a nested call, a position past the last parameter, a call
-///   of a sibling's declaration, a call typed before its close and a position
-///   in no call are each asserted at their exact answer.
+/// - hypothesis: L3 — a function's juxtaposed call at each argument, a
+///   constructor applied to no field yet, a nested call, a position past the
+///   last parameter, a call of a sibling's declaration and a position in no
+///   call are each asserted at their exact answer.
 /// - witness: `server::tests::signature_help_answers_the_declared_head_of_the_call`
-/// - witness: `server::tests::signature_help_answers_inside_a_call_typed_before_its_close_843`
 /// - witness: `tests::session::signature_help_reads_a_sibling_s_head`
 /// - witness: `server::tests::signature_help_sends_a_parameter_s_documentation_1116`
 #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Signatures(_)))]
@@ -1828,14 +1928,8 @@ pub fn help(
     offsets: LabelOffsets,
 ) -> Answer
 {
-    let written = <&str>::from(text);
-    let index = LineIndex::new(written.into());
-    let at = usize::from(position.byte(&index));
-    let at = ByteOffset::from(
-        written
-            .get(.. at)
-            .map_or(at, |before| before.trim_end().len()),
-    );
+    let index = LineIndex::new(<&str>::from(text).into());
+    let at = ByteOffset::from(usize::from(position.byte(&index)));
     let Some((head, argument)) = reading.call_at(at)
     else {
         return Answer::Nothing;
@@ -2015,49 +2109,44 @@ mod tests
         };
         let answer = |head: &str, argument: usize| Some((String::from(head), argument));
         assert_eq!(
-            called(CALLED, "Zero), Zero)"),
+            called(CALLED, "Zero) Zero"),
             answer("Succ", 0),
-            "a call nested in an argument answers itself"
+            "a spine nested in an argument answers itself"
         );
         assert_eq!(
-            called(CALLED, ", Zero) }"),
+            called(CALLED, " Zero }"),
             answer("plus", 0),
-            "just before a comma, the argument it ends"
+            "just past an argument, the argument it ends"
         );
         assert_eq!(
-            called(CALLED, "Zero) }"),
+            called(CALLED, "Zero }"),
             answer("plus", 1),
-            "past a comma, the argument after it"
-        );
-        assert_eq!(
-            called(CALLED, ") }"),
-            answer("plus", 1),
-            "just before the closing parenthesis, the call it closes"
+            "at the next argument, that argument"
         );
         assert_eq!(
             called(CALLED, " } ;\ndata List"),
-            None,
-            "past the closing parenthesis, no call"
+            answer("plus", 1),
+            "just past the last argument, the spine it ends"
         );
         assert_eq!(
-            called(CALLED, "plus(Succ"),
+            called(CALLED, "} ;\ndata List"),
             None,
-            "on the head, not the call it heads"
+            "past the spine, no call"
         );
         assert_eq!(
-            called(CALLED, "p))"),
+            called(CALLED, "plus (Succ"),
+            None,
+            "on the head, not the spine it heads"
+        );
+        assert_eq!(
+            called(CALLED, "p)\ndef f"),
             answer("plus[<]", 1),
             "a recursive call, headed by its claim"
         );
         assert_eq!(
-            called(CALLED, "a)\n}"),
+            called(CALLED, "a)\n"),
             answer("List", 0),
             "a family's application in a type"
-        );
-        assert_eq!(
-            called("def g = thunk { plus(Zero, \n} ;\n", "\n} ;"),
-            answer("plus", 1),
-            "a call the parser closed holds the rest of its form"
         );
     }
 
@@ -2141,7 +2230,7 @@ mod tests
             head("f", "f : +U (Nat -> -F Nat)", &["Nat"], None),
             head(
                 "r",
-                "r : #{ sub : +U (Nat -> Nat -> -F Type), subTm : (g : Nat, t : sub(g, g)) => Nat }",
+                "r : *{ sub : +U (Nat -> Nat -> -F Type), subTm : (g : Nat, t : sub(g, g)) -> Nat }",
                 &[],
                 None
             ),
@@ -2153,7 +2242,7 @@ mod tests
             ),
             head(
                 "subTm",
-                "subTm : (g : Nat, t : sub(g, g)) => Nat",
+                "subTm : (g : Nat, t : sub(g, g)) -> Nat",
                 &["g : Nat", "t : sub(g, g)"],
                 None
             ),
@@ -2310,18 +2399,18 @@ mod tests
             (
                 "f",
                 "f : (x : Nat) -> -F Nat",
-                Vec::from([("(x : Nat)", None)]),
+                Vec::from([("x : Nat", Some("The argument."))]),
                 None
             ),
             (
                 "use",
-                "use(h : (i : Nat) => Nat) -> -F Nat",
-                Vec::from([("h : (i : Nat) => Nat", None)]),
+                "use(h : (i : Nat) -> Nat) -> -F Nat",
+                Vec::from([("h : (i : Nat) -> Nat", None)]),
                 None
             ),
             (
                 "h",
-                "h : (i : Nat) => Nat",
+                "h : (i : Nat) -> Nat",
                 Vec::from([("i : Nat", Some("The index."))]),
                 None
             ),
@@ -2333,6 +2422,7 @@ mod tests
             .collect();
         assert_eq!(documented, [
             ("n", "The predecessor."),
+            ("x", "The argument."),
             ("p", "The pair."),
             ("i", "The index.")
         ]);

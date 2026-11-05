@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc c740022c258eb07c019d8ad3ca4f3529e5cbaf3a8afa4ed040ae1d1529f1ff24 # shrinks to parts = [""], replacement = "~\0", start = Index(0), length = 0
+cc 407d43216fb5ed5aa9c08468364673ba1b49420b3e903e825979128d07783aba # shrinks to parts = ["/* c /* n */ */", "def f(x : A) -> A =\n  l", "def f(x : A) -> A =\n  let y = x\n  y\n", "theory S where\n  sort A : T", "\0��\0\0����\0\0��", "��\0\0�\0���\0\0\0\0�\0��\0�", "{\n  a\n  b }", "\0\0\0\0\0\0\0\0�\0\0\0��\0\0\0\0�", "\0�\0\0�\0\0\0\0\0�\0�"], replacement = "def f(x : A) -> A =", start = Index(4027673378539203410), length = 23

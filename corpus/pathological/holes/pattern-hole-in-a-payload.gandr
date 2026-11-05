@@ -4,20 +4,17 @@
 // - see: #391 — `describe`
 
 /// An integer, or none.
-data Maybe : Type where {
+data Maybe : Type where
   | Nothing : Maybe
   | Just : (x : Integer) --> Maybe
-}
 
 /// The hole stands for `Just`'s payload.
 @[ refuses("UndecidedCoverage") ]
-def describe(m : Maybe) -> Integer {
-  match m {
-    Just(?) => 100,
-    Nothing => 200
-  }
-}
+def describe(m : Maybe) -> Integer =
+  match m
+    | Just(?) => 100
+    | Nothing => 200
 
 /// `Just(3)` described: it checks against `describe`'s signature, whose body
 /// is refused above, so it is not run.
-def described() -> Integer { describe(Just(3)) }
+def described() -> Integer { describe (Just 3) }

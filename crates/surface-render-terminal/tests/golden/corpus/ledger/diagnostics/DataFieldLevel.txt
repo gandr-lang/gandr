@@ -1,7 +1,7 @@
 error[DataFieldLevel]: a constructor field lives in a larger universe than its datatype
   ╭▸ corpus/ledger/diagnostics/DataFieldLevel.gandr:4:17
   │
-3 │ data Small : Type where {
+3 │ data Small : Type where
   │              ──── the type it is checked against
 4 │   | Pick : (a : Type, f : +U (a -> -F Small)) --> Small
   │                 ━━━━ above the declared universe

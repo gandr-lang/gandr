@@ -3,7 +3,6 @@
 ///
 /// - owes: #1501
 @[ refuses("OutOfFragment.acquire_expression") ]
-def acquired(rounds : Integer) -> -F Unit {
-  let seat = acquire(rounds);
-  return unit
-}
+def acquired(rounds : Integer) -> -F Unit =
+  let seat = acquire(rounds)
+  return *{}

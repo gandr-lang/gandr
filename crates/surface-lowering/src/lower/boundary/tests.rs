@@ -40,7 +40,7 @@ const DATA: &str = concat!(
     "data Row : Type where { | Row : (result : Code) --> Row }\n",
     "data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }\n",
     "data Admission : Type where { | Admitted : Admission }\n",
-    "def addRow : Row = Row(Plain(U32));\n",
+    "def addRow : Row = Row (Plain U32);\n",
 );
 
 /// The call a boundary check makes.

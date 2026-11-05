@@ -1,7 +1,7 @@
 error[FillUncertified]: `fill` needs a stratum the chain sub-site certifies
-   ╭▸ corpus/ledger/diagnostics/FillUncertified.gandr:36:3
+   ╭▸ corpus/ledger/diagnostics/FillUncertified.gandr:32:3
    │
-32 │   def uncertified(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Pa…
+28 │   def uncertified(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Pa…
    │   │               ┬         ┬      ┬      ┬      ┬─                       ┬─                       ┬─                                          ─ checked; while checking the body of this function; binds g : Path[.A = A](y, z)
    │   │               │         │      │      │      │                        │                        │
    │   │               │         │      │      │      │                        │                        checked; while checking the body of this function; binds fa : Path[.A = Path[.A = A](x, y)](fm, fp)
@@ -12,13 +12,14 @@ error[FillUncertified]: `fill` needs a stratum the chain sub-site certifies
    │   │               │         checked; while checking the body of this function; binds x : A
    │ ┌─┘               checked; while checking the body of this function; binds A : Type
    │ │
-33 │ │   Path.step(Path.here(Path.step(fm, g)), whiskered(A, x, y, z, fm, fp, fa, g)),
-34 │ │   Path.step(whiskered(A, x, y, z, fm, fp, fa, g), Path.here(Path.step(fp, g)))
-35 │ │ ) {
-36 │ │   fill[0, 7](chain(2), selfComposite(A, x, y, z), (fa, g))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a stratum the chains do not certify
-37 │ │ }
-   │ └─┘ checked; while checking the body of this thunk
+29 │ │   Path.step (Path.here (Path.step fm g)) (whiskered A x y z fm fp fa g),
+30 │ │   Path.step (whiskered A x y z fm fp fa g) (Path.here (Path.step fp g))
+31 │ │ ) =
+32 │ │   fill[0, 7] (chain 2) (selfComposite A x y z) (fa, g)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│──────────────────────────────────────────────────┤
+   │     │                                                  checked; while checking the body of this thunk
+   │     a stratum the chains do not certify
    │
    ├ note: `uncertified` is refused with FillUncertified, as its expectation states
    ╰ note: tracked by #312 <https://github.com/gandr-lang/gandr/issues/312>

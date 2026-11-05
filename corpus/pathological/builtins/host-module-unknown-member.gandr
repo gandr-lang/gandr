@@ -6,4 +6,4 @@
 
 /// `fs.copy`, an operation `fs` does not have.
 @[ refuses("OutOfFragment.projection_expression") ]
-def copied = fs.copy("/a", "/b");
+def copied = fs.copy "/a" "/b";

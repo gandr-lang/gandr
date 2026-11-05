@@ -21,9 +21,8 @@ def whiskerRight(
   f2 : Path(x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path(y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
-  Path.ap(fun (q) { Path.step(q, g) }, a)
-}
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
+  Path.ap (fun (q) { Path.step q g }) a
 
 /// The whisker composed with a reflexivity: `Path.ap` stands under
 /// `Path.step`, where no path type is stated.
@@ -36,9 +35,8 @@ def whiskerThenHere(
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path(y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g)) {
-  Path.step(Path.ap(fun (q) { Path.step(q, g) }, a), Path.here(Path.step(f2, g)))
-}
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
+  Path.step (Path.ap (fun (q) { Path.step q g }) a) (Path.here (Path.step f2 g))
 
 /// The whisker as an endpoint of a stated path type: its reflexivity.
 def whiskerHere(
@@ -50,12 +48,11 @@ def whiskerHere(
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path(y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g))](
-  Path.ap(fun (q) { Path.step(q, g) }, a),
-  Path.ap(fun (q) { Path.step(q, g) }, a)
-) {
-  Path.here(Path.ap(fun (q) { Path.step(q, g) }, a))
-}
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g)](
+  Path.ap (fun (q) { Path.step q g }) a,
+  Path.ap (fun (q) { Path.step q g }) a
+) =
+  Path.here (Path.ap (fun (q) { Path.step q g }) a)
 
 /// The whisker's reflexivity again, its binder stating the type of the path's
 /// points.
@@ -68,9 +65,8 @@ def whiskerStatedHere(
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   g : Path(y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(f1, g), Path.step(f2, g))](
-  Path.ap(fun (q : Path[.A = A](x, y)) { Path.step(q, g) }, a),
-  Path.ap(fun (q : Path[.A = A](x, y)) { Path.step(q, g) }, a)
-) {
-  Path.here(Path.ap(fun (q : Path[.A = A](x, y)) { Path.step(q, g) }, a))
-}
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g)](
+  Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a,
+  Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a
+) =
+  Path.here (Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a)

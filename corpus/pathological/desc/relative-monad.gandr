@@ -9,20 +9,18 @@ import std.list (List);
 /// continuation `k` is lost. Against the left unit law at `ext(ext(ret(a), k),
 /// l)`, one rule leaves `l(a)` and the other `ext(k(a), l)`.
 @[ refuses("RulesOverlapSecondOrder") ]
-theory MonadLossy where {
+theory MonadLossy where
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
   oper ext : (m : C, k : pi+ (x : V). C) --> C;
-  rule unitL : ext(ret(a), k) <=> k(a);
-  rule lossy : ext(ext(m, k), l) <=> ext(m, l);
-}
+  rule unitL : ext (ret a) k <=> k a;
+  rule lossy : ext (ext m k) l <=> ext m l;
 
 /// The carrier into the computation types.
-theory Carrier where {
+theory Carrier where
   /// A family from the host's types into the computation types.
   sort T(A : Type) : Type[-];
-}
 
 /// Lists answer it as a family into the value types, which `Type[-]` does
 /// not classify.
@@ -33,10 +31,9 @@ module ValueCarrier : Model(Carrier) where {
 }
 
 /// A carrier into the value types.
-theory ValueSort where {
+theory ValueSort where
   /// A family from the host's types into the value types.
   sort T(A : Type) : Type;
-}
 
 /// Returned lists answer it as a family into the computation types, which
 /// `Type` does not classify.

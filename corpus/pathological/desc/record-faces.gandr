@@ -16,15 +16,13 @@ module Faces where {
   /// `bad` holds `cert`, which the record does not label: the face is refused
   /// at the label (`FaceOutsideShape`).
   @[ refuses("IllFormedDescription") ]
-  type Outside = #{host : String, port : Integer} where {
+  type Outside = *{host : String, port : Integer} where
     face bad = { port, cert };
-  }
 
   /// The block names `addr` twice: the second is refused at its name
   /// (`DuplicateFaceName`).
   @[ refuses("IllFormedDescription") ]
-  type Twice = #{host : String, port : Integer} where {
+  type Twice = *{host : String, port : Integer} where
     face addr = { host };
     face addr = { port };
-  }
 }

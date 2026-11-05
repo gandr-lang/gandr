@@ -14,64 +14,58 @@
 import "./circle-base.gandr";
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
-def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A](x, y)) => Path[.A = Path[.A = A](x, y)](
+def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A](x, y)) -> Path[.A = Path[.A = A](x, y)](
   f,
   f
-) {
-  thunk { fun (f) { Path.here(f) } }
-}
+) =
+  thunk { fun (f) { Path.here f } }
 
 /// The generator's filler over a `Path.here` cell is `Path.here` of its side, where a
 /// type holds it.
 def generatedIsHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, x)](
-  Path.here(x),
-  Path.here(x)
+  Path.here x,
+  Path.here x
 )](
-  Path.here(Path.here(x)),
-  Path.here(Path.here(x))
+  Path.here (Path.here x),
+  Path.here (Path.here x)
 )](
-  fill[1, 3](chain(1), selfLoop(A, x, x), (Path.here(Path.here(x)))),
-  Path.here(Path.here(Path.here(x)))
-) {
-  Path.here(Path.here(Path.here(Path.here(x))))
-}
+  fill[1, 3] (chain 1) (selfLoop A x x) (Path.here (Path.here x)),
+  Path.here (Path.here (Path.here x))
+) =
+  Path.here (Path.here (Path.here (Path.here x)))
 
 /// The generator's filler: `Path.walk` over it, with a `Path.here` input, reduces
 /// to its base.
 def overGenerated(
   A : Type,
   x : A,
-  v : Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](
-    Path.here(Path.here(x)),
-    Path.here(Path.here(x))
+  v : Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](
+    Path.here (Path.here x),
+    Path.here (Path.here x)
   )
-) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](
-  Path.here(Path.here(x)),
-  Path.here(Path.here(x))
+) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](
+  Path.here (Path.here x),
+  Path.here (Path.here x)
 )](
-  Path.walk(
-    fun (s) { type(Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](s, s)) },
-    fill[1, 3](chain(1), selfLoop(A, x, x), (Path.here(Path.here(x)))),
-    v
-  ),
+  Path.walk (fun (s) {
+    type(Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](s, s))
+  }) (fill[1, 3] (chain 1) (selfLoop A x x) (Path.here (Path.here x)))
+    v,
   v
-) {
-  Path.here(v)
-}
+) =
+  Path.here v
 
 /// A composite of `Path.here` cells: `Path.walk` over it reduces to its base.
-def overComposite(A : Type, M : A => Type, x : A, v : M(x)) -> Path[.A = M(x)](
-  Path.walk(fun (a) { M(a) }, compose[3, 5](chain(2), (Path.here(x), Path.here(x))), v),
+def overComposite(A : Type, M : A -> Type, x : A, v : M(x)) -> Path[.A = M(x)](
+  Path.walk (fun (a) { M a }) (compose[3, 5] (chain 2) (Path.here x, Path.here x)) v,
   v
-) {
-  Path.here(v)
-}
+) =
+  Path.here v
 
 /// A carried cell: `Path.walk` over the circle's `loop` stays stuck by name.
 @[ refuses("EndpointMismatch") ]
 def overCarried(
-  M : Circle => Type,
+  M : Circle -> Type,
   v : M(Base)
-) -> Path[.A = M(Base)](Path.walk(fun (c) { M(c) }, loop, v), v) {
-  Path.here(v)
-}
+) -> Path[.A = M(Base)](Path.walk (fun (c) { M c }) loop v, v) =
+  Path.here v

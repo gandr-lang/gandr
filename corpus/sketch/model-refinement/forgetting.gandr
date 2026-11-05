@@ -16,42 +16,38 @@
 import "counters.gandr";
 
 /// A counter of integers, its counts fixed.
-def ints : Model(Counter) with { sort C = Integer } = #{
+def ints : Model(Counter) with { sort C = Integer } = *{
   .zero = 0,
   .incr = fun (n) { n + 1 },
   .read = fun (n) { n }
 };
 
 /// A reader that treats the counts as abstract.
-def readOnce(c : Model(Counter)) -> Integer {
-  c.read(c.incr(c.zero))
-}
+def readOnce(c : Model(Counter)) -> Integer =
+  c.read (c.incr c.zero)
 
 /// The argument forgets the fixed sort, and the checker inserts the map.
-def readInts() -> Integer {
-  readOnce(ints)
-}
+def readInts() -> Integer =
+  readOnce ints
 
 /// The map the checker inserts, printed.
-def readIntsExplicit() -> Integer {
-  readOnce(forget(ints) at Model(Counter))
-}
+def readIntsExplicit() -> Integer =
+  readOnce(forget ints at Model Counter)
 
 /// An existential: a seed and a reading over a type nobody outside names.
-def opaqueSeed : Model(#{ type T; read : T -> Integer; seed : T }) = #{
+def opaqueSeed : Model(*{ type T; read : T -> Integer; seed : T }) = *{
   .T = String,
   .read = length,
   .seed = "seed"
 };
 
 /// Opening the existential: its type is fresh at this opening.
-def seedLength() -> Integer {
-  module s = opaqueSeed;
-  s.read(s.seed)
-}
+def seedLength() -> Integer =
+  module s = opaqueSeed
+  s.read s.seed
 
 /// Sealing mints one atom, so every use of `Tally.C` is one type.
-module Tally :> Counter where {
+module Tally :> Counter where
   /// The counts, hidden behind the seal.
   type C = Integer;
   /// Zero.
@@ -60,4 +56,3 @@ module Tally :> Counter where {
   def incr(n : Integer) -> Integer { n + 1 }
   /// The count itself.
   def read(n : Integer) -> Integer { n }
-}

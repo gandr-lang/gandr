@@ -5,13 +5,12 @@ import std.io;
 
 /// A buffer allocated and never freed.
 @[ refuses("BufferUnreturned") ]
-def neverFreed() -> -F Unit {
+def neverFreed() -> -F Unit =
   handle r : std.io.Ring.Eff {
-    let b = r.alloc(4096);
-    pure unit
+    let b = r.alloc 4096;
+    pure *{}
   } with {
-    pure(x) => pure x,
-    oper alloc(n, b, k) => k(b),
-    oper free(b, k) => k(unit)
+    | pure(x) => pure x
+    | oper alloc(n, b, k) => k b
+    | oper free(b, k) => k *{}
   }
-}

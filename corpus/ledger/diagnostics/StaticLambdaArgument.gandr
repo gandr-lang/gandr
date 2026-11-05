@@ -1,8 +1,8 @@
 /// `StaticLambdaArgument`: a type operator passed where a dynamic parameter needs a value.
-@[ runs("fun (a) { unit }") ]
-def use(f : Type -> Type) -> -F Unit { return unit }
+@[ runs("fun (a) { *{} }") ]
+def use(f : Type -> Type) -> -F Unit { return *{} }
 
 @[ refuses("StaticLambdaArgument") ]
 def at_a_dynamic_parameter : +U (-F Unit) ;
 
-def at_a_dynamic_parameter = thunk { use(fun (X) { type(#{X, X}) }) } ;
+def at_a_dynamic_parameter = thunk { use (fun (X) { type(*{X, X}) }) } ;

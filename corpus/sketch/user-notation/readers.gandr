@@ -19,22 +19,18 @@ import std.json (Json);
 /// JSON written in place: the token tree becomes a `Json` value, each
 /// `${e}` a value the program supplies.
 @[reader]
-pub def #json(src : Tokens) -> Quote(Json) {
-  jsonFromTokens(src)
-}
+pub def #json(src : Tokens) -> Quote(Json) =
+  jsonFromTokens src
 
 /// A service's configuration, its name supplied by the caller.
-pub def config(name : String) -> Json {
+pub def config(name : String) -> Json =
   #json{ "name": ${name}, "port": 8080, "tags": ["internal", "v2"] }
-}
 
 /// The automaton of a regular expression, read once at elaboration time.
 @[reader]
-pub def #re(src : Text) -> Quote(Regex) {
-  compileRegex(src)
-}
+pub def #re(src : Text) -> Quote(Regex) =
+  compileRegex src
 
 /// Whether a line is an ISO date.
-pub def isDate(line : String) -> Bool {
-  #re"^[0-9]{4}-[0-9]{2}-[0-9]{2}$".matches(line)
-}
+pub def isDate(line : String) -> Bool =
+  #re"^[0-9]{4}-[0-9]{2}-[0-9]{2}$".matches line

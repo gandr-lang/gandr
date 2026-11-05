@@ -14,13 +14,13 @@
 //! side as a cut of a value against an operation frame, so a rule whose
 //! left-hand side applies an operation where that value stands has no sequent
 //! cell. It is read over terms instead: a `theory` block's law,
-//! `turn(unturn(x)) ==> x`, under the shape reading (`elaborate_theory_desc`),
-//! and a `data` family's rule, `add(add(m, n), k) ==> add(m, add(n, k))`, under
+//! `turn (unturn x) ==> x`, under the shape reading (`elaborate_theory_desc`),
+//! and a `data` family's rule, `add (add m n) k ==> add m (add n k)`, under
 //! the generative one, as a law of the family that no arm of its operation's
 //! body runs. A law over an indexed sort is read with the indices its sorting
 //! fixes; one the block gives no sorting stays refused at its span. A face
 //! whose left-hand side is a constructor application — a presented type's rule,
-//! `Loop(Unloop(x)) ==> x` — is no operation redex and has no sequent cell
+//! `Loop (Unloop x) ==> x` — is no operation redex and has no sequent cell
 //! either; it is read over terms too (`DeclarationCells::presented`), where it
 //! rewrites a value wherever the value stands. A `data` operation whose rules
 //! compile runs as a declaration of the module, returning its results as one

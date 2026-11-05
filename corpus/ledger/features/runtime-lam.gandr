@@ -13,10 +13,9 @@
 import "../../model/runtime/exclusive-update.gandr";
 
 /// The second view reads what the first wrote back.
-@[ runs("Pair(3, 2)") ]
-def bumpedTwice() -> Pair {
-  var[1] p = Pair(1, 2);
-  access p as v { let q = bump(v); resume(v, q) };
-  access p as v { let q = bump(v); resume(v, q) };
-  p.take()
-}
+@[ runs("Pair 3 2") ]
+def bumpedTwice() -> Pair =
+  var[1] p = Pair 1 2
+  access p as v { let q = bump v; resume(v, q) };
+  access p as v { let q = bump v; resume(v, q) };
+  p.take ()

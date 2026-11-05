@@ -1,8 +1,8 @@
 error[PointwiseDistinct]: `Path.funext` needs both functions to agree at every input: return the same value, or apply their function argument at the same input
-   ╭▸ corpus/ledger/diagnostics/PointwiseDistinct.gandr:18:20
+   ╭▸ corpus/ledger/diagnostics/PointwiseDistinct.gandr:15:20
    │
-18 │ def not_identity = Path.funext(not, same) ;
-   │                    ━━━━━━━━━━━━━━━━━━━━━━ functions that differ at some input
+15 │ def not_identity = Path.funext not same ;
+   │                    ━━━━━━━━━━━━━━━━━━━━ functions that differ at some input
    │
    ├ note: `not_identity` is refused with PointwiseDistinct, as its expectation states
    ╰ help: make both functions return the same value at every input

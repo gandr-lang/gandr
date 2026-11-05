@@ -15,51 +15,41 @@
 //! [McBride-2002-elimination_motive]: https://doi.org/10.1007/3-540-45842-5_13 "McBride, Elimination with a Motive"
 
 /// The naturals.
-data Nat : Type where {
+data Nat : Type where
   /// Zero.
   | Zero : Nat
   /// One past a natural.
   | Succ : (n : Nat) --> Nat
-}
 
 /// A universe of two codes.
-data UQ : Type where {
+data UQ : Type where
   /// The code of the naturals.
   | NatQ : UQ
   /// The code of the unit type.
   | UnitQ : UQ
-}
 
 /// The type each code decodes to.
-def elQ(u : UQ) -> Type {
-  match u {
-    NatQ => return Nat,
-    UnitQ => return Unit
-  }
-}
+def elQ(u : UQ) -> Type =
+  match u
+    | NatQ => return Nat
+    | UnitQ => return Unit
 
 /// A value at each code: the goal reads the arm's code.
-def pick(u : UQ) -> elQ(u) {
-  match u {
-    NatQ => Zero,
-    UnitQ => unit
-  }
-}
+def pick(u : UQ) -> elQ(u) =
+  match u
+    | NatQ => Zero
+    | UnitQ => *{}
 
 /// A value beside its code, read back as a natural. The `NatQ` arm reads `v`
 /// at `elQ(NatQ)`, which decodes to `Nat`.
-def back(u : UQ, v : elQ(u)) -> Nat {
-  match u {
-    NatQ => v,
-    UnitQ => Zero
-  }
-}
+def back(u : UQ, v : elQ(u)) -> Nat =
+  match u
+    | NatQ => v
+    | UnitQ => Zero
 
 /// A value beside its code, at the code's decode. Each arm reads `v` at its
 /// own code.
-def same(u : UQ, v : elQ(u)) -> elQ(u) {
-  match u {
-    NatQ => v,
-    UnitQ => v
-  }
-}
+def same(u : UQ, v : elQ(u)) -> elQ(u) =
+  match u
+    | NatQ => v
+    | UnitQ => v

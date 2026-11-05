@@ -20,6 +20,5 @@ import std.authority (Authority, console);
 import std.io (print);
 
 /// The entry: it opens the console from its authority and prints its greeting.
-def main(authority : Authority) -> [std.io.Console.Eff] Unit {
-  print(console(authority), "hello, world!")
-}
+def main(authority : Authority) -> [std.io.Console.Eff] Unit =
+  print (console authority) "hello, world!"

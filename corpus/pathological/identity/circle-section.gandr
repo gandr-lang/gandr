@@ -5,47 +5,40 @@
 // cancellation are two different paths.
 
 /// The circle: one point and a loop at it.
-data Circle : Type where {
+data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
-}
 
 /// The integers, presented by their two cancellations.
 data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S(P(x)) ==> x;
-  rule : P(S(x)) ==> x;
+  rule : S (P x) ==> x;
+  rule : P (S x) ==> x;
 }
 
 /// The winding number: a loop counts one up, its inverse one down.
-def rec wind(p : Path[.A = Circle](Base, Base)) -> Int {
-  match p {
-    here => Z,
-    loop ∷ q => S(wind[<](q)),
-    back(loop) ∷ q => P(wind[<](q))
-  }
-}
+def rec wind(p : Path[.A = Circle](Base, Base)) -> Int =
+  match p
+    | here => Z
+    | loop ∷ q => S (wind[<] q)
+    | back(loop) ∷ q => P (wind[<] q)
 
 /// Spinning: a successor is a loop, a predecessor its inverse.
-def rec spin(n : Int) -> Path[.A = Circle](Base, Base) {
-  match n {
-    Z => Path.here(Base),
-    S(x) => loop ∷ spin[<](x),
-    P(x) => back(loop) ∷ spin[<](x)
-  }
-}
+def rec spin(n : Int) -> Path[.A = Circle](Base, Base) =
+  match n
+    | Z => Path.here Base
+    | S(x) => loop ∷ spin[<] x
+    | P(x) => back loop ∷ spin[<] x
 
 /// One loop more.
-def loopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {
+def loopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
   loop ∷ p
-}
 
 /// One inverse loop more.
-def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {
-  back(loop) ∷ p
-}
+def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
+  back loop ∷ p
 
 /// A forged section: the loop arm answers with the rest's path unchanged,
 /// typed at the motive at `q`, where the arm owes the motive at `loop ∷ q`:
@@ -53,15 +46,13 @@ def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base)
 /// not convert, and the arm is refused.
 @[ refuses("TypeMismatch") ]
 def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  spin(wind(p)),
+  spin (wind p),
   p
-) {
-  match p {
-    here => Path.here(Path.here(Base)),
-    loop ∷ q => forged[<](q),
-    back(loop) ∷ q => { let ih = forged[<](q); Path.ap(unloopOn, ih) }
-  }
-}
+) =
+  match p
+    | here => Path.here (Path.here Base)
+    | loop ∷ q => forged[<] q
+    | back(loop) ∷ q => { let ih = forged[<] q; Path.ap unloopOn ih }
 
 /// A path at every loop whose inverse arm drops its rest's path: each arm
 /// checks at its letter, but at `loop ∷ back(loop) ∷ q` the loop arm carries
@@ -72,10 +63,8 @@ def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle]
 def rec rewound(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
   p,
   p
-) {
-  match p {
-    here => Path.here(Path.here(Base)),
-    loop ∷ q => { let ih = rewound[<](q); Path.ap(loopOn, ih) },
-    back(loop) ∷ q => Path.here(back(loop) ∷ q)
-  }
-}
+) =
+  match p
+    | here => Path.here (Path.here Base)
+    | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
+    | back(loop) ∷ q => Path.here (back loop ∷ q)

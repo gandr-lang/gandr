@@ -1,5 +1,4 @@
 /// `binary_expression.add.minus`: subtraction.
 @[ checks ]
-def difference() -> -F Integer {
+def difference() -> -F Integer =
   return 3 - 1
-}

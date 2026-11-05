@@ -152,12 +152,12 @@ data Tree : Type where {
 }
 def rec sum(t : Tree) -> Integer {
   match t {
-    Leaf(n) => n,
-    Node(l, r) => { let a = sum[<](l); let b = sum[<](r); a + b }
+    | Leaf(n) => n
+    | Node(l, r) => { let a = sum[<] l; let b = sum[<] r; a + b }
   }
 }
-def say(s : String) -> [std.io.Console.Eff] Unit { std.io.Console.print(s) }
-def shout(s : String) -> [std.io.Console.Eff] Integer { let u = say(s); 1 }
+def say(s : String) -> [std.io.Console.Eff] Unit { std.io.Console.print s }
+def shout(s : String) -> [std.io.Console.Eff] Integer { let u = say s; 1 }
 "#,
     );
     assert_eq!(
@@ -178,8 +178,8 @@ fn a_writer_over_a_capability_stays_fused()
 def count(c : Cap { read }) -> Integer { 1 }
 def twice(n : Integer) -> Integer { n + n }
 def both(c : Cap { read }, k : Integer) -> Integer {
-  let a = count(c);
-  let b = twice(k);
+  let a = count c;
+  let b = twice k;
   a + b
 }
 "#,
@@ -207,11 +207,11 @@ fn a_writer_answering_a_kept_value_stays_fused_2954()
 def keptView() -> Integer {
   var s = 3;
   handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w { pure pure w };
+    let k : (() -> Integer) at c = access shared s as w { pure pure w };
     force k
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   }
 }
 "#,

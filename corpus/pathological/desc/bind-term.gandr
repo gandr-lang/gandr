@@ -8,10 +8,9 @@ import "../../model/desc/bind-term.gandr";
 /// abstracts would escape: the description check refuses the abstraction as
 /// misplaced, an ill-formed description.
 @[ refuses("IllFormedDescription") ]
-theory Escape where {
+theory Escape where
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
-  rule leak : par(bind a. nil(), nil()) ==> nil();
-}
+  rule leak : par (bind a. (nil ())) (nil ()) ==> nil ();

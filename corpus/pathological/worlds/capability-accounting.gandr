@@ -9,24 +9,21 @@ import "../../model/worlds/seat-and-operator.gandr";
 /// A second migration to the seat on one capability, refused at the second:
 /// the first spent the one the entry holds.
 @[ refuses("CapabilityMissing") ]
-@[ entry((operator, seat)) ]
-def twice() -> Seat.Report {
+@[ entry(*{operator, seat}) ]
+def twice() -> Seat.Report =
   let first : Seat.Report = migrate [seat] { pure Seat.progress };
   migrate [seat] { pure first }
-}
 
 /// A migration from an entry holding no capability for its world, refused:
 /// the operator stands at its own world with nothing to spend.
 @[ refuses("CapabilityMissing") ]
 @[ entry(operator) ]
-def unheld() -> Seat.Report {
+def unheld() -> Seat.Report =
   migrate [seat] { pure Seat.progress }
-}
 
 /// A migration suspended in a thunk, refused: a thunk may be forced any
 /// number of times, and a capability is spent once.
 @[ refuses("CapabilityCaptured") ]
-@[ entry((operator, seat)) ]
-def suspended() -> () => Seat.Report {
+@[ entry(*{operator, seat}) ]
+def suspended() -> () -> Seat.Report =
   pure thunk { migrate [seat] { pure Seat.progress } }
-}

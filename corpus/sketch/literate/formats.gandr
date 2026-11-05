@@ -20,9 +20,8 @@ pub def alpha : Integer = 90;
 
 /// Composition of two functions, set as a ring.
 @[format(latex = "\\circ", typst = "compose", md = "∘")]
-pub def compose[a : Type, b : Type, c : Type](g : b => c, f : a => b) -> (a => c) {
-  fun (x) { g(f(x)) }
-}
+pub def compose[a : Type, b : Type, c : Type](g : b -> c, f : a -> b) -> (a -> c) =
+  fun (x) { g (f x) }
 
 /// A caption for a figure, in LaTeX's own markup.
 pub def caption : Latex = #latex{ The rotation by $\alpha$ composes with itself. };

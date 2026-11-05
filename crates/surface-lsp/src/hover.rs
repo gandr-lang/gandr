@@ -2205,7 +2205,7 @@ mod tests
                 Maybe::Absent(reason) => panic!("the position hovers nothing: {reason:?}"),
             }
         };
-        let composite = "Path.step(loop, Path.here(Base))";
+        let composite = "Path.step loop (Path.here Base)";
         let ty = format!("Path[.A = Path[.A = Circle](Base, Base)]({composite}, loop)");
         let named = at(line.saturating_add("def jo".len()));
         assert!(
@@ -2256,18 +2256,18 @@ mod tests
         };
         let applied = |call: &str| format!("\n\nthe checker applies\n\n{}", fenced(call.into()));
         for (needle, call) in [
-            ("multiplies(endoMonoid)", "Monoid.Semigroup(endoMonoid)"),
-            ("multiplies(m)", "UnitAndZero.Semigroup(m)"),
+            ("multiplies endoMonoid", "Monoid.Semigroup(endoMonoid)"),
+            ("multiplies m", "UnitAndZero.Semigroup(m)"),
         ] {
-            let shown = at(needle, "multiplies(".len());
+            let shown = at(needle, "multiplies ".len());
             assert!(
                 shown.ends_with(&applied(call)),
                 "`{needle}` names the reduct the checker applies: {shown}"
             );
         }
         for (needle, past) in [
-            ("multiplies(endoManifest)", "multiplies(".len()),
-            ("multiplies(endoMonoid)", 0),
+            ("multiplies endoManifest", "multiplies ".len()),
+            ("multiplies endoMonoid", 0),
         ] {
             let shown = at(needle, past);
             assert!(
@@ -2307,13 +2307,13 @@ mod tests
         let applied = |call: &str| format!("\n\nthe checker applies\n\n{}", fenced(call.into()));
         for (needle, past, call) in [
             (
-                "observe(upManifest)",
-                "observe(".len(),
+                "observe upManifest",
+                "observe ".len(),
                 "forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter)",
             ),
             (
-                "observeShown(upBoth)",
-                "observeShown(".len(),
+                "observeShown upBoth",
+                "observeShown ".len(),
                 "forget[sort C = +{Unit, Bool}, sort R = Integer](upBoth) at Model(ReadCounter)",
             ),
         ] {
@@ -2323,7 +2323,7 @@ mod tests
                 "`{needle}` names the forgetting map the checker applies: {shown}"
             );
         }
-        let shown = at("observe(b)", "observe(".len());
+        let shown = at("observe b", "observe ".len());
         assert!(
             !shown.contains("the checker applies"),
             "`b`, whose carrier is selected off a binder, names no map: {shown}"
@@ -2377,12 +2377,12 @@ mod tests
             ),
             (
                 "a function's name",
-                "def $0f(x: Integer) -> -F Integer { return x }\n",
+                "def $0f(x : Integer) -> -F Integer { return x }\n",
                 Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
             ),
             (
                 "the name of a function the lowering refused",
-                "def $0f(x: Integer) -> -F Integer { let y = return x ; return y }\n",
+                "def $0f(x : Integer) -> -F Integer { let y = return x ; return y }\n",
                 Ok(String::from(
                     "```gandr\nf\n```\n\nrefused: no path reaches this code: every path \
                      through the statement before it exits",
@@ -2390,27 +2390,27 @@ mod tests
             ),
             (
                 "a binder",
-                "def f($0x: Integer) -> -F Integer { return x }\n",
+                "def f($0x : Integer) -> -F Integer { return x }\n",
                 Ok(fenced(SourceText::from("x : Integer"))),
             ),
             (
                 "a use",
-                "def f(x: Integer) -> -F Integer { return $0x }\n",
+                "def f(x : Integer) -> -F Integer { return $0x }\n",
                 Ok(fenced(SourceText::from("x : Integer"))),
             ),
             (
                 "a literal",
-                "def f(x: Integer) -> -F Integer { return 4$02 }\n",
+                "def f(x : Integer) -> -F Integer { return 4$02 }\n",
                 Ok(fenced(SourceText::from("Integer"))),
             ),
             (
                 "the keyword introducing a function",
-                "d$0ef f(x: Integer) -> -F Integer { return x }\n",
+                "d$0ef f(x : Integer) -> -F Integer { return x }\n",
                 Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
             ),
             (
                 "the brace closing a function's body",
-                "def f(x: Integer) -> -F Integer { return x $0}\n",
+                "def f(x : Integer) -> -F Integer { return x $0}\n",
                 Ok(fenced(SourceText::from("f : +U (Integer -> -F Integer)"))),
             ),
             (
@@ -2420,20 +2420,20 @@ mod tests
             ),
             (
                 "a declaration written with a dependent record",
-                "def r$0ing : #{n : Integer, v : Path[.A = Integer](n, n)} ;\ndef ring = #{2, Path.here(2)} \
+                "def r$0ing : *{n : Integer, v : Path[.A = Integer](n, n)} ;\ndef ring = *{2, Path.here 2} \
                  ;\n",
                 Ok(fenced(SourceText::from(
-                    "ring : #{n : Integer, v : Path[.A = Integer](n, n)}",
+                    "ring : *{n : Integer, v : Path[.A = Integer](n, n)}",
                 ))),
             ),
             (
                 "a written computation type",
-                "def f(x: Integer) -> -$0F Integer { return x }\n",
+                "def f(x : Integer) -> -$0F Integer { return x }\n",
                 Ok(fenced(SourceText::from("-F Integer : Type[-]"))),
             ),
             (
                 "a keyword opening a term",
-                "def f(x: Integer) -> -F Integer { ret$0urn x }\n",
+                "def f(x : Integer) -> -F Integer { ret$0urn x }\n",
                 Ok(fenced(SourceText::from("-F Integer"))),
             ),
             (
@@ -2448,14 +2448,14 @@ mod tests
             ),
             (
                 "a mismatched term",
-                "def bad : Integer ;\ndef bad = u$0nit ;\n",
+                "def bad : Integer ;\ndef bad = *$0{} ;\n",
                 Ok(String::from(
                     "```gandr\nUnit\n```\n\nchecked against\n\n```gandr\nInteger\n```",
                 )),
             ),
             (
                 "a term past a refusal in its body",
-                "def g(x: Integer) -> -F Integer { let y = force 1 ; return $0x }\n",
+                "def g(x : Integer) -> -F Integer { let y = force 1 ; return $0x }\n",
                 Ok(fenced(SourceText::from("x : Integer"))),
             ),
             (
@@ -2490,7 +2490,7 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data Flag : Type where {\n  | On : Flag\n  | Off : Flag\n}\ndef decoded(f : Flag) -> -F \
-                 Type { match f { On => return Integer, Off => return Unit } }\ndef kept(f : \
+                 Type { match f { | On => return Integer | Off => return Unit } }\ndef kept(f : \
                  Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n"
             )),
             Ok(fenced(SourceText::from("decoded(f) : Type")))
@@ -2503,7 +2503,7 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data U : Type where {\n  | NatC : U\n  | Arrow : (a : U, b : U) --> U\n}\ndef el(u : U) \
-                 -> -F Type { match u { NatC => return Integer, Arrow(a, b) => return Unit } \
+                 -> -F Type { match u { | NatC => return Integer | Arrow(a, b) => return Unit } \
                  }\ndef k : el(Arrow$0(NatC, NatC)) ;\n"
             )),
             Ok(fenced(SourceText::from("Arrow(NatC, NatC) : U")))
@@ -2526,8 +2526,8 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "module Seed :> #{ type T, zero : T } where {\n  type T = Integer;\n  def zero = \
-                 0;\n}\nmodule Keep(S : #{ type T, zero : T }) :> #{ type T, zero : T } where {\n  type \
+                "module Seed :> *{ type T, zero : T } where {\n  type T = Integer;\n  def zero = \
+                 0;\n}\nmodule Keep(S : *{ type T, zero : T }) :> *{ type T, zero : T } where {\n  type \
                  T = S.T;\n  def zero = S.zero;\n}\nmodule A = Keep(S$0eed) ;\n"
             )),
             Ok(fenced(SourceText::from("module A = Keep(Seed)")))
@@ -2540,8 +2540,8 @@ mod tests
         let call = |marked_at: &str| {
             marked(SourceText::from(
                 format!(
-                    "def quotientOf(c : Integer) -> -F Integer {{\n  let lead = {marked_at}(c, \
-                     64);\n  return lead\n}}\n"
+                    "def quotientOf(c : Integer) -> -F Integer {{\n  let lead = ({marked_at}) c \
+                     64;\n  return lead\n}}\n"
                 )
                 .as_str(),
             ))
@@ -2563,8 +2563,8 @@ mod tests
         assert_eq!(
             marked(SourceText::from(
                 "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef rec size(p : \
-                 Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    here => return 0,\n    \
-                 loop ∷ q => become size[<](q),\n    back$0(loop) ∷ q => become size[<](q)\n  }\n}\n"
+                 Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    | here => return 0\n    \
+                 | loop ∷ q => become size[<] q\n    | back$0(loop) ∷ q => become size[<] q\n  }\n}\n"
             )),
             Ok(fenced(SourceText::from(
                 "back(loop) ∷ q : Path[.A = Circle](Base, Base)"
@@ -2577,8 +2577,8 @@ mod tests
     {
         assert_eq!(
             marked(SourceText::from(
-                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  match b {\n    +{.$00 = u} => \
-                 return +{.1 = u},\n    +{.1 = u} => return +{.0 = u}\n  }\n}\n"
+                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  match b {\n    | +{.$00 = u} => \
+                 return +{.1 = u}\n    | +{.1 = u} => return +{.0 = u}\n  }\n}\n"
             )),
             Ok(fenced(SourceText::from("0 : Unit")))
         );
@@ -2693,7 +2693,7 @@ mod tests
     fn a_deprecated_declaration_hovers_its_note()
     {
         let text = SourceText::from(
-            "/// The answer.\n@[ deprecated(#{ since = \"0.2\", note = \"use `other`\" }) ]\ndef \
+            "/// The answer.\n@[ deprecated(*{ since = \"0.2\", note = \"use `other`\" }) ]\ndef \
              answer = 42 ;\n@[ deprecated ] def bare = 1 ;\ndef other = 2 ;\n",
         );
         assert_eq!(
@@ -2766,21 +2766,21 @@ mod tests
     {
         let text = SourceText::from(
             "theory Lawful where {\n  sort Carrier : Type;\n  oper alike : (a : Carrier, b : Carrier) \
-             --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](alike(a, a), true);\n}\nmodule \
+             --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);\n}\nmodule \
              Host : Model(Lawful) with sort Carrier = Integer where {\n  def alike(a : Integer, b : \
-             Integer) -> Bool { int.eq(a, b) }\n  law refl = ~admitted;\n}\n",
+             Integer) -> Bool { int.eq a b }\n  law refl = ~admitted;\n}\n",
         );
         assert_eq!(
             shown(text, (7.into(), 7.into())),
             Ok(String::from(
-                "```gandr\nrefl : +U ((a : Integer) -> -F Path[.A = Bool](Host.alike(a, a), true))\n```"
+                "```gandr\nrefl : +U ((a : Integer) -> -F Path[.A = Bool](Host.alike a a, true))\n```"
             )),
             "the admitted law"
         );
         assert_eq!(
             shown(text, (3.into(), 7.into())),
             Ok(String::from(
-                "```gandr\nrefl : +U ((a : Carrier) -> -F Path[.A = Bool](alike(a, a), true))\n```"
+                "```gandr\nrefl : +U ((a : Carrier) -> -F Path[.A = Bool](alike a a, true))\n```"
             )),
             "the theory's law"
         );
@@ -2794,8 +2794,8 @@ mod tests
         let text = SourceText::from(
             "theory State where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s : \
              S) . C) --> C;\n}\ndef read() -> Integer {\n  handle st : State with sort S = \
-             Integer {\n    st.get()\n  } with {\n    pure(x) => pure x,\n    oper get(k) => \
-             k(4)\n  }\n}\n",
+             Integer {\n    st.get ()\n  } with {\n    | pure(x) => pure x\n    | oper get(k) => \
+             k 4\n  }\n}\n",
         );
         assert_eq!(
             shown(text, (6.into(), 14.into())),
@@ -2813,7 +2813,7 @@ mod tests
     {
         let text = SourceText::from(
             "theory Tally where {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n}\ndef stepped[s : \
-             Model(Tally)] (c : s.C) -> s.C { s.incr(c) }\n",
+             Model(Tally)] (c : s.C) -> s.C { s.incr c }\n",
         );
         assert_eq!(
             shown(text, (4.into(), 12.into())),
@@ -2857,7 +2857,7 @@ mod tests
             format!("<span style=\"color:var(--vscode-gandr-hover-{role});\">{text}</span>")
         };
         let (text, at) = marker(SourceText::from(
-            "def $0f(x: Integer) -> -F Integer { return x }\n",
+            "def $0f(x : Integer) -> -F Integer { return x }\n",
         ));
         assert_eq!(
             styled(SourceText::from(text.as_str()), at, html),
@@ -2865,13 +2865,13 @@ mod tests
                 "<pre><code>{} : {} {} {}</code></pre>",
                 coloured("functionDef", "f"),
                 coloured("typeBuiltin", "Integer"),
-                coloured("operator", "=&gt;"),
+                coloured("operator", "-&gt;"),
                 coloured("typeBuiltin", "Integer"),
             )),
             "the name in its editor colour, the sugared type in its roles, `>` escaped"
         );
         let (text, at) = marker(SourceText::from(
-            "def f($0x: Integer) -> -F Integer { return x }\n",
+            "def f($0x : Integer) -> -F Integer { return x }\n",
         ));
         assert_eq!(
             styled(SourceText::from(text.as_str()), at, html),
@@ -2941,7 +2941,7 @@ mod tests
         let rec = include_str!("hover/fixtures/rec-group.gandr");
         let succ = fenced(SourceText::from("Succ : (n : NatDiv) --> NatDiv"));
         let family = fenced(SourceText::from("NatDiv : Type"));
-        let rule = fenced(SourceText::from("rule : divmod(m, Zero) ==> (Zero, m)"));
+        let rule = fenced(SourceText::from("rule : divmod m Zero ==> (Zero, m)"));
         let ints = fenced(SourceText::from("module Ints"));
         let group = format!(
             "{}\n\nThe declarations this `rec_block` writes together.",
@@ -2982,14 +2982,14 @@ mod tests
                 Ok(ints.clone()),
             ),
             ("a module's closing brace", module, (3, 0), Ok(ints)),
-            ("a rec group's keyword", rec, (4, 0), Ok(group.clone())),
+            ("a rec group's keyword", rec, (3, 0), Ok(group.clone())),
             (
                 "a rec group's opening brace",
                 rec,
-                (4, 4),
+                (3, 4),
                 Ok(group.clone()),
             ),
-            ("a rec group's closing brace", rec, (7, 0), Ok(group)),
+            ("a rec group's closing brace", rec, (6, 0), Ok(group)),
         ];
         for (position, text, (line, character), expected) in rows {
             assert_eq!(
@@ -3005,7 +3005,7 @@ mod tests
     {
         let data = include_str!("hover/fixtures/natdiv.gandr");
         let theory = include_str!("hover/fixtures/cat.gandr");
-        let rows: [Row<'_>; 14] = [
+        let rows: [Row<'_>; 13] = [
             (
                 "a data family's name",
                 data,
@@ -3041,7 +3041,7 @@ mod tests
                 data,
                 (4, 10),
                 Ok(fenced(SourceText::from(
-                    "divmod : +U (NatDiv -> NatDiv -> -F #{NatDiv, NatDiv})",
+                    "divmod : +U (NatDiv -> NatDiv -> -F *{NatDiv, NatDiv})",
                 ))),
             ),
             (
@@ -3051,16 +3051,10 @@ mod tests
                 Ok(fenced(SourceText::from("oriented left to right"))),
             ),
             (
-                "a rule's pattern variable",
-                data,
-                (4, 16),
-                Ok(fenced(SourceText::from("m : NatDiv"))),
-            ),
-            (
                 "a rule's results",
                 data,
-                (4, 29),
-                Ok(fenced(SourceText::from("#{NatDiv, NatDiv}"))),
+                (4, 27),
+                Ok(fenced(SourceText::from("*{NatDiv, NatDiv}"))),
             ),
             (
                 "a member's keyword",
@@ -3087,16 +3081,14 @@ mod tests
             (
                 "a law's application",
                 theory,
-                (5, 22),
-                Ok(fenced(SourceText::from("Hom(a, a)"))),
+                (5, 20),
+                Ok(fenced(SourceText::from("Hom(a, b)"))),
             ),
             (
                 "a theory member's keyword",
                 theory,
                 (5, 3),
-                Ok(fenced(SourceText::from(
-                    "rule unitL : comp(id(a), f) ==> f",
-                ))),
+                Ok(fenced(SourceText::from("rule unitL : comp (id a) f ==> f"))),
             ),
         ];
         for (position, text, (line, character), expected) in rows {
@@ -3113,7 +3105,7 @@ mod tests
     {
         let model = "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> \
                      M;\n}\n\n/// A semigroup with a unit.\ntheory Monoid where {\n  include \
-                     Semigroup;\n  oper one : () --> M;\n  rule unitL : mul(one(), x) ==> \
+                     Semigroup;\n  oper one : () --> M;\n  rule unitL : mul (one ()) x ==> \
                      x;\n}\n\nmodule Ints : Model(Semigroup) where {\n  type M = Integer;\n  def \
                      mul(x : Integer, y : Integer) -> -F Integer { return y }\n}\n";
         let shaped = "theory Generated where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val \
@@ -3125,7 +3117,7 @@ mod tests
             "{}\n\nA semigroup with a unit.",
             fenced(SourceText::from(
                 "theory Monoid where {\n  include Semigroup;\n  oper one : () --> M;\n  rule unitL : \
-                 mul(one(), x) ==> x;\n}"
+                 mul (one ()) x ==> x;\n}"
             ))
         );
         let module = fenced(SourceText::from("module Ints : Model(Semigroup)"));
@@ -3238,7 +3230,7 @@ mod tests
         let rows = [
             (
                 "a constructor's use",
-                (5, 9),
+                (4, 9),
                 format!(
                     "```gandr\nSucc : (n : Nat) --> Nat\n```\n\nA constructor, written at line \
                      3.\n\n{refused}"
@@ -3246,15 +3238,15 @@ mod tests
             ),
             (
                 "a keyword",
-                (5, 2),
+                (4, 2),
                 format!("```gandr\nreturn\n```\n\nA tile of `return_expression`.\n\n{refused}"),
             ),
             (
                 "a parameter's use inside the refused call",
-                (5, 14),
+                (4, 14),
                 format!(
                     "```gandr\ndef bad(x : Nat) -> -F Nat {{\n```\n\nA binder, written at line \
-                     5.\n\n{refused}"
+                     4.\n\n{refused}"
                 ),
             ),
         ];
@@ -3436,21 +3428,13 @@ mod tests
     {
         let top_level = "stands at a source's top level, where only declarations stand; a program \
                          runs the `main` it declares";
-        let rows: [(&str, &str, String); 6] = [
-            (
-                "a final expression",
-                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame$0(Integer, answer) ;\n",
-                format!(
-                    "{}\n\nrefused: `call_expression`, read as a declaration, {top_level}",
-                    fenced(SourceText::from("same(Integer, answer)"))
-                ),
-            ),
+        let rows: [(&str, &str, String); 5] = [
             (
                 "a final expression's `;`",
-                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame(Integer, answer) $0;\n",
+                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame Integer answer $0;\n",
                 format!(
-                    "{}\n\nrefused: `call_expression`, read as a declaration, {top_level}",
-                    fenced(SourceText::from("same(Integer, answer)"))
+                    "{}\n\nrefused: `identifier`, read as a declaration, {top_level}",
+                    fenced(SourceText::from("answer"))
                 ),
             ),
             (

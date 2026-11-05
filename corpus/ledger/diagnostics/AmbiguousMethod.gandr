@@ -13,6 +13,5 @@ module Narrow where {
 }
 
 @[ refuses("AmbiguousMethod") ]
-def measured(n : Integer) -> -F Integer {
-  n.width()
-}
+def measured(n : Integer) -> -F Integer =
+  n.width ()

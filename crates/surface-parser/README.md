@@ -22,7 +22,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 
 ## Provided features
 
-- `label`, `Token` and `Lexeme`: the total lossless labeler. Witnesses: `label::tests::span_tiling_is_total_and_gapless`, `label::tests::stray_bytes_are_unknown_never_a_panic`, `label::tests::multi_byte_operators_munch_maximally`, `label::tests::bridge_tiles_end_where_their_letter_does`.
+- `label`, `Token` and `Lexeme`: the total lossless labeler. Witnesses: `label::tests::span_tiling_is_total_and_gapless`, `label::tests::stray_bytes_are_unknown_never_a_panic`, `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`.
 - `Labeling`: a source's tokens with where the labeler stood within a mode, and `Labeling::relabel`, the labeling of an edit made from the unedited source's by scanning only around the edit. Witnesses: `label::tests::an_edit_relabels_as_the_edited_source_labels`, `label::tests::a_relabel_restarts_before_what_a_token_read`.
 - `Molder`, `candidate_labels`, `TokenLabels`, `CandidateLabel` and `TokenText`: per-token mold choice by least obligation delta, deterministic across runs. Witnesses: `mold::tests::picks_the_obligation_minimum_mold`, `mold::tests::molding_is_deterministic_across_runs`, `mold::tests::unmoldable_token_takes_the_unmolded_path`.
 - `MoldVerdicts`, `Molder::with_verdicts` and `DisagreementCount`: how a molder reaches its verdicts — by its tables, by a dry run per candidate and a window per tied opener, or both at once, counting every decision where they differ. Witnesses: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`, and the editor scenarios of `gandr-surface-lsp` at every keystroke.

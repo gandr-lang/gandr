@@ -1,5 +1,5 @@
 @[ refuses("UndescribedMember.ParallelRedexes") ]
-theory Cong where {
+theory Cong where
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
 
@@ -13,10 +13,9 @@ theory Cong where {
     node : q(y) ==> (y′);
     node : add(x′, y′) --> (z);
   };
-}
 
 @[ refuses("UndescribedMember.OperationFiller") ]
-theory Chain where {
+theory Chain where
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
   oper g : (a : Nat) --> (b : Nat);
@@ -27,7 +26,6 @@ theory Chain where {
     node s2 : g(m1) --> (m2);
     node s3 : h(m2) --> (o);
   };
-}
 
 @[ refuses("UndescribedMember.OperationFiller") ]
 oper accumulate : (stream : Stream) --> (out : Stream) {

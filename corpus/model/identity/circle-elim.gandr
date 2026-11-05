@@ -15,70 +15,66 @@ import "./circle-base.gandr";
 /// The flip twice is the identity, at every point: the answer at `Base` is
 /// reflexivity, and carried along the loop it is conjugated by the flip's
 /// image of its image, the loop again.
-def involutive(x : Circle) -> Path[.A = Circle](invLooper(invLooper(x)), x) {
-  match x {
-    Base => Path.here(Base)
-  }
-}
+def involutive(x : Circle) -> Path[.A = Circle](invLooper (invLooper x), x) =
+  match x
+    | Base => Path.here Base
 
 /// The map that collapses the circle to its point: no loop arm, so the loop's
 /// image is reflexivity.
-def collapse(x : Circle) -> Circle {
-  match x {
-    Base => Base
-  }
-}
+def collapse(x : Circle) -> Circle =
+  match x
+    | Base => Base
 
 /// The collapse's image of the loop is reflexivity: `Path.ap` reads its path's
 /// type off the loop and the collapse's written result, so it stands bare in
 /// the type.
 def collapsed_loop : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.ap(collapse, loop),
-  Path.here(Base)
-) = Path.here(Path.here(Base));
+  Path.ap collapse loop,
+  Path.here Base
+) = Path.here (Path.here Base);
 
 /// The loop twice around, composed with no path type written at the
 /// composite: it is a path from the point the first loop leaves to the point
 /// the second reaches.
-def two : Path(Base, Base) = Path.step(loop, loop);
+def two : Path(Base, Base) = Path.step loop loop;
 
 /// The inverse of the composite, read off the composite's own path type.
-def undone : Path(Base, Base) = Path.back(Path.step(loop, loop));
+def undone : Path(Base, Base) = Path.back (Path.step loop loop);
 
 /// A word written where the path stands is followed as the path it is: the
 /// loop composed with the empty word at the point is the loop.
 def joined : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step(loop, Path.here(Base)),
+  Path.step loop (Path.here Base),
   loop
-) = Path.here(loop);
+) = Path.here loop;
 
 /// The inverse of the loop's one-letter word, written out, is the loop's
 /// inverse.
 def unwound_word : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.back(loop ∷ Path.here(Base)),
-  Path.back(loop)
-) = Path.here(Path.back(loop));
+  Path.back (loop ∷ Path.here Base),
+  Path.back loop
+) = Path.here (Path.back loop);
 
 /// Transport in a family of paths from the point moves the endpoint: it
 /// post-composes with the loop.
 def moved : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step(Path.here(Base), loop),
+  Path.step (Path.here Base) loop,
   loop
-) = Path.here(loop);
+) = Path.here loop;
 
 /// Transport in the family of loops at each point conjugates by the loop,
 /// which fixes the loop.
 def conjugated : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk(fun (x) { type(Path[.A = Circle](x, x)) }, loop, loop),
+  Path.walk (fun (x) { type(Path[.A = Circle](x, x)) }) loop loop,
   loop
-) = Path.here(loop);
+) = Path.here loop;
 
 /// Transport in a constant family is the identity.
-def constant : Path(Path.walk(fun (x) { Int }, loop, Z), Z) = Path.here(Z);
+def constant : Path(Path.walk (fun (x) { Int }) loop Z, Z) = Path.here Z;
 
 /// Transport in a family running its point through the flip is the flip's
 /// image of the loop, its inverse: the family's transport is its `Path.ap`.
 def flipped : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk(fun (x) { type(Path[.A = Circle](Base, invLooper(x))) }, loop, Path.here(Base)),
-  back(loop) ∷ Path.here(Base)
-) = Path.here(back(loop) ∷ Path.here(Base));
+  Path.walk (fun (x) { type(Path[.A = Circle](Base, invLooper x)) }) loop (Path.here Base),
+  back loop ∷ Path.here Base
+) = Path.here (back loop ∷ Path.here Base);

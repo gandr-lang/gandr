@@ -375,7 +375,10 @@ impl<'source> Collector<'_, 'source>
     ///   I`, and a parameter list follows, every such entry and every explicit
     ///   parameter, in the order [`merge_order`] gives over what each one's
     ///   type mentions, a name the type binds itself mentioning nothing, then
-    ///   every label of the result's row as an instance; absent otherwise.
+    ///   every label of the result's row as an instance. When the header is a
+    ///   signature `: T` whose box has an implicit group, as
+    ///   [`Self::signature_entries`] reads it, the box's entries are merged the
+    ///   same way, then every label of its output's row. Absent otherwise.
     ///   `header` is left where it was.
     /// - provides: the plicity metadata of [`super::Collected::plicities`].
     /// - fails: [`LoweringRefusal::TelescopeCycle`] at the declaration, naming
@@ -397,6 +400,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
     /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
     /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    /// - witness: `lower::implicit::tests::a_signature_s_implicit_group_is_supplied_by_the_call_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |merged| match *merged {
         Maybe::Present(ref entries) => entries.iter().any(|entry| entry.plicity != Plicity::Explicit),
         Maybe::Absent(_) => true,
@@ -414,6 +418,18 @@ impl<'source> Collector<'_, 'source>
         // The names the implicit telescope binds that are no entry: a region
         // binder's, which a label of the result row names rather than binds.
         let mut staged: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
+        if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+            let Maybe::Present(Piece::Operand(typed)) = cursor.read()
+            else {
+                return Ok(none);
+            };
+            let Some(result) = self.signature_entries(typed, &mut entries, &mut scratch)?
+            else {
+                return Ok(none);
+            };
+            self.row_labels(result, staged, &mut entries, &mut scratch)?;
+            return self.merged(&entries, declaration);
+        }
         if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
             while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
                 if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
@@ -446,7 +462,9 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
             return Ok(none);
         }
-        while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
+        while let Maybe::Present(first) = cursor.tile(TileName::IDENTIFIER) {
+            // Names that share a type, `m n : T`, each take it.
+            let shared = cursor.shared(&[TileName::IDENTIFIER]);
             let declared = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
                     // A receiver's mode word or mode variable: the receivers
@@ -464,13 +482,15 @@ impl<'source> Collector<'_, 'source>
                 },
                 Maybe::Absent(_) => Maybe::Absent(unstated::Absent::Unwritten),
             };
-            entries.push(TelescopeEntry {
-                name: self.name_of(written),
-                binder: written,
-                declared,
-                interface: Maybe::Absent(uninterfaced::Absent::Parameter),
-                plicity: Plicity::Explicit,
-            });
+            for written in core::iter::once(first).chain(shared) {
+                entries.push(TelescopeEntry {
+                    name: self.name_of(written),
+                    binder: written,
+                    declared,
+                    interface: Maybe::Absent(uninterfaced::Absent::Parameter),
+                    plicity: Plicity::Explicit,
+                });
+            }
             let _comma = cursor.tile(TileName::COMMA);
         }
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
@@ -481,6 +501,45 @@ impl<'source> Collector<'_, 'source>
         {
             self.row_labels(result, staged, &mut entries, &mut scratch)?;
         }
+        self.merged(&entries, declaration)
+    }
+
+    /// The merged telescope of `entries`, a declaration's parameters as
+    /// written: absent when every entry is explicit, else every entry in the
+    /// order [`merge_order`] gives over what each one's type mentions.
+    ///
+    /// # Specification
+    /// - requires: `entries` is the telescope `declaration` writes, in written
+    ///   order.
+    /// - ensures: absent when every entry is explicit; else every entry once,
+    ///   each after every entry its type mentions.
+    /// - fails: [`LoweringRefusal::TelescopeCycle`] at the declaration, naming
+    ///   two parameters standing in a cycle; a form fault reading a type's
+    ///   pieces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// Each type's nodes are read once, and the tree is finite.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::merged_telescope`].
+    /// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
+    /// - witness: `lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |merged| match *merged {
+        Maybe::Present(ref entries) => entries.iter().any(|entry| entry.plicity != Plicity::Explicit),
+        Maybe::Absent(_) => true,
+    }))]
+    fn merged(
+        &self,
+        entries: &[TelescopeEntry<'source>],
+        declaration: Placed,
+    ) -> Result<Maybe<Vec<TelescopeEntry<'source>>, merged::Absent>, LoweringRefusal<'source>>
+    {
+        let none = Maybe::Absent(merged::Absent::NoImplicit);
+        let mut scratch = Pieces::new();
         if entries
             .iter()
             .all(|entry| entry.plicity == Plicity::Explicit)
@@ -522,9 +581,7 @@ impl<'source> Collector<'_, 'source>
                                     scope = Some(binders.len().saturating_sub(1));
                                 }
                             },
-                            Some(&Piece::Tile { label, .. })
-                                if label == TileName::ARROW || label == TileName::FAT_ARROW =>
-                            {
+                            Some(&Piece::Tile { label, .. }) if label == TileName::ARROW => {
                                 pending.push((operand.node, scope));
                                 read_pieces(self.pbg, self.tree, operand.node, &mut keyed)?;
                                 for (at, held) in keyed.pieces.iter().enumerate() {
@@ -594,6 +651,139 @@ impl<'source> Collector<'_, 'source>
                 .filter_map(|&position| entries.get(usize::from(position)).copied())
                 .collect(),
         ))
+    }
+
+    /// Append the entries of the box the signature type `typed` writes when
+    /// an implicit group opens its domain, `[a : Type] (x : a) -> a`, and
+    /// answer the box's output.
+    ///
+    /// # Specification
+    /// - requires: `typed` is the type a declaration's signature `: T` writes;
+    ///   `scratch` is free for reading pieces.
+    /// - ensures: when `typed` is a box whose domain is `[k : T, …]` before one
+    ///   operand, and every `k` is one name and every `T` sorts a value, one
+    ///   implicit entry per `k : T` in written order, then one explicit entry
+    ///   per entry of the parenthesised operand, or one for the operand when it
+    ///   is no parenthesised list; the box's output is answered. `entries` is
+    ///   left as found and `None` is answered otherwise.
+    /// - fails: a form fault reading the type's pieces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// Each loop consumes at least one piece of a finite list each round.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a signature whose implicit group stands before a list
+    ///   and before one type, each called with the implicit left out.
+    /// - witness: `lower::implicit::tests::a_signature_s_implicit_group_is_supplied_by_the_call_4853`
+    #[spec(captures: before = entries.len(), ensures: |ret| ret.as_ref().is_ok_and(Option::is_some) || entries.len() == before)]
+    fn signature_entries(
+        &self,
+        typed: Placed,
+        entries: &mut Vec<TelescopeEntry<'source>>,
+        scratch: &mut Pieces,
+    ) -> Result<Option<Placed>, LoweringRefusal<'source>>
+    {
+        read_pieces(self.pbg, self.tree, typed.node, scratch)?;
+        let &[
+            Piece::Operand(domain),
+            Piece::Tile { label, .. },
+            Piece::Operand(result),
+        ] = scratch.pieces.as_slice()
+        else {
+            return Ok(None);
+        };
+        if label != TileName::ARROW {
+            return Ok(None);
+        }
+        let mut group = Pieces::new();
+        let mut named = Pieces::new();
+        read_pieces(self.pbg, self.tree, domain.node, &mut group)?;
+        let mut cursor = Cursor::new(&group.pieces, domain.span);
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
+            return Ok(None);
+        }
+        let mut written = Vec::new();
+        while let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_CLOSE) {
+            let (
+                Maybe::Present(Piece::Operand(key)),
+                Maybe::Present(_),
+                Maybe::Present(Piece::Operand(sort)),
+            ) = (cursor.read(), cursor.tile(TileName::COLON), cursor.read())
+            else {
+                return Ok(None);
+            };
+            let Some(binder) = self.lone_name(key.node, &mut named)?
+            else {
+                return Ok(None);
+            };
+            if self.sort_of(sort, scratch)? != EntrySort::Value {
+                return Ok(None);
+            }
+            written.push(TelescopeEntry {
+                name: self.name_of(binder),
+                binder,
+                declared: Maybe::Present(sort),
+                interface: Maybe::Absent(uninterfaced::Absent::Parameter),
+                plicity: Plicity::Implicit,
+            });
+            let _comma = cursor.tile(TileName::COMMA);
+        }
+        let (Maybe::Present(Piece::Operand(explicit)), Maybe::Absent(_)) =
+            (cursor.read(), cursor.read())
+        else {
+            return Ok(None);
+        };
+        read_pieces(self.pbg, self.tree, explicit.node, &mut group)?;
+        let mut cursor = Cursor::new(&group.pieces, explicit.span);
+        if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
+            while let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+                let Maybe::Present(Piece::Operand(first)) = cursor.read()
+                else {
+                    return Ok(None);
+                };
+                let entry = if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+                    let (Some(binder), Maybe::Present(Piece::Operand(declared))) =
+                        (self.lone_name(first.node, &mut named)?, cursor.read())
+                    else {
+                        return Ok(None);
+                    };
+                    TelescopeEntry {
+                        name: self.name_of(binder),
+                        binder,
+                        declared: Maybe::Present(declared),
+                        interface: Maybe::Absent(uninterfaced::Absent::Parameter),
+                        plicity: Plicity::Explicit,
+                    }
+                }
+                else {
+                    TelescopeEntry {
+                        name: SurfaceName::from(""),
+                        binder: first,
+                        declared: Maybe::Present(first),
+                        interface: Maybe::Absent(uninterfaced::Absent::Parameter),
+                        plicity: Plicity::Explicit,
+                    }
+                };
+                written.push(entry);
+                let _comma = cursor.tile(TileName::COMMA);
+            }
+        }
+        else {
+            written.push(TelescopeEntry {
+                name: SurfaceName::from(""),
+                binder: explicit,
+                declared: Maybe::Present(explicit),
+                interface: Maybe::Absent(uninterfaced::Absent::Parameter),
+                plicity: Plicity::Explicit,
+            });
+        }
+        entries.append(&mut written);
+
+        Ok(Some(result))
     }
 
     /// Append an instance for each label `a : I` the row of the result type
@@ -789,10 +979,13 @@ impl<'source> Collector<'_, 'source>
         }
         // A binder is written lowercase, `x`, a type variable, or capitalised,
         // `A : Type`, as a type's name is (#3921).
-        while let Maybe::Present(Piece::Tile { label, at: written }) = cursor.peek()
+        while let Maybe::Present(Piece::Tile { label, at: first }) = cursor.peek()
             && BINDER_TILES.contains(&label)
         {
             let _binder = cursor.read();
+            // Names that share a type, `m n : T`, each take it; the type reads
+            // only the names before them.
+            let shared = cursor.shared(&BINDER_TILES);
             let (declared, dependent) = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
                     if let Maybe::Absent(_) = cursor.tile(TileName::SHARED)
@@ -810,12 +1003,14 @@ impl<'source> Collector<'_, 'source>
                 },
                 Maybe::Absent(_) => (Maybe::Absent(unclosed::Absent::Unwritten), false),
             };
-            let _fresh = earlier.insert(self.name_of(written));
-            parameters.push(ExplicitParameter {
-                binder: written,
-                declared,
-                dependent,
-            });
+            for written in core::iter::once(first).chain(shared) {
+                let _fresh = earlier.insert(self.name_of(written));
+                parameters.push(ExplicitParameter {
+                    binder: written,
+                    declared,
+                    dependent,
+                });
+            }
             let _comma = cursor.tile(TileName::COMMA);
         }
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
@@ -833,8 +1028,9 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `cursor` stands just past a function's written parameter
     ///   list, or past its name and telescope when it writes none; `bound`
     ///   holds the telescope's names and `earlier` the written parameters'.
-    /// - ensures: for a tail `: T where` with `T` a value function space, one
-    ///   entry per domain `Ai` at its own node, typed `Ai`, or
+    /// - ensures: for a tail `: T where` with `T` a box, `(A1, …) -> B` or its
+    ///   bridge spelling with `=>`, as [`crate::form::writes_box`] reads one,
+    ///   one entry per domain `Ai` at its own node, typed `Ai`, or
     ///   [`unclosed::Absent::Dependent`] when `Ai` names an entry of the
     ///   telescope, and dependent when it names a written parameter; nothing
     ///   for any other tail, or a domain list that does not read.
@@ -849,6 +1045,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a constructor argument of a call to a function of
     ///   clauses takes its column's type, naming the parameter before it.
     /// - witness: `lower::native::tests::a_clause_column_types_its_call_s_argument`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     fn column_parameters(
         &self,
         mut cursor: Cursor<'_>,
@@ -868,11 +1065,12 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Absent(_) = cursor.at(TileName::WHERE) {
             return;
         }
-        let Ok(Maybe::Present(Former::ValueFunctionType)) = self.root_former(stated)
+        let mut arrow = Pieces::new();
+        let Ok(crate::form::Boxed(true)) =
+            crate::form::writes_box(self.pbg, self.tree, stated.node, &mut arrow)
         else {
             return;
         };
-        let mut arrow = Pieces::new();
         if read_pieces(self.pbg, self.tree, stated.node, &mut arrow).is_err() {
             return;
         }

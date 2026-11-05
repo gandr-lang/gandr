@@ -2,13 +2,12 @@
 ///
 /// The theory the model derives from: a binder no body uses is collected.
 @[ checks ]
-theory T where {
+theory T where
   sort Val : Type+;
   sort Proc : Type;
   oper nil : Proc;
   oper new : (body : pi+ (x : Val) . Proc) --> Proc;
-  rule collect : new(bind x . nil) <=> nil;
-}
+  rule collect : new (bind x . nil) <=> nil;
 
 @[ refuses("UnstatedComponent.Binding") ]
 def model : Model(T) ;

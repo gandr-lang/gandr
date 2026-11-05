@@ -8,84 +8,68 @@
 import std.list (List);
 
 /// A rubric's grade.
-data Grade : Type where {
+data Grade : Type where
   | Met : Grade
   | Unmet : Grade
-}
 
 /// The grades composed: unmet as soon as one is, met when none is.
-def rec compose(grades : List(Grade)) -> Grade {
-  match grades {
-    #[] => Met,
-    #[grade, ..rest] => match grade {
-      Unmet => Unmet,
-      Met => compose[<](rest)
-    }
-  }
-}
+def rec compose(grades : List(Grade)) -> Grade =
+  match grades
+    | #[] => Met
+    | #[grade, ..rest] => match grade
+      | Unmet => Unmet
+      | Met => compose[<] rest
 
 /// One unmet grade among met ones fails the composition.
 @[ runs("Unmet") ]
-def failing() -> Grade {
-  compose(#[Met, Unmet, Met])
-}
+def failing() -> Grade =
+  compose (#[Met, Unmet, Met])
 
 /// Met grades alone pass it.
 @[ runs("Met") ]
-def passing() -> Grade {
-  compose(#[Met, Met])
-}
+def passing() -> Grade =
+  compose (#[Met, Met])
 
 /// A list's length up to three, read off its shape.
-def shortLength(xs : List(Integer)) -> Integer {
-  match xs {
-    #[] => 0,
-    #[a] => 1,
-    #[a, b] => 2,
-    _ => 3
-  }
-}
+def shortLength(xs : List(Integer)) -> Integer =
+  match xs
+    | #[] => 0
+    | #[a] => 1
+    | #[a, b] => 2
+    | _ => 3
 
 /// Two elements match the pattern of two.
 @[ runs("2") ]
-def two() -> Integer {
-  shortLength(#[7, 8])
-}
+def two() -> Integer =
+  shortLength (#[7, 8])
 
 /// Four fall past every written length to the catch-all.
 @[ runs("3") ]
-def many() -> Integer {
-  shortLength(#[7, 8, 9, 10])
-}
+def many() -> Integer =
+  shortLength (#[7, 8, 9, 10])
 
 /// The second element, past the first, whatever the rest holds.
-def secondOf(xs : List(Integer)) -> Integer {
-  match xs {
-    #[_, b, ..rest] => b,
-    _ => 0
-  }
-}
+def secondOf(xs : List(Integer)) -> Integer =
+  match xs
+    | #[_, b, ..rest] => b
+    | _ => 0
 
 /// The second of three.
 @[ runs("8") ]
-def eight() -> Integer {
-  secondOf(#[7, 8, 9])
-}
+def eight() -> Integer =
+  secondOf (#[7, 8, 9])
 
 /// A list's head added to its length up to three: the as-pattern binds the
 /// whole list the cell pattern matched.
-def headed(xs : List(Integer)) -> Integer {
-  match xs {
-    all @ #[a, .._] => {
-      let counted = shortLength(all);
+def headed(xs : List(Integer)) -> Integer =
+  match xs
+    | all @ #[a, .._] => {
+      let counted = shortLength all;
       a + counted
-    },
-    #[] => 0
-  }
-}
+    }
+    | #[] => 0
 
 /// Five and the two elements it heads.
 @[ runs("7") ]
-def seven() -> Integer {
-  headed(#[5, 6])
-}
+def seven() -> Integer =
+  headed (#[5, 6])

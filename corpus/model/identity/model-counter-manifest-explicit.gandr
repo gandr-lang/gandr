@@ -17,40 +17,35 @@ import "./model-counter-manifest.gandr";
 
 /// The manifest counter where a counter is asked, the map written out.
 @[ runs("1"), form(explicit) ]
-def observedManifestWritten() -> -F Integer {
-  become observe(forget[sort C = +{Unit, +{Unit, Unit}}](upManifest) at Model(Counter))
-}
+def observedManifestWritten() -> -F Integer =
+  become observe (forget[sort C = +{Unit, +{Unit, Unit}}](upManifest) at Model(Counter))
 
 /// The counter carried along negation, the map written at the far end.
 @[ runs("1"), form(explicit) ]
-def observedCarriedWritten() -> -F Integer {
-  become observe(forget[sort C = +{Unit, +{Unit, Unit}}](negatedManifest) at Model(Counter))
-}
+def observedCarriedWritten() -> -F Integer =
+  become observe (forget[sort C = +{Unit, +{Unit, Unit}}](negatedManifest) at Model(Counter))
 
 /// The counter with its readings manifest, the map putting back the readings
 /// alone written out.
 @[ runs("1"), form(explicit) ]
-def observedReadingsWritten() -> -F Integer {
-  become observeShown(forget[sort R = Integer](upReadings) at Model(ReadCounter))
-}
+def observedReadingsWritten() -> -F Integer =
+  become observeShown (forget[sort R = Integer](upReadings) at Model(ReadCounter))
 
 /// Both sorts manifest, written in another order than the theory states
 /// them: the map is the one putting back both.
 @[ runs("1"), form(explicit) ]
-def observedBothWritten() -> -F Integer {
-  become observeShown(forget[
+def observedBothWritten() -> -F Integer =
+  become observeShown (forget[
     sort R = Integer,
     sort C = +{Unit, +{Unit, Unit}}
   ](upBoth) at Model(ReadCounter))
-}
 
 /// The counter sharing `a`'s counts where any counter is asked, the map
 /// written at `a`'s carrier.
 @[ checks, form(explicit) ]
-def observeSharedWritten(a : Model(Counter), b : Model(Counter) with sort C = a.C) -> -F Integer {
-  become observe(forget[sort C = a.C](b) at Model(Counter))
-}
+def observeSharedWritten(a : Model(Counter), b : Model(Counter) with sort C = a.C) -> -F Integer =
+  become observe (forget[sort C = a.C](b) at Model(Counter))
 
 /// The twin read through the written map at counting up's carrier.
 @[ runs("1"), form(explicit) ]
-def observedSharedUpWritten() -> -F Integer { become observeSharedWritten(upModel, upManifest) }
+def observedSharedUpWritten() -> -F Integer { become observeSharedWritten upModel upManifest }

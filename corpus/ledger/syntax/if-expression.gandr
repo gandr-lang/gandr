@@ -1,5 +1,4 @@
 /// `if_expression`: a conditional.
 @[ checks ]
-def pick(b : Bool) -> -F Integer {
+def pick(b : Bool) -> -F Integer =
   if b { return 1 } else { return 2 }
-}

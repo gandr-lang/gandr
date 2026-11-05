@@ -3,16 +3,16 @@
 // records they are.
 
 /// A corner of two fields.
-def corner = #{x = 1, y = 2};
+def corner = *{x = 1, y = 2};
 
 /// Updates at distinct labels commute: both orders are one record.
-def commute : Path[.A = #{x : Integer, y : Integer}](
-  #{#{corner | x = 9} | y = 3},
-  #{#{corner | y = 3} | x = 9}
-) = Path.here(#{x = 9, y = 3});
+def commute : Path[.A = *{x : Integer, y : Integer}](
+  *{*{corner | x = 9} | y = 3},
+  *{*{corner | y = 3} | x = 9}
+) = Path.here (*{x = 9, y = 3});
 
 /// Updating a field with its own value is the record itself.
-def unchanged : Path[.A = #{x : Integer, y : Integer}](
-  #{corner | x = 1},
+def unchanged : Path[.A = *{x : Integer, y : Integer}](
+  *{corner | x = 1},
   corner
-) = Path.here(corner);
+) = Path.here corner;

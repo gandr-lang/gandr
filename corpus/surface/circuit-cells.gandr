@@ -1,5 +1,5 @@
 @[ refuses("UndescribedMember.ParallelRedexes") ]
-theory Nat where {
+theory Nat where
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
 
@@ -13,7 +13,6 @@ theory Nat where {
     node : q(y) ==> (y′);
     node : add(x′, y′) --> (z);
   };
-}
 
 @[ refuses("UndescribedMember.OperationFiller") ]
 oper accumulate : (stream : Stream(Nat)) --> (out2 : Stream(Nat)) {
@@ -21,12 +20,11 @@ oper accumulate : (stream : Stream(Nat)) --> (out2 : Stream(Nat)) {
   feed : (next) --> (state);
 }
 
-theory NatDesugared where {
+theory NatDesugared where
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
-}
 
-theory Labelled where {
+theory Labelled where
   sort Nat : Type;
   oper zero : () --> (out : Nat);
   oper step : (i : Nat) --> (o : Nat);
@@ -35,17 +33,14 @@ theory Labelled where {
     node w1 : p(x) ==> (m);
     node w2 : step(m) --> (o);
   };
-}
 
 @[ refuses("UndescribedMember.HigherCell") ]
-theory Invertible where {
+theory Invertible where
   sort Bit : Type;
   oper flip : (b : Bit) --> (c : Bit);
   rule involutive : (b : Bit) <=> (c : Bit);
-}
 
 @[ refuses("UndescribedMember.Reversible") ]
-theory Reserved where {
+theory Reserved where
   sort Bit : Type;
   oper negate : (b : Bit) <-> (c : Bit);
-}

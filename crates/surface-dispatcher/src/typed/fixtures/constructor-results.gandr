@@ -1,8 +1,6 @@
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
-data Vec(a : Type) : Nat -> Type where {
+data Vec(a : Type) : Nat -> Type where
   | VNil : Vec(a, Zero)
   | VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n))
-}

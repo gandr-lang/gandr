@@ -22,9 +22,9 @@ def twice[g : Model(Grade), r : g.G, A : Type](step : +U[r + r] (A -> A), x : A)
 
 /// Runs `step` twice on each half of a pair. The numeral `2` reads in the
 /// algebra the slot names, as its `one + one`.
-def bothTwice[g : Model(Grade), r : g.G, A : Type](step : +U[2 * (r + r)] (A -> A), pair : (A, A)) : (A, A) = {
-  let (a, b) = pair;
-  (twice(step, a), twice(step, b))
+def bothTwice[g : Model(Grade), r : g.G, A : Type](step : +U[2 * (r + r)] (A -> A), pair : *{A, A}) : *{A, A} = {
+  let *{a, b} = pair;
+  *{twice step a, twice step b}
 }
 
 /// Writes its line once. Nothing names the grade's algebra, so `1` reads in
@@ -34,10 +34,10 @@ def logOnce(sink : +U[1] (String -> Unit), line : String) : Unit = sink(line)
 /// Hands a counting sink to a logger that `Usage` grades. Three uses in
 /// `Count` collapse to many, which covers the three calls through the map.
 def audited[h : Hom(count, usage)](sink : +U[Count.3] (String -> Unit)) : Unit = {
-  logOnce(sink, "opened");
-  logOnce(sink, "read");
-  logOnce(sink, "closed")
+  logOnce sink "opened";
+  logOnce sink "read";
+  logOnce sink "closed"
 }
 
 /// Names the map, as a call may name any implicit.
-def auditedNamed(sink : +U[Count.3] (String -> Unit)) : Unit = audited[.h = collapse](sink)
+def auditedNamed(sink : +U[Count.3] (String -> Unit)) : Unit = audited[.h = collapse] sink

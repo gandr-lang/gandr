@@ -13,7 +13,7 @@ error[OutOfFragment.extern_block]: an extern block cannot stand where a declarat
 error[OutOfFragment.projection_expression]: the projection expression is not supported yet
    ╭▸ corpus/pathological/ffi/interior-nul.gandr:17:16
    │
-17 │ def measured = testlib.gandr_test_strlen("a\0b");
+17 │ def measured = testlib.gandr_test_strlen "a\0b";
    │                ━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `measured` is refused with OutOfFragment.projection_expression, as its expectation states

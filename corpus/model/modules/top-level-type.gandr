@@ -5,34 +5,32 @@
 // - see: #1834 — `Band`
 
 /// A rubric's band, in millionths.
-pub type Band = #{low : Integer, high : Integer};
+pub type Band = *{low : Integer, high : Integer};
 
 /// The band every rubric of the set grades against.
-def setBand : Band = #{low = 200000, high = 800000};
+def setBand : Band = *{low = 200000, high = 800000};
 
 /// The width of a band, its fields read through the synonym.
-pub def width(band : Band) -> Integer {
-  match band {
-    #{.low = low, .high = high} => high - low
-  }
-}
+pub def width(band : Band) -> Integer =
+  match band
+    | *{.low = low, .high = high} => high - low
 
 /// The set's band is six tenths wide.
 @[ runs("600000") ]
-def setWidth() -> Integer { width(setBand) }
+def setWidth() -> Integer { width setBand }
 
 /// A pair of one type, a synonym with a parameter.
 pub type Twice(a : Type) = a * a;
 
 /// The set's bounds as a pair.
-def bounds : Twice(Integer) = (200000, 800000);
+def bounds : Twice(Integer) = *{200000, 800000};
 
 /// A computation type, named as a member: a run returning an integer.
 pub type Reading = -F Integer;
 
 /// The set's width, read by a run of the member's type.
 @[ runs("600000") ]
-def readWidth() -> Reading { width(setBand) }
+def readWidth() -> Reading { width setBand }
 
 /// A run returning a value of the parameter's type, a family of computation
 /// types.

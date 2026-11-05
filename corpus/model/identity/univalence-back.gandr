@@ -19,37 +19,34 @@ import "./univalence.gandr";
 def backBeta(
   a : Type,
   b : Type,
-  t : a => b,
-  g : b => a,
-  s : (x : a) => Path[.A = a](g(t(x)), x),
-  h : b => a,
-  r : (y : b) => Path[.A = b](t(h(y)), y),
+  t : a -> b,
+  g : b -> a,
+  s : (x : a) -> Path[.A = a](g (t x), x),
+  h : b -> a,
+  r : (y : b) -> Path[.A = b](t (h y), y),
   y : b
-) -> Path[.A = a](bwdAlong(a, b, ua((t, ((g, s), (h, r)))), y), g(y)) {
-  Path.here(g(y))
-}
+) -> Path[.A = a](bwdAlong a b (ua (*{t, *{*{g, s}, *{h, r}}})) y, g y) =
+  Path.here (g y)
 
 /// Transport back along a path from the loops at the point to the integers.
 def loopsBack(
   p : Path[.A = Type](Path[.A = Circle](Base, Base), Int),
   y : Int
-) -> Path[.A = Circle](Base, Base) {
-  Path.walk(fun (X) { X }, Path.back(p), y)
-}
+) -> Path[.A = Circle](Base, Base) =
+  Path.walk (fun (X) { X }) (Path.back p) y
 
 /// Two carried back along the loops' path is the word of two loops, by a run.
-@[ runs("loop ∷ loop ∷ Path.here(Base)") ]
-def backRun : () => Path[.A = Circle](Base, Base) = loopsBack(loopsAreIntegers, S(S(Z)));
+@[ runs("loop ∷ loop ∷ Path.here Base") ]
+def backRun : () -> Path[.A = Circle](Base, Base) = loopsBack loopsAreIntegers (S (S Z));
 
 /// The loops' path reversed and named, its type stated. `back` reads the
 /// type `loopsAreIntegers` states.
 def integersAreLoops : Path[.A = Type](
   Int,
   Path[.A = Circle](Base, Base)
-) = Path.back(loopsAreIntegers);
+) = Path.back loopsAreIntegers;
 
 /// Two carried along the named reversal is the word of two loops, by a run.
-@[ runs("loop ∷ loop ∷ Path.here(Base)") ]
-def namedBackRun() -> Path[.A = Circle](Base, Base) {
-  Path.walk(fun (X) { X }, integersAreLoops, S(S(Z)))
-}
+@[ runs("loop ∷ loop ∷ Path.here Base") ]
+def namedBackRun() -> Path[.A = Circle](Base, Base) =
+  Path.walk (fun (X) { X }) integersAreLoops (S (S Z))

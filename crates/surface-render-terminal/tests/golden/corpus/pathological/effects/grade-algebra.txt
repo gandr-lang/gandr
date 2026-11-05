@@ -1,10 +1,10 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/effects/grade-algebra.gandr:21:56
+   ╭▸ corpus/pathological/effects/grade-algebra.gandr:21:54
    │
-21 │ def manyUnderOnce : Path(Usage.le(Many, Once), true) = Path.here(true);
-   │                          ┬───────────────────  ┬───    ━━━━━━━━━━━━━━━ not both endpoints of the path
-   │                          │                     │
-   │                          │                     an endpoint the point does not convert to
+21 │ def manyUnderOnce : Path(Usage.le Many Once, true) = Path.here true;
+   │                          ┬─────────────────  ┬───    ━━━━━━━━━━━━━━ not both endpoints of the path
+   │                          │                   │
+   │                          │                   an endpoint the point does not convert to
    │                          an endpoint the point does not convert to
    │
    ├ note: `manyUnderOnce` is refused with EndpointMismatch, as its expectation states
@@ -13,23 +13,23 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/effects/grade-algebra.gandr:28:5
    │
-26 │   Count.le((8589934592 : Nat), (2147483648 : Nat)),
-   │   ──────────────────────────────────────────────── an endpoint the point does not convert to
+26 │   Count.le (8589934592 : Nat) (2147483648 : Nat),
+   │   ────────────────────────────────────────────── an endpoint the point does not convert to
 27 │   true
    │   ──── an endpoint the point does not convert to
-28 │ ) = Path.here(true);
-   │     ━━━━━━━━━━━━━━━ not both endpoints of the path
+28 │ ) = Path.here true;
+   │     ━━━━━━━━━━━━━━ not both endpoints of the path
    │
    ├ note: `eightUnderTwoGiB` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/effects/grade-algebra.gandr:48:54
+   ╭▸ corpus/pathological/effects/grade-algebra.gandr:47:52
    │
-48 │ def twoUnderFourBytes : Path(Bytes.le(2, 4), true) = Path.here(true);
-   │                              ┬─────────────  ┬───    ━━━━━━━━━━━━━━━ not both endpoints of the path
-   │                              │               │
-   │                              │               an endpoint the point does not convert to
+47 │ def twoUnderFourBytes : Path(Bytes.le 2 4, true) = Path.here true;
+   │                              ┬───────────  ┬───    ━━━━━━━━━━━━━━ not both endpoints of the path
+   │                              │             │
+   │                              │             an endpoint the point does not convert to
    │                              an endpoint the point does not convert to
    │
    ├ note: `twoUnderFourBytes` is refused with EndpointMismatch, as its expectation states

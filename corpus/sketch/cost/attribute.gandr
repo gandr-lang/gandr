@@ -17,21 +17,19 @@ import std.bytes (Bytes, Digest, blake3);
 import std.array (binarySearch);
 
 /// Hashes a block, at one step for each 64 bytes and one more.
-@[cost(length(block) / 64 + 1)]
-def hash(block : Bytes) -> [Cost] Digest {
-  blake3(block)
-}
+@[cost(length block / 64 + 1)]
+def hash(block : Bytes) -> [Cost] Digest =
+  blake3 block
 
 /// Finds `x` in a sorted array, at one step for each halving and one more.
-@[cost(log2(length(xs)) + 1)]
-def find(xs : Array(Integer), x : Integer) -> [Cost] Maybe(Nat) {
-  binarySearch(xs, x)
-}
+@[cost(log2 (length xs) + 1)]
+def find(xs : Array(Integer), x : Integer) -> [Cost] Maybe(Nat) =
+  binarySearch xs x
 
 /// Hashes two blocks. Each call charges what its attribute states, and the
 /// bound is their sum.
-def hashBoth(a : Bytes, b : Bytes) -> [Cost] (Digest, Digest) #spec{
-  measure { cost length(a) / 64 + length(b) / 64 + 2 }
+def hashBoth(a : Bytes, b : Bytes) -> [Cost] *{Digest, Digest} #spec{
+  measure { cost length a / 64 + length b / 64 + 2 }
 } {
-  (hash(a), hash(b))
+  *{hash a, hash b}
 }

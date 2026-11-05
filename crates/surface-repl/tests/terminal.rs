@@ -116,8 +116,8 @@ where
 fn the_terminal_face_reads_its_input_through_the_editor()
 {
     assert_eq!(
-        face("def a = 41 ;\ndef b = (\na) ;\ndef c = b ;\n:quit\ndef never = 0 ;\n"),
-        "gandr> ▸ def a = 41 ;\na : Integer\n= 41\ngandr>   ...> ▸ def b = (\n  a) ;\nb : \
+        face("def a = 41 ;\ndef b = (\n  a) ;\ndef c = b ;\n:quit\ndef never = 0 ;\n"),
+        "gandr> ▸ def a = 41 ;\na : Integer\n= 41\ngandr>   ...> ▸ def b = (\n    a) ;\nb : \
          Integer\n= 41\ngandr> ▸ def c = b ;\nc : Integer\n= 41\ngandr> ended: completed",
     );
 }

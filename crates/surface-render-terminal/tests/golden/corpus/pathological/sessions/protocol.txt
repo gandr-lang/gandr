@@ -1,69 +1,67 @@
 error[SessionMismatch]: the endpoint's protocol expects a send here, not a receive
   ╭▸ corpus/pathological/sessions/protocol.gandr:4:3
   │
-2 │ ┌ def desk_receives_first() -> Unit {
+2 │ ┌ def desk_receives_first() -> Unit =
 3 │ │   let desk = fork (seat : ?String. end) { let task = recv(seat); close(seat) };
   │ │   ┬──
   │ │   │
   │ │   the endpoint was opened by this fork
   │ │   checked against `-F Unit`; while checking the rest of this fork's parent
-4 │ │   let task = recv(desk);
+4 │ │   let task = recv(desk)
   │ │   ━━━ an action the endpoint's state does not admit: found `!String >> end`
 5 │ │   close(desk)
-6 │ │ }
-  │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+  │ └─────────────┘ checked against `() -> Unit`; while checking the body of this thunk
   │
   ├ note: `desk_receives_first` is refused with SessionMismatch, as its expectation states
   ╰ help: change the endpoint action or protocol so that they agree
 
 error[UnofferedLabel]: the endpoint's protocol offers no such label here
-   ╭▸ corpus/pathological/sessions/protocol.gandr:11:3
+   ╭▸ corpus/pathological/sessions/protocol.gandr:10:3
    │
- 9 │ ┌ def desk_selects_no_offered_label() -> Unit {
-10 │ │   let desk = fork (seat : &{next : end}) { offer(seat) { next => close(seat) } };
+ 8 │ ┌ def desk_selects_no_offered_label() -> Unit =
+ 9 │ │   let desk = fork (seat : &{next : end}) { offer(seat) { | next => close(seat) } };
    │ │   ┬──
    │ │   │
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the rest of this fork's parent
-11 │ │   select(desk, retire);
+10 │ │   select(desk, retire)
    │ │   ━━━━━━━━━━━━━━━━━━━━ a label the endpoint's state does not offer: found `+{next : end}`
-12 │ │   close(desk)
-13 │ │ }
-   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+11 │ │   close(desk)
+   │ └─────────────┘ checked against `() -> Unit`; while checking the body of this thunk
    │
    ├ note: `desk_selects_no_offered_label` is refused with UnofferedLabel, as its expectation states
    ╰ help: select a label the endpoint's protocol offers
 
 error[OfferArms]: `offer` must handle every label of its protocol exactly once
-   ╭▸ corpus/pathological/sessions/protocol.gandr:17:58
+   ╭▸ corpus/pathological/sessions/protocol.gandr:15:58
    │
-16 │ ┌ def seat_arms_one_label_of_two() -> Unit {
-17 │ │   let desk = fork (seat : &{next : end, retire : end}) { offer(seat) { next => close(seat) } };
-   │ │   ┬──                                                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not every offered label once: found `&{next : end, retire : end}`
+14 │ ┌ def seat_arms_one_label_of_two() -> Unit =
+15 │ │   let desk = fork (seat : &{next : end, retire : end}) { offer(seat) { | next => close(seat) } };
+   │ │   ┬──                                                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not every offered label once: found `&{next : end, retire : end}`
    │ │   │
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the child this forks
-18 │ │   select(desk, next);
-19 │ │   close(desk)
-20 │ │ }
-   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+16 │ │   select(desk, next)
+17 │ │   close(desk)
+   │ └─────────────┘ checked against `() -> Unit`; while checking the body of this thunk
    │
    ├ note: `seat_arms_one_label_of_two` is refused with OfferArms, as its expectation states
    ╰ help: handle every label of the endpoint's protocol exactly once
 
 error[SessionMismatch]: the endpoint's protocol expects an offer here, not a close
-   ╭▸ corpus/pathological/sessions/protocol.gandr:27:3
+   ╭▸ corpus/pathological/sessions/protocol.gandr:24:3
    │
-25 │ ┌ def desk_drops_a_live_endpoint() -> Unit {
-26 │ │   let desk = fork (seat : +{done : end}) { select(seat, done); drop(seat) };
+22 │ ┌ def desk_drops_a_live_endpoint() -> Unit =
+23 │ │   let desk = fork (seat : +{done : end}) { select(seat, done); drop(seat) };
    │ │   ┬──
    │ │   │
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the rest of this fork's parent
-27 │ │   drop(desk)
-   │ │   ━━━━━━━━━━ an action the endpoint's state does not admit: found `&{done : end}`
-28 │ │ }
-   │ └─┘ checked against `() => Unit`; while checking the body of this thunk
+24 │ │   drop(desk)
+   │ │   ┯━━━━━━━━│
+   │ └───│────────┤
+   │     │        checked against `() -> Unit`; while checking the body of this thunk
+   │     an action the endpoint's state does not admit: found `&{done : end}`
    │
    ├ note: `desk_drops_a_live_endpoint` is refused with SessionMismatch, as its expectation states
    ╰ help: change the endpoint action or protocol so that they agree

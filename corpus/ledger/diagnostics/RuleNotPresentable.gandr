@@ -3,5 +3,5 @@
 data Tally : Type where {
   | Empty : Tally
   | Mark : (n : Integer) --> Tally
-  rule : Mark(Empty) ==> Empty;
+  rule : Mark Empty ==> Empty;
 }

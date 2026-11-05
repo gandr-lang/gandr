@@ -10,7 +10,7 @@
 //! lowering inserts. A family with parameters takes it from the type the
 //! constructor's position states: an annotation `(C(…) : T(…))`; the
 //! signature of the definition it is, `def x : T(…) ; def x = C(…) ;`; the
-//! answer of the body it ends, `+U (-F T(…))`, `() => T(…)` or a function's
+//! answer of the body it ends, `+U (-F T(…))`, `() -> T(…)` or a function's
 //! stated result, through a tail, a `pure` there or a `return` — a result
 //! written as a top-level definition's application, `-> opt(Integer)` with
 //! `opt = fun (A) { -F Maybe(A) }`, read through the definition's body; its
@@ -408,6 +408,7 @@ use super::LabelRead;
 use super::LabelSite;
 use super::Lowered;
 use super::Lowerer;
+use super::Parameter;
 use super::Plan;
 use super::Produced;
 use super::Reading;
@@ -1153,12 +1154,12 @@ pub(super) enum Over
         arm: Frame,
     },
     /// The returner over the written value type, `-F B`: the answer of a
-    /// thunk's body whose signature writes the alias `() => B`.
+    /// thunk's body whose signature writes the box `() -> B`.
     Returning,
-    /// The arrows the value function space `(A1, …, An) => B` the node writes
-    /// stands for, past its first `taken` domains: `Aₜ₊₁ -> … -> An -> -F B`.
-    /// The answer of a thunk's body whose signature writes the alias, and of
-    /// each lambda under it but the last, which answers `B` returning.
+    /// The arrows the box `(A1, …, An) -> B` the node writes stands for, past
+    /// its first `taken` domains: `Aₜ₊₁ -> … -> An -> -F B`. The answer of a
+    /// thunk's body whose signature writes the box, and of each lambda under
+    /// it but the last, which answers `B` returning.
     Valued
     {
         /// How many domains the lambdas around the position took.
@@ -2545,6 +2546,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             if let Maybe::Present(kind) = form.kind {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
+                let _fresh = self.kinds.insert(kind.node);
             }
             // Each index reads under the parameters and the indices before
             // it, a named one by its name; the generators read under the
@@ -4053,15 +4055,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the collection has read every slot.
     /// - ensures: for each slot whose signature and definition are both written
     ///   types and terms: a signature `+U C`, its parentheses stripped, answers
-    ///   the definition's thunk body with `C`, the alias `() => B` with `-F B`
-    ///   and any other alias `(A1, …, An) => B` with the arrows it stands for,
+    ///   the definition's thunk body with `C`, the box `() -> B` with `-F B`
+    ///   and any other box `(A1, …, An) -> B` with the arrows it stands for,
     ///   each read under the outermost frame; any other signature classifies
     ///   the definition. A slot with no signature whose written definition is
     ///   `(e : T)` records `T` as the annotation's ascription and signs `e` by
     ///   `T` the same way.
     /// - provides: the expected type a constructor takes its classifier from
     ///   where the source states one only in the signature, and the binder
-    ///   types and answers of the lambdas a thunk signed with an alias opens.
+    ///   types and answers of the lambdas a thunk signed with a box opens.
     /// - fails: as [`Self::unwrapped`].
     /// - panics: none.
     ///
@@ -4069,9 +4071,9 @@ impl<'source> Lowerer<'_, 'source>
     /// The walk's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a thunk signed `+U (-F T)` and `() => T`, and a
+    /// - hypothesis: L3 — a thunk signed `+U (-F T)` and `() -> T`, and a
     ///   definition signed `T`, each over a parameterised family's constructor;
-    ///   a lambda signed `A => B` and `(A, C) => B` lowering as under the
+    ///   a lambda signed `A -> B` and `(A, C) -> B` lowering as under the
     ///   thunked arrow.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
@@ -4128,12 +4130,13 @@ impl<'source> Lowerer<'_, 'source>
 
     /// What the written type `written`, its parentheses stripped, answers a
     /// thunk's body or a bare lambda it types: `C` for `+U C`, `-F B` for
-    /// `() => B` and the arrows any other value function space `(A1, …, An)
-    /// => B` stands for, each read under the outermost frame.
+    /// `() -> B` and the arrows any other box `(A1, …, An) -> B` stands for,
+    /// each read under the outermost frame.
     ///
     /// # Specification
-    /// - ensures: the answer for a thunk type of one operand and for a value
-    ///   function space; nothing for any other type.
+    /// - ensures: the answer for a thunk type of one operand and for a box,
+    ///   either arrow writing it as [`crate::form::writes_box`] reads it;
+    ///   nothing for any other type.
     /// - fails: as [`Self::unwrapped`].
     /// - panics: none.
     ///
@@ -4145,6 +4148,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Self::parameters_classify`].
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::an_argument_lambda_s_binder_is_typed_by_its_parameter_1948`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |answer| answer.is_none_or(|answer| answer.frame == Frame::Outermost)))]
     fn signed_answer(
         &mut self,
@@ -4155,6 +4159,7 @@ impl<'source> Lowerer<'_, 'source>
             && written.keyword.is_some_and(|at| {
                 type_former(self.name_at(at)) == Maybe::Present(TypeFormer::Thunk)
             });
+        let boxed = self.boxes(written.node)?.0;
         Ok(match *written.operands.as_slice() {
             [body] if thunked => Some(Answer {
                 node: body,
@@ -4162,25 +4167,23 @@ impl<'source> Lowerer<'_, 'source>
                 over: Over::Written,
                 arm: Maybe::Absent(passed::Absent::Unpassed),
             }),
-            [domain, codomain] if written.former == Former::ValueFunctionType => {
-                match self.unwrapped(domain)? {
-                    Maybe::Present(Unwrapped {
-                        former: Former::ParenthesizedType,
-                        ref operands,
-                        ..
-                    }) if operands.is_empty() => Some(Answer {
-                        node: codomain,
-                        frame: Frame::Outermost,
-                        over: Over::Returning,
-                        arm: Maybe::Absent(passed::Absent::Unpassed),
-                    }),
-                    Maybe::Present(_) | Maybe::Absent(_) => Some(Answer {
-                        node: written.node,
-                        frame: Frame::Outermost,
-                        over: Over::Valued { taken: 0_usize },
-                        arm: Maybe::Absent(passed::Absent::Unpassed),
-                    }),
-                }
+            [domain, codomain] if boxed => match self.unwrapped(domain)? {
+                Maybe::Present(Unwrapped {
+                    former: Former::ParenthesizedType,
+                    ref operands,
+                    ..
+                }) if operands.is_empty() => Some(Answer {
+                    node: codomain,
+                    frame: Frame::Outermost,
+                    over: Over::Returning,
+                    arm: Maybe::Absent(passed::Absent::Unpassed),
+                }),
+                Maybe::Present(_) | Maybe::Absent(_) => Some(Answer {
+                    node: written.node,
+                    frame: Frame::Outermost,
+                    over: Over::Valued { taken: 0_usize },
+                    arm: Maybe::Absent(passed::Absent::Unpassed),
+                }),
             },
             _ => None,
         })
@@ -5171,7 +5174,10 @@ impl<'source> Lowerer<'_, 'source>
             closed(site, &mut cursor, TileName::FAT_ARROW)?;
             let body = site.one(cursor.operands())?;
             arms.push((pattern, body));
-            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+            // A `,` or the next arm's bar separates arms.
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
+                && let Maybe::Absent(_) = cursor.at(TileName::ARM_BAR)
+            {
                 closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
                 break;
             }
@@ -5848,6 +5854,11 @@ impl<'source> Lowerer<'_, 'source>
     {
         let unplanned = Ok(arity::Planned(false));
         let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return unplanned;
+        };
+        // `(C a).l` selects as `C(a).l` does.
+        let Some(target) = self.ungrouped_target(target, site.at.node)?
         else {
             return unplanned;
         };
@@ -6625,11 +6636,6 @@ impl<'source> Lowerer<'_, 'source>
         if name == FormName::HOLE {
             return Ok(Matcher::Hole(self.hole(at)?));
         }
-        if name == FormName::UNIT {
-            // `unit` is the empty product's pattern, `#{}` spelled as the
-            // value it matches.
-            return self.components(here, queued, &[], patterns, work);
-        }
         if name == FormName::IDENTIFIER {
             if self.text_at(at).as_ref() == super::identity::HERE {
                 return match self.collected.words.len() {
@@ -6817,8 +6823,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::LABELLED_SUM_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
-            closed(here, &mut cursor, TileName::PLUS)?;
-            closed(here, &mut cursor, TileName::BRACE_OPEN)?;
+            closed(here, &mut cursor, TileName::SUM_OPEN)?;
             let key = self.dotted(here, &mut cursor)?;
             closed(here, &mut cursor, TileName::EQUALS)?;
             let payload = here.one(cursor.operands())?;
@@ -10894,6 +10899,63 @@ impl<'source> Lowerer<'_, 'source>
         lifted
     }
 
+    /// `domain`, the type `parameter` states, read past the binders of the
+    /// names before it that share its written type: `y` in `x y : a` reads `a`
+    /// past `x` when a later type names `x`.
+    ///
+    /// # Specification
+    /// - requires: `domain` is minted from `parameter`'s written type, under
+    ///   the frame of the first name that shares it; `earlier` holds the
+    ///   parameters before `parameter`, in written order; `binds` answers
+    ///   whether a parameter's arrow is a Π, as the caller mints it.
+    /// - ensures: `domain` itself when no name just before `parameter` that
+    ///   shares its written type binds; otherwise `domain` with every free
+    ///   index raised by the names that bind, each copy recorded as
+    ///   [`Self::lift_value_type`] records its own.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two names that share a type a later type names
+    ///   declare what the names written apart declare, in a def head and in a
+    ///   box's group.
+    /// - witness: `lower::tests::a_def_head_s_shared_names_are_its_parameters_written_apart_4853`
+    /// - witness: `lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
+    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == domain)]
+    pub(super) fn shared_domain(
+        earlier: &[Parameter],
+        parameter: &Parameter,
+        binds: impl Fn(&Parameter) -> bool,
+        domain: ValueTypeId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        let binding = earlier
+            .iter()
+            .rev()
+            .take_while(|named| named.declared == parameter.declared)
+            .filter(|&named| binds(named))
+            .count();
+        let lift = Binders::from(u32::try_from(binding).unwrap_or(u32::MAX));
+        if lift == Binders::NONE {
+            return domain;
+        }
+        let mark = sink.arena.watermark();
+        let mut copies = Vec::new();
+        let lifted = gandr_core_term::shift_value_type(sink.arena, domain, lift)
+            .settle_traced(sink.arena, &mut copies);
+        record_copied_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(rooted::Absent::Classifier),
+            &copies,
+        );
+
+        lifted
+    }
+
     /// `ty`, a computation type read under `frame` in `telescope`, carried
     /// into the term context of the same frame.
     ///
@@ -10964,9 +11026,9 @@ impl<'source> Lowerer<'_, 'source>
     /// The peeling loop runs `taken` times.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a function result and a thunk signed `() => T`, each
+    /// - hypothesis: L3 — a function result and a thunk signed `() -> T`, each
     ///   answering a constructor's classifier, and a match under a lambda
-    ///   signed `A => B` answering `-F B`.
+    ///   signed `A -> B` answering `-F B`.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::staged::tests::a_case_under_a_staged_result_answers_plainly`

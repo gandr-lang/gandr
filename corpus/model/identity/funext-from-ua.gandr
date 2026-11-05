@@ -9,56 +9,47 @@
 // extensionality.
 
 /// The diagonal of the path space: a point, to itself, along reflexivity.
-def diag(b : Type, v : b) -> #{x : b, y : b, p : Path[.A = b](x, y)} {
-  (v, (v, Path.here(v)))
-}
+def diag(b : Type, v : b) -> *{x : b, y : b, p : Path[.A = b](x, y)} =
+  *{v, *{v, Path.here v}}
 
 /// The first end of a path.
-def source(b : Type, w : #{x : b, y : b, p : Path[.A = b](x, y)}) -> b {
-  match w {
-    #{.x = u, .y = v, .p = q} => u
-  }
-}
+def source(b : Type, w : *{x : b, y : b, p : Path[.A = b](x, y)}) -> b =
+  match w
+    | *{.x = u, .y = v, .p = q} => u
 
 /// The second end of a path.
-def target(b : Type, w : #{x : b, y : b, p : Path[.A = b](x, y)}) -> b {
-  match w {
-    #{.x = u, .y = v, .p = q} => v
-  }
-}
+def target(b : Type, w : *{x : b, y : b, p : Path[.A = b](x, y)}) -> b =
+  match w
+    | *{.x = u, .y = v, .p = q} => v
 
 /// The diagonal at a path's first end is the path, by `J` on it.
 def diagSource(
   b : Type,
-  w : #{x : b, y : b, p : Path[.A = b](x, y)}
-) -> Path[.A = #{x : b, y : b, p : Path[.A = b](x, y)}](
-  diag(b, source(b, w)),
+  w : *{x : b, y : b, p : Path[.A = b](x, y)}
+) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)}](
+  diag b (source b w),
   w
-) {
-  match w {
-    #{.x = u, .y = v, .p = q} => Path.walk(
-      (y : b, z : Path[.A = b](u, y)) => Path[.A = #{x : b, y : b, p : Path[.A = b](x, y)}](
-        diag(b, u),
-        (u, (y, z))
-      ),
-      q,
-      Path.here(u),
-      Path.here(q),
-      Path.here(diag(b, u))
-    )
-  }
-}
+) =
+  match w
+    | *{.x = u, .y = v, .p = q} => Path.walk
+      ((y : b, z : Path[.A = b](u, y)) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)}](
+        diag b u,
+        *{u, *{y, z}}
+      ))
+      q
+      (Path.here u)
+      (Path.here q)
+      (Path.here (diag b u))
 
 /// The diagonal is bi-invertible, the first end both its inverses.
-def diagEquiv(b : Type) -> b ≃ #{x : b, y : b, p : Path[.A = b](x, y)} {
-  (
-    fun (v) { diag(b, v) },
-    (
-      (fun (w) { source(b, w) }, fun (v) { Path.here(v) }),
-      (fun (w) { source(b, w) }, fun (w) { diagSource(b, w) })
-    )
-  )
-}
+def diagEquiv(b : Type) -> b ≃ *{x : b, y : b, p : Path[.A = b](x, y)} =
+  *{
+    fun (v) { diag b v },
+    *{
+      *{fun (w) { source b w }, fun (v) { Path.here v }},
+      *{fun (w) { source b w }, fun (w) { diagSource b w }}
+    }
+  }
 
 /// A function into `b` carried back along a path between types and forward
 /// again is itself, at every function, by `J` on the path.
@@ -67,21 +58,19 @@ def roundTrip(
   x : Type,
   y : Type,
   p : Path[.A = Type](x, y)
-) -> (u : y => b) => Path[.A = y => b](
-  Path.walk(fun (Z) { Z => b }, p, Path.walk(fun (Z) { Z => b }, Path.back(p), u)),
+) -> (u : y -> b) -> Path[.A = y -> b](
+  Path.walk (fun (Z) { Z -> b }) p (Path.walk (fun (Z) { Z -> b }) (Path.back p) u),
   u
-) {
-  Path.walk(
-    (w : Type, z : Path[.A = Type](x, w)) => (v : w => b) => Path[.A = w => b](
-      Path.walk(fun (Z) { Z => b }, z, Path.walk(fun (Z) { Z => b }, Path.back(z), v)),
+) =
+  Path.walk
+    ((w : Type, z : Path[.A = Type](x, w)) -> ((v : w -> b) -> Path[.A = w -> b](
+      Path.walk (fun (Z) { Z -> b }) z (Path.walk (fun (Z) { Z -> b }) (Path.back z) v),
       v
-    ),
-    p,
-    Path.here(x),
-    Path.here(p),
-    fun (v) { Path.here(v) }
-  )
-}
+    )))
+    p
+    (Path.here x)
+    (Path.here p)
+    (fun (v) { Path.here v })
 
 /// Two functions into `b` that are one stay one carried forward along a path
 /// between types, by `J` on the path between them.
@@ -90,36 +79,33 @@ def carryPath(
   x : Type,
   y : Type,
   p : Path[.A = Type](x, y),
-  u : x => b,
-  v : x => b,
-  e : Path[.A = x => b](u, v)
-) -> Path[.A = y => b](Path.walk(fun (Z) { Z => b }, p, u), Path.walk(fun (Z) { Z => b }, p, v)) {
-  Path.walk(
-    (w : x => b, Path[.A = x => b](u, w)) => Path[.A = y => b](
-      Path.walk(fun (Z) { Z => b }, p, u),
-      Path.walk(fun (Z) { Z => b }, p, w)
-    ),
-    e,
-    Path.here(u),
-    Path.here(e),
-    Path.here(Path.walk(fun (Z) { Z => b }, p, u))
-  )
-}
+  u : x -> b,
+  v : x -> b,
+  e : Path[.A = x -> b](u, v)
+) -> Path[.A = y -> b](Path.walk (fun (Z) { Z -> b }) p u, Path.walk (fun (Z) { Z -> b }) p v) =
+  Path.walk
+    ((w : x -> b, Path[.A = x -> b](u, w)) -> Path[.A = y -> b](
+      Path.walk (fun (Z) { Z -> b }) p u,
+      Path.walk (fun (Z) { Z -> b }) p w
+    ))
+    e
+    (Path.here u)
+    (Path.here e)
+    (Path.here (Path.walk (fun (Z) { Z -> b }) p u))
 
 /// Three paths between functions into `b`, the first reversed, in a row.
 def chain(
   b : Type,
   y : Type,
-  u : y => b,
-  s : y => b,
-  r : y => b,
-  v : y => b,
-  l : Path[.A = y => b](s, u),
-  c : Path[.A = y => b](s, r),
-  m : Path[.A = y => b](r, v)
-) -> Path[.A = y => b](u, v) {
-  Path.step(Path.step(Path.back(l), c), m)
-}
+  u : y -> b,
+  s : y -> b,
+  r : y -> b,
+  v : y -> b,
+  l : Path[.A = y -> b](s, u),
+  c : Path[.A = y -> b](s, r),
+  m : Path[.A = y -> b](r, v)
+) -> Path[.A = y -> b](u, v) =
+  Path.step (Path.step (Path.back l) c) m
 
 /// Carrying back along a path between types is injective: two functions
 /// into `b` whose carried copies are one are one.
@@ -128,106 +114,97 @@ def carryInjective(
   x : Type,
   y : Type,
   p : Path[.A = Type](x, y),
-  u : y => b,
-  v : y => b,
-  e : Path[.A = x => b](
-    Path.walk(fun (Z) { Z => b }, Path.back(p), u),
-    Path.walk(fun (Z) { Z => b }, Path.back(p), v)
+  u : y -> b,
+  v : y -> b,
+  e : Path[.A = x -> b](
+    Path.walk (fun (Z) { Z -> b }) (Path.back p) u,
+    Path.walk (fun (Z) { Z -> b }) (Path.back p) v
   )
-) -> Path[.A = y => b](u, v) {
-  let all = roundTrip(b, x, y, p);
-  let l = all(u);
-  let m = all(v);
-  let c = carryPath(
-    b,
-    x,
-    y,
-    p,
-    Path.walk(fun (Z) { Z => b }, Path.back(p), u),
-    Path.walk(fun (Z) { Z => b }, Path.back(p), v),
+) -> Path[.A = y -> b](u, v) =
+  let all = roundTrip b x y p
+  let l = all u
+  let m = all v
+  let c = carryPath
+    b
+    x
+    y
+    p
+    (Path.walk (fun (Z) { Z -> b }) (Path.back p) u)
+    (Path.walk (fun (Z) { Z -> b }) (Path.back p) v)
     e
-  );
-  chain(
-    b,
-    y,
-    u,
-    Path.walk(fun (Z) { Z => b }, p, Path.walk(fun (Z) { Z => b }, Path.back(p), u)),
-    Path.walk(fun (Z) { Z => b }, p, Path.walk(fun (Z) { Z => b }, Path.back(p), v)),
-    v,
-    l,
-    c,
+  chain
+    b
+    y
+    u
+    (Path.walk (fun (Z) { Z -> b }) p (Path.walk (fun (Z) { Z -> b }) (Path.back p) u))
+    (Path.walk (fun (Z) { Z -> b }) p (Path.walk (fun (Z) { Z -> b }) (Path.back p) v))
+    v
+    l
+    c
     m
-  )
-}
 
 /// The two ends of the path space are one function: carried back along
 /// `ua` of the diagonal, each runs the diagonal and then reads an end, and
 /// both are the identity by conversion.
-def endsAgree(b : Type) -> Path[.A = #{x : b, y : b, p : Path[.A = b](x, y)} => b](
-  thunk { fun (w) { source(b, w) } },
-  thunk { fun (w) { target(b, w) } }
-) {
-  carryInjective(
-    b,
-    b,
-    type(#{x : b, y : b, p : Path[.A = b](x, y)}),
-    ua((
-      thunk { fun (v) { diag(b, v) } },
-      (
-        (thunk { fun (w) { source(b, w) } }, thunk { fun (v) { Path.here(v) } }),
-        (thunk { fun (w) { source(b, w) } }, thunk { fun (w) { diagSource(b, w) } })
-      )
-    )),
-    thunk { fun (w) { source(b, w) } },
-    thunk { fun (w) { target(b, w) } },
-    Path.here(thunk { fun (v) { v } })
-  )
-}
+def endsAgree(b : Type) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> b](
+  thunk { fun (w) { source b w } },
+  thunk { fun (w) { target b w } }
+) =
+  carryInjective
+    b
+    b
+    (type(*{x : b, y : b, p : Path[.A = b](x, y)}))
+    (ua (*{
+      thunk { fun (v) { diag b v } },
+      *{
+        *{thunk { fun (w) { source b w } }, thunk { fun (v) { Path.here v } }},
+        *{thunk { fun (w) { source b w } }, thunk { fun (w) { diagSource b w } }}
+      }
+    }))
+    (thunk { fun (w) { source b w } })
+    (thunk { fun (w) { target b w } })
+    (Path.here (thunk { fun (v) { v } }))
 
 /// Two functions out of the path space that are one stay one after any map
 /// into it, by `J` on the path between them.
 def whisker(
   a : Type,
   b : Type,
-  k : a => #{x : b, y : b, p : Path[.A = b](x, y)},
-  s : #{x : b, y : b, p : Path[.A = b](x, y)} => b,
-  t : #{x : b, y : b, p : Path[.A = b](x, y)} => b,
-  e : Path[.A = #{x : b, y : b, p : Path[.A = b](x, y)} => b](s, t)
-) -> Path[.A = a => b](fun (x) { s(k(x)) }, fun (x) { t(k(x)) }) {
-  Path.walk(
-    (
-      w : #{x : b, y : b, p : Path[.A = b](x, y)} => b,
-      Path[.A = #{x : b, y : b, p : Path[.A = b](x, y)} => b](
+  k : a -> *{x : b, y : b, p : Path[.A = b](x, y)},
+  s : *{x : b, y : b, p : Path[.A = b](x, y)} -> b,
+  t : *{x : b, y : b, p : Path[.A = b](x, y)} -> b,
+  e : Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> b](s, t)
+) -> Path[.A = a -> b](fun (x) { s (k x) }, fun (x) { t (k x) }) =
+  Path.walk
+    ((
+      w : *{x : b, y : b, p : Path[.A = b](x, y)} -> b,
+      Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> b](
         s,
         w
       )
-    ) => Path[.A = a => b](fun (x) { s(k(x)) }, fun (x) { w(k(x)) }),
-    e,
-    Path.here(s),
-    Path.here(e),
-    Path.here(fun (x) { s(k(x)) })
-  )
-}
+    ) -> Path[.A = a -> b](fun (x) { s (k x) }, fun (x) { w (k x) }))
+    e
+    (Path.here s)
+    (Path.here e)
+    (Path.here (fun (x) { s (k x) }))
 
 /// Function extensionality at the path space: a map into it gives a path
 /// between its two ends, whatever the functions are.
 def funextOfSpace(
   a : Type,
   b : Type,
-  k : a => #{x : b, y : b, p : Path[.A = b](x, y)}
-) -> Path[.A = a => b](
-  fun (x) { source(b, k(x)) },
-  fun (x) { target(b, k(x)) }
-) {
-  whisker(
-    a,
-    b,
-    k,
-    fun (w) { source(b, w) },
-    fun (w) { target(b, w) },
-    endsAgree(b)
-  )
-}
+  k : a -> *{x : b, y : b, p : Path[.A = b](x, y)}
+) -> Path[.A = a -> b](
+  fun (x) { source b (k x) },
+  fun (x) { target b (k x) }
+) =
+  whisker
+    a
+    b
+    k
+    (fun (w) { source b w })
+    (fun (w) { target b w })
+    (endsAgree b)
 
 /// Function extensionality from a homotopy, through the path space: the map
 /// takes a point to both functions' results there and the homotopy's path
@@ -237,9 +214,8 @@ def funextOfSpace(
 def funextFromUa(
   a : Type,
   b : Type,
-  f : a => b,
-  g : a => b,
-  h : (x : a) => Path[.A = b](f(x), g(x))
-) -> Path[.A = a => b](f, g) {
-  funextOfSpace(a, b, fun (x) { (f(x), (g(x), h(x))) })
-}
+  f : a -> b,
+  g : a -> b,
+  h : (x : a) -> Path[.A = b](f x, g x)
+) -> Path[.A = a -> b](f, g) =
+  funextOfSpace a b (fun (x) { *{f x, *{g x, h x}} })

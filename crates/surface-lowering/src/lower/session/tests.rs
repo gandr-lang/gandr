@@ -44,21 +44,21 @@ const EXCHANGE: &str = "def exchange(n : Integer) -> -F Unit {\n\
        select(c, report);\n\
        send(c, \"progress\");\n\
        offer(c) {\n\
-         next => { select(c, handoff); send(c, \"notes\"); close(c) },\n\
-         retire => close(c)\n\
+         | next => { select(c, handoff); send(c, \"notes\"); close(c) }\n\
+         | retire => close(c)\n\
        }\n\
      };\n\
      send(peer, \"task\");\n\
      offer(peer) {\n\
-       report => {\n\
+       | report => {\n\
          let first = recv(peer);\n\
          select(peer, next);\n\
          offer(peer) {\n\
-           report => { let second = recv(peer); select(peer, retire); close(peer) },\n\
-           handoff => { let notes = recv(peer); close(peer) }\n\
+           | report => { let second = recv(peer); select(peer, retire); close(peer) }\n\
+           | handoff => { let notes = recv(peer); close(peer) }\n\
          }\n\
-       },\n\
-       handoff => { let notes = recv(peer); close(peer) }\n\
+       }\n\
+       | handoff => { let notes = recv(peer); close(peer) }\n\
      }\n\
    }\n";
 
@@ -727,7 +727,7 @@ fn a_parameter_at_a_named_session_type_is_placed()
 {
     let source = SourceText::from(
         "module Base where { type Ask = ?Integer >> end ; }\n\
-         module Gate :> #{ type T } where { type T = end ; }\n\
+         module Gate :> *{ type T } where { type T = end ; }\n\
          type Local = !Integer >> end ;\n\
          type Again = Local ;\n\
          type Count = Integer ;\n\
@@ -769,12 +769,12 @@ fn an_offer_arm_is_one_label()
 {
     let source = SourceText::from(
         "def twice(n : Integer) -> -F Unit {\n\
-           let d = fork (c : &{ go : end }) { offer(c) { go => close(c), go => close(c) } };\n\
+           let d = fork (c : &{ go : end }) { offer(c) { | go => close(c) | go => close(c) } };\n\
            select(d, go);\n\
            close(d)\n\
          }\n\
          def patterned(n : Integer) -> -F Unit {\n\
-           let d = fork (c : &{ go : end }) { offer(c) { 7 => close(c) } };\n\
+           let d = fork (c : &{ go : end }) { offer(c) { | 7 => close(c) } };\n\
            select(d, go);\n\
            close(d)\n\
          }\n",
@@ -786,14 +786,14 @@ fn an_offer_arm_is_one_label()
             refusal_of(&module, SurfaceName::from("twice")),
             LoweringRefusal::DuplicateDefinition { name, span, .. }
                 if name == SurfaceName::from("go")
-                    && span == spelled_within(source, SourceText::from("go => close(c), go"), SourceText::from("go"))
+                    && span == spelled_within(source, SourceText::from("go => close(c) | go"), SourceText::from("go"))
         ),
         "a label is armed once"
     );
     assert_eq!(
         refusal_of(&module, SurfaceName::from("patterned")),
         LoweringRefusal::OutOfFragment {
-            span: spelled_within(source, SourceText::from("{ 7 =>"), SourceText::from("7")),
+            span: spelled_within(source, SourceText::from("{ | 7 =>"), SourceText::from("7")),
             form: FormName::from(NamedKind("literal_pattern")),
             sort: FragmentSort::Pattern,
             boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::LiteralPattern),
@@ -806,10 +806,10 @@ fn an_offer_arm_is_one_label()
 fn sharing_is_reserved_by_name()
 {
     let source = SourceText::from(
-        "def shared(n : Integer) -> -F Unit { fork !(c : end) { close(c) } ; return unit }\n\
-         def bound(n : Integer) -> -F Unit { let d = fork !(c : end) { close(c) } ; return unit }\n\
-         def acquired(n : Integer) -> -F Unit { let c = acquire(n) ; return unit }\n\
-         def released(n : Integer) -> -F Unit { let c = release(n) ; return unit }\n\
+        "def shared(n : Integer) -> -F Unit { fork !(c : end) { close(c) } ; return *{} }\n\
+         def bound(n : Integer) -> -F Unit { let d = fork !(c : end) { close(c) } ; return *{} }\n\
+         def acquired(n : Integer) -> -F Unit { let c = acquire(n) ; return *{} }\n\
+         def released(n : Integer) -> -F Unit { let c = release(n) ; return *{} }\n\
          def duplicated(n : Integer) -> -F Unit { let d = fork (c : end) { close(c) } ; dup(d) ; close(d) }\n",
     );
     let mut arena = CoreArena::new();
@@ -882,7 +882,7 @@ fn a_receive_or_a_fork_no_let_binds_is_refused()
          }\n\
          def forked() -> -F Unit {\n\
            fork (c : end) { close(c) };\n\
-           return unit\n\
+           return *{}\n\
          }\n",
     );
     let mut arena = CoreArena::new();
@@ -917,12 +917,12 @@ fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
         "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
          def joined(n : Nat) -> -F Integer {\n\
            var c = 100;\n\
-           let m = match n { Zero => return 7, Succ(p) => { let d = fork (e : end) { close(e) }; close(d) } } ;\n\
+           let m = match n { | Zero => return 7 | Succ(p) => { let d = fork (e : end) { close(e) }; close(d) } } ;\n\
            pure c\n\
          }\n\
          def joined_by_hand(n : Nat) -> -F Integer {\n\
            var c = 100;\n\
-           match n { Zero => return 7, Succ(p) => { let d = fork (e : end) { close(e) }; let m = close(d) ; pure c } }\n\
+           match n { | Zero => return 7 | Succ(p) => { let d = fork (e : end) { close(e) }; let m = close(d) ; pure c } }\n\
          }\n",
     );
     let mut arena = CoreArena::new();
@@ -946,21 +946,21 @@ fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
          def forked(n : Nat) -> -F Unit {\n\
            let d = fork (c : end) { close(c) };\n\
            close(d) ;\n\
-           let m = match n { Zero => return unit, Succ(p) => pure unit } ;\n\
+           let m = match n { | Zero => return *{} | Succ(p) => pure *{} } ;\n\
            return m\n\
          }\n\
          def forked_by_hand(n : Nat) -> -F Unit {\n\
            let d = fork (c : end) { close(c) };\n\
            close(d) ;\n\
-           match n { Zero => return unit, Succ(p) => return unit }\n\
+           match n { | Zero => return *{} | Succ(p) => return *{} }\n\
          }\n\
          def offered(n : Nat) -> -F Unit {\n\
            let d = fork (c : +{ go : end }) { select(c, go) ; close(c) };\n\
-           offer(d) { go => { close(d) ; let m = match n { Zero => return unit, Succ(p) => pure unit } ; return m } }\n\
+           offer(d) { | go => { close(d) ; let m = match n { | Zero => return *{} | Succ(p) => pure *{} } ; return m } }\n\
          }\n\
          def offered_by_hand(n : Nat) -> -F Unit {\n\
            let d = fork (c : +{ go : end }) { select(c, go) ; close(c) };\n\
-           offer(d) { go => { close(d) ; match n { Zero => return unit, Succ(p) => return unit } } }\n\
+           offer(d) { | go => { close(d) ; match n { | Zero => return *{} | Succ(p) => return *{} } } }\n\
          }\n",
     );
     let mut arena = CoreArena::new();

@@ -17,16 +17,15 @@ data NatDiv : Type where {
     rem : NatDiv
   );
   oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);
-  rule : walk(Zero, g, d, q, r) <=> (q, r);
-  rule : walk(Succ(m), Zero, d, q, r) <=> walk(m, d, d, Succ(q), Zero);
-  rule : walk(Succ(m), Succ(g), d, q, r) <=> walk(m, g, d, q, Succ(r));
-  rule : divmod(m, Zero) <=> (Zero, m);
-  rule : divmod(m, Succ(d)) <=> walk(m, d, d, Zero, Zero);
+  rule : walk Zero g d q r <=> (q, r);
+  rule : walk (Succ m) Zero d q r <=> walk m d d (Succ q) Zero;
+  rule : walk (Succ m) (Succ g) d q r <=> walk m g d q (Succ r);
+  rule : divmod m Zero <=> (Zero, m);
+  rule : divmod m (Succ d) <=> walk m d d Zero Zero;
 }
 
 /// Five by two runs to two remainder one, both outputs bound.
-@[ runs("(Succ(Succ(Zero)), Succ(Zero))") ]
-def five_by_two() -> NatDiv * NatDiv {
-  let (quot, rem) = divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero)));
-  (quot, rem)
-}
+@[ runs("*{Succ (Succ Zero), Succ Zero}") ]
+def five_by_two() -> NatDiv * NatDiv =
+  let *{quot, rem} = divmod (Succ (Succ (Succ (Succ (Succ Zero))))) (Succ (Succ Zero))
+  *{quot, rem}

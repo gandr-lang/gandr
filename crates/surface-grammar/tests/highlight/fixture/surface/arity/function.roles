@@ -103,6 +103,6 @@
 346..347 Other ":"
 348..354 TypeBuiltin "String"
 354..355 Other ")"
-356..358 Operator "=>"
+356..358 Operator "->"
 359..366 TypeBuiltin "Integer"
 366..367 Other ";"

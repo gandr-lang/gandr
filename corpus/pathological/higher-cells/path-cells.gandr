@@ -14,7 +14,7 @@
 //   and the circle's paths, whose associator `Path.here` fills
 
 /// The globular theory at dimension one, its associator a cell.
-theory Glob where {
+theory Glob where
   /// The objects.
   sort Ob : Type;
   /// The cells from one object to another.
@@ -34,35 +34,30 @@ theory Glob where {
     f : Hom(a, b),
     g : Hom(b, c),
     h : Hom(c, d)
-  ) => Path[.A = Hom(a, d)](comp(comp(f, g), h), comp(f, comp(g, h)));
-}
+  ) -> Path[.A = Hom(a, d)](comp (comp f g) h, comp f (comp g h));
 
 /// The one object.
-data One : Type where {
+data One : Type where
   /// The object.
   | Star : One
-}
 
 /// The naturals.
-data Nat : Type where {
+data Nat : Type where
   /// Zero.
   | Zero : Nat
   /// The natural after `n`.
   | Succ : (n : Nat) --> Nat
-}
 
 /// Addition, by recursion on its second argument.
-def rec plus(n : Nat, m : Nat) -> Nat {
-  match m {
-    Zero => n,
-    Succ(p) => Succ(plus[<](n, p))
-  }
-}
+def rec plus(n : Nat, m : Nat) -> Nat =
+  match m
+    | Zero => n
+    | Succ(p) => Succ (plus[<] n p)
 
 /// The naturals under addition as cells at one object, with no associator
 /// written.
 @[ refuses("NoFiller.Omitted") ]
-module Unwitnessed : Model(Glob) where {
+module Unwitnessed : Model(Glob) where
   /// The one object.
   type Ob = One;
   /// The numbers, each a cell from the object to itself.
@@ -72,11 +67,10 @@ module Unwitnessed : Model(Glob) where {
   def id(a : One) -> Nat { Zero }
 
   /// Addition, the composite.
-  def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat { plus(f, g) }
-}
+  def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat { plus f g }
 
 /// A store whose write leaves the rest as it is, by a cell of the theory.
-theory Skipping where {
+theory Skipping where
   /// The stored value.
   sort S : Type+;
   /// The computation the store runs in.
@@ -86,20 +80,18 @@ theory Skipping where {
   /// Store a value.
   oper put : (s : S, k : C) --> C;
   /// A write leaves what follows it as it is.
-  law putSkip : (s : S, k : C) => Path[.A = C](put(s, k), k);
-}
+  law putSkip : (s : S, k : C) -> Path[.A = C](put s k, k);
 
 /// Every write answers nine and drops what follows it. The cell's left side is
 /// then nine, and its right side what follows.
 @[ refuses("HandlerUnlawful") ]
-def discarding() -> Integer {
+def discarding() -> Integer =
   handle st : Skipping with sort S = Integer {
-    st.put(1);
-    let a = st.get();
+    st.put 1;
+    let a = st.get ();
     pure a
   } with {
-    pure(x) => pure x,
-    oper get(k) => k(4),
-    oper put(s, k) => pure 9
+    | pure(x) => pure x
+    | oper get(k) => k 4
+    | oper put(s, k) => pure 9
   }
-}

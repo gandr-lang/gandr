@@ -5,49 +5,44 @@
 /// block whose type names the sort is refused at the opening.
 
 /// A counter: a seed and a reading of it.
-theory Seeded where {
+theory Seeded where
   /// What the counter counts in.
   sort T : Type;
   /// The reading of a count.
   oper read : (t : T) --> Integer;
   /// The first count.
   oper seed : T;
-}
 
 /// A counter over integers.
-module Ints : Model(Seeded) where {
+module Ints : Model(Seeded) where
   /// Counts are integers.
   type T = Integer;
   /// A count reads as itself.
   def read(n : Integer) -> Integer { n }
   /// Seven.
   def seed = 7;
-}
 
 /// The counter as a value at its model type.
 def ints : Model(Seeded) = Ints;
 
 /// Returns the seed at the integers its sort stands for.
 @[ refuses("TypeMismatch") ]
-def leak() -> Integer {
-  module m = ints;
+def leak() -> Integer =
+  module m = ints
   m.seed
-}
 
 /// Reads one opening's seed through another opening's reader.
 @[ refuses("TypeMismatch") ]
-def mixed() -> Integer {
-  module a = ints;
-  module b = ints;
-  a.read(b.seed)
-}
+def mixed() -> Integer =
+  module a = ints
+  module b = ints
+  a.read b.seed
 
 /// Binds a block whose type is the opened sort.
 @[ refuses("DependentBind") ]
-def escaped() -> Integer {
+def escaped() -> Integer =
   let y = {
     module m = ints;
     m.seed
   };
   7
-}

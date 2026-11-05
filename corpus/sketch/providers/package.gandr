@@ -17,14 +17,13 @@ import std.build (Gandr);
 import std.io (Command, Host, Path);
 
 /// The package, which grants each provider its capabilities.
-pub module Package : Model(Gandr.Package) where {
+pub module Package : Model(Gandr.Package) where
   /// The name the manifest records.
   def name = "deploy";
   /// The language version.
   def gandr = "0.1";
   /// What each provider may run, read and reach.
-  def providers = #{
-    .nix = #{ .run = #[Command("nix")], .read = #[Path("nixpkgs")] },
-    .aws = #{ .reach = #[Host("*.amazonaws.com")] }
+  def providers = *{
+    .nix = *{ .run = #[Command "nix"], .read = #[Path "nixpkgs"] },
+    .aws = *{ .reach = #[Host "*.amazonaws.com"] }
   };
-}

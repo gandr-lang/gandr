@@ -1191,9 +1191,9 @@ mod tests
         owed.sort();
         let mut expected = vec![
             key(Text("Nat.Succ"), Text("Succ : (n : Nat) --> Nat")),
-            key(Text("Nat.rule"), Text("rule : Succ(Zero) <=> Zero;")),
+            key(Text("Nat.rule"), Text("rule : Succ Zero <=> Zero;")),
             key(Text("T.get"), Text("oper get : (k : S) --> S;")),
-            key(Text("T.g"), Text("rule g : get(k) <=> k;")),
+            key(Text("T.g"), Text("rule g : get k <=> k;")),
             key(Text("Stream.head"), Text("head : a;")),
         ];
         expected.sort();

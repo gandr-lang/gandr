@@ -1,16 +1,16 @@
 error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
-   ╭▸ corpus/ledger/diagnostics/UndecidedCoverage.gandr:11:3
+   ╭▸ corpus/ledger/diagnostics/UndecidedCoverage.gandr:10:3
    │
-10 │    def classify(c : Color) -> -F Integer {
+ 9 │    def classify(c : Color) -> -F Integer =
    │    │            ─ checked against `Color -> -F Integer`; while checking the body of this function; binds c : Color
    │ ┌──┘
    │ │
-11 │ │┏   match c {
-12 │ │┃     ?branch => 1
-13 │ │┃   }
-   │ │┗━━━┛ an arm left to a pattern hole
-14 │ │  }
-   │ └──┘ checked against `Color => Integer`; while checking the body of this thunk
+10 │ │┏   match c
+11 │ │┃     | ?branch => 1
+   │ │┃                  ╿
+   │ └┃──────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━checked against `Color -> Integer`; while checking the body of this thunk
+   │                     an arm left to a pattern hole
    │
    ├ note: `classify` is refused with UndecidedCoverage, as its expectation states
    ╰ help: replace the pattern hole with a pattern

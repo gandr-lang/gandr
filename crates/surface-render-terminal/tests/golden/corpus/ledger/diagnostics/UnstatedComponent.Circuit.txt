@@ -11,9 +11,9 @@ error[UndescribedMember.NestedOperation]: this member rewrites a term with an op
    ╰ note: tracked by #4128 <https://github.com/gandr-lang/gandr/issues/4128>
 
 error[UnstatedComponent.Circuit]: the model signature cannot state `twice`, which is a circuit rule, whose sphere a model does not read yet
-   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Circuit.gandr:15:19
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Circuit.gandr:14:19
    │
-15 │ def model : Model(T) ;
+14 │ def model : Model(T) ;
    │                   ━ the signature this model derives
    │
    ├ note: `model` is refused with UnstatedComponent.Circuit, as its expectation states

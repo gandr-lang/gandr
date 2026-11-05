@@ -15,6 +15,5 @@ import "./reduct.gandr";
 /// The monoid where a semigroup is asked, with the reduct the checker applies
 /// written out.
 @[ runs("0"), form(explicit) ]
-def asSemigroupWritten() -> -F Integer {
-  become multiplies(Monoid.Semigroup(endoMonoid))
-}
+def asSemigroupWritten() -> -F Integer =
+  become multiplies (Monoid.Semigroup endoMonoid)

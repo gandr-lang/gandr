@@ -95,9 +95,9 @@ fn a_groups_certificate_replays_in_the_kernel()
     oper e : G;
     oper inv : (x : G) --> G;
     oper mul : (x : G, y : G) --> G;
-    rule unitL : mul(e(), x) <=> x;
-    rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
-    rule invL : mul(inv(x), x) <=> e();
+    rule unitL : mul (e ()) x <=> x;
+    rule assoc : mul (mul x y) z <=> mul x (mul y z);
+    rule invL : mul (inv x) x <=> e ();
 }"#;
     lowered(SourceText::from(group), |module| {
         let (certificate, verdict) = certified(module);
@@ -115,7 +115,7 @@ fn a_groups_certificate_replays_in_the_kernel()
     sort M : Type;
     oper e : M;
     oper mul : (x : M, y : M) --> M;
-    rule unitL : x <=> mul(e(), x);
+    rule unitL : x <=> mul (e ()) x;
 }"#;
     lowered(SourceText::from(unital), |module| {
         let (certificate, verdict) = certified(module);

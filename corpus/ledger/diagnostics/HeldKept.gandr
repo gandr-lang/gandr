@@ -1,8 +1,7 @@
 /// `HeldKept`: an exclusive access of a held slot a view of which is kept in a live region.
 @[ refuses("HeldKept") ]
-def writtenWhileKept() -> -F Integer {
-  var s = 3;
-  let k : (() => Integer) at s = access shared s as w { pure thunk { pure w } } ;
+def writtenWhileKept() -> -F Integer =
+  var s = 3
+  let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } } ;
   access s as v { resume(v, 4) };
   force k
-}

@@ -10,12 +10,11 @@ import std.process;
 
 /// A scope cancelled at its exit answers nine, not one hundred and one.
 @[ runs("9") ]
-def answered() -> Integer {
+def answered() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(1);
+    c.exit 1;
     pure 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => { abandon(k); pure 9 }
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => { abandon k; pure 9 }
   }
-}

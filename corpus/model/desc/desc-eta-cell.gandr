@@ -10,5 +10,5 @@
 data Wrap : Type where {
   | MkWrap : (n : Wrap) --> Wrap
   oper unwrap : (w : Wrap) --> Wrap;
-  rule : unwrap(MkWrap(x)) <=> x;
+  rule : unwrap (MkWrap x) <=> x;
 }

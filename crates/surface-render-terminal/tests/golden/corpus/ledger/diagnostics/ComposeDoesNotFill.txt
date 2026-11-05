@@ -1,27 +1,28 @@
 error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along the chain
-   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:9:3
-   │
- 8 │   def apart(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(x, z)) -> Path(x, z) {
-   │   │         ┬         ┬      ┬      ┬      ┬               ─ checked against `Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds q : Path[.A = A](x, z)
-   │   │         │         │      │      │      │
-   │   │         │         │      │      │      checked against `Path[.A = A](x, y) -> Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds p : Path[.A = A](x, y)
-   │   │         │         │      │      checked against `(a : A) -> Path[.A = A](x, y) -> Path[.A = A](x, a) -> -F Path[.A = A](x, a)`; while checking the body of this function; binds z : A
-   │   │         │         │      checked against `(a : A) -> (b : A) -> Path[.A = A](x, a) -> Path[.A = A](x, b) -> -F Path[.A = A](x, b)`; while checking the body of this function; binds y : A
-   │   │         │         checked against `(a : A) -> (b : A) -> (c : A) -> Path[.A = A](a, b) -> Path[.A = A](a, c) -> -F Path[.A = A](a, c)`; while checking the body of this function; binds x : A
-   │ ┌─┘         checked; while checking the body of this function; binds A : Type
-   │ │
- 9 │ │   compose[3, 5](chain(2), (p, q))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ cells that do not fill the chain
-10 │ │ }
-   │ └─┘ checked against `(a : Type, b : a, c : a, d : a, Path[.A = a](b, c), Path[.A = a](b, d)) => Path[.A = a](b, d)`; while checking the body of this thunk
-   │
-   ├ note: `apart` is refused with ComposeDoesNotFill, as its expectation states
-   ╰ help: start each cell at the point where the cell before it ends
+  ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:8:3
+  │
+7 │   def apart(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(x, z)) -> Path(x, z) =
+  │   │         ┬         ┬      ┬      ┬      ┬               ─ checked against `Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds q : Path[.A = A](x, z)
+  │   │         │         │      │      │      │
+  │   │         │         │      │      │      checked against `Path[.A = A](x, y) -> Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds p : Path[.A = A](x, y)
+  │   │         │         │      │      checked against `(a : A) -> Path[.A = A](x, y) -> Path[.A = A](x, a) -> -F Path[.A = A](x, a)`; while checking the body of this function; binds z : A
+  │   │         │         │      checked against `(a : A) -> (b : A) -> Path[.A = A](x, a) -> Path[.A = A](x, b) -> -F Path[.A = A](x, b)`; while checking the body of this function; binds y : A
+  │   │         │         checked against `(a : A) -> (b : A) -> (c : A) -> Path[.A = A](a, b) -> Path[.A = A](a, c) -> -F Path[.A = A](a, c)`; while checking the body of this function; binds x : A
+  │ ┌─┘         checked; while checking the body of this function; binds A : Type
+  │ │
+8 │ │   compose[3, 5] (chain 2) (p, q)
+  │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+  │ └───│────────────────────────────┤
+  │     │                            checked against `(a : Type, b : a, c : a, d : a, Path[.A = a](b, c), Path[.A = a](b, d)) -> Path[.A = a](b, d)`; while checking the body of this thunk
+  │     cells that do not fill the chain
+  │
+  ├ note: `apart` is refused with ComposeDoesNotFill, as its expectation states
+  ╰ help: start each cell at the point where the cell before it ends
 
 error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end to end
-   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:19:3
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:16:3
    │
-18 │   def columnApart(A : Type, x : A, y : A, f : Path(x, y), g : Path(x, y), h : Path(x, y), k : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Pa…
+15 │   def columnApart(A : Type, x : A, y : A, f : Path(x, y), g : Path(x, y), h : Path(x, y), k : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Pa…
    │   │               ┬         ┬      ┬      ┬               ┬               ┬               ┬               ┬                                        ─ checked against `Path[.A = Path[.A = A](x, y)](h, k) -> -F Path[.A = Path[.A = A](x, y)](f, k)`; while checking the body of this function; binds b : Path[.A = Path[.A = A](x, y)](h, k)
    │   │               │         │      │      │               │               │               │               │
    │   │               │         │      │      │               │               │               │               checked; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
@@ -33,10 +34,11 @@ error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end t
    │   │               │         checked; while checking the body of this function; binds x : A
    │ ┌─┘               checked; while checking the body of this function; binds A : Type
    │ │
-19 │ │   compose[4, 9](chain(1, (2)), (a, b))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2-cells that do not fill their column
-20 │ │ }
-   │ └─┘ checked; while checking the body of this thunk
+16 │ │   compose[4, 9] (chain 1 2) (a, b)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│──────────────────────────────┤
+   │     │                              checked; while checking the body of this thunk
+   │     2-cells that do not fill their column
    │
    ├ note: `columnApart` is refused with ComposeDoesNotFill, as its expectation states
    ╰ help: start each 2-cell of a column at the 1-cell where the 2-cell before it ends

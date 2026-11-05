@@ -20,97 +20,82 @@ import "./state.gandr";
 import "../identity/model-counter.gandr";
 
 /// State passing: what runs reads the current state and answers an integer.
-module Passing : Model(State.Eff) with sort S = Integer where {
+module Passing : Model(State.Eff) with sort S = Integer where
   /// A computation awaiting the current state.
-  type C = Integer => Integer;
+  type C = Integer -> Integer;
   /// Reading hands the current state to what runs after, at that same state.
-  def get(k : Integer => Integer => Integer) -> Integer => Integer {
-    thunk { fun (s) { let after = k(s); after(s) } }
-  }
+  def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
+    thunk { fun (s) { let after = k s; after s } }
   /// Storing runs what comes after at the stored value, whatever the state
   /// was.
-  def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
-    thunk { fun (_old) { k(s) } }
-  }
-}
+  def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
+    thunk { fun (_old) { k s } }
 
 /// Storing four and then reading twice from an initial zero: the read sees
 /// the stored four both times, put-get at a point.
 @[ runs("44") ]
-def putThenGet() -> Integer {
-  let read = Passing.get(fun (s) { pure fun (t) { pure s * 10 + t } });
-  let program = Passing.put(4, read);
-  program(0)
-}
+def putThenGet() -> Integer =
+  let read = Passing.get (fun (s) { pure fun (t) { pure s * 10 + t } })
+  let program = Passing.put 4 read
+  program 0
 
 /// The same model of `StatePutPut`: put-put relates no term at `get`'s port,
 /// so the model states it, and proves it by conversion — both sides run what
 /// comes after at the second value.
-module Overwriting : Model(StatePutPut) with sort S = Integer where {
+module Overwriting : Model(StatePutPut) with sort S = Integer where
   /// A computation awaiting the current state.
-  type C = Integer => Integer;
+  type C = Integer -> Integer;
   /// As `Passing.get`.
-  def get(k : Integer => Integer => Integer) -> Integer => Integer {
-    thunk { fun (s) { let after = k(s); after(s) } }
-  }
+  def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
+    thunk { fun (s) { let after = k s; after s } }
   /// As `Passing.put`.
-  def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
-    thunk { fun (_old) { k(s) } }
-  }
+  def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
+    thunk { fun (_old) { k s } }
   /// Storing twice keeps the second value.
-  def putPut(s : Integer, u : Integer, k : Integer => Integer) -> Path(
-    put(s, put(u, k)),
-    put(u, k)
-  ) {
-    Path.here(put(u, k))
-  }
-}
+  def putPut(s : Integer, u : Integer, k : Integer -> Integer) -> Path(
+    put s (put u k),
+    put u k
+  ) =
+    Path.here (put u k)
 
 /// The counts read as integers, the first count zero.
-def shown(c : Unit + (Unit + Unit)) -> Integer {
-  match c {
-    +{.0 = u} => 0,
-    +{.1 = rest} => match rest {
-      +{.0 = u} => 1,
-      +{.1 = v} => 2
-    }
-  }
-}
+def shown(c : Unit + (Unit + Unit)) -> Integer =
+  match c
+    | +{.0 = u} => 0
+    | +{.1 = rest} => match rest
+      | +{.0 = u} => 1
+      | +{.1 = v} => 2
 
 /// State passing over the counts with both sorts manifest, so a model is the
 /// record of its two operations.
-def passing : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = #{
-  .get = fun (k) { pure fun (s) { let after = k(s); after(s) } },
-  .put = fun (s) { fun (k) { pure fun (_old) { k(s) } } }
+def passing : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = *{
+  .get = fun (k) { pure fun (s) { let after = k s; after s } },
+  .put = fun (s) { fun (k) { pure fun (_old) { k s } } }
 };
 
 /// The same model carried along negation of the counts: `get`'s continuation
 /// is a function of the state, so the state it is handed is negated back and
 /// the computation it answers negated forth.
-def negated : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = Path.walk(
-  fun (x) { type(Model(State.Eff) with sort S = x with sort C = (x => Integer)) },
-  countsNegated,
-  passing
-);
+def negated : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = Path.walk (fun (x) {
+  type(Model(State.Eff) with sort S = x with sort C = (x -> Integer))
+}) countsNegated passing;
 
 /// Storing the second count and then reading the state twice, from the first
 /// count.
-def putGet(m : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer)) -> Integer {
-  match m {
-    #{.get = g, .put = p} => {
-      let read = g(fun (s) {
-        pure fun (t) { let a = shown(s); let b = shown(t); pure a * 10 + b }
+def putGet(m : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer)) -> Integer =
+  match m
+    | *{.get = g, .put = p} => {
+      let read = g (fun (s) {
+        pure fun (t) { let a = shown s; let b = shown t; pure a * 10 + b }
       });
-      let program = p(+{.1 = +{.0 = unit}}, read);
-      program(+{.0 = unit})
+      let program = p (+{.1 = +{.0 = *{}}}) read;
+      program (+{.0 = *{}})
     }
-  }
-}
 
 /// Through the model itself: both reads see the stored count.
 @[ runs("11") ]
-def direct() -> Integer { putGet(passing) }
+def direct() -> Integer { putGet passing }
 
 /// Through the carried model, where put-get holds as in any model. It runs to
 /// `11` once the machine transports along `put`'s curried function.
-def carried() -> Integer { putGet(negated) }
+def carried() -> Integer { putGet negated }

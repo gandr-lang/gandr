@@ -19,14 +19,13 @@
 import std.manifold (Site);
 
 /// The far site, on a loopback socket.
-pub module Site : Model(Site) where {
+pub module Site : Model(Site) where
   /// The key the hosting process proves.
   def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
   /// The socket it binds, where a dialer reaches it.
   def sockets = "127.0.0.1:7433";
   /// The name of the key's secret.
   def secret = "far";
-}
 
 /// The far site's model, where a manifold places a world.
 pub def site : Model(Site) = pack Site at Model(Site);

@@ -7,16 +7,14 @@
 // may run.
 
 /// A carrier with a test.
-theory Base where {
+theory Base where
   sort Carrier : Type;
   oper test : (a : Carrier) --> Bool;
-}
 
 /// A carrier with a test and another, over `Base`.
-theory Wider where {
+theory Wider where
   include Base;
   oper other : (a : Carrier) --> Bool;
-}
 
 /// A code the module owes.
 @[ owes(1) ]

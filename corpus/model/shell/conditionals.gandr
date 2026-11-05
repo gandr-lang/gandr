@@ -5,7 +5,6 @@
 
 /// `test -d` on the host, its exit code read by an `if`.
 @[ refuses("OutOfFragment.shell_block") ]
-def probed() -> -F String {
+def probed() -> -F String =
   let probe = #!{ test -d /tmp; };
   if probe.exit_code == 0 -> -F String { pure "present" } else { pure "absent" }
-}

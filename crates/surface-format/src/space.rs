@@ -51,16 +51,6 @@ const BINDINGS: [&str; 5] = [
     "receive_session_type",
 ];
 
-/// The rules whose `{` lists labelled entries hugged by their braces, written
-/// against the `+` or `&` before it: a sum and a lazy record.
-const TELESCOPES: [&str; 5] = [
-    "labelled_sum_type",
-    "labelled_sum_expression",
-    "labelled_sum_pattern",
-    "lazy_record_type",
-    "lazy_record_expression",
-];
-
 /// What a face's `{` follows in a theory: its `=`, the one `{` of the rule
 /// written there. The face lists the names it holds, hugged by its braces:
 /// `face left = {tl, bl}`.
@@ -68,16 +58,10 @@ const FACE: &[RCtxStep] = &[RCtxStep {
     crossed: StepSym::Tile("="),
 }];
 
-/// The rules whose `#{` opens a module signature, padded by its braces; any
-/// other `#{` opens a record, hugged by them.
+/// The rules whose `*{` opens a module signature, padded by its braces; any
+/// other `*{` opens a record, hugged by them. The retired `#{` reads the
+/// same.
 const SIGNATURES: [&str; 2] = ["module_declaration", "nested_module_member"];
-
-/// The rules a `<` or `>` marks the bound or direction it touches in.
-const MARKS: [&str; 3] = [
-    "staged_type",
-    "instantiation.direction.descent",
-    "instantiation.direction.productivity",
-];
 
 /// The keywords whose parenthesis lists binders, one space after the keyword:
 /// `fun (x)`, `fork (seat : end)`, `bind (a : Name)`, `pi+ (x : A)`.
@@ -93,16 +77,17 @@ pub enum Context
     /// package's world, a world's requirement or a site's offer, a theory's
     /// bracketed parameters.
     Operand,
-    /// An operator touching what follows it: a negation, a session's `!` or
-    /// `?`, a universe's `+` or `-`, a staged bound's `<` or `>`, a lambda's
-    /// `\`, a rest pattern's `..`, a splice's `~`, and the `+` or `&` of a sum
-    /// or lazy record.
+    /// An operator touching what follows it: a session's `!` or `?`, a
+    /// universe's `+` or `-`, a lambda's `\`, a rest pattern's `..` and a
+    /// splice's `~`. A negation's `-` and a staged or directed `<` or `>` are
+    /// no prefixes: written against their operand, `-2` or `<i`, each is one
+    /// token, a name.
     Prefix,
     /// A `.` ending a binder or a session's message.
     Binding,
-    /// The `{` of a sum, a lazy record or a shape's face.
+    /// The `{` of a shape's face.
     Telescope,
-    /// The `#{` of a module signature.
+    /// The `*{` of a module signature.
     Signature,
     /// Any other token.
     Plain,
@@ -149,14 +134,10 @@ impl Context
             {
                 Self::Operand
             },
-            "{" if TELESCOPES.contains(&rule) => Self::Telescope,
             "{" if rule == "theory_declaration" && before == FACE => Self::Telescope,
-            "#{" if SIGNATURES.contains(&rule) => Self::Signature,
-            "+" | "&" if TELESCOPES.contains(&rule) => Self::Prefix,
-            "-" if rule == "unary_expression" || rule == "universe_type" => Self::Prefix,
-            "+" if rule == "universe_type" => Self::Prefix,
+            "*{" | "#{" if SIGNATURES.contains(&rule) => Self::Signature,
+            "-" | "+" if rule == "universe_type" => Self::Prefix,
             "?" if rule == "receive_session_type" => Self::Prefix,
-            "<" | ">" if MARKS.contains(&rule) => Self::Prefix,
             "!" | "\\" | ".." | "~" => Self::Prefix,
             _ => Self::Plain,
         }
@@ -214,7 +195,7 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Signature
             | Context::Plain => Padding::Pad,
         },
-        "#{" => match open.context {
+        "*{" | "#{" => match open.context {
             Context::Signature => Padding::Pad,
             Context::Operand
             | Context::Prefix
@@ -306,12 +287,13 @@ fn applied(left: Token<'_>) -> Wordlike
 /// - requires: `left` stands directly before `right` on one line, and neither
 ///   is the bracket of a group the other is the first or last element of.
 /// - ensures: a `,` or `;` touches what stands before it and is followed by one
-///   space; a comment has one space on either side; a `.` or a selector `.#[`
-///   or `.#{` touches the word or bracket before it, and a `.` the word after
-///   it unless it ends a binder; a prefix operator touches what follows it; a
-///   `(` or `[` touches the word or hugging bracket before it, unless it opens
-///   an operand or the binders of `fun`, `fork`, `bind` or `pi+`; any other two
-///   are one space apart.
+///   space; a comment has one space on either side; an application's empty
+///   juxtaposition tile has one space before it and none after it; a `.` or a
+///   selector `.#[` or `.*{` touches the word or bracket before it, and a `.`
+///   the word after it unless it ends a binder; a prefix operator touches what
+///   follows it; a `(` or `[` touches the word or hugging bracket before it,
+///   unless it opens an operand or the binders of `fun`, `fork`, `bind` or
+///   `pi+`; any other two are one space apart.
 /// - provides: the space [`crate::layout`] writes between two elements of a
 ///   line.
 /// - fails: never.
@@ -343,8 +325,17 @@ pub fn join(
     if left.kind == Kind::Comment || right.kind == Kind::Comment {
         return Join::Space;
     }
+    // An application's own tile, its juxtaposition, is empty: one space
+    // stands before it and none after it, so its head and its argument stand
+    // one space apart.
+    if right.kind == Kind::Token && right_text.is_empty() {
+        return Join::Space;
+    }
+    if left.kind == Kind::Token && left_text.is_empty() {
+        return Join::Touch;
+    }
     if (right.kind == Kind::Token && right_text == "."
-        || right.kind == Kind::Open && matches!(right_text, ".#[" | ".#{"))
+        || right.kind == Kind::Open && matches!(right_text, ".#[" | ".*{" | ".#{"))
         && applied(left) == Wordlike::Yes
     {
         return Join::Touch;

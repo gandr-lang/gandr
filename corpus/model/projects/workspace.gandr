@@ -17,7 +17,7 @@ import std.list (List);
 
 /// What the members share: the version each states. Each member reads what it
 /// asks of the toolchain here unless it asks more.
-pub module Workspace : Model(Gandr.Workspace) where {
+pub module Workspace : Model(Gandr.Workspace) where
   def version = "0.1.0";
   /// The least language version the members ask for.
   def gandr = ">= 0.0";
@@ -25,7 +25,6 @@ pub module Workspace : Model(Gandr.Workspace) where {
   def features = "project-manifest";
   /// The systems the members build on: any.
   def systems = "";
-}
 
 /// The workspace's packages, each a directory below it.
 pub def members : List(String) = #["hello", "tools"];

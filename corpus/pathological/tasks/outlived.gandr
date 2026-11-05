@@ -9,17 +9,16 @@ import std.process;
 
 /// A task exiting through its scope's capability after closing its end.
 @[ refuses("CapabilityEscaped") ]
-def outlived() -> Unit {
+def outlived() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Task.Join) {
       send(task, Task.notes);
       close(task);
-      c.exit(1)
+      c.exit 1
     };
     let text = recv(found);
     close(found)
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
   }
-}

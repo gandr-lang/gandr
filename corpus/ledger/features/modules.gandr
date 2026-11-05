@@ -1,10 +1,9 @@
 /// `modules`: a module groups declarations under a name, and a member is reached through it.
-pub module Origin where {
+pub module Origin where
   /// The starting point.
   def zero() -> -F Integer { return 0 }
-}
 
 /// The member called through its module's name.
 @[ runs("0") ]
-def started : () => Integer ;
-def started = thunk { Origin.zero() } ;
+def started : () -> Integer ;
+def started = thunk { Origin.zero () } ;

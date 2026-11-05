@@ -1,10 +1,8 @@
 /// `instantiation.direction.productivity`: a corecursive call guarded by an observation.
 @[ checks ]
-codata Stream(a : Type) : Type[-] where {
+codata Stream(a : Type) : Type[-] where
   head : a;
   tail : Stream(a);
-}
 @[ checks ]
-def rec nats(n : Integer) -> Stream(Integer) {
-  &{ .head => n, .tail => nats[>](n + 1) }
-}
+def rec nats(n : Integer) -> Stream(Integer) =
+  &{ .head => n, .tail => nats[>] (n + 1) }

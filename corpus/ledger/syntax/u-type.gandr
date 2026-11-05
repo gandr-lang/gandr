@@ -1,9 +1,7 @@
 /// `u_type`: a thunk type at the unrestricted grade, written with its glyph and in ASCII.
 @[ checks ]
-def later(k : +U[ω] (-F Integer)) -> -F Unit {
-  pure unit
-}
+def later(k : +U[ω] (-F Integer)) -> -F Unit =
+  pure *{}
 @[ checks ]
-def laterAscii(k : +U[inf] (-F Integer)) -> -F Unit {
-  pure unit
-}
+def laterAscii(k : +U[inf] (-F Integer)) -> -F Unit =
+  pure *{}

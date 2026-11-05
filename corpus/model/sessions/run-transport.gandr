@@ -8,79 +8,70 @@
 import std.session (Run);
 
 /// A bit.
-pub data Bit : Type where {
+pub data Bit : Type where
   | Zero : Bit
   | One : Bit
-}
 
 /// An answer.
-pub data Answer : Type where {
+pub data Answer : Type where
   | No : Answer
   | Yes : Answer
-}
 
 /// A bit read as an answer.
-def decode(b : Bit) -> Answer {
-  match b {
-    Zero => No,
-    One => Yes,
-  }
-}
+def decode(b : Bit) -> Answer =
+  match b
+    | Zero => No
+    | One => Yes
 
 /// An answer written as a bit.
-def encode(a : Answer) -> Bit {
-  match a {
-    No => Zero,
-    Yes => One,
-  }
-}
+def encode(a : Answer) -> Bit =
+  match a
+    | No => Zero
+    | Yes => One
 
 /// Encoding a decoded bit gives the bit back.
-def encoded(b : Bit) -> Path(encode(decode(b)), b) {
-  match b {
-    Zero => Path.here(Zero),
-    One => Path.here(One),
-  }
-}
+def encoded(b : Bit) -> Path(encode (decode b), b) =
+  match b
+    | Zero => Path.here Zero
+    | One => Path.here One
 
 /// Decoding an encoded answer gives the answer back.
-def decoded(a : Answer) -> Path(decode(encode(a)), a) {
-  match a {
-    No => Path.here(No),
-    Yes => Path.here(Yes),
-  }
-}
+def decoded(a : Answer) -> Path(decode (encode a), a) =
+  match a
+    | No => Path.here No
+    | Yes => Path.here Yes
 
 /// The bits and the answers are one type, by univalence.
-pub def codes : Path[.A = Type](Bit, Answer) = ua((decode, ((encode, encoded), (encode, decoded))));
+pub def codes : Path[.A = Type](Bit, Answer) = ua (*{
+  decode,
+  *{*{encode, encoded}, *{encode, decoded}}
+});
 
 /// A protocol that hears a bit, and one that hears an answer.
-module Ask where {
+module Ask where
   type Coded = ?Bit. end;
   type Decoded = ?Answer. end;
-}
 
 /// A run that heard a one.
-def heard : Run(Ask.Coded) = recorded(received(One), closed);
+def heard : Run(Ask.Coded) = recorded (received One) closed;
 
 /// Carried along the path, the run heard the one decoded: a yes.
 def heardDecoded : Path[.A = Run(Ask.Decoded)](
-  Path.walk(fun (X) { Run(type(?X. end)) }, codes, heard),
-  recorded(received(Yes), closed)
-) = Path.here(recorded(received(Yes), closed));
+  Path.walk (fun (X) { Run (type(?X. end)) }) codes heard,
+  recorded (received Yes) closed
+) = Path.here (recorded (received Yes) closed);
 
 /// The payload moves: the carried run is no run that heard a no.
 @[ refuses("EndpointMismatch") ]
 def heardKept : Path(
-  Path.walk(fun (X) { Run(type(?X. end)) }, codes, heard),
-  recorded(received(No), closed)
-) = Path.here(recorded(received(No), closed));
+  Path.walk (fun (X) { Run (type(?X. end)) }) codes heard,
+  recorded (received No) closed
+) = Path.here (recorded (received No) closed);
 
 /// The carried run, computed.
-def heardRun() -> Run(Ask.Decoded) {
-  Path.walk(fun (X) { Run(type(?X. end)) }, codes, heard)
-}
+def heardRun() -> Run(Ask.Decoded) =
+  Path.walk (fun (X) { Run (type(?X. end)) }) codes heard
 
 /// On the machine the carried run hears the yes, as it does by conversion.
-@[ runs("recorded(received(Yes), closed)") ]
-def decodedRun() -> Run(Ask.Decoded) { heardRun() }
+@[ runs("recorded (received Yes) (closed)") ]
+def decodedRun() -> Run(Ask.Decoded) { heardRun () }

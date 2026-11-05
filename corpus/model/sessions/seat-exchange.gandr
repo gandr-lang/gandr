@@ -14,39 +14,28 @@ import "./seat-base.gandr";
 /// retirement or a handoff. Its run plays the handoff, whose last five moves
 /// leave a prime node.
 @[
-  runs("unit"),
-  traces(decomposes(seat, series(
-    event(right, 0),
-    event(left, 0),
-    event(left, 1),
-    parallel(event(left, 2), event(right, 1)),
-    event(right, 2),
-    event(right, 3),
-    event(left, 3),
-    event(left, 4),
-    prime(event(left, 5), event(left, 6), event(right, 4), series(event(right, 5), event(right, 6)))
-  )))
+  runs("*{}"),
+  traces(decomposes seat (series (event right 0) (event left 0) (event left 1) (parallel (event left 2) (event right 1)) (event right 2) (event right 3) (event left 3) (event left 4) (prime (event left 5) (event left 6) (event right 4) (series (event right 5) (event right 6)))))
 ]
-def exchange() -> Unit {
+def exchange() -> Unit =
   let desk = fork (seat : Seat.SeatEnd) {
     let task = recv(seat);
     select(seat, report);
     send(seat, Seat.progress);
     offer(seat) {
-      next => { select(seat, handoff); send(seat, Seat.notes); close(seat) },
-      retire => close(seat)
+      | next => { select(seat, handoff); send(seat, Seat.notes); close(seat) }
+      | retire => close(seat)
     }
   };
-  send(desk, Seat.task);
+  send(desk, Seat.task)
   offer(desk) {
-    report => {
+    | report => {
       let first = recv(desk);
       select(desk, next);
       offer(desk) {
-        report => { let second = recv(desk); select(desk, retire); close(desk) },
-        handoff => { let notes = recv(desk); close(desk) }
+        | report => { let second = recv(desk); select(desk, retire); close(desk) }
+        | handoff => { let notes = recv(desk); close(desk) }
       }
-    },
-    handoff => { let notes = recv(desk); close(desk) }
+    }
+    | handoff => { let notes = recv(desk); close(desk) }
   }
-}

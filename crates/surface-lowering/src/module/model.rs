@@ -1126,12 +1126,12 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// How many indices the written kind `kind`, `(a : A, …) => U` or `A -> …
-    /// -> U`, states.
+    /// How many indices the written kind `kind`, the box `(a : A, …) -> U` or
+    /// the static arrow `A -> (… -> U)`, states.
     ///
     /// # Specification
-    /// - requires: `kind` is a value function space or a static arrow, either
-    ///   possibly in parentheses.
+    /// - requires: `kind` is a box or a static arrow, either possibly in
+    ///   parentheses.
     /// - ensures: read through the parentheses around the kind as a whole, for
     ///   a static arrow one per arrow along its spine; otherwise the number of
     ///   entries its parenthesised domain lists, or one for a domain written
@@ -1652,7 +1652,6 @@ pub fn spine_domains<'source>(
             | Former::Character
             | Former::TypeQuote
             | Former::Parenthesized
-            | Former::Unit
             | Former::Boolean
             | Former::Thunk
             | Former::Lambda
@@ -1691,7 +1690,6 @@ pub fn spine_domains<'source>(
             | Former::TelescopeType
             | Former::LabelledSumType
             | Former::LazyRecordType
-            | Former::ValueFunctionType
             | Former::PathType
             | Former::BridgeType
             | Former::FlowType

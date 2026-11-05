@@ -145,11 +145,9 @@
 //! `p : Path[.A = A](a, b)`, `z₀ : B[a]`, `q` an identity over `p` from `z₀`
 //! transported along it to some `z₁ : B[b]`, and `v : C[a, z₀]`; it returns
 //! `C[b, z₁]`. The motive is read as a value type, the thunk of the
-//! computation type `Π (y : A). Π (z : B). -F C` that the telescope alias
-//! `(y : A, z : B) => C` abbreviates, and the transport takes the computation
-//! type under the thunk. The alias itself cannot stand as an argument, where
-//! the grammar reads `(` as a tuple or an annotation, so the motive is written
-//! in the spelling the alias stands for. An entry written as a plain arrow,
+//! computation type `Π (y : A). Π (z : B). -F C` that the box `(y : A, z : B)
+//! -> C` writes, and the transport takes the computation type under the
+//! thunk. An entry written as a plain arrow,
 //! `+U (A -> B -> -F C)`, is made dependent, its codomain moved under the
 //! binder it then stands under. Any other motive is minted as written, a value
 //! type other than a thunk as the returner over it, and the checker refuses
@@ -833,13 +831,13 @@ enum Synthesis
 ///
 /// # Specification
 /// - ensures: a computation type returns its returner's result; a value
-///   function's codomain is that result itself, the alias `A => B` standing for
+///   function's codomain is that result itself, the box `A -> B` standing for
 ///   `+U (A -> -F B)`.
 /// - executable: none — a tag holds no tree to check its reading against.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `cong` by a parameter stated as `+U (A -> -F B)` and as
-///   `A => B` reads the same carrier.
+///   `A -> B` reads the same carrier.
 /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
 /// - witness: `lower::identity::tests::cong_reads_a_map_stated_as_a_value_function_791`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -848,7 +846,7 @@ enum Codomain
     /// A written computation type, `-F B`: a definition's result or a thunked
     /// arrow's codomain.
     Returner(NodeIndex),
-    /// The codomain `B` of a value function `A => B`.
+    /// The codomain `B` of a box `A -> B`.
     Returned(NodeIndex),
 }
 
@@ -2396,8 +2394,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: `Ok` exactly when the operand is a lambda, `fun (X) { T }`,
     ///   filed in [`Self::static_lambdas`] so it lowers as the static lambda
     ///   whose body is the family the operation moves its value in (#4508), or
-    ///   a bare name resolving to a binder whose written type is a thunk or the
-    ///   alias, `P : A => Type`, whose calls are that family (#3786).
+    ///   a bare name resolving to a binder whose written type is a thunk or a
+    ///   box, `P : A -> Type` or `P : A => Type`, whose calls are that family
+    ///   (#3786).
     /// - fails: the unannotated refusal at `site` for any other operand; the
     ///   refusals the tree's molds yield and the name's own refusal from its
     ///   resolution.
@@ -2456,12 +2455,18 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Err(unannotated);
                 };
-                match self.tree.node(written).map(|node| shape_of(self.pbg, node)) {
+                let thunked = matches!(
+                    self.tree.node(written).map(|node| shape_of(self.pbg, node)),
                     Some(Ok(Shape::Form {
-                        former: Former::ThunkType | Former::ValueFunctionType,
+                        former: Former::ThunkType,
                         ..
-                    })) => Ok(()),
-                    Some(Ok(_) | Err(_)) | None => Err(unannotated),
+                    }))
+                );
+                if thunked || self.boxes(written)?.0 {
+                    Ok(())
+                }
+                else {
+                    Err(unannotated)
                 }
             },
             Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => Err(unannotated),
@@ -3378,7 +3383,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the result type node and the frame it is read under, when
     ///   `function` is a bare name resolving to an earlier declaration written
     ///   as a function tail with a result type, or to one whose signature
-    ///   states a map, `+U (A -> C)` or `A => B`, or to a binder whose written
+    ///   states a map, `+U (A -> C)` or `A -> B`, or to a binder whose written
     ///   type is the thunk of an arrow, `+U (A -> C)`, under any parentheses;
     ///   the lambda itself when `function` is a lambda [`Self::cong_map`]
     ///   pointed at its path's points.
@@ -3543,7 +3548,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The codomain of the map the value type at `declared` states: `C` of
-    /// `+U (A -> C)`, or `B` of `A => B`, through parentheses.
+    /// `+U (A -> C)`, or `B` of `A -> B`, through parentheses.
     ///
     /// # Specification
     /// - requires: the ascending sweep has classified `declared`.
@@ -3583,7 +3588,14 @@ impl<'source> Lowerer<'_, 'source>
                 Some(&Plan::ValueFunction(domains, codomain))
                     if !thunked && domains.end.checked_sub(domains.start) == Some(1_usize) =>
                 {
-                    return Some(Codomain::Returned(codomain));
+                    // An output read as a result, a group or a row, mints
+                    // its own computation type, as a returner does.
+                    return Some(if matches!(self.reading(codomain), Reading::Result(_)) {
+                        Codomain::Returner(codomain)
+                    }
+                    else {
+                        Codomain::Returned(codomain)
+                    });
                 },
                 _ => return None,
             }
@@ -4083,13 +4095,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the ascending sweep has classified the declaration.
     /// - ensures: the tail's parameters and result when either half is a tail
-    ///   writing a result; otherwise, when the signature is written as `(x : A,
-    ///   …) => B` through parentheses, its entries and `B`, and as `A => B`, no
-    ///   binders, the domains' count and `B`; when it is written as the thunk
-    ///   that alias stands for, `+U (A1 -> … -> An -> -F B)`, the arrows every
-    ///   one dependent, `(x : A) -> C`, or none, the binders the dependent
-    ///   arrows' entries hold, the arrows' count and the returner `-F B`; the
-    ///   call's own fields left empty.
+    ///   writing a result; otherwise, when the signature is written as the box
+    ///   `(x : A, …) -> B` through parentheses, its entries and `B`, and as `A
+    ///   -> B`, no binders, the domains' count and `B`; when it is written as
+    ///   the thunk the box stands for, `+U (A1 -> … -> An -> -F B)`, the arrows
+    ///   every one dependent, `(x : A) -> C`, or none, the binders the
+    ///   dependent arrows' entries hold, the arrows' count and the returner `-F
+    ///   B`; the call's own fields left empty.
     /// - fails: none otherwise, a chain mixing dependent and plain arrows among
     ///   them.
     /// - panics: none.
@@ -4135,13 +4147,13 @@ impl<'source> Lowerer<'_, 'source>
                 entries,
                 entries.end.saturating_sub(entries.start),
                 codomain,
-                false,
+                matches!(self.reading(codomain), Reading::Result(_)),
             ),
             Some(&Plan::ValueFunction(domains, codomain)) => (
                 none,
                 domains.end.saturating_sub(domains.start),
                 codomain,
-                false,
+                matches!(self.reading(codomain), Reading::Result(_)),
             ),
             Some(&Plan::Former(TypeFormer::Thunk, held)) => {
                 let mut at = through(held);
@@ -4499,7 +4511,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Character
                 | Former::TypeQuote
                 | Former::Parenthesized
-                | Former::Unit
                 | Former::Boolean
                 | Former::Thunk
                 | Former::Lambda
@@ -4538,7 +4549,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::TelescopeType
                 | Former::LabelledSumType
                 | Former::LazyRecordType
-                | Former::ValueFunctionType
                 | Former::BridgeType
                 | Former::CapabilityType
                 | Former::AtType

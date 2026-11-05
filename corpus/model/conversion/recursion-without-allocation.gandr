@@ -19,17 +19,13 @@ import "../data/data-base.gandr";
 import "./conversion-base.gandr";
 
 /// Two recursive calls at each level, which answer a constant.
-def rec calls(n : Nat) -> Bool {
-  match n {
-    Zero => true,
-    Succ(m) => match calls[<](m) {
-      true => calls[<](m),
-      false => false
-    }
-  }
-}
+def rec calls(n : Nat) -> Bool =
+  match n
+    | Zero => true
+    | Succ(m) => match calls[<] m
+      | true => calls[<] m
+      | false => false
 
 /// Every call answers true.
-def callsAnswerTrue() -> Path(calls(twelve), true) {
-  Path.here(true)
-}
+def callsAnswerTrue() -> Path(calls twelve, true) =
+  Path.here true

@@ -1,8 +1,8 @@
 //! A signature and the definition after it written as one form.
 //!
-//! The function form: `def f : () => B ; def f = thunk { c } ;` and `def
+//! The function form: `def f : () -> B ; def f = thunk { c } ;` and `def
 //! f() -> -F B { c }`, which lower to the same thunk at the same type, and
-//! `def f : A => B ; def f = thunk { fun (x) { c } } ;` or `def f = fun (x) {
+//! `def f : A -> B ; def f = thunk { fun (x) { c } } ;` or `def f = fun (x) {
 //! c } ;` and `def f(x : A) -> -F B { c }`, the lambda's binders the
 //! function form's parameters.
 //!
@@ -32,11 +32,12 @@ use gandr_surface_syntax::SyntaxTree;
 use crate::leaf::Documentation;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
+use crate::leaf::Offside;
 use crate::space::Context;
 
 /// The tokens that open a bracketed group.
-const OPENERS: [&str; 11] = [
-    "(", "[", "#[", ".#[", "{", "#{", ".#{", "&{", "+{", "@[", "@![",
+const OPENERS: [&str; 13] = [
+    "(", "[", "#[", ".#[", "{", "*{", ".*{", "#{", ".#{", "&{", "+{", "@[", "@![",
 ];
 
 /// The tokens that close one.
@@ -242,6 +243,8 @@ pub fn separated<'source>(
         owner: first.owner,
         documentation: Documentation::Outside,
         context: Context::Written,
+        offside: Offside::Written,
+        branch: None,
     };
     let mut signed: Vec<Leaf<'source>> =
         Vec::with_capacity(head.saturating_add(last).saturating_add(3));
@@ -339,6 +342,8 @@ pub fn joined<'leaves, 'source>(
         owner: first.owner,
         documentation: Documentation::Outside,
         context: Context::Written,
+        offside: Offside::Written,
+        branch: None,
     };
     let mut out: Vec<Leaf<'source>> =
         Vec::with_capacity(signature.len().saturating_add(definition.len()));
@@ -501,6 +506,8 @@ pub fn members<'source>(
                 owner: first.owner,
                 documentation: Documentation::Outside,
                 context: Context::Written,
+                offside: Offside::Written,
+                branch: None,
             });
             out.extend(defined);
             copied = range.end;
@@ -561,7 +568,7 @@ pub fn members<'source>(
 /// # Specification
 /// - requires: each slice is one top-level form's leaves, in offset order.
 /// - ensures: `None` unless the signature is `def f : T ;` behind any
-///   attributes and documentation, `T` one of `() => B`, `+U (-F B)`, `D => B`
+///   attributes and documentation, `T` one of `() -> B`, `+U (-F B)`, `D -> B`
 ///   with `D` one domain or a parenthesised list of them, or `+U (D1 -> … -> Dn
 ///   -> -F B)`, the definition is written `def f = thunk { … } ;` under the
 ///   same name, its thunk ungraded, or `def f = fn …` when `T` has a domain,
@@ -675,6 +682,8 @@ pub fn merged<'leaves, 'source>(
         owner: first.owner,
         documentation: Documentation::Outside,
         context: Context::Written,
+        offside: Offside::Written,
+        branch: None,
     };
     let mut out: Vec<Leaf<'source>> = Vec::with_capacity(
         signature
@@ -746,8 +755,8 @@ struct Domain<'leaves, 'source>
 }
 
 /// The domains and the returner of the type whose tokens are `ty`, among the
-/// leaves `declared`, when it is a function form's: `() => B`, `+U (-F B)`,
-/// `D => B` or `+U (D1 -> … -> Dn -> -F B)`.
+/// leaves `declared`, when it is a function form's: `() -> B`, `+U (-F B)`,
+/// `D -> B` or `+U (D1 -> … -> Dn -> -F B)`.
 ///
 /// # Specification
 /// trivial.
@@ -781,7 +790,7 @@ fn abstracted<'leaves, 'source>(
             .collect::<Option<Vec<_>>>()?;
         return Some((domains, Codomain::Returner(spanned(declared, last)?)));
     }
-    let pieces = split(ty, Separator::Function);
+    let pieces = split(ty, Separator::Arrow);
     let &[given, result] = pieces.as_slice()
     else {
         return None;
@@ -890,10 +899,8 @@ fn applied<'leaves, 'source>(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Separator
 {
-    /// A computation arrow, `->`.
+    /// An arrow, `->`: a computation's, or the value function alias's.
     Arrow,
-    /// A value function's arrow, `=>`.
-    Function,
     /// A comma.
     Comma,
 }
@@ -908,7 +915,6 @@ impl Separator
     {
         match text {
             "->" => Some(Self::Arrow),
-            "=>" => Some(Self::Function),
             "," => Some(Self::Comma),
             _ => None,
         }
@@ -1018,7 +1024,7 @@ fn identifier(Token(_, text): Token<'_>) -> Identifier
 /// The returner a signature's type suspends.
 enum Codomain<'leaves, 'source>
 {
-    /// The result `B` of `() => B`, and whether it stands bare after `-F`.
+    /// The result `B` of `() -> B`, and whether it stands bare after `-F`.
     Result(&'leaves [Leaf<'source>], Atomic),
     /// The `-F B` of `+U (-F B)`.
     Returner(&'leaves [Leaf<'source>]),

@@ -1,15 +1,14 @@
 @[ refuses("RulesNonLinear") ]
-theory ConsumedTwice where {
+theory ConsumedTwice where
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
 
   rule doubled : (data x : Nat) ==> (z : Nat) {
     node : add(x, x) --> (z);
   };
-}
 
 @[ refuses("UndescribedMember.OperationFiller") ]
-theory ProducedTwice where {
+theory ProducedTwice where
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
   oper g : (a : Nat) --> (b : Nat);
@@ -18,10 +17,9 @@ theory ProducedTwice where {
     node : f(i) --> (m);
     node : g(j) --> (m);
   };
-}
 
 @[ refuses("UndescribedMember.ParallelRedexes") ]
-theory SharedRedexPort where {
+theory SharedRedexPort where
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);
 
@@ -34,11 +32,9 @@ theory SharedRedexPort where {
     node : q(x) ==> (n);
     node : add(m, n) --> (z);
   };
-}
 
 @[ refuses("MalformedForm") ]
-theory SortDisagreement where {
+theory SortDisagreement where
   sort Nat : Type;
   sort Bit : Type;
   oper narrow : (v : Nat) --> (v : Bit);
-}

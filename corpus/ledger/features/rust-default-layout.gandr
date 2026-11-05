@@ -14,9 +14,9 @@ import std.layout (
 );
 
 /// `struct Pair { flag: bool, count: u32 }` puts `count` first: rustc prints `count` at 0, `flag` at 4, in 8 bytes.
-@[ runs("Layout(8, 4, At(\"count\", 0, At(\"flag\", 4, End)))") ]
-def pairLayout() -> Layout { structLayout(Field("flag", Flag, Field("count", U32, Done))) }
+@[ runs("Layout 8 4 (At \"count\" 0 (At \"flag\" 4 End))") ]
+def pairLayout() -> Layout { structLayout (Field "flag" Flag (Field "count" U32 Done)) }
 
 /// `enum Shape { Dot, Line(u16, u16) }` has no niche, so it is tagged, the tag widened to two bytes: rustc prints 6 bytes.
-@[ runs("EnumLayout(6, 2, Tag(2), Arm(\"Dot\", End, Arm(\"Line\", At(\"0\", 2, At(\"1\", 4, End)), NoArm)))") ]
-def shapeLayout() -> EnumLayout { enumLayout(Variant("Dot", Done, Variant("Line", Field("0", U16, Field("1", U16, Done)), NoVariant))) }
+@[ runs("EnumLayout 6 2 (Tag 2) (Arm \"Dot\" End (Arm \"Line\" (At \"0\" 2 (At \"1\" 4 End)) NoArm))") ]
+def shapeLayout() -> EnumLayout { enumLayout (Variant "Dot" Done (Variant "Line" (Field "0" U16 (Field "1" U16 Done)) NoVariant)) }

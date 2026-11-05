@@ -12,62 +12,52 @@
 // - see: #2327 — `passed_alone`, `passed_beside`
 
 @[ checks, form(explicit) ]
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 @[ checks ]
-def rec down(n : Nat) -> -F Nat {
-  match n {
-    Zero => n,
-    Succ(p) => down[<](p)
-  }
-}
+def rec down(n : Nat) -> -F Nat =
+  match n
+    | Zero => n
+    | Succ(p) => down[<] p
 
 @[ runs("Zero") ]
 def held : +U (-F Nat);
-def held = down(Succ(Zero));
+def held = down (Succ Zero);
 
 @[ refuses("UnenclosedRun") ]
 def ran : Nat;
-def ran = down(Zero);
+def ran = down Zero;
 
 @[ checks ]
-def scrutinised(n : Nat) -> -F Nat {
-  match down(n) {
-    Zero => n,
-    Succ(p) => p
-  }
-}
+def scrutinised(n : Nat) -> -F Nat =
+  match down n
+    | Zero => n
+    | Succ(p) => p
 
 @[ checks ]
-def scrutinised_run(n : Nat) -> -F Nat {
-  let m = down(n);
-  match m {
-    Zero => n,
-    Succ(p) => p
-  }
-}
+def scrutinised_run(n : Nat) -> -F Nat =
+  let m = down n
+  match m
+    | Zero => n
+    | Succ(p) => p
 
 @[ checks ]
-def kept(n : Nat) -> -F (+U (-F Nat)) {
-  return thunk { Succ(down(n)) }
-}
+def kept(n : Nat) -> -F (+U (-F Nat)) =
+  return thunk { Succ (down n) }
 
 @[ checks ]
-def armed(n : Nat) -> -F Nat {
-  match n {
-    Zero => Zero,
-    Succ(p) => Succ(down(p))
-  }
-}
+def armed(n : Nat) -> -F Nat =
+  match n
+    | Zero => Zero
+    | Succ(p) => Succ (down p)
 
-@[ runs("Succ(Zero)") ]
-def armed_three() -> -F Nat { armed(Succ(Succ(Succ(Zero)))) }
+@[ runs("Succ Zero") ]
+def armed_three() -> -F Nat { armed (Succ (Succ (Succ Zero))) }
 
-@[ runs("Succ(Zero)") ]
-def kept_three() -> -F Nat { let k = kept(Succ(Succ(Zero))); force k }
+@[ runs("Succ Zero") ]
+def kept_three() -> -F Nat { let k = kept (Succ (Succ Zero)); force k }
 
 /// The constant function at `n`, returned by a call.
 @[ checks ]
@@ -75,25 +65,25 @@ def constantly(n : Nat) -> -F (+U (Nat -> -F Nat)) { return fun (_m) { n } }
 
 /// A function applied at zero.
 @[ checks ]
-def at_zero(g : +U (Nat -> -F Nat)) -> -F Nat { g(Zero) }
+def at_zero(g : +U (Nat -> -F Nat)) -> -F Nat { g Zero }
 
 /// A function applied at a point.
 @[ checks ]
-def at_point(g : +U (Nat -> -F Nat), x : Nat) -> -F Nat { g(x) }
+def at_point(g : +U (Nat -> -F Nat), x : Nat) -> -F Nat { g x }
 
 /// A call returning a function, passed where a function is read,
 /// runs before the call it is passed to, which applies what it returned.
-@[ runs("Succ(Zero)") ]
-def passed_alone() -> -F Nat { at_zero(constantly(Succ(Zero))) }
+@[ runs("Succ Zero") ]
+def passed_alone() -> -F Nat { at_zero (constantly (Succ Zero)) }
 
 /// The same call passed beside another argument.
-@[ runs("Succ(Succ(Zero))") ]
-def passed_beside() -> -F Nat { at_point(constantly(Succ(Succ(Zero))), Zero) }
+@[ runs("Succ (Succ Zero)") ]
+def passed_beside() -> -F Nat { at_point (constantly (Succ (Succ Zero))) Zero }
 
 /// A call returning a function, applied in place, runs before the
 /// application, which applies what it returned.
-@[ runs("Succ(Succ(Zero))") ]
-def applied_in_place() -> -F Nat { constantly(Succ(Succ(Zero)))(Zero) }
+@[ runs("Succ (Succ Zero)") ]
+def applied_in_place() -> -F Nat { (constantly (Succ (Succ Zero))) Zero }
 
 /// The second of two naturals.
 @[ checks ]
@@ -102,4 +92,4 @@ def second(_a : Nat, b : Nat) -> -F Nat { b }
 /// A call of a function of two parameters, applied in place, stays the one
 /// call it spells.
 @[ runs("Zero") ]
-def applied_curried() -> -F Nat { second(Succ(Zero))(Zero) }
+def applied_curried() -> -F Nat { (second (Succ Zero)) Zero }

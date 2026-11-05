@@ -1,44 +1,44 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/identity/circle-section.gandr:61:17
+   ╭▸ corpus/pathological/identity/circle-section.gandr:54:19
    │
-55 │    def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-   │    │              ─ checked against `(a : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](spin(wind(a)), a)`; while checking the body of this function; binds p : Path[.A = Circle](Base, Base)
+48 │    def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
+   │    │              ─ checked against `(a : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](spin (wind a), a)`; while checking the body of this function; binds p : Path[.A = Circle](Base, Base)
    │ ┌──┘
    │ │
-56 │ │    spin(wind(p)),
-57 │ │    p
-58 │ │  ) {
-59 │ │┌   match p {
-60 │ ││     here => Path.here(Path.here(Base)),
-61 │ ││     loop ∷ q => forged[<](q),
-   │ ││                 ━━━━━━━━━━━━ its type does not convert: expected `-F Path[.A = Path[.A = Circle](Base, Base)](spin(wind(loop ∷ q)), loop ∷ q)`, found `-F Path[.A = Path[.A = Circle](Base, Base)](spin(wind(q)), q)`
-62 │ ││     back(loop) ∷ q => { let ih = forged[<](q); Path.ap(unloopOn, ih) }
-63 │ ││   }
-   │ │└───┘ checked against `-F Path[.A = Path[.A = Circle](Base, Base)](spin(wind(p)), p)`; while checking the body of this function; binds q : Path[.A = Circle](Base, Base)
-64 │ │  }
-   │ └──┘ checked against `(p : Path[.A = Circle](Base, Base)) => Path[.A = Path[.A = Circle](Base, Base)](spin(wind(p)), p)`; while checking the body of this function; binds forged : (a : Path[.A = Circle](Base, Base)) => Path[.A = Path[.A = Circle](Base, Base)](spin(wind(a)), a)
+49 │ │    spin (wind p),
+50 │ │    p
+51 │ │  ) =
+52 │ │┌   match p
+53 │ ││     | here => Path.here (Path.here Base)
+54 │ ││     | loop ∷ q => forged[<] q
+   │ ││                   ━━━━━━━━━━━ its type does not convert: expected `-F Path[.A = Path[.A = Circle](Base, Base)](spin (wind (loop ∷ q)), loop ∷ q)`, found `-F Path[.A = Path[.A = Circle](Base, Base)](spin (wind q), q)`
+55 │ ││     | back(loop) ∷ q => { let ih = forged[<] q; Path.ap unloopOn ih }
+   │ ││                                                                     │
+   │ └│─────────────────────────────────────────────────────────────────────│
+   │  └─────────────────────────────────────────────────────────────────────checked against `(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](spin (wind p), p)`; while checking the body of this function; binds forged : (a : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](spin (wind a), a)
+   │                                                                        checked against `-F Path[.A = Path[.A = Circle](Base, Base)](spin (wind p), p)`; while checking the body of this function; binds q : Path[.A = Circle](Base, Base)
    │
    ├ note: `forged` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
-   ╭▸ corpus/pathological/identity/circle-section.gandr:76:3
+   ╭▸ corpus/pathological/identity/circle-section.gandr:67:3
    │
-72 │    def rec rewound(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
+63 │    def rec rewound(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
    │    │               ─ checked against `(a : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](a, a)`; while checking the body of this function; binds p : Path[.A = Circle](Base, Base)
    │ ┌──┘
    │ │
-73 │ │    p,
-74 │ │    p
-75 │ │  ) {
-76 │ │┏   match p {
-77 │ │┃     here => Path.here(Path.here(Base)),
-78 │ │┃     loop ∷ q => { let ih = rewound[<](q); Path.ap(loopOn, ih) },
-79 │ │┃     back(loop) ∷ q => Path.here(back(loop) ∷ q)
-80 │ │┃   }
-   │ │┗━━━┛ a case its datatype's rules do not admit
-81 │ │  }
-   │ └──┘ checked against `(p : Path[.A = Circle](Base, Base)) => Path[.A = Path[.A = Circle](Base, Base)](p, p)`; while checking the body of this function; binds rewound : (a : Path[.A = Circle](Base, Base)) => Path[.A = Path[.A = Circle](Base, Base)](a, a)
+64 │ │    p,
+65 │ │    p
+66 │ │  ) =
+67 │ │┏   match p
+68 │ │┃     | here => Path.here (Path.here Base)
+69 │ │┃     | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
+70 │ │┃     | back(loop) ∷ q => Path.here (back loop ∷ q)
+   │ │┃                                                 ╿
+   │ └┃─────────────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](p, p)`; while checking the body of this function; binds rewound : (a : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](a, a)
+   │                                                    a case its datatype's rules do not admit
    │
    ├ note: `rewound` is refused with RuleNotRespected, as its expectation states
    ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

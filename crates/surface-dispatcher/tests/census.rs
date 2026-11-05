@@ -159,6 +159,49 @@ fn collapsed(text: SourceText<'_>) -> String
         .join(" ")
 }
 
+/// `text` with each call's tuple argument `f(*{a, b})` written as its list
+/// `f(a, b)`: the `*{` after each `(` and the `}` that closes it go.
+///
+/// # Specification
+/// trivial.
+fn unlisted(text: SourceText<'_>) -> String
+{
+    let mut out = String::with_capacity(text.as_ref().len());
+    // The depth of each brace a `(*{` opens, innermost last.
+    let mut listed: Vec<usize> = Vec::new();
+    let mut depth = 0_usize;
+    let mut rest = text.as_ref();
+    while let Some(next) = rest.chars().next() {
+        if let Some(after) = rest.strip_prefix("(*{") {
+            out.push('(');
+            depth = depth.saturating_add(1);
+            listed.push(depth);
+            rest = after;
+            continue;
+        }
+        match next {
+            '{' => {
+                depth = depth.saturating_add(1);
+                out.push(next);
+            },
+            '}' => {
+                let closes_list = listed.last() == Some(&depth)
+                    && rest.get(1 ..).is_some_and(|after| after.starts_with(')'));
+                if closes_list {
+                    let _closed = listed.pop();
+                }
+                else {
+                    out.push(next);
+                }
+                depth = depth.saturating_sub(1);
+            },
+            _ => out.push(next),
+        }
+        rest = rest.get(next.len_utf8() ..).unwrap_or_default();
+    }
+    out
+}
+
 /// The table of the walk's source at `path`, typed beside the prelude and
 /// the siblings it imports: the walk's `text` lays out the source's
 /// component, its own text from `base`, and read as one source the
@@ -295,7 +338,7 @@ fn the_resolved_comparisons_read_back_2429()
     assert!(
         reads
             .iter()
-            .any(|read| read.spelled.contains("eq[.e = EqInteger](x, y)")),
+            .any(|read| read.spelled.contains("eq[.e = EqInteger] x y")),
         "a resolved model is written by its path"
     );
     let unread: Vec<(&str, &RoundTrip)> = reads
@@ -580,6 +623,14 @@ mod sweeps
         reads_back(&Sweep::asked().expect("the run's sweep resolves").changed());
     }
 
+    /// Why the census holds a spelling whose reprint writes `Unit` for each
+    /// `*{}` alone.
+    const UNIT_READ: &str = "#5208, a `*{}` operand inside a type reads as `Unit`";
+
+    /// Why the census holds a spelling whose reprint writes each call's
+    /// argument list `f(a, b)` as one tuple, `f(*{a, b})`.
+    const LISTED_CALL: &str = "#5211, a call inside a lambda inside a type prints in the list form";
+
     /// Every printed type of every source `sweep` visits reads back to its
     /// certificate.
     ///
@@ -605,6 +656,7 @@ mod sweeps
         let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
         let mut unread: Vec<String> = Vec::new();
         let mut moved: Vec<String> = Vec::new();
+        let mut held: Vec<String> = Vec::new();
         let mut over = 0_usize;
         let walk = Walk::new(vec![
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -652,6 +704,7 @@ mod sweeps
                             .map(move |read| (spelling, read))
                     });
                 let mut at = String::new();
+                let mut spelled = String::new();
                 for (spelling, read) in reads {
                     at.clear();
                     core::fmt::Write::write_fmt(
@@ -659,20 +712,81 @@ mod sweeps
                         format_args!("{} ({spelling:?})", path.display()),
                     )
                     .expect("a string accepts every write");
+                    // A constructor call inside a type reads a `*{}` operand
+                    // as the type `Unit` (#5208): held when the reprint writes
+                    // `Unit` for each `*{}` alone.
+                    spelled.clear();
+                    for (index, word) in read.spelled.split_whitespace().enumerate() {
+                        if index > 0 {
+                            spelled.push(' ');
+                        }
+                        spelled.push_str(word);
+                    }
+                    // A call inside a lambda inside a type prints in the list
+                    // form, which the expression reads as one tuple (#5211):
+                    // held when the reprint writes `f(*{…})` for each `f(…)`
+                    // alone.
+                    let why = match read.reprinted {
+                        Maybe::Present(ref again) => {
+                            if spelled.contains("*{}")
+                                && spelled.replace("*{}", "Unit")
+                                    == collapsed(SourceText::from(again.as_str()))
+                            {
+                                Some(UNIT_READ)
+                            }
+                            else if again.contains("(*{")
+                                && unlisted(SourceText::from(
+                                    collapsed(SourceText::from(again.as_str())).as_str(),
+                                )) == spelled
+                            {
+                                Some(LISTED_CALL)
+                            }
+                            else {
+                                None
+                            }
+                        },
+                        Maybe::Absent(_) => None,
+                    };
                     let class = match read.trip {
                         RoundTrip::Equal => "Equal",
                         RoundTrip::Open => "Open",
                         RoundTrip::Unknown => "Unknown",
                         RoundTrip::Wildcard => "Wildcard",
                         RoundTrip::Different => {
-                            unread.push(format!(
-                                "{}: `{}` reads back as another type",
-                                at, read.spelled
-                            ));
+                            let line = format!("{}: `{}` reads back as another type", at, read.spelled);
+                            if let Some(why) = why {
+                                held.push(format!("{why}: {line}"));
+                            }
+                            else {
+                                unread.push(line);
+                            }
                             "Different"
                         },
                         RoundTrip::Refused(ref refusal) => {
-                            unread.push(format!("{}: `{}` refuses: {refusal}", at, read.spelled));
+                            // A printed row names its effect by a path the
+                            // read back does not resolve (#5209): held when
+                            // the refused head is a path the spelling writes
+                            // as a row entry.
+                            let line = format!("{}: `{}` refuses: {refusal}", at, read.spelled);
+                            let qualified_row = refusal
+                                .strip_prefix("no type head answers `")
+                                .and_then(|rest| rest.split_once('`'))
+                                .is_some_and(|(head, _)| {
+                                    head.contains('.')
+                                        && spelled.match_indices(head).any(|(start, _)| {
+                                            spelled
+                                                .get(.. start)
+                                                .is_some_and(|before| before.ends_with('['))
+                                        })
+                                });
+                            if qualified_row {
+                                held.push(format!(
+                                    "#5209, a printed row's effect path reads back unresolved: {line}"
+                                ));
+                            }
+                            else {
+                                unread.push(line);
+                            }
                             "Refused"
                         },
                         RoundTrip::Unparsed => {
@@ -690,10 +804,15 @@ mod sweeps
                     // is the spelling.
                     match read.reprinted {
                         Maybe::Present(ref again)
-                            if collapsed(SourceText::from(again.as_str()))
-                                != collapsed(SourceText::from(read.spelled.as_str())) =>
+                            if collapsed(SourceText::from(again.as_str())) != spelled =>
                         {
-                            moved.push(format!("{}: `{}` reprints as `{again}`", at, read.spelled));
+                            let line = format!("{}: `{}` reprints as `{again}`", at, read.spelled);
+                            if let Some(why) = why {
+                                held.push(format!("{why}: {line}"));
+                            }
+                            else {
+                                moved.push(line);
+                            }
                         },
                         Maybe::Absent(reprinted::Absent::Unspelled) => {
                             moved.push(format!(
@@ -713,6 +832,9 @@ mod sweeps
             eprintln!("| {class} | {count} |");
         }
         eprintln!("{over} sources past the read-back ceiling, read whole by the `sweeps` profile");
+        for line in &held {
+            eprintln!("held out, {line}");
+        }
         assert!(
             sweep.portion() == Portion::Changed
                 || trips.get("Equal").is_some_and(|&equal| equal > 0_usize),

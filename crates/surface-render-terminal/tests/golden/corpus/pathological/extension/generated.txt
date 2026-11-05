@@ -4,7 +4,7 @@ error[RulesUncompleted]: this rule and an earlier one rewrite one term to two no
 19 │   ext Cell = Val on left is zero;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
 20 │
-21 │   rule leaked : outCellp(inCell(yq)) ==> yq;
+21 │   rule leaked : outCellp (inCell yq) ==> yq;
    │   ───────────────────────────────────────── the rule it overlaps
    │
    ├ note: `Leaked` is refused with RulesUncompleted, as its expectation states

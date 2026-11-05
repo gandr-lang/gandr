@@ -13,40 +13,36 @@ import "../../model/effects/rows.gandr";
 /// by: there `flush(mark(k))` reaches `k` one way and `mark(k)` the other,
 /// two normal forms, so the rules are refused.
 @[ refuses("RulesOverlapCondition") ]
-theory Unerased where {
+theory Unerased where
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
-  rule dropped : flush(mark(k)) <=> k where { | under [Sink | r] };
-  rule kept : flush(mark(k)) <=> mark(k) where { | under [State.Eff | r] };
-}
+  rule dropped : flush (mark k) <=> k where { | under [Sink | r] };
+  rule kept : flush (mark k) <=> mark k where { | under [State.Eff | r] };
 
 /// `Marks` with erasing rules that need a third theory: they fire in no row
 /// that holds only `State.Eff` and `Sink`, and in those rows the overlap still
 /// parts, so the rules are refused.
 @[ refuses("RulesOverlapCondition") ]
-theory Overreaching where {
+theory Overreaching where
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;
-  rule dropped : flush(mark(k)) <=> k where { | under [Sink | r] };
-  rule kept : flush(mark(k)) <=> mark(k) where { | under [State.Eff | r] };
-  rule erased : mark(k) <=> k where { | under [State.Eff, Sink, Marks | r] };
-  rule flushed : flush(k) <=> k where { | under [Sink, State.Eff, Marks | r] };
-}
+  rule dropped : flush (mark k) <=> k where { | under [Sink | r] };
+  rule kept : flush (mark k) <=> mark k where { | under [State.Eff | r] };
+  rule erased : mark k <=> k where { | under [State.Eff, Sink, Marks | r] };
+  rule flushed : flush k <=> k where { | under [Sink, State.Eff, Marks | r] };
 
 /// A row naming a theory no block this source sees presents.
 @[ refuses("UnresolvedTypeHead") ]
-theory Unseen where {
+theory Unseen where
   sort C : Type;
   oper mark : (k : C) --> C;
-  rule dropped : mark(k) <=> k where { | under [Missing | r] };
-}
+  rule dropped : mark k <=> k where { | under [Missing | r] };
 
 /// A row naming one theory twice: a row holds each theory once.
 @[ refuses("DuplicateDefinition") ]
-theory Twice where {
+theory Twice where
   sort C : Type;
   oper mark : (k : C) --> C;
-  rule dropped : mark(k) <=> k where { | under [Sink, State.Eff, Sink] };
-}
+  rule dropped : mark k <=> k where { | under [Sink, State.Eff, Sink] };

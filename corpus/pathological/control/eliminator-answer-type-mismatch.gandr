@@ -6,7 +6,6 @@
 
 /// `-> -F String` written over integer arms: `1` is refused as no `String`.
 @[ refuses("TypeMismatch") ]
-def answered() -> String {
+def answered() -> String =
   let s = if true -> -F String { pure 1 } else { pure 2 };
   pure s
-}

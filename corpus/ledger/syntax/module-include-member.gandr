@@ -1,10 +1,8 @@
 /// `module_include_member`: a module body taking another module's members.
-module Base where {
+module Base where
   def zero = 0;
-}
 
 /// `Base`'s members, and one of its own.
-module Extended where {
+module Extended where
   include Base;
   def one = 1;
-}

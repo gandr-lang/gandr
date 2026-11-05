@@ -1431,7 +1431,7 @@ mod tests
                 coloured("typeBuiltin", "Path"),
                 coloured("type", "A"),
                 coloured("type", "Bool"),
-                coloured("operator", "=&gt;"),
+                coloured("operator", "-&gt;"),
                 coloured("type", "Bool"),
                 coloured("variable", "exchange"),
                 coloured("variable", "flip"),

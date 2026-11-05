@@ -302,7 +302,7 @@ const SEEDS: [&str; 4] = [
     "",
     "def a : Integer ;\ndef a = 1 ;\n",
     "def f(x : Integer) -> -F Integer {\n  return x\n}\n",
-    "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef rec down(n : Nat) -> -F Nat {\n  match n {\n    Zero => return n,\n    Succ(p) => become down[<](p)\n  }\n}\n",
+    "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef rec down(n : Nat) -> -F Nat {\n  match n {\n    | Zero => return n\n    | Succ(p) => become down[<] p\n  }\n}\n",
 ];
 
 /// What a random script types, one token per step.
@@ -1033,7 +1033,8 @@ fn defining_a_missing_name_clears_its_diagnostic()
 #[test]
 fn restoring_a_semicolon_clears_its_diagnostic()
 {
-    let text = "def a = 1 ;\ndef b = a ;\n";
+    // Two definitions on one line: the column rule cannot separate them.
+    let text = "def a = 1 ; def b = a ;\n";
     let mut session = Session::open(
         String::from("file:///strict/semicolon.gandr"),
         Text(text),
@@ -1446,7 +1447,7 @@ fn a_splice_is_a_kind_the_hover_coverage_decides_3198()
 {
     let source = Source {
         uri: String::from("file:///splice.gandr"),
-        text: String::from("def id : (Integer) => Integer = ~intro(assumption) ;\n"),
+        text: String::from("def id : (Integer) -> Integer = ~intro assumption ;\n"),
     };
     let grammar = built_in().expect("the built-in grammar builds");
     let kinds: BTreeSet<String> = hovered(&grammar, &source, Every(1))

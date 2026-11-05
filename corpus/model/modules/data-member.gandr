@@ -11,36 +11,31 @@
 // - see: #4298
 
 /// A module holding a family and a box of it.
-module M where {
+module M where
   /// A box holding one number.
-  data Box : Type where {
+  data Box : Type where
     /// The box around `x`.
     | B : (x : Integer) --> Box
-  }
 
   /// A box built inside the module, by the bare constructor.
-  def one : Box = B(1);
-}
+  def one : Box = B 1;
 
 /// A box built through the module.
-def two : M.Box = M.B(2);
+def two : M.Box = M.B 2;
 
 /// A box built through the module's family.
-def three : M.Box = M.Box.B(3);
+def three : M.Box = M.Box.B 3;
 
 /// The number a box holds, matched through the module.
-def open(b : M.Box) -> Integer {
-  match b { M.B(x) => x }
-}
+def open(b : M.Box) -> Integer =
+  match b { | M.B(x) => x }
 
 /// A box built and opened through the module.
 @[ runs("5") ]
-def five() -> Integer {
-  open(M.B(5))
-}
+def five() -> Integer =
+  open (M.B 5)
 
 /// The module's own box, which a client opens.
 @[ runs("1") ]
-def own_box() -> Integer {
-  open(M.one)
-}
+def own_box() -> Integer =
+  open M.one

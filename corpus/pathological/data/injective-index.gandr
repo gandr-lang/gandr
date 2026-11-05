@@ -15,22 +15,18 @@ import "../../model/data/data-base.gandr";
 import "../../model/data/injective-index.gandr";
 
 /// A natural beside a predecessor of its successor.
-pub data Sig : Type where {
+pub data Sig : Type where
   /// The natural `n` and a predecessor at `Succ(n)`.
   | Pack : (n : Nat, v : Pred(Succ(n))) --> Sig
-}
 
 /// A family that holds a packed natural in its index.
-pub data Packed : (s : Sig) --> Type where {
+pub data Packed : (s : Sig) --> Type where
   /// The witness over the pack of `n` and `v`.
   | Hold : (n : Nat, v : Pred(Succ(n))) --> Packed(Pack(n, v))
-}
 
 /// The arm binds `Pack(m, w) = Pack(n, v)`, where the type of `w` reads `m`.
 /// The checker does not split that equation, so the arm does not learn `m`.
 @[ refuses("TypeMismatch") ]
-def first(n : Nat, v : Pred(Succ(n)), h : Packed(Pack(n, v))) -> At(n) {
-  match h {
-    Hold(m, w) => A(m)
-  }
-}
+def first(n : Nat, v : Pred(Succ(n)), h : Packed(Pack(n, v))) -> At(n) =
+  match h
+    | Hold(m, w) => A m

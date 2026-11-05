@@ -17,7 +17,7 @@
 /// [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"
 
 /// A monoid's unit and associativity laws, each a rule.
-pub theory Monoid where {
+pub theory Monoid where
   /// The carrier.
   sort M : Type;
 
@@ -27,34 +27,29 @@ pub theory Monoid where {
   oper mul : (x : M, y : M) --> M;
 
   /// The unit on the left.
-  rule unitL : mul(e(), x) <=> x;
+  rule unitL : mul (e ()) x <=> x;
   /// The unit on the right.
-  rule unitR : mul(x, e()) <=> x;
+  rule unitR : mul x (e ()) <=> x;
   /// Binary associativity.
-  rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
-}
+  rule assoc : mul (mul x y) z <=> mul x (mul y z);
 
 /// The associator of four, in every monoid.
-rule Monoid.assoc4 : mul(mul(mul(a, b), c), d) <=> mul(a, mul(b, mul(c, d)));
+rule Monoid.assoc4 : mul (mul (mul a b) c) d <=> mul a (mul b (mul c d));
 
 /// A sign.
-pub data Sign : Type where {
+pub data Sign : Type where
   /// The positive sign.
   | Plus : Sign
   /// The negative sign.
   | Minus : Sign
-}
 
 /// The product of two signs.
-pub def times(a : Sign, b : Sign) -> Sign {
-  match a {
-    Plus => b,
-    Minus => match b {
-      Plus => Minus,
-      Minus => Plus,
-    },
-  }
-}
+pub def times(a : Sign, b : Sign) -> Sign =
+  match a
+    | Plus => b
+    | Minus => match b
+      | Plus => Minus
+      | Minus => Plus
 
 /// The signs under their product, plus the unit. The model writes its three
 /// rules' witnesses and nothing for the associator of four.
@@ -64,32 +59,26 @@ module Signs : Model(Monoid) where {
   /// Plus is the unit.
   def e = Plus;
   /// The product is the signs' product.
-  def mul(x : Sign, y : Sign) -> Sign { times(x, y) }
+  def mul(x : Sign, y : Sign) -> Sign { times x y }
   /// The left unit law, by conversion.
   @[ checks ]
-  def unitL(x : Sign) -> Path(mul(e, x), x) { Path.here(x) }
+  def unitL(x : Sign) -> Path(mul e x, x) { Path.here x }
   /// The right unit law, case by case.
   @[ checks ]
-  def unitR(x : Sign) -> Path(mul(x, e), x) {
-    match x {
-      Plus => Path.here(Plus),
-      Minus => Path.here(Minus),
-    }
-  }
+  def unitR(x : Sign) -> Path(mul x e, x) =
+    match x
+      | Plus => Path.here Plus
+      | Minus => Path.here Minus
   /// Binary associativity, case by case.
   @[ checks ]
-  def assoc(x : Sign, y : Sign, z : Sign) -> Path(mul(mul(x, y), z), mul(x, mul(y, z))) {
-    match x {
-      Plus => Path.here(times(y, z)),
-      Minus => match y {
-        Plus => Path.here(times(Minus, z)),
-        Minus => match z {
-          Plus => Path.here(Plus),
-          Minus => Path.here(Minus),
-        },
-      },
-    }
-  }
+  def assoc(x : Sign, y : Sign, z : Sign) -> Path(mul (mul x y) z, mul x (mul y z)) =
+    match x
+      | Plus => Path.here (times y z)
+      | Minus => match y
+        | Plus => Path.here (times Minus z)
+        | Minus => match z
+          | Plus => Path.here Plus
+          | Minus => Path.here Minus
 }
 
 /// The signs, as a model.
@@ -97,7 +86,6 @@ def signs : Model(Monoid) = pack Signs at Model(Monoid);
 
 /// The derived associator read at the signs, at minus, minus, plus and minus.
 /// Both sides are minus.
-def assoc4Signs() -> Path(Minus, Minus) {
-  let law = Monoid.assoc4(signs);
-  law(Minus, Minus, Plus, Minus)
-}
+def assoc4Signs() -> Path(Minus, Minus) =
+  let law = Monoid.assoc4 signs
+  law Minus Minus Plus Minus

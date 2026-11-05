@@ -1,71 +1,71 @@
 error[MalformedForm]: an operand is missing in this lazy record expression
-   ╭▸ corpus/pathological/codata/streams.gandr:52:3
+   ╭▸ corpus/pathological/codata/streams.gandr:47:3
    │
-52 │   &{.x => return n, .y => return n}
+47 │   &{.x => return n, .y => return n}
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an operand is missing here
    │
    ├ note: `shallow` is refused with MalformedForm, as its expectation states
    ╰ help: write the missing operand
 
 error[CodataKindNotUniverse]: a codata declaration's kind must be a computation universe
-   ╭▸ corpus/pathological/codata/streams.gandr:21:16
+   ╭▸ corpus/pathological/codata/streams.gandr:20:16
    │
-21 │ codata Point : Type where {
+20 │ codata Point : Type where
    │                ━━━━ a codata kind that is no computation universe
    │
    ├ note: `Point` is refused with CodataKindNotUniverse, as its expectation states
    ╰ help: give the codata declaration a computation universe as its kind
 
 error[CodataOccurrence]: a codata type may name itself only as an observation's result, at its own parameters in order
-   ╭▸ corpus/pathological/codata/streams.gandr:31:10
+   ╭▸ corpus/pathological/codata/streams.gandr:29:10
    │
-31 │   tail : Swap(b, a);
+29 │   tail : Swap(b, a);
    │          ━━━━━━━━━━ the codata type named off an observation's result
    │
    ├ note: `Swap` is refused with CodataOccurrence, as its expectation states
    ╰ help: write the codata type only as an observation's result, with its parameters in order
 
 error[CodataOccurrence]: a codata type may name itself only as an observation's result, at its own parameters in order
-   ╭▸ corpus/pathological/codata/streams.gandr:39:10
+   ╭▸ corpus/pathological/codata/streams.gandr:36:10
    │
-39 │   tail : Twisted(Twisted(a));
+36 │   tail : Twisted(Twisted(a));
    │          ━━━━━━━━━━━━━━━━━━━ the codata type named off an observation's result
    │
    ├ note: `Twisted` is refused with CodataOccurrence, as its expectation states
    ╰ help: write the codata type only as an observation's result, with its parameters in order
 
 error[UnresolvedName]: `z` is not defined
-   ╭▸ corpus/pathological/codata/streams.gandr:58:38
+   ╭▸ corpus/pathological/codata/streams.gandr:52:38
    │
-58 │   &{.x => return n, .y => return n, .z => return n}
+52 │   &{.x => return n, .y => return n, .z => return n}
    │                                      ━ not found in this scope
    │
    ├ note: `stray` is refused with UnresolvedName, as its expectation states
    ╰ help: define `z`, or import the module that exports it
 
 error[UnguardedCorecursion]: `fibs[>](…)` must be the whole arm of a copattern block, so each observation yields before `fibs` runs again
-   ╭▸ corpus/pathological/codata/streams.gandr:86:27
+   ╭▸ corpus/pathological/codata/streams.gandr:77:50
    │
-86 │     .tail => sums(thunk { fibs[>](n) }, thunk { fibs[>](n) })
-   │                           ━━━━━━━ not the whole arm of a copattern
+77 │     .tail => sums (thunk { fibs[>] n }) (thunk { fibs[>] n })
+   │                                                  ━━━━━━━ not the whole arm of a copattern
    │
    ├ note: `fibs` is refused with UnguardedCorecursion, as its expectation states
    ╰ help: write the productive self-call as a copattern arm's whole body
 
 error[UnguardedCorecursion]: `deferred[>](…)` must be the whole arm of a copattern block, so each observation yields before `deferred` runs again
-   ╭▸ corpus/pathological/codata/streams.gandr:93:40
+   ╭▸ corpus/pathological/codata/streams.gandr:83:40
    │
-93 │   &{.head => return n, .tail => become deferred[>](n)}
+83 │   &{.head => return n, .tail => become deferred[>] n}
    │                                        ━━━━━━━━━━━ not the whole arm of a copattern
    │
    ├ note: `deferred` is refused with UnguardedCorecursion, as its expectation states
    ╰ help: write the productive self-call as a copattern arm's whole body
 
 error[UnguardedCorecursion]: `bare[>](…)` must be the whole arm of a copattern block, so each observation yields before `bare` runs again
-    ╭▸ corpus/pathological/codata/streams.gandr:100:3
-    │
-100 │   bare[>](n)
-    │   ━━━━━━━ not the whole arm of a copattern
-    │
-    ├ note: `bare` is refused with UnguardedCorecursion, as its expectation states
-    ╰ help: write the productive self-call as a copattern arm's whole body
+   ╭▸ corpus/pathological/codata/streams.gandr:89:3
+   │
+89 │   bare[>] n
+   │   ━━━━━━━ not the whole arm of a copattern
+   │
+   ├ note: `bare` is refused with UnguardedCorecursion, as its expectation states
+   ╰ help: write the productive self-call as a copattern arm's whole body

@@ -1,41 +1,42 @@
 error[ComposeNotAShape]: `compose` needs a chain within the degree and the bound of its stratum
-   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:20:3
+   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:19:3
    │
- 8 │ ┌ def pastBound(
- 9 │ │   A : Type,
+ 7 │ ┌ def pastBound(
+ 8 │ │   A : Type,
    │ │   ─ checked; while checking the body of this function; binds A : Type
-10 │ │   x : A,
+ 9 │ │   x : A,
    │ │   ─ checked; while checking the body of this function; binds x : A
-11 │ │   y : A,
+10 │ │   y : A,
    │ │   ─ checked; while checking the body of this function; binds y : A
-12 │ │   z : A,
+11 │ │   z : A,
    │ │   ─ checked; while checking the body of this function; binds z : A
-13 │ │   w : A,
+12 │ │   w : A,
    │ │   ─ checked; while checking the body of this function; binds w : A
-14 │ │   v : A,
+13 │ │   v : A,
    │ │   ─ checked; while checking the body of this function; binds v : A
-15 │ │   p : Path(x, y),
+14 │ │   p : Path(x, y),
    │ │   ─ checked; while checking the body of this function; binds p : Path[.A = A](x, y)
-16 │ │   q : Path(y, z),
+15 │ │   q : Path(y, z),
    │ │   ─ checked against `Path[.A = A](y, z) -> Path[.A = A](z, w) -> Path[.A = A](w, v) -> -F Path[.A = A](x, v)`; while checking the body of this function; binds q : Path[.A = A](y, z)
-17 │ │   r : Path(z, w),
+16 │ │   r : Path(z, w),
    │ │   ─ checked against `Path[.A = A](z, w) -> Path[.A = A](w, v) -> -F Path[.A = A](x, v)`; while checking the body of this function; binds r : Path[.A = A](z, w)
-18 │ │   s : Path(w, v)
+17 │ │   s : Path(w, v)
    │ │   ─ checked against `Path[.A = A](w, v) -> -F Path[.A = A](x, v)`; while checking the body of this function; binds s : Path[.A = A](w, v)
-19 │ │ ) -> Path(x, v) {
-20 │ │   compose[5, 7](chain(4), (p, q, r, s))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a chain past its stratum
-21 │ │ }
-   │ └─┘ checked; while checking the body of this thunk
+18 │ │ ) -> Path(x, v) =
+19 │ │   compose[5, 7] (chain 4) (p, q, r, s)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│──────────────────────────────────┤
+   │     │                                  checked; while checking the body of this thunk
+   │     a chain past its stratum
    │
    ├ note: `pastBound` is refused with ComposeNotAShape, as its expectation states
    ╰ help: write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain of m cells
 
 error[ComposeNotAShape]: `compose` needs a level-two shape the wreath holds within the degree and the bound of its stratum
-   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:30:3
+   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:27:3
    │
-29 │   def whiskerPastDegree(A : Type, x : A, y : A, z : A, fm : Path(x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Pa…
-   │   │                     ┬         ┬      ┬      ┬      ┬─               ┬─               ┬─                                          ─ checked against `(a : Path[.A = A](y, z)) -> -F Path[.A = Path[.A = A](x, z)](Path.step(fm, a), Path.step(fp, a))`; while checking the body of this function; binds g : Path[.A = A](y, z)
+26 │   def whiskerPastDegree(A : Type, x : A, y : A, z : A, fm : Path(x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Pa…
+   │   │                     ┬         ┬      ┬      ┬      ┬─               ┬─               ┬─                                          ─ checked against `(a : Path[.A = A](y, z)) -> -F Path[.A = Path[.A = A](x, z)](Path.step fm a, Path.step fp a)`; while checking the body of this function; binds g : Path[.A = A](y, z)
    │   │                     │         │      │      │      │                │                │
    │   │                     │         │      │      │      │                │                checked; while checking the body of this function; binds fa : Path[.A = Path[.A = A](x, y)](fm, fp)
    │   │                     │         │      │      │      │                checked; while checking the body of this function; binds fp : Path[.A = A](x, y)
@@ -45,10 +46,11 @@ error[ComposeNotAShape]: `compose` needs a level-two shape the wreath holds with
    │   │                     │         checked; while checking the body of this function; binds x : A
    │ ┌─┘                     checked; while checking the body of this function; binds A : Type
    │ │
-30 │ │   compose[3, 9](chain(2, (1, 0)), (fa, g))
-   │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a level-two shape past its stratum
-31 │ │ }
-   │ └─┘ checked; while checking the body of this thunk
+27 │ │   compose[3, 9] (chain 2 (1, 0)) (fa, g)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│────────────────────────────────────┤
+   │     │                                    checked; while checking the body of this thunk
+   │     a level-two shape past its stratum
    │
    ├ note: `whiskerPastDegree` is refused with ComposeNotAShape, as its expectation states
    ╰ help: write a stratum whose bound holds the level-two shape and whose degree reaches its degree

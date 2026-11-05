@@ -10,14 +10,12 @@
 /// - see: `transport-dependent-element.gandr` — a path that reads its own path
 
 /// Each path's reflexivity, as a family.
-def reflFamily(A : Type, x : A, y : A) -> (q : Path(x, y)) => Path[.A = Path[.A = A](x, y)](q, q) {
-  thunk { fun (q : Path[.A = A](x, y)) { Path.here(q) } }
-}
+def reflFamily(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](q, q) =
+  thunk { fun (q : Path[.A = A](x, y)) { Path.here q } }
 
 /// The same family, its parameter named apart from the type's binder.
-def reflFamilyApart(A : Type, x : A, y : A) -> (q : Path(x, y)) => Path[.A = Path[.A = A](x, y)](
+def reflFamilyApart(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](
   q,
   q
-) {
-  thunk { fun (r : Path[.A = A](x, y)) { Path.here(r) } }
-}
+) =
+  thunk { fun (r : Path[.A = A](x, y)) { Path.here r } }

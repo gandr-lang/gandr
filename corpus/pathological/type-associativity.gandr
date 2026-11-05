@@ -1,4 +1,4 @@
-def product_chain : Integer * Unit * Integer * String = (1, unit, 2, "text");
+def product_chain : Integer * Unit * Integer * String = *{1, *{}, 2, "text"};
 
 def sum_chain : Integer + Unit + Integer + String = +{.2 = 2};
 
@@ -6,7 +6,7 @@ def sum_chain : Integer + Unit + Integer + String = +{.2 = 2};
 /// product and one sum.
 def lazy_chain : +U (-F Integer & -F Unit & -F Integer & -F String) = &{
   .0 => pure 1,
-  .1 => pure unit,
+  .1 => pure *{},
   .2 => pure 2,
   .3 => pure "text"
 };

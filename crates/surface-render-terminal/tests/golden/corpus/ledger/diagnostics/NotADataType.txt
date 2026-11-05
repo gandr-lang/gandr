@@ -1,22 +1,21 @@
 error[DataKindNotUniverse]: a datatype's kind must be a universe
   ╭▸ corpus/ledger/diagnostics/NotADataType.gandr:3:12
   │
-3 │ data Odd : Integer where {
+3 │ data Odd : Integer where
   │            ━━━━━━━ not a value universe
   │
   ├ note: `Odd` is refused with DataKindNotUniverse, as its expectation states
   ╰ help: give the data declaration a universe kind
 
 error[NotADataType]: this is not a datatype
-   ╭▸ corpus/ledger/diagnostics/NotADataType.gandr:8:1
-   │
- 8 │   def held(x : Odd) -> -F Integer {
-   │   ╿        ─ formed; while forming the parts of this type
-   │ ┏━┙
-   │ ┃
- 9 │ ┃   return 1
-10 │ ┃ }
-   │ ┗━┛ not an admitted datatype
-   │
-   ├ note: `held` is refused with NotADataType, as its expectation states
-   ╰ help: use a declared datatype
+  ╭▸ corpus/ledger/diagnostics/NotADataType.gandr:7:1
+  │
+7 │   def held(x : Odd) -> -F Integer =
+  │   ╿        ─ formed; while forming the parts of this type
+  │ ┏━┙
+  │ ┃
+8 │ ┃   return 1
+  │ ┗━━━━━━━━━━┛ not an admitted datatype
+  │
+  ├ note: `held` is refused with NotADataType, as its expectation states
+  ╰ help: use a declared datatype

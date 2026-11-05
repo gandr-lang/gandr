@@ -15,79 +15,71 @@
 // - see: #4112
 
 /// A decision and the laws that make it an equivalence.
-theory Lawful where {
+theory Lawful where
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
-  law refl : (a : Carrier) => Path[.A = Bool](alike(a, a), true);
-  law sym : (a : Carrier, b : Carrier) => Path[.A = Bool](alike(a, b), alike(b, a));
+  law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);
+  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool](alike a b, alike b a);
   law trans : (
     a : Carrier,
     b : Carrier,
     c : Carrier,
-    p : Path[.A = Bool](alike(a, b), true),
-    q : Path[.A = Bool](alike(b, c), true)
-  ) => Path[.A = Bool](alike(a, c), true);
-}
+    p : Path[.A = Bool](alike a b, true),
+    q : Path[.A = Bool](alike b c, true)
+  ) -> Path[.A = Bool](alike a c, true);
 
 /// One value.
-data Single : Type where {
+data Single : Type where
   | Only : Single
-}
 
 /// Every two values of `Single` are alike, so each law is a reflexivity.
-module LawfulSingle : Model(Lawful) with sort Carrier = Single where {
+module LawfulSingle : Model(Lawful) with sort Carrier = Single where
   def alike(a : Single, b : Single) -> Bool { true }
-  def refl(a : Single) -> Path(alike(a, a), true) { Path.here(true) }
-  def sym(a : Single, b : Single) -> Path(alike(a, b), alike(b, a)) { Path.here(true) }
+  def refl(a : Single) -> Path(alike a a, true) { Path.here true }
+  def sym(a : Single, b : Single) -> Path(alike a b, alike b a) { Path.here true }
   def trans(
     a : Single,
     b : Single,
     c : Single,
-    p : Path(alike(a, b), true),
-    q : Path(alike(b, c), true)
-  ) -> Path(alike(a, c), true) {
-    Path.here(true)
-  }
-}
+    p : Path(alike a b, true),
+    q : Path(alike b c, true)
+  ) -> Path(alike a c, true) =
+    Path.here true
 
 /// The same decision with its laws left out. Each law's sides convert, so
 /// the checker discharges each by `Path.here`.
-module LawfulOmitted : Model(Lawful) with sort Carrier = Single where {
+module LawfulOmitted : Model(Lawful) with sort Carrier = Single where
   /// Every two values are alike.
   def alike(a : Single, b : Single) -> Bool { true }
-}
 
 /// The host's integer equality: its laws are the host's, admitted, each
 /// settling `checks` with the audit row naming it, `LawfulInteger.refl
 /// admitted` the first.
-module LawfulInteger : Model(Lawful) with sort Carrier = Integer where {
+module LawfulInteger : Model(Lawful) with sort Carrier = Integer where
   def alike(a : Integer, b : Integer) -> Bool { a == b }
   law refl = ~admitted;
   law sym = ~admitted;
   law trans = ~admitted;
-}
 
 /// The admitted model decides by the host: three is three.
-@[ runs("+{.0 = unit}") ]
-def threeIsThree() -> Bool { LawfulInteger.alike(3, 3) }
+@[ runs("+{.0 = *{}}") ]
+def threeIsThree() -> Bool { LawfulInteger.alike 3 3 }
 
 /// A decision with an order beside it: its models restrict to `Lawful`'s,
 /// the laws carried through the include.
-theory LawfulOrder where {
+theory LawfulOrder where
   include Lawful;
   oper below : (a : Carrier, b : Carrier) --> Bool;
-}
 
 /// The integers' order over their lawful decision.
-module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer where {
+module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer where
   include LawfulInteger;
   def below(a : Integer, b : Integer) -> Bool { a < b }
-}
 
 /// A decision through any lawful model.
-def decide[l : Model(Lawful)](a : l.Carrier, b : l.Carrier) -> Bool { l.alike(a, b) }
+def decide[l : Model(Lawful)](a : l.Carrier, b : l.Carrier) -> Bool { l.alike a b }
 
 /// The order's model stands where a lawful one is asked, restricted by the
 /// reduct: two is not three.
-@[ runs("+{.1 = unit}") ]
-def twoIsNotThree() -> Bool { decide[.l = LawfulOrderInteger](2, 3) }
+@[ runs("+{.1 = *{}}") ]
+def twoIsNotThree() -> Bool { decide[.l = LawfulOrderInteger] 2 3 }

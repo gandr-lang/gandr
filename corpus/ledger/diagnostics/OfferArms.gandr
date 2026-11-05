@@ -1,7 +1,6 @@
 /// `OfferArms`: an offer whose arms are not exactly the labels its state offers.
 @[ refuses("OfferArms") ]
-def seat_arms_one_label_of_two() -> -F Unit {
-  let desk = fork (seat : &{ next : end, retire : end }) { offer(seat) { next => close(seat) } };
-  select(desk, next);
+def seat_arms_one_label_of_two() -> -F Unit =
+  let desk = fork (seat : &{ next : end, retire : end }) { offer(seat) { | next => close(seat) } };
+  select(desk, next)
   close(desk)
-}

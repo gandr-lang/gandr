@@ -9,12 +9,12 @@ error[CapabilityEscaped]: a capability its scope introduced would outlive the sc
    │ ││     │      a capability outliving its scope: found `Cap {exit}`
    │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Cap {exit}`; while judging the value this returns; binds _ : Stack(-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Cap {exit}, -F Cap {exit})
 11 │ ││   } with {
-12 │ ││     pure(x) => x,
-13 │ ││     oper exit(code, k) => k(unit)
+12 │ ││     | pure(x) => x
+13 │ ││     | oper exit(code, k) => k *{}
 14 │ ││   }
    │ │└───┘ checked against `-F Cap {exit}`; while checking the subject of this scope under its capability; binds c : Cap {exit}
 15 │ │  }
-   │ └──┘ checked against `() => Cap {exit}`; while checking the body of this reset
+   │ └──┘ checked against `() -> Cap {exit}`; while checking the body of this reset
    │
    ├ note: `leak` is refused with CapabilityEscaped, as its expectation states
    ╰ help: keep the capability inside its scope

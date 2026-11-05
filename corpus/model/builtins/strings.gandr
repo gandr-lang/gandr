@@ -16,15 +16,15 @@ def slogan = "types are machines";
 /// A statement at the top level, where only declarations stand: it runs
 /// inside a declaration, `main` or another.
 @[ refuses("OutOfFragment.TopLevel") ]
-string.contains(slogan, "machine");
+(string.contains slogan "machine");
 
 /// Equality: `==` between strings resolves the prelude's `EqString`, and a
 /// slogan is itself.
-@[ runs("+{.0 = unit}") ]
+@[ runs("+{.0 = *{}}") ]
 def same() -> Bool { slogan == "types are machines" }
 
 /// A slogan is not another.
-@[ runs("+{.1 = unit}") ]
+@[ runs("+{.1 = *{}}") ]
 def different() -> Bool { slogan == "types are types" }
 
 /// Equality across types: the integer fixes the carrier `==` compares at, and
@@ -34,16 +34,16 @@ def across() -> Bool { 3 == "three" }
 
 /// Whether the string starts with a word.
 @[ refuses("UnknownMember") ]
-def has_prefix = string.starts_with(slogan, "types");
+def has_prefix = string.starts_with slogan "types";
 
 /// Whether the string ends with a word.
 @[ refuses("UnknownMember") ]
-def has_suffix = string.ends_with(slogan, "machines");
+def has_suffix = string.ends_with slogan "machines";
 
 /// A path with its special characters escaped.
 @[ refuses("UnknownMember") ]
-def escaped = string.escape("a+b.txt");
+def escaped = string.escape "a+b.txt";
 
 /// A split at a comma, which is no member of the native `string` namespace.
 @[ refuses("UnknownMember") ]
-def halves = string.split("alpha,beta", ",");
+def halves = string.split "alpha,beta" ",";

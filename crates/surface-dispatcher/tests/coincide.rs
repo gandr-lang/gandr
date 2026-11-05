@@ -105,18 +105,20 @@ fn sources() -> BTreeSet<PathBuf>
 
 /// The body of the thunk `name` is defined as in `text`: the bytes between
 /// `def name = thunk {`, or the `{` opening the function form of no
-/// parameter `def name() -> C {`, and the brace that closes it.
+/// parameter `def name() -> C {`, and the brace that closes it; or the lines
+/// a layout body `def name() -> C =` indents under it.
 ///
 /// # Specification
 /// - ensures: absent when `text` defines no thunk of that name; otherwise the
-///   text inside its braces, nested braces kept.
+///   text inside its braces, nested braces kept, or the indented lines of its
+///   layout body, each line kept.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as the differential: a body cut short reads no call and
 ///   the run is reported as no direct call.
 /// - witness: `tests::coincide::every_run_through_a_described_operation_is_its_calls_normal_form`
-#[spec(ensures: |ret| ret.as_deref().is_none_or(|body| text.as_ref().contains(body)))]
+#[spec(ensures: |ret| ret.as_deref().is_none_or(|body| body.lines().all(|line| text.as_ref().contains(line))))]
 fn thunk_body(
     text: SourceText<'_>,
     name: SourceFragment<'_>,
@@ -136,12 +138,25 @@ fn thunk_body(
             match character {
                 '(' | '[' => depth = depth.saturating_add(1),
                 ')' | ']' => depth = depth.saturating_sub(1),
-                '{' if depth == 0 => return Some(offset),
+                '{' | '\n' if depth == 0 => return Some((offset, character)),
                 _ => {},
             }
             None
         })?;
-        at.saturating_add(open).saturating_add(1)
+        if open.1 == '\n' {
+            let header = codomain.get(.. open.0)?;
+            if !header.trim_end().ends_with('=') {
+                return None;
+            }
+            let lines: Vec<&str> = codomain
+                .get(open.0.saturating_add(1) ..)?
+                .lines()
+                .take_while(|line| line.starts_with(' '))
+                .map(str::trim)
+                .collect();
+            return (!lines.is_empty()).then(|| lines.join("\n"));
+        }
+        at.saturating_add(open.0).saturating_add(1)
     };
     let rest = text.get(start ..)?;
     let mut depth = 0_usize;
@@ -157,13 +172,14 @@ fn thunk_body(
 }
 
 /// The call a thunk's body is, when the body is one call delivered
-/// unchanged: `become f(…)`, `f(…)`, or `let p = f(…); return p`, the tail
-/// written `p` alone as the sugared form writes it (#1327).
+/// unchanged: `become f a`, `f a`, or `let p = f a` then `p`, the tail
+/// written `p` alone as the sugared form writes it (#1327), either after a
+/// `;` or on the next line. The call is written in the inspection notation a
+/// `normalizes` row reads, `f(a)`.
 ///
 /// # Specification
 /// - ensures: present only for a body of one of the three shapes, the call an
-///   identifier applied to one balanced argument list, with white space between
-///   tokens collapsed.
+///   identifier applied to at least one operand, in the inspection notation.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -174,48 +190,156 @@ fn thunk_body(
 #[spec(ensures: |ret| ret.as_deref().is_none_or(|call| call.ends_with(')')))]
 fn direct_call(body: SourceFragment<'_>) -> Option<String>
 {
-    let spaced = body
+    let statements: Vec<String> = body
         .as_ref()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let spaced = spaced.trim_end_matches(';').trim_end();
-    let call = if let Some(call) = spaced.strip_prefix("become ") {
-        call
-    }
-    else if let Some(bound) = spaced.strip_prefix("let ") {
-        let (pattern, rest) = bound.split_once(" = ")?;
-        let (call, tail) = rest.split_once("; ")?;
-        let returned = tail.strip_prefix("return ").unwrap_or(tail);
-        if returned.trim_end_matches(';').trim() != pattern {
-            return None;
-        }
-        call
-    }
-    else {
-        spaced
+        .split([';', '\n'])
+        .map(|statement| {
+            statement
+                .split_whitespace()
+                .fold(String::new(), |mut joined, word| {
+                    if !joined.is_empty() {
+                        joined.push(' ');
+                    }
+                    joined.push_str(word);
+                    joined
+                })
+        })
+        .filter(|statement| !statement.is_empty())
+        .collect();
+    let call = match *statements.as_slice() {
+        [ref only] => only.strip_prefix("become ").unwrap_or(only),
+        [ref bound, ref tail] => {
+            let (pattern, call) = bound.strip_prefix("let ")?.split_once(" = ")?;
+            let returned = tail.strip_prefix("return ").unwrap_or(tail);
+            if returned != pattern {
+                return None;
+            }
+            call
+        },
+        _ => return None,
     };
-    let (head, arguments) = call.split_once('(')?;
-    let identifier = !head.is_empty()
-        && head
+    let written = inspected(SourceFragment::from(call))?;
+    written.ends_with(')').then_some(written)
+}
+
+/// What opened a frame of the spine [`inspected`] reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Opened
+{
+    /// The spine itself, which no bracket opens.
+    Spine,
+    /// A `(`, closed by `)`.
+    Group,
+    /// A pair's `*{`, closed by `}`, its components apart by commas.
+    Pair,
+}
+
+/// One open bracket of the spine [`inspected`] reads.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the operands read since the bracket opened, or since a pair's
+///   last comma, and a pair's components read before them.
+/// - executable: none — a frame the reader fills as it reads.
+struct Frame
+{
+    /// What opened the frame.
+    opened: Opened,
+    /// The operands read since the bracket opened or since its last comma.
+    operands: Vec<String>,
+    /// A pair's components, each in the inspection notation.
+    components: Vec<String>,
+}
+
+/// The juxtaposed spine `spine` in the inspection notation: `f a (g b)` as
+/// `f(a, g(b))`, a pair `*{a, b}` as `(a, b)`, a lone operand as itself.
+///
+/// # Specification
+/// - ensures: absent when a bracket is unbalanced or a head is no identifier;
+///   otherwise the head, and its operands in order inside `(…)`, each operand
+///   in the same notation; a pair's components likewise.
+/// - panics: none.
+/// - executable: none — a clause would restate the reading bracket by bracket.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the differential's calls: a nested call keeps its
+///   nesting, and a mismatched parenthesis reads no call.
+/// - witness: `tests::coincide::every_run_through_a_described_operation_is_its_calls_normal_form`
+fn inspected(spine: SourceFragment<'_>) -> Option<String>
+{
+    let call = |operands: &[String]| {
+        let (head, arguments) = operands.split_first()?;
+        if arguments.is_empty() {
+            return Some(head.clone());
+        }
+        let identifier = head
             .chars()
             .all(|character| character.is_alphanumeric() || character == '_');
-    let mut depth = 1_usize;
-    let mut closed = None;
-    for (offset, character) in arguments.char_indices() {
-        match character {
-            '(' => depth = depth.saturating_add(1),
-            ')' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    closed = Some(offset);
-                    break;
-                }
-            },
-            _ => {},
+        identifier.then(|| format!("{head}({})", arguments.join(", ")))
+    };
+    let opened = |opened: Opened| Frame {
+        opened,
+        operands: Vec::new(),
+        components: Vec::new(),
+    };
+    let mut frames = vec![opened(Opened::Spine)];
+    let mut rest = spine.as_ref().trim();
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix("*{") {
+            frames.push(opened(Opened::Pair));
+            rest = after;
         }
+        else if let Some(after) = rest.strip_prefix('(') {
+            frames.push(opened(Opened::Group));
+            rest = after;
+        }
+        else if let Some(after) = rest.strip_prefix(',') {
+            let frame = frames.last_mut()?;
+            if frame.opened != Opened::Pair {
+                return None;
+            }
+            let component = call(&frame.operands)?;
+            frame.components.push(component);
+            frame.operands.clear();
+            rest = after;
+        }
+        else if let Some(after) = rest.strip_prefix(')') {
+            let closed = frames.pop()?;
+            if closed.opened != Opened::Group {
+                return None;
+            }
+            let written = call(&closed.operands)?;
+            frames.last_mut()?.operands.push(written);
+            rest = after;
+        }
+        else if let Some(after) = rest.strip_prefix('}') {
+            let mut closed = frames.pop()?;
+            if closed.opened != Opened::Pair {
+                return None;
+            }
+            let last = call(&closed.operands)?;
+            closed.components.push(last);
+            let written = format!("({})", closed.components.join(", "));
+            frames.last_mut()?.operands.push(written);
+            rest = after;
+        }
+        else {
+            let end = rest.find([' ', '(', ')', '}', ',']).unwrap_or(rest.len());
+            if end == 0 {
+                return None;
+            }
+            frames
+                .last_mut()?
+                .operands
+                .push(String::from(rest.get(.. end)?));
+            rest = rest.get(end ..)?;
+        }
+        rest = rest.trim_start();
     }
-    (identifier && closed == Some(arguments.len().saturating_sub(1))).then(|| String::from(call))
+    match *frames.as_slice() {
+        [ref only] if only.opened == Opened::Spine => call(&only.operands),
+        _ => None,
+    }
 }
 
 #[test]
@@ -261,10 +385,9 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
             };
             let named = operations.iter().find(|operation| {
                 needle.clear();
-                for part in [operation.as_str(), "("] {
-                    needle.push_str(part);
-                }
-                body.contains(needle.as_str())
+                needle.push_str(operation.as_str());
+                body.split(|character: char| !character.is_alphanumeric() && character != '_')
+                    .any(|word| word == needle.as_str())
             });
             let Some(operation) = named
             else {
@@ -322,10 +445,13 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
             if !runs {
                 continue;
             }
+            // The machine prints a value juxtaposed, `Succ Zero`; the engine
+            // reads it in the inspection notation, `Succ(Zero)`.
             let machine = program.run(constant);
+            let printed: &str = machine.as_ref();
             assert_eq!(
-                machine.as_ref(),
-                engine,
+                inspected(SourceFragment::from(printed)).as_deref(),
+                Some(engine.as_str()),
                 "{shown}: `{name}` runs `{call}` to {machine} on the machine; the engine \
                      reads {engine}"
             );

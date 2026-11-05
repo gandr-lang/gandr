@@ -54,10 +54,9 @@ rec {
   /// stand below the code it was read from.
   @[ refuses("StageNotBelow") ]
   def rec decode(u : Odd) -> -F Type {
-    match u {
-      TwoC => return Two,
-      Over(a, b) => decode[<](a)
-    }
+    match u
+      | TwoC => return Two
+      | Over(a, b) => decode[<] a
   }
 
   /// The code the field decodes, a definition of the block, refused with it.
@@ -78,21 +77,18 @@ rec {
 
   /// The decoder decoding a function code again where its domain is wanted.
   @[ refuses("StageNotBelow") ]
-  def rec unloop(u : Loop) -> -F Type {
-    match u {
-      Base => return Two,
-      PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Two))
-    }
-  }
+  def rec unloop(u : Loop) -> -F Type =
+    match u
+      | Base => return Two
+      | PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Two))
 }
 
 /// A type read off a call that returns no code: `g(L)` is a function still
 /// waiting for its second argument, and only a pure returner's call stands
 /// where a type is read.
 @[ refuses("CompoundEndpoint") ]
-def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two {
+def curried(g : +U (Two -> Two -> -F Type), v : g(L)) -> -F Two =
   return L
-}
 
 /// A hierarchy of universes by level, and its decoder, in one block.
 rec {
@@ -110,11 +106,9 @@ rec {
   /// The decoder at each level. Its arm for `TypeV` returns the family
   /// itself, at the level under `n`.
   @[ refuses("NegativeOccurrence") ]
-  def rec elLevel(n : Nat, u : ULevel(n)) -> -F Type {
-    match u {
-      NatV(m) => return Nat,
-      TypeV(m) => return (ULevel(m)),
-      PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F elLevel[<](m, b(x))))
-    }
-  }
+  def rec elLevel(n : Nat, u : ULevel(n)) -> -F Type =
+    match u
+      | NatV(m) => return Nat
+      | TypeV(m) => return (ULevel m)
+      | PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F elLevel[<](m, b(x))))
 }

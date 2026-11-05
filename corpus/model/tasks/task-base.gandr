@@ -12,12 +12,11 @@
 
 /// A task: the protocols its end carries back to the parent, and the path it
 /// reads.
-pub module Task :> #{
+pub module Task :> *{
   type Join = !String. end,
   type Relay = ?String. !String. end,
   type Volunteer = !String. ?String. end,
   notes : String
-} where {
+} where
   /// The path a task reads.
   def notes = "notes";
-}

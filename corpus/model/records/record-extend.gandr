@@ -1,11 +1,11 @@
 // A record update at a field the record lacks extends it with that field.
 
 /// A record of one field.
-def single = #{a = 1};
+def single = *{a = 1};
 
 /// `single` extended at `b`, the record type it gains stated.
-def pair : #{a : Integer, b : Integer} = #{single | b = 2};
+def pair : *{a : Integer, b : Integer} = *{single | b = 2};
 
 /// `single` extended at `b` and returned: the record gains the field.
-@[ runs("#{.a = 1, .b = 2}") ]
-def grown() -> #{a : Integer, b : Integer} { #{single | b = 2} }
+@[ runs("*{.a = 1, .b = 2}") ]
+def grown() -> *{a : Integer, b : Integer} { *{single | b = 2} }

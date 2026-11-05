@@ -15,66 +15,56 @@ import "../data/data-base.gandr";
 
 /// Sets: a type of members, and the member at each of its elements.
 @[ checks, form(explicit) ]
-data Vinf : Type[+, 1] where {
+data Vinf : Type[+, 1] where
   | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf
-}
 
 /// Ordinals of the same shape: the limit of a family of smaller ordinals.
 @[ checks ]
-data Ord : Type[+, 1] where {
+data Ord : Type[+, 1] where
   | Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord
-}
 
 /// The rank of a set: the limit, over its members, of their ranks. Each
 /// member is reached through `f` and ranked one stage below the set.
 @[ checks ]
-def rec rank(v : Vinf) -> -F Ord {
-  match v {
-    Sup(a, f) => Lim(a, thunk { fun (x) { rank[<](f(x)) } })
-  }
-}
+def rec rank(v : Vinf) -> -F Ord =
+  match v
+    | Sup(a, f) => Lim a (thunk { fun (x) { rank[<] (f x) } })
 
 /// The type a set's members are picked by.
 @[ checks ]
-def members(v : Vinf) -> -F Type {
-  match v {
-    Sup(a, f) => return a
-  }
-}
+def members(v : Vinf) -> -F Type =
+  match v
+    | Sup(a, f) => return a
 
 /// The type with one element.
 @[ checks ]
-data Lone : Type where {
+data Lone : Type where
   | Pt : Lone
-}
 
 /// Any set follows from an element of the empty type.
 @[ checks ]
-def absurdSet(e : Empty) -> -F Vinf {
+def absurdSet(e : Empty) -> -F Vinf =
   match e {}
-}
 
 /// No member: the empty set's picking function has nothing to pick from.
 @[ checks ]
-def none(x : Empty) -> -F Vinf { absurdSet(x) }
+def none(x : Empty) -> -F Vinf { absurdSet x }
 
 /// The empty set.
 @[ checks ]
 def zero : Vinf;
-def zero = Sup(Empty, none);
+def zero = Sup Empty none;
 
 /// The set whose one member is `v`.
 @[ checks ]
-def single(v : Vinf) -> -F Vinf {
-  Sup(Lone, thunk { fun (x) { v } })
-}
+def single(v : Vinf) -> -F Vinf =
+  Sup Lone (thunk { fun (x) { v } })
 
 /// The set whose members are `v` and `w`.
 @[ checks ]
-def pair(v : Vinf, w : Vinf) -> -F Vinf {
-  Sup(Two, thunk { fun (x) { match x -> -F Vinf { L => v, R => w } } })
-}
+def pair(v : Vinf, w : Vinf) -> -F Vinf =
+  Sup Two (thunk { fun (x) { match x -> -F Vinf { | L => v | R => w } } })
 
 /// The rank of the set whose one member is the empty set.
 @[ checks ]
-def ranked() -> -F Ord { let v = single(zero); rank(v) }
+def ranked() -> -F Ord { let v = single zero; rank v }

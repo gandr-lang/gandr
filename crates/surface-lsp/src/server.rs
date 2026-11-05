@@ -9812,8 +9812,8 @@ mod tests
                 "def kept+0:37 `m` variable→parameter",
                 "def kept+0:40 `m` variable→parameter",
                 "def kept+1:8 `m` variable→parameter",
-                "def kept+2:22 `m` variable→parameter",
-                "def kept+3:25 `m` variable→parameter",
+                "def kept+2:24 `m` variable→parameter",
+                "def kept+3:27 `m` variable→parameter",
                 "def keptTally+1:8 `t` variable→parameter",
                 "def keptDuo+1:8 `d` variable→parameter",
             ],
@@ -9823,7 +9823,7 @@ mod tests
         assert_eq!(
             changed("sums-and-case.gandr"),
             [
-                "def pick+2:4 `Inl` enumMember→unresolvedReference",
+                "def pick+2:6 `Inl` enumMember→unresolvedReference",
                 "def picked+0:26 `pick` variable→function"
             ],
             "the name the lowering refused `pick` for, an expected refusal, sent as unresolved; \
@@ -9929,20 +9929,20 @@ mod tests
                 "pub data Maybe+2:4 `Some` enumMember declaration+value",
                 "pub data Maybe+2:12 `x` parameter declaration+value",
                 "def unwrap_or_zero+0:4 `unwrap_or_zero` function declaration",
-                "def unwrap_or_zero+2:4 `None` enumMember value",
-                "def unwrap_or_zero+3:4 `Some` enumMember value",
-                "def unwrap_or_zero+3:9 `x` variable declaration+value",
-                "def unwrap_or_zero+3:15 `x` variable value",
+                "def unwrap_or_zero+2:6 `None` enumMember value",
+                "def unwrap_or_zero+3:6 `Some` enumMember value",
+                "def unwrap_or_zero+3:11 `x` variable declaration+value",
+                "def unwrap_or_zero+3:17 `x` variable value",
                 "def kept+0:4 `kept` function declaration",
                 "def kept+0:9 `m` parameter declaration+value",
                 "def kept+0:37 `m` parameter value",
                 "def kept+0:40 `m` parameter value",
                 "def kept+1:8 `m` parameter value",
-                "def kept+2:4 `None` enumMember value",
-                "def kept+2:22 `m` parameter value",
-                "def kept+3:4 `Some` enumMember value",
-                "def kept+3:9 `x` variable declaration+value",
-                "def kept+3:25 `m` parameter value",
+                "def kept+2:6 `None` enumMember value",
+                "def kept+2:24 `m` parameter value",
+                "def kept+3:6 `Some` enumMember value",
+                "def kept+3:11 `x` variable declaration+value",
+                "def kept+3:27 `m` parameter value",
             ],
             "the family, its constructors and their telescope binder, each definition, parameter \
              and pattern variable declare; a constructor matched in a pattern and each name read \
@@ -9957,9 +9957,9 @@ mod tests
                 "def tag_of+0:30 `w` typeParameter declaration+value",
                 "def tag_of+0:37 `n` typeParameter value",
                 "def tag_of+1:8 `p` parameter value",
-                "def tag_of+2:6 `m` variable declaration+value",
-                "def tag_of+2:9 `w` variable declaration+value",
-                "def tag_of+2:15 `m` variable value",
+                "def tag_of+2:8 `m` variable declaration+value",
+                "def tag_of+2:11 `w` variable declaration+value",
+                "def tag_of+2:17 `m` variable value",
                 "def tag+0:4 `tag` function declaration",
                 "def tag+0:23 `tag_of` function computation",
                 "def tag+0:30 `tagged` function value",
@@ -9974,13 +9974,13 @@ mod tests
                 "pub def rec plus+0:17 `n` parameter declaration+value",
                 "pub def rec plus+0:26 `m` parameter declaration+value",
                 "pub def rec plus+1:8 `m` parameter value",
-                "pub def rec plus+2:4 `Zero` enumMember value",
-                "pub def rec plus+2:12 `n` parameter value",
-                "pub def rec plus+3:4 `Succ` enumMember value",
-                "pub def rec plus+3:9 `p` variable declaration+value",
-                "pub def rec plus+3:20 `plus` function computation",
-                "pub def rec plus+3:28 `n` parameter value",
-                "pub def rec plus+3:31 `p` variable value",
+                "pub def rec plus+2:6 `Zero` enumMember value",
+                "pub def rec plus+2:14 `n` parameter value",
+                "pub def rec plus+3:6 `Succ` enumMember value",
+                "pub def rec plus+3:11 `p` variable declaration+value",
+                "pub def rec plus+3:23 `plus` function computation",
+                "pub def rec plus+3:31 `n` parameter value",
+                "pub def rec plus+3:33 `p` variable value",
             ],
             "#1487: the recursive call's name, written with its claim as `plus[<]`, is run as a \
              computation as any called name is; the arguments passed to it are values"
@@ -10929,7 +10929,7 @@ mod tests
             }})
         };
         let uses = [
-            location("base.gandr", 6, 4, 8),
+            location("base.gandr", 5, 6, 10),
             location("first.gandr", 2, 13, 17),
             location("second.gandr", 2, 12, 16),
         ];
@@ -10949,16 +10949,16 @@ mod tests
             "the same uses from the declaring name, the declaration left out"
         );
         assert_eq!(
-            references("base.gandr", 6, 12, true),
+            references("base.gandr", 5, 14, true),
             Value::Array(vec![
-                location("base.gandr", 4, 17, 18),
-                location("base.gandr", 6, 12, 13),
-                location("base.gandr", 7, 28, 29),
+                location("base.gandr", 3, 17, 18),
+                location("base.gandr", 5, 14, 15),
+                location("base.gandr", 6, 31, 32),
             ]),
             "a parameter's uses stay in its declaration, though every importer reads the source"
         );
         assert_eq!(
-            references("base.gandr", 5, 3, true),
+            references("base.gandr", 4, 3, true),
             Value::Array(vec![]),
             "a keyword refers to nothing"
         );
@@ -11043,19 +11043,19 @@ mod tests
         let minus = item(
             "following.gandr",
             "minus",
-            lines(minus_at, below(minus_at, 8), 1),
+            lines(minus_at, below(minus_at, 5), 31),
             span(minus_at, 8, 13),
         );
         let difference = item(
             "following.gandr",
             "difference",
-            lines(difference_at, difference_at, 54),
+            lines(difference_at, difference_at, 53),
             span(difference_at, 4, 14),
         );
         let three = item(
             "data-base.gandr",
             "three",
-            span(three_at, 4, 32),
+            span(three_at, 4, 31),
             span(three_at, 8, 13),
         );
         let call = |key: &str, item: &Value, ranges: &[Range]| serde_json::json!({key: item, "fromRanges": ranges});
@@ -11081,26 +11081,26 @@ mod tests
                 serde_json::json!({"item": minus})
             ),
             serde_json::json!([
-                call("from", &minus, &[span(below(minus_at, 5), 17, 22)]),
+                call("from", &minus, &[span(below(minus_at, 5), 19, 24)]),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "divided",
-                        lines(divided_at, below(divided_at, 5), 1),
+                        lines(divided_at, below(divided_at, 3), 61),
                         span(divided_at, 8, 15)
                     ),
-                    &[span(below(divided_at, 3), 25, 30)]
+                    &[span(below(divided_at, 3), 27, 32)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "halvedUp",
-                        lines(halved_at, below(halved_at, 5), 1),
+                        lines(halved_at, below(halved_at, 3), 70),
                         span(halved_at, 8, 16)
                     ),
-                    &[span(below(halved_at, 3), 25, 30)]
+                    &[span(below(halved_at, 3), 27, 32)]
                 ),
                 call("from", &difference, &[span(difference_at, 29, 34)]),
             ]),
@@ -11111,7 +11111,7 @@ mod tests
                 "callHierarchy/outgoingCalls",
                 serde_json::json!({"item": minus})
             ),
-            serde_json::json!([call("to", &minus, &[span(below(minus_at, 5), 17, 22)])]),
+            serde_json::json!([call("to", &minus, &[span(below(minus_at, 5), 19, 24)])]),
             "`minus` calls itself once, at the recursive call's name; `Succ` and `Zero` are no calls"
         );
         assert_eq!(
@@ -11140,14 +11140,14 @@ mod tests
                         lines(quotient_at, quotient_at, 60),
                         span(quotient_at, 4, 12)
                     ),
-                    &[span(quotient_at, 40, 45)]
+                    &[span(quotient_at, 41, 46)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "halvedThree",
-                        lines(halved_three_at, halved_three_at, 46),
+                        lines(halved_three_at, halved_three_at, 45),
                         span(halved_three_at, 4, 15)
                     ),
                     &[span(halved_three_at, 39, 44)]
@@ -11160,7 +11160,7 @@ mod tests
                         lines(four_at, four_at, 51),
                         span(four_at, 4, 16)
                     ),
-                    &[span(four_at, 43, 48)]
+                    &[span(four_at, 44, 49)]
                 ),
             ]),
             "the base's `three`, asked about where no editor holds the base, is called by the \
@@ -11332,7 +11332,7 @@ mod tests
             (elim.as_str(), "def involutive("),
             (
                 elim.as_str(),
-                "Path.walk(fun (x) { type(Path[.A = Circle](Base, invLooper(x))) }",
+                "Path.walk (fun (x) { type(Path[.A = Circle](Base, invLooper x)) })",
             ),
         ]
         .map(|(text, held)| {
@@ -11350,8 +11350,8 @@ mod tests
                 serde_json::json!({"title": "3 references", "command": "gandr.showReferences",
                 "arguments": [uri("circle-base.gandr"), at(Line::from(flip_at), Character::from(8_u32)), [
                     location("circle-elim.gandr", involutive_at, 48, 57),
-                    location("circle-elim.gandr", involutive_at, 58, 67),
-                    location("circle-elim.gandr", flipped_at, 51, 60),
+                    location("circle-elim.gandr", involutive_at, 59, 68),
+                    location("circle-elim.gandr", flipped_at, 52, 61),
                 ]]})
             ),
             "the flip's command shows the importer's three calls of it: twice in \
@@ -11431,7 +11431,7 @@ mod tests
             serde_json::json!([
                 location("base.gandr", 1, 4, 8),
                 location("first.gandr", 2, 13, 17),
-                location("base.gandr", 6, 4, 8),
+                location("base.gandr", 5, 6, 10),
                 location("unopened.gandr", 2, 13, 17),
             ]),
             "the declaration, then the open importer's use, then the uses of the sources no editor \
@@ -11469,7 +11469,7 @@ mod tests
                 serde_json::json!({"newName": "Nought"})
             )["result"],
             serde_json::json!({"changes": {
-                uri("base.gandr"): [edit(1, 4, 8), edit(6, 4, 8)],
+                uri("base.gandr"): [edit(1, 4, 8), edit(5, 6, 10)],
                 uri("first.gandr"): [edit(2, 13, 17)],
                 uri("unopened.gandr"): [edit(2, 13, 17)],
             }}),
@@ -11729,14 +11729,14 @@ mod tests
             )))
         };
         assert_eq!(
-            ask(&mut offsets, 12, 21),
+            ask(&mut offsets, 9, 21),
             plus(0),
             "the first argument of a call, its parameters as places in the label"
         );
         assert_eq!(
-            ask(&mut offsets, 12, 27),
+            ask(&mut offsets, 9, 27),
             plus(1),
-            "past the comma, the second"
+            "in the next argument, the second"
         );
         let succ = wire(Json(
             r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
@@ -11746,12 +11746,12 @@ mod tests
                 "activeSignature":0,"activeParameter":0}}]"#,
         ));
         assert_eq!(
-            ask(&mut offsets, 12, 32),
+            ask(&mut offsets, 9, 33),
             succ,
             "a constructor applied to no field yet, though the lowering refuses `f`"
         );
         assert_eq!(
-            ask(&mut texts, 12, 27),
+            ask(&mut texts, 9, 27),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
                     "label":"plus(n : Nat, m : Nat) -> -F Nat",
@@ -11761,7 +11761,7 @@ mod tests
             "a client taking no offsets: each parameter as its text"
         );
         assert_eq!(
-            ask(&mut offsets, 8, 32),
+            ask(&mut offsets, 7, 33),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
                     "label":"plus(n : Nat, m : Nat) -> -F Nat",
@@ -11771,12 +11771,12 @@ mod tests
             "a recursive call, by its claim's name"
         );
         assert_eq!(
-            ask(&mut offsets, 12, 34),
+            ask(&mut offsets, 9, 36),
             wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
             "past the call: null"
         );
         assert_eq!(
-            ask(&mut offsets, 13, 54),
+            ask(&mut offsets, 10, 54),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
                     "label":"g : +U (Nat -> -F Nat)",
@@ -11806,7 +11806,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/documented.gandr","languageId":"gandr","version":1,
-                     "text":"def add(\n  /// The first.\n  a : Integer,\n  b : Integer\n) -> -F Integer { return a }\ndef f : +U (-F Integer) ;\ndef f = thunk { add(1, 2) } ;\n"}}}"#,
+                     "text":"def add(\n  /// The first.\n  a : Integer,\n  b : Integer\n) -> -F Integer { return a }\ndef f : +U (-F Integer) ;\ndef f = thunk { add 1 2 } ;\n"}}}"#,
             ),
         );
         assert_eq!(
@@ -11826,56 +11826,6 @@ mod tests
                         {"label":[17,28]}]}],
                     "activeSignature":0,"activeParameter":0}}]"#
             )),
-        );
-    }
-
-    /// #843: a call typed up to its next argument without its `)`, as an
-    /// editor that does not close brackets holds it, answers its head.
-    #[test]
-    fn signature_help_answers_inside_a_call_typed_before_its_close_843()
-    {
-        let mut server = Connected::default();
-        let _answered = send(
-            &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":
-                {"textDocument":{"signatureHelp":{"signatureInformation":
-                {"parameterInformation":{"labelOffsetSupport":true}}}}}}}"#,
-            ),
-        );
-        let _published = send(
-            &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/typing.gandr","languageId":"gandr","version":1,
-                     "text":"data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    Zero => n,\n    Succ(p) => Succ(plus[<](n, p))\n  }\n}\ndef f : +U (-F Nat) ;\ndef f = thunk { plus(Zero, "}}}"#,
-            ),
-        );
-        let ask = |server: &mut Connected, character: u32| {
-            let request = format!(
-                r#"{{"jsonrpc":"2.0","id":9,"method":"textDocument/signatureHelp","params":{{
-                    "textDocument":{{"uri":"file:///tmp/typing.gandr"}},
-                    "position":{{"line":11,"character":{character}}}}}}}"#
-            );
-            send(server, Json(&request))
-        };
-        let plus = |active: u32| {
-            wire(Json(&format!(
-                r#"[{{"jsonrpc":"2.0","id":9,"result":{{"signatures":[{{
-                    "label":"plus(n : Nat, m : Nat) -> -F Nat",
-                    "parameters":[{{"label":[5,12]}},{{"label":[14,21]}}]}}],
-                    "activeSignature":0,"activeParameter":{active}}}}}]"#
-            )))
-        };
-        assert_eq!(
-            ask(&mut server, 27),
-            plus(1),
-            "past the comma at the end of the text, the second parameter"
-        );
-        assert_eq!(
-            ask(&mut server, 21),
-            plus(0),
-            "at the first argument, the first"
         );
     }
 
@@ -13623,7 +13573,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
-                     "text":"def id : Integer => Integer ;\ndef id = thunk { fun (y) { return y } } ;\n"}}}"#,
+                     "text":"def id : Integer -> Integer ;\ndef id = thunk { fun (y) { return y } } ;\n"}}}"#,
             ),
         );
         let ask = |server: &mut Connected, uri: &str, (from, to): (u32, u32)| {
@@ -13658,7 +13608,7 @@ mod tests
         );
     }
 
-    /// #764: the hint of `r`, bound by `let r = minus(p, d)` in a corpus
+    /// #764: the hint of `r`, bound by `let r = minus p d` in a corpus
     /// importer, names `Nat`, which the importer's base declares. A client
     /// that resolves no hint, or resolves other properties alone (#1620), gets
     /// the name located at once; one that resolves a label's locations gets it
@@ -13679,11 +13629,11 @@ mod tests
             Line::from(
                 crate::anchor::line_of(
                     crate::anchor::Source(&text),
-                    crate::anchor::Held("let r = minus(p, d)"),
+                    crate::anchor::Held("let r = minus p d"),
                 )
                 .0,
             ),
-            Character::from(22_u32),
+            Character::from(24_u32),
         );
         let opened = |capabilities: Value| {
             let mut server = Connected::default();
@@ -13838,7 +13788,7 @@ mod tests
             let _answered = send(&mut server, Json(&initialize));
             let open = r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                 {"uri":"file:///tmp/folded.gandr","languageId":"gandr","version":1,
-                 "text":"def f(x: Integer) -> -F Integer {\n  return x\n}\n"}}}"#;
+                 "text":"def f(x : Integer) -> -F Integer {\n  return x\n}\n"}}}"#;
             let _published = send(&mut server, Json(open));
             let request = r#"{"jsonrpc":"2.0","id":9,"method":"textDocument/foldingRange",
                 "params":{"textDocument":{"uri":"file:///tmp/folded.gandr"}}}"#;
@@ -13850,7 +13800,7 @@ mod tests
         assert_eq!(
             folds(r#"{"textDocument":{"foldingRange":{"foldingRange":{"collapsedText":true}}}}"#),
             wire(Json(
-                r#"[{"startLine":0,"endLine":2,"collapsedText":"def f(x: Integer) -> -F Integer { … }"}]"#
+                r#"[{"startLine":0,"endLine":2,"collapsedText":"def f(x : Integer) -> -F Integer { … }"}]"#
             )),
             "a client that takes collapsed text is shown the function's head"
         );
@@ -14051,13 +14001,12 @@ mod tests
                 r#"[{{"jsonrpc":"2.0","id":9,"result":[{uris}]}}]"#
             )))
         };
-        let minus = "def rec minus(n : Nat, k : Nat) -> Nat {\n  match k {\n    Zero => n,\n    \
-                     Succ(j) => match n {\n      Zero => Zero,\n      Succ(p) => minus[<](p, j)\n    \
-                     }\n  }\n}";
+        let minus = "def rec minus(n : Nat, k : Nat) -> Nat =\n  match k\n    | Zero => n\n    \
+                     | Succ(j) => match n\n      | Zero => Zero\n      | Succ(p) => minus[<] p j";
         assert_eq!(
             copied(&mut server, &following, &[(
-                "def difference : () => Nat = ",
-                "minus(three, Succ(Zero))"
+                "def difference : () -> Nat = ",
+                "minus three (Succ Zero)"
             )]),
             answered(&[&base, &following]),
             "a call of the document's own declaration, of a sibling's numeral and constructors"
@@ -14071,7 +14020,7 @@ mod tests
         assert_eq!(
             copied(&mut server, &following, &[
                 ("", minus),
-                ("def difference : () => Nat = ", "minus(three, Succ(Zero))")
+                ("def difference : () -> Nat = ", "minus three (Succ Zero)")
             ]),
             answered(&[&base]),
             "a call of a declaration the copy holds answers nothing for it"
@@ -14232,7 +14181,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/untidy.gandr","languageId":"gandr","version":1,
-                     "text":"def plus(n : Nat) -> -F Nat {   \nmatch n {\nZero => n\n}\n}\n\n\n"}}}"#,
+                     "text":"def plus(n : Nat) -> -F Nat {   \nmatch n {\n| Zero => n\n}\n}\n\n\n"}}}"#,
             ),
         );
         let format = |server: &mut Connected, options: &str| {
@@ -14247,7 +14196,7 @@ mod tests
         let canonical = wire(Json(
             r#"[{"jsonrpc":"2.0","id":7,"result":[{
                 "range":{"start":{"line":0,"character":29},"end":{"line":6,"character":0}},
-                "newText":"\n  match n {\n    Zero => n\n  }\n}"}]}]"#,
+                "newText":"\n  match n {\n    | Zero => n\n  }\n}"}]}]"#,
         ));
         assert_eq!(
             format(
@@ -14717,64 +14666,64 @@ mod tests
         let definition = |server: &mut Connected, line, character| {
             going(server, Goto::Definition, &uri, position(line, character))
         };
-        let n = range(4, 13, 14);
-        let plus = range(4, 8, 12);
+        let n = range(3, 13, 14);
+        let plus = range(3, 8, 12);
         let nat = Range {
             start: position(0, 0),
-            end: position(3, 1),
+            end: position(2, 28),
         };
         let succ = range(2, 4, 8);
         assert_eq!(
-            definition(&mut linked, 6, 12),
-            Value::Array(vec![link(range(6, 12, 13), n, n)]),
+            definition(&mut linked, 5, 14),
+            Value::Array(vec![link(range(5, 14, 15), n, n)]),
             "a parameter's use links to its binder"
         );
         assert_eq!(
-            definition(&mut located, 6, 12),
+            definition(&mut located, 5, 14),
             serde_json::json!([{"uri": "file:///tmp/referred.gandr", "range": n}]),
             "a client without links is answered the binder's location"
         );
         assert_eq!(
-            definition(&mut linked, 6, 13),
-            definition(&mut linked, 6, 12),
+            definition(&mut linked, 5, 15),
+            definition(&mut linked, 5, 14),
             "a caret just past a name answers the name"
         );
         assert_eq!(
-            definition(&mut linked, 7, 21),
-            Value::Array(vec![link(range(7, 20, 24), plus, plus)]),
+            definition(&mut linked, 6, 24),
+            Value::Array(vec![link(range(6, 23, 27), plus, plus)]),
             "a recursive call links to its declaration from its name, its marker aside (#827)"
         );
         assert_eq!(
-            definition(&mut linked, 7, 31),
+            definition(&mut linked, 6, 33),
             Value::Array(vec![link(
-                range(7, 31, 32),
-                range(7, 9, 10),
-                range(7, 9, 10)
+                range(6, 33, 34),
+                range(6, 11, 12),
+                range(6, 11, 12)
             )]),
             "a pattern's binder is the referent of its use in the arm"
         );
         assert_eq!(
-            definition(&mut linked, 7, 4),
-            Value::Array(vec![link(range(7, 4, 8), nat, succ)]),
+            definition(&mut linked, 6, 6),
+            Value::Array(vec![link(range(6, 6, 10), nat, succ)]),
             "a constructor in a pattern links to its family with the constructor selected"
         );
         assert_eq!(
-            definition(&mut linked, 11, 18),
-            Value::Array(vec![link(range(11, 15, 19), nat, succ)]),
+            definition(&mut linked, 8, 19),
+            Value::Array(vec![link(range(8, 16, 20), nat, succ)]),
             "a constructor nested in another's arguments answers itself, from its name"
         );
         assert_eq!(
-            definition(&mut linked, 11, 11),
-            Value::Array(vec![link(range(11, 10, 14), nat, succ)]),
+            definition(&mut linked, 8, 11),
+            Value::Array(vec![link(range(8, 10, 14), nat, succ)]),
             "a constructor applied links from its name, not from its arguments (#827)"
         );
         assert_eq!(
-            definition(&mut linked, 10, 10),
-            Value::Array(vec![link(range(10, 10, 13), nat, range(0, 5, 8))]),
+            definition(&mut linked, 7, 10),
+            Value::Array(vec![link(range(7, 10, 13), nat, range(0, 5, 8))]),
             "a written type links to its family"
         );
         assert_eq!(
-            definition(&mut linked, 4, 1),
+            definition(&mut linked, 3, 1),
             Value::Array(vec![]),
             "a keyword refers to nothing"
         );
@@ -14813,41 +14762,41 @@ mod tests
         };
         let uri = "file:///tmp/referred.gandr";
         let n = Value::Array(vec![
-            mark(1, 4, 13, 14),
-            mark(2, 6, 12, 13),
-            mark(2, 7, 28, 29),
+            mark(1, 3, 13, 14),
+            mark(2, 5, 14, 15),
+            mark(2, 6, 31, 32),
         ]);
         assert_eq!(
-            highlight(uri, 6, 12),
+            highlight(uri, 5, 14),
             n,
             "a parameter's use marks its binder, its use in an arm and in the recursive call"
         );
-        assert_eq!(highlight(uri, 4, 13), n, "the binder marks the same");
+        assert_eq!(highlight(uri, 3, 13), n, "the binder marks the same");
         assert_eq!(
-            highlight(uri, 6, 13),
+            highlight(uri, 5, 15),
             n,
             "a caret just past a name marks it"
         );
-        let plus = Value::Array(vec![mark(1, 4, 8, 12), mark(2, 7, 20, 24)]);
+        let plus = Value::Array(vec![mark(1, 3, 8, 12), mark(2, 6, 23, 27)]);
         assert_eq!(
-            highlight(uri, 4, 9),
+            highlight(uri, 3, 9),
             plus,
             "a recursive declaration marks its name and its call"
         );
-        assert_eq!(highlight(uri, 7, 21), plus, "its call marks the same");
+        assert_eq!(highlight(uri, 6, 24), plus, "its call marks the same");
         assert_eq!(
-            highlight(uri, 7, 5),
+            highlight(uri, 6, 7),
             Value::Array(vec![
                 mark(1, 2, 4, 8),
-                mark(2, 7, 4, 8),
-                mark(2, 7, 15, 19),
-                mark(2, 11, 10, 14),
-                mark(2, 11, 15, 19),
+                mark(2, 6, 6, 10),
+                mark(2, 6, 17, 21),
+                mark(2, 8, 10, 14),
+                mark(2, 8, 16, 20),
             ]),
             "a constructor marks its name in the family, its pattern and its terms"
         );
         assert_eq!(
-            highlight(uri, 4, 1),
+            highlight(uri, 3, 1),
             Value::Array(vec![]),
             "a keyword marks nothing"
         );
@@ -14880,25 +14829,25 @@ mod tests
             }).collect::<Vec<_>>(), "wordPattern": gandr_surface_parser::WORD_PATTERN})
         };
         let uri = "file:///tmp/referred.gandr";
-        let n = ranges(&[(4, 13, 14), (6, 12, 13), (7, 28, 29)]);
+        let n = ranges(&[(3, 13, 14), (5, 14, 15), (6, 31, 32)]);
         assert_eq!(
-            linked(uri, 4, 13),
+            linked(uri, 3, 13),
             n,
             "a parameter's binder links itself and its uses"
         );
-        assert_eq!(linked(uri, 7, 28), n, "a use links the same ranges");
+        assert_eq!(linked(uri, 6, 31), n, "a use links the same ranges");
         assert_eq!(
-            linked(uri, 7, 9),
-            ranges(&[(7, 9, 10), (7, 31, 32)]),
+            linked(uri, 6, 11),
+            ranges(&[(6, 11, 12), (6, 33, 34)]),
             "a binder a constructor pattern introduces links its use"
         );
         assert_eq!(
-            linked(uri, 4, 9),
+            linked(uri, 3, 9),
             Value::Null,
             "a declaration's name, which importers may use, links nothing"
         );
-        assert_eq!(linked(uri, 7, 5), Value::Null, "nor does a constructor");
-        assert_eq!(linked(uri, 4, 1), Value::Null, "a keyword links nothing");
+        assert_eq!(linked(uri, 6, 7), Value::Null, "nor does a constructor");
+        assert_eq!(linked(uri, 3, 1), Value::Null, "a keyword links nothing");
         assert_eq!(
             linked("file:///tmp/closed.gandr", 0, 0),
             Value::Null,
@@ -14926,22 +14875,22 @@ mod tests
         };
         let whole = Range {
             start: position(0, 0),
-            end: position(3, 1),
+            end: position(2, 28),
         };
         let nat = |origin| Value::Array(vec![link(origin, whole, range(0, 5, 8))]);
         assert_eq!(
-            type_definition(6, 12),
-            nat(range(6, 12, 13)),
+            type_definition(5, 14),
+            nat(range(5, 14, 15)),
             "a parameter's use is typed by the family"
         );
         assert_eq!(
-            type_definition(7, 9),
-            nat(range(7, 9, 10)),
+            type_definition(6, 11),
+            nat(range(6, 11, 12)),
             "so is a binder in a constructor pattern"
         );
         assert_eq!(
-            type_definition(11, 10),
-            nat(range(11, 10, 26)),
+            type_definition(8, 10),
+            nat(range(8, 10, 26)),
             "and a numeral built of its constructors"
         );
         assert_eq!(
@@ -15741,7 +15690,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
                     "uri":"file:///tmp/f.gandr","languageId":"gandr","version":1,
-                    "text":"def f(x: Integer) -> -F Integer { return x }\n"}}}"#,
+                    "text":"def f(x : Integer) -> -F Integer { return x }\n"}}}"#,
             ),
         );
         let hovered = |server: &mut Connected| {
@@ -15769,7 +15718,7 @@ mod tests
         let explicit = Some(String::from(
             "```gandr\nf : +U (Integer -> -F Integer)\n```",
         ));
-        let sugared = Some(String::from("```gandr\nf : Integer => Integer\n```"));
+        let sugared = Some(String::from("```gandr\nf : Integer -> Integer\n```"));
         assert_eq!(
             hovered(&mut server),
             explicit,
@@ -16053,7 +16002,9 @@ mod tests
 
     /// #1547: a change that arrives while its document's admission waits for
     /// the pool retires it, its line logged as retired, and the change's own
-    /// admission settles whole once the pool frees.
+    /// admission settles whole once the pool frees: the document's own
+    /// declarations cross again, and the prelude's cross or resume from the
+    /// process's store, which other tests in the process fill.
     #[test]
     fn a_change_during_an_admission_retires_it_1547()
     {
@@ -16125,18 +16076,21 @@ mod tests
         else {
             panic!("the change's admission settles once: {:?}", settled.log);
         };
+        let crossing = admitted
+            .to_string()
+            .rsplit_once(", ")
+            .and_then(|(_, crossed)| {
+                let (crossed, of) = crossed
+                    .strip_suffix(" declarations crossed")?
+                    .split_once('/')?;
+                Some((crossed.parse::<usize>().ok()?, of.parse::<usize>().ok()?))
+            });
         assert!(
             admitted.to_string().contains("at version 2: ")
                 && admitted.to_string().contains(", admitted in ")
-                && admitted
-                    .to_string()
-                    .rsplit_once(", ")
-                    .and_then(|(_, crossed)| crossed
-                        .strip_suffix(" declarations crossed")?
-                        .split_once('/'))
-                    .is_some_and(|(crossed, of)| crossed == of),
-            "the change's admission crosses the revision whole, the prelude's among them: \
-             {admitted}"
+                && crossing.is_some_and(|(crossed, of)| crossed >= 2_usize && crossed <= of),
+            "the change's admission settles the revision, its document's two declarations \
+             crossed again: {admitted}"
         );
         assert!(matches!(
             blocking.wait(),

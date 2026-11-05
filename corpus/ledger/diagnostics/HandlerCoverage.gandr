@@ -5,10 +5,9 @@ import std.process;
 
 /// A handler of early exit with no clause for `exit`.
 @[ refuses("HandlerCoverage") ]
-def asked() -> -F Integer {
+def asked() -> -F Integer =
   handle c : std.process.Exit.Eff {
     pure 1
   } with {
-    pure(x) => pure x
+    | pure(x) => pure x
   }
-}

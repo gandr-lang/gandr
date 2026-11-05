@@ -45,31 +45,20 @@ pub def cylinderComposite2(
   f2 : Path[.A = A](x2, y2),
   xs : Path[.A = A](x, x2),
   ys : Path[.A = A](y, y2),
-  a : Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, f2)),
+  a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2),
   z : A,
   g : Path[.A = A](y, z),
   z2 : A,
   g2 : Path[.A = A](y2, z2),
   zs : Path[.A = A](z, z2),
-  b : Path[.A = Path[.A = A](y, z2)](Path.step(g, zs), Path.step(ys, g2))
+  b : Path[.A = Path[.A = A](y, z2)](Path.step g zs, Path.step ys g2)
 ) -> Path[.A = Path[.A = A](x, z2)](
-  Path.step(Path.step(f, g), zs),
-  Path.step(xs, Path.step(f2, g2))
-) {
-  Path.step(
-    Path.step(
-      Path.step(
-        Path.step(
-          assoc(A, x, y, z, z2, f, g, zs),
-          whiskerLeft(A, x, y, z2, f, Path.step(g, zs), Path.step(ys, g2), b)
-        ),
-        Path.back(assoc(A, x, y, y2, z2, f, ys, g2))
-      ),
-      whiskerRight(A, x, y2, z2, Path.step(f, ys), Path.step(xs, f2), a, g2)
-    ),
-    assoc(A, x, x2, y2, z2, xs, f2, g2)
-  )
-}
+  Path.step (Path.step f g) zs,
+  Path.step xs (Path.step f2 g2)
+) =
+  Path.step
+    (Path.step (Path.step (Path.step (assoc A x y z z2 f g zs) (whiskerLeft A x y z2 f (Path.step g zs) (Path.step ys g2) b)) (Path.back (assoc A x y y2 z2 f ys g2))) (whiskerRight A x y2 z2 (Path.step f ys) (Path.step xs f2) a g2))
+    (assoc A x x2 y2 z2 xs f2 g2)
 
 /// A stack of two squares composes to a square: Catt's `cylstack(2)`, the composite of their transposes read back.
 pub def cylinderStack2(
@@ -82,36 +71,18 @@ pub def cylinderStack2(
   f2 : Path[.A = A](x2, y2),
   xs : Path[.A = A](x, x2),
   ys : Path[.A = A](y, y2),
-  a : Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, f2)),
+  a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2),
   x3 : A,
   y3 : A,
   f3 : Path[.A = A](x3, y3),
   xs2 : Path[.A = A](x2, x3),
   ys2 : Path[.A = A](y2, y3),
-  b : Path[.A = Path[.A = A](x2, y3)](Path.step(f2, ys2), Path.step(xs2, f3))
+  b : Path[.A = Path[.A = A](x2, y3)](Path.step f2 ys2, Path.step xs2 f3)
 ) -> Path[.A = Path[.A = A](x, y3)](
-  Path.step(f, Path.step(ys, ys2)),
-  Path.step(Path.step(xs, xs2), f3)
-) {
-  Path.back(cylinderComposite2(
-    A,
-    x,
-    x2,
-    xs,
-    y,
-    y2,
-    ys,
-    f,
-    f2,
-    Path.back(a),
-    x3,
-    xs2,
-    y3,
-    ys2,
-    f3,
-    Path.back(b)
-  ))
-}
+  Path.step f (Path.step ys ys2),
+  Path.step (Path.step xs xs2) f3
+) =
+  Path.back (cylinderComposite2 A x x2 xs y y2 ys f f2 (Path.back a) x3 xs2 y3 ys2 f3 (Path.back b))
 
 /// Two triangles over one apex compose to a triangle: Catt's `conecomp(2,1,2)`.
 pub def coneComposite2(
@@ -122,36 +93,36 @@ pub def coneComposite2(
   c : A,
   p : Path[.A = A](x, c),
   q : Path[.A = A](y, c),
-  a : Path[.A = Path[.A = A](x, c)](p, Path.step(f, q)),
+  a : Path[.A = Path[.A = A](x, c)](p, Path.step f q),
   w : A,
   g : Path[.A = A](y, w),
   r : Path[.A = A](w, c),
-  b : Path[.A = Path[.A = A](y, c)](q, Path.step(g, r))
-) -> Path[.A = Path[.A = A](x, c)](p, Path.step(Path.step(f, g), r)) {
-  Path.step(
-    Path.step(a, whiskerLeft(A, x, y, c, f, q, Path.step(g, r), b)),
-    Path.back(assoc(A, x, y, w, c, f, g, r))
-  )
-}
+  b : Path[.A = Path[.A = A](y, c)](q, Path.step g r)
+) -> Path[.A = Path[.A = A](x, c)](p, Path.step (Path.step f g) r) =
+  Path.step
+    (Path.step a (whiskerLeft A x y c f q (Path.step g r) b))
+    (Path.back (assoc A x y w c f g r))
 
 /// The 2-chain's pasting context into its composite: Example 1.2's generator over `x, y, f, z, g`.
-def chainComposite(A : Type) -> (x : A) => (y : A) => Path[.A = A](x, y) => (z : A) => Path[.A = A](
+def chainComposite(A : Type) -> (x : A) -> ((y : A) -> (Path[.A = A](
+  x,
+  y
+) -> ((z : A) -> (Path[.A = A](
   y,
   z
-) => Path[.A = A](
+) -> Path[.A = A](
   x,
   z
-) {
+))))) =
   thunk {
     fun (x) {
       thunk {
         fun (y) {
-          thunk { fun (f) { thunk { fun (z) { thunk { fun (g) { join(A, x, y, z, f, g) } } } } } }
+          thunk { fun (f) { thunk { fun (z) { thunk { fun (g) { join A x y z f g } } } } } }
         }
       }
     }
   }
-}
 
 /// Two squares side by side compose to a square by `fill`: Example 1.2, the composite at `n = 2`.
 pub def cylinderFill2(
@@ -164,19 +135,18 @@ pub def cylinderFill2(
   f2 : Path[.A = A](x2, y2),
   xs : Path[.A = A](x, x2),
   ys : Path[.A = A](y, y2),
-  a : Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, f2)),
+  a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2),
   z : A,
   g : Path[.A = A](y, z),
   z2 : A,
   g2 : Path[.A = A](y2, z2),
   zs : Path[.A = A](z, z2),
-  b : Path[.A = Path[.A = A](y, z2)](Path.step(g, zs), Path.step(ys, g2))
+  b : Path[.A = Path[.A = A](y, z2)](Path.step g zs, Path.step ys g2)
 ) -> Path[.A = Path[.A = A](x, z2)](
-  Path.step(Path.step(f, g), zs),
-  Path.step(xs, Path.step(f2, g2))
-) {
-  fill[5, 7](chain(2), chainComposite(A), (xs, ys, a, zs, b))
-}
+  Path.step (Path.step f g) zs,
+  Path.step xs (Path.step f2 g2)
+) =
+  fill[5, 7] (chain 2) (chainComposite A) (xs, ys, a, zs, b)
 
 /// The composite at `n = 2` with its points fixed and its verticals constant, stated at the sides the level-two `fill` reads.
 pub def cylinderFillAt2(
@@ -190,27 +160,26 @@ pub def cylinderFillAt2(
   g0 : Path[.A = A](y, z),
   g1 : Path[.A = A](y, z),
   b : Path[.A = Path[.A = A](y, z)](g0, g1)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(f0, g0), Path.step(f1, g1)) {
-  cylinderFill2(A, x, y, f0, x, y, f1, Path.here(x), Path.here(y), a, z, g0, z, g1, Path.here(z), b)
-}
+) -> Path[.A = Path[.A = A](x, z)](Path.step f0 g0, Path.step f1 g1) =
+  cylinderFill2 A x y f0 x y f1 (Path.here x) (Path.here y) a z g0 z g1 (Path.here z) b
 
 /// The generator of the step at `n = 3`: the composite at `n = 2`, a function over `[2](1, 1)`.
 pub def cylinderFillOver2(A : Type, x : A, y : A, z : A) -> (f0 : Path[.A = A](
   x,
   y
-)) => (f1 : Path[.A = A](
+)) -> ((f1 : Path[.A = A](
   x,
   y
-)) => Path[.A = Path[.A = A](x, y)](
+)) -> (Path[.A = Path[.A = A](x, y)](
   f0,
   f1
-) => (g0 : Path[.A = A](y, z)) => (g1 : Path[.A = A](y, z)) => Path[.A = Path[.A = A](y, z)](
+) -> ((g0 : Path[.A = A](y, z)) -> ((g1 : Path[.A = A](y, z)) -> (Path[.A = Path[.A = A](y, z)](
   g0,
   g1
-) => Path[.A = Path[.A = A](x, z)](
-  Path.step(f0, g0),
-  Path.step(f1, g1)
-) {
+) -> Path[.A = Path[.A = A](x, z)](
+  Path.step f0 g0,
+  Path.step f1 g1
+)))))) =
   thunk {
     fun (f0) {
       thunk {
@@ -221,7 +190,7 @@ pub def cylinderFillOver2(A : Type, x : A, y : A, z : A) -> (f0 : Path[.A = A](
                 fun (g0) {
                   thunk {
                     fun (g1) {
-                      thunk { fun (b) { cylinderFillAt2(A, x, y, z, f0, f1, a, g0, g1, b) } }
+                      thunk { fun (b) { cylinderFillAt2 A x y z f0 f1 a g0 g1 b } }
                     }
                   }
                 }
@@ -232,7 +201,6 @@ pub def cylinderFillOver2(A : Type, x : A, y : A, z : A) -> (f0 : Path[.A = A](
       }
     }
   }
-}
 
 /// The horizontal composite of `fa` and `ga`, the right whisker then the left, the lift of a composite of two cells that `fill` writes.
 pub def liftHorizontal(
@@ -246,9 +214,8 @@ pub def liftHorizontal(
   gm : Path[.A = A](y, z),
   gp : Path[.A = A](y, z),
   ga : Path[.A = Path[.A = A](y, z)](gm, gp)
-) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, gm), Path.step(fp, gp)) {
-  Path.step(whiskerRight(A, x, y, z, fm, fp, fa, gm), whiskerLeft(A, x, y, z, fp, gm, gp, ga))
-}
+) -> Path[.A = Path[.A = A](x, z)](Path.step fm gm, Path.step fp gp) =
+  Path.step (whiskerRight A x y z fm fp fa gm) (whiskerLeft A x y z fp gm gp ga)
 
 /// Two 3-cylinders side by side compose to a 3-cylinder by the level-two `fill`. It is Example 1.4 at the composite at `n = 2`, its points fixed.
 pub def cylinderFill3(
@@ -264,7 +231,7 @@ pub def cylinderFill3(
   pa : Path[.A = Path[.A = A](x, y)](pm, pp),
   am : Path[.A = Path[.A = A](x, y)](fm, pm),
   ap : Path[.A = Path[.A = A](x, y)](fp, pp),
-  aa : Path[.A = Path[.A = Path[.A = A](x, y)](fm, pp)](Path.step(am, pa), Path.step(fa, ap)),
+  aa : Path[.A = Path[.A = Path[.A = A](x, y)](fm, pp)](Path.step am pa, Path.step fa ap),
   gm : Path[.A = A](y, z),
   gp : Path[.A = A](y, z),
   ga : Path[.A = Path[.A = A](y, z)](gm, gp),
@@ -273,35 +240,12 @@ pub def cylinderFill3(
   qa : Path[.A = Path[.A = A](y, z)](qm, qp),
   km : Path[.A = Path[.A = A](y, z)](gm, qm),
   kp : Path[.A = Path[.A = A](y, z)](gp, qp),
-  ka : Path[.A = Path[.A = Path[.A = A](y, z)](gm, qp)](Path.step(km, qa), Path.step(ga, kp))
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, gm), Path.step(pp, qp))](
-  Path.step(cylinderFillAt2(A, x, y, z, fm, pm, am, gm, qm, km), liftHorizontal(
-    A,
-    x,
-    y,
-    z,
-    pm,
-    pp,
-    pa,
-    qm,
-    qp,
-    qa
-  )),
-  Path.step(liftHorizontal(A, x, y, z, fm, fp, fa, gm, gp, ga), cylinderFillAt2(
-    A,
-    x,
-    y,
-    z,
-    fp,
-    pp,
-    ap,
-    gp,
-    qp,
-    kp
-  ))
-) {
-  fill[5, 11](chain(2, (1, 1)), cylinderFillOver2(A, x, y, z), (fa, pa, aa, ga, qa, ka))
-}
+  ka : Path[.A = Path[.A = Path[.A = A](y, z)](gm, qp)](Path.step km qa, Path.step ga kp)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm gm, Path.step pp qp)](
+  Path.step (cylinderFillAt2 A x y z fm pm am gm qm km) (liftHorizontal A x y z pm pp pa qm qp qa),
+  Path.step (liftHorizontal A x y z fm fp fa gm gp ga) (cylinderFillAt2 A x y z fp pp ap gp qp kp)
+) =
+  fill[5, 11] (chain 2 (1, 1)) (cylinderFillOver2 A x y z) (fa, pa, aa, ga, qa, ka)
 
 /// Two squares side by side compose to a square in the cells reading: Catt's `cylcomp(2,1,2)` as `f ◁ b` then `a ▷ g2`.
 pub def cylinderCompositeCells2(
@@ -314,19 +258,18 @@ pub def cylinderCompositeCells2(
   f2 : Path[.A = A](x2, y2),
   xs : Path[.A = A](x, x2),
   ys : Path[.A = A](y, y2),
-  a : Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, f2)),
+  a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2),
   z : A,
   g : Path[.A = A](y, z),
   z2 : A,
   g2 : Path[.A = A](y2, z2),
   zs : Path[.A = A](z, z2),
-  b : Path[.A = Path[.A = A](y, z2)](Path.step(g, zs), Path.step(ys, g2))
+  b : Path[.A = Path[.A = A](y, z2)](Path.step g zs, Path.step ys g2)
 ) -> Path[.A = Path[.A = A](x, z2)](
-  compose[5, 7](chain(3), (f, g, zs)),
-  compose[5, 7](chain(3), (xs, f2, g2))
-) {
-  Path.step(compose[4, 9](chain(2, (0, 1)), (f, b)), compose[4, 9](chain(2, (1, 0)), (a, g2)))
-}
+  compose[5, 7] (chain 3) (f, g, zs),
+  compose[5, 7] (chain 3) (xs, f2, g2)
+) =
+  Path.step (compose[4, 9] (chain 2 (0, 1)) (f, b)) (compose[4, 9] (chain 2 (1, 0)) (a, g2))
 
 /// A stack of two squares composes to a square in the cells reading: Catt's `cylstack(2)` as `a ▷ ys2` then `xs ◁ b`.
 pub def cylinderStackCells2(
@@ -339,19 +282,18 @@ pub def cylinderStackCells2(
   f2 : Path[.A = A](x2, y2),
   xs : Path[.A = A](x, x2),
   ys : Path[.A = A](y, y2),
-  a : Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, f2)),
+  a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2),
   x3 : A,
   y3 : A,
   f3 : Path[.A = A](x3, y3),
   xs2 : Path[.A = A](x2, x3),
   ys2 : Path[.A = A](y2, y3),
-  b : Path[.A = Path[.A = A](x2, y3)](Path.step(f2, ys2), Path.step(xs2, f3))
+  b : Path[.A = Path[.A = A](x2, y3)](Path.step f2 ys2, Path.step xs2 f3)
 ) -> Path[.A = Path[.A = A](x, y3)](
-  compose[5, 7](chain(3), (f, ys, ys2)),
-  compose[5, 7](chain(3), (xs, xs2, f3))
-) {
-  Path.step(compose[4, 9](chain(2, (1, 0)), (a, ys2)), compose[4, 9](chain(2, (0, 1)), (xs, b)))
-}
+  compose[5, 7] (chain 3) (f, ys, ys2),
+  compose[5, 7] (chain 3) (xs, xs2, f3)
+) =
+  Path.step (compose[4, 9] (chain 2 (1, 0)) (a, ys2)) (compose[4, 9] (chain 2 (0, 1)) (xs, b))
 
 /// Two triangles over one apex compose to a triangle in the cells reading: Catt's `conecomp(2,1,2)` as `a` then `f ◁ b`.
 pub def coneCompositeCells2(
@@ -362,14 +304,13 @@ pub def coneCompositeCells2(
   c : A,
   p : Path[.A = A](x, c),
   q : Path[.A = A](y, c),
-  a : Path[.A = Path[.A = A](x, c)](p, Path.step(f, q)),
+  a : Path[.A = Path[.A = A](x, c)](p, Path.step f q),
   w : A,
   g : Path[.A = A](y, w),
   r : Path[.A = A](w, c),
-  b : Path[.A = Path[.A = A](y, c)](q, Path.step(g, r))
-) -> Path[.A = Path[.A = A](x, c)](p, compose[5, 7](chain(3), (f, g, r))) {
-  Path.step(a, compose[4, 9](chain(2, (0, 1)), (f, b)))
-}
+  b : Path[.A = Path[.A = A](y, c)](q, Path.step g r)
+) -> Path[.A = Path[.A = A](x, c)](p, compose[5, 7] (chain 3) (f, g, r)) =
+  Path.step a (compose[4, 9] (chain 2 (0, 1)) (f, b))
 
 /// `j⁻`: the composite of the column `[2](2, 0)` is the composite of its two whiskers, by based path induction on the second 2-cell.
 pub def interchangeRight(
@@ -383,24 +324,22 @@ pub def interchangeRight(
   fa : Path[.A = Path[.A = A](x, y)](f, g),
   ga : Path[.A = Path[.A = A](x, y)](g, h),
   c : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(f, c), Path.step(h, c))](
-  compose[6, 13](chain(2, (2, 0)), (fa, ga, c)),
-  Path.step(compose[4, 9](chain(2, (1, 0)), (fa, c)), compose[4, 9](chain(2, (1, 0)), (ga, c)))
-) {
-  Path.walk(
-    (
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f c, Path.step h c)](
+  compose[6, 13] (chain 2 (2, 0)) (fa, ga, c),
+  Path.step (compose[4, 9] (chain 2 (1, 0)) (fa, c)) (compose[4, 9] (chain 2 (1, 0)) (ga, c))
+) =
+  Path.walk
+    ((
       v : Path[.A = A](x, y),
       k : Path[.A = Path[.A = A](x, y)](g, v)
-    ) => Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(f, c), Path.step(v, c))](
-      compose[6, 13](chain(2, (2, 0)), (fa, k, c)),
-      Path.step(compose[4, 9](chain(2, (1, 0)), (fa, c)), compose[4, 9](chain(2, (1, 0)), (k, c)))
-    ),
-    ga,
-    Path.here(g),
-    Path.here(ga),
-    Path.here(compose[4, 9](chain(2, (1, 0)), (fa, c)))
-  )
-}
+    ) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f c, Path.step v c)](
+      compose[6, 13] (chain 2 (2, 0)) (fa, k, c),
+      Path.step (compose[4, 9] (chain 2 (1, 0)) (fa, c)) (compose[4, 9] (chain 2 (1, 0)) (k, c))
+    ))
+    ga
+    (Path.here g)
+    (Path.here ga)
+    (Path.here (compose[4, 9] (chain 2 (1, 0)) (fa, c)))
 
 /// `j⁺`: the column `[2](0, 2)` composed is its two whiskers composed, by based path induction on the second 2-cell.
 pub def interchangeLeft(
@@ -414,24 +353,22 @@ pub def interchangeLeft(
   h : Path[.A = A](x, y),
   fa : Path[.A = Path[.A = A](x, y)](f, g),
   ga : Path[.A = Path[.A = A](x, y)](g, h)
-) -> Path[.A = Path[.A = Path[.A = A](w, y)](Path.step(c, f), Path.step(c, h))](
-  compose[6, 13](chain(2, (0, 2)), (c, fa, ga)),
-  Path.step(compose[4, 9](chain(2, (0, 1)), (c, fa)), compose[4, 9](chain(2, (0, 1)), (c, ga)))
-) {
-  Path.walk(
-    (
+) -> Path[.A = Path[.A = Path[.A = A](w, y)](Path.step c f, Path.step c h)](
+  compose[6, 13] (chain 2 (0, 2)) (c, fa, ga),
+  Path.step (compose[4, 9] (chain 2 (0, 1)) (c, fa)) (compose[4, 9] (chain 2 (0, 1)) (c, ga))
+) =
+  Path.walk
+    ((
       v : Path[.A = A](x, y),
       k : Path[.A = Path[.A = A](x, y)](g, v)
-    ) => Path[.A = Path[.A = Path[.A = A](w, y)](Path.step(c, f), Path.step(c, v))](
-      compose[6, 13](chain(2, (0, 2)), (c, fa, k)),
-      Path.step(compose[4, 9](chain(2, (0, 1)), (c, fa)), compose[4, 9](chain(2, (0, 1)), (c, k)))
-    ),
-    ga,
-    Path.here(g),
-    Path.here(ga),
-    Path.here(compose[4, 9](chain(2, (0, 1)), (c, fa)))
-  )
-}
+    ) -> Path[.A = Path[.A = Path[.A = A](w, y)](Path.step c f, Path.step c v)](
+      compose[6, 13] (chain 2 (0, 2)) (c, fa, k),
+      Path.step (compose[4, 9] (chain 2 (0, 1)) (c, fa)) (compose[4, 9] (chain 2 (0, 1)) (c, k))
+    ))
+    ga
+    (Path.here g)
+    (Path.here ga)
+    (Path.here (compose[4, 9] (chain 2 (0, 1)) (c, fa)))
 
 /// Two 3-cylinders along a shared square compose to a 3-cylinder: Catt's `cylcomp(3,2,3)`, Theorem 4.2's suspension between the two interchangers.
 pub def cylinderSuspended3(
@@ -448,50 +385,41 @@ pub def cylinderSuspended3(
   fa2 : Path[.A = Path[.A = A](x2, y2)](f2, g2),
   xs : Path[.A = A](x, x2),
   ys : Path[.A = A](y, y2),
-  a : Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, f2)),
-  b : Path[.A = Path[.A = A](x, y2)](Path.step(g, ys), Path.step(xs, g2)),
-  m : Path[.A = Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, g2))](
-    Path.step(compose[4, 9](chain(2, (1, 0)), (fa, ys)), b),
-    Path.step(a, compose[4, 9](chain(2, (0, 1)), (xs, fa2)))
+  a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2),
+  b : Path[.A = Path[.A = A](x, y2)](Path.step g ys, Path.step xs g2),
+  m : Path[.A = Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs g2)](
+    Path.step (compose[4, 9] (chain 2 (1, 0)) (fa, ys)) b,
+    Path.step a (compose[4, 9] (chain 2 (0, 1)) (xs, fa2))
   ),
   h : Path[.A = A](x, y),
   ga : Path[.A = Path[.A = A](x, y)](g, h),
   h2 : Path[.A = A](x2, y2),
   ga2 : Path[.A = Path[.A = A](x2, y2)](g2, h2),
-  c : Path[.A = Path[.A = A](x, y2)](Path.step(h, ys), Path.step(xs, h2)),
-  n : Path[.A = Path[.A = Path[.A = A](x, y2)](Path.step(g, ys), Path.step(xs, h2))](
-    Path.step(compose[4, 9](chain(2, (1, 0)), (ga, ys)), c),
-    Path.step(b, compose[4, 9](chain(2, (0, 1)), (xs, ga2)))
+  c : Path[.A = Path[.A = A](x, y2)](Path.step h ys, Path.step xs h2),
+  n : Path[.A = Path[.A = Path[.A = A](x, y2)](Path.step g ys, Path.step xs h2)](
+    Path.step (compose[4, 9] (chain 2 (1, 0)) (ga, ys)) c,
+    Path.step b (compose[4, 9] (chain 2 (0, 1)) (xs, ga2))
   )
-) -> Path[.A = Path[.A = Path[.A = A](x, y2)](Path.step(f, ys), Path.step(xs, h2))](
-  Path.step(compose[4, 9](chain(2, (1, 0)), (Path.step(fa, ga), ys)), c),
-  Path.step(a, compose[4, 9](chain(2, (0, 1)), (xs, Path.step(fa2, ga2))))
-) {
-  Path.step(Path.step(
-    compose[4, 9](chain(2, (1, 0)), (interchangeRight(A, x, y, y2, f, g, h, fa, ga, ys), c)),
-    cylinderFill2(
-      type(Path[.A = A](x, y2)),
-      Path.step(f, ys),
-      Path.step(g, ys),
-      compose[4, 9](chain(2, (1, 0)), (fa, ys)),
-      Path.step(xs, f2),
-      Path.step(xs, g2),
-      compose[4, 9](chain(2, (0, 1)), (xs, fa2)),
-      a,
-      b,
-      m,
-      Path.step(h, ys),
-      compose[4, 9](chain(2, (1, 0)), (ga, ys)),
-      Path.step(xs, h2),
-      compose[4, 9](chain(2, (0, 1)), (xs, ga2)),
-      c,
-      n
-    )
-  ), compose[4, 9](
-    chain(2, (0, 1)),
-    (a, Path.back(interchangeLeft(A, x, x2, y2, xs, f2, g2, h2, fa2, ga2)))
+) -> Path[.A = Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs h2)](
+  Path.step (compose[4, 9] (chain 2 (1, 0)) (Path.step fa ga, ys)) c,
+  Path.step a (compose[4, 9] (chain 2 (0, 1)) (xs, Path.step fa2 ga2))
+) =
+  Path.step (Path.step (compose[4, 9] (chain 2 (1, 0)) (
+    interchangeRight A x y y2 f g h fa ga ys,
+    c
+  )) (cylinderFill2 (type(Path[.A = A](x, y2))) (Path.step f ys) (Path.step g ys) (compose[
+    4,
+    9
+  ] (chain 2 (1, 0)) (fa, ys)) (Path.step xs f2) (Path.step xs g2) (compose[4, 9] (chain 2 (0, 1)) (
+    xs,
+    fa2
+  )) a b m (Path.step h ys) (compose[4, 9] (chain 2 (1, 0)) (ga, ys)) (Path.step xs h2) (compose[
+    4,
+    9
+  ] (chain 2 (0, 1)) (xs, ga2)) c n)) (compose[4, 9] (chain 2 (0, 1)) (
+    a,
+    Path.back (interchangeLeft A x x2 y2 xs f2 g2 h2 fa2 ga2)
   ))
-}
 
 /// Two triangles from one apex compose to a triangle: Catt's `op{1,2} conecomp(2,1,2)`, the right whisker of one then the other.
 pub def coneOpposite2(
@@ -502,14 +430,13 @@ pub def coneOpposite2(
   c : A,
   p : Path[.A = A](c, x),
   q : Path[.A = A](c, y),
-  a : Path[.A = Path[.A = A](c, x)](Path.step(q, f), p),
+  a : Path[.A = Path[.A = A](c, x)](Path.step q f, p),
   w : A,
   g : Path[.A = A](w, y),
   r : Path[.A = A](c, w),
-  b : Path[.A = Path[.A = A](c, y)](Path.step(r, g), q)
-) -> Path[.A = Path[.A = A](c, x)](Path.step(r, Path.step(g, f)), p) {
-  Path.step(compose[4, 9](chain(2, (1, 0)), (b, f)), a)
-}
+  b : Path[.A = Path[.A = A](c, y)](Path.step r g, q)
+) -> Path[.A = Path[.A = A](c, x)](Path.step r (Path.step g f), p) =
+  Path.step (compose[4, 9] (chain 2 (1, 0)) (b, f)) a
 
 /// Two 3-cones along a shared triangle compose to a 3-cone: Catt's `conecomp(3,2,3)`, Theorem 5.2's interchanger before the suspended opposite.
 pub def coneSuspended3(
@@ -522,38 +449,29 @@ pub def coneSuspended3(
   c : A,
   p : Path[.A = A](x, c),
   q : Path[.A = A](y, c),
-  b : Path[.A = Path[.A = A](x, c)](p, Path.step(f, q)),
-  d : Path[.A = Path[.A = A](x, c)](p, Path.step(g, q)),
-  m : Path[.A = Path[.A = Path[.A = A](x, c)](p, Path.step(g, q))](
-    Path.step(b, compose[4, 9](chain(2, (1, 0)), (fa, q))),
+  b : Path[.A = Path[.A = A](x, c)](p, Path.step f q),
+  d : Path[.A = Path[.A = A](x, c)](p, Path.step g q),
+  m : Path[.A = Path[.A = Path[.A = A](x, c)](p, Path.step g q)](
+    Path.step b (compose[4, 9] (chain 2 (1, 0)) (fa, q)),
     d
   ),
   h : Path[.A = A](x, y),
   ga : Path[.A = Path[.A = A](x, y)](g, h),
-  e : Path[.A = Path[.A = A](x, c)](p, Path.step(h, q)),
-  n : Path[.A = Path[.A = Path[.A = A](x, c)](p, Path.step(h, q))](
-    Path.step(d, compose[4, 9](chain(2, (1, 0)), (ga, q))),
+  e : Path[.A = Path[.A = A](x, c)](p, Path.step h q),
+  n : Path[.A = Path[.A = Path[.A = A](x, c)](p, Path.step h q)](
+    Path.step d (compose[4, 9] (chain 2 (1, 0)) (ga, q)),
     e
   )
-) -> Path[.A = Path[.A = Path[.A = A](x, c)](p, Path.step(h, q))](
-  Path.step(b, compose[4, 9](chain(2, (1, 0)), (Path.step(fa, ga), q))),
+) -> Path[.A = Path[.A = Path[.A = A](x, c)](p, Path.step h q)](
+  Path.step b (compose[4, 9] (chain 2 (1, 0)) (Path.step fa ga, q)),
   e
-) {
-  Path.step(
-    compose[4, 9](chain(2, (0, 1)), (b, interchangeRight(A, x, y, c, f, g, h, fa, ga, q))),
-    coneOpposite2(
-      type(Path[.A = A](x, c)),
-      Path.step(h, q),
-      Path.step(g, q),
-      compose[4, 9](chain(2, (1, 0)), (ga, q)),
-      p,
-      e,
-      d,
-      n,
-      Path.step(f, q),
-      compose[4, 9](chain(2, (1, 0)), (fa, q)),
-      b,
-      m
-    )
-  )
-}
+) =
+  Path.step
+    (compose[4, 9] (chain 2 (0, 1)) (b, interchangeRight A x y c f g h fa ga q))
+    (coneOpposite2 (type(Path[.A = A](x, c))) (Path.step h q) (Path.step g q) (compose[
+      4,
+      9
+    ] (chain 2 (1, 0)) (ga, q)) p e d n (Path.step f q) (compose[4, 9] (chain 2 (1, 0)) (
+      fa,
+      q
+    )) b m)

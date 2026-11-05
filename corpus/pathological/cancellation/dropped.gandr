@@ -11,17 +11,16 @@ import std.process;
 
 /// A scope whose exit clause drops the rest while its task's end is open.
 @[ refuses("ContinuationUnspent") ]
-def dropped() -> Unit {
+def dropped() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
       send(task, Cancel.notes);
       close(task)
     };
-    c.exit(1);
+    c.exit 1;
     let text = recv(found);
     close(found)
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure unit
+    | pure(x) => pure x
+    | oper exit(code, k) => pure *{}
   }
-}

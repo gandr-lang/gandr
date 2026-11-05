@@ -29,53 +29,48 @@ import std.process;
 /// The length of `hi` read through a view, which writes it back unchanged:
 /// its two bytes and the zero.
 @[ runs("3") ]
-def readThrough() -> Integer {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+def readThrough() -> Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
   access s as v { resume(v, v) };
-  count(bytes(s))
-}
+  count (bytes s)
 
 /// `!` appended through a view and written back: after the access the held
 /// string's bytes are the written one's.
-@[ runs("Cons(104, Cons(105, Cons(33, Cons(0, Nil))))") ]
-def writeThrough() -> List(Integer) {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  access s as v { let w = push(v, 33); let t = written(w); resume(v, t) };
-  bytes(s)
-}
+@[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))") ]
+def writeThrough() -> List(Integer) =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  access s as v { let w = push v 33; let t = written w; resume(v, t) };
+  bytes s
 
 /// An access that aborts writes nothing back: the held string's bytes are as
 /// they were.
-@[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def abandoned() -> List(Integer) {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  access s as v { abort(v) } unwind { pure unit };
-  bytes(s)
-}
+@[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
+def abandoned() -> List(Integer) =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  access s as v { abort(v) } unwind { pure *{} };
+  bytes s
 
 /// Two accesses in turn, each seeing the write the one before left.
-@[ runs("Cons(104, Cons(105, Cons(33, Cons(33, Cons(0, Nil)))))") ]
-def twiceThrough() -> List(Integer) {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  access s as v { let w = push(v, 33); let t = written(w); resume(v, t) };
-  access s as v { let w = push(v, 33); let t = written(w); resume(v, t) };
-  bytes(s)
-}
+@[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 33 (Cons 0 Nil))))") ]
+def twiceThrough() -> List(Integer) =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  access s as v { let w = push v 33; let t = written w; resume(v, t) };
+  access s as v { let w = push v 33; let t = written w; resume(v, t) };
+  bytes s
 
 /// A view kept past its access in the region of the scope around it: it lives
 /// as long as that scope rather than the access, and reads the string after
 /// the access has ended, its two bytes and the zero. The held string stays as
 /// it was until the scope ends.
 @[ runs("3") ]
-def keptInRegion() -> Integer {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+def keptInRegion() -> Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
   handle c : std.process.Exit.Eff {
-    let k : (() => Integer) at c = access shared s as w {
-      pure count(bytes(w))
+    let k : (() -> Integer) at c = access shared s as w {
+      pure count (bytes w)
     };
     force k
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 0
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
   }
-}

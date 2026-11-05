@@ -13,32 +13,25 @@
 import "../../model/data/data-base.gandr";
 
 /// Fibonacci, the doubly recursive definition.
-def rec fib(n : Nat) -> Nat {
-  match n {
-    Zero => Zero,
-    Succ(m) => match m {
-      Zero => Succ(Zero),
-      Succ(k) => plus(fib[<](m), fib[<](k))
-    }
-  }
-}
+def rec fib(n : Nat) -> Nat =
+  match n
+    | Zero => Zero
+    | Succ(m) => match m
+      | Zero => Succ Zero
+      | Succ(k) => plus (fib[<] m) (fib[<] k)
 
 /// Fibonacci by iteration over a pair of accumulators.
-def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {
-  match n {
-    Zero => a,
-    Succ(m) => fibFrom[<](m, b, plus(a, b))
-  }
-}
+def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat =
+  match n
+    | Zero => a
+    | Succ(m) => fibFrom[<] m b (plus a b)
 
 /// Nineteen: one more than three sixes.
-def nineteen() -> Nat {
-  Succ(plus(plus(three, three), plus(plus(three, three), plus(three, three))))
-}
+def nineteen() -> Nat =
+  Succ (plus (plus three three) (plus (plus three three) (plus three three)))
 
 /// The two definitions agree at nineteen, but the conversion spends its
 /// step budget before it shows it.
 @[ refuses("EndpointMismatch") ]
-def agree() -> Path(fib(nineteen()), fibFrom(nineteen(), Zero, Succ(Zero))) {
-  Path.here(fib(nineteen()))
-}
+def agree() -> Path(fib (nineteen ()), fibFrom (nineteen ()) Zero (Succ Zero)) =
+  Path.here (fib (nineteen ()))

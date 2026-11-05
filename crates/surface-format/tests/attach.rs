@@ -111,8 +111,8 @@ fn expected(
 /// A body a narrow page breaks one statement per line, a comment of each
 /// role inside it: the definition owns its block's statements, whose
 /// keywords are its own tiles, and a call owns what its brackets hold.
-const BODY: &str = "def f(x : Integer) -> -F Integer {\n  // first\n  let y = inc(x) ; /* \
-                    after y */\n  let z = inc(\n    // why\n    y) ;\n  z\n  // done\n}\n";
+const BODY: &str = "def f(x : Integer) -> -F Integer {\n  // first\n  let y = inc x ; /* \
+                    after y */\n  let z = inc\n    // why\n    y ;\n  z\n  // done\n}\n";
 
 #[test]
 fn a_comment_on_its_own_line_leads_the_form_below_it()
@@ -132,7 +132,7 @@ fn a_comment_on_its_own_line_leads_the_form_below_it()
                 "// why",
                 CommentKind::Line,
                 Role::Leading,
-                "call_expression"
+                "application_expression"
             )),
         ),
         "a comment on its own line before material leads it, in the form holding that \
@@ -227,7 +227,7 @@ fn a_layout_that_breaks_or_joins_a_group_keeps_each_comment_with_its_owner()
             "at {width} columns each comment keeps its owner and role:\n{once}"
         );
     }
-    let joined = "def g(x : Integer) -> -F Integer { let y = inc(x) ; /* kept */ y }\n";
+    let joined = "def g(x : Integer) -> -F Integer { let y = inc x ; /* kept */ y }\n";
     let broken = laid(&grammar, joined, 24_u32);
     assert!(
         broken.lines().nth(1).is_some(),

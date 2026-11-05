@@ -1,6 +1,5 @@
 /// `UndescribedMember.Reversible`: a member the description does not read: the glyph `<->`, reserved for reversible maps.
 @[ refuses("UndescribedMember.Reversible") ]
-theory Reserved where {
+theory Reserved where
   sort Bit : Type;
   oper negate : (b : Bit) <-> (c : Bit);
-}

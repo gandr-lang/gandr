@@ -1,15 +1,11 @@
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
-def rec plus(n : Nat, m : Nat) -> -F Nat {
-  match m {
-    Zero => n,
-    Succ(p) => Succ(plus[<](n, p))
-  }
-}
+def rec plus(n : Nat, m : Nat) -> -F Nat =
+  match m
+    | Zero => n
+    | Succ(p) => Succ (plus[<] n p)
 def f : +U (-F Nat) ;
-def f = thunk { plus(Succ(Zero), Zero) } ;
-data List(a : Type) : Type where {
+def f = thunk { plus (Succ Zero) Zero } ;
+data List(a : Type) : Type where
   | Nil : List(a)
-}

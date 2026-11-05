@@ -10,10 +10,10 @@ error[UnresolvedTypeHead]: no type named `Band` is written bare
 error[MissingRecordField]: the record is missing a field
    ╭▸ corpus/pathological/modules/top-level-type.gandr:14:22
    │
-10 │ type Band = #{low : Integer, high : Integer};
+10 │ type Band = *{low : Integer, high : Integer};
    │             ──────────────────────────────── the type it is checked against
    ┆
-14 │ def partial : Band = #{low = 200000};
+14 │ def partial : Band = *{low = 200000};
    │                      ━━━━━━━━━━━━━━━ a required field is missing
    │
    ├ note: `partial` is refused with MissingRecordField, as its expectation states

@@ -18,21 +18,19 @@ import "../../model/higher-cells/ua-type.gandr";
 /// `J` leaves of `uaEta`, refused.
 @[ refuses("EndpointMismatch") ]
 def uaEtaRefl(a : Type) -> Path[.A = Path[.A = Type](a, a)](
-  ua(idtoequiv(a, a, Path.here(a))),
-  Path.here(a)
-) {
-  Path.here(Path.here(a))
-}
+  ua (idtoequiv a a (Path.here a)),
+  Path.here a
+) =
+  Path.here (Path.here a)
 
 /// `ua` of the packaged stratum path, read as the path itself: refused at the
 /// stratum code as at reflexivity.
 @[ refuses("EndpointMismatch") ]
 def uaEtaStratum() -> Path[.A = Path[.A = Type](AtStratum.Tel, AtStratum.Tel)](
-  ua(idtoequiv(AtStratum.Tel, AtStratum.Tel, AtStratum.opposite)),
+  ua (idtoequiv AtStratum.Tel AtStratum.Tel AtStratum.opposite),
   AtStratum.opposite
-) {
-  Path.here(AtStratum.opposite)
-}
+) =
+  Path.here AtStratum.opposite
 
 /// Two functions that agree at every point are one function, from the
 /// homotopy: past the functions `Path.funext` decides, refused.
@@ -40,9 +38,8 @@ def uaEtaStratum() -> Path[.A = Path[.A = Type](AtStratum.Tel, AtStratum.Tel)](
 def funextFromHomotopy(
   a : Type,
   b : Type,
-  f : a => b,
-  g : a => b,
-  h : (x : a) => Path[.A = b](f(x), g(x))
-) -> Path[.A = a => b](f, g) {
-  Path.funext(f, g)
-}
+  f : a -> b,
+  g : a -> b,
+  h : (x : a) -> Path[.A = b](f x, g x)
+) -> Path[.A = a -> b](f, g) =
+  Path.funext f g

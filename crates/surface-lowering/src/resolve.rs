@@ -45,21 +45,22 @@
 //! strictly earlier in admission order; nothing answers otherwise. A
 //! capitalised name in term position answers the same way, and when nothing
 //! does, a type atom or `Type` stands as a type and is quoted; any other is a
-//! constructor, which the fragment does not admit. The unit value is the
-//! keyword `unit` and its type `Unit`; the empty parentheses `()` are an empty
-//! list, refused as a value or a type (`EmptyList`), and read only before `=>`,
-//! where `() => C` takes no argument and is `+U (-F C)`, distinct from `Unit =>
-//! C`. The `unit` pattern is the empty product's, `#{}` spelled as the value
-//! it matches: a match splits its scrutinee into no components.
+//! constructor, which the fragment does not admit. The unit value is `*{}`,
+//! the product of no components, and its type `Unit`; the empty parentheses
+//! `()` are an empty list, refused as a value or a type (`EmptyList`), and
+//! read only before `->`, where `() -> C` takes no argument and is `+U (-F
+//! C)`, distinct from `Unit -> C`. The unit pattern is `*{}` too, the empty
+//! product's: a match splits its scrutinee into no components.
 //!
-//! Choice: the unit value is a keyword, and `()` is never the unit. A product
-//! of no components and a domain list of no members are both the empty list, so
-//! reading `()` as the unit would make `() => C` and `Unit => C` the same type
-//! and give the n-ary product `#{}` two spellings of its nullary case.
-//! Alternatives: `()` as the unit, which conflates the empty domain list with
-//! the one-argument function over `Unit`; and a primitive term table answering
-//! the name `unit`, which a declaration could shadow. Reversal: none while
-//! `#{}` spells the nullary product.
+//! Choice: the unit value is `*{}`, and `()` is never the unit. A product of
+//! no components and a domain list of no members are both the empty list, so
+//! reading `()` as the unit would make `() -> C` and `Unit -> C` the same
+//! type. The keyword `unit` retired (#4853): `*{}` already spells the nullary
+//! product, and the keyword gave it a second spelling. Alternatives: `()` as
+//! the unit, which conflates the empty domain list with the one-argument
+//! function over `Unit`; and a primitive term table answering the name
+//! `unit`, which a declaration could shadow. Reversal: none while `*{}`
+//! spells the nullary product.
 //!
 //! Binder predicates check backward parent links, fresh frame positions, exact
 //! successful lookup and mention-filtered telescope counts. `ScopeId` is a

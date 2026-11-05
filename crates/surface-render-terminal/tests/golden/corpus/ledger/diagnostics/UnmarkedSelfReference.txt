@@ -1,8 +1,8 @@
 error[UnmarkedSelfReference]: `bare` calls itself without saying how it recurses; write `bare[<](…)`
-   ╭▸ corpus/ledger/diagnostics/UnmarkedSelfReference.gandr:12:16
+   ╭▸ corpus/ledger/diagnostics/UnmarkedSelfReference.gandr:11:18
    │
-12 │     Succ(p) => bare(p)
-   │                ━━━━ recursion without a claim
+11 │     | Succ(p) => bare p
+   │                  ━━━━ recursion without a claim
    │
    ├ note: `bare` is refused with UnmarkedSelfReference, as its expectation states
    ╰ help: mark `bare` with a descent claim

@@ -12,11 +12,10 @@
 import std.process;
 
 @[ refuses("UnresolvedName") ]
-def stray() -> -F Unit {
+def stray() -> -F Unit =
   handle c : std.process.Exit.Eff {
-    k(unit)
+    k *{}
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
   }
-}

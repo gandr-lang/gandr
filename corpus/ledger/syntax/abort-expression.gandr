@@ -1,6 +1,5 @@
 /// `abort_expression`: aborting an accessed cell.
 @[ checks ]
-def give_up() -> -F Unit {
-  var c = 0;
+def give_up() -> -F Unit =
+  var c = 0
   access c as v { abort(v) }
-}

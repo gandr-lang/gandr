@@ -9,18 +9,17 @@ import "./cancel-base.gandr";
 import std.process;
 
 /// A scope resumed at its exit while its task's end is open.
-@[ runs("unit") ]
-def resumed() -> Unit {
+@[ runs("*{}") ]
+def resumed() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
       send(task, Cancel.notes);
       close(task)
     };
-    c.exit(1);
+    c.exit 1;
     let text = recv(found);
     close(found)
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
   }
-}

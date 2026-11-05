@@ -7,21 +7,19 @@
 import std.list (List);
 
 /// A temperature in Celsius.
-data Celsius : Type where {
+data Celsius : Type where
   | Cel : (x : Integer) --> Celsius
-}
 
 /// A temperature in Fahrenheit, the same shape.
-data Fahrenheit : Type where {
+data Fahrenheit : Type where
   | Fah : (x : Integer) --> Fahrenheit
-}
 
 /// A list of one Celsius value ascribed a list of Fahrenheit: its element
 /// keeps its own family.
 @[ refuses("TypeMismatch") ]
-def listed = (#[Cel(20)] : List(Fahrenheit));
+def listed = (#[Cel 20] : List(Fahrenheit));
 
 /// The same list again, judged as every declaration is before anything runs
 /// it.
 @[ refuses("TypeMismatch") ]
-def again = (#[Cel(20)] : List(Fahrenheit));
+def again = (#[Cel 20] : List(Fahrenheit));

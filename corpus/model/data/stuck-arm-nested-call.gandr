@@ -10,32 +10,25 @@ import "./data-base.gandr";
 import "./stuck-arm-call.gandr";
 
 /// This function gives the heap past the first cell, or the empty heap.
-def tailOf(h : Heap) -> Heap {
-  match h {
-    Emp => Emp,
-    Cell(_l, rest) => rest
-  }
-}
+def tailOf(h : Heap) -> Heap =
+  match h
+    | Emp => Emp
+    | Cell(_l, rest) => rest
 
 /// At zero, the heap past the first cell is empty; at a successor, never.
-def viaTail(w : Nat, h : Heap) -> Type {
-  match w {
-    Zero => emp(tailOf(h)),
-    Succ(_n) => return Void
-  }
-}
+def viaTail(w : Nat, h : Heap) -> Type =
+  match w
+    | Zero => emp (tailOf h)
+    | Succ(_n) => return Void
 
 /// The heap past the first cell is empty, with no arm selected first.
-def tailEmpty(h : Heap) -> Type {
-  emp(tailOf(h))
-}
+def tailEmpty(h : Heap) -> Type =
+  emp (tailOf h)
 
 /// This proof reads `viaTail(Zero, h)` as the calls its arm reached.
-def nested(h : Heap) -> (viaTail(Zero, h)) => emp(tailOf(h)) {
+def nested(h : Heap) -> (viaTail(Zero, h)) -> emp(tailOf(h)) =
   return fun (e) { e }
-}
 
 /// This proof reads `tailEmpty(h)` as the calls its body makes.
-def bodyNested(h : Heap) -> (tailEmpty(h)) => emp(tailOf(h)) {
+def bodyNested(h : Heap) -> (tailEmpty(h)) -> emp(tailOf(h)) =
   return fun (e) { e }
-}

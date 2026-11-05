@@ -16,49 +16,47 @@ import std.process;
 /// Two instances of `std.io.Console.Eff` handled around a call naming neither: the
 /// call is refused naming both, never routed to the innermost.
 @[ refuses("InstanceAmbiguous") ]
-def ambiguous() -> Integer {
+def ambiguous() -> Integer =
   handle a : std.io.Console.Eff {
     handle b : std.io.Console.Eff {
-      say();
+      say ();
       pure 0
     } with {
-      pure(x) => pure x,
-      oper print(line, k) => pure 2
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
     }
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => pure 1
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
   }
-}
 
 /// No instance of `std.io.Console.Eff` stands where `say` is called: the row's
 /// default is not an instance the call may pass.
 @[ refuses("InstanceUnanswered") ]
-def unanswered() -> [std.io.Console.Eff] Unit { say() }
+def unanswered() -> [std.io.Console.Eff] Unit { say () }
 
 /// One label written twice in a row.
 @[ refuses("DuplicateDefinition") ]
-def twice() -> [o : std.io.Console.Eff, o : std.io.Console.Eff] Unit { o.print("twice") }
+def twice() -> [o : std.io.Console.Eff, o : std.io.Console.Eff] Unit { o.print "twice" }
 
 /// The default `std.io.Console.Eff` performed under a row whose only `std.io.Console.Eff` is the
 /// instance `o`: the two are apart.
 @[ refuses("TypeMismatch") ]
-def defaulted() -> [o : std.io.Console.Eff] Unit { std.io.Console.print("defaulted") }
+def defaulted() -> [o : std.io.Console.Eff] Unit { std.io.Console.print "defaulted" }
 
 /// An instance of `std.process.Exit.Eff` supplied where `say` takes an instance of
 /// `std.io.Console.Eff`: its capability grants none of `std.io.Console.Eff`'s operations.
 @[ refuses("CapabilityAmplified") ]
-def misplaced() -> Integer {
+def misplaced() -> Integer =
   handle p : std.process.Exit.Eff {
-    say[.out = p]();
+    say[.out = p] ();
     pure 0
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => pure 1
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 1
   }
-}
 
 /// A label in a parameter's row naming no instance: the function's own row
 /// binds none.
 @[ refuses("UnresolvedName") ]
-def lost(body : +U (-F [z : std.io.Console.Eff] Unit)) -> Unit { pure unit }
+def lost(body : +U (-F [z : std.io.Console.Eff] Unit)) -> Unit { pure *{} }

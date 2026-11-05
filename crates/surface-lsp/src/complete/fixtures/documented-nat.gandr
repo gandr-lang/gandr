@@ -1,15 +1,12 @@
 /// Natural numbers.
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   /// One more.
   | Succ : (n : Nat) --> Nat
-}
 /// Addition.
-def rec plus(n : Nat, m : Nat) -> -F Nat {
-  match m {
-    Zero => n,
-    Succ(p) => Succ(plus[<](n, p))
-  }
-}
+def rec plus(n : Nat, m : Nat) -> -F Nat =
+  match m
+    | Zero => n
+    | Succ(p) => Succ (plus[<] n p)
 /// The answer.
 def answer = 42 ;

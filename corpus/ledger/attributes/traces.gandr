@@ -2,17 +2,14 @@
 /// channel beside `runs`. The task's close waits on its send alone, so it
 /// sits beside the parent's receipt and close.
 @[
-  runs("unit"),
-  traces(decomposes(
-    task,
-    series(event(left, 0), parallel(event(left, 1), series(event(right, 0), event(right, 1))))
-  ))
+  runs("*{}"),
+  traces(decomposes
+    task (series (event left 0) (parallel (event left 1) (series (event right 0) (event right 1)))))
 ]
-def asked() -> Unit {
+def asked() -> Unit =
   let heard = fork (task : !String. end) {
     send(task, "yes");
     close(task)
   };
-  let said = recv(heard);
+  let said = recv(heard)
   close(heard)
-}

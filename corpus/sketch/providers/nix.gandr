@@ -24,11 +24,9 @@ def helloDerivation = ~nix.derivation("hello", revision = "3ec636362e18");
 type HelloLatest = ~nix.attribute("hello");
 
 /// Whether `hello` builds on a system, read off its provided platforms.
-def buildsOn(system : String) -> Bool {
-  contains(Hello.meta.platforms, system)
-}
+def buildsOn(system : String) -> Bool =
+  contains Hello.meta.platforms system
 
 /// The store path of `hello`'s default output, from the provided derivation.
-def outPath() -> String {
+def outPath() -> String =
   helloDerivation.outputs.out.path
-}

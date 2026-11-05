@@ -4,7 +4,7 @@
 171..174 Keyword "def"
 175..179 FunctionDef "list"
 180..181 Other "="
-182..184 Other "#{"
+182..184 Other "*{"
 184..188 Variable "each"
 189..190 Other "="
 191..192 Number "7"

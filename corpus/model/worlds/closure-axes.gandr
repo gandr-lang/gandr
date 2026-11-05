@@ -24,56 +24,50 @@
 import "./seat-and-operator.gandr";
 
 /// A suspended report comes back from the seat: it names no capture.
-@[ entry((operator, seat)), runs("thunk { Seat.progress }") ]
-def suspendedBack() -> () => Seat.Report {
+@[ entry(*{operator, seat}), runs("thunk { Seat.progress }") ]
+def suspendedBack() -> () -> Seat.Report =
   migrate [seat] { pure thunk { pure Seat.progress } }
-}
 
 /// A thunk over an integer bound at the seat comes back with the integer.
-@[ entry((operator, seat)), runs("thunk { 3 + 1 }") ]
-def counted() -> () => Integer {
+@[ entry(*{operator, seat}), runs("thunk { 3 + 1 }") ]
+def counted() -> () -> Integer =
   migrate [seat] {
     let n = 3;
     pure thunk { pure n + 1 }
   }
-}
 
 /// A thunk over the seat's report comes back, since the signature marks the
 /// report mobile.
-@[ entry((operator, seat)), runs("thunk { \"progress\" }") ]
-def reported() -> () => Seat.Report {
+@[ entry(*{operator, seat}), runs("thunk { \"progress\" }") ]
+def reported() -> () -> Seat.Report =
   migrate [seat] {
     let report = Seat.progress;
     pure thunk { pure report }
   }
-}
 
 /// A thunk over a handle to an integer comes back, since the handle is open.
-@[ entry((operator, seat)), runs("thunk { 3 }") ]
-def pointing() -> () => (Integer at seat) {
+@[ entry(*{operator, seat}), runs("thunk { 3 }") ]
+def pointing() -> () -> (Integer at seat) =
   migrate [seat] {
     var held : Integer at seat = 3;
     pure thunk { pure held }
   }
-}
 
 /// The operator forces the thunk over the seat's integer, which runs there
 /// with its capture.
-@[ entry((operator, seat)), runs("4") ]
-def forced() -> Integer {
-  let later : () => Integer = migrate [seat] {
+@[ entry(*{operator, seat}), runs("4") ]
+def forced() -> Integer =
+  let later : () -> Integer = migrate [seat] {
     let n = 3;
     pure thunk { pure n + 1 }
   };
   force later
-}
 
 /// A function over the seat's integer applies at the operator.
-@[ entry((operator, seat)), runs("5") ]
-def applied() -> Integer {
-  let bump : Integer => Integer = migrate [seat] {
+@[ entry(*{operator, seat}), runs("5") ]
+def applied() -> Integer =
+  let bump : Integer -> Integer = migrate [seat] {
     let n = 3;
     pure thunk { fun (x) { pure x + n } }
   };
-  bump(2)
-}
+  bump 2

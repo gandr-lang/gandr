@@ -6,15 +6,13 @@
 // - see: #421
 
 /// Two summands.
-data SumOb(a : Type, b : Type) : Type where {
+data SumOb(a : Type, b : Type) : Type where
   | Inl : (x : a) --> SumOb(a, b)
   | Inr : (y : b) --> SumOb(a, b)
-}
 
 /// A tag over a summand of the two types before it.
-data Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type where {
+data Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type where
   | Tag : (n : Integer) --> Tagged(l, r, s)
-}
 
 /// Each summand stands as the family's third argument, at its place's type.
 def keptTagged(
@@ -22,12 +20,10 @@ def keptTagged(
   b : String,
   t : Tagged(Integer, String, Inl(a)),
   u : Tagged(Integer, String, Inr(b))
-) -> Tagged(Integer, String, Inl(a)) {
+) -> Tagged(Integer, String, Inl(a)) =
   t
-}
 
 /// A `String` is no left summand of `SumOb(Integer, String)`.
 @[ refuses("TypeMismatch") ]
-def misplaced(b : String, t : Tagged(Integer, String, Inl(b))) -> Integer {
+def misplaced(b : String, t : Tagged(Integer, String, Inl(b))) -> Integer =
   0
-}

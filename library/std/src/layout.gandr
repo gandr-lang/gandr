@@ -26,7 +26,7 @@
 // - see: #2343
 
 /// A field's scalar type, its size its alignment on x86-64.
-pub data Scalar : Type where {
+pub data Scalar : Type where
   /// `u8`.
   | U8 : Scalar
   /// `u16`.
@@ -43,56 +43,49 @@ pub data Scalar : Type where {
   | Flag : Scalar
   /// `&T`, whose null is invalid.
   | Ref : Scalar
-}
 
 /// A struct's fields in declaration order.
-pub data Fields : Type where {
+pub data Fields : Type where
   /// No more fields.
   | Done : Fields
   /// A named field, then the rest.
   | Field : (name : String, ty : Scalar, rest : Fields) --> Fields
-}
 
 /// An enum's variants in declaration order.
-pub data Variants : Type where {
+pub data Variants : Type where
   /// No more variants.
   | NoVariant : Variants
   /// A named variant with its fields, then the rest.
   | Variant : (name : String, fields : Fields, rest : Variants) --> Variants
-}
 
 /// Fields in memory order, each at its offset.
-pub data Placed : Type where {
+pub data Placed : Type where
   /// No more fields.
   | End : Placed
   /// A field at an offset, then the rest.
   | At : (name : String, offset : Integer, rest : Placed) --> Placed
-}
 
 /// A struct's layout as rustc prints it.
-pub data Layout : Type where {
+pub data Layout : Type where
   /// Size, alignment and the placement of the fields.
   | Layout : (size : Integer, align : Integer, fields : Placed) --> Layout
-}
 
 /// Where an enum keeps which variant it holds.
-pub data Discriminant : Type where {
+pub data Discriminant : Type where
   /// In the invalid values of the field at an offset.
   | InNiche : (offset : Integer) --> Discriminant
   /// In a tag of a size at offset zero.
   | Tag : (size : Integer) --> Discriminant
-}
 
 /// Each variant's placement, in declaration order.
-pub data Arms : Type where {
+pub data Arms : Type where
   /// No more variants.
   | NoArm : Arms
   /// A variant's placement, then the rest.
   | Arm : (name : String, fields : Placed, rest : Arms) --> Arms
-}
 
 /// An enum's layout as rustc prints it.
-pub data EnumLayout : Type where {
+pub data EnumLayout : Type where
   /// Size, alignment, the discriminant and each variant's fields.
   | EnumLayout : (
     size : Integer,
@@ -100,400 +93,318 @@ pub data EnumLayout : Type where {
     discriminant : Discriminant,
     arms : Arms
   ) --> EnumLayout
-}
 
 /// A layout's largest niche.
-data Niche : Type where {
+data Niche : Type where
   /// No field has invalid values.
   | NoNiche : Niche
   /// The field at an offset, its width, and how many invalid values it has.
   | NicheAt : (offset : Integer, width : Integer, available : Integer) --> Niche
-}
 
 /// A layout with its largest niche.
-data Laid : Type where {
+data Laid : Type where
   /// Size, alignment, the fields placed and the largest niche.
   | Laid : (size : Integer, align : Integer, fields : Placed, niche : Niche) --> Laid
-}
 
 /// Which end of its alignment group a struct's niche sorts to.
-data Bias : Type where {
+data Bias : Type where
   /// Larger niches first.
   | NicheFirst : Bias
   /// Larger niches last.
   | NicheLast : Bias
-}
 
 /// An order of fields.
-data Order : Type where {
+data Order : Type where
   /// A struct's: larger alignment first, then the niche toward the bias.
   | InStruct : (bias : Bias) --> Order
   /// A tagged variant's: smaller alignment first, then smaller niche.
   | AfterTag : Order
-}
 
 /// The layout of each variant.
-data Laids : Type where {
+data Laids : Type where
   /// No more variants.
   | NoLaid : Laids
   /// A variant's layout, then the rest.
   | OneLaid : (name : String, laid : Laid, rest : Laids) --> Laids
-}
 
 /// A layout with how many invalid values it leaves, or none.
-data Filled : Type where {
+data Filled : Type where
   /// No such layout.
   | NoFill : Filled
   /// The layout and its remaining niche.
   | Filled : (layout : EnumLayout, remaining : Integer) --> Filled
-}
 
 /// A placement of variants around a niche, or a variant that does not fit.
-data Fitted : Type where {
+data Fitted : Type where
   /// A variant fits neither before nor after the niche.
   | Misfit : Fitted
   /// The placement of every variant.
   | Fitted : (arms : Arms) --> Fitted
-}
 
 /// A scalar's size, which is its alignment.
-def bytes(s : Scalar) -> Integer {
-  match s {
-    U8 => 1,
-    U16 => 2,
-    U32 => 4,
-    U64 => 8,
-    I32 => 4,
-    I64 => 8,
-    Flag => 1,
-    Ref => 8
-  }
-}
+def bytes(s : Scalar) -> Integer =
+  match s
+    | U8 => 1
+    | U16 => 2
+    | U32 => 4
+    | U64 => 8
+    | I32 => 4
+    | I64 => 8
+    | Flag => 1
+    | Ref => 8
 
 /// How many invalid values a scalar has.
-def niche(s : Scalar) -> Integer {
-  match s {
-    U8 => 0,
-    U16 => 0,
-    U32 => 0,
-    U64 => 0,
-    I32 => 0,
-    I64 => 0,
-    Flag => 254,
-    Ref => 1
-  }
-}
+def niche(s : Scalar) -> Integer =
+  match s
+    | U8 => 0
+    | U16 => 0
+    | U32 => 0
+    | U64 => 0
+    | I32 => 0
+    | I64 => 0
+    | Flag => 254
+    | Ref => 1
 
 /// The larger of two integers.
-def bigger(a : Integer, b : Integer) -> Integer {
-  match a >= b {
-    true => a,
-    false => b
-  }
-}
+def bigger(a : Integer, b : Integer) -> Integer =
+  match a >= b
+    | true => a
+    | false => b
 
 /// The smaller of two integers.
-def smaller(a : Integer, b : Integer) -> Integer {
-  match a >= b {
-    true => b,
-    false => a
-  }
-}
+def smaller(a : Integer, b : Integer) -> Integer =
+  match a >= b
+    | true => b
+    | false => a
 
 /// Whether two integers are equal.
-def same(a : Integer, b : Integer) -> Bool {
-  match a >= b {
-    true => b >= a,
-    false => false
-  }
-}
+def same(a : Integer, b : Integer) -> Bool =
+  match a >= b
+    | true => b >= a
+    | false => false
 
 /// One of two integers, by a condition.
-def pick(c : Bool, yes : Integer, no : Integer) -> Integer {
-  match c {
-    true => yes,
-    false => no
-  }
-}
+def pick(c : Bool, yes : Integer, no : Integer) -> Integer =
+  match c
+    | true => yes
+    | false => no
 
 /// The first multiple of an alignment at or past an offset.
-def up(o : Integer, a : Integer) -> Integer {
-  let q = int.div(o + a - 1, a);
+def up(o : Integer, a : Integer) -> Integer =
+  let q = int.div (o + a - 1) a
   q * a
-}
 
 /// Whether an order places `a` no later than `b`.
-def before(o : Order, a : Scalar, b : Scalar) -> Bool {
-  let x = bytes(a);
-  let y = bytes(b);
-  let m = niche(a);
-  let n = niche(b);
-  match o {
-    InStruct(bias) => match x >= y {
-      false => false,
-      true => match y >= x {
-        false => true,
-        true => match bias {
-          NicheFirst => m >= n,
-          NicheLast => n >= m
-        }
-      }
-    },
-    AfterTag => match y >= x {
-      false => false,
-      true => match x >= y {
-        false => true,
-        true => n >= m
-      }
-    }
-  }
-}
+def before(o : Order, a : Scalar, b : Scalar) -> Bool =
+  let x = bytes a
+  let y = bytes b
+  let m = niche a
+  let n = niche b
+  match o
+    | InStruct(bias) => match x >= y
+      | false => false
+      | true => match y >= x
+        | false => true
+        | true => match bias
+          | NicheFirst => m >= n
+          | NicheLast => n >= m
+    | AfterTag => match y >= x
+      | false => false
+      | true => match x >= y
+        | false => true
+        | true => n >= m
 
 /// A field inserted into fields already in memory order, after every field it does not go before.
-def rec insert(sorted : Fields, o : Order, n : String, s : Scalar) -> Fields {
-  match sorted {
-    Done => Field(n, s, Done),
-    Field(m, t, rest) => {
-      let first = before(o, s, t);
-      match first {
-        true => Field(n, s, Field(m, t, rest)),
-        false => Field(m, t, insert[<](rest, o, n, s))
-      }
+def rec insert(sorted : Fields, o : Order, n : String, s : Scalar) -> Fields =
+  match sorted
+    | Done => Field n s Done
+    | Field(m, t, rest) => {
+      let first = before o s t;
+      match first
+        | true => Field n s (Field m t rest)
+        | false => Field m t (insert[<] rest o n s)
     }
-  }
-}
 
 /// Fields in memory order, by a stable insertion sort, as rustc's `sort_by_key` is stable.
-def rec order(fs : Fields, o : Order) -> Fields {
-  match fs {
-    Done => Done,
-    Field(n, s, rest) => insert(order[<](rest, o), o, n, s)
-  }
-}
+def rec order(fs : Fields, o : Order) -> Fields =
+  match fs
+    | Done => Done
+    | Field(n, s, rest) => insert (order[<] rest o) o n s
 
 /// How many fields there are.
-def rec count(fs : Fields) -> Integer {
-  match fs {
-    Done => 0,
-    Field(n, s, rest) => {
-      let c = count[<](rest);
+def rec count(fs : Fields) -> Integer =
+  match fs
+    | Done => 0
+    | Field(n, s, rest) => {
+      let c = count[<] rest;
       c + 1
     }
-  }
-}
 
 /// The placement of fields from an offset, each at the next multiple of its alignment.
-def rec placeFrom(fs : Fields, o : Integer) -> Placed {
-  match fs {
-    Done => End,
-    Field(n, s, rest) => {
-      let b = bytes(s);
-      let off = up(o, b);
-      At(n, off, placeFrom[<](rest, off + b))
+def rec placeFrom(fs : Fields, o : Integer) -> Placed =
+  match fs
+    | Done => End
+    | Field(n, s, rest) => {
+      let b = bytes s;
+      let off = up o b;
+      At n off (placeFrom[<] rest (off + b))
     }
-  }
-}
 
 /// Where the last field ends, placed from an offset.
-def rec endFrom(fs : Fields, o : Integer) -> Integer {
-  match fs {
-    Done => o,
-    Field(n, s, rest) => {
-      let b = bytes(s);
-      let off = up(o, b);
-      endFrom[<](rest, off + b)
+def rec endFrom(fs : Fields, o : Integer) -> Integer =
+  match fs
+    | Done => o
+    | Field(n, s, rest) => {
+      let b = bytes s;
+      let off = up o b;
+      endFrom[<] rest (off + b)
     }
-  }
-}
 
 /// The largest alignment, one when there is none.
-def rec widest(fs : Fields) -> Integer {
-  match fs {
-    Done => 1,
-    Field(n, s, rest) => bigger(bytes(s), widest[<](rest))
-  }
-}
+def rec widest(fs : Fields) -> Integer =
+  match fs
+    | Done => 1
+    | Field(n, s, rest) => bigger (bytes s) (widest[<] rest)
 
 /// How many invalid values a niche has, none for no niche.
-def room(n : Niche) -> Integer {
-  match n {
-    NoNiche => 0,
-    NicheAt(off, width, available) => available
-  }
-}
+def room(n : Niche) -> Integer =
+  match n
+    | NoNiche => 0
+    | NicheAt(off, width, available) => available
 
 /// The largest niche of fields placed from an offset, the first in memory order among equals.
-def rec nicheFrom(fs : Fields, o : Integer, best : Niche) -> Niche {
-  match fs {
-    Done => best,
-    Field(n, s, rest) => {
-      let b = bytes(s);
-      let off = up(o, b);
-      let v = niche(s);
-      let held = room(best);
-      match held >= v {
-        true => nicheFrom[<](rest, off + b, best),
-        false => nicheFrom[<](rest, off + b, NicheAt(off, b, v))
-      }
+def rec nicheFrom(fs : Fields, o : Integer, best : Niche) -> Niche =
+  match fs
+    | Done => best
+    | Field(n, s, rest) => {
+      let b = bytes s;
+      let off = up o b;
+      let v = niche s;
+      let held = room best;
+      match held >= v
+        | true => nicheFrom[<] rest (off + b) best
+        | false => nicheFrom[<] rest (off + b) (NicheAt off b v)
     }
-  }
-}
 
 /// The layout of fields in memory order after a prefix of a size and an alignment.
-def laidOut(sorted : Fields, prefix : Integer, prefixAlign : Integer) -> Laid {
-  let w = widest(sorted);
-  let a = bigger(w, prefixAlign);
-  let e = endFrom(sorted, prefix);
-  Laid(up(e, a), a, placeFrom(sorted, prefix), nicheFrom(sorted, prefix, NoNiche))
-}
+def laidOut(sorted : Fields, prefix : Integer, prefixAlign : Integer) -> Laid =
+  let w = widest sorted
+  let a = bigger w prefixAlign
+  let e = endFrom sorted prefix
+  Laid (up e a) a (placeFrom sorted prefix) (nicheFrom sorted prefix NoNiche)
 
 /// The layout of a struct's fields under a bias, as `univariant_biased` lays them out.
-def biased(fs : Fields, bias : Bias) -> Laid {
-  laidOut(order(fs, InStruct(bias)), 0, 1)
-}
+def biased(fs : Fields, bias : Bias) -> Laid =
+  laidOut (order fs (InStruct bias)) 0 1
 
 /// The offset of a layout's niche, or zero when it has none.
-def nicheOffset(l : Laid) -> Integer {
-  match l {
-    Laid(size, a, placed, n) => match n {
-      NoNiche => 0,
-      NicheAt(off, width, available) => off
-    }
-  }
-}
+def nicheOffset(l : Laid) -> Integer =
+  match l
+    | Laid(size, a, placed, n) => match n
+      | NoNiche => 0
+      | NicheAt(off, width, available) => off
 
 /// A struct's layout, as `univariant` chooses it: niches first, unless niches last puts the niche further from both edges' padding.
-def univariant(fs : Fields) -> Laid {
-  let first = biased(fs, NicheFirst);
-  let c = count(fs);
-  match first {
-    Laid(size, a, placed, n) => match n {
-      NoNiche => first,
-      NicheAt(head, width, available) => match c >= 2 {
-        false => first,
-        true => match head >= 1 {
-          false => first,
-          true => match size - head - width >= 1 {
-            false => first,
-            true => {
-              let alt = biased(fs, NicheLast);
-              let altHead = nicheOffset(alt);
-              match altHead >= head + 1 {
-                false => first,
-                true => match altHead >= size - head - width + 1 {
-                  false => first,
-                  true => alt
-                }
-              }
+def univariant(fs : Fields) -> Laid =
+  let first = biased fs NicheFirst
+  let c = count fs
+  match first
+    | Laid(size, a, placed, n) => match n
+      | NoNiche => first
+      | NicheAt(head, width, available) => match c >= 2
+        | false => first
+        | true => match head >= 1
+          | false => first
+          | true => match size - head - width >= 1
+            | false => first
+            | true => {
+              let alt = biased fs NicheLast;
+              let altHead = nicheOffset alt;
+              match altHead >= head + 1
+                | false => first
+                | true => match altHead >= size - head - width + 1
+                  | false => first
+                  | true => alt
             }
-          }
-        }
-      }
-    }
-  }
-}
 
 /// A struct's layout: rustc's for a `repr(Rust)` struct of these fields.
-pub def structLayout(fs : Fields) -> Layout {
-  let l = univariant(fs);
-  match l {
-    Laid(size, a, placed, n) => Layout(size, a, placed)
-  }
-}
+pub def structLayout(fs : Fields) -> Layout =
+  let l = univariant fs
+  match l
+    | Laid(size, a, placed, n) => Layout size a placed
 
 /// The layout of each variant as a struct.
-def rec asStructs(vs : Variants) -> Laids {
-  match vs {
-    NoVariant => NoLaid,
-    Variant(n, fs, rest) => OneLaid(n, univariant(fs), asStructs[<](rest))
-  }
-}
+def rec asStructs(vs : Variants) -> Laids =
+  match vs
+    | NoVariant => NoLaid
+    | Variant(n, fs, rest) => OneLaid n (univariant fs) (asStructs[<] rest)
 
 /// The layout of each variant after a one-byte tag.
-def rec afterTag(vs : Variants) -> Laids {
-  match vs {
-    NoVariant => NoLaid,
-    Variant(n, fs, rest) => {
-      let sorted = order(fs, AfterTag);
-      OneLaid(n, laidOut(sorted, 1, 1), afterTag[<](rest))
+def rec afterTag(vs : Variants) -> Laids =
+  match vs
+    | NoVariant => NoLaid
+    | Variant(n, fs, rest) => {
+      let sorted = order fs AfterTag;
+      OneLaid n (laidOut sorted 1 1) (afterTag[<] rest)
     }
-  }
-}
 
 /// How many variants there are.
-def rec variantCount(ls : Laids) -> Integer {
-  match ls {
-    NoLaid => 0,
-    OneLaid(n, l, rest) => {
-      let c = variantCount[<](rest);
+def rec variantCount(ls : Laids) -> Integer =
+  match ls
+    | NoLaid => 0
+    | OneLaid(n, l, rest) => {
+      let c = variantCount[<] rest;
       c + 1
     }
-  }
-}
 
 /// The largest alignment of the variants, one when there is none.
-def rec widestOf(ls : Laids) -> Integer {
-  match ls {
-    NoLaid => 1,
-    OneLaid(n, l, rest) => {
-      let w = widestOf[<](rest);
-      match l {
-        Laid(size, a, placed, nn) => bigger(a, w)
-      }
+def rec widestOf(ls : Laids) -> Integer =
+  match ls
+    | NoLaid => 1
+    | OneLaid(n, l, rest) => {
+      let w = widestOf[<] rest;
+      match l
+        | Laid(size, a, placed, nn) => bigger a w
     }
-  }
-}
 
 /// The largest size of the variants, zero when there is none.
-def rec largestSize(ls : Laids) -> Integer {
-  match ls {
-    NoLaid => 0,
-    OneLaid(n, l, rest) => {
-      let w = largestSize[<](rest);
-      match l {
-        Laid(size, a, placed, nn) => bigger(size, w)
-      }
+def rec largestSize(ls : Laids) -> Integer =
+  match ls
+    | NoLaid => 0
+    | OneLaid(n, l, rest) => {
+      let w = largestSize[<] rest;
+      match l
+        | Laid(size, a, placed, nn) => bigger size w
     }
-  }
-}
 
 /// The index of the last largest variant, counting from `i`, as `max_by_key` keeps the last.
-def rec largestFrom(ls : Laids, i : Integer, bestIndex : Integer, bestSize : Integer) -> Integer {
-  match ls {
-    NoLaid => bestIndex,
-    OneLaid(n, l, rest) => match l {
-      Laid(size, a, placed, nn) => match size >= bestSize {
-        true => largestFrom[<](rest, i + 1, i, size),
-        false => largestFrom[<](rest, i + 1, bestIndex, bestSize)
-      }
-    }
-  }
-}
+def rec largestFrom(ls : Laids, i : Integer, bestIndex : Integer, bestSize : Integer) -> Integer =
+  match ls
+    | NoLaid => bestIndex
+    | OneLaid(n, l, rest) => match l
+      | Laid(size, a, placed, nn) => match size >= bestSize
+        | true => largestFrom[<] rest (i + 1) i size
+        | false => largestFrom[<] rest (i + 1) bestIndex bestSize
 
 /// The variant at an index, where the count starts at `i`, or an empty layout past the end.
-def rec laidAt(ls : Laids, i : Integer, want : Integer) -> Laid {
-  match ls {
-    NoLaid => Laid(0, 1, End, NoNiche),
-    OneLaid(n, l, rest) => {
-      let found = same(i, want);
-      match found {
-        true => l,
-        false => laidAt[<](rest, i + 1, want)
-      }
+def rec laidAt(ls : Laids, i : Integer, want : Integer) -> Laid =
+  match ls
+    | NoLaid => Laid 0 1 End NoNiche
+    | OneLaid(n, l, rest) => {
+      let found = same i want;
+      match found
+        | true => l
+        | false => laidAt[<] rest (i + 1) want
     }
-  }
-}
 
 /// Each field's place plus an offset.
-def rec shifted(p : Placed, by : Integer) -> Placed {
-  match p {
-    End => End,
-    At(n, off, rest) => {
-      let tail = shifted[<](rest, by);
-      At(n, off + by, tail)
+def rec shifted(p : Placed, by : Integer) -> Placed =
+  match p
+    | End => End
+    | At(n, off, rest) => {
+      let tail = shifted[<] rest by;
+      At n (off + by) tail
     }
-  }
-}
 
 /// Every variant but the largest placed before the niche or after it.
 def rec around(
@@ -503,156 +414,123 @@ def rec around(
   off : Integer,
   width : Integer,
   size : Integer
-) -> Fitted {
-  match ls {
-    NoLaid => Fitted(NoArm),
-    OneLaid(n, l, rest) => {
-      let tail = around[<](rest, i + 1, largest, off, width, size);
-      let isLargest = same(i, largest);
-      match tail {
-        Misfit => Misfit,
-        Fitted(arms) => match l {
-          Laid(s, a, placed, nn) => match isLargest {
-            true => Fitted(Arm(n, placed, arms)),
-            false => match off >= s {
-              true => Fitted(Arm(n, placed, arms)),
-              false => {
-                let after = up(off + width, a);
-                match size >= after + s {
-                  true => Fitted(Arm(n, shifted(placed, after), arms)),
-                  false => Misfit
-                }
+) -> Fitted =
+  match ls
+    | NoLaid => Fitted NoArm
+    | OneLaid(n, l, rest) => {
+      let tail = around[<] rest (i + 1) largest off width size;
+      let isLargest = same i largest;
+      match tail
+        | Misfit => Misfit
+        | Fitted(arms) => match l
+          | Laid(s, a, placed, nn) => match isLargest
+            | true => Fitted (Arm n placed arms)
+            | false => match off >= s
+              | true => Fitted (Arm n placed arms)
+              | false => {
+                let after = up (off + width) a;
+                match size >= after + s
+                  | true => Fitted (Arm n (shifted placed after) arms)
+                  | false => Misfit
               }
-            }
-          }
-        }
-      }
     }
-  }
-}
 
 /// The niche-filled layout: the largest variant's niche holds which of the variants around it is there.
-def nicheFilled(ls : Laids) -> Filled {
-  let n = variantCount(ls);
-  match n >= 2 {
-    false => NoFill,
-    true => {
-      let big = largestFrom(ls, 0, 0, 0 - 1);
-      let l = laidAt(ls, 0, big);
-      let a = widestOf(ls);
-      let atStart = same(big, 0);
-      let atLast = same(big, n - 1);
-      let firstNeed = pick(atStart, 1, 0);
-      let lastNeed = pick(atLast, n - 2, n - 1);
+def nicheFilled(ls : Laids) -> Filled =
+  let n = variantCount ls
+  match n >= 2
+    | false => NoFill
+    | true => {
+      let big = largestFrom ls 0 0 (0 - 1);
+      let l = laidAt ls 0 big;
+      let a = widestOf ls;
+      let atStart = same big 0;
+      let atLast = same big (n - 1);
+      let firstNeed = pick atStart 1 0;
+      let lastNeed = pick atLast (n - 2) (n - 1);
       let needed = lastNeed - firstNeed + 1;
-      match l {
-        Laid(s, la, placed, nn) => match nn {
-          NoNiche => NoFill,
-          NicheAt(off, width, available) => match available >= needed {
-            false => NoFill,
-            true => {
-              let size = up(s, a);
-              let fitted = around(ls, 0, big, off, width, size);
-              match fitted {
-                Misfit => NoFill,
-                Fitted(arms) => Filled(EnumLayout(size, a, InNiche(off), arms), available - needed)
-              }
+      match l
+        | Laid(s, la, placed, nn) => match nn
+          | NoNiche => NoFill
+          | NicheAt(off, width, available) => match available >= needed
+            | false => NoFill
+            | true => {
+              let size = up s a;
+              let fitted = around ls 0 big off width size;
+              match fitted
+                | Misfit => NoFill
+                | Fitted(arms) => Filled (EnumLayout size a (InNiche off) arms) (available - needed)
             }
-          }
-        }
-      }
     }
-  }
-}
 
 /// The smallest alignment of a variant's first field after the tag, 256 when no variant has a field.
-def rec firstAlign(ls : Laids) -> Integer {
-  match ls {
-    NoLaid => 256,
-    OneLaid(n, l, rest) => {
-      let r = firstAlign[<](rest);
-      match l {
-        Laid(size, a, placed, nn) => match placed {
-          End => r,
-          At(m, off, t) => smaller(a, r)
-        }
-      }
+def rec firstAlign(ls : Laids) -> Integer =
+  match ls
+    | NoLaid => 256
+    | OneLaid(n, l, rest) => {
+      let r = firstAlign[<] rest;
+      match l
+        | Laid(size, a, placed, nn) => match placed
+          | End => r
+          | At(m, off, t) => smaller a r
     }
-  }
-}
 
 /// The placement of the variants' fields.
-def rec armsOf(ls : Laids) -> Arms {
-  match ls {
-    NoLaid => NoArm,
-    OneLaid(n, l, rest) => {
-      let t = armsOf[<](rest);
-      match l {
-        Laid(size, a, placed, nn) => Arm(n, placed, t)
-      }
+def rec armsOf(ls : Laids) -> Arms =
+  match ls
+    | NoLaid => NoArm
+    | OneLaid(n, l, rest) => {
+      let t = armsOf[<] rest;
+      match l
+        | Laid(size, a, placed, nn) => Arm n placed t
     }
-  }
-}
 
 /// How many values a tag of a size holds.
-def tagRange(t : Integer) -> Integer {
-  match t >= 8 {
-    true => 18446744073709551616,
-    false => match t >= 4 {
-      true => 4294967296,
-      false => match t >= 2 {
-        true => 65536,
-        false => 256
-      }
-    }
-  }
-}
+def tagRange(t : Integer) -> Integer =
+  match t >= 8
+    | true => 18446744073709551616
+    | false => match t >= 4
+      | true => 4294967296
+      | false => match t >= 2
+        | true => 65536
+        | false => 256
 
 /// The tagged layout, whose tag widens to the smallest first-field alignment.
-def taggedFill(vs : Variants) -> Filled {
-  let ls = afterTag(vs);
-  let n = variantCount(ls);
-  let a = widestOf(ls);
-  let s = largestSize(ls);
-  let size = up(s, a);
-  let start = firstAlign(ls);
-  let fits = 8 >= start;
-  let tag = pick(fits, start, 1);
-  let arms = armsOf(ls);
-  let range = tagRange(tag);
-  Filled(EnumLayout(size, a, Tag(tag), arms), range - n)
-}
+def taggedFill(vs : Variants) -> Filled =
+  let ls = afterTag vs
+  let n = variantCount ls
+  let a = widestOf ls
+  let s = largestSize ls
+  let size = up s a
+  let start = firstAlign ls
+  let fits = 8 >= start
+  let tag = pick fits start 1
+  let arms = armsOf ls
+  let range = tagRange tag
+  Filled (EnumLayout size a (Tag tag) arms) (range - n)
 
 /// An enum's size.
-def enumSize(l : EnumLayout) -> Integer {
-  match l {
-    EnumLayout(size, a, d, arms) => size
-  }
-}
+def enumSize(l : EnumLayout) -> Integer =
+  match l
+    | EnumLayout(size, a, d, arms) => size
 
 /// An enum's layout: rustc's for a `repr(Rust)` enum of these variants.
-pub def enumLayout(vs : Variants) -> EnumLayout {
-  let ls = asStructs(vs);
-  let nl = nicheFilled(ls);
-  let tl = taggedFill(vs);
-  match tl {
-    NoFill => EnumLayout(0, 1, Tag(0), NoArm),
-    Filled(tlay, tniche) => match nl {
-      NoFill => tlay,
-      Filled(nlay, nniche) => {
-        let ts = enumSize(tlay);
-        let ns = enumSize(nlay);
-        match ts >= ns + 1 {
-          true => nlay,
-          false => match ns >= ts + 1 {
-            true => tlay,
-            false => match nniche >= tniche + 1 {
-              true => nlay,
-              false => tlay
-            }
-          }
-        }
+pub def enumLayout(vs : Variants) -> EnumLayout =
+  let ls = asStructs vs
+  let nl = nicheFilled ls
+  let tl = taggedFill vs
+  match tl
+    | NoFill => EnumLayout 0 1 (Tag 0) NoArm
+    | Filled(tlay, tniche) => match nl
+      | NoFill => tlay
+      | Filled(nlay, nniche) => {
+        let ts = enumSize tlay;
+        let ns = enumSize nlay;
+        match ts >= ns + 1
+          | true => nlay
+          | false => match ns >= ts + 1
+            | true => tlay
+            | false => match nniche >= tniche + 1
+              | true => nlay
+              | false => tlay
       }
-    }
-  }
-}

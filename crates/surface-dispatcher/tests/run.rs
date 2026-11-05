@@ -346,9 +346,9 @@ fn a_script_runs_through_what_it_imports_2970()
 #[test]
 fn a_script_passes_its_arguments_to_its_entry_1881()
 {
-    let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    #[] => 0,\n    \
-                   #[x, ..rest] => { let n = count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
-                   List(String)) -> -F Integer { become count(args) }\n";
+    let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    | #[] => 0\n    \
+                   | #[x, ..rest] => { let n = count[<] rest; n + 1 }\n  }\n}\ndef main(args : \
+                   List(String)) -> -F Integer { become count args }\n";
     let file = Scratch::write(Path::new("arguments"), SourceText::from(counted));
     for arguments in [vec![], vec![String::from("one"), String::from("two")]] {
         let mut script = Script::new(file.0.clone());
@@ -487,7 +487,7 @@ fn a_script_pings_over_its_network_3186()
     let stray = Scratch::write(
         Path::new("net-stray-3186"),
         SourceText::from(
-            "import std.net;\ndef main() -> -F [std.net.Eff] Integer { std.net.transmit(7, \"lost\"); 0 }\n",
+            "import std.net;\ndef main() -> -F [std.net.Eff] Integer { std.net.transmit 7 \"lost\"; 0 }\n",
         ),
     );
     let mut script = Script::new(stray.0.clone());
@@ -723,13 +723,13 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
         .join(", ");
     let text = format!(
         "import std.list (List);\n\npub world operator;\npub world seat;\npub world gate;\n\ndef rec size(xs : \
-         List(Integer)) -> Integer {{\n  match xs {{\n    #[] => 0,\n    #[x, ..rest] => 1 + \
-         size[<](rest)\n  }}\n}}\n\n@[ entry((operator, seat, seat, gate, seat, seat)) ]\ndef \
+         List(Integer)) -> Integer {{\n  match xs {{\n    | #[] => 0\n    | #[x, ..rest] => 1 + \
+         size[<] rest\n  }}\n}}\n\n@[ entry((operator, seat, seat, gate, seat, seat)) ]\ndef \
          main() -> Integer {{\n  let listed : List(Integer) at seat = migrate [seat] {{ (hold \
          #[{listed}]) }};\n  let xs at seat = listed;\n  let edited : List(Integer) at seat = migrate \
-         [seat] {{ (hold cons(0, xs)) }};\n  let ys at seat = edited;\n  let opened = migrate [gate] \
-         {{ pure 0 }};\n  let before = migrate [seat] {{ size(xs) }};\n  let after = migrate \
-         [seat] {{ size(ys) }};\n  pure (after - before + 41 + opened)\n}}\n"
+         [seat] {{ (hold cons 0 xs) }};\n  let ys at seat = edited;\n  let opened = migrate [gate] \
+         {{ pure 0 }};\n  let before = migrate [seat] {{ size xs }};\n  let after = migrate \
+         [seat] {{ size ys }};\n  pure (after - before + 41 + opened)\n}}\n"
     );
     let file = Scratch::write(Path::new("descent"), SourceText::from(text.as_str()));
     let alone = exited(&mut Script::new(file.0.clone()));

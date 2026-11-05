@@ -814,38 +814,38 @@ mod tests
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
         let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                       \n\
-                      def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
+                      def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
                       \n\
                       def second(a : Nat, b : Nat) -> Nat { b }\n\
                       \n\
-                      def make(n : Nat) -> () => Nat { thunk { twice(n) } }\n\
+                      def make(n : Nat) -> () -> Nat { thunk { twice n } }\n\
                       \n\
-                      def apply(t : () => Nat) -> Nat { force t }\n\
+                      def apply(t : () -> Nat) -> Nat { force t }\n\
                       \n\
-                      def field(n : Nat) -> Nat {\n  let m = twice(n);\n  Succ(m)\n}\n\
+                      def field(n : Nat) -> Nat {\n  let m = twice n;\n  Succ m\n}\n\
                       \n\
-                      def paired(n : Nat) -> Nat {\n  let p = twice(n);\n  let q = twice(Zero);\n  second(p, q)\n}\n\
+                      def paired(n : Nat) -> Nat {\n  let p = twice n;\n  let q = twice Zero;\n  second p q\n}\n\
                       \n\
-                      def chained(n : Nat) -> Nat {\n  let a = twice(n);\n  let b = twice(a);\n  become twice(b)\n}\n\
+                      def chained(n : Nat) -> Nat {\n  let a = twice n;\n  let b = twice a;\n  become twice b\n}\n\
                       \n\
-                      def suspended(n : Nat) -> Nat {\n  let t = make(n);\n  apply(t)\n}\n";
+                      def suspended(n : Nat) -> Nat {\n  let t = make n;\n  apply t\n}\n";
         let sugared = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                        \n\
-                       def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
+                       def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
                        \n\
                        def second(a : Nat, b : Nat) -> Nat { b }\n\
                        \n\
-                       def make(n : Nat) -> () => Nat { thunk { twice(n) } }\n\
+                       def make(n : Nat) -> () -> Nat { thunk { twice n } }\n\
                        \n\
-                       def apply(t : () => Nat) -> Nat { force t }\n\
+                       def apply(t : () -> Nat) -> Nat { force t }\n\
                        \n\
-                       def field(n : Nat) -> Nat {\n  Succ(twice(n))\n}\n\
+                       def field(n : Nat) -> Nat {\n  Succ (twice n)\n}\n\
                        \n\
-                       def paired(n : Nat) -> Nat {\n  second(twice(n), twice(Zero))\n}\n\
+                       def paired(n : Nat) -> Nat {\n  second (twice n) (twice Zero)\n}\n\
                        \n\
-                       def chained(n : Nat) -> Nat {\n  let a = twice(n);\n  become twice(twice(a))\n}\n\
+                       def chained(n : Nat) -> Nat {\n  let a = twice n;\n  become twice (twice a)\n}\n\
                        \n\
-                       def suspended(n : Nat) -> Nat {\n  let t = make(n);\n  apply(t)\n}\n";
+                       def suspended(n : Nat) -> Nat {\n  let t = make n;\n  apply t\n}\n";
         let options = FormatOptions {
             form: gandr_surface_format::Form::Sugared,
             ..FormatOptions::default()
@@ -899,37 +899,37 @@ mod tests
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
         let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                       \n\
-                      def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                      def twice(n : Nat) -> -F Nat { Succ (Succ n) }\n\
                       \n\
-                      def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
+                      def make(n : Nat) -> -F (() -> Nat) { thunk { twice n } }\n\
                       \n\
-                      def bump : Nat => Nat;\n\
-                      def bump = thunk { fun (n) { Succ(n) } };\n\
+                      def bump : Nat -> Nat;\n\
+                      def bump = thunk { fun (n) { Succ n } };\n\
                       \n\
-                      def counted : () => Nat;\n\
-                      def counted = thunk { twice(Zero) };\n\
+                      def counted : () -> Nat;\n\
+                      def counted = thunk { twice Zero };\n\
                       \n\
-                      def tailed : () => Nat;\n\
-                      def tailed = thunk { become twice(Zero) };\n\
+                      def tailed : () -> Nat;\n\
+                      def tailed = thunk { become twice Zero };\n\
                       \n\
-                      def none : () => Nat;\n\
+                      def none : () -> Nat;\n\
                       def none = thunk { Zero };\n";
         let sugared = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
                        \n\
-                       def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                       def twice(n : Nat) -> -F Nat { Succ (Succ n) }\n\
                        \n\
-                       def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
+                       def make(n : Nat) -> -F (() -> Nat) { thunk { twice n } }\n\
                        \n\
-                       def bump : Nat => Nat;\n\
-                       def bump = fun (n) { Succ(n) };\n\
+                       def bump : Nat -> Nat;\n\
+                       def bump = fun (n) { Succ n };\n\
                        \n\
-                       def counted : () => Nat;\n\
-                       def counted = twice(Zero);\n\
+                       def counted : () -> Nat;\n\
+                       def counted = twice Zero;\n\
                        \n\
-                       def tailed : () => Nat;\n\
-                       def tailed = thunk { become twice(Zero) };\n\
+                       def tailed : () -> Nat;\n\
+                       def tailed = thunk { become twice Zero };\n\
                        \n\
-                       def none : () => Nat;\n\
+                       def none : () -> Nat;\n\
                        def none = thunk { Zero };\n";
         // The thunk rewrite alone: the function form would merge each signed
         // thunk, which a witness of its own pins.
@@ -1019,10 +1019,10 @@ mod tests
             (
                 tokens(&source)
                     .replace(
-                        "multiplies(endoMonoid)",
-                        "multiplies(Monoid.Semigroup(endoMonoid))"
+                        "multipliesendoMonoid",
+                        "multiplies(Monoid.SemigroupendoMonoid)"
                     )
-                    .replace("multiplies(m)", "multiplies(UnitAndZero.Semigroup(m))"),
+                    .replace("multipliesm", "multiplies(UnitAndZero.Semigroupm)"),
                 Vec::new()
             ),
             "the explicit form writes the reduct the checker applies, the diamond's by the \
@@ -1085,7 +1085,7 @@ mod tests
         let mut expected = tokens(&source);
         for (written, applied) in [
             (
-                "observe(upManifest)",
+                "observe upManifest",
                 "observe(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter))",
             ),
             (
@@ -1093,20 +1093,20 @@ mod tests
                 "(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter) : Model(Counter))",
             ),
             (
-                "observe(negatedManifest)",
+                "observe negatedManifest",
                 "observe(forget[sort C = +{Unit, Bool}](negatedManifest) at Model(Counter))",
             ),
             (
-                "observeShown(upReadings)",
+                "observeShown upReadings",
                 "observeShown(forget[sort R = Integer](upReadings) at Model(ReadCounter))",
             ),
             (
-                "observeShown(upBoth)",
+                "observeShown upBoth",
                 "observeShown(forget[sort C = +{Unit, Bool}, sort R = Integer](upBoth) at \
                  Model(ReadCounter))",
             ),
             (
-                "observeShown(negatedBoth)",
+                "observeShown negatedBoth",
                 "observeShown(forget[sort C = +{Unit, Bool}, sort R = Integer](negatedBoth) at \
                  Model(ReadCounter))",
             ),

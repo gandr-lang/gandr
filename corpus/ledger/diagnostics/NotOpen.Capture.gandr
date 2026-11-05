@@ -1,5 +1,5 @@
 /// `NotOpen.Capture`: a thunk crossing to another world over a handle whose held value is not open.
-module Seat :> #{
+module Seat :> *{
   type Dispatch,
   task : Dispatch
 } where {
@@ -16,10 +16,9 @@ world operator;
 world seat;
 
 @[ refuses("NotOpen.Capture") ]
-@[ entry((operator, seat)) ]
-def pointing() -> () => (Seat.Dispatch at seat) {
+@[ entry(*{operator, seat}) ]
+def pointing() -> () -> (Seat.Dispatch at seat) =
   migrate [seat] {
     var held : Seat.Dispatch at seat = Seat.task;
     pure thunk { pure held }
   }
-}

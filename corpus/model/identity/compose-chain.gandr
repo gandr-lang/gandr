@@ -25,9 +25,8 @@ def composed(
   p : Path(x, y),
   q : Path(y, z),
   r : Path(z, w)
-) -> Path(x, w) {
-  compose[5, 7](chain(3), (p, q, r))
-}
+) -> Path(x, w) =
+  compose[5, 7] (chain 3) (p, q, r)
 
 /// The same three paths composed by `Path.step`, the fold the composite carries.
 def folded(
@@ -39,9 +38,8 @@ def folded(
   p : Path(x, y),
   q : Path(y, z),
   r : Path(z, w)
-) -> Path(x, w) {
-  Path.step(Path.step(p, q), r)
-}
+) -> Path(x, w) =
+  Path.step (Path.step p q) r
 
 /// The composite is the fold it carries, by reflexivity.
 def agrees(
@@ -54,26 +52,22 @@ def agrees(
   q : Path(y, z),
   r : Path(z, w)
 ) -> Path[.A = Path[.A = A](x, w)](
-  composed(A, x, y, z, w, p, q, r),
-  folded(A, x, y, z, w, p, q, r)
-) {
-  Path.here(folded(A, x, y, z, w, p, q, r))
-}
+  composed A x y z w p q r,
+  folded A x y z w p q r
+) =
+  Path.here (folded A x y z w p q r)
 
 /// One cell is its own composite, and reads no stratum.
-def single(A : Type, x : A, y : A, p : Path(x, y)) -> Path(x, y) {
-  compose[0, 0](chain(1), p)
-}
+def single(A : Type, x : A, y : A, p : Path(x, y)) -> Path(x, y) =
+  compose[0, 0] (chain 1) p
 
 /// Three reflexivities compose unbiased to a loop at their point.
-def reflexivities(A : Type, x : A) -> Path(x, x) {
-  compose[5, 7](chain(3), (Path.here(x), Path.here(x), Path.here(x)))
-}
+def reflexivities(A : Type, x : A) -> Path(x, x) =
+  compose[5, 7] (chain 3) (Path.here x, Path.here x, Path.here x)
 
 /// A composite of reflexivities reduces to reflexivity.
-def decided(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](reflexivities(A, x), Path.here(x)) {
-  Path.here(Path.here(x))
-}
+def decided(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](reflexivities A x, Path.here x) =
+  Path.here (Path.here x)
 
 /// A cell written as a call runs, and the composite reads the path it returns.
 def called(
@@ -85,12 +79,11 @@ def called(
   p : Path(x, y),
   q : Path(y, z),
   r : Path(z, w)
-) -> Path(x, w) {
-  compose[3, 5](chain(2), (folded(A, x, y, z, w, p, q, r), Path.here(w)))
-}
+) -> Path(x, w) =
+  compose[3, 5] (chain 2) (folded A x y z w p q r, Path.here w)
 
 /// A word written as a cell is the path at the circle's point it is.
 def wound : Path[.A = Path[.A = Circle](Base, Base)](
-  compose[3, 5](chain(2), (loop, Path.here(Base))),
+  compose[3, 5] (chain 2) (loop, Path.here Base),
   loop
-) = Path.here(loop);
+) = Path.here loop;

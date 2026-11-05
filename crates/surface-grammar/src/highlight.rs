@@ -138,11 +138,13 @@ use crate::parity::NamedKind;
 const OPENERS: &[&str] = &[
     "#!{",
     "#[",
-    "#{",
     "${",
+    "&{",
     "(",
+    "*{",
+    "+{",
     ".#[",
-    ".#{",
+    ".*{",
     "@![",
     "@[",
     "[",
@@ -889,7 +891,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
     _ => match facts.opener {
         Opener::Form => HlRole::Variable,
         Opener::Bracket { label, left } => match label.0 {
-            "#{" | "{" => HlRole::Member,
+            "*{" | "+{" | "&{" | "{" => HlRole::Member,
             "@[" | "[" if facts.right.crosses(TileLabel(":")).0 => HlRole::VariableParam,
             "[" if matches!(facts.kind.0, "u_type" | "thunk_expression") => HlRole::Number,
             "[" if facts.kind.0 == "migrate_expression" => HlRole::Label,
@@ -946,7 +948,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
     match facts.opener {
         Opener::Form => HlRole::Variable,
         Opener::Bracket { label, left } => match label.0 {
-            "#{" | "{" => HlRole::Member,
+            "*{" | "+{" | "&{" | "{" => HlRole::Member,
             "@[" | "[" if right_crosses(":") => HlRole::VariableParam,
             "@[" | "@![" => HlRole::Other,
             "[" => match kind {
@@ -1064,9 +1066,11 @@ mod tests
             ("]", &["#[", ".#[", "@![", "@[", "["]),
             ("}", &[
                 "#!{",
-                "#{",
                 "${",
-                ".#{",
+                "&{",
+                "*{",
+                "+{",
+                ".*{",
                 "command_substitution_start",
                 "{",
             ]),
@@ -1375,7 +1379,7 @@ mod tests
             left: Side(&[]),
         };
         let record = Opener::Bracket {
-            label: TileLabel("#{"),
+            label: TileLabel("*{"),
             left: Side(&[]),
         };
         for kind in ["list_operator", "redirection_operator"] {

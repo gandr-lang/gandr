@@ -21,77 +21,72 @@ import std.list (List);
 
 /// The booleans to themselves by negation, its own inverse.
 @[ checks ]
-def negation : Path[.A = Type](Bool, Bool) = equiv(not, not) ;
+def negation : Path[.A = Type](Bool, Bool) = equiv not not ;
 
 /// A list of booleans transported along negation, in the family of lists.
 @[ checks ]
-def moved_list(xs : List(Bool)) -> List(Bool) {
-  Path.walk(fun (X) { List(X) }, negation, xs)
-}
+def moved_list(xs : List(Bool)) -> List(Bool) =
+  Path.walk (fun (X) { List X }) negation xs
 
 /// Truth then falsity.
-@[ runs("cons(+{.0 = unit}, cons(+{.1 = unit}, nil))") ]
-def both : List(Bool) = cons(+{.0 = unit}, cons(+{.1 = unit}, nil)) ;
+@[ runs("cons +{.0 = *{}} (cons +{.1 = *{}} nil)") ]
+def both : List(Bool) = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil) ;
 
 /// Truth then falsity transported along negation is falsity then truth, by
 /// conversion.
 @[ checks ]
 def flipped_beta : Path(
-  Path.walk(fun (X) { List(X) }, negation, cons(+{.0 = unit}, cons(+{.1 = unit}, nil))),
-  cons(+{.1 = unit}, cons(+{.0 = unit}, nil))
-) = Path.here(cons(+{.1 = unit}, cons(+{.0 = unit}, nil))) ;
+  Path.walk (fun (X) { List X }) negation (cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil)),
+  cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil)
+) = Path.here (cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil)) ;
 
 /// `both` transported along negation by a run, which negates every element.
-@[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
-def flipped_list() -> List(Bool) { moved_list(both) }
+@[ runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)") ]
+def flipped_list() -> List(Bool) { moved_list both }
 
 /// `both` transported along negation as a value, whose computation
 /// runs the first time a run reads it. A declaration computed by a transport
 /// had no producer for the machine to unfold.
-@[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
-def flipped_value : List(Bool) = Path.walk(fun (X) { List(X) }, negation, both) ;
+@[ runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)") ]
+def flipped_value : List(Bool) = Path.walk (fun (X) { List X }) negation both ;
 
 /// A list transported along negation written in place, as along the
 /// named `negation`. The kernel read the inline equivalence's type,
 /// `Path_U(Bool, Bool)`, as no path and refused the transport by shape.
 @[ checks ]
-def moved_inline(xs : List(Bool)) -> List(Bool) {
-  Path.walk(fun (X) { List(X) }, equiv(not, not), xs)
-}
+def moved_inline(xs : List(Bool)) -> List(Bool) =
+  Path.walk (fun (X) { List X }) (equiv not not) xs
 
 /// `both` transported along negation written in place, by a run.
-@[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
-def flipped_inline() -> List(Bool) { moved_inline(both) }
+@[ runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)") ]
+def flipped_inline() -> List(Bool) { moved_inline both }
 
 /// The identity on lists of booleans.
 @[ checks ]
-def keep(xs : List(Bool)) -> List(Bool) {
+def keep(xs : List(Bool)) -> List(Bool) =
   xs
-}
 
 /// Lists of booleans to themselves by the identity: its round trip returns
 /// the empty list and each cell over a rigid tail.
 @[ checks ]
-def lists : Path[.A = Type](List(Bool), List(Bool)) = equiv(keep, keep) ;
+def lists : Path[.A = Type](List(Bool), List(Bool)) = equiv keep keep ;
 
 /// A list transported along the identity's path is itself, by conversion.
 @[ checks ]
-def kept_beta : Path(Path.walk(fun (X) { X }, lists, both), both) = Path.here(both) ;
+def kept_beta : Path(Path.walk (fun (X) { X }) lists both, both) = Path.here both ;
 
 /// A flag beside a list of booleans, negated, the list left as it is.
 @[ checks ]
-def flip_flag(entry : Bool * List(Bool)) -> Bool * List(Bool) {
-  match entry {
-    #{b, xs} => (not(b), xs)
-  }
-}
+def flip_flag(entry : Bool * List(Bool)) -> Bool * List(Bool) =
+  match entry
+    | *{b, xs} => *{not b, xs}
 
 /// Negating the flag is its own inverse: at each boolean beside the empty
 /// list and beside each cell over a rigid tail.
 @[ checks ]
-def flagged : Path[.A = Type](Bool * List(Bool), Bool * List(Bool)) = equiv(flip_flag, flip_flag) ;
+def flagged : Path[.A = Type](Bool * List(Bool), Bool * List(Bool)) = equiv flip_flag flip_flag ;
 
 /// Truth beside `both`, transported along the flag's path by a run: the flag
 /// negates and the list stays.
-@[ runs("(+{.1 = unit}, cons(+{.0 = unit}, cons(+{.1 = unit}, nil)))") ]
-def flagged_run() -> Bool * List(Bool) { Path.walk(fun (X) { X }, flagged, (+{.0 = unit}, both)) }
+@[ runs("*{+{.1 = *{}}, cons +{.0 = *{}} (cons +{.1 = *{}} nil)}") ]
+def flagged_run() -> Bool * List(Bool) { Path.walk (fun (X) { X }) flagged (*{+{.0 = *{}}, both}) }

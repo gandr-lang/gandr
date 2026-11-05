@@ -2,11 +2,11 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
    ╭▸ corpus/pathological/effects/state-laws.gandr:12:3
    │
 12 │ ┏   handle st : StatePutGet with sort S = Integer {
-13 │ ┃     st.put(1);
-14 │ ┃     let a = st.get();
+13 │ ┃     st.put 1;
+14 │ ┃     let a = st.get ();
 15 │ ┃     pure a
    ┆ ┇
-19 │ ┃     oper put(s, k) => k(unit)
+19 │ ┃     | oper put(s, k) => k *{}
 20 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory
    │
@@ -14,15 +14,15 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
    ╰ help: change the handler's clauses so that they satisfy the law
 
 error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
-   ╭▸ corpus/pathological/effects/state-laws.gandr:28:3
+   ╭▸ corpus/pathological/effects/state-laws.gandr:27:3
    │
-28 │ ┏   handle st : StatePutLaws with sort S = Integer {
-29 │ ┃     st.put(1);
-30 │ ┃     let a = st.get();
-31 │ ┃     pure thunk { fun (s : Integer) { pure a } }
+27 │ ┏   handle st : StatePutLaws with sort S = Integer {
+28 │ ┃     st.put 1;
+29 │ ┃     let a = st.get ();
+30 │ ┃     pure thunk { fun (s : Integer) { pure a } }
    ┆ ┇
-35 │ ┃     oper put(s, k) => pure thunk { fun (t : Integer) { let g = k(unit); g(s + t) } }
-36 │ ┃   }
+34 │ ┃     | oper put(s, k) => pure thunk { fun (t : Integer) { let g = k *{}; g (s + t) } }
+35 │ ┃   }
    │ ┗━━━┛ not shown to satisfy a law of its theory
    │
    ├ note: `accumulating` is refused with HandlerUnlawful, as its expectation states

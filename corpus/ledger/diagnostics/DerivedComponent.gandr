@@ -1,18 +1,17 @@
 /// `DerivedComponent`: a model writing a component under the name of a rule its theory derives.
 @[ checks ]
-theory Involution where {
+theory Involution where
   sort G : Type;
   oper inv : (x : G) --> G;
-  rule invInv : inv(inv(x)) <=> x;
-}
+  rule invInv : inv (inv x) <=> x;
 
 @[ checks ]
-rule Involution.invFour : inv(inv(inv(inv(x)))) <=> x;
+rule Involution.invFour : inv (inv (inv (inv x))) <=> x;
 
 module Same : Model(Involution) where {
   type G = Integer;
   def inv(x : Integer) -> Integer { x }
-  def invInv(x : Integer) -> Path(inv(inv(x)), x) { Path.here(x) }
+  def invInv(x : Integer) -> Path(inv (inv x), x) { Path.here x }
   @[ refuses("DerivedComponent") ]
-  def invFour(x : Integer) -> Path(inv(inv(inv(inv(x)))), x) { Path.here(x) }
+  def invFour(x : Integer) -> Path(inv (inv (inv (inv x))), x) { Path.here x }
 }

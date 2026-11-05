@@ -481,7 +481,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Character
                 | Former::TypeQuote
                 | Former::Parenthesized
-                | Former::Unit
                 | Former::Boolean
                 | Former::Thunk
                 | Former::Lambda
@@ -519,7 +518,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::SumType
                 | Former::LazyProductType
                 | Former::TelescopeType
-                | Former::ValueFunctionType
                 | Former::ParenthesizedType
                 | Former::PathType
                 | Former::BridgeType
@@ -599,7 +597,6 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::Character
                         | Former::TypeQuote
                         | Former::Parenthesized
-                        | Former::Unit
                         | Former::Boolean
                         | Former::Thunk
                         | Former::Lambda
@@ -639,7 +636,6 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::TelescopeType
                         | Former::LabelledSumType
                         | Former::LazyRecordType
-                        | Former::ValueFunctionType
                         | Former::PathType
                         | Former::BridgeType
                         | Former::FlowType
@@ -676,7 +672,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Character
                 | Former::TypeQuote
                 | Former::Parenthesized
-                | Former::Unit
                 | Former::Boolean
                 | Former::Thunk
                 | Former::Lambda
@@ -713,7 +708,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::SumType
                 | Former::LazyProductType
                 | Former::TelescopeType
-                | Former::ValueFunctionType
                 | Former::PathType
                 | Former::BridgeType
                 | Former::FlowType
@@ -907,13 +901,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<ProtocolSyntax, LoweringRefusal<'source>>
     {
         let opener = if former == Former::LabelledSumType {
-            TileName::PLUS
+            TileName::SUM_OPEN
         }
         else {
-            TileName::AMPERSAND
+            TileName::LAZY_OPEN
         };
         closed(here, &mut cursor, opener)?;
-        closed(here, &mut cursor, TileName::BRACE_OPEN)?;
         let entries = self.type_entries(here, &mut cursor, TileName::BRACE_CLOSE)?;
         let entries = match arrange(here, entries)? {
             Arranged::Labelled(entries) => entries,
@@ -1395,7 +1388,10 @@ impl<'source> Lowerer<'_, 'source>
             closed(site, &mut cursor, TileName::FAT_ARROW)?;
             let body = site.one(cursor.operands())?;
             written.push((pattern, body));
-            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+            // A `,` or the next arm's bar separates arms.
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
+                && let Maybe::Absent(_) = cursor.at(TileName::ARM_BAR)
+            {
                 closed(site, &mut cursor, TileName::BRACE_CLOSE)?;
                 break;
             }

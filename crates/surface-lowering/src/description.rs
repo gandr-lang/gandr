@@ -294,8 +294,8 @@ impl fmt::Display for MemberFault
     {
         f.write_str(match *self {
             Self::HigherOrderField => {
-                "has a function-valued member the description code does not hold: only a value \
-                 function space `A => B` has a code"
+                "has a function-valued member the description code does not hold: only a box \
+                 `A -> B` written as a field's whole type has a code"
             },
             Self::DependentField => {
                 "has a field whose type names a field before it, which the first-order \
@@ -1843,17 +1843,100 @@ impl Reader<'_, '_>
         Ok(grade)
     }
 
+    /// The domain and the result of the box `pieces` write: an arrow of two
+    /// operands, `A -> B`, whose result is no returner.
+    ///
+    /// # Specification
+    /// - ensures: the two operands for `[A, ->, B]` whose `B` does not open
+    ///   with `-F`; nothing otherwise, the computation arrow `A -> -F B` among
+    ///   them.
+    /// - fails: the result's reading refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The result's reading refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the box and the computation arrow separate the box
+    ///   from the arrow inside a thunk.
+    /// - witness: `description::theory::tests::the_box_reads_as_its_thunk_1329`
+    /// - witness: `description::theory::tests::a_law_member_reads_its_statement_2356`
+    /// - witness: `description::tests::a_value_function_field_is_the_function_former`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|(domain, result)| domain.span.end() <= result.span.start())))]
+    fn boxed(
+        &self,
+        pieces: &[Piece],
+    ) -> Result<Option<(Placed, Placed)>, DescriptionDiagnostic>
+    {
+        let [
+            Piece::Operand(domain),
+            Piece::Tile { ref label, .. },
+            Piece::Operand(result),
+        ] = *pieces
+        else {
+            return Ok(None);
+        };
+        let boxed = label.as_ref() == "->"
+            && !matches!(
+                self.pieces(result)?.first(),
+                Some(Piece::Tile { label, .. }) if label.as_ref() == "-F"
+            );
+        Ok(boxed.then_some((domain, result)))
+    }
+
+    /// The box a parenthesized type `(A -> B)` holds, so a box nested to the
+    /// right, `A -> (B -> C)`, reads as the next layer.
+    ///
+    /// # Specification
+    /// - ensures: the one entry inside `at`'s parentheses when `at` is `( entry
+    ///   )` and the entry is a box as [`Self::boxed`] reads one; nothing
+    ///   otherwise.
+    /// - fails: a piece's reading refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// A piece's reading refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a box nested to the right in parentheses reads as the
+    ///   box nested in the bridge's spelling.
+    /// - witness: `description::tests::a_value_function_field_is_the_function_former`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|inner| at.span.start() < inner.span.start() && inner.span.end() < at.span.end())))]
+    fn box_in_parentheses(
+        &self,
+        at: Placed,
+    ) -> Result<Option<Placed>, DescriptionDiagnostic>
+    {
+        let pieces = self.pieces(at)?;
+        let [
+            Piece::Tile {
+                label: ref open, ..
+            },
+            Piece::Operand(inner),
+            Piece::Tile {
+                label: ref close, ..
+            },
+        ] = *pieces.as_slice()
+        else {
+            return Ok(None);
+        };
+        if open.as_ref() != "(" || close.as_ref() != ")" {
+            return Ok(None);
+        }
+        Ok(self.boxed(&self.pieces(inner)?)?.map(|_| inner))
+    }
+
     /// Interpret a field, recognizing the recursive family head and the value
     /// function space, and keep where each node of its type is written.
     ///
     /// # Specification
     /// - requires: `bound` holds the binders of the fields before this one.
     /// - ensures: self references become recursive code, whatever their indices
-    ///   name, and other fields retain symbolic types; a field `Ā => B`, or the
-    ///   thunked arrow `+U (Ā -> -F B)` it abbreviates, is the function former
-    ///   over `Ā` and `B`'s own reading, each `=>` or thunked arrow to the
-    ///   right one former more; the written term is the innermost result's, as
-    ///   [`Self::type_reference`] keeps it.
+    ///   name, and other fields retain symbolic types; a field `Ā -> B`, the
+    ///   box as [`Self::boxed`] reads it, or the thunked arrow `+U (Ā -> -F B)`
+    ///   it abbreviates, is the function former over `Ā` and `B`'s own reading,
+    ///   each box or thunked arrow to the right one former more; the written
+    ///   term is the innermost result's, as [`Self::type_reference`] keeps it.
     /// - fails: unreadable type forms return their located refusal, and a
     ///   symbolic type or domain naming a binder of `bound` refuses as
     ///   dependent.
@@ -1867,8 +1950,7 @@ impl Reader<'_, '_>
     /// - reason: the function spaces are peeled by a `loop` over the field's
     ///   written operands, each pass one function space to the right, not
     ///   recursion.
-    /// - measure: the `=>` tiles and thunked arrows written to the right of
-    ///   `at`.
+    /// - measure: the boxes and thunked arrows written to the right of `at`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — recursive and primitive fields distinguish var from
@@ -1898,19 +1980,12 @@ impl Reader<'_, '_>
                 result = codomain;
                 continue;
             }
-            let [
-                Piece::Operand(domain),
-                Piece::Tile { ref label, .. },
-                Piece::Operand(codomain),
-            ] = *pieces.as_slice()
+            let Some((domain, codomain)) = self.boxed(&pieces)?
             else {
                 break pieces;
             };
-            if label.as_ref() != "=>" {
-                break pieces;
-            }
             layers.push(self.domains(domain, bound)?);
-            result = codomain;
+            result = self.box_in_parentheses(codomain)?.unwrap_or(codomain);
         };
         let (reference, written) = self.type_reference_read(result, pieces)?;
         let body = if &reference.head_name() == family {
@@ -2307,7 +2382,7 @@ impl Reader<'_, '_>
                         });
                         continue;
                     }
-                    if pieces.iter().any(|piece| matches!(piece, Piece::Tile { label, .. } if matches!(label.as_ref(), "->" | "=>"))) {
+                    if pieces.iter().any(|piece| matches!(piece, Piece::Tile { label, .. } if label.as_ref() == "->")) {
                         return Err(DescriptionDiagnostic { span: at.span, fault: DescriptionFault::HigherOrderField });
                     }
                     let mut run = Run::new(&pieces, at.span);
@@ -2451,7 +2526,9 @@ fn split_members(
                 }
                 start = index;
             },
-            "(" | "[" | "#[" | ".#[" | "{" | "#{" | ".#{" => depth = depth.saturating_add(1),
+            "(" | "[" | "#[" | ".#[" | "{" | "*{" | "+{" | "&{" | ".*{" => {
+                depth = depth.saturating_add(1);
+            },
             ")" | "]" | "}" => depth = depth.saturating_sub(1),
             _ => {},
         }

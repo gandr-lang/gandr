@@ -16,16 +16,15 @@
 /// Two steps and the shortcut between their ends: the cell relates the
 /// composite of the steps to the shortcut.
 @[ refuses("UndescribedMember.HigherCell") ]
-theory Shortcut where {
+theory Shortcut where
   sort Ob : Type;
 
   oper s : (a : Ob) --> Ob;
   oper t : (a : Ob) --> Ob;
   oper u : (a : Ob) --> Ob;
 
-  rule step : s(a) ==> t(a);
-  rule onward : t(a) ==> u(a);
-  rule direct : s(a) ==> u(a);
+  rule step : s a ==> t a;
+  rule onward : t a ==> u a;
+  rule direct : s a ==> u a;
 
-  rule shortcut : (Path.step(step(a), onward(a))) ==> direct(a);
-}
+  rule shortcut : (Path.step (step a) (onward a)) ==> direct a;

@@ -11,20 +11,19 @@ import std.process;
 
 /// A scope whose exit clause abandons the rest from inside an unwind.
 @[ refuses("UnwindEffect") ]
-def shielded() -> Unit {
+def shielded() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
       send(task, Cancel.notes);
       close(task)
     };
-    c.exit(1);
+    c.exit 1;
     let text = recv(found);
     close(found)
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => {
+    | pure(x) => pure x
+    | oper exit(code, k) => {
       var n = 0;
-      access n as v { abort(v) } unwind { abandon(k) }
+      access n as v { abort(v) } unwind { abandon k }
     }
   }
-}

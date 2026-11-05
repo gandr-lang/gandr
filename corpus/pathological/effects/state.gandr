@@ -6,39 +6,36 @@
 /// operation. Instantiating the continuation at the stored value is then no
 /// branch selection, and put-get does not descend.
 @[ refuses("RulesUnoriented") ]
-theory StateObserved where {
+theory StateObserved where
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
   oper peek : (c : C) --> S;
-  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
-}
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
 
 /// Put-put keeping the first value, beside put-get: put-put's continuation
 /// can be a `get`, and the read after the two puts sees `s` by one rule and
 /// `u` by the other, so the pair parts.
 @[ refuses("RulesOverlapSecondOrder") ]
-theory StatePutKeepsFirst where {
+theory StatePutKeepsFirst where
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
-  rule putFirst : put(s, put(u, k)) <=> put(s, k);
-}
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+  rule putFirst : put s (put u k) <=> put s k;
 
 /// The four laws of global state. Get-put holds only where its continuation
 /// does not read the state it drops, a condition on its instance, and its
 /// overlap with put-get is not decided under that condition yet.
 @[ refuses("RulesOverlapCondition") ]
-theory StateAllLaws where {
+theory StateAllLaws where
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
-  rule putPut : put(s, put(u, k)) <=> put(u, k);
-  rule getPut : get(bind s. put(s, k)) <=> k;
-  rule getGet : get(bind s. get(bind t. k(s, t))) <=> get(bind s. k(s, s));
-}
+  rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
+  rule putPut : put s (put u k) <=> put u k;
+  rule getPut : get (bind s. (put s k)) <=> k;
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));

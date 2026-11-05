@@ -28,7 +28,7 @@
 /// it at, and the name of the key's secret. The hosting process reads the
 /// secret by that name through a model of `std.secret`'s `Secrets`. The file
 /// never holds it.
-pub theory Site where {
+pub theory Site where
   /// The public key the site proves, 64 hexadecimal digits.
   oper key : String;
   /// The sockets the site binds and a dialer reaches, each `ip:port`. They
@@ -39,24 +39,21 @@ pub theory Site where {
   /// The name of the key's secret, which the hosting process reads as 64
   /// hexadecimal digits.
   oper secret : String;
-}
 
 /// The binding of a program's worlds onto sites: the program it deploys,
 /// beside the `placements` its file lists. The file lists them as
 /// `pub def placements : List(Placement)`, a definition of its own until an
 /// operation's port can be a list.
-pub theory Manifold where {
+pub theory Manifold where
   /// The program the manifold deploys: the path of its source, as the
   /// manifold's file writes it.
   oper artifact : String;
-}
 
 /// One world of the program bound to a site, the site's model as its file
 /// exports it: `At("far", far.site)`. The manifold imports each site's file,
 /// and a site's key matches it to its file.
-pub data Placement : Type where {
+pub data Placement : Type where
   /// The world `name` as one process at the site.
   | At : (name : String, site : Model(Site)) --> Placement
   /// The world `name` as `count` processes at the site.
   | Instances : (name : String, site : Model(Site), count : Integer) --> Placement
-}

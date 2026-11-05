@@ -27,10 +27,10 @@
 //!
 //! # A run states its channels' webs
 //!
-//! `@[ runs("v"), traces(decomposes(c, web)) ]` states that running the
+//! `@[ runs("v"), traces(decomposes c (web)) ]` states that running the
 //! declaration comes to `v` and that the channel its fork names `c` — the
 //! binder the fork writes at its protocol — plays a dialogue whose causal web
-//! decomposes to `web`; `traces(primes(c, n))` states only the web's prime
+//! decomposes to `web`; `traces(primes c n)` states only the web's prime
 //! count, as `decomposes(primes = n)` does. A `runs` beside one or more
 //! `traces` reads as [`Outcome::RunsTracing`], the channels in the order
 //! written. The runner is asked for a traced run, and the declaration settles
@@ -217,7 +217,7 @@ pub enum ExpectationSchema
     /// `decomposes(web)`: the dialogue checks, owing nothing, and its causal
     /// web decomposes to the web written.
     Decomposes,
-    /// `traces(decomposes(c, web))`: beside a `runs`, the channel the run's
+    /// `traces(decomposes c (web))`: beside a `runs`, the channel the run's
     /// fork names `c` plays a dialogue whose web decomposes to the web
     /// written.
     Traces,
@@ -369,7 +369,7 @@ pub enum Outcome
     /// to the web spelled beside it.
     RunsTracing(RunSpelling, Vec<Channel>),
     /// The declaration checks, owing nothing, and mentions exactly the items
-    /// spelled: `()`, one name, or a tuple of names.
+    /// spelled: `()`, one name, or a record of names, `*{a, b}`.
     Reads(RunSpelling),
 }
 
@@ -558,8 +558,8 @@ pub enum ExpectationFault
         /// The bytes the attribute covers.
         span: ByteSpan,
     },
-    /// A `traces` payload that is neither `decomposes(c, web)` over a web
-    /// node nor `primes(c, n)` over a count.
+    /// A `traces` payload that is neither `decomposes c (web)` over a web
+    /// node nor `primes c n` over a count.
     UnwrittenTrace
     {
         /// The bytes the attribute covers.
@@ -625,13 +625,13 @@ impl fmt::Display for ExpectationFault
                 "the `decomposes` payload is no `series`, `parallel`, `prime` or `event` node",
             ),
             Self::UnwrittenTrace { .. } => f.write_str(
-                "the `traces` payload is no `decomposes(channel, web)` or `primes(channel, n)`",
+                "the `traces` payload is no `decomposes channel (web)` or `primes channel n`",
             ),
             Self::TraceWithoutRun { .. } => {
                 f.write_str("the `traces` states a channel of no run: it needs a `runs` beside it")
             },
             Self::UnwrittenReads { .. } => {
-                f.write_str("the `reads` payload is no `()`, name or tuple of names")
+                f.write_str("the `reads` payload is no `()`, name or record of names")
             },
         }
     }
@@ -912,7 +912,7 @@ where
     } else if schema == ExpectationSchema::Decomposes {
         match spelled {
             None => ret == Err(unreadable),
-            Some(web) if (WEB_NODES.iter().any(|node| web.as_ref().starts_with(node)) && web.as_ref().ends_with(')'))
+            Some(web) if WEB_NODES.iter().any(|node| web.as_ref().starts_with(node))
                 || web.as_ref().strip_prefix(PRIMES).is_some_and(|count| !count.is_empty() && count.bytes().all(|digit| digit.is_ascii_digit())) => {
                 matches!(ret, Ok(Stated::Verdict(Outcome::Decomposes(ref stated))) if stated == web)
             }
@@ -1023,8 +1023,7 @@ fn stated_by(
         },
         ExpectationSchema::Decomposes => {
             let web = spelled.ok_or(unreadable)?;
-            let written = WEB_NODES.iter().any(|node| web.as_ref().starts_with(node))
-                && web.as_ref().ends_with(')');
+            let written = WEB_NODES.iter().any(|node| web.as_ref().starts_with(node));
             let counted = web.as_ref().strip_prefix(PRIMES).is_some_and(|count| {
                 !count.is_empty() && count.bytes().all(|digit| digit.is_ascii_digit())
             });
@@ -1050,9 +1049,10 @@ fn stated_by(
     }
 }
 
-/// The node openings a `decomposes` payload begins with: the modular
-/// decomposition's series, parallel and prime nodes, and a leaf event.
-const WEB_NODES: [&str; 4] = ["series(", "parallel(", "prime(", "event("];
+/// The node heads a `decomposes` payload begins with, each before its first
+/// operand: the modular decomposition's series, parallel and prime nodes, and
+/// a leaf event, as in `series (event left 0) (event right 0)`.
+const WEB_NODES: [&str; 4] = ["series ", "parallel ", "prime ", "event "];
 
 /// The opening of a `decomposes` payload that states only the web's prime
 /// count, `primes = 2`.
@@ -1061,7 +1061,7 @@ const PRIMES: &str = "primes = ";
 quenchant_shape::reason_enum! {
     /// Why a `reads` spelling names no items.
     mod read_names {
-        /// The spelling is no `()`, name or tuple of names.
+        /// The spelling is no `()`, name or record of names.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// It is none of the three forms.
@@ -1076,41 +1076,45 @@ quenchant_shape::reason_enum! {
 struct ReadNames<'spelled>(BTreeSet<&'spelled str>);
 
 /// The items `spelled` names, read as a `reads` payload writes them: none
-/// for `()`, the one a bare name writes, and each component of a tuple of
-/// names.
+/// for `()`, the one a bare name writes, and each component of a record of
+/// names, `*{a, b}`.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: present exactly when `spelled` is `()`, one name, or names
-///   between parentheses separated by commas, each name nonempty and holding no
-///   white space, comma or parenthesis; each name written is held once.
+///   between `*{` and `}` separated by commas, each name nonempty and holding
+///   no white space, comma, parenthesis or brace; each name written is held
+///   once.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the three forms and a repeated name read, and an empty
-///   component, a nested tuple and a phrase refused.
+///   component, a nested record, a retired tuple and a phrase refused.
 /// - witness: `expectation::tests::a_reads_payload_names_each_item_once_2520`
 #[spec(ensures: |ret| match ret {
-    Maybe::Present(ref names) => names.0.iter().all(|name| !name.is_empty() && name.chars().all(|glyph| !glyph.is_whitespace() && !matches!(glyph, ',' | '(' | ')'))),
+    Maybe::Present(ref names) => names.0.iter().all(|name| !name.is_empty() && name.chars().all(|glyph| !glyph.is_whitespace() && !matches!(glyph, ',' | '(' | ')' | '{' | '}'))),
     Maybe::Absent(_) => true,
 })]
 fn read_names(spelled: &RunSpelling) -> Maybe<ReadNames<'_>, read_names::Absent>
 {
     let text: &str = spelled.as_ref();
-    let components: Vec<&str> = match text
-        .strip_prefix('(')
-        .and_then(|rest| rest.strip_suffix(')'))
-    {
-        Some("") => Vec::new(),
-        Some(inner) => inner.split(',').map(str::trim).collect(),
-        None => Vec::from([text]),
+    let components: Vec<&str> = if text == "()" {
+        Vec::new()
+    }
+    else {
+        text.strip_prefix("*{")
+            .and_then(|rest| rest.strip_suffix('}'))
+            .map_or_else(
+                || Vec::from([text]),
+                |inner| inner.split(',').map(str::trim).collect(),
+            )
     };
     let named = components.iter().all(|name| {
         !name.is_empty()
-            && name
-                .chars()
-                .all(|glyph| !glyph.is_whitespace() && !matches!(glyph, ',' | '(' | ')'))
+            && name.chars().all(|glyph| {
+                !glyph.is_whitespace() && !matches!(glyph, ',' | '(' | ')' | '{' | '}')
+            })
     });
     if named {
         Maybe::Present(ReadNames(components.into_iter().collect()))
@@ -1151,11 +1155,12 @@ pub fn reads_as_stated(
 }
 
 /// The `reads` spelling of `names`: `()` for none, the name itself for one,
-/// and the names between parentheses, in ascending order and each once,
-/// separated by `, ` for more.
+/// and the names as a record, `*{a, b}`, in ascending order and each once,
+/// for more.
 ///
 /// # Specification
-/// - requires: no name is empty or holds white space, a comma or a parenthesis.
+/// - requires: no name is empty or holds white space, a comma, a parenthesis or
+///   a brace.
 /// - ensures: a spelling a `reads` payload writes, naming exactly `names`.
 /// - provides: the produced side of a `reads` comparison, spelled as the
 ///   payload is written.
@@ -1177,18 +1182,21 @@ where
     let held: Vec<Name> = names.into_iter().collect();
     let sorted: BTreeSet<&str> = held.iter().map(AsRef::as_ref).collect();
     let mut spelled = String::new();
-    if sorted.len() == 1_usize {
+    if sorted.is_empty() {
+        spelled.push_str("()");
+    }
+    else if sorted.len() == 1_usize {
         spelled.extend(sorted.first().copied());
     }
     else {
-        spelled.push('(');
+        spelled.push_str("*{");
         for (index, name) in sorted.iter().enumerate() {
             if index > 0_usize {
                 spelled.push_str(", ");
             }
             spelled.push_str(name);
         }
-        spelled.push(')');
+        spelled.push('}');
     }
     RunSpelling::from(spelled)
 }
@@ -1281,21 +1289,22 @@ quenchant_shape::reason_enum! {
         /// The payload is neither form.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// It is no `decomposes(c, web)` over a web node and no
-            /// `primes(c, n)` over a count.
+            /// It is no `decomposes c (web)` over a web node and no
+            /// `primes c n` over a count.
             Unwritten,
         }
     }
 }
 
-/// The channel a `traces` payload spelled `spelled` states: `decomposes(c,
-/// web)` names `c` with `web`, and `primes(c, n)` names `c` with the prime
+/// The channel a `traces` payload spelled `spelled` states: `decomposes c
+/// (web)` names `c` with `web`, and `primes c n` names `c` with the prime
 /// count `primes = n`, as a `decomposes` payload states one.
 ///
 /// # Specification
 /// - ensures: a channel named by an identifier, whose web is a `series`,
-///   `parallel`, `prime` or `event` node or a prime count; unwritten for a
-///   payload of neither form, or an empty or spaced name.
+///   `parallel`, `prime` or `event` node between one pair of parentheses, or a
+///   prime count; unwritten for a payload of neither form, or an empty or
+///   spaced name.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1311,29 +1320,36 @@ fn channel_stated(spelled: &RunSpelling) -> Maybe<Channel, channel_stated::Absen
 {
     let unwritten = Maybe::Absent(channel_stated::Absent::Unwritten);
     let text: &str = spelled.as_ref();
-    let read = |opening: &str| {
-        text.strip_prefix(opening)
-            .and_then(|rest| rest.strip_suffix(')'))
-            .and_then(|inner| inner.split_once(','))
-            .map(|(name, rest)| (name, rest.trim_start()))
-    };
+    let read = |head: &str| text.strip_prefix(head)?.split_once(' ');
     let named = |name: &str| {
         !name.is_empty()
             && name
                 .chars()
                 .all(|glyph| glyph.is_alphanumeric() || glyph == '_' || glyph == '\'')
     };
-    if let Some((name, web)) = read("decomposes(")
+    // One pair of parentheses encloses the web whole: `(a (b))` holds
+    // `a (b)`, and `(a) (b)` encloses nothing.
+    let balanced = |inner: &str| {
+        inner.bytes().try_fold(0_usize, |depth, byte| match byte {
+            b'(' => Some(depth.saturating_add(1)),
+            b')' => depth.checked_sub(1),
+            _ => Some(depth),
+        }) == Some(0)
+    };
+    if let Some((name, grouped)) = read("decomposes ")
         && named(name)
+        && let Some(web) = grouped
+            .strip_prefix('(')
+            .and_then(|rest| rest.strip_suffix(')'))
+            .filter(|&inner| balanced(inner))
         && WEB_NODES.iter().any(|node| web.starts_with(node))
-        && web.ends_with(')')
     {
         return Maybe::Present(Channel {
             name: String::from(name),
             web: RunSpelling::from(String::from(web)),
         });
     }
-    if let Some((name, count)) = read("primes(")
+    if let Some((name, count)) = read("primes ")
         && named(name)
         && !count.is_empty()
         && count.bytes().all(|digit| digit.is_ascii_digit())
@@ -1353,7 +1369,7 @@ fn channel_stated(spelled: &RunSpelling) -> Maybe<Channel, channel_stated::Absen
 /// # Specification
 /// - requires: `web` is a spelling the runner printed for a web.
 /// - ensures: `primes = k` for a `stated` opening `primes = `, `k` the number
-///   of `prime(` nodes in `web`, each a `prime(` that begins a name rather than
+///   of `prime ` nodes in `web`, each a `prime ` that begins a name rather than
 ///   ending a longer one; `web` itself otherwise.
 /// - fails: never.
 /// - panics: none.
@@ -1374,7 +1390,7 @@ pub fn web_as_stated(
     }
     let spelled = web.as_ref();
     let primes = spelled
-        .match_indices("prime(")
+        .match_indices("prime ")
         .filter(|&(at, _)| {
             spelled
                 .get(.. at)
@@ -2065,22 +2081,22 @@ mod tests
                 "f(λ) ~> λ",
             ),
             (
-                Outcome::Decomposes(RunSpelling::from(String::from("series(event(left, 0))"))),
-                "series(event(left, 0))",
+                Outcome::Decomposes(RunSpelling::from(String::from("series (event left 0)"))),
+                "series (event left 0)",
             ),
             (
                 Outcome::RunsTracing(
                     RunSpelling::from(String::from("unit")),
                     Vec::from([Channel {
                         name: String::from("seat"),
-                        web: RunSpelling::from(String::from("event(left, 0)")),
+                        web: RunSpelling::from(String::from("event left 0")),
                     }]),
                 ),
-                "seat to event(left, 0)",
+                "seat to event left 0",
             ),
             (
-                Outcome::Reads(RunSpelling::from(String::from("(Nat, λ)"))),
-                "(Nat, λ)",
+                Outcome::Reads(RunSpelling::from(String::from("*{Nat, λ}"))),
+                "*{Nat, λ}",
             ),
         ] {
             let stated = Stated::Verdict(outcome);
@@ -2130,9 +2146,9 @@ mod tests
         let spelling = |text: &str| RunSpelling::from(String::from(text));
         let counted = spelling("primes = 1");
         let web = spelling(
-            "series(event(left, 0), prime(event(left, 1), event(right, 0), subprime(x), series(event(right, 1), prime(event(left, 2)))))",
+            "series (event left 0) (prime (event left 1) (event right 0) (subprime x) (series (event right 1) (prime (event left 2))))",
         );
-        let series = spelling("series(event(left, 0), parallel(event(left, 1), event(right, 0)))");
+        let series = spelling("series (event left 0) (parallel (event left 1) (event right 0))");
         assert_eq!(super::web_as_stated(&counted, &web), spelling("primes = 2"));
         assert_eq!(
             super::web_as_stated(&counted, &series),
@@ -2160,11 +2176,12 @@ mod tests
         assert_eq!(named("()"), names(&[]));
         assert_eq!(named("Nat"), names(&["Nat"]));
         assert_eq!(named("Inner.leaf"), names(&["Inner.leaf"]));
-        assert_eq!(named("(side, Nat, side)"), names(&["Nat", "side"]));
+        assert_eq!(named("*{side, Nat, side}"), names(&["Nat", "side"]));
         for unwritten in [
             "",
-            "(Nat,, side)",
-            "((Nat, side))",
+            "*{Nat,, side}",
+            "*{*{Nat, side}}",
+            "(Nat, side)",
             "f(x)",
             "no footprint: opaque",
         ] {
@@ -2172,12 +2189,12 @@ mod tests
         }
         assert_eq!(
             super::reads_spelled(["side", "Nat", "side"]),
-            spelling("(Nat, side)")
+            spelling("*{Nat, side}")
         );
         assert_eq!(super::reads_spelled(["Nat"]), spelling("Nat"));
         assert_eq!(super::reads_spelled(Vec::<&str>::new()), spelling("()"));
-        let produced = spelling("(Nat, side)");
-        let reordered = spelling("(side, Nat)");
+        let produced = spelling("*{Nat, side}");
+        let reordered = spelling("*{side, Nat}");
         assert_eq!(super::reads_as_stated(&reordered, &produced), reordered);
         assert_eq!(
             super::reads_as_stated(&spelling("Nat"), &produced),
@@ -2211,11 +2228,11 @@ mod tests
         let spellings = [
             (
                 2_usize,
-                "decomposes(seat, series(event(left, 0), event(right, 0)))",
+                "decomposes seat (series (event left 0) (event right 0))",
             ),
-            (4_usize, "primes(other, 1)"),
-            (6_usize, "decomposes(a b, event(left, 0))"),
-            (8_usize, "decomposes(seat, 3)"),
+            (4_usize, "primes other 1"),
+            (6_usize, "decomposes a b (event left 0)"),
+            (8_usize, "decomposes seat 3"),
         ];
         let spelled = |written: &AttributeEntry| {
             spellings
@@ -2230,7 +2247,7 @@ mod tests
         let both = Stated::Verdict(Outcome::RunsTracing(
             RunSpelling::from(String::from("unit")),
             Vec::from([
-                channel("seat", "series(event(left, 0), event(right, 0))"),
+                channel("seat", "series (event left 0) (event right 0)"),
                 channel("other", "primes = 1"),
             ]),
         ));

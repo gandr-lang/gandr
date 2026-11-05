@@ -19,11 +19,11 @@ def cong(n : Integer) -> Integer { n * 2 }
 
 /// The bound `here` answers, not reflexivity.
 @[ runs("5") ]
-def bumped() -> Integer { here(4) }
+def bumped() -> Integer { here 4 }
 
 /// The bound `cong` answers, not the action on a path.
 @[ runs("8") ]
-def doubled() -> Integer { cong(4) }
+def doubled() -> Integer { cong 4 }
 
 /// Reflexivity still stands under its former beside the bound name.
-def stillReflexive : Path(5, 5) = Path.here(5);
+def stillReflexive : Path(5, 5) = Path.here 5;

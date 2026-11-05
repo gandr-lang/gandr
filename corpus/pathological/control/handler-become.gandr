@@ -11,16 +11,14 @@
 // Early exit's host interface.
 import std.process;
 
-def one() -> Integer {
+def one() -> Integer =
   1
-}
 
 @[ refuses("AcrossHandler") ]
-def became() -> -F Integer {
+def became() -> -F Integer =
   handle c : std.process.Exit.Eff {
-    become one()
+    become one ()
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
   }
-}

@@ -16,30 +16,26 @@
 // - see: `../../pathological/identity/k-derivation.gandr` — `here` is not a pattern
 
 /// A sort whose loops are one.
-theory Collapsed where {
+theory Collapsed where
   /// The loops.
   sort Loop : Type;
   /// Any two loops are one path.
-  law one : (p : Loop, q : Loop) => Path[.A = Loop](p, q);
-}
+  law one : (p : Loop, q : Loop) -> Path[.A = Loop](p, q);
 
 /// One value.
-data Dot : Type where {
+data Dot : Type where
   /// The value.
   | Spot : Dot
-}
 
 /// The model proves the law at `Dot` by cases: the one loop is the one loop.
-module CollapsedDot : Model(Collapsed) with sort Loop = Dot where {
+module CollapsedDot : Model(Collapsed) with sort Loop = Dot where
   /// Both loops are `Spot`, so reflexivity proves the law.
-  def one(p : Dot, q : Dot) -> Path(p, q) {
-    match p { Spot => match q { Spot => Path.here(Spot) } }
-  }
-}
+  def one(p : Dot, q : Dot) -> Path(p, q) =
+    match p { | Spot => match q { | Spot => Path.here Spot } }
 
 /// The program reads the model's law at its carrier as a path from the one loop to itself.
-def one_loop() -> Path(Spot, Spot) { CollapsedDot.one(Spot, Spot) }
+def one_loop() -> Path(Spot, Spot) { CollapsedDot.one Spot Spot }
 
 /// The entry returns the unit.
-@[ runs("unit") ]
-def main() -> Unit { unit }
+@[ runs("*{}") ]
+def main() -> Unit { *{} }

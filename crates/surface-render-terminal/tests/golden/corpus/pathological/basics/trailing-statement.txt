@@ -1,14 +1,14 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/basics/trailing-statement.gandr:10:3
    │
- 9 │   def unitAnswered() -> Integer {
+ 9 │   def unitAnswered() -> Integer =
    │   │                     ─────── the type it is checked against
    │ ┌─┘
    │ │
-10 │ │   pure unit;
-   │ │   ━━━━━━━━━ its type does not convert: expected `Integer`, found `Unit`
-11 │ │ }
-   │ └─┘ checked against `() => Integer`; while checking the body of this thunk
+10 │ │   pure *{};
+   │ └───┯━━━━━━━┘ checked against `() -> Integer`; while checking the body of this thunk
+   │     │
+   │     its type does not convert: expected `Integer`, found `Unit`
    │
    ├ note: `unitAnswered` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

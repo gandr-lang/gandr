@@ -8,11 +8,11 @@ def in_infix = ? + 1;
 def named_infix = ?lhs + ?rhs;
 
 @[ refuses("UnresolvedName") ]
-def in_call = f(?, 2);
+def in_call = f (?) 2;
 
 @[ refuses("NotSynthesisable") ]
 def in_thunk = thunk { ? };
 @[ refuses("NotSynthesisable") ]
 def seeded = thunk { return ?seed };
 
-def pair_hole = (?, ?slot);
+def pair_hole = *{?, ?slot};

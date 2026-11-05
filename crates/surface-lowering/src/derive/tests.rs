@@ -30,9 +30,9 @@ const GROUP: &str = "theory Grp where {
   oper e : G;
   oper inv : (x : G) --> G;
   oper mul : (x : G, y : G) --> G;
-  rule unitL : mul(e(), x) <=> x;
-  rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
-  rule invL : mul(inv(x), x) <=> e();
+  rule unitL : mul (e ()) x <=> x;
+  rule assoc : mul (mul x y) z <=> mul x (mul y z);
+  rule invL : mul (inv x) x <=> e ();
 }";
 
 /// [`plan`] of `left <=> right` in the group, named `r`.

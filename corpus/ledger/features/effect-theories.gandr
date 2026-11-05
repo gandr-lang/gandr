@@ -23,7 +23,7 @@
 
 /// The operations alone, reading and storing a state of sort `S`, with no law.
 @[ checks ]
-theory State.Eff where {
+theory State.Eff where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -32,11 +32,10 @@ theory State.Eff where {
   oper get : (k : pi+ (s : S) . C) --> C;
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
-}
 
 /// State with the put-get law alone.
 @[ checks ]
-theory StatePutGet where {
+theory StatePutGet where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -46,12 +45,11 @@ theory StatePutGet where {
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
   /// Storing then reading continues at the stored value, a branch selection because no operation returns `S`.
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
-}
+  rule putGet : put s (get (bind t . (k t))) <=> put s (k s);
 
 /// State with the put-put law alone.
 @[ checks ]
-theory StatePutPut where {
+theory StatePutPut where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -61,12 +59,11 @@ theory StatePutPut where {
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
   /// Storing twice keeps the second value.
-  rule putPut : put(s, put(u, k)) <=> put(u, k);
-}
+  rule putPut : put s (put u k) <=> put u k;
 
 /// State with put-get and put-put, whose overlap joins because both reducts store the second value and continue at it.
 @[ checks ]
-theory StatePutLaws where {
+theory StatePutLaws where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -76,14 +73,13 @@ theory StatePutLaws where {
   /// Storing replaces the state before what runs after.
   oper put : (s : S, k : C) --> C;
   /// Storing then reading continues at the stored value.
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putGet : put s (get (bind t . (k t))) <=> put s (k s);
   /// Storing twice keeps the second value.
-  rule putPut : put(s, put(u, k)) <=> put(u, k);
-}
+  rule putPut : put s (put u k) <=> put u k;
 
 /// State with the get-get law, which overlaps itself through its pattern and joins.
 @[ checks ]
-theory StateGetGet where {
+theory StateGetGet where
   /// The sort of the stored state, a value type.
   sort S : Type+;
   /// The carrier, the type each operation answers in.
@@ -91,109 +87,97 @@ theory StateGetGet where {
   /// Reading passes the current state to what runs after.
   oper get : (k : pi+ (s : S) . C) --> C;
   /// Reading twice reads once and continues at that state for both reads.
-  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
-}
+  rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s s));
 
 /// A scope over get-get reads once, because its subject normalises to one read before it runs.
 /// The handler answers four, so the scope runs to eight.
 @[ runs("8") ]
-def readTwice() -> Integer {
+def readTwice() -> Integer =
   handle st : StateGetGet with sort S = Integer {
-    let a = st.get();
-    let b = st.get();
+    let a = st.get ();
+    let b = st.get ();
     pure a + b
   } with {
-    pure(x) => pure x,
-    oper get(k) => k(4)
+    | pure(x) => pure x
+    | oper get(k) => k 4
   }
-}
 
 /// A returner whose row names `State.Eff` at `Integer`, its instance `st` a capability over `get` and `put`.
 @[ checks ]
-def readState() -> [st : State.Eff with sort S = Integer] Integer {
-  st.get()
-}
+def readState() -> [st : State.Eff with sort S = Integer] Integer =
+  st.get ()
 
 /// A scope over `State.Eff` at `Integer` discharges the row and answers the read with seven.
 @[ runs("7") ]
-def readUnderScope() -> Integer {
+def readUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
-    readState()
+    readState ()
   } with {
-    pure(x) => pure x,
-    oper get(k) => k(7),
-    oper put(v, k) => k()
+    | pure(x) => pure x
+    | oper get(k) => k 7
+    | oper put(v, k) => k ()
   }
-}
 
 /// A scope over `State.Eff` fixes `S` to the parameter `a` and answers a read with `x`.
 @[ checks ]
-def readGiven[a : Type](x : a) -> a {
+def readGiven[a : Type](x : a) -> a =
   handle s : State.Eff with sort S = a {
-    s.get()
+    s.get ()
   } with {
-    pure(y) => pure y,
-    oper get(k) => k(x),
-    oper put(v, k) => k()
+    | pure(y) => pure y
+    | oper get(k) => k x
+    | oper put(v, k) => k ()
   }
-}
 
 /// The scope at `Integer` answers the read with the seven it is given.
 @[ runs("7") ]
-def readGivenSeven() -> Integer {
-  readGiven(7)
-}
+def readGivenSeven() -> Integer =
+  readGiven 7
 
 /// A returner whose row fixes `S` to the parameter `a`, its instance `st` a capability at that type.
 @[ checks ]
-def readAt(a : Type) -> [st : State.Eff with sort S = a] a {
-  st.get()
-}
+def readAt(a : Type) -> [st : State.Eff with sort S = a] a =
+  st.get ()
 
 /// A scope over `State.Eff` at `Integer` discharges the row at `Integer` and answers the read with seven.
 @[ runs("7") ]
-def readAtUnderScope() -> Integer {
+def readAtUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
-    readAt(Integer)
+    readAt Integer
   } with {
-    pure(x) => pure x,
-    oper get(k) => k(7),
-    oper put(v, k) => k()
+    | pure(x) => pure x
+    | oper get(k) => k 7
+    | oper put(v, k) => k ()
   }
-}
 
 /// A returner whose row fixes `S` to the implicit `a`, which a call's argument solves.
 @[ checks ]
-def readGivenAt[a : Type](x : a) -> [st : State.Eff with sort S = a] a {
-  st.get()
-}
+def readGivenAt[a : Type](x : a) -> [st : State.Eff with sort S = a] a =
+  st.get ()
 
 /// The argument solves `a` as `Integer`, so the scope at `Integer` discharges the row and answers the read with seven.
 @[ runs("7") ]
-def readGivenAtUnderScope() -> Integer {
+def readGivenAtUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
-    readGivenAt(0)
+    readGivenAt 0
   } with {
-    pure(x) => pure x,
-    oper get(k) => k(7),
-    oper put(v, k) => k()
+    | pure(x) => pure x
+    | oper get(k) => k 7
+    | oper put(v, k) => k ()
   }
-}
 
 /// A returner whose row fixes `S` to the implicit `a`, which no argument solves.
 @[ checks ]
-def readSolved[a : Type]() -> [st : State.Eff with sort S = a] a {
-  st.get()
-}
+def readSolved[a : Type]() -> [st : State.Eff with sort S = a] a =
+  st.get ()
 
 /// The scope at `Integer` solves `a` as `Integer` and answers the read with seven.
 @[ runs("7") ]
-def readSolvedUnderScope() -> Integer {
+def readSolvedUnderScope() -> Integer =
   handle s : State.Eff with sort S = Integer {
-    readSolved()
+    readSolved ()
   } with {
-    pure(x) => pure x,
-    oper get(k) => k(7),
-    oper put(v, k) => k()
+    | pure(x) => pure x
+    | oper get(k) => k 7
+    | oper put(v, k) => k ()
   }
-}

@@ -2,16 +2,13 @@ data Int : Type where {
   | Z : Int
   | S : (x : Int) --> Int
   | P : (x : Int) --> Int
-  rule : S(P(x)) ==> x;
-  rule : P(S(x)) ==> x;
+  rule : S (P x) ==> x;
+  rule : P (S x) ==> x;
 }
-def rec dbl(n : Int) -> -F Int {
-  match n { Z => Z, S(x) => S(S(dbl[<](x))), P(x) => P(P(dbl[<](x))) }
-}
-def rec bound(n : Int) -> -F Int {
-  match n {
-    Z => Z,
-    S(x) => { let d = bound[<](x) ; S(S(d)) },
-    P(x) => { let d = bound[<](x) ; P(P(d)) }
-  }
-}
+def rec dbl(n : Int) -> -F Int =
+  match n { | Z => Z | S(x) => S (S (dbl[<] x)) | P(x) => P (P (dbl[<] x)) }
+def rec bound(n : Int) -> -F Int =
+  match n
+    | Z => Z
+    | S(x) => { let d = bound[<] x ; S (S d) }
+    | P(x) => { let d = bound[<] x ; P (P d) }

@@ -36,116 +36,100 @@ import "../../data/data-maybe.gandr";
 import "../../layouts/ribbit-list.gandr";
 
 /// `word`'s row: a `u64` address to the `u64` stored there.
-pub def wordRow : Row = Row(Arg(Plain(U64), NoCode), Plain(U64));
+pub def wordRow : Row = Row (Arg (Plain U64) NoCode) (Plain U64);
 
 /// `half`'s row: a `u64` address to the `u32` stored there.
-pub def halfRow : Row = Row(Arg(Plain(U64), NoCode), Plain(U32));
+pub def halfRow : Row = Row (Arg (Plain U64) NoCode) (Plain U32);
 
 /// Reads of the Rust caller's memory at the addresses it lends. Its check
 /// admits each read against its row.
-@[ boundary((wordRow, halfRow)) ]
+@[ boundary(*{wordRow, halfRow}) ]
 extern "rust" from "memory" as Memory {
   def word(address : u64) -> u64;
   def half(address : u64) -> u32;
 }
 
 /// The cells any list the Rust caller lends may hold, and one more.
-def fuel : Nat = Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))));
+def fuel : Nat = Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero)))))));
 
 /// The address `offset` bytes past the address `n`.
-def past(n : Integer, offset : Integer) -> u64 { u64.from_integer(n + offset) }
+def past(n : Integer, offset : Integer) -> u64 { u64.from_integer (n + offset) }
 
 /// The `i32` in a word's low four bytes.
-def low(w : u64) -> i32 { i32.from_integer(u64.to_integer(w)) }
+def low(w : u64) -> i32 { i32.from_integer (u64.to_integer w) }
 
 /// The tagged list at the word `w`, or `None` once `fuel` runs out.
-def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe(Tagged) {
-  match fuel {
-    Zero => None,
-    Succ(rest) => {
-      let n = u64.to_integer(w);
-      let bit = int.mod(n, 2);
-      match bit == 1 {
-        true => Some(TagNil),
-        false => {
-          let h = Memory.word(w);
-          let head = low(h);
-          let t = Memory.word(past(n, 8));
-          let tail = readTagged[<](rest, t);
-          match tail {
-            None => None,
-            Some(l) => Some(TagCons(head, l))
-          }
+def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe(Tagged) =
+  match fuel
+    | Zero => None
+    | Succ(rest) => {
+      let n = u64.to_integer w;
+      let bit = int.mod n 2;
+      match bit == 1
+        | true => Some TagNil
+        | false => {
+          let h = Memory.word w;
+          let head = low h;
+          let t = Memory.word (past n 8);
+          let tail = readTagged[<] rest t;
+          match tail
+            | None => None
+            | Some(l) => Some (TagCons head l)
         }
-      }
     }
-  }
-}
 
 /// The packed list at the word `w`, or `None` once `fuel` runs out or at the
 /// fourth tag. A pointer's cell holds two elements in its first word and the
 /// rest in its second.
-def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe(Packed) {
-  match fuel {
-    Zero => None,
-    Succ(rest) => {
-      let n = u64.to_integer(w);
-      let tag = int.mod(n, 4);
-      match tag == 0 {
-        true => Some(Empty),
-        false => match tag == 1 {
-          true => Some(One(i32.from_integer(int.div(n, 4)))),
-          false => match tag == 2 {
-            true => {
-              let xy = Memory.word(past(n, -2));
-              let m = u64.to_integer(xy);
-              let x = i32.from_integer(m);
-              let y = i32.from_integer(int.div(m, 4294967296));
-              let r = Memory.word(past(n, 6));
-              let tail = readPacked[<](rest, r);
-              match tail {
-                None => None,
-                Some(l) => Some(Many(x, y, l))
-              }
-            },
-            false => None
-          }
-        }
-      }
+def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe(Packed) =
+  match fuel
+    | Zero => None
+    | Succ(rest) => {
+      let n = u64.to_integer w;
+      let tag = int.mod n 4;
+      match tag == 0
+        | true => Some Empty
+        | false => match tag == 1
+          | true => Some (One (i32.from_integer (int.div n 4)))
+          | false => match tag == 2
+            | true => {
+              let xy = Memory.word (past n (- 2));
+              let m = u64.to_integer xy;
+              let x = i32.from_integer m;
+              let y = i32.from_integer (int.div m 4294967296);
+              let r = Memory.word (past n 6);
+              let tail = readPacked[<] rest r;
+              match tail
+                | None => None
+                | Some(l) => Some (Many x y l)
+            }
+            | false => None
     }
-  }
-}
 
 /// The length of the tagged list at `w`, or `-1` when it does not read.
-pub def taggedLengthAt(w : u64) -> [Memory] Integer {
-  let read = readTagged(fuel, w);
-  match read {
-    None => -1,
-    Some(l) => {
-      let f = Path.walk(fun (X) { X => Integer }, taggedPath, fun (l) { length(l) });
-      f(l)
+pub def taggedLengthAt(w : u64) -> [Memory] Integer =
+  let read = readTagged fuel w
+  match read
+    | None => - 1
+    | Some(l) => {
+      let f = Path.walk (fun (X) { X -> Integer }) taggedPath (fun (l) { length l });
+      f l
     }
-  }
-}
 
 /// The length of the packed list at `w`, or `-1` when it does not read.
-pub def packedLengthAt(w : u64) -> [Memory] Integer {
-  let read = readPacked(fuel, w);
-  match read {
-    None => -1,
-    Some(l) => {
-      let f = Path.walk(fun (X) { X => Integer }, packedPath, fun (l) { length(l) });
-      f(l)
+pub def packedLengthAt(w : u64) -> [Memory] Integer =
+  let read = readPacked fuel w
+  match read
+    | None => - 1
+    | Some(l) => {
+      let f = Path.walk (fun (X) { X -> Integer }) packedPath (fun (l) { length l });
+      f l
     }
-  }
-}
 
 /// `deref_or(x: Option<&u32>, d: u32) -> u32`: `d` at the null word, and the
 /// `u32` the word addresses at any other.
-pub def derefOr(x : u64, d : u32) -> [Memory] u32 {
-  let n = u64.to_integer(x);
-  match n == 0 {
-    true => d,
-    false => Memory.half(x)
-  }
-}
+pub def derefOr(x : u64, d : u32) -> [Memory] u32 =
+  let n = u64.to_integer x
+  match n == 0
+    | true => d
+    | false => Memory.half x

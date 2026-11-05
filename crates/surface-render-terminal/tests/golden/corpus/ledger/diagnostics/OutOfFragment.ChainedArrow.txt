@@ -1,0 +1,7 @@
+error[OutOfFragment.ChainedArrow]: arrows do not chain: write `(A, B) -> C` for one function of two inputs, or `A -> (B -> C)` for a function whose output is a function
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.ChainedArrow.gandr:3:17
+  │
+3 │ def chained(f : Integer -> Integer -> Integer) -> Integer =
+  │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an arrow whose output is an arrow
+  │
+  ╰ note: `chained` is refused with OutOfFragment.ChainedArrow, as its expectation states

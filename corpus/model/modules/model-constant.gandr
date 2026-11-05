@@ -7,10 +7,9 @@
 // `e()`, and the model's law reads the constant's value there.
 
 /// A pointed carrier, the theory of `phase.gandr`'s `#{ type T, z : T }`.
-theory Pointed where {
+theory Pointed where
   sort T : Type;
   oper z : T;
-}
 
 /// The integers pointed at zero.
 module ZeroPointed : Model(Pointed) where {
@@ -22,30 +21,27 @@ module ZeroPointed : Model(Pointed) where {
 
 /// Two constants at a builtin type, the theory of
 /// `module-signature-matching.gandr`'s `#{ base: Integer, double: Integer }`.
-theory Based where {
+theory Based where
   oper base : Integer;
   oper double : Integer;
-}
 
 /// Seven and its double.
-module Sevens : Model(Based) where {
+module Sevens : Model(Based) where
   /// The base.
   def base = 7;
   /// Its double.
   def double = 14;
-}
 
 /// A model's constant, read from outside the model.
 @[ runs("7") ]
 def seven() -> Integer { Sevens.base }
 
 /// A unital carrier: a constant, an operation, and a law over both.
-theory Unital where {
+theory Unital where
   sort M : Type;
   oper e : M;
   oper mul : (x : M, y : M) --> M;
-  rule unitL : mul(e(), x) ==> x;
-}
+  rule unitL : mul (e ()) x ==> x;
 
 /// The integers under addition. The law holds by arithmetic, which conversion
 /// leaves to the runtime, so it is owed; its type reads the constant `e` as
@@ -59,5 +55,5 @@ module Additive : Model(Unital) where {
   def mul(x : Integer, y : Integer) -> Integer { x + y }
   /// Zero is a left unit.
   @[ owes(1) ]
-  def unitL : (x : Integer) => Path[.A = Integer](mul(e, x), x);
+  def unitL : (x : Integer) -> Path[.A = Integer](mul e x, x);
 }

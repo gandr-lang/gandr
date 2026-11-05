@@ -1,5 +1,4 @@
 /// `type_variable`: a type variable.
 @[ checks ]
-def keep(code : Type, x : code) -> -F code {
+def keep(code : Type, x : code) -> -F code =
   return x
-}

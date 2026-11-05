@@ -1,13 +1,13 @@
 //! Definitions quantified over stages and regions in the lowering: the
 //! telescope `[i : Size, j < i, r : Region]` after a function's name, the
-//! staged types `Nat[i]` and `Nat[<i]` its parameter and result types write,
+//! staged types `Nat[i]` and `Nat[< i]` its parameter and result types write,
 //! and the region binders a kept type `A at r` names.
 //!
 //! # A binder is its ordinal
 //!
 //! The telescope binds each stage binder by its position in it. A staged type
 //! in the function's parameter or result types names the stage of the binder
-//! its name resolves to: `Nat[i]` the binder's own stage, `Nat[<i]` the stage
+//! its name resolves to: `Nat[i]` the binder's own stage, `Nat[< i]` the stage
 //! one below it. The checker mints one stage per binder before it forms the
 //! signature, each the stage its ordinal names, so the declared type is
 //! written over those stages directly; the bounds cross on the declaration
@@ -102,8 +102,7 @@ mod tests;
 /// the formers the kernel's mark reaches through, arrows and dependent
 /// arrows, returners, thunks, products, sums, records and lazy products, a
 /// data type's arguments, and parentheses.
-const PLACING: [Former; 13] = [
-    Former::ValueFunctionType,
+const PLACING: [Former; 12] = [
     Former::ArrowType,
     Former::ReturnerType,
     Former::ThunkType,
@@ -523,7 +522,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a staged type, `Nat[i]` or `Nat[<i]`, or the view type
+    /// Classify a staged type, `Nat[i]` or `Nat[< i]`, or the view type
     /// `View[m](a)` a method answering a place declares its result at.
     ///
     /// # Specification

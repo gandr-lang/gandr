@@ -19,20 +19,18 @@ import std.fs;
 
 /// Reading a file, then a loop: the row joins `peek`'s `std.fs.Eff` and `once`'s
 /// `Partial`.
-def performsBoth(c : Cap { read }) -> [std.fs.Eff, Partial] Integer {
-  let _ = peek(c);
-  once(1)
-}
+def performsBoth(c : Cap { read }) -> [std.fs.Eff, Partial] Integer =
+  let _ = peek c
+  once 1
 
 /// The same interfaces listed the other way round are the same row:
 /// `performsBoth`'s call stands at it unchanged.
-def listedSwapped(c : Cap { read }) -> [Partial, std.fs.Eff] Integer { performsBoth(c) }
+def listedSwapped(c : Cap { read }) -> [Partial, std.fs.Eff] Integer { performsBoth c }
 
 /// A suspended computation at one order is forced at the other.
-def forcedAcross(t : +U (-F [Partial, std.fs.Eff] Integer)) -> [std.fs.Eff, Partial] Integer {
+def forcedAcross(t : +U (-F [Partial, std.fs.Eff] Integer)) -> [std.fs.Eff, Partial] Integer =
   force t
-}
 
 /// A computation at `[Partial]` is read where `[std.fs.Eff, Partial]` is asked, and runs.
 @[ runs("3") ]
-def widenedRow() -> [std.fs.Eff, Partial] Integer { once(3) }
+def widenedRow() -> [std.fs.Eff, Partial] Integer { once 3 }

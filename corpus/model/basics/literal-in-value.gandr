@@ -12,19 +12,17 @@
 // - see: `ledger/features/literal-reading.gandr` — the literals readers carry
 
 /// Expressions over the integers.
-data Expr : Type where {
+data Expr : Type where
   /// The leaf holding an integer.
   | Lit : (n : Integer) --> Expr
-}
 
 /// An expression reads a literal as the leaf holding it.
-module ExprFromNat : Model(FromNat) with sort Carrier = Expr where {
+module ExprFromNat : Model(FromNat) with sort Carrier = Expr where
   /// The leaf.
-  def fromNat(n : Integer) -> Expr { Lit(n) }
-}
+  def fromNat(n : Integer) -> Expr { Lit n }
 
 /// The literal read in a body, which runs the reader's call.
-@[ runs("Lit(5)") ]
+@[ runs("Lit 5") ]
 def body() -> Expr { 5 }
 
 /// The literal as the definition's own value, where no body runs the call.

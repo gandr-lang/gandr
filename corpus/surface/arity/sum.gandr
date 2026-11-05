@@ -14,9 +14,9 @@
 def one : +{Integer};
 def one = +{.0 = 1};
 
-@[ runs("+{.2 = unit}") ]
+@[ runs("+{.2 = *{}}") ]
 def third : +{Integer, String, Unit};
-def third = +{.2 = unit};
+def third = +{.2 = *{}};
 
 @[ checks ]
 def failed : +{ok : Integer, err : String};
@@ -30,21 +30,18 @@ def only = (+{.only = 4} : +{only : Integer});
 def unstated = +{.err = "no"};
 
 @[ checks ]
-def absurd(x : +{}) -> -F Integer {
+def absurd(x : +{}) -> -F Integer =
   match x {}
-}
 
 @[ checks ]
-def pick(v : +{ok : Integer, err : String, gone : Unit}) -> -F Integer {
-  match v {
-    +{.ok = n} => return n,
-    +{.err = e} => return 20,
-    +{.gone = u} => return 30
-  }
-}
+def pick(v : +{ok : Integer, err : String, gone : Unit}) -> -F Integer =
+  match v
+    | +{.ok = n} => return n
+    | +{.err = e} => return 20
+    | +{.gone = u} => return 30
 
 @[ runs("30") ]
-def gone() -> -F Integer { pick(+{.2 = unit}) }
+def gone() -> -F Integer { pick (+{.2 = *{}}) }
 
 /// A sum written at its label injects into the summand the label names. The
 /// printer spells its signature under those labels.
@@ -54,54 +51,45 @@ def signed = +{.err = "no"};
 /// `pick` takes the arm of the summand `signed` injects into. It runs to
 /// that arm's answer.
 @[ runs("20") ]
-def signed_picked() -> -F Integer { pick(signed) }
+def signed_picked() -> -F Integer { pick signed }
 
 @[ checks ]
-def unwrap(v : +{only : Integer}) -> -F Integer {
-  match v {
-    +{.only = n} => return n
-  }
-}
+def unwrap(v : +{only : Integer}) -> -F Integer =
+  match v
+    | +{.only = n} => return n
 
 @[ checks ]
-def nested(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
-  match t {
-    #{+{.1 = x}, y} => return x,
-    #{_, y} => return y
-  }
-}
+def nested(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
+  match t
+    | *{+{.1 = x}, y} => return x
+    | *{_, y} => return y
 
 @[ runs("8") ]
-def inner() -> -F Integer { nested(#{+{.1 = 8}, 9}) }
+def inner() -> -F Integer { nested (*{+{.1 = 8}, 9}) }
 
 /// A sum stated as the chain `A + B`, inside a product stated as `(A + B) * C`,
 /// is the braced `#{+{A, B}, C}`: a match reads its summands off either
 /// spelling.
 @[ checks ]
-def chained(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
-  match t {
-    #{+{.1 = x}, y} => return x,
-    #{_, y} => return y
-  }
-}
+def chained(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
+  match t
+    | *{+{.1 = x}, y} => return x
+    | *{_, y} => return y
 
 /// `chained` matches the second summand of its product's first component.
 @[ runs("8") ]
-def outer() -> -F Integer { chained(#{+{.1 = 8}, 9}) }
+def outer() -> -F Integer { chained (*{+{.1 = 8}, 9}) }
 
 /// A pattern variable holds the type its position states: `s`, bound at the
 /// first component of `#{+{Integer, Integer}, Integer}`, is matched as the sum
 /// that component states, the shape the printer writes `nested` in.
 @[ checks ]
-def split(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
-  match t {
-    #{s, y} => match s {
-      +{.0 = x} => return y,
-      +{.1 = x} => return x
-    }
-  }
-}
+def split(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
+  match t
+    | *{s, y} => match s
+      | +{.0 = x} => return y
+      | +{.1 = x} => return x
 
 /// `split` matches the second summand of its product's first component.
 @[ runs("8") ]
-def split_inner() -> -F Integer { split(#{+{.1 = 8}, 9}) }
+def split_inner() -> -F Integer { split (*{+{.1 = 8}, 9}) }

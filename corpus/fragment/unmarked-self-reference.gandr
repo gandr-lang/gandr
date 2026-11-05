@@ -13,46 +13,37 @@
 // - see: #644 — `ahead`
 // - see: #1499 — `constant`, `spin`
 
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 @[ refuses("UnmarkedSelfReference") ]
-def rec bare(n : Nat) -> -F Nat {
-  match n {
-    Zero => return n,
-    Succ(p) => bare(p)
-  }
-}
+def rec bare(n : Nat) -> -F Nat =
+  match n
+    | Zero => return n
+    | Succ(p) => bare p
 
-def rec marked(n : Nat) -> Nat {
-  match n {
-    Zero => n,
-    Succ(p) => marked[<](p)
-  }
-}
+def rec marked(n : Nat) -> Nat =
+  match n
+    | Zero => n
+    | Succ(p) => marked[<] p
 
 def rec idle(n : Nat) -> Nat { n }
 
 /// A parameter written before the staged one may vary across the call: it is
 /// passed to the fixpoint as a leading argument.
-def rec varied(n : Nat, m : Nat) -> Nat {
-  match m {
-    Zero => n,
-    Succ(p) => varied[<](p, p)
-  }
-}
+def rec varied(n : Nat, m : Nat) -> Nat =
+  match m
+    | Zero => n
+    | Succ(p) => varied[<] p p
 
 /// A productive claim outside a copattern block: nothing is observed before
 /// the function runs again.
 @[ refuses("UnguardedCorecursion") ]
-def rec ahead(n : Nat) -> -F Nat {
-  match n {
-    Zero => return n,
-    Succ(p) => ahead[>](p)
-  }
-}
+def rec ahead(n : Nat) -> -F Nat =
+  match n
+    | Zero => return n
+    | Succ(p) => ahead[>] p
 
 /// A recursive definition of no parameter binds its own name over its body,
 /// which this one never calls.
@@ -61,4 +52,4 @@ def rec constant() -> Nat { Zero }
 /// A descent claimed by a recursive definition of no parameter: its fixpoint
 /// stands at no arrow, so the call has nothing to descend on.
 @[ refuses("ShapeMismatch") ]
-def rec spin() -> Nat { spin[<]() }
+def rec spin() -> Nat { spin[<] () }

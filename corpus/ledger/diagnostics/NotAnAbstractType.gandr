@@ -1,5 +1,5 @@
 /// `NotAnAbstractType`: a member typed at an abstract type whose declaration was refused.
-module Seat :> #{
+module Seat :> *{
   mobile type Report,
   progress : Report
 } where {

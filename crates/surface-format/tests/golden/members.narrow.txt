@@ -5,7 +5,7 @@ data Nat : Type where {
   /// One more than `n`.
   | Succ : (n : Nat) --> Nat
   /// The successor of zero is not zero.
-  rule : Succ(Zero) <=> Succ(Zero);
+  rule : Succ Zero <=> Succ Zero;
 }
 
 /// A state theory.
@@ -17,12 +17,11 @@ theory T where {
 }
 
 /// A stream.
-codata Stream(a : Type) : Type[-] where {
+codata Stream(a : Type) : Type[-] where
   /// The head.
   head : a;
   /// The rest.
   tail : Stream(a);
-}
 
 /// A module.
 module M where {

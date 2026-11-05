@@ -388,12 +388,15 @@ pub(super) fn standing(
 }
 
 /// [`Internal::Layout`] when every reading of `root` passes a layout tile.
+/// The juxtaposition tile ([`gandr_surface_grammar::APPLICATION`]) is no
+/// such tile: the source writes it as the space between two operands, and
+/// the melder pushes it there.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: internal exactly when every reading passes a tile whose text,
-///   labeled alone, opens with a layout token at its first byte, naming the
-///   first such tile the form writes.
+/// - ensures: internal exactly when every reading passes a tile other than the
+///   juxtaposition tile whose text, labeled alone, opens with a layout token at
+///   its first byte, naming the first such tile the form writes.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -406,9 +409,12 @@ fn layout(root: RegexView<'_>) -> Standing
 {
     let is_layout = |tile: &str| match tile_spelling(CandidateLabel::from(tile)) {
         TileSpelling::Class(_) => false,
-        TileSpelling::Literal(text) => label(SourceFragment::from(text))
-            .first()
-            .is_some_and(|token| token.start == 0 && matches!(token.lexeme, Lexeme::Space)),
+        TileSpelling::Literal(text) => {
+            text != gandr_surface_grammar::APPLICATION
+                && label(SourceFragment::from(text))
+                    .first()
+                    .is_some_and(|token| token.start == 0 && matches!(token.lexeme, Lexeme::Space))
+        },
     };
     let mut first: Option<&'static str> = None;
     let writable: Result<bool, ()> = fold(
@@ -776,9 +782,9 @@ fn slot(
         Sort::Item => text.to_string(),
         Sort::ModuleMember => format!("module Probe where {{ {text} }}"),
         Sort::Expression => format!("def probe = {text} ;"),
-        Sort::Pattern => format!("def probe = match x {{ {text} => 1 }} ;"),
+        Sort::Pattern => format!("def probe = match x {{ | {text} => 1 }} ;"),
         Sort::Type => format!("def probe : {text} ;"),
-        Sort::Instantiation => format!("def probe = f[{text}](1) ;"),
+        Sort::Instantiation => format!("def probe = f[{text}] 1 ;"),
         Sort::Block => format!("def probe = thunk {text} ;"),
     }
 }

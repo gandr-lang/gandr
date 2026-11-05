@@ -16,17 +16,17 @@ import "./seat-base.gandr";
 def quoted_receive : Flow[.A = Type](
   ?(Seat.Dispatch). end,
   ?(Seat.Dispatch). end
-) = Flow.stay(type(?(Seat.Dispatch). end));
+) = Flow.stay (type(?(Seat.Dispatch). end));
 
 /// The stationary flow at a labelled sum of one summand.
-def quoted_sum : Flow[.A = Type](+{Unit}, +{Unit}) = Flow.stay(type(+{Unit}));
+def quoted_sum : Flow[.A = Type](+{Unit}, +{Unit}) = Flow.stay (type(+{Unit}));
 
 /// The seat's protocol, written out in full where an expression stands,
 /// simulates the protocol its name stands for.
 def protocol : Flow[.A = Type](Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
   report : !(Seat.Report). &{next : turn, retire : end},
   handoff : !(Seat.Handoff). end
-}) = Flow.sim(Seat.SeatEnd, type(?(Seat.Dispatch). mu turn. +{
+}) = Flow.sim Seat.SeatEnd (type(?(Seat.Dispatch). mu turn. +{
   report : !(Seat.Report). &{next : turn, retire : end},
   handoff : !(Seat.Handoff). end
 }));
@@ -34,6 +34,5 @@ def protocol : Flow[.A = Type](Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
 /// A run's protocol may read the binder of the motive it stands in, where a
 /// quote may not: a run stays on the checker's side, so its payloads are no
 /// codes the kernel forms, and the run moves along a path.
-def run_over_binder(served : Run(?(Seat.Dispatch). end)) -> Run(?(Seat.Dispatch). end) {
-  Path.walk(fun (X) { Run(type(?X. end)) }, Path.here(Seat.Dispatch), served)
-}
+def run_over_binder(served : Run(?(Seat.Dispatch). end)) -> Run(?(Seat.Dispatch). end) =
+  Path.walk (fun (X) { Run (type(?X. end)) }) (Path.here Seat.Dispatch) served

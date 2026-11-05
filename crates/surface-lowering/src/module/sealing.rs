@@ -380,9 +380,11 @@ pub(super) enum KindForm
 {
     /// A universe, or any form other than an arrow: an abstract type.
     Universe,
-    /// A value function space `(a : A, …) => U`: a type family.
+    /// The box `(a : A, …) -> U`, an arrow whose domain classifies no codes:
+    /// a type family.
     Family,
-    /// A static arrow `A -> … -> U`: the kind of a type operator, formed at
+    /// A static arrow `Type -> … -> U`, whose domain classifies codes: the
+    /// kind of a type operator, formed at
     /// its classifier. A transparent ascription reads it against a family
     /// member of the spine's arity; an opaque one declares an abstract type
     /// at it, which the checker refuses unless the kind is a universe.
@@ -396,8 +398,8 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: read through the parentheses written around the kind as a
-    ///   whole, a family for a value function space, an arrow for a function
-    ///   type, and a universe for any other form or a missing node.
+    ///   whole, a family for the box, an arrow for a function type whose domain
+    ///   classifies codes, and a universe for any other form or a missing node.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold, and the
     ///   hole's refusal for parentheses that do not hold one operand.
     /// - panics: none.
@@ -429,13 +431,16 @@ impl<'source> Collector<'_, 'source>
 
         Ok(match shape_of(self.pbg, node)? {
             Shape::Form {
-                former: Former::ValueFunctionType,
-                ..
-            } => KindForm::Family,
-            Shape::Form {
                 former: Former::ArrowType,
                 ..
-            } => KindForm::Arrow,
+            } => {
+                if crate::form::writes_box(self.pbg, self.tree, kind.node, &mut Pieces::new())?.0 {
+                    KindForm::Family
+                }
+                else {
+                    KindForm::Arrow
+                }
+            },
             Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
                 KindForm::Universe
             },

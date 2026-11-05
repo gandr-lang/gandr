@@ -15,7 +15,7 @@
 // - owes: #4105 — a stated law as a cell of the terms
 
 /// A monoid's signature: its associativity orients to no decreasing rule.
-theory Mon where {
+theory Mon where
   /// The carrier.
   sort M : Type;
   /// The unit.
@@ -23,12 +23,11 @@ theory Mon where {
   /// The product.
   oper mul : (x : M, y : M) --> M;
   /// The unit on the left.
-  rule unitL : mul(one(), x) <=> x;
+  rule unitL : mul (one ()) x <=> x;
   /// The unit on the right.
-  rule unitR : mul(x, one()) <=> x;
+  rule unitR : mul x (one ()) <=> x;
   /// Associativity, which neither orientation makes decrease.
-  rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
-}
+  rule assoc : mul (mul x y) z <=> mul x (mul y z);
 
 /// The monoid's unit as a term: its terms are refused, and so is it.
 @[ refuses("RuleNotPresentable") ]
@@ -36,10 +35,10 @@ def neutral : Terms(Mon) = Mon.one;
 
 /// A second declaration asking for the terms states the same cause.
 @[ refuses("RuleNotPresentable") ]
-def product : Terms(Mon) = Mon.mul(Mon.one, Mon.one);
+def product : Terms(Mon) = Mon.mul Mon.one Mon.one;
 
 /// A signature of two sorts, a point and a pair of them.
-theory Pair where {
+theory Pair where
   /// The points.
   sort P : Type;
   /// The pairs.
@@ -48,21 +47,19 @@ theory Pair where {
   oper origin : () --> P;
   /// A pair of two points.
   oper pair : (x : P, y : P) --> Q;
-}
 
 /// Terms over two sorts stand outside the slice.
 @[ refuses("OutOfFragment.terms_type.sorted") ]
 def paired : Terms(Pair) = Pair.origin;
 
 /// A signature that states a law: `twice` twice equals `twice` once.
-theory Idem where {
+theory Idem where
   /// The carrier.
   sort M : Type;
   /// The one operation.
   oper twice : (x : M) --> M;
   /// The stated law, a path the terms would carry as their cell.
-  law settles : (x : M) => Path[.A = M](twice(twice(x)), twice(x));
-}
+  law settles : (x : M) -> Path[.A = M](twice (twice x), twice x);
 
 /// Terms of a theory stating a law stand outside the slice.
 @[ refuses("OutOfFragment.terms_type.law") ]

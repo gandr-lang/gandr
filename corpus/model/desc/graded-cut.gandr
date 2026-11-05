@@ -10,7 +10,7 @@
 /// branch whatever grade the right one stands at, so the choice between a
 /// cut and a failure reaches the cut.
 @[ normalizes("orBot(cut, fail) ~> cut") ]
-theory GradedCut where {
+theory GradedCut where
   sort Grade : Type;
   sort M(g : Grade) : Type;
 
@@ -20,13 +20,12 @@ theory GradedCut where {
   oper fail : () --> M(top());
   oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
 
-  rule cutLeft : orBot(x, y) ==> x;
-}
+  rule cutLeft : orBot x y ==> x;
 
 /// The same choice nested: the inner choice is a cut's grade, so it stands
 /// left of an outer one and the outer law fires first.
 @[ normalizes("orBot(orBot(cut, fail), fail) ~> cut") ]
-theory NestedCut where {
+theory NestedCut where
   sort Grade : Type;
   sort M(g : Grade) : Type;
 
@@ -36,5 +35,4 @@ theory NestedCut where {
   oper fail : () --> M(top());
   oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
 
-  rule cutLeft : orBot(x, y) ==> x;
-}
+  rule cutLeft : orBot x y ==> x;

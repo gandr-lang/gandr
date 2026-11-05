@@ -1012,10 +1012,10 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 pub const KEYWORDS: &[&str] = &[
     "def", "run", "as", "extern", "type", "fun", "pure", "return", "become", "thunk", "force",
     "match", "if", "else", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
-    "fork", "acquire", "release", "migrate", "at", "true", "false", "unit", "mu", "end", "data",
-    "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import",
-    "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile",
-    "inf", "pub", "flow", "where",
+    "fork", "acquire", "release", "migrate", "at", "true", "false", "mu", "end", "data", "codata",
+    "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import", "module",
+    "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile", "inf",
+    "pub", "flow", "where",
 ];
 
 /// The keywords that open a block's statements: one that no open form
@@ -1122,6 +1122,9 @@ pub fn candidate_labels<'text>(
         Lexeme::SubshellClose => labels.push(CandidateLabel::from("subshell_close")),
         Lexeme::FileDescriptor => labels.push(CandidateLabel::from("file_descriptor")),
         Lexeme::ArmBar => labels.push(CandidateLabel::from("arm_bar")),
+        Lexeme::LayoutOpen => labels.push(CandidateLabel::from("{")),
+        Lexeme::LayoutSemi => labels.push(CandidateLabel::from(";")),
+        Lexeme::LayoutClose => labels.push(CandidateLabel::from("}")),
         Lexeme::Punct => {
             labels.push(CandidateLabel::from(text));
             // A dialect-bearing shell opener (`#!sh{`, `$!py{`) lexes as one
@@ -1218,7 +1221,8 @@ enum GroupClose
 {
     /// The group is empty: its `)` is the next significant token.
     Empty,
-    /// The group closes, and `=>` is the next significant token past it.
+    /// The group closes, and an arrow, `=>` or `->`, is the next significant
+    /// token past it.
     Arrow,
     /// The group closes before any other token, or before the stream's end.
     Other,
@@ -1235,15 +1239,16 @@ enum GroupClose
 ///   token whose text ends in `(`.
 /// - ensures: [`GroupClose::Empty`] when the next significant token is `)`;
 ///   otherwise, past the `)` that balances the opener, [`GroupClose::Arrow`]
-///   when the next significant token is `=>` and [`GroupClose::Other`]
+///   when the next significant token is `=>` or `->` and [`GroupClose::Other`]
 ///   otherwise; [`GroupClose::Open`] when no `)` balances it.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an empty group, a nested call and quote inside the group,
-///   a group closed before `=>`, before another token and at the stream's end,
-///   and an unbalanced group expose each answer. Counting a string fragment's
-///   `(`, or stopping at a nested `)`, reads the wrong token past the group.
+///   a group closed before `=>`, before `->`, before another token and at the
+///   stream's end, and an unbalanced group expose each answer. Counting a
+///   string fragment's `(`, or stopping at a nested `)`, reads the wrong token
+///   past the group.
 /// - witness: `mold::tests::a_group_closes_past_its_nested_groups_2255`
 #[spec(ensures: |ret| ret != GroupClose::Empty || next_significant(tokens, index).is_some_and(|(_, token)| AsRef::<str>::as_ref(&token.text(source)) == ")"))]
 fn group_close(
@@ -1271,7 +1276,9 @@ fn group_close(
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     return match next_significant(tokens, cursor) {
-                        Some((_, next)) if punct(next, "=>") => GroupClose::Arrow,
+                        Some((_, next)) if punct(next, "=>") || punct(next, "->") => {
+                            GroupClose::Arrow
+                        },
                         Some(_) | None => GroupClose::Other,
                     };
                 }
@@ -1312,6 +1319,59 @@ fn next_significant(
         next = next.saturating_add(1);
     }
     None
+}
+
+/// Whether a same-form successor stands right after its mold.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Adjacency
+{
+    /// No hole stands between them.
+    Direct,
+    /// A hole stands between them.
+    Apart,
+}
+
+/// Whether the same-form successor `right` of `mold` stands right after it,
+/// with no hole between: every successor of a mold no hole follows, and of
+/// one a hole follows, a successor whose tile faces it on the right.
+///
+/// # Specification
+/// - requires: `right` is one of `mold`'s same-form successors.
+/// - ensures: [`Adjacency::Direct`] exactly when `mold`'s right bound is the
+///   root, or `right`'s label is a tile step on `mold`'s right.
+/// - panics: none.
+/// - economy: one bounds read and, past a root bound, a walk of the few steps
+///   on `mold`'s right. Nothing is allocated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Molder::follow`]: the unit `*{` before its `}` and
+///   the argument comma before a closer tell the two branches apart.
+/// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
+#[spec(ensures: |ret| (ret == Adjacency::Direct) == (matches!(pbg.bounds(mold), Ok((_, Bound::Root))) || pbg.mold(mold).is_ok_and(|own| pbg.mold(right).is_ok_and(|next| pbg.step(own.rctx, Dir::Right).is_ok_and(|steps| steps.iter().any(|step| step.crossed == StepSym::Tile(next.label)))))))]
+fn direct_successor(
+    pbg: &Pbg,
+    mold: MoldId,
+    right: MoldId,
+) -> Adjacency
+{
+    if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
+        return Adjacency::Direct;
+    }
+    let (Ok(own), Ok(next)) = (pbg.mold(mold), pbg.mold(right))
+    else {
+        return Adjacency::Apart;
+    };
+    let faces = pbg.step(own.rctx, Dir::Right).is_ok_and(|steps| {
+        steps
+            .iter()
+            .any(|step| step.crossed == StepSym::Tile(next.label))
+    });
+    if faces {
+        Adjacency::Direct
+    }
+    else {
+        Adjacency::Apart
+    }
 }
 
 /// The whole candidate menu of the next significant token after `index`: its
@@ -1392,7 +1452,11 @@ enum Bracket
 ///   bracket inside a string, and reading the closer by suffix counts `]]` or a
 ///   compound closer that does not exist.
 /// - witness: `mold::tests::brackets_are_classified_by_lexeme_and_text`
-#[spec(ensures: |ret| ret == if !matches!(token.lexeme, Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose) {
+#[spec(ensures: |ret| ret == if token.lexeme == Lexeme::LayoutOpen {
+    Bracket::Open
+} else if token.lexeme == Lexeme::LayoutClose {
+    Bracket::Close
+} else if !matches!(token.lexeme, Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose) {
     Bracket::Neither
 } else if <&str>::from(text).ends_with(['(', '[', '{']) {
     Bracket::Open
@@ -1406,11 +1470,28 @@ fn bracket(
     text: TokenText<'_>,
 ) -> Bracket
 {
-    if !matches!(
-        token.lexeme,
-        Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose
-    ) {
-        return Bracket::Neither;
+    match token.lexeme {
+        Lexeme::LayoutOpen => return Bracket::Open,
+        Lexeme::LayoutClose => return Bracket::Close,
+        Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose => {},
+        Lexeme::LowerWord
+        | Lexeme::UpperWord
+        | Lexeme::Number
+        | Lexeme::TypedNumber
+        | Lexeme::Character
+        | Lexeme::Quote
+        | Lexeme::StringFragment
+        | Lexeme::ShellStringFragment
+        | Lexeme::EscapeSequence
+        | Lexeme::ShellWord
+        | Lexeme::EnvAssign
+        | Lexeme::SingleQuotedContent
+        | Lexeme::VariableName
+        | Lexeme::FileDescriptor
+        | Lexeme::ArmBar
+        | Lexeme::LayoutSemi
+        | Lexeme::Space
+        | Lexeme::Unknown => return Bracket::Neither,
     }
     let text = <&str>::from(text);
     if text.ends_with(['(', '[', '{']) {
@@ -2330,7 +2411,8 @@ impl<'pbg> Molder<'pbg>
                 Bracket::Close => depth = depth.saturating_sub(1),
                 Bracket::Neither => {},
             }
-            after_terminator = matches!(token.lexeme, Lexeme::Punct) && matches!(text, ";" | "}");
+            after_terminator = matches!(token.lexeme, Lexeme::LayoutSemi | Lexeme::LayoutClose)
+                || (matches!(token.lexeme, Lexeme::Punct) && matches!(text, ";" | "}"));
         }
         runs.push(TokenRun::new(
             TokenIndex::from(start),
@@ -3541,11 +3623,11 @@ impl<'pbg> Molder<'pbg>
     /// - requires: `frontier` is `state`'s admissibility frontier; `tokens` is
     ///   the labeler output for `source`; `index` names the current token.
     /// - ensures: when the slot is a fresh expression slot, a parenthesized
-    ///   expression's `(` is eligible and the group closes before `=>`, the
-    ///   eligible parenthesized expression's molds give way to the
-    ///   parenthesized type's molds a type slot there admits, in menu order;
-    ///   otherwise, and when no such type mold is admitted, `self.eligible` is
-    ///   unchanged.
+    ///   expression's `(` is eligible and the group closes before an arrow,
+    ///   `=>` or `->`, the eligible parenthesized expression's molds give way
+    ///   to the parenthesized type's molds a type slot there admits, in menu
+    ///   order; otherwise, and when no such type mold is admitted,
+    ///   `self.eligible` is unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4133,33 +4215,37 @@ impl<'pbg> Molder<'pbg>
 
     /// Whether a token carrying one of `labels` can stand right after `mold`.
     ///
-    /// A mold a hole follows on its right is followed by what fills the hole,
-    /// which begins with a form's first tile: a token none of whose labels
-    /// can begin a form refutes it. A mold that no hole follows is followed
-    /// by one of its same-form successors or, when it can end its form, by
-    /// what follows the whole form: the form fills a hole, so the next tile is
-    /// one a hole of the form's sort faces on its left, or nothing at all. A
-    /// token carrying none of those refutes it.
+    /// A same-form successor that stands right after `mold`, with no hole
+    /// between, can follow it: the unit `*{` before its `}`. A mold a hole
+    /// follows on its right is also followed by what fills the hole, which
+    /// begins with a form's first tile. A mold that no hole follows is also
+    /// followed, when it can end its form, by what follows the whole form:
+    /// the form fills a hole, so the next tile is one a hole of the form's
+    /// sort faces on its left, or nothing at all. A token carrying none of
+    /// those refutes it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Follow::Refuted`] exactly when either `mold`'s right bound
-    ///   is not the root and no label in `labels` names a tile that begins a
-    ///   form, or its right bound is the root, none of its same-form successors
-    ///   is labelled with one of `labels`, and either it is not form-last or
-    ///   [`Molder::after_form`] refutes `labels`.
+    /// - ensures: [`Follow::Refuted`] exactly when no same-form successor that
+    ///   [`direct_successor`] admits is labelled with one of `labels`, and
+    ///   either `mold`'s right bound is not the root and no label in `labels`
+    ///   names a tile that begins a form, or its right bound is the root and
+    ///   either it is not form-last or [`Molder::after_form`] refutes `labels`.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parameter comma read before a name, before a closer
     ///   and before nothing, an argument comma before an argument and before a
-    ///   closer, a call's form-last closer, and the unknown type before `(`
-    ///   expose each branch: dropping the hole check keeps the argument comma
-    ///   before a closer, reading the hole check as the successor check refutes
-    ///   it before an argument, dropping the form-last check refutes the
-    ///   closer, dropping the successor check refutes the parameter comma
-    ///   before a name, and dropping the whole-form check keeps the unknown
-    ///   type before `(`.
+    ///   closer, a call's form-last closer, the unknown type before `(`, and
+    ///   the unit `*{` before its `}` beside the labelled `*{` expose each
+    ///   branch: dropping the hole check keeps the argument comma before a
+    ///   closer, reading the hole check as the successor check refutes it
+    ///   before an argument, dropping the form-last check refutes the closer,
+    ///   dropping the successor check refutes the parameter comma before a
+    ///   name, dropping the whole-form check keeps the unknown type before `(`,
+    ///   reading only a closed mold's successors refutes the unit `*{` before
+    ///   `}`, and reading a successor across a hole keeps the argument comma
+    ///   before a closer.
     /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -4175,12 +4261,14 @@ impl<'pbg> Molder<'pbg>
             reason = "bounded: `labels` holds one token's candidate labels, at most `LABEL_CAPACITY`"
         )
     )]
-    #[spec(ensures: |ret| (ret == Follow::Refuted) == if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
-        !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold_label(right).is_some_and(|label| labels.as_slice().contains(&label)))
-            && (!bool::from(self.pbg.mold_is_form_last(mold)) || self.after_form(mold, labels) == Follow::Refuted)
-    } else {
-        !labels.as_slice().iter().any(|&label| !self.pbg.label_fresh_candidates(label).is_empty())
-    })]
+    #[spec(ensures: |ret| (ret == Follow::Refuted) == (
+        !self.pbg.mold_successors(mold).iter().any(|&(_, right)| direct_successor(self.pbg, mold, right) == Adjacency::Direct && self.pbg.mold_label(right).is_some_and(|label| labels.as_slice().contains(&label)))
+            && if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
+                !bool::from(self.pbg.mold_is_form_last(mold)) || self.after_form(mold, labels) == Follow::Refuted
+            } else {
+                !labels.as_slice().iter().any(|&label| !self.pbg.label_fresh_candidates(label).is_empty())
+            }
+    ))]
     fn follow(
         &self,
         mold: MoldId,
@@ -4189,17 +4277,21 @@ impl<'pbg> Molder<'pbg>
     {
         let pbg = self.pbg;
         let ids = labels.as_slice();
-        let continued = if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
-            pbg.mold_successors(mold).iter().any(|&(_, right)| {
-                pbg.mold_label(right)
+        let succeeded = pbg.mold_successors(mold).iter().any(|&(_, right)| {
+            direct_successor(pbg, mold, right) == Adjacency::Direct
+                && pbg
+                    .mold_label(right)
                     .is_some_and(|label| ids.contains(&label))
-            }) || (bool::from(pbg.mold_is_form_last(mold))
-                && self.after_form(mold, labels) == Follow::Possible)
-        }
-        else {
-            ids.iter()
-                .any(|&label| !pbg.label_fresh_candidates(label).is_empty())
-        };
+        });
+        let continued = succeeded
+            || if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
+                bool::from(pbg.mold_is_form_last(mold))
+                    && self.after_form(mold, labels) == Follow::Possible
+            }
+            else {
+                ids.iter()
+                    .any(|&label| !pbg.label_fresh_candidates(label).is_empty())
+            };
         if continued {
             Follow::Possible
         }
@@ -4657,6 +4749,9 @@ mod tests
             (Lexeme::Punct, "~~>", &["~~>", "⇝"]),
             (Lexeme::Punct, "::", &["::", "∷"]),
             (Lexeme::Punct, "≃", &["≃"]),
+            (Lexeme::Punct, "#{", &["#{"]),
+            (Lexeme::Punct, ".#{", &[".#{"]),
+            (Lexeme::Punct, "*{", &["*{"]),
             (Lexeme::LowerWord, "inf", &["inf", "ω"]),
             (Lexeme::Space, " ", &[]),
             (Lexeme::Unknown, "^", &[]),
@@ -4707,6 +4802,7 @@ mod tests
         for (text, expected) in [
             ("(y : A, z : P(y)) => B", GroupClose::Arrow),
             ("((A)) => B", GroupClose::Arrow),
+            ("(y : A, P(y)) -> B", GroupClose::Arrow),
             ("(type(T), \"(\") => B", GroupClose::Arrow),
             ("(x : A) , y", GroupClose::Other),
             ("(x, f(y)) => B", GroupClose::Arrow),
@@ -4815,7 +4911,7 @@ mod tests
                 .copied()
                 .eq(expected.iter().copied())
         );
-        for source in [" ", "^"] {
+        for source in [" ", "\u{1}"] {
             let token = *label(SourceFragment::from(source)).first().unwrap();
             assert_eq!(
                 molder.candidate_count(token, SourceText::from(source)),
@@ -4905,7 +5001,7 @@ mod tests
         // right after one only matches the whole stream when the first run's
         // window reads into the second run's tokens.
         let pbg = built()?;
-        let src = "def a : Type = List(Integer);\ndef b = Inl(1);\ndef c = match b { Inl(x) => x, Inr(y) => y };\n";
+        let src = "def a : Type = List (Integer);\ndef b = Inl 1;\ndef c = match b { | Inl(x) => x | Inr(y) => y };\n";
         let source = SourceText::from(src);
         let tokens = label(SourceFragment::from(src));
         let mut molder = Molder::new(&pbg);
@@ -4993,7 +5089,7 @@ mod tests
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        let source = SourceFragment::from("^ 1 2");
+        let source = SourceFragment::from("\u{1} 1 2");
         let tokens = label(source);
         let unmolded_tokens = |count: usize| {
             let mut delta = crate::Delta::empty();
@@ -5094,7 +5190,7 @@ mod tests
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
         let mut state = MeldState::new(&pbg);
-        let src = "^";
+        let src = "\u{1}";
         for token in label(SourceFragment::from(src)) {
             molder.mold(&mut state, token, SourceText::from(src));
         }
@@ -5198,8 +5294,8 @@ mod tests
 
     /// The rule of `def f(x, y) …`.
     const DEF: RuleName = RuleName("def_value");
-    /// The rule of `f(x, y)`.
-    const CALL: RuleName = RuleName("call_expression");
+    /// The rule of `Vec(a, n)`, the call form a type application keeps.
+    const CALL: RuleName = RuleName("type_application");
     /// The comma tile.
     const COMMA: TileLabel = TileLabel(",");
     /// The uppercase-name label a reserved word falls back to.
@@ -5278,14 +5374,12 @@ mod tests
         );
         assert_eq!(molder.follow(parameter_comma, &close), Follow::Refuted);
         assert_eq!(molder.follow(parameter_comma, &nothing), Follow::Refuted);
-        // `f(x, y)`: an argument fills the hole after the comma, and an
+        // `Vec(a, n)`: an argument fills the hole after the comma, and an
         // argument begins with a form's first tile, which a closer never is.
         let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
         assert_eq!(molder.follow(argument_comma, &identifier), Follow::Possible);
         assert_eq!(molder.follow(argument_comma, &close), Follow::Refuted);
-        // `f(x)`: the closer ends its form, so it may end the stream, and
-        // whatever a hole of its sort precedes may follow it: a call of the
-        // call.
+        // `Vec(a)`: the closer ends its form, so it may end the stream.
         let call_close = mold_in(&pbg, CALL, TileLabel(")"), RightSide::Closed, &[])?;
         assert!(bool::from(pbg.mold_is_form_last(call_close)));
         assert_eq!(molder.follow(call_close, &nothing), Follow::Possible);
@@ -5295,8 +5389,10 @@ mod tests
             molder.follow(call_close, &resolve("absent-label-for-witness")),
             Follow::Refuted
         );
+        // No type form goes on with `(` after a whole type: a type application
+        // is no head of another.
         let open = resolve("(");
-        assert_eq!(molder.follow(call_close, &open), Follow::Possible);
+        assert_eq!(molder.follow(call_close, &open), Follow::Refuted);
         // `?(P). S` (#1229): the unknown type is a whole type, and no type
         // form goes on with `(` after one, while `.` and `)` stand after a
         // type operand.
@@ -5310,6 +5406,24 @@ mod tests
         assert_eq!(molder.follow(unknown, &open), Follow::Refuted);
         assert_eq!(molder.follow(unknown, &resolve(".")), Follow::Possible);
         assert_eq!(molder.follow(unknown, &close), Follow::Possible);
+        // `*{}` (#4853): the unit's opener faces its first entry's hole and
+        // also its own `}` right after it, which may follow it; the labelled
+        // opener takes only a label's `.`, which a closer refutes.
+        let telescope = RuleName("telescope_expression");
+        let brace = resolve("}");
+        let unit_open = mold_in(&pbg, telescope, TileLabel("*{"), RightSide::Hole, &[
+            TileLabel("}"),
+        ])?;
+        assert_eq!(molder.follow(unit_open, &brace), Follow::Possible);
+        assert_eq!(molder.follow(unit_open, &identifier), Follow::Possible);
+        let labelled_open = mold_in(&pbg, telescope, TileLabel("*{"), RightSide::Closed, &[
+            TileLabel("."),
+        ])?;
+        assert_eq!(molder.follow(labelled_open, &brace), Follow::Refuted);
+        assert_eq!(
+            molder.follow(labelled_open, &resolve(".")),
+            Follow::Possible
+        );
         Ok(())
     }
 
@@ -5328,8 +5442,8 @@ mod tests
             RightSide::Closed,
             &[TileLabel("identifier")],
         )?;
-        // A call's argument comma opens another argument; its trailing comma
-        // is followed by the closer.
+        // A type application's argument comma opens another argument; its
+        // trailing comma is followed by the closer.
         let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
         let trailing_comma = mold_in(&pbg, CALL, COMMA, RightSide::Closed, &[TileLabel(")")])?;
         let cases: [(&str, &[MoldId], &[MoldId]); 7] = [
@@ -5614,18 +5728,20 @@ mod tests
     #[test]
     fn a_window_reads_the_token_after_a_tied_separator() -> Result<(), Box<dyn Error>>
     {
-        // A call's separator ties the comma that opens another argument with
-        // the trailing one its closer follows. Read alone, the lesser mold
-        // wins and the closer after it becomes a repair; inside a window the
-        // next token is known, and only the trailing comma can precede it.
+        // A type application's separator ties the comma that opens another
+        // argument with the trailing one its closer follows. Read alone, the
+        // lesser mold wins and the closer after it becomes a repair; inside a
+        // window the next token is known, and only the trailing comma can
+        // precede it.
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        let source = SourceText::from("def x = f(a, ) ;");
-        let tokens = label(SourceFragment::from("def x = f(a, ) ;"));
+        let written = "def x : Pair(Integer, ) ;";
+        let source = SourceText::from(written);
+        let tokens = label(SourceFragment::from(written));
         let comma = tokens
             .iter()
             .position(|token| {
-                AsRef::<str>::as_ref(&token.text(&SourceFragment::from("def x = f(a, ) ;"))) == ","
+                AsRef::<str>::as_ref(&token.text(&SourceFragment::from(written))) == ","
             })
             .ok_or("the source spells a comma")?;
         let mut state = MeldState::new(&pbg);
@@ -5642,7 +5758,7 @@ mod tests
         let ahead = Ahead::Stream {
             tokens: &tokens,
             index: TokenIndex::from(comma),
-            source: &SourceFragment::from("def x = f(a, ) ;"),
+            source: &SourceFragment::from(written),
         };
         let windowed = molder.choose(&mut state, TokenText::from(","), ahead);
         assert_eq!(
@@ -5710,7 +5826,7 @@ mod tests
     #[test]
     fn brackets_are_classified_by_lexeme_and_text()
     {
-        let source = SourceFragment::from("@[ f([x], #{ y }) ] ( \"]\" z");
+        let source = SourceFragment::from("@[ f([x], #{ y }) ] ( \"]\" z *{}");
         let classes: Vec<(String, super::Bracket)> = label(source)
             .into_iter()
             .filter(|token| token.lexeme != Lexeme::Space)
@@ -5744,6 +5860,8 @@ mod tests
             ("]", neither),
             ("\"", neither),
             ("z", neither),
+            ("*{", open),
+            ("}", close),
         ];
         assert_eq!(
             classes,

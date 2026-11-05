@@ -1,35 +1,32 @@
-@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e(d(f)) } } } } } }") ]
+@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }") ]
 def comp(
   a : Type,
   b : Type,
   c : Type,
-  f : a => b,
-  g : b => c,
+  f : a -> b,
+  g : b -> c,
   x : a
-) -> c {
-  become g(f(x))
-}
+) -> c =
+  become g (f x)
 
-@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { thunk { comp(a, c, d, e, f) } } } } } } }") ]
+@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { thunk { comp a c d e f } } } } } } }") ]
 def collide(
   a : Type,
   b : Type,
   c : Type,
   d : Type,
-  u : a => c,
-  h : c => d
-) -> a => d {
-  thunk { become comp(a, c, d, u, h) }
-}
+  u : a -> c,
+  h : c -> d
+) -> a -> d =
+  thunk { become comp a c d u h }
 
-@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { thunk { comp(a, c, d, e, f) } } } } } } }") ]
+@[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { thunk { comp a c d e f } } } } } } }") ]
 def clean(
   p : Type,
   q : Type,
   r : Type,
   s : Type,
-  u : p => r,
-  h : r => s
-) -> p => s {
-  thunk { become comp(p, r, s, u, h) }
-}
+  u : p -> r,
+  h : r -> s
+) -> p -> s =
+  thunk { become comp p r s u h }

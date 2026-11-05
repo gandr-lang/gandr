@@ -18,33 +18,32 @@ import std.io;
 
 /// A line printed through `std.io.Console.Eff`, the rest of the row left open: `r`
 /// lacks `std.io.Console.Eff`, which the row writes beside it.
-pub def log[r : Row](s : String) -> [std.io.Console.Eff | r] Unit { std.io.Console.print(s) }
+pub def log[r : Row](s : String) -> [std.io.Console.Eff | r] Unit { std.io.Console.print s }
 
 /// `log` where the row is `std.io.Console.Eff` alone: the call's `r` is the empty row.
-def logAlone() -> [std.io.Console.Eff] Unit { log("alone") }
+def logAlone() -> [std.io.Console.Eff] Unit { log "alone" }
 
 /// `log` beside `Partial`: the call's `r` is `[Partial]`.
-def logBeside() -> [std.io.Console.Eff, Partial] Unit { log("beside") }
+def logBeside() -> [std.io.Console.Eff, Partial] Unit { log "beside" }
 
 /// `logBeside`'s row listed the other way round is the same row, so the
 /// call's `r` is solved as the same `[Partial]`: one solution, not two that
 /// convert.
-def logSwapped() -> [Partial, std.io.Console.Eff] Unit { log("swapped") }
+def logSwapped() -> [Partial, std.io.Console.Eff] Unit { log "swapped" }
 
 /// A handler of `std.io.Console.Eff` around `log`: the handled body's row is
 /// `[std.io.Console.Eff | r]`, and what the handler leaves is `r`.
-def quiet[r : Row](s : String) -> [r] Unit {
+def quiet[r : Row](s : String) -> [r] Unit =
   handle c : std.io.Console.Eff {
-    log(s)
+    log s
   } with {
-    pure(x) => pure x,
-    oper print(line, k) => k(unit)
+    | pure(x) => pure x
+    | oper print(line, k) => k *{}
   }
-}
 
 /// `quiet` where nothing is left: it runs, the line handled.
-@[ runs("unit") ]
-def quietRun() -> Unit { quiet("handled") }
+@[ runs("*{}") ]
+def quietRun() -> Unit { quiet "handled" }
 
 /// `quiet` beside `Partial`: the variable carries `Partial` through the handler.
-def quietBeside() -> [Partial] Unit { quiet("forwarded") }
+def quietBeside() -> [Partial] Unit { quiet "forwarded" }

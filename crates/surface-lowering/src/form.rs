@@ -484,9 +484,11 @@ impl TileName
     pub const ACCESS: Self = Self("access");
     /// The alias keyword `as` of an import.
     pub const AS: Self = Self("as");
-    /// The lazy product's `&`, and the opener of the lazy record over labels
-    /// and of the copattern block, `&{`.
+    /// The lazy product's `&`.
     pub const AMPERSAND: Self = Self("&");
+    /// The opener `&{` of the lazy record over labels and of the copattern
+    /// block.
+    pub const LAZY_OPEN: Self = Self("&{");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
     /// The inner attribute-block opener `@![`, decorating the item it stands
@@ -512,8 +514,8 @@ impl TileName
     pub const SEQUENCE_OPEN: Self = Self("#[");
     /// The index selector's opener `.#[`, closed by `]`.
     pub const SELECT_OPEN: Self = Self(".#[");
-    /// The sub-record selector's opener `.#{`, closed by `}`.
-    pub const SUB_RECORD_OPEN: Self = Self(".#{");
+    /// The sub-record selector's opener `.*{`, closed by `}`.
+    pub const SUB_RECORD_OPEN: Self = Self(".*{");
     /// A brace closer `}`.
     pub const BRACE_CLOSE: Self = Self("}");
     /// A brace opener `{`.
@@ -553,7 +555,8 @@ impl TileName
     /// The greater-than sign `>`: an instantiation's productivity claim, a
     /// self-call standing as a copattern arm.
     pub const GREATER_THAN: Self = Self(">");
-    /// The value function space's `=>`.
+    /// The `=>` after an arm's pattern, a clause's patterns, a handler
+    /// clause's head or a copattern's label.
     pub const FAT_ARROW: Self = Self("=>");
     /// The protocol step `>>` between a send's or a receive's payload and the
     /// rest of the protocol.
@@ -627,13 +630,15 @@ impl TileName
     pub const OFFERS: Self = Self("offers");
     /// The sort literal `+` of a universe: the value types.
     pub const PLUS: Self = Self("+");
+    /// The opener `+{` of the sum over labels and of an injection into it.
+    pub const SUM_OPEN: Self = Self("+{");
     /// A double quote opening or closing a string written among a form's own
     /// tiles.
     pub const QUOTE: Self = Self("\"");
     /// The recursion keyword `rec`.
     pub const REC: Self = Self("rec");
-    /// The record and signature opener `#{`.
-    pub const RECORD: Self = Self("#{");
+    /// The product's opener `*{`: a record, a telescope and a signature.
+    pub const RECORD: Self = Self("*{");
     /// The receive keyword `recv`, opening a statement.
     pub const RECV: Self = Self("recv");
     /// The release keyword `release`, opening a statement.
@@ -858,8 +863,6 @@ pub enum Former
     /// The type quote `type(T)`: the code of the type `T`, written where an
     /// expression stands.
     TypeQuote,
-    /// The unit value `unit`.
-    Unit,
     /// The thunk `thunk { c }`.
     Thunk,
     /// The lambda `fun (x) { c }`.
@@ -958,9 +961,6 @@ pub enum Former
     LabelledSumType,
     /// The lazy record over labels `&{…}`, positional or labelled.
     LazyRecordType,
-    /// The value function space `A => B`, `(A, B) => C`, or the telescope
-    /// `(x : A, y : B(x)) => C`: the alias of the thunked arrow.
-    ValueFunctionType,
     /// A parenthesised type.
     ParenthesizedType,
     /// The element path type `Path[.A = A](a, b)`: a value type over a carrier
@@ -987,7 +987,7 @@ pub enum Former
     /// capability lives until the scope binding `c` ends.
     AtType,
     /// A data type at a stage a definition's signature binds, `Nat[i]`, or
-    /// one below it, `Nat[<i]`.
+    /// one below it, `Nat[< i]`.
     StagedType,
     /// A type at a mode variable, `m T`: a method's receiver at the mode its
     /// telescope's `[m : Mode]` binds, refused anywhere else.
@@ -1073,7 +1073,7 @@ impl Former
     ///   table outcome's variant. The evidence is bounded to the current closed
     ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 74_usize] = [
+    pub const ALL: [Self; 72_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -1082,7 +1082,6 @@ impl Former
         Self::Text,
         Self::Character,
         Self::Parenthesized,
-        Self::Unit,
         Self::Thunk,
         Self::Lambda,
         Self::Block,
@@ -1121,7 +1120,6 @@ impl Former
         Self::TelescopeType,
         Self::LabelledSumType,
         Self::LazyRecordType,
-        Self::ValueFunctionType,
         Self::ParenthesizedType,
         Self::PathType,
         Self::BridgeType,
@@ -1175,7 +1173,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 137_usize] = [
+pub const FORMERS: [(&str, Former); 135_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1187,7 +1185,6 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
     ("character", Former::Character),
     ("parenthesized_expression", Former::Parenthesized),
     ("type_quote_expression", Former::TypeQuote),
-    ("unit", Former::Unit),
     ("thunk_expression", Former::Thunk),
     ("lambda_expression", Former::Lambda),
     ("block", Former::Block),
@@ -1229,7 +1226,6 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
     ("telescope_type", Former::TelescopeType),
     ("labelled_sum_type", Former::LabelledSumType),
     ("lazy_record_type", Former::LazyRecordType),
-    ("value_function_type", Former::ValueFunctionType),
     ("parenthesized_type", Former::ParenthesizedType),
     ("path_type", Former::PathType),
     ("bridge_type", Former::BridgeType),
@@ -1701,6 +1697,151 @@ pub fn shape_of<'source>(
         NodeLabel::Grout { shape, .. } => Ok(Shape::Repair(Repair::Grout(shape))),
         NodeLabel::GhostClose { class, .. } => Ok(Shape::Repair(Repair::GhostClose(class))),
         NodeLabel::Space | NodeLabel::Doc => Ok(Shape::Layout),
+    }
+}
+
+/// Whether a written type classifies codes: a universe, the row kind, or an
+/// arrow between such types.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Kinded(pub bool);
+
+/// Whether a written type is the box, a function value's type: the value
+/// function `=>`, or an arrow `->` whose domain classifies no codes.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Boxed(pub bool);
+
+/// Whether the type written at `at` classifies codes, by its syntax: a
+/// universe, the row kind, or an arrow whose domain classifies codes,
+/// through parentheses. `scratch` is a reused reading buffer.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: kinded for `Type`, `Type[-]`, `Row`, `Type -> Type` and `(Type ->
+///   Type)`. Not kinded for any other type, a name an alias gives a kind
+///   included.
+/// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+/// - panics: none.
+/// - executable: none — the answer is read off the syntax tree, which a
+///   predicate could check only by repeating the walk.
+///
+/// # Errors
+/// [`LoweringRefusal::UnknownMold`].
+///
+/// # Termination
+/// Each round descends to an operand of the finite tree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a kind arrow over universes stays the static Pi and an
+///   arrow between value types is the box.
+/// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
+/// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+pub fn classifies_codes<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    at: Placed,
+    scratch: &mut Pieces,
+) -> Result<Kinded, LoweringRefusal<'source>>
+{
+    let mut at = at;
+    loop {
+        let Some(node) = tree.node(at.node)
+        else {
+            return Ok(Kinded(false));
+        };
+        match shape_of(pbg, node)? {
+            Shape::Form {
+                former: Former::Universe,
+                ..
+            } => return Ok(Kinded(true)),
+            Shape::Form {
+                former: Former::TypeHead,
+                ..
+            } => {
+                let named = tree
+                    .fragment(at.node)
+                    .is_some_and(|text| SurfaceName::from(text).as_ref() == "Row");
+                return Ok(Kinded(named));
+            },
+            Shape::Form {
+                former: Former::ParenthesizedType | Former::ArrowType,
+                ..
+            } => {
+                read_pieces(pbg, tree, at.node, scratch)?;
+                let Some(first) = scratch.pieces.iter().find_map(|piece| match *piece {
+                    Piece::Operand(operand) => Some(operand),
+                    Piece::Tile { .. } => None,
+                })
+                else {
+                    return Ok(Kinded(false));
+                };
+                at = first;
+            },
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                return Ok(Kinded(false));
+            },
+        }
+    }
+}
+
+/// Whether the type written at `at` is the box, by its syntax: the arrow
+/// `A -> B` whose domain classifies no codes, as [`classifies_codes`] reads
+/// it. `scratch` is a reused reading buffer.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: boxed for `A -> B` whose domain is not kinded; not boxed for a
+///   kind arrow such as `Type -> Type`, and for any other type.
+/// - provides: the box test of every reading that reads a function value's
+///   written type off its syntax, whichever arrow writes it.
+/// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+/// - panics: none.
+/// - executable: none — the answer is read off the syntax tree, which a
+///   predicate could check only by repeating the walk.
+///
+/// # Errors
+/// [`LoweringRefusal::UnknownMold`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda passed for a box parameter, an implicit box
+///   applied in a body, a family a box states and a clause definition over a
+///   box, each written with `->`, lower and check.
+/// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
+#[inline]
+pub fn writes_box<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    at: NodeIndex,
+    scratch: &mut Pieces,
+) -> Result<Boxed, LoweringRefusal<'source>>
+{
+    let Some(node) = tree.node(at)
+    else {
+        return Ok(Boxed(false));
+    };
+    match shape_of(pbg, node)? {
+        Shape::Form {
+            former: Former::ArrowType,
+            ..
+        } => {
+            read_pieces(pbg, tree, at, scratch)?;
+            let Some(domain) = scratch.pieces.iter().find_map(|piece| match *piece {
+                Piece::Operand(operand) => Some(operand),
+                Piece::Tile { .. } => None,
+            })
+            else {
+                return Ok(Boxed(false));
+            };
+            Ok(Boxed(!classifies_codes(pbg, tree, domain, scratch)?.0))
+        },
+        Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => Ok(Boxed(false)),
     }
 }
 
@@ -2180,7 +2321,8 @@ pub fn written_children<'tree>(
 ///   form's own or the inner one reported, gives way to the point where its
 ///   form first leaves its rule's shape when that point comes before it
 ///   ([`earliest`]). Reading layout, documentation or a repair node itself
-///   leaves both fields empty.
+///   leaves both fields empty. An application spine `f x y` reads as the pieces
+///   of the call `f(x, y)` it spells, as [`application_spine`] reads it.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
@@ -2236,6 +2378,13 @@ pub fn written_children<'tree>(
                 | NodeLabel::Doc => {
                     read.pieces.is_empty()
                         && read.repair == Maybe::Absent(repair::Absent::Unrepaired)
+                },
+                | NodeLabel::Meld(mold)
+                    if Some(mold) == pbg.application()
+                        && matches!(read.pieces.first(), Some(Piece::Operand(_)))
+                        && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE) =>
+                {
+                    read.repair == Maybe::Absent(repair::Absent::Unrepaired)
                 },
                 | NodeLabel::Wald | NodeLabel::Meld(_) => {
                     let written = own_children(pbg, tree, position).filter_map(|(child, _)| {
@@ -2317,6 +2466,9 @@ pub fn read_pieces<'source>(
     else {
         return Ok(());
     };
+    if application_spine(pbg, tree, position, read).is_some() {
+        return Ok(());
+    }
     let own = match node.label() {
         NodeLabel::Tile(mold) => {
             let label = tile_name(pbg, node, mold)?;
@@ -2383,6 +2535,116 @@ pub fn read_pieces<'source>(
         };
     }
     Ok(())
+}
+
+/// The pieces of the call that the application spine at `position` spells:
+/// `f x y` reads as `f(x, y)`. Each application tile stands for the `(` or
+/// the `,` before its argument, and the outermost tile also stands for the
+/// `)`. An argument `()` is no argument, so `f ()` is the call `f()`.
+/// Parentheses around one argument only group it, so `f (g x)` reads as
+/// `f(g x)`. Every call reader thus reads a juxtaposed call as the call it
+/// spells.
+///
+/// # Specification
+/// - requires: `read` holds no pieces.
+/// - ensures: when `position` is an application whose left operands down to its
+///   head are applications and whose every part is written, `read` holds the
+///   head, `(`, the arguments separated by `,`, and `)`, and the head is
+///   answered. `None` otherwise, with `read` empty.
+/// - panics: none.
+/// - economy: one walk down the spine, written into `read`'s buffer, with no
+///   allocation beyond the buffer's growth.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `f x y` lowers as `f(x, y)`, and a call inside an
+///   argument as its own call. While the call form stands, a `(` after an
+///   operand molds as a call, so `f ()` and a grouped argument reach the spine
+///   only after the call form leaves the grammar.
+/// - witness: `lower::tests::a_call_argument_and_an_inferring_call_lower_4853`
+#[spec(ensures: |ret| match ret {
+    Some(head) => read.pieces.first() == Some(&Piece::Operand(head)) && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE),
+    None => read.pieces.is_empty(),
+})]
+fn application_spine(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    position: NodeIndex,
+    read: &mut Pieces,
+) -> Option<Placed>
+{
+    let application = pbg.application()?;
+    let applied = |at: NodeIndex| {
+        tree.node(at)
+            .is_some_and(|node| node.label() == NodeLabel::Meld(application))
+    };
+    if !applied(position) {
+        return None;
+    }
+    let written = |at: NodeIndex| {
+        tree.children(at)
+            .filter_map(|child| tree.node(child).map(|node| (child, node)))
+            .filter(|&(_, node)| !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc))
+    };
+    // The pieces are written last to first, then reversed.
+    let mut at = position;
+    let head = loop {
+        let mut parts = written(at);
+        let (Some((left, left_node)), Some((tile, tile_node)), Some((right, right_node)), None) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            read.pieces.clear();
+            return None;
+        };
+        if !matches!(tile_node.label(), NodeLabel::Tile(_))
+            || !matches!(right_node.label(), NodeLabel::Tile(_) | NodeLabel::Meld(_))
+            || !matches!(left_node.label(), NodeLabel::Tile(_) | NodeLabel::Meld(_))
+        {
+            read.pieces.clear();
+            return None;
+        }
+        let tile = Placed::of(tile, tile_node);
+        if read.pieces.is_empty() {
+            read.pieces.push(Piece::Tile {
+                label: TileName::PAREN_CLOSE,
+                at: tile,
+            });
+        }
+        let opens = |node: &Node| matches!(node.label(), NodeLabel::Tile(mold) if tile_name(pbg, node, mold) == Ok(TileName::PAREN_OPEN));
+        let closes = |node: &Node| matches!(node.label(), NodeLabel::Tile(_));
+        let mut inner = written(right);
+        let argument = match (inner.next(), inner.next(), inner.next(), inner.next()) {
+            (Some((_, open)), Some((_, close)), None, None) if opens(open) && closes(close) => None,
+            (Some((_, open)), Some((only, held)), Some((_, close)), None)
+                if opens(open)
+                    && closes(close)
+                    && matches!(held.label(), NodeLabel::Tile(_) | NodeLabel::Meld(_)) =>
+            {
+                Some(Placed::of(only, held))
+            },
+            _ => Some(Placed::of(right, right_node)),
+        };
+        if let Some(argument) = argument {
+            read.pieces.push(Piece::Operand(argument));
+        }
+        read.pieces.push(Piece::Tile {
+            label: TileName::COMMA,
+            at: tile,
+        });
+        if applied(left) {
+            at = left;
+        }
+        else {
+            break Placed::of(left, left_node);
+        }
+    };
+    read.pieces.push(Piece::Operand(head));
+    read.pieces.reverse();
+    // The separator nearest the head opens the list.
+    if let Some(&mut Piece::Tile { ref mut label, .. }) = read.pieces.get_mut(1) {
+        *label = TileName::PAREN_OPEN;
+    }
+
+    Some(head)
 }
 
 /// Where the form at `position` itself stopped, when the parser closed it,
@@ -3100,6 +3362,40 @@ fn holes(regex: RegexView<'_>) -> Holes
     read.pop().unwrap_or(Holes::NOTHING)
 }
 
+/// The application that the word at `head` heads, `retur x`, when one does.
+///
+/// # Specification
+/// - requires: `head` is a span of `tree`.
+/// - ensures: an application node of `tree` whose first written child spans
+///   exactly `head`. `None` when no application starts with that word.
+/// - fails: never.
+/// - panics: none.
+/// - economy: one walk over the tree's positions, taken only for a refused
+///   name.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `retur x` heads an application and is refused as `return`
+///   misspelt, and a name used alone heads none.
+/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+#[spec(ensures: |ret| ret.is_none_or(|at| tree.node(at).is_some_and(|node| Some(node.label()) == pbg.application().map(NodeLabel::Meld))))]
+pub fn applied_word(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    head: ByteSpan,
+) -> Option<NodeIndex>
+{
+    let application = NodeLabel::Meld(pbg.application()?);
+    tree.positions().find(|&position| {
+        tree.node(position)
+            .is_some_and(|node| node.label() == application)
+            && tree
+                .children(position)
+                .filter_map(|child| tree.node(child))
+                .find(|node| !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc))
+                .is_some_and(|first| first.span() == head)
+    })
+}
+
 /// The keyword the word right before `extra` nearly spells, with the word's
 /// bytes, when `extra` is an operand its form does not take and the word is a
 /// name no rule spells.
@@ -3203,6 +3499,55 @@ pub fn misspelt_keyword(
         pbg.tile_label(LabelText(candidate))
             .map(|label| (span, TileName(label.0)))
     })
+}
+
+/// Whether a keyword opens a form where an expression stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeywordOpening
+{
+    /// It opens one, as `return` does.
+    Expression,
+    /// It opens none, as `where` does.
+    Elsewhere,
+}
+
+/// Whether the keyword `keyword` opens a form where an expression stands, as
+/// `return` does and `where` does not.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`KeywordOpening::Expression`] exactly when `pbg` spells
+///   `keyword` as a tile one of whose molds opens a form of the expression
+///   sort.
+/// - fails: never.
+/// - panics: none.
+/// - economy: one look-up of the label and a scan of its few molds, taken only
+///   for a refused name.
+/// - executable: none — a clause would restate the scan of the label's molds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `retur x` is `return` misspelt, and `here x`, one edit
+///   from `where`, which opens no expression, stays an unresolved name.
+/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+#[must_use]
+pub fn opens_expression(
+    pbg: &Pbg,
+    keyword: TileName,
+) -> KeywordOpening
+{
+    let opens = pbg.tile_label(LabelText(keyword.0)).is_some_and(|label| {
+        pbg.candidates(label).iter().any(|&mold| {
+            pbg.mold(mold)
+                .is_ok_and(|def| def.sort == gandr_surface_grammar::Sort::Expression)
+                && bool::from(pbg.mold_is_form_first(mold))
+        })
+    });
+    if opens {
+        KeywordOpening::Expression
+    }
+    else {
+        KeywordOpening::Elsewhere
+    }
 }
 
 /// The bare bracket that is open at the refusal `at` inside `within`. This is
@@ -3699,6 +4044,31 @@ pub struct Cursor<'pieces>
     edge: ByteSpan,
 }
 
+/// The names after a parameter's first that share its type, `n` in `m n :
+/// T`, as [`Cursor::shared`] reads them.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: each name's tile, in written order.
+/// - executable: none — an iterator over tiles the cursor read.
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct Shared<'pieces>(core::slice::Iter<'pieces, Piece>);
+
+impl Iterator for Shared<'_>
+{
+    type Item = Placed;
+
+    /// The next shared name's tile.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&mut self) -> Option<Placed>
+    {
+        self.0.next().map(|piece| piece.placed())
+    }
+}
+
 /// A dotted path as a form writes it, `State` or `std.io.Console.Eff`: the
 /// segments before its last name, and the last, which names what the path
 /// reaches in the module the segments name.
@@ -3758,17 +4128,20 @@ impl WrittenPath
     }
 }
 
-/// The dotted path a type operand spells when it opens with a package's
-/// lowercase name, `std.io.Console.Eff`: each link of the postfix type path
-/// from its head out, a row entry, a capability scope's head and a world's
-/// entry reading it as the tiles of a theory's path read.
+/// The path a type operand spells. The operand is a dotted path that opens
+/// with a package's lowercase name, `std.io.Console.Eff`, read link by link
+/// from its head out. Or the operand is one capitalised name alone, `State`,
+/// as the type of a labelled entry writes a theory. A row entry, the head of a
+/// capability scope and an entry of a world read the path as the tiles of a
+/// theory's path.
 ///
 /// # Specification
 /// - requires: `written` is an operand of `tree`.
-/// - ensures: the path when `written` is a type path whose innermost operand is
-///   a lowercase name, its segments in written order and its last name the
-///   outermost link's; `None` for any other operand, a lowercase name alone
-///   among them.
+/// - ensures: for a type path whose innermost operand is a lowercase name, the
+///   path, with its segments in written order and its last name from the
+///   outermost link. For a capitalised type name alone, the path of that one
+///   name. `None` for any other operand. A lowercase name alone gives `None`,
+///   and a row reads it as its tail.
 /// - fails: the refusal of [`read_pieces`] or [`shape_of`] on a link.
 /// - panics: none.
 ///
@@ -3782,7 +4155,7 @@ impl WrittenPath
 /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
 /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
 /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |path| path.as_ref().is_none_or(|path| !path.prefix.is_empty() && written.span.start() <= path.span().start() && path.span().end() <= written.span.end())))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |path| path.as_ref().is_none_or(|path| written.span.start() <= path.span().start() && path.span().end() <= written.span.end())))]
 fn operand_path<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -3848,6 +4221,18 @@ fn operand_path<'source>(
                 target = inner;
             },
             (Former::TypeHead, &[Piece::Tile { at: head, .. }]) if !names.is_empty() => {
+                names.push(head);
+                break;
+            },
+            (
+                Former::TypeHead,
+                &[
+                    Piece::Tile {
+                        label: TileName::TYPE_IDENTIFIER,
+                        at: head,
+                    },
+                ],
+            ) => {
                 names.push(head);
                 break;
             },
@@ -4465,6 +4850,50 @@ impl<'pieces> Cursor<'pieces>
         }
 
         Maybe::Present(WrittenPath { prefix, last })
+    }
+
+    /// Read the names after a parameter's first that share its type: `n` in
+    /// `m n : T`.
+    ///
+    /// # Specification
+    /// - requires: the cursor stands just past a parameter's first name.
+    /// - ensures: every tile at the cursor whose label `labels` holds, up to
+    ///   the first other piece, read and answered in written order; none, with
+    ///   the cursor unmoved, when the next piece is no such tile.
+    /// - provides: the one reading of a parameter's shared names, for the
+    ///   lowering and for the telescope readers.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the prefix of pieces the cursor
+    ///   walks, which restating reads again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two and three names that share a type, after a
+    ///   parameter of its own and after a type the head binds, each lower to
+    ///   the parameters written apart.
+    /// - witness: `lower::tests::a_def_head_s_shared_names_are_its_parameters_written_apart_4853`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `labels` holds the one or two tiles a parameter's shared names spell"
+        )
+    )]
+    pub(crate) fn shared(
+        &mut self,
+        labels: &[TileName],
+    ) -> Shared<'pieces>
+    {
+        let start = self.rest;
+        let mut count = 0_usize;
+        while let Maybe::Present(Piece::Tile { label, at }) = self.peek()
+            && labels.contains(&label)
+        {
+            self.advance(at);
+            count = count.saturating_add(1_usize);
+        }
+
+        Shared(start.get(.. count).unwrap_or_default().iter())
     }
 
     /// The zero-width span at the end of the last piece read.

@@ -24,10 +24,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/holes/suspended-decode.gandr:40:40
+   ╭▸ corpus/pathological/holes/suspended-decode.gandr:40:41
    │
-40 │ def halfWaiting : code * Integer = (3, "three");
-   │                          ┬──────       ━━━━━━━ its type does not convert: expected `Integer`, found `String`
+40 │ def halfWaiting : code * Integer = *{3, "three"};
+   │                          ┬──────        ━━━━━━━ its type does not convert: expected `Integer`, found `String`
    │                          │
    │                          the type it is checked against
    │

@@ -4,40 +4,35 @@
 // - see: #1205
 
 /// A body of one statement: `pure unit` runs and the unit is returned.
-def plain() -> Unit {
-  pure unit;
-}
+def plain() -> Unit =
+  pure *{};
 
 /// A statement after a bind: the bind runs, then the statement, then the
 /// unit is returned.
-def after(n : Integer) -> Unit {
-  let m : Integer = (n + 1);
-  pure unit;
-}
+def after(n : Integer) -> Unit =
+  let m : Integer = (n + 1)
+  pure *{};
 
 /// A match written as the last statement, each arm falling through to the
 /// unit the block returns.
-def armed(b : Bool) -> Unit {
+def armed(b : Bool) -> Unit =
   match b {
-    true => pure unit,
-    false => pure unit
+    | true => pure *{}
+    | false => pure *{}
   };
-}
 
 /// A match written as the last statement whose arms all leave stays the end
 /// of the body.
-def left(b : Bool) -> Integer {
+def left(b : Bool) -> Integer =
   match b {
-    true => return 1,
-    false => return 2
+    | true => return 1
+    | false => return 2
   };
-}
 
 /// A match written as the last statement, one arm leaving and the other
 /// falling through to the unit.
-def some(b : Bool) -> Unit {
+def some(b : Bool) -> Unit =
   match b {
-    true => return unit,
-    false => pure unit
+    | true => return *{}
+    | false => pure *{}
   };
-}

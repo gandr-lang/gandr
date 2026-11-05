@@ -1,22 +1,16 @@
-data Sig(a : Type, b : +U (a -> -F Type)) : Type where {
+data Sig(a : Type, b : +U (a -> -F Type)) : Type where
   | MkSig : (x : a, y : b(x)) --> Sig(a, b)
-}
-data IR(d : Type) : Type[+, 1] where {
+data IR(d : Type) : Type[+, 1] where
   | Iota : (e : d) --> IR(d)
   | DeltaC : (a : Type, f : +U (+U (a -> -F d) -> -F IR(d))) --> IR(d)
-}
-def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type {
-  match c {
-    Iota(e) => return Unit,
-    DeltaC(a, f) => return (Sig(
-      +U (a -> -F x),
-      thunk { fun (h) { args[<](d, f(thunk { fun (z) { t(h(z)) } }), x, t) } }
-    ))
-  }
-}
-def keep(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), w : args(d, c, x, t)) -> Unit {
-  return unit
-}
+def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type =
+  match c
+    | Iota(e) => return Unit
+    | DeltaC(a, f) => return (Sig
+      (+U (a -> -F x))
+      (thunk { fun (h) { args[<] d (f (thunk { fun (z) { t (h z) } })) x t } }))
+def keep(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), w : args(d, c, x, t)) -> Unit =
+  return *{}
 def delta(
   d : Type,
   a : Type,
@@ -24,8 +18,6 @@ def delta(
   x : Type,
   t : +U (x -> -F d),
   v : args(d, (DeltaC(a, f) : IR(d)), x, t)
-) -> Unit {
-  match v {
-    MkSig(h, r) => keep(d, f(thunk { fun (z) { t(h(z)) } }), x, t, r)
-  }
-}
+) -> Unit =
+  match v
+    | MkSig(h, r) => keep d (f (thunk { fun (z) { t (h z) } })) x t r

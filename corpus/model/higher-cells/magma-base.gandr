@@ -11,28 +11,23 @@
 //! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
 
 /// A magma: one sort, a binary operation and a constant.
-pub theory Magma where {
+pub theory Magma where
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
-}
 
 /// The swap of the booleans, its own inverse: the binary corolla's
 /// translator.
-pub def exchange(b : Bool) -> Bool {
-  match b {
-    true => +{.1 = unit},
-    false => +{.0 = unit}
-  }
-}
+pub def exchange(b : Bool) -> Bool =
+  match b
+    | true => +{.1 = *{}}
+    | false => +{.0 = *{}}
 
 /// The identity on the booleans, which is no inverse of the swap; named
 /// apart from the flow former `Flow.stay`.
-pub def boolId(b : Bool) -> Bool {
+pub def boolId(b : Bool) -> Bool =
   b
-}
 
 /// The identity on the constant corolla's one element.
-pub def keep(e : +{Unit}) -> +{Unit} {
+pub def keep(e : +{Unit}) -> +{Unit} =
   e
-}

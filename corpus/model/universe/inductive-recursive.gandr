@@ -33,12 +33,10 @@ rec {
   /// binder at that decode, the codomain its family picks; each decode
   /// recurses below the code.
   @[ checks ]
-  def rec elPi(u : UPi) -> -F Type {
-    match u {
-      NatC => return Nat,
-      PiC(a, b) => return (+U ((x : elPi[<](a)) -> -F elPi[<](b(x))))
-    }
-  }
+  def rec elPi(u : UPi) -> -F Type =
+    match u
+      | NatC => return Nat
+      | PiC(a, b) => return (+U ((x : elPi[<](a)) -> -F elPi[<](b(x))))
 }
 
 /// The family that picks the natural code at every natural.
@@ -52,8 +50,8 @@ def idDecoded : elPi(PiC(NatC, toNat));
 def idDecoded = thunk { fun (x) { return x } };
 
 /// The identity applied at its decoded type.
-@[ runs("Succ(Zero)") ]
-def appliedDecoded() -> -F Nat { idDecoded(Succ(Zero)) }
+@[ runs("Succ Zero") ]
+def appliedDecoded() -> -F Nat { idDecoded (Succ Zero) }
 
 /// The same identity where the plain arrow between naturals is expected: the
 /// decode is a dependent arrow whose codomain, `elPi(toNat(x))`, runs to
@@ -76,18 +74,16 @@ rec {
 
   /// The decoder at each level. It recurses below the code.
   @[ checks ]
-  def rec elM(n : Nat, u : UM(n)) -> -F Type {
-    match u {
-      NatM(m) => return Nat,
-      PiM(m, a, b) => return (+U ((x : elM[<](m, a)) -> -F elM[<](m, b(x))))
-    }
-  }
+  def rec elM(n : Nat, u : UM(n)) -> -F Type =
+    match u
+      | NatM(m) => return Nat
+      | PiM(m, a, b) => return (+U ((x : elM[<](m, a)) -> -F elM[<](m, b(x))))
 }
 
 /// The natural code at level zero.
 @[ checks ]
 def natAtZero : UM(Zero);
-def natAtZero = NatM(Zero);
+def natAtZero = NatM Zero;
 
 /// Zero at the decode of the natural code at level zero.
 @[ checks ]

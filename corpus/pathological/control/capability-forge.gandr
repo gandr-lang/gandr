@@ -11,11 +11,9 @@
 // The filesystem's host interface.
 import std.fs;
 
-def peek(c : Cap { read }) -> [std.fs.Eff] String {
-  c.read("notes")
-}
+def peek(c : Cap { read }) -> [std.fs.Eff] String =
+  c.read "notes"
 
 @[ refuses("CapabilityForged") ]
-def forged() -> [std.fs.Eff] String {
-  peek("fs")
-}
+def forged() -> [std.fs.Eff] String =
+  peek "fs"

@@ -17,7 +17,7 @@ import "./ring-base.gandr";
 /// A buffer moved into the mock kernel's submission and finished there before
 /// the completion is posted: the send consumes the submitter's end, and the
 /// kernel's receive binds it until the kernel closes it.
-def bufferMoved() -> Unit {
+def bufferMoved() -> Unit =
   let buffer = fork (owner : Ring.Buffer) { close(owner) };
   let ring = fork (kernel : Ring.Moving) {
     let held = recv(kernel);
@@ -25,7 +25,6 @@ def bufferMoved() -> Unit {
     send(kernel, Ring.done);
     close(kernel)
   };
-  send(ring, buffer);
-  let cqe = recv(ring);
+  send(ring, buffer)
+  let cqe = recv(ring)
   close(ring)
-}

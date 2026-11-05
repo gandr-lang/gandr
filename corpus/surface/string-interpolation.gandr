@@ -3,29 +3,24 @@
 // reads a `String`; no other value is formatted into one.
 
 /// A parameter interpolated between two runs of text.
-def greet(name : String) -> String {
+def greet(name : String) -> String =
   "hello ${ name }!"
-}
 
 /// A call interpolated, run where the string reads it, between escapes.
 @[ runs("\"<hello types!>\\t\"") ]
-def greeted() -> String {
-  "<${ greet("types") }>\t"
-}
+def greeted() -> String =
+  "<${ greet "types" }>\t"
 
 /// A lone interpolation is the string it holds.
 @[ runs("\"machines\"") ]
-def alone() -> String {
+def alone() -> String =
   "${ "machines" }"
-}
 
 /// A `$` that opens no interpolation is text.
-def price(count : String) -> String {
+def price(count : String) -> String =
   "total: $5.00 for ${ count } items"
-}
 
 /// A record is not a string, and an interpolation formats nothing into one.
 @[ refuses("ShapeMismatch") ]
-def describe(user : String, count : Integer) -> String {
-  return "user=${ user }\trow=${ #{ n = count } }\n"
-}
+def describe(user : String, count : Integer) -> String =
+  return "user=${ user }\trow=${ *{ n = count } }\n"

@@ -871,9 +871,6 @@ corpus/ledger/syntax/splice-expression.gandr STE-3.5 aea592cfcd16e9e6
 corpus/ledger/syntax/statement-block.gandr STE-9.3 4fbbe5f361fe2408
 corpus/ledger/syntax/type-application.gandr STE-3.2 5a9d60bbb383f82a
 corpus/ledger/syntax/typed-number.expression.gandr STE-8.1 6cbba91a4b569ce7
-corpus/ledger/syntax/value-function-type.gandr STE-3.6 9d653ac1b5fe87f6
-corpus/ledger/syntax/value-function-type.gandr STE-3.5 9d653ac1b5fe87f6
-corpus/ledger/syntax/value-function-type.gandr STE-6.3 9d653ac1b5fe87f6
 corpus/ledger/syntax/variable-name.gandr STE-3.6 d5ff941dfad249fd
 corpus/ledger/syntax/variable-name.gandr STE-8.1 d5ff941dfad249fd
 corpus/ledger/syntax/view-expression.gandr STE-3.2 2789927eebe1e1b9
@@ -5580,6 +5577,7 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ImportShad
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/LevelMismatch.txt STE-5.3 4243b91b89fd9499
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/MismatchedPattern.txt STE-5.3 9861b85a5613cd7c
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/NotOpen.Homed.txt STE-5.2 67451c9330e56c92
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.ChainedArrow.txt STE-5.3 fe4dd7b6131982af
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/OutOfFragment.NonContractive.txt STE-5.3 4538ce87b3a6c1e1
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/SessionNotSubtype.txt STE-5.2 e1af2a66c8eda789
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ShadowedBuiltin.txt STE-5.3 d0178ac867679784

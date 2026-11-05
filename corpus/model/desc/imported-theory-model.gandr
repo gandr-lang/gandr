@@ -17,8 +17,7 @@ module Counting : Model(Nat) where {
 
   /// Two successors of zero: the derived operations run.
   @[ runs("2") ]
-  def two() -> Integer {
-    let z = zero();
-    succ(succ(z))
-  }
+  def two() -> Integer =
+    let z = zero ()
+    succ (succ z)
 }

@@ -15,41 +15,36 @@
 import "../data/data-base.gandr";
 
 /// Each module of a list, quoted on a line of its own, each line indented and ended by a comma.
-def rec lines(modules : List(String)) -> String {
-  match modules {
-    Nil => "",
-    Cons(path, rest) => {
-      let more = lines[<](rest);
+def rec lines(modules : List(String)) -> String =
+  match modules
+    | Nil => ""
+    | Cons(path, rest) => {
+      let more = lines[<] rest;
       "  \"${ path }\",\n${ more }"
     }
-  }
-}
 
 /// The `modules` array: `[]` when the list is empty, else one line per module between the brackets.
-def listed(modules : List(String)) -> String {
-  match modules {
-    Nil => "[]",
-    Cons(_, _) => {
-      let each = lines(modules);
+def listed(modules : List(String)) -> String =
+  match modules
+    | Nil => "[]"
+    | Cons(_, _) => {
+      let each = lines modules;
       "[\n${ each }]"
     }
-  }
-}
 
 /// A manifest's body: the `[package]` table with the name, the version and the modules.
-def body(name : String, version : String, modules : List(String)) -> String {
-  let array = listed(modules);
+def body(name : String, version : String, modules : List(String)) -> String =
+  let array = listed modules
   "\n[package]\nname = \"${ name }\"\nversion = \"${ version }\"\nmodules = ${ array }\n"
-}
 
 /// The body of the manifest of `hello`, with its one module.
 @[ runs("\"\\n[package]\\nname = \\\"hello\\\"\\nversion = \\\"0.1.0\\\"\\nmodules = [\\n  \\\"text.greet\\\",\\n]\\n\"") ]
-def hello() -> String { body("hello", "0.1.0", (Cons("text.greet", Nil) : List(String))) }
+def hello() -> String { body "hello" "0.1.0" (Cons "text.greet" Nil : List(String)) }
 
 /// The body of the manifest of `tools`, with no modules.
 @[ runs("\"\\n[package]\\nname = \\\"tools\\\"\\nversion = \\\"0.1.0\\\"\\nmodules = []\\n\"") ]
-def tools() -> String { body("tools", "0.1.0", (Nil : List(String))) }
+def tools() -> String { body "tools" "0.1.0" (Nil : List(String)) }
 
 /// The body of the manifest of `std`, the package of the tree.
 @[ runs("\"\\n[package]\\nname = \\\"std\\\"\\nversion = \\\"0.1.0\\\"\\nmodules = [\\n  \\\"package\\\",\\n]\\n\"") ]
-def std() -> String { body("std", "0.1.0", (Cons("package", Nil) : List(String))) }
+def std() -> String { body "std" "0.1.0" (Cons "package" Nil : List(String)) }

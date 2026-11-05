@@ -407,7 +407,7 @@ fn lowered(
                      what the block answers; remove the written answer",
                 ),
                 FragmentBoundary::EmptyList => f.write_str(
-                    "`()` is an empty list, never the unit; write the unit value as `unit` and \
+                    "`()` is an empty list, never the unit; write the unit value as `*{}` and \
                      its type as `Unit`",
                 ),
                 FragmentBoundary::Endpoint => f.write_str(
@@ -430,6 +430,10 @@ fn lowered(
                 FragmentBoundary::Unbound => f.write_str(
                     "a receive gives its message and a fork its parent's end, each linear, and \
                      no name holds this one",
+                ),
+                FragmentBoundary::ChainedArrow => f.write_str(
+                    "arrows do not chain: write `(A, B) -> C` for one function of two inputs, or \
+                     `A -> (B -> C)` for a function whose output is a function",
                 ),
             }
         },

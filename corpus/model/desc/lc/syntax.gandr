@@ -36,7 +36,7 @@ import "../model-in-source.gandr";
 /// path order orients it and the rules are refused; `Model(LC)` derives from
 /// the block all the same.
 @[ refuses("RulesUnoriented") ]
-pub theory LC where {
+pub theory LC where
   sort Con : Type;
   sort Sub(d : Con, g : Con) : Type;
   sort Tm(g : Con) : Type;
@@ -51,108 +51,86 @@ pub theory LC where {
   oper lam : (t : Tm(extendTm(g))) --> Tm(g);
   oper app : (t : Tm(g), u : Tm(g)) --> Tm(g);
 
-  rule law1 : subTm(qTm(), singleTm(b)) <=> b;
-  rule law2 : subTm(qTm(), liftTm(s)) <=> qTm();
-  rule law3 : subTm(subTm(b, pTm()), liftTm(s)) <=> subTm(subTm(b, s), pTm());
-  rule law4 : subTm(subTm(b, pTm()), singleTm(a)) <=> b;
-  rule law5 : subTm(lam(t), s) <=> lam(subTm(t, liftTm(s)));
-  rule law6 : subTm(app(t, u), s) <=> app(subTm(t, s), subTm(u, s));
-}
+  rule law1 : subTm (qTm ()) (singleTm b) <=> b;
+  rule law2 : subTm (qTm ()) (liftTm s) <=> qTm ();
+  rule law3 : subTm (subTm b (pTm ())) (liftTm s) <=> subTm (subTm b s) (pTm ());
+  rule law4 : subTm (subTm b (pTm ())) (singleTm a) <=> b;
+  rule law5 : subTm (lam t) s <=> lam (subTm t (liftTm s));
+  rule law6 : subTm (app t u) s <=> app (subTm t s) (subTm u s);
 
 /// λ-terms with de Bruijn indices: a variable, an abstraction whose body
 /// binds index zero, and an application.
-pub data Term : Type where {
+pub data Term : Type where
   | Ix : (n : N) --> Term
   | Lam : (t : Term) --> Term
   | Ap : (t : Term, u : Term) --> Term
-}
 
 /// Renamings: every index shifted by `k`, or a renaming lifted under one
 /// binder.
-pub data Ren : Type where {
+pub data Ren : Type where
   | RShift : (k : N) --> Ren
   | RLift : (r : Ren) --> Ren
-}
 
 /// Substitutions: every index shifted by `k`, a term consed on for index
 /// zero, or a substitution lifted under one binder.
-pub data Env : Type where {
+pub data Env : Type where
   | Shift : (k : N) --> Env
   | Cons : (a : Term, s : Env) --> Env
   | Lift : (s : Env) --> Env
-}
 
 /// Addition, by recursion on the second summand.
-pub def rec plus(n : N, k : N) -> N {
-  match k {
-    Z => n,
-    S(j) => S(plus[<](n, j))
-  }
-}
+pub def rec plus(n : N, k : N) -> N =
+  match k
+    | Z => n
+    | S(j) => S (plus[<] n j)
 
 /// `n + j + k`, by recursion on `k`: a shift's index under `k` more binders.
-pub def rec plusTwo(n : N, j : N, k : N) -> N {
-  match k {
-    Z => plus(n, j),
-    S(i) => S(plusTwo[<](n, j, i))
-  }
-}
+pub def rec plusTwo(n : N, j : N, k : N) -> N =
+  match k
+    | Z => plus n j
+    | S(i) => S (plusTwo[<] n j i)
 
 /// The index a renaming sends `n` to: a lift keeps zero and renames under
 /// it.
-pub def rec rlook(n : N, r : Ren) -> N {
-  match r {
-    RShift(k) => plus(n, k),
-    RLift(q) => match n {
-      Z => Z,
-      S(m) => S(rlook[<](m, q))
-    }
-  }
-}
+pub def rec rlook(n : N, r : Ren) -> N =
+  match r
+    | RShift(k) => plus n k
+    | RLift(q) => match n
+      | Z => Z
+      | S(m) => S (rlook[<] m q)
 
 /// A renaming applied to a term, lifted under each abstraction.
-pub def rec rename(t : Term, r : Ren) -> Term {
-  match t {
-    Ix(n) => Ix(rlook(n, r)),
-    Lam(b) => Lam(rename[<](b, RLift(r))),
-    Ap(f, a) => Ap(rename[<](f, r), rename[<](a, r))
-  }
-}
+pub def rec rename(t : Term, r : Ren) -> Term =
+  match t
+    | Ix(n) => Ix (rlook n r)
+    | Lam(b) => Lam (rename[<] b (RLift r))
+    | Ap(f, a) => Ap (rename[<] f r) (rename[<] a r)
 
 /// Weakening: every index shifted by one.
-pub def wk(t : Term) -> Term {
-  rename(t, RShift(S(Z)))
-}
+pub def wk(t : Term) -> Term =
+  rename t (RShift (S Z))
 
 /// A term under `k` more binders: itself under none.
-pub def shiftBy(a : Term, k : N) -> Term {
-  match k {
-    Z => a,
-    S(j) => rename(a, RShift(S(j)))
-  }
-}
+pub def shiftBy(a : Term, k : N) -> Term =
+  match k
+    | Z => a
+    | S(j) => rename a (RShift (S j))
 
 /// The term a substitution sends index `n` to, under `k` binders the lookup
 /// has crossed: each lift it passes adds one.
-pub def rec look(n : N, s : Env, k : N) -> Term {
-  match s {
-    Shift(j) => Ix(plusTwo(n, j, k)),
-    Cons(a, r) => match n {
-      Z => shiftBy(a, k),
-      S(m) => look[<](m, r, k)
-    },
-    Lift(r) => match n {
-      Z => Ix(plus(Z, k)),
-      S(m) => look[<](m, r, S(k))
-    }
-  }
-}
+pub def rec look(n : N, s : Env, k : N) -> Term =
+  match s
+    | Shift(j) => Ix (plusTwo n j k)
+    | Cons(a, r) => match n
+      | Z => shiftBy a k
+      | S(m) => look[<] m r k
+    | Lift(r) => match n
+      | Z => Ix (plus Z k)
+      | S(m) => look[<] m r (S k)
 
 /// A substitution applied to a term, lifted under each abstraction.
-pub def rec subst(t : Term, s : Env) -> Term {
-  match t {
-    Ix(n) => look(n, s, Z),
-    Lam(b) => Lam(subst[<](b, Lift(s))),
-    Ap(f, a) => Ap(subst[<](f, s), subst[<](a, s))
-  }
-}
+pub def rec subst(t : Term, s : Env) -> Term =
+  match t
+    | Ix(n) => look n s Z
+    | Lam(b) => Lam (subst[<] b (Lift s))
+    | Ap(f, a) => Ap (subst[<] f s) (subst[<] a s)

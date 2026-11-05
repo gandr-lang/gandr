@@ -15,51 +15,45 @@ import std.list (List);
 
 /// The list each access below holds; a list's type is declared, never
 /// inferred.
-@[ runs("cons(1, cons(2, nil))") ]
-pub def pair : List(Integer) = cons(1, cons(2, nil));
+@[ runs("cons 1 (cons 2 nil)") ]
+pub def pair : List(Integer) = cons 1 (cons 2 nil);
 
 /// The element at an index, read through a shared view.
 @[ runs("2") ]
-def second() -> Integer {
-  var xs = pair;
+def second() -> Integer =
+  var xs = pair
   access shared xs.#[1] as w { pure w }
-}
 
 /// The element at an index written back through an exclusive view, then the
 /// list read whole: only that element moved.
-@[ runs("cons(1, cons(3, nil))") ]
-def bumped() -> List(Integer) {
-  var xs = pair;
+@[ runs("cons 1 (cons 3 nil)") ]
+def bumped() -> List(Integer) =
+  var xs = pair
   access xs.#[1] as v { resume(v, v + 1) };
   pure xs
-}
 
 /// A list of pairs built where it runs.
-def tagged(a : Integer) -> List(Integer * Integer) {
-  pure cons((a, 1), cons((a, 2), cons((a, 3), nil)))
-}
+def tagged(a : Integer) -> List(Integer * Integer) =
+  pure cons (a, 1) (cons (a, 2) (cons (a, 3) nil))
 
 /// An element written back past the head: the cells before it are copied
 /// and share their elements, the cells after it are shared, and fresh pairs
 /// allocated after the write-back leave both untouched.
-@[ runs("cons((9, 9), cons((1, 1), cons((5, 5), cons((1, 3), nil))))") ]
-def rebuilt() -> List(Integer * Integer) {
-  let l = tagged(1);
-  var xs = l;
-  access xs.#[1] as v { resume(v, (5, 5)) };
-  pure cons((9, 9), xs)
-}
+@[ runs("cons *{9, 9} (cons *{1, 1} (cons *{5, 5} (cons *{1, 3} nil)))") ]
+def rebuilt() -> List(Integer * Integer) =
+  let l = tagged 1
+  var xs = l
+  access xs.#[1] as v { resume(v, *{5, 5}) };
+  pure cons (9, 9) xs
 
 /// An abort writes nothing back: the list stands as it was.
-@[ runs("cons(1, cons(2, nil))") ]
-def kept() -> List(Integer) {
-  var xs = pair;
-  access xs.#[0] as v { abort(v) } unwind { pure unit };
+@[ runs("cons 1 (cons 2 nil)") ]
+def kept() -> List(Integer) =
+  var xs = pair
+  access xs.#[0] as v { abort(v) } unwind { pure *{} };
   pure xs
-}
 
 /// The index is any value where the access stands, here a parameter.
-def indexed(i : Integer) -> Integer {
-  var xs = pair;
+def indexed(i : Integer) -> Integer =
+  var xs = pair
   access shared xs.#[i] as w { pure w }
-}

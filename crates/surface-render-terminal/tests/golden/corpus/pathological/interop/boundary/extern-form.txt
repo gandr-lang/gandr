@@ -19,7 +19,7 @@ error[BoundaryUnrealised.Size]: a type a member of the block declares differs in
 error[UnresolvedName]: `sub` is not defined
    ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:48:48
    │
-48 │ def less(x : u32) -> [Boundary] u32 { Boundary.sub(x, x) }
+48 │ def less(x : u32) -> [Boundary] u32 { Boundary.sub x x }
    │                                                ━━━ not found in this scope
    │
    ├ note: `less` is refused with UnresolvedName, as its expectation states

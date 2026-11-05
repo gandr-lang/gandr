@@ -1,5 +1,5 @@
 /// `Unlocated`: a hold or an opening `let x at w` at the host's world.
-module Seat :> #{
+module Seat :> *{
   type Dispatch,
   mobile type Report,
   type Handoff,
@@ -32,6 +32,5 @@ world operator ;
 world seat ;
 
 @[ refuses("Unlocated") ]
-def unplaced() -> -F (Seat.Report at seat) {
+def unplaced() -> -F (Seat.Report at seat) =
   (hold Seat.progress)
-}

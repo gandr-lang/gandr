@@ -22,7 +22,7 @@ fn a_model_opens_as_a_bind_over_the_rest_of_its_block_4788()
     // The opening binds what the ascribed return of `p` returns, so the
     // checker reads `s` as a variable of `p`'s model type, never as `p`.
     let source = alloc::format!(
-        "{SEEDED}def opened(p : Model(Seeded)) -> Integer {{ module s = p; let r = s.read; r(s.seed) }}"
+        "{SEEDED}def opened(p : Model(Seeded)) -> Integer {{ module s = p; let r = s.read; r s.seed }}"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

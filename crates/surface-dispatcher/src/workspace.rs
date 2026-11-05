@@ -753,13 +753,12 @@ impl<'text> From<&'text str> for Spelling<'text>
 
 impl Spelling<'_>
 {
-    /// The strings the spelling lists: `cons("a", cons("b", nil))` is `a`
-    /// then `b`, each decoded as a string literal is; none for any other
-    /// spelling.
+    /// The strings the spelling lists: `cons "a" (cons "b" nil)` is `a` then
+    /// `b`, each decoded as a string literal is; none for any other spelling.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the strings of a spelling `cons(s₁, cons(s₂, … nil))`, each
+    /// - ensures: the strings of a spelling `cons s₁ (cons s₂ (… nil))`, each
     ///   `sᵢ` a quoted string read up to its unescaped closing quote and
     ///   decoded, in order; none when anything else stands anywhere in it.
     /// - fails: never.
@@ -777,17 +776,17 @@ impl Spelling<'_>
         self.listed_as(Self::quoted)
     }
 
-    /// The placements the spelling lists: `cons(At("far", #{.key = "<key>",
-    /// .secret = "far", .sockets = "127.0.0.1:4733"}), nil)` is the world
-    /// `far` at the site of that key and socket, once, and `Instances("far",
-    /// #{…}, 2)` is it twice; none for any other spelling.
+    /// The placements the spelling lists: `cons (At "far" *{.key = "<key>",
+    /// .secret = "far", .sockets = "127.0.0.1:4733"}) nil` is the world `far`
+    /// at the site of that key and socket, once, and `(Instances "far" *{…}
+    /// 2)` is it twice; none for any other spelling.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each element of a spelling `cons(p₁, cons(p₂, … nil))` read
-    ///   in order, each `pᵢ` written `At(n, s)`, read with the count `1`, or
-    ///   `Instances(n, s, c)`, read with the count `c` as spelled, `n` a quoted
-    ///   string decoded and `s` a site's model spelled `#{.key = k, .secret =
+    /// - ensures: each element of a spelling `cons p₁ (cons p₂ (… nil))` read
+    ///   in order, each `pᵢ` written `(At n s)`, read with the count `1`, or
+    ///   `(Instances n s c)`, read with the count `c` as spelled, `n` a quoted
+    ///   string decoded and `s` a site's model spelled `*{.key = k, .secret =
     ///   e, .sockets = o}`, its labels in the order a run spells them and `k`
     ///   and `o` read as quoted strings decoded; none when anything else stands
     ///   anywhere in it.
@@ -802,17 +801,18 @@ impl Spelling<'_>
     pub(crate) fn placements(self) -> Option<Vec<Placed>>
     {
         self.listed_as(|spelling| {
-            let (counted, rest) = match spelling.0.strip_prefix("At(") {
+            let inner = spelling.0.strip_prefix('(')?;
+            let (counted, rest) = match inner.strip_prefix("At ") {
                 Some(rest) => (false, rest),
-                None => (true, spelling.0.strip_prefix("Instances(")?),
+                None => (true, inner.strip_prefix("Instances ")?),
             };
             let (name, Self(rest)) = Self(rest).quoted()?;
-            let (key, Self(rest)) = Self(rest.strip_prefix(", #{.key = ")?).quoted()?;
+            let (key, Self(rest)) = Self(rest.strip_prefix(" *{.key = ")?).quoted()?;
             let (_secret, Self(rest)) = Self(rest.strip_prefix(", .secret = ")?).quoted()?;
             let (sockets, Self(rest)) = Self(rest.strip_prefix(", .sockets = ")?).quoted()?;
             let rest = rest.strip_prefix('}')?;
             let (count, rest) = if counted {
-                rest.strip_prefix(", ")?.split_once(')')?
+                rest.strip_prefix(' ')?.split_once(')')?
             }
             else {
                 ("1", rest.strip_prefix(')')?)
@@ -829,7 +829,8 @@ impl Spelling<'_>
         })
     }
 
-    /// The elements the spelling lists, each read by `element`.
+    /// The elements the spelling lists, each read by `element`: `cons e₁
+    /// (cons e₂ (… nil))`, every tail but the last `nil` in parentheses.
     ///
     /// # Specification
     /// trivial.
@@ -840,14 +841,20 @@ impl Spelling<'_>
     {
         let mut rest = self.0;
         let mut elements = Vec::new();
-        while let Some(after) = rest.strip_prefix("cons(") {
+        let mut opened = 0_usize;
+        while let Some(after) = rest.strip_prefix("cons ") {
             let (read, Self(after)) = element(Self(after))?;
             elements.push(read);
-            rest = after.strip_prefix(", ")?;
+            let after = after.strip_prefix(' ')?;
+            if after.starts_with("nil") {
+                rest = after;
+                break;
+            }
+            rest = after.strip_prefix('(')?;
+            opened = opened.saturating_add(1);
         }
         let closers = rest.strip_prefix("nil")?;
-        (closers.len() == elements.len() && closers.bytes().all(|byte| byte == b')'))
-            .then_some(elements)
+        (closers.len() == opened && closers.bytes().all(|byte| byte == b')')).then_some(elements)
     }
 
     /// The string literal the spelling opens with, decoded, and what follows
@@ -966,7 +973,7 @@ mod tests
     fn a_run_s_spelling_lists_its_strings_2687()
     {
         assert_eq!(
-            Spelling("cons(\"hello\", cons(\"tools\", nil))").listed(),
+            Spelling("cons \"hello\" (cons \"tools\" nil)").listed(),
             Some(Vec::from([String::from("hello"), String::from("tools")])),
             "two members read in order"
         );
@@ -976,15 +983,16 @@ mod tests
             "no member reads as none"
         );
         assert_eq!(
-            Spelling("cons(\"a \\\"b\\\"\", nil)").listed(),
+            Spelling("cons \"a \\\"b\\\"\" nil").listed(),
             Some(Vec::from([String::from("a \"b\"")])),
             "a member's escapes are decoded"
         );
         for other in [
             "\"hello\"",
-            "cons(\"a\", nil",
-            "cons(\"a\", nil))",
-            "cons(1, nil)",
+            "cons \"a\" (cons \"b\" nil",
+            "cons \"a\" nil)",
+            "cons 1 nil",
+            "cons(\"a\", nil)",
         ] {
             assert_eq!(Spelling(other).listed(), None, "`{other}` lists no strings");
         }
@@ -1000,11 +1008,11 @@ mod tests
             count: String::from(count),
         };
         let site = |sockets: &str| {
-            format!("#{{.key = \"k\", .secret = \"far\", .sockets = \"{sockets}\"}}")
+            format!("*{{.key = \"k\", .secret = \"far\", .sockets = \"{sockets}\"}}")
         };
         assert_eq!(
             Spelling(&format!(
-                "cons(At(\"far\", {}), cons(Instances(\"near\", {}, 2), nil))",
+                "cons (At \"far\" {}) (cons (Instances \"near\" {} 2) nil)",
                 site("127.0.0.1:4733"),
                 site("")
             ))
@@ -1022,7 +1030,7 @@ mod tests
             "no placement reads as none"
         );
         assert_eq!(
-            Spelling("cons(At(\"far\", #{.key = \"k\", .secret = \"far\"}), nil)").placements(),
+            Spelling("cons (At \"far\" *{.key = \"k\", .secret = \"far\"}) nil").placements(),
             None,
             "a placement whose site lacks its sockets lists nothing"
         );

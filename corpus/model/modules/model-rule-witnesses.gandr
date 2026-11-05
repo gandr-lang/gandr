@@ -16,15 +16,14 @@
 // - see: `model-laws.gandr` — a law stated as its path type
 
 /// The naturals, apart from any theory.
-data Ticks : Type where {
+data Ticks : Type where
   /// No tick.
   | NoTick : Ticks
   /// One tick more.
   | Tick : (n : Ticks) --> Ticks
-}
 
 /// A carrier with a unit and a product, and one rule: the unit is a left unit.
-theory LeftUnit where {
+theory LeftUnit where
   /// The carrier.
   sort M : Type;
   /// The unit.
@@ -32,38 +31,31 @@ theory LeftUnit where {
   /// The product.
   oper mul : (x : M, y : M) --> M;
   /// The unit on the left leaves the other factor.
-  rule unitL : mul(e(), x) <=> x;
-}
+  rule unitL : mul (e ()) x <=> x;
 
 /// One more tick, as a function `Path.ap` can take.
-def tick(n : Ticks) -> Ticks { Tick(n) }
+def tick(n : Ticks) -> Ticks { Tick n }
 
 /// Joins two counts by recursion on the left one.
-def rec joinLeft(m : Ticks, n : Ticks) -> Ticks {
-  match m {
-    NoTick => n,
-    Tick(k) => Tick(joinLeft[<](k, n))
-  }
-}
+def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
+  match m
+    | NoTick => n
+    | Tick(k) => Tick (joinLeft[<] k n)
 
 /// Joins two counts by recursion on the right one.
-def rec joinRight(m : Ticks, n : Ticks) -> Ticks {
-  match n {
-    NoTick => m,
-    Tick(k) => Tick(joinRight[<](m, k))
-  }
-}
+def rec joinRight(m : Ticks, n : Ticks) -> Ticks =
+  match n
+    | NoTick => m
+    | Tick(k) => Tick (joinRight[<] m k)
 
 /// Joining no tick on the left leaves a count as it is, by induction on it.
-def rec noTickJoinsRight(n : Ticks) -> Path(joinRight(NoTick, n), n) {
-  match n {
-    NoTick => Path.here(NoTick),
-    Tick(k) => Path.ap(tick, noTickJoinsRight[<](k))
-  }
-}
+def rec noTickJoinsRight(n : Ticks) -> Path(joinRight NoTick n, n) =
+  match n
+    | NoTick => Path.here NoTick
+    | Tick(k) => Path.ap tick (noTickJoinsRight[<] k)
 
 /// Joining on the left as a model: its carrier converts the rule's sides.
-module ByLeft : Model(LeftUnit) where {
+module ByLeft : Model(LeftUnit) where
   /// The naturals carry it.
   type M = Ticks;
 
@@ -71,14 +63,13 @@ module ByLeft : Model(LeftUnit) where {
   def e() -> Ticks { NoTick }
 
   /// The product joins on the left.
-  def mul(x : Ticks, y : Ticks) -> Ticks { joinLeft(x, y) }
+  def mul(x : Ticks, y : Ticks) -> Ticks { joinLeft x y }
 
   /// `mul(e(), x)` computes to `x`, so `Path.here` witnesses the rule.
-  def unitL(x : Ticks) -> Path(mul(e(), x), x) { Path.here(x) }
-}
+  def unitL(x : Ticks) -> Path(mul (e ()) x, x) { Path.here x }
 
 /// Joining on the right as a model: its carrier leaves the rule's sides apart.
-module ByRight : Model(LeftUnit) where {
+module ByRight : Model(LeftUnit) where
   /// The naturals carry it.
   type M = Ticks;
 
@@ -86,8 +77,7 @@ module ByRight : Model(LeftUnit) where {
   def e() -> Ticks { NoTick }
 
   /// The product joins on the right.
-  def mul(x : Ticks, y : Ticks) -> Ticks { joinRight(x, y) }
+  def mul(x : Ticks, y : Ticks) -> Ticks { joinRight x y }
 
   /// `mul(e(), x)` waits on `x`, so the induction witnesses the rule.
-  def unitL(x : Ticks) -> Path(mul(e(), x), x) { noTickJoinsRight(x) }
-}
+  def unitL(x : Ticks) -> Path(mul (e ()) x, x) { noTickJoinsRight x }

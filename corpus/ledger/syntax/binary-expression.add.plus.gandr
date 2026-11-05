@@ -1,5 +1,4 @@
 /// `binary_expression.add.plus`: addition.
 @[ checks ]
-def sum() -> -F Integer {
+def sum() -> -F Integer =
   return 1 + 2
-}

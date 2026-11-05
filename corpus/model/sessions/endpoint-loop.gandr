@@ -19,43 +19,40 @@
 def follow(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> Unit {
+}) -> Unit =
   loop {
     offer(operator) {
-      report => { let next = recv(operator); continue },
-      retire => { let last = recv(operator); close(operator); break }
+      | report => { let next = recv(operator); continue }
+      | retire => { let last = recv(operator); close(operator); break }
     }
   }
-}
 
 /// A desk counting a seat's reports in a held slot until it retires: the loop
 /// threads the count beside the endpoint.
 def tally(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> Integer {
-  var seen = 0;
+}) -> Integer =
+  var seen = 0
   loop {
     offer(operator) {
-      report => { let next = recv(operator); access seen as v { resume(v, v + 1) }; continue },
-      retire => { let last = recv(operator); close(operator); break }
+      | report => { let next = recv(operator); access seen as v { resume(v, v + 1) }; continue }
+      | retire => { let last = recv(operator); close(operator); break }
     }
   };
   pure seen
-}
 
 /// A seat that reports twice and retires, followed by a forked desk.
-@[ runs("unit") ]
-def followed() -> Unit {
+@[ runs("*{}") ]
+def followed() -> Unit =
   let seat = fork (operator : mu open. &{
     report : ?Integer. open,
     retire : ?Integer. end
-  }) { follow(operator) };
-  select(seat, report);
-  send(seat, 1);
-  select(seat, report);
-  send(seat, 2);
-  select(seat, retire);
-  send(seat, 3);
+  }) { follow operator };
+  select(seat, report)
+  send(seat, 1)
+  select(seat, report)
+  send(seat, 2)
+  select(seat, retire)
+  send(seat, 3)
   close(seat)
-}

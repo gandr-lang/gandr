@@ -1452,8 +1452,8 @@ mod tests
     {
         let grammar = built_in().expect("the grammar builds");
         let text = SourceText::from(
-            "def a() -> Integer {\n  return 1 ^ 2\n}\n\ndef b() -> Integer {\n  return a()\n}\n\ndef \
-             c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c()\n}\n",
+            "def a() -> Integer {\n  return 1 ^ 2\n}\n\ndef b() -> Integer {\n  return a ()\n}\n\ndef \
+             c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c ()\n}\n",
         );
         let cascade = step(
             Path::new("cascade.gandr"),
@@ -1477,14 +1477,14 @@ mod tests
                 .expect("ordered"),
             )
         };
-        let body = text.as_ref().find("return a()").expect("the call");
+        let body = text.as_ref().find("return a ()").expect("the call");
         assert_eq!(
             entries(&cascade, Verb::Check(Goals::Gated))
                 .map(|diagnostic| (diagnostic.severity, diagnostic.span))
                 .collect::<Vec<_>>(),
             [
                 (Severity::Error, at("^", 0)),
-                (Severity::Note, at("a()", body))
+                (Severity::Note, at("a ()", body))
             ],
             "the refused declaration is the one error; the one calling it is a note at the call, \
              and the one calling a declaration that checks prints nothing"
@@ -1559,7 +1559,7 @@ mod tests
     {
         let grammar = built_in().expect("the grammar builds");
         let written =
-            "def f() -> Integer {\n  return g()\n}\n\nde g() -> Integer {\n  return 1\n}\n";
+            "def f() -> Integer {\n  return g ()\n}\n\nde g() -> Integer {\n  return 1\n}\n";
         let misspelt = step(
             Path::new("misspelt.gandr"),
             SourceRoot::Strict,
@@ -1576,7 +1576,13 @@ mod tests
                     Maybe::Absent(_) => usize::MAX,
                 })
                 .collect::<Vec<_>>(),
-            [at("de g"), at("g() ->"), at("{\n  return 1"), at("g()")],
+            [
+                at("de g"),
+                at("g() ->"),
+                at("() -> Integer {\n  return 1"),
+                at("{\n  return 1"),
+                at("g ()")
+            ],
             "the refusals of form print first in admission order, then the unresolved call \
              admitted before them"
         );
@@ -1648,8 +1654,8 @@ mod tests
     {
         let grammar = built_in().expect("the grammar builds");
         let text = SourceText::from(
-            "def add : Integer ;\ndef add = 1 ;\n@[ explicit_exits ]\ndef asked(n: Integer) -> -F \
-             Integer { n }\ndef unasked(n: Integer) -> -F Integer { n }\n",
+            "def add : Integer ;\ndef add = 1 ;\n@[ explicit_exits ]\ndef asked(n : Integer) -> -F \
+             Integer { n }\ndef unasked(n : Integer) -> -F Integer { n }\n",
         );
         let at = |start: usize| {
             Maybe::Present(
@@ -1713,24 +1719,24 @@ mod tests
     {
         let grammar = built_in().expect("the grammar builds");
         let text = SourceText::from(
-            "def id(n: Integer) -> -F Integer { n }\n@[ explicit_runs(\"effects\") ]\ndef \
-             effects(n: Integer) -> -F Integer { id(id(n)) }\n@[ explicit_runs ]\ndef every(n: \
-             Integer) -> -F Integer { id(id(n)) }\ndef unasked(n: Integer) -> -F Integer { \
-             id(id(n)) }\n",
+            "def id(n : Integer) -> -F Integer { n }\n@[ explicit_runs(\"effects\") ]\ndef \
+             effects(n : Integer) -> -F Integer { id (id n) }\n@[ explicit_runs ]\ndef every(n : \
+             Integer) -> -F Integer { id (id n) }\ndef unasked(n : Integer) -> -F Integer { \
+             id (id n) }\n",
         );
         let nested = |declaration: &str| {
             let context = text.as_ref().find(declaration).expect("declared");
             let start = text
                 .as_ref()
                 .get(context ..)
-                .and_then(|rest| rest.find("{ id(id(n)) }"))
+                .and_then(|rest| rest.find("{ id (id n) }"))
                 .expect("nested")
                 .saturating_add(context)
-                .saturating_add(5_usize);
+                .saturating_add(6_usize);
             Maybe::Present(
                 ByteSpan::new(
                     ByteOffset::from(start),
-                    ByteOffset::from(start.saturating_add(5_usize)),
+                    ByteOffset::from(start.saturating_add(4_usize)),
                 )
                 .expect("ordered"),
             )
@@ -1803,16 +1809,16 @@ mod tests
     fn a_second_run_refusal_is_located_where_its_bound_spelling_is_380()
     {
         let grammar = built_in().expect("the grammar builds");
-        let data = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : S(P(x)) ==> x;\n  rule : P(S(x)) ==> x;\n}\n\n";
+        let data = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : S (P x) ==> x;\n  rule : P (S x) ==> x;\n}\n\n";
         let fold = |arm: &str| {
             format!(
-                "{data}def rec tell(n : Int) -> -F Int {{\n  match n {{\n    Z => Z,\n    S(x) => \
-                 {arm},\n    P(x) => {arm}\n  }}\n}}\n"
+                "{data}def rec tell(n : Int) -> -F Int {{\n  match n {{\n    | Z => Z\n    | S(x) => \
+                 {arm}\n    | P(x) => {arm}\n  }}\n}}\n"
             )
         };
         // The nested call is judged by the second run, over the bind the
         // first run elaborated it to; the bound twin by the first run alone.
-        for written in [fold("S(tell[<](x))"), fold("{ let t = tell[<](x); S(t) }")] {
+        for written in [fold("S (tell[<] x)"), fold("{ let t = tell[<] x; S t }")] {
             let text = SourceText::from(written.as_str());
             let start = written.find("match n").expect("the match");
             let end = written.rfind("  }\n}").expect("the case's close") + "  }".len();

@@ -2112,7 +2112,7 @@ mod tests
     fn related_information_is_the_annotations_then_the_located_contexts()
     {
         let uri = DocumentUri::from("file:///strict/returned.gandr");
-        let text = "def g(v: Integer) -> -F String { return v }\n";
+        let text = "def g(v : Integer) -> -F String { return v }\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -2120,7 +2120,7 @@ mod tests
         };
         assert_eq!(
             (diagnostic.range, diagnostic.code.as_deref()),
-            (range(Span(0, 40, 0, 41)), Some("TypeMismatch")),
+            (range(Span(0, 41, 0, 42)), Some("TypeMismatch")),
             "the returned value is the lead range"
         );
         let related: Vec<(Range, &str)> = diagnostic
@@ -2131,11 +2131,11 @@ mod tests
         assert_eq!(
             related,
             [
-                (range(Span(0, 24, 0, 30)), "the type it is checked against"),
-                (range(Span(0, 9, 0, 16)), "the type it synthesises"),
+                (range(Span(0, 25, 0, 31)), "the type it is checked against"),
+                (range(Span(0, 10, 0, 17)), "the type it synthesises"),
                 (
-                    range(Span(0, 0, 0, 43)),
-                    "checked against `Integer => String`; while checking the body of this \
+                    range(Span(0, 0, 0, 44)),
+                    "checked against `Integer -> String`; while checking the body of this \
                      thunk"
                 ),
                 (
@@ -2144,7 +2144,7 @@ mod tests
                      function; binds v : Integer"
                 ),
                 (
-                    range(Span(0, 33, 0, 41)),
+                    range(Span(0, 34, 0, 42)),
                     "checked against `-F String`; while judging the value this returns"
                 ),
             ],
@@ -2245,7 +2245,7 @@ mod tests
     fn a_deprecated_use_is_published_struck_through()
     {
         let uri = DocumentUri::from("file:///strict/deprecated.gandr");
-        let text = "@[ deprecated(#{ note = \"use two\" }) ] def one = 1 ;\ndef two = 2 \
+        let text = "@[ deprecated(*{ note = \"use two\" }) ] def one = 1 ;\ndef two = 2 \
                     ;\ndef uses = one ;\ndef add : Integer ;\ndef add = two ;\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         assert_eq!(
@@ -2319,7 +2319,7 @@ mod tests
     fn a_refusal_publishes_its_label_note_and_help()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = "def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n";
+        let text = "def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -2383,7 +2383,7 @@ mod tests
         );
         let malformed = checked(
             &DocumentUri::from("file:///strict/head.gandr"),
-            SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+            SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
         );
         assert!(
             malformed
@@ -2398,7 +2398,7 @@ mod tests
     fn one_refusal_is_published_at_every_verbosity()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = SourceText::from("def f(xs: Vec(Integer)) -> -F Integer {\n  return 1\n}\n");
+        let text = SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  return 1\n}\n");
         let [user, detailed, debug, json] = [
             Verbosity::User,
             Verbosity::Detailed,
@@ -2541,7 +2541,7 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
-        let base = "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
+        let base = "module P :> *{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
         let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  let ring = \
                     fork (kernel : P.Moving) {\n    let held = recv(kernel);\n    close(kernel)\n  \
                     };\n  close(ring)\n}\n";

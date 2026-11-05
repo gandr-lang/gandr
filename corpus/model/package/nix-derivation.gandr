@@ -23,7 +23,7 @@ pub type InputDerivation = String * List(String);
 pub type Variable = String * String;
 
 /// A derivation, as format version 4 of `nix derivation show` prints one.
-pub type Derivation = #{
+pub type Derivation = *{
   name : String,
   system : String,
   builder : String,
@@ -36,7 +36,7 @@ pub type Derivation = #{
 };
 
 /// `hello`'s derivation, `lpg53dvkfq377crcw2kr64cflmm2q8k8-hello-2.12.2.drv`, field by field, its empty variables left out.
-def helloDerivation : Derivation = #{
+def helloDerivation : Derivation = *{
   name = "hello-2.12.2",
   system = "x86_64-linux",
   builder = "/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin/bash",
@@ -46,34 +46,34 @@ def helloDerivation : Derivation = #{
     "/nix/store/shkw4qm9qcw5sc5n1k5jznc83ny02r39-default-builder.sh"
   ],
   env = #[
-    ("NIX_CFLAGS_COMPILE", " -ggdb -Og"),
-    ("NIX_MAIN_PROGRAM", "hello"),
-    ("NIX_RUSTFLAGS", " -g -C opt-level=0 -C strip=none"),
-    ("builder", "/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin/bash"),
-    ("doCheck", "1"),
-    ("doInstallCheck", "1"),
-    ("dontStrip", "1"),
-    ("name", "hello-2.12.2"),
-    ("nativeBuildInputs", "/nix/store/qfdf0si45105mh5576w07wgkb8i90hf1-version-check-hook"),
-    ("out", "/nix/store/lpl117l7c02847bxhznbgg2hy5hpbwsb-hello-2.12.2"),
-    ("outputs", "out"),
-    ("pname", "hello"),
-    ("postInstallCheck", "stat \"\${!outputBin}/bin/hello\"\n"),
-    ("src", "/nix/store/dw402azxjrgrzrk6j0p66wkqrab5mwgw-hello-2.12.2.tar.gz"),
-    ("stdenv", "/nix/store/s3w5m3spa1g71hx0yb82lvk6394j3w5j-stdenv-linux"),
-    ("system", "x86_64-linux"),
-    ("version", "2.12.2")
+    *{"NIX_CFLAGS_COMPILE", " -ggdb -Og"},
+    *{"NIX_MAIN_PROGRAM", "hello"},
+    *{"NIX_RUSTFLAGS", " -g -C opt-level=0 -C strip=none"},
+    *{"builder", "/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin/bash"},
+    *{"doCheck", "1"},
+    *{"doInstallCheck", "1"},
+    *{"dontStrip", "1"},
+    *{"name", "hello-2.12.2"},
+    *{"nativeBuildInputs", "/nix/store/qfdf0si45105mh5576w07wgkb8i90hf1-version-check-hook"},
+    *{"out", "/nix/store/lpl117l7c02847bxhznbgg2hy5hpbwsb-hello-2.12.2"},
+    *{"outputs", "out"},
+    *{"pname", "hello"},
+    *{"postInstallCheck", "stat \"\${!outputBin}/bin/hello\"\n"},
+    *{"src", "/nix/store/dw402azxjrgrzrk6j0p66wkqrab5mwgw-hello-2.12.2.tar.gz"},
+    *{"stdenv", "/nix/store/s3w5m3spa1g71hx0yb82lvk6394j3w5j-stdenv-linux"},
+    *{"system", "x86_64-linux"},
+    *{"version", "2.12.2"}
   ],
   inputDrvs = #[
-    ("dkd7x68qnzz99f3dvmf50ig8xwpvaax8-version-check-hook.drv", #["out"]),
-    ("iadiya7abzbls67alm9nj7prs68dig6k-hello-2.12.2.tar.gz.drv", #["out"]),
-    ("pnjvpwgka59d6fwpp9fnz42ll2ai4ffm-stdenv-linux.drv", #["out"]),
-    ("vwmk63kc9sysjif65h7fdwnqr5h8jfm6-bash-5.3p3.drv", #["out"])
+    *{"dkd7x68qnzz99f3dvmf50ig8xwpvaax8-version-check-hook.drv", #["out"]},
+    *{"iadiya7abzbls67alm9nj7prs68dig6k-hello-2.12.2.tar.gz.drv", #["out"]},
+    *{"pnjvpwgka59d6fwpp9fnz42ll2ai4ffm-stdenv-linux.drv", #["out"]},
+    *{"vwmk63kc9sysjif65h7fdwnqr5h8jfm6-bash-5.3p3.drv", #["out"]}
   ],
   inputSrcs = #[
     "l622p70vy8k5sh7y5wizi5f2mic6ynpg-source-stdenv.sh",
     "shkw4qm9qcw5sc5n1k5jznc83ny02r39-default-builder.sh"
   ],
-  outputs = #[("out", "lpl117l7c02847bxhznbgg2hy5hpbwsb-hello-2.12.2")],
+  outputs = #[*{"out", "lpl117l7c02847bxhznbgg2hy5hpbwsb-hello-2.12.2"}],
   version = 4
 };

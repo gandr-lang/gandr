@@ -1,6 +1,5 @@
 /// `NotAView`: a resume or an abort naming a linear slot that is no view.
 @[ refuses("NotAView") ]
-def resumed() -> -F Unit {
-  var n = 1;
+def resumed() -> -F Unit =
+  var n = 1
   resume(n, 1)
-}

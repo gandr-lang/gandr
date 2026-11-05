@@ -1,14 +1,8 @@
 error[DialogueInverted]: this dialogue is logged out of its causal order
-   ╭▸ corpus/ledger/diagnostics/DialogueInverted.gandr:14:16
+   ╭▸ corpus/ledger/diagnostics/DialogueInverted.gandr:13:16
    │
-14 │   def foretold = dialogue(
-   │ ┏━━━━━━━━━━━━━━━━┛
-15 │ ┃   right(received("yes")),
-16 │ ┃   left(sent("yes")),
-17 │ ┃   left(closed),
-18 │ ┃   right(closed)
-19 │ ┃ ) ;
-   │ ┗━┛ a move logged before the move it follows
+13 │ def foretold = dialogue (right (received "yes")) (left (sent "yes")) (left closed) (right closed) ;
+   │                ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a move logged before the move it follows
    │
    ├ note: `foretold` is refused with DialogueInverted, as its expectation states
    ╰ help: log each send before its matching receipt

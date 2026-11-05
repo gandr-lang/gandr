@@ -1,23 +1,19 @@
-def first(n : Nat) -> -F Nat {
-  let m = loop { break(Succ(n)) };
-  return Succ(m)
-}
+def first(n : Nat) -> -F Nat =
+  let m = loop { break(Succ n) };
+  return Succ m
 
-def sift(n : Nat) -> -F Nat {
+def sift(n : Nat) -> -F Nat =
   loop {
     match n {
-      Zero => { break; },
-      Succ(p) => { tick(p); continue; }
+      | Zero => { break; }
+      | Succ(p) => { tick p; continue; }
     }
   };
   return n
-}
 
-def until_done(n : Integer) -> -F Integer {
+def until_done(n : Integer) -> -F Integer =
   while n > 0 { return n };
   return 0
-}
 
-def for_each(n : Nat) -> -F Unit {
-  for x in n { tick(x); }
-}
+def for_each(n : Nat) -> -F Unit =
+  for x in n { tick x; }

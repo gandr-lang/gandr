@@ -6,10 +6,9 @@ world operator;
 world seat;
 
 @[ refuses("NotOpen") ]
-@[ entry((operator, seat)) ]
-def heldThunk() -> -F ((() => Integer) at seat) {
+@[ entry(*{operator, seat}) ]
+def heldThunk() -> -F ((() -> Integer) at seat) =
   migrate [seat] {
-    let later : () => Integer = thunk { pure 3 };
+    let later : () -> Integer = thunk { pure 3 };
     (hold later)
   }
-}

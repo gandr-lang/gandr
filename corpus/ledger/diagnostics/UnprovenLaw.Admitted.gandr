@@ -2,17 +2,15 @@
 ///
 /// The theory the model derives from.
 @[ checks ]
-theory Reflexive where {
+theory Reflexive where
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
-  law refl : (a : Carrier) => Path[.A = Bool](alike(a, a), true);
-}
+  law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);
 
 /// One value, of a type the source writes.
 @[ checks ]
-data Lone : Type where {
+data Lone : Type where
   | Alone : Lone
-}
 
 /// The model at `Lone`.
 module Admitting : Model(Reflexive) with sort Carrier = Lone where {

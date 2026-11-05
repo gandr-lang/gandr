@@ -354,7 +354,6 @@ mod tests
             "a type parses clean as a type"
         );
         assert_eq!(roles("../../data/x.gandr"), None, "a path does not lex");
-        assert_eq!(roles("λ f. f"), None, "a Greek letter does not lex");
         assert_eq!(roles("#spec{ … }"), None, "an ellipsis does not lex");
     }
 

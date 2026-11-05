@@ -16,24 +16,21 @@
 import std.grade (Count);
 
 /// The answer a server gives.
-data Status : Type where {
+data Status : Type where
   /// The server serves the request.
   | Served : Status
   /// The server fails, and the client may fetch again.
   | ServerError : Status
-}
 
 /// A request a client sends.
-data Request : Type where {
+data Request : Type where
   /// A path to read.
   | Get : (path : String) --> Request
-}
 
 /// A server's answer: its status and its body.
-data Response : Type where {
+data Response : Type where
   /// The answer.
   | Answer : (status : Status, body : String) --> Response
-}
 
 /// A retrying client, which counts each fetch as a use of the connection.
 module Retrying where {
@@ -43,27 +40,25 @@ module Retrying where {
   /// Fetches `r`, and once more when the first answer is a server error. The
   /// client uses the connection at most twice.
   pub def onceMore(fetch : +U[2] (Request -> Response), r : Request) : Response = {
-    let first = fetch(r);
-    match first.status {
-      ServerError => fetch(r),
-      Served => first,
-    }
+    let first = fetch r;
+    match first.status
+      | ServerError => fetch r
+      | Served => first
   }
 
   /// Fetches `r` up to three times, until an answer is not a server error.
   pub def thrice(fetch : +U[3] (Request -> Response), r : Request) : Response = {
-    let first = fetch(r);
-    match first.status {
-      ServerError => onceMore(fetch, r),
-      Served => first,
-    }
+    let first = fetch r;
+    match first.status
+      | ServerError => onceMore(fetch, r)
+      | Served => first
   }
 }
 
 /// Forces a suspended load exactly twice. The block's counting grades the
 /// thunk, so `thunk[2]` reads in `Count`.
-def warmed(load : String) : (String, String) = {
+def warmed(load : String) : *{String, String} = {
   import Count;
   let cached = thunk[2] { load };
-  (force(cached), force(cached))
+  *{force(cached), force(cached)}
 }

@@ -7,7 +7,6 @@
 /// The guard: a variable no environment sets reads as the empty string, so
 /// it answers the exit code `3`.
 @[ refuses("OutOfFragment.projection_expression") ]
-def exit_by_environment() -> -F Integer {
-  let missing = env.get("GANDR_CORPUS_UNSET_VARIABLE_ZZQ");
+def exit_by_environment() -> -F Integer =
+  let missing = env.get "GANDR_CORPUS_UNSET_VARIABLE_ZZQ"
   if missing == "" { 3 } else { 7 }
-}

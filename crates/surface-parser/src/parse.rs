@@ -917,6 +917,9 @@ impl<'source> FormSplit<'source>
                 Lexeme::Unknown => 17,
                 Lexeme::ShellStringFragment => 18,
                 Lexeme::ArmBar => 19,
+                Lexeme::LayoutOpen => 20,
+                Lexeme::LayoutSemi => 21,
+                Lexeme::LayoutClose => 22,
             });
             spelling.extend_from_slice(&token.end.saturating_sub(origin).to_le_bytes());
         }
@@ -1174,7 +1177,7 @@ mod tests
         for source in [
             "",
             "def x = 1;",
-            "def a = ( ; ¤ def b = #[ ;",
+            "def a = ( ; \u{1} def b = #[ ;",
             "def = ; ? ?",
         ] {
             let parsed = parse(&pbg, SourceText::from(source)).unwrap();
@@ -1278,7 +1281,7 @@ mod tests
         };
         for (closure, document) in [
             (
-                "def a = 1;\nmodule M where {\n  def b = (a, 2);\n}\n",
+                "def a = 1;\nmodule M where {\n  def b = *{a, 2};\n}\n",
                 "def c = M.b;\ndef d = (c ;\n",
             ),
             ("def a = 1;\n", "  \n// c\n\ndef b = a;\n"),

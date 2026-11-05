@@ -1,0 +1,4 @@
+/// `OutOfFragment.ChainedArrow`: a parameter's type chains two arrows, where one function of two inputs takes them as one group.
+@[ refuses("OutOfFragment.ChainedArrow") ]
+def chained(f : Integer -> Integer -> Integer) -> Integer =
+  0

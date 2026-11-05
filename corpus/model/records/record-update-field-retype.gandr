@@ -2,12 +2,12 @@
 // type states the new one.
 
 /// A cell with an integer count.
-def cell = #{count = 3, label = "start"};
+def cell = *{count = 3, label = "start"};
 
 /// `cell` with a string count, the retyped record stated.
-def named : #{count : String, label : String} = #{cell | count = "three"};
+def named : *{count : String, label : String} = *{cell | count = "three"};
 
 /// `count` given a string and returned: the record's `count` is the string
 /// now.
-@[ runs("#{.count = \"three\", .label = \"start\"}") ]
-def recounted() -> #{count : String, label : String} { #{cell | count = "three"} }
+@[ runs("*{.count = \"three\", .label = \"start\"}") ]
+def recounted() -> *{count : String, label : String} { *{cell | count = "three"} }

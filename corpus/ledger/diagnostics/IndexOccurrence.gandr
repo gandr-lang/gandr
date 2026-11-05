@@ -1,6 +1,5 @@
 /// `IndexOccurrence`: a data declaration's own family occurs inside a term a field's type reads.
 @[ refuses("IndexOccurrence") ]
-data Coded : Type where {
+data Coded : Type where
   | Base : Coded
   | Looped : (p : Path[.A = Type](Coded, Coded)) --> Coded
-}

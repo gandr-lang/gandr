@@ -202,7 +202,7 @@ fn whole_file_submit_carries_definitions_forward()
 fn a_malformed_declaration_is_declined_and_the_later_definition_binds()
 {
     let mut session = session(SourceRoot::Strict);
-    let first = submit(&mut session, "def bad = 1 ^ 2 ;\ndef good = 2 ;");
+    let first = submit(&mut session, "def bad = 1 \u{1} 2 ;\ndef good = 2 ;");
     let Composed::Settled { ref report, .. } = *first.composed()
     else {
         panic!("the damaged declaration does not collapse the submission");
@@ -229,7 +229,7 @@ fn a_malformed_declaration_is_declined_and_the_later_definition_binds()
 
     let later = submit(
         &mut session,
-        "def bad = 1 ^ 2 ;\ndef good = 2 ;\ndef later : Integer ;\ndef later = good ;",
+        "def bad = 1 \u{1} 2 ;\ndef good = 2 ;\ndef later : Integer ;\ndef later = good ;",
     );
     assert_eq!(
         rows(later.composed()).get(2_usize),
@@ -425,7 +425,7 @@ fn an_undeclared_type_name_in_a_signature_is_refused_by_name()
     let mut session = session(SourceRoot::Strict);
     let refused = submit(
         &mut session,
-        "def f(x: NoSuchType) -> -F Integer { return 1 }",
+        "def f(x : NoSuchType) -> -F Integer { return 1 }",
     );
     let Composed::Settled { ref report, .. } = *refused.composed()
     else {
@@ -438,7 +438,10 @@ fn an_undeclared_type_name_in_a_signature_is_refused_by_name()
         ),
         "an undeclared type name in a signature is refused by its name: {report:?}"
     );
-    let accepted = submit(&mut session, "def f(x: Integer) -> -F Integer { return 1 }");
+    let accepted = submit(
+        &mut session,
+        "def f(x : Integer) -> -F Integer { return 1 }",
+    );
     assert_eq!(
         rows(accepted.composed()),
         vec![("f".to_owned(), checks(), Settlement::Settled)],
@@ -811,7 +814,7 @@ fn nullary_function_call_evaluates()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def step() -> -F Integer { return 1 }\ndef called : +U (-F Integer) ;\ndef called = thunk { become step() } ;",
+        "def step() -> -F Integer { return 1 }\ndef called : +U (-F Integer) ;\ndef called = thunk { become step () } ;",
     );
     assert_eq!(
         rows(submission.composed()),
@@ -966,7 +969,7 @@ fn module_builtins_type_and_evaluate()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def identity : +U (-F Integer) ; def identity = thunk { become prim.id(5) } ; def first : +U (-F Integer) ; def first = thunk { become prim.const(7, 9) } ;",
+        "def identity : +U (-F Integer) ; def identity = thunk { become prim.id 5 } ; def first : +U (-F Integer) ; def first = thunk { become prim.const 7 9 } ;",
     );
     assert_eq!(rows(submission.composed()), vec![
         ("identity".to_owned(), checks(), Settlement::Settled),
@@ -996,7 +999,9 @@ fn comparison_operators_type_check_and_evaluate()
     )]);
     let answer = constant_of(submission.composed(), SurfaceName::from("answer"));
     assert!(
-        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "+{.0 = unit}")
+        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "+{.0 = *{}}"),
+        "{:?}",
+        submission.evaluate(answer)
     );
 }
 
@@ -1093,7 +1098,7 @@ fn documentation_keeps_its_declaration_links_4963()
 fn a_deprecation_is_kept_by_declaration_identity()
 {
     let mut session = session(SourceRoot::Strict);
-    let text = "@[ deprecated(#{ since = \"0.2\", note = \"use `other`\" }) ]\ndef answer = 42 \
+    let text = "@[ deprecated(*{ since = \"0.2\", note = \"use `other`\" }) ]\ndef answer = 42 \
                 ;\n@[ deprecated ]\ndef bare = 2 ;\ndef other = 1 ;";
     let _submitted = submit(&mut session, text);
     let key = |form: &str| first_declaration(form.into());
@@ -1342,7 +1347,7 @@ fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
     let revision = |three: &str, four: &str, after: &str| {
         format!(
             "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = {three} ;\ndef five : \
-             Path[.A = Integer](three, 1) ;\ndef five = Path.here(1) ;\ndef four : Integer ;\ndef four = \
+             Path[.A = Integer](three, 1) ;\ndef five = Path.here 1 ;\ndef four : Integer ;\ndef four = \
              {four} ;\n{after}"
         )
     };

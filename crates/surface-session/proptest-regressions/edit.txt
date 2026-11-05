@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 022ed88dc270be60d33225e87f9cb3e0a8760b0a6ee61428b5a7c05986ad3816 # shrinks to old = [Stmt { name: 0, ascription: None, body: Int(0) }], new = [Stmt { name: 0, ascription: None, body: Int(0) }]
+cc da3d5bb12c7cfcdb31a95e8a5d25031eabf9f18fc5181b13e5719a6ab9f6f2d1 # shrinks to statements = [Stmt { name: 0, ascription: None, body: Function(0) }]

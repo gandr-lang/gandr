@@ -22,45 +22,40 @@ import std.net;
 
 /// Accept one stream, read its ping, answer `pong`, disconnect, and return
 /// the ping.
-pub def serve() -> [std.net.Eff] String {
-  let (peer, stream) = std.net.accept();
-  let ping = std.net.receive(stream);
-  std.net.transmit(stream, "pong");
-  std.net.disconnect(stream);
+pub def serve() -> [std.net.Eff] String =
+  let *{peer, stream} = std.net.accept ()
+  let ping = std.net.receive stream
+  std.net.transmit stream "pong"
+  std.net.disconnect stream
   ping
-}
 
 /// Dial `peer`, send `ping`, read the answer, disconnect, and return the
 /// answer.
-pub def ping(peer : String) -> [std.net.Eff] String {
-  let stream = std.net.connect(peer);
-  std.net.transmit(stream, "ping");
-  let pong = std.net.receive(stream);
-  std.net.disconnect(stream);
+pub def ping(peer : String) -> [std.net.Eff] String =
+  let stream = std.net.connect peer
+  std.net.transmit stream "ping"
+  let pong = std.net.receive stream
+  std.net.disconnect stream
   pong
-}
 
 /// `ping` under a handler written here, a second model of `std.net.Eff` whose every
 /// received frame is `pong`. The same term returns what the server answers.
 @[ runs("\"pong\"") ]
-def pingAnswered() -> String {
+def pingAnswered() -> String =
   handle n : std.net.Eff {
-    ping("peer")
+    ping "peer"
   } with {
-    pure(x) => pure x,
-    oper connect(peer, k) => k(0),
-    oper accept(k) => k(("peer", 0)),
-    oper transmit(sent, k) => k(unit),
-    oper receive(stream, k) => k("pong"),
-    oper disconnect(stream, k) => k(unit)
+    | pure(x) => pure x
+    | oper connect(peer, k) => k 0
+    | oper accept(k) => k "peer" 0
+    | oper transmit(sent, k) => k *{}
+    | oper receive(stream, k) => k "pong"
+    | oper disconnect(stream, k) => k *{}
   }
-}
 
 /// The entry: serve with no argument, ping the peer the first argument
 /// names otherwise, print what came back, and exit with 0.
-def main(args : List(String)) -> [std.net.Eff, std.io.Console.Eff] Integer {
-  match args {
-    #[] => { let got = serve(); std.io.Console.print(got); 0 },
-    #[peer, .._] => { let got = ping(peer); std.io.Console.print(got); 0 }
-  }
-}
+def main(args : List(String)) -> [std.net.Eff, std.io.Console.Eff] Integer =
+  match args
+    | #[] => { let got = serve (); std.io.Console.print got; 0 }
+    | #[peer, .._] => { let got = ping peer; std.io.Console.print got; 0 }

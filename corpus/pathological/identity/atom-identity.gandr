@@ -15,44 +15,44 @@
 import "../../model/identity/atom-identity.gandr";
 
 /// The unit type sealed, stating the relation and its reflexivity alone.
-module Lawless :> #{ type T, origin : T, other : T } where {
+module Lawless :> *{ type T, origin : T, other : T } where {
   /// The sealed points, whose interface names no transport law.
-  @[ identity((related, reflexivity)) ]
+  @[ identity(*{related, reflexivity}) ]
   type T = Unit;
 
   /// One point.
-  def origin = unit;
+  def origin = *{};
 
   /// Another point.
-  def other = unit;
+  def other = *{};
 }
 
 /// The relation's evidence between two sealed points, refused: the interface
 /// names no transport law.
 @[ refuses("AtomTransport") ]
-def lawlessOriginOther : Path(Lawless.origin, Lawless.other) = unit;
+def lawlessOriginOther : Path(Lawless.origin, Lawless.other) = *{};
 
 /// The transport law at the paths of the unit type written as no pair,
 /// refused: an identity in the singleton's total space is a path in the
 /// unit type and one over it.
 @[ refuses("TypeMismatch") ]
 def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
-  (b, r),
-  (a, pathReflexivity(a))
-) { unit }
+  *{b, r},
+  *{a, pathReflexivity a}
+) { *{} }
 
 /// The unit type sealed, naming the refused law. The atom and its members
 /// check against their types; the kernel withholds them with the law, as it
 /// withholds every reader of a declaration that did not cross, rather than
 /// faulting the source.
-module UnpairedPoint :> #{ type T, origin : T, other : T } where {
+module UnpairedPoint :> *{ type T, origin : T, other : T } where {
   /// The sealed points, whose transport law is refused.
-  @[ identity((pathRelated, pathReflexivity, unpairedContraction)) ]
+  @[ identity(*{pathRelated, pathReflexivity, unpairedContraction}) ]
   type T = Unit;
 
   /// One point.
-  def origin = unit;
+  def origin = *{};
 
   /// Another point.
-  def other = unit;
+  def other = *{};
 }

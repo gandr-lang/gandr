@@ -25,9 +25,8 @@ pub world far;
 
 /// `far` computes forty-two and holds it, and a second migration reads it
 /// there again.
-@[ entry((near, far, far)), runs("42") ]
-def main() -> Integer {
+@[ entry(*{near, far, far}), runs("42") ]
+def main() -> Integer =
   let held : Integer at far = migrate [far] { (hold (6 * 7)) };
-  let answer at far = held;
+  let answer at far = held
   migrate [far] { pure answer }
-}

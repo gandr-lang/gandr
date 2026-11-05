@@ -76,12 +76,13 @@
 //! core's shape is exactly the one the sugar stands for: the product `A * B`
 //! and the sum `A + B` of two components or more, `A * B * C` one product of
 //! three as the lowering flattens the chain; the binary lazy product `C & D`;
-//! the tuple `(a, b)` of two components or more; the value-function alias
-//! `A => C`, `() => C` and `(A, B) => C` for a thunk over a chain of
-//! non-dependent arrows ending in a pure returner; and the path composite
-//! `Path.step(p, q)` for the returned transport `Path.walk(fun (y) { Path[.A =
-//! A](a, y) }, q, p)` it derives, the carrier and the fixed endpoint naming no
-//! `y` (#754). A dependent arrow, an effectful returner, a record, a sum or
+//! the value-function alias `A -> C`, `() -> C` and `(A, B) -> C` for a thunk
+//! over a chain of non-dependent arrows ending in a pure returner; and the
+//! path composite `Path.step p q` for the returned transport `Path.walk (fun
+//! (y) { Path[.A = A](a, y) }) q p` it derives, the carrier and the fixed
+//! endpoint naming no `y` (#754). A tuple is the record `*{a, b}` in either
+//! form: a group is never a stored value (#4853). A dependent arrow, an
+//! effectful returner, a record, a sum or
 //! product of one component and the empty ones keep their explicit spelling.
 //! Sugared is what every reader-facing
 //! face shows — a hover, a diagnostic, the REPL, the terminal face and a
@@ -442,13 +443,13 @@ pub enum Wildcards
 pub enum Form
 {
     /// Every sugar the grammar parses where the core's shape is exactly the
-    /// sugar's: the value-function alias `(A, B) => C` for `+U (A -> B -> -F
-    /// C)`, the infix `A * B`, `A + B` and `C & D`, the tuple `(a, b)`, and
-    /// the path composite `Path.step(p, q)` for the transport it derives.
-    /// The form every face a person reads takes by default.
+    /// sugar's: the value-function alias `(A, B) -> C` for `+U (A -> B -> -F
+    /// C)`, the infix `A * B`, `A + B` and `C & D`, and the path composite
+    /// `Path.step p q` for the transport it derives. The form every face a
+    /// person reads takes by default.
     Sugared,
     /// What the core holds, former by former: `+U (A -> B -> -F C)`,
-    /// `#{A, B}`, `+{A, B}`, `&{C, D}` and `#{a, b}`.
+    /// `*{A, B}`, `+{A, B}`, `&{C, D}` and `*{a, b}`.
     Explicit,
 }
 

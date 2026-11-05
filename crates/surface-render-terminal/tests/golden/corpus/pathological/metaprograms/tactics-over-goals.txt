@@ -1,7 +1,7 @@
 error[OutOfFragment.WrongSort]: a splice expression cannot stand where a computation is expected
    ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:29:3
    │
-29 │   ~assumption;
+29 │   ~assumption
    │   ━━━━━━━━━━━ a form of another sort than this position takes
    │
    ├ note: `ranSplice` is refused with OutOfFragment.WrongSort, as its expectation states
@@ -15,7 +15,7 @@ error[TacticRefused]: the tactic `assumption` reaches a goal whose type no binde
    │ │        │                      │
    │ │        │                      a splice its tactic does not answer
    │ │        checked against `Unit -> -F Integer`; while checking the body of this function; binds u : Unit
-   │ checked against `Unit => Integer`; while checking the body of this thunk
+   │ checked against `Unit -> Integer`; while checking the body of this thunk
    │
    ├ note: `none` is refused with TacticRefused, as its expectation states
    ╰ help: replace the tactic with a proof term
@@ -23,8 +23,8 @@ error[TacticRefused]: the tactic `assumption` reaches a goal whose type no binde
 error[TacticRefused]: the tactic `intro(assumption)` introduces a binder where the goal is no function
    ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:14:22
    │
-14 │ def flat : Integer = ~intro(assumption);
-   │                      ━━━━━━━━━━━━━━━━━━ a splice its tactic does not answer
+14 │ def flat : Integer = ~intro assumption;
+   │                      ━━━━━━━━━━━━━━━━━ a splice its tactic does not answer
    │
    ├ note: `flat` is refused with TacticRefused, as its expectation states
    ╰ help: replace the tactic with a proof term

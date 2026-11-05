@@ -1,50 +1,41 @@
 @[ checks, form(explicit) ]
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 @[ checks ]
-def rec down(n : Nat) -> -F Nat {
-  match n {
-    Zero => return n,
-    Succ(p) => become down[<](p)
-  }
-}
+def rec down(n : Nat) -> -F Nat =
+  match n
+    | Zero => return n
+    | Succ(p) => become down[<] p
 
 @[ checks ]
 def produced(n : Nat) -> -F Nat { pure n }
 
 @[ checks ]
-def called(n : Nat) -> -F Nat { down(n) }
+def called(n : Nat) -> -F Nat { down n }
 
 @[ checks ]
-def one_arm(n : Nat) -> -F Nat {
-  match n {
-    Zero => return n,
-    Succ(p) => pure p
-  }
-}
+def one_arm(n : Nat) -> -F Nat =
+  match n
+    | Zero => return n
+    | Succ(p) => pure p
 
 @[ checks ]
-def sequenced(n : Nat) -> -F Nat {
-  let m = down(n);
+def sequenced(n : Nat) -> -F Nat =
+  let m = down n
   pure m
-}
 
 @[ checks ]
-def nested(n : Nat) -> -F Nat {
-  match n {
-    Zero => return n,
-    Succ(p) => {
-      let q = match p {
-        Zero => return p,
-        Succ(r) => pure r,
-      };
+def nested(n : Nat) -> -F Nat =
+  match n
+    | Zero => return n
+    | Succ(p) => {
+      let q = match p
+        | Zero => return p
+        | Succ(r) => pure r
       pure q
-    },
-  }
-}
+    }
 
 @[ checks ]
 def thunked() -> -F Nat { pure Zero }
@@ -53,7 +44,6 @@ def thunked() -> -F Nat { pure Zero }
 def lambda(n : Nat) -> -F Nat { pure n }
 
 @[ checks ]
-def bound(n : Nat) -> -F Nat {
-  let m = match n -> -F Nat { Zero => pure n, Succ(p) => pure p };
+def bound(n : Nat) -> -F Nat =
+  let m = match n -> -F Nat { | Zero => pure n | Succ(p) => pure p };
   return m
-}

@@ -13,7 +13,7 @@
 /// Values `V`, computations `C` and the order between two computations:
 /// reflexive, transitive, and an extension below another where its
 /// computation and each of its continuations are.
-theory SpecificationMonad where {
+theory SpecificationMonad where
   sort V : Type+;
   sort C : Type;
   sort Below(w : C, v : C) : Type;
@@ -29,4 +29,3 @@ theory SpecificationMonad where {
     p : Below(m, n),
     q : pi+ (x : V). Below(k(x), l(x))
   ) --> Below(ext(m, k), ext(n, l));
-}

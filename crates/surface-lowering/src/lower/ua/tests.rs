@@ -31,8 +31,8 @@ const MAGMA: &str = r"theory Magma where {
 }
 def exchange(b : Bool) -> -F Bool {
   match b {
-    true => return +{.1 = unit},
-    false => return +{.0 = unit}
+    | true => return +{.1 = *{}}
+    | false => return +{.0 = *{}}
   }
 }
 def keep(e : +{Unit}) -> -F +{Unit} {
@@ -91,7 +91,7 @@ fn a_statement_lowers_to_univalence_at_its_stratum()
 {
     let mut arena = CoreArena::new();
     let source = format!(
-        "{MAGMA}def opposite = ua[1, 4](Magma, Magma, #{{mul = exchange, one = keep}}, #{{mul = exchange, one = keep}});\n"
+        "{MAGMA}def opposite = ua[1, 4] Magma Magma (*{{mul = exchange, one = keep}}) (*{{mul = exchange, one = keep}});\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let outcome = outcome_of(&module, "opposite".into());
@@ -106,7 +106,7 @@ fn a_statement_lowers_to_univalence_at_its_stratum()
         backward,
     }) = arena.value(body)
     else {
-        panic!("`ua[1, 4](…)` is univalence at a stratum");
+        panic!("`ua[1, 4] …` is univalence at a stratum");
     };
     assert_eq!(stratum, Stratum {
         degree: Degree::from(1_usize),
@@ -144,12 +144,12 @@ fn a_statement_lowers_to_univalence_at_its_stratum()
         .find(|&&(statement, _)| statement == body)
         .map(|&(_, named)| named.map(|origin| usize::from(origin.span().start())));
     let first = source
-        .find("(Magma")
+        .find("] Magma")
         .expect("the call names its sides")
-        .saturating_add(1);
+        .saturating_add("] ".len());
     assert_eq!(
         starts,
-        Some([first, first.saturating_add("Magma, ".len())]),
+        Some([first, first.saturating_add("Magma ".len())]),
         "each description is named where it is written, the source's first"
     );
     let report = judged(&module, &mut arena);
@@ -176,7 +176,7 @@ fn a_statement_the_syntax_cannot_read_is_refused()
             | DeclarationOutcome::World) => panic!("`{written}` is refused: {other:?}"),
         }
     };
-    let records = "#{mul = exchange, one = keep}";
+    let records = "(*{mul = exchange, one = keep})";
     let start = MAGMA.len().saturating_add("def opposite = ".len());
     let spans = |refusal: &LoweringRefusal<'_>| {
         refusal.span().map(|span| {
@@ -186,7 +186,7 @@ fn a_statement_the_syntax_cannot_read_is_refused()
             )
         })
     };
-    let single = refused(&format!("ua[1](Magma, Magma, {records}, {records})"));
+    let single = refused(&format!("ua[1] Magma Magma {records} {records}"));
     assert!(
         matches!(
             single,
@@ -197,9 +197,7 @@ fn a_statement_the_syntax_cannot_read_is_refused()
         ) && spans(&single) == quenchant_shape::shape::Maybe::Present((0_usize, 5_usize)),
         "a single resident is refused at the head that writes it: {single:?}"
     );
-    let typed = refused(&format!(
-        "ua[1, Integer](Magma, Magma, {records}, {records})"
-    ));
+    let typed = refused(&format!("ua[1, Integer] Magma Magma {records} {records}"));
     assert!(
         matches!(typed, LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::UaCount),
@@ -208,14 +206,14 @@ fn a_statement_the_syntax_cannot_read_is_refused()
         "a resident not written in digits alone is refused where it stands: {typed:?}"
     );
     assert!(matches!(
-        refused(&format!("ua[1, 4](Magma, Magma, {records})")),
+        refused(&format!("ua[1, 4] Magma Magma {records}")),
         LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Arity(count),
             ..
         } if count == OperandCount::from(3_usize)
     ));
     assert!(matches!(
-        refused(&format!("ua[1, 4](Monoid, Magma, {records}, {records})")),
+        refused(&format!("ua[1, 4] Monoid Magma {records} {records}")),
         LoweringRefusal::UnresolvedName { name, .. } if name.as_ref() == "Monoid"
     ));
 }
@@ -225,7 +223,7 @@ fn a_statement_the_syntax_cannot_read_is_refused()
 #[test]
 fn a_later_member_named_ua_is_a_forward_reference()
 {
-    let source = "theory S where { sort M : Type; }\nmodule M where { def o = ua[1, 4](S, S, #{}, #{}); def ua = 1; \
+    let source = "theory S where { sort M : Type; }\nmodule M where { def o = ua[1, 4] S (S (*{})) (*{}); def ua = 1; \
                   }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
@@ -246,12 +244,12 @@ fn a_later_member_named_ua_is_a_forward_reference()
 }
 
 /// A recursive function named `compose` claims its recursion with
-/// `compose[<](…)`: its own name shadows the composite's head.
+/// `compose[<] …`: its own name shadows the composite's head.
 #[test]
 fn a_recursive_function_named_compose_recurses_through_its_claim()
 {
-    let source = "def rec compose(xs : List(Integer)) -> Integer {\n  match xs {\n    #[] => 0,\n    #[_, \
-                  ..rest] => compose[<](rest)\n  }\n}\n";
+    let source = "def rec compose(xs : List(Integer)) -> Integer {\n  match xs {\n    | #[] => 0\n    | #[_, \
+                  ..rest] => compose[<] rest\n  }\n}\n";
     let mut arena = CoreArena::new();
     let source = listing(source);
     let module = listed(&source, &mut arena);
@@ -281,7 +279,7 @@ fn a_description_outside_the_stratum_is_refused_at_its_name()
     ] {
         let mut arena = CoreArena::new();
         let source = format!(
-            "{MAGMA}{theory}def opposite = ua[1, 4](Magma, {name}, #{{mul = exchange}}, #{{f = exchange}});\n"
+            "{MAGMA}{theory}def opposite = ua[1, 4] Magma {name} (*{{mul = exchange}}) (*{{f = exchange}});\n"
         );
         let module = lowered(SourceText::from(source.as_str()), &mut arena);
         let refused = outcome_of(&module, "opposite".into());

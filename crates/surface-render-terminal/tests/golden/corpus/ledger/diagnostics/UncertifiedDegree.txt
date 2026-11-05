@@ -1,11 +1,11 @@
 error[UncertifiedDegree]: `ua` is certified from degree 1 to the catalogue's largest degree
-   ╭▸ corpus/ledger/diagnostics/UncertifiedDegree.gandr:28:13
+   ╭▸ corpus/ledger/diagnostics/UncertifiedDegree.gandr:24:13
    │
-28 │   def above = ua[
+24 │   def above = ua[
    │ ┏━━━━━━━━━━━━━┛
-29 │ ┃   5,
-30 │ ┃   4
-31 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+25 │ ┃   5,
+26 │ ┃   4
+27 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep}) ;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a degree no shape of the catalogue reaches
    │
    ├ note: `above` is refused with UncertifiedDegree, as its expectation states

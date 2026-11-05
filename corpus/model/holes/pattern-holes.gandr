@@ -6,37 +6,31 @@
 // - see: #391 — `rank`, `weigh`
 
 /// Three colours.
-data Shade : Type where {
+data Shade : Type where
   | Crimson : Shade
   | Olive : Shade
   | Navy : Shade
-}
 
 /// A hole between two arms.
 @[ refuses("UndecidedCoverage") ]
-def rank(c : Shade) -> Integer {
-  match c {
-    Crimson => 0,
-    ? => 1,
-    Navy => 2
-  }
-}
+def rank(c : Shade) -> Integer =
+  match c
+    | Crimson => 0
+    | ? => 1
+    | Navy => 2
 
 /// An integer, or none.
-data Option : Type where {
+data Option : Type where
   | NoValue : Option
   | Value : (x : Integer) --> Option
-}
 
 /// A hole inside a payload.
 @[ refuses("UndecidedCoverage") ]
-def weigh(m : Option) -> Integer {
-  match m {
-    Value(?) => 100,
-    NoValue => 200
-  }
-}
+def weigh(m : Option) -> Integer =
+  match m
+    | Value(?) => 100
+    | NoValue => 200
 
 /// Nothing weighed: it checks against `weigh`'s signature, whose body the hole
 /// above leaves refused, so it is not run.
-def weighed() -> Integer { weigh(NoValue) }
+def weighed() -> Integer { weigh NoValue }

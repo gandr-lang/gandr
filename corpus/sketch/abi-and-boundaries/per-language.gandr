@@ -25,7 +25,7 @@ import std.abi.Swift;
 /// A Rust crate's exported function. rustc's layouts give its row, where
 /// `Option(&u32)` is one word with `None` in the reference's niche.
 extern Rust from "crate:demo" {
-  fun f(x : Option(&u32), n : u32) -> u32;
+  fun f(x : Option(& u32), n : u32) -> u32;
 }
 
 /// The same function behind `extern "C"`, admitted under the C row: a C
@@ -41,11 +41,9 @@ extern Swift from "package:Greeting" {
 }
 
 /// The Rust function, called with a reference.
-pub def fromRust(x : &u32, n : u32) -> u32 {
-  f(Some(x), n)
-}
+pub def fromRust(x : & u32, n : u32) -> u32 =
+  f (Some x) n
 
 /// The Rust function, called with no reference.
-pub def fallback(n : u32) -> u32 {
-  f(None, n)
-}
+pub def fallback(n : u32) -> u32 =
+  f None n

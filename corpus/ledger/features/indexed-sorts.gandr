@@ -12,72 +12,67 @@ import std.list (List);
 /// The shape of a category without its laws: a sort of morphisms indexed by
 /// two objects, an identity at each object and composition.
 @[ checks ]
-theory CatShape where {
+theory CatShape where
   sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
 
   oper id : (a : Ob) --> Hom(a, a);
   oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
-}
 
 /// Types and the functions between them as a model of the shape: `Hom` is a
 /// function from its two indices into the universe.
 module SetoidCat : Model(CatShape) where {
   type Ob = Type;
-  type Hom(a : Ob, b : Ob) = a => b;
+  type Hom(a : Ob, b : Ob) = a -> b;
 
   /// The identity function at a type.
   @[ runs("fun (a) { fun (b) { b } }") ]
   def ident(t : Type, x : t) -> t { x }
 
   /// Composition of two functions, applied.
-  @[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e(d(f)) } } } } } }") ]
+  @[ runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }") ]
   def compose(
     t : Type,
     u : Type,
     v : Type,
-    f : t => u,
-    g : u => v,
+    f : t -> u,
+    g : u -> v,
     x : t
-  ) -> v {
-    g(f(x))
-  }
+  ) -> v =
+    g (f x)
 
   /// The interface's identity runs to a function that applies `ident`, which
   /// the signature hides, so the run is opaque at the model.
-  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) => a => a") ]
-  def id(t : Type) -> t => t { thunk { ident(t) } }
+  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) -> (a -> a)") ]
+  def id(t : Type) -> t -> t { thunk { ident t } }
 
   /// Composition likewise runs through the hidden `compose`.
-  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a => b, b => c) => a => c") ]
+  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a -> b, b -> c) -> (a -> c)") ]
   def comp(
     t : Type,
     u : Type,
     v : Type,
-    f : t => u,
-    g : u => v
-  ) -> t => v {
-    thunk { compose(t, u, v, f, g) }
-  }
+    f : t -> u,
+    g : u -> v
+  ) -> t -> v =
+    thunk { compose t u v f g }
 }
 
 /// A carrier indexed by the host's types: its index ranges over `Type`, the
 /// binder named as a definition's type parameter is, and an operation over it
 /// takes the index its port's sort names.
-theory Carrier where {
+theory Carrier where
   sort T(A : Type) : Type;
 
   oper same : (x : T(a)) --> T(a);
-}
 
 /// Lists as a model of the carrier: `T` is a family from the host's types
 /// into the universe.
-module Lists : Model(Carrier) where {
+module Lists : Model(Carrier) where
   type T(a : Type) = List(a);
 
   /// The list unchanged.
   def same(a : Type, x : List(a)) -> List(a) { x }
-}
 
 /// A client reaches the model's family through the model's name: `Lists.T`
 /// at `Integer` is the list of integers.
@@ -86,37 +81,33 @@ def kept(xs : Lists.T(Integer)) -> List(Integer) { xs }
 
 /// A carrier into the computation types: `Type[-]` classifies the sort, so a
 /// model answers it with a family into the computation types.
-theory Computing where {
+theory Computing where
   sort T(A : Type) : Type[-];
-}
 
 /// Lists, returned: `T` is a family from the host's types into the
 /// computation types.
-module Returning : Model(Computing) where {
+module Returning : Model(Computing) where
   type T(a : Type) = -F List(a);
-}
 
 /// Families and their sections. A context and a family over it index `Sec`,
 /// so an earlier indexed sort indexes it.
-theory Sections where {
+theory Sections where
   sort Ctx : Type;
   sort Fam(g : Ctx) : Type;
   sort Sec(g : Ctx, a : Fam(g)) : Type;
 
   oper whole : (g : Ctx) --> Fam(g);
-}
 
 /// Types and their families. The member `Sec` reads the member `Fam` at its
 /// binder `a`, and it calls `a` where it reads a type.
-module Pointwise : Model(Sections) where {
+module Pointwise : Model(Sections) where
   type Ctx = Type;
-  type Fam(g : Ctx) = g => Type;
-  type Sec(g : Ctx, a : Fam(g)) = (x : g) => a(x);
+  type Fam(g : Ctx) = g -> Type;
+  type Sec(g : Ctx, a : Fam(g)) = (x : g) -> a(x);
 
   /// The family that is `Unit` at every point.
-  def whole(g : Type) -> g => Type { return fun (_x) { return Unit } }
-}
+  def whole(g : Type) -> g -> Type { return fun (_x) { return Unit } }
 
 /// A section of a family over the integers gives, at a point, a value of the
 /// type the family names there.
-def readAt(a : Integer => Type, s : Pointwise.Sec(Integer, a), n : Integer) -> a(n) { s(n) }
+def readAt(a : Integer -> Type, s : Pointwise.Sec(Integer, a), n : Integer) -> a(n) { s n }

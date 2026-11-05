@@ -15,4 +15,4 @@ def unitString : Bridge[.A = Type](Unit, String) = thunk {
 
 /// Two equal lists of integers, related cell by cell.
 @[ checks ]
-def sameDigits : Bridge[.A = List(Integer)](#[1, 2], #[1, 2]) = (unit, (unit, unit));
+def sameDigits : Bridge[.A = List(Integer)](#[1, 2], #[1, 2]) = *{*{}, *{*{}, *{}}};

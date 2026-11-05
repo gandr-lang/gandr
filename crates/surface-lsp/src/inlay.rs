@@ -407,15 +407,15 @@ mod tests
             [
                 "def first+1:8 : Nat",
                 "def pick+1:8 : Nat",
-                "def pick+4:13 : Nat",
-                "def leave+4:13 : Nat",
-                "def sift+4:13 : Nat",
+                "def pick+4:15 : Nat",
+                "def leave+4:15 : Nat",
+                "def sift+4:15 : Nat",
                 "def handled+2:10 : Nat",
-                "def handled+5:11 : Nat",
-                "def handled+6:19 : Integer",
-                "def handled+6:22 : Stack(-F [Partial] Unit, -F [Partial] Nat)",
+                "def handled+5:13 : Nat",
+                "def handled+6:21 : Integer",
+                "def handled+6:24 : Stack(-F [Partial] Unit, -F [Partial] Nat)",
                 "def find_succ+1:8 : Nat",
-                "def find_succ+4:13 : Nat",
+                "def find_succ+4:15 : Nat",
                 "def for_each+1:8 : Nat",
                 "def for_value+1:8 : Nat",
                 "def for_value+1:16 : Nat",
@@ -430,7 +430,7 @@ mod tests
         );
         assert_eq!(
             hinted("surface/control-flow.gandr", &|text| {
-                let at = line_of(text, "for x in xs { tick(x); }");
+                let at = line_of(text, "for x in xs { tick x; }");
                 at .. at.saturating_add(1)
             }),
             ["def for_each+1:8 : Nat"],
@@ -452,7 +452,7 @@ mod tests
     {
         let written = "def one() -> Integer { 1 }\n\
                        def two() -> -F Integer { return 2 }\n\
-                       def three() -> -F Integer { one() }\n";
+                       def three() -> -F Integer { one () }\n";
         let text = SourceText::from(written);
         let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(written.len()))
             .expect("an ordered window");

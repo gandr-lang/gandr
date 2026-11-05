@@ -1,22 +1,18 @@
 @[ refuses("OutOfFragment.Endpoint") ]
-def parameter_as_endpoint(rounds : Integer) -> -F Unit {
+def parameter_as_endpoint(rounds : Integer) -> -F Unit =
   close(rounds)
-}
 
 @[ refuses("OutOfFragment.NonContractive") ]
-def recursion_before_any_action() -> -F Unit {
+def recursion_before_any_action() -> -F Unit =
   let desk = fork (seat : mu turn. turn) { close(seat) };
   close(desk)
-}
 
 @[ refuses("OutOfFragment.WrongSort") ]
-def value_type_as_continuation() -> -F Unit {
+def value_type_as_continuation() -> -F Unit =
   let desk = fork (seat : !Integer. Integer) { close(seat) };
   close(desk)
-}
 
 @[ refuses("MalformedForm") ]
-def branch_without_label() -> -F Unit {
+def branch_without_label() -> -F Unit =
   let desk = fork (seat : !Integer. +{end, end}) { close(seat) };
   close(desk)
-}

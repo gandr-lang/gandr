@@ -18,18 +18,16 @@
 pub data Stores : Type where {
   | End : (x : Integer) --> Stores
   | Store : (s : Integer, k : Stores) --> Stores
-  rule : Store(s, Store(u, k)) <=> Store(u, k);
+  rule : Store s (Store u k) <=> Store u k;
 }
 
 /// The final state from an initial one: each store hands its state to the
 /// rest of the program, and the end returns the state it is handed.
-def rec final(p : Stores, s : Integer) -> Integer {
-  match p {
-    End(_x) => s,
-    Store(t, k) => final[<](k, t)
-  }
-}
+def rec final(p : Stores, s : Integer) -> Integer =
+  match p
+    | End(_x) => s
+    | Store(t, k) => final[<] k t
 
 /// Three stores from zero leave the last stored.
 @[ runs("3") ]
-def finalOfThree : () => Integer = final(Store(1, Store(2, Store(3, End(0)))), 0);
+def finalOfThree : () -> Integer = final (Store 1 (Store 2 (Store 3 (End 0)))) 0;

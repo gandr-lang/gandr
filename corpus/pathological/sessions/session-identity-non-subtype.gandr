@@ -9,5 +9,5 @@ module Evolution where {
     pause : !String. turn
   };
   @[ refuses("SessionNotSubtype") ]
-  def narrowed : Flow[.A = Type](SeatEnd′, SeatEnd) = Flow.sim(SeatEnd′, SeatEnd);
+  def narrowed : Flow[.A = Type](SeatEnd′, SeatEnd) = Flow.sim SeatEnd′ SeatEnd;
 }

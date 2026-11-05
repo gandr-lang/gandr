@@ -1,23 +1,19 @@
 /// `RoundTripDistinct`: a universe equivalence whose round trip does not return its input.
 @[ checks ]
-def not(b : Unit + Unit) -> -F (Unit + Unit) {
-  match b {
-    +{.0 = u} => +{.1 = u},
-    +{.1 = u} => +{.0 = u}
-  }
-}
+def not(b : Unit + Unit) -> -F (Unit + Unit) =
+  match b
+    | +{.0 = u} => +{.1 = u}
+    | +{.1 = u} => +{.0 = u}
 
 @[ checks ]
-def not_not(b : Unit + Unit) -> -F (Unit + Unit) {
-  not(not(b))
-}
+def not_not(b : Unit + Unit) -> -F (Unit + Unit) =
+  not (not b)
 
 @[ checks ]
-def same(b : Unit + Unit) -> -F (Unit + Unit) {
+def same(b : Unit + Unit) -> -F (Unit + Unit) =
   b
-}
 
 @[ refuses("RoundTripDistinct") ]
 def collapse_bool : Path[.A = Type](Bool, Bool) ;
 
-def collapse_bool = equiv(not, same) ;
+def collapse_bool = equiv not same ;

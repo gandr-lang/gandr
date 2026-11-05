@@ -3,6 +3,5 @@
 world seat ;
 @[ entry(seat) ]
 @[ checks ]
-def opened() -> -F Unit {
-  pure unit
-}
+def opened() -> -F Unit =
+  pure *{}

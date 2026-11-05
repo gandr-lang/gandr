@@ -17,27 +17,23 @@ module Roster where {
   type New = List(Integer) * String;
   /// The translator: the fields swapped, the scores moved unread.
   @[ checks ]
-  def toNew(old : Old) -> New {
-    match old {
-      #{name, scores} => (scores, name)
-    }
-  }
+  def toNew(old : Old) -> New =
+    match old
+      | *{name, scores} => *{scores, name}
   /// The flow from the old record to the new, by its translator.
   @[ checks ]
-  def upgrade : Flow[.A = Type](Old, New) = Flow.into(toNew);
+  def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
   /// A list kept whole: the flow from a list code to itself.
   @[ checks ]
-  def wrap(xs : List(Integer)) -> List(Integer) {
+  def wrap(xs : List(Integer)) -> List(Integer) =
     xs
-  }
   @[ checks ]
-  def lists : Flow[.A = Type](List(Integer), List(Integer)) = Flow.into(wrap);
+  def lists : Flow[.A = Type](List(Integer), List(Integer)) = Flow.into wrap;
   /// One record ridden along the flow.
   @[ checks ]
-  def moved(old : Old) -> New {
-    Flow.ride(fun (X) { X }, upgrade, old)
-  }
+  def moved(old : Old) -> New =
+    Flow.ride (fun (X) { X }) upgrade old
   /// A record of two scores migrated by a run.
-  @[ runs("(cons(90, cons(85, nil)), \"ada\")") ]
-  def one : () => New = moved(("ada", cons(90, cons(85, nil))));
+  @[ runs("*{cons 90 (cons 85 nil), \"ada\"}") ]
+  def one : () -> New = moved (*{"ada", cons 90 (cons 85 nil)});
 }

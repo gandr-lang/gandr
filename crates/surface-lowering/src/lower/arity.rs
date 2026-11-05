@@ -1,6 +1,6 @@
 //! The arity-shaped formers in the lowering: the telescope `#{…}`, the sum
 //! over labels `+{…}` and the lazy record over labels `&{…}`, at the type,
-//! the value and the observation, and the telescope Π `(x : A, …) => C`. The
+//! the value and the observation, and the telescope Π `(x : A, …) -> C`. The
 //! patterns of the first two are read by the match compiler (`native`).
 //!
 //! # One core former per reading of a delimiter
@@ -110,13 +110,13 @@
 //!
 //! # A telescope Π binds an entry a later type names
 //!
-//! `(x : A, y : B(x)) => C` is `+U (Π x : A. Π y : B(x). -F C)`: an entry is a
+//! `(x : A, y : B(x)) -> C` is `+U (Π x : A. Π y : B(x). -F C)`: an entry is a
 //! dependent arrow exactly where a later entry or the codomain names its
 //! binder, as a type or as a value standing in one, and a plain arrow
 //! everywhere else, an unnamed entry always. A variable written in a later
 //! entry counts only the dependent arrows before it. The dependent arrow
 //! `(x : A) -> C` reads by the same rule: a Π where `C` names `x`, the plain
-//! arrow otherwise. So `(n : Integer) => Integer` is the type `def f(n :
+//! arrow otherwise. So `(n : Integer) -> Integer` is the type `def f(n :
 //! Integer) -> -F Integer` declares, `(n : Integer) -> -F Integer` the
 //! computation under its thunk, and a model's operation whose clause binds an
 //! index nothing later reads converts with the member that implements it.
@@ -130,7 +130,7 @@
 //! - Reason: the kernel kept a Π whose codomain ignores its binder and the
 //!   plain arrow over the same children distinct, and asked the producer to
 //!   emit the dependent former only where the codomain is scoped; reading the
-//!   spelling as written made `def g : (n : Integer) => Integer` and the `def
+//!   spelling as written made `def g : (n : Integer) -> Integer` and the `def
 //!   g(n : Integer) -> -F Integer` that defines it two types, and a model's
 //!   `def` members unable to meet the components `Model(S)` derives. A
 //!   transport motive is unaffected: the motive reader takes a plain arrow and
@@ -201,6 +201,7 @@ use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Origin;
+use crate::resolve::Bound;
 use crate::resolve::Mentioned;
 use crate::resolve::OperandCount;
 use crate::resolve::ScopeId;
@@ -498,6 +499,15 @@ pub(super) struct Planned(pub bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Grouped(pub bool);
 
+/// Whether a written type is written as a computation type: a returner, a
+/// lazy product or a lazy record, or an arrow into one of those.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct Computed(pub bool);
+
 /// The place of an entry among the entries a type states, counting from
 /// zero.
 ///
@@ -757,6 +767,8 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Read the entries of a type list up to `closer`: each a bare type, or
     /// `k : T` whose key is a bare word, lowercase or named as a type is.
+    /// Several words before one `:` share its type, `m n : T`, and give one
+    /// entry each, in written order.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the form's opener.
@@ -774,12 +786,50 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — empty, positional and labelled lists, with and
-    ///   without a trailing comma, and a dependent arrow whose binder is named
-    ///   as a type is.
+    ///   without a trailing comma, a dependent arrow whose binder is named as a
+    ///   type is, and words that share one type, the type an earlier entry
+    ///   binds included.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_dependent_arrow_binds_a_type_named_binder_2179`
+    /// - witness: `lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
     pub(super) fn type_entries(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        closer: TileName,
+    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
+    {
+        let entries = self.listed_entries(site, cursor, closer)?;
+        exhausted(site, cursor)?;
+
+        Ok(entries)
+    }
+
+    /// Read the entries of a type list up to and over `closer`, as
+    /// [`Self::type_entries`] reads them. The pieces after `closer` stay.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the form's opener.
+    /// - ensures: every entry in written order, the cursor just past `closer`.
+    /// - fails: a misplaced key or tile, and a hole's own fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] and
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Termination
+    /// Every round consumes at least one piece of the finite cursor or
+    /// refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::type_entries`], and an implicit group
+    ///   before the explicit group of a box.
+    /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
+    /// - witness: `lower::arity::tests::an_implicit_group_is_its_explicit_twin_4853`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
+    fn listed_entries(
         &self,
         site: Site,
         cursor: &mut Cursor<'_>,
@@ -789,26 +839,53 @@ impl<'source> Lowerer<'_, 'source>
         let mut entries = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(closer) {
             let first = site.one(cursor.operands())?;
-            let entry = if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
-                if !matches!(self.form_at(first)?, Some((name, _)) if name == FormName::TYPE_VARIABLE || name == FormName::TYPE_IDENTIFIER)
-                {
-                    return Err(site.fault(first.span, FormFault::MisplacedTile));
-                }
-                Entry {
-                    key: Key::Label(self.name_at(first), first),
-                    held: Held::Operand(site.one(cursor.operands())?),
+            if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+                let held = Held::Operand(site.one(cursor.operands())?);
+                // Words that share a type, `m n`, mold as a moded type: each
+                // word before the last is a mode tile over the rest.
+                let mut key = first;
+                loop {
+                    match self.form_at(key)? {
+                        Some((name, _))
+                            if name == FormName::TYPE_VARIABLE
+                                || name == FormName::TYPE_IDENTIFIER =>
+                        {
+                            entries.push(Entry {
+                                key: Key::Label(self.name_at(key), key),
+                                held,
+                            });
+                            break;
+                        },
+                        Some((_, Former::ModedType)) => {
+                            let mut moded = Pieces::new();
+                            read_pieces(self.pbg, self.tree, key.node, &mut moded)?;
+                            let (
+                                Maybe::Absent(_),
+                                &[Piece::Tile { at: word, .. }, Piece::Operand(rest)],
+                            ) = (moded.repair, moded.pieces.as_slice())
+                            else {
+                                return Err(site.fault(key.span, FormFault::MisplacedTile));
+                            };
+                            entries.push(Entry {
+                                key: Key::Label(self.name_at(word), word),
+                                held,
+                            });
+                            key = rest;
+                        },
+                        Some(_) | None => {
+                            return Err(site.fault(key.span, FormFault::MisplacedTile));
+                        },
+                    }
                 }
             }
             else {
-                Entry {
+                entries.push(Entry {
                     key: Key::Positional,
                     held: Held::Operand(first),
-                }
-            };
-            entries.push(entry);
+                });
+            }
             separated(site, cursor, closer)?;
         }
-        exhausted(site, cursor)?;
 
         Ok(entries)
     }
@@ -1377,8 +1454,8 @@ impl<'source> Lowerer<'_, 'source>
             let opener = match former {
                 Former::SessionType => continue,
                 Former::ParenthesizedType => TileName::PAREN_OPEN,
-                Former::LabelledSumType => TileName::PLUS,
-                Former::LazyRecordType => TileName::AMPERSAND,
+                Former::LabelledSumType => TileName::SUM_OPEN,
+                Former::LazyRecordType => TileName::LAZY_OPEN,
                 Former::Name
                 | Former::Constructor
                 | Former::Hole
@@ -1387,7 +1464,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Character
                 | Former::TypeQuote
                 | Former::Parenthesized
-                | Former::Unit
                 | Former::Boolean
                 | Former::Thunk
                 | Former::Lambda
@@ -1425,7 +1501,6 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::SumType
                 | Former::LazyProductType
                 | Former::TelescopeType
-                | Former::ValueFunctionType
                 | Former::PathType
                 | Former::BridgeType
                 | Former::FlowType
@@ -1472,7 +1547,6 @@ impl<'source> Lowerer<'_, 'source>
                 pending.push(inner);
                 continue;
             }
-            closed(nested, &mut cursor, TileName::BRACE_OPEN)?;
             let entries = self.type_entries(nested, &mut cursor, TileName::BRACE_CLOSE)?;
             if entries.is_empty() {
                 return Ok(TypeZone::Ordinary);
@@ -1750,8 +1824,7 @@ impl<'source> Lowerer<'_, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        closed(site, &mut cursor, TileName::PLUS)?;
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        closed(site, &mut cursor, TileName::SUM_OPEN)?;
         let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
         if self.zoned(site, &entries)? == TypeZone::Session {
             return self.session_type(Site {
@@ -1799,8 +1872,7 @@ impl<'source> Lowerer<'_, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        closed(site, &mut cursor, TileName::AMPERSAND)?;
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        closed(site, &mut cursor, TileName::LAZY_OPEN)?;
         let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
         if self.zoned(site, &entries)? == TypeZone::Session {
             return self.session_type(Site {
@@ -1883,6 +1955,7 @@ impl<'source> Lowerer<'_, 'source>
         let plan = match arrange(site, entries)? {
             Arranged::Positional(entries) => {
                 let members = self.stored(&entries);
+                self.classify_members(site, members, frame)?;
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::Value(frame));
                 }
@@ -2009,19 +2082,16 @@ impl<'source> Lowerer<'_, 'source>
             };
             let mut cursor = Cursor::new(&scratch.pieces, placed.span);
             if held == former {
-                let opened = if former == Former::TelescopeType {
-                    closed(stated, &mut cursor, TileName::RECORD)
+                let opener = if former == Former::TelescopeType {
+                    TileName::RECORD
+                }
+                else if former == Former::LabelledSumType {
+                    TileName::SUM_OPEN
                 }
                 else {
-                    let opener = if former == Former::LabelledSumType {
-                        TileName::PLUS
-                    }
-                    else {
-                        TileName::AMPERSAND
-                    };
-                    closed(stated, &mut cursor, opener)
-                        .and_then(|()| closed(stated, &mut cursor, TileName::BRACE_OPEN))
+                    TileName::LAZY_OPEN
                 };
+                let opened = closed(stated, &mut cursor, opener);
                 break opened
                     .and_then(|()| self.type_entries(stated, &mut cursor, TileName::BRACE_CLOSE))
                     .map(|entries| Maybe::Present((at, entries)));
@@ -2393,8 +2463,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Value)?;
-        closed(site, &mut cursor, TileName::PLUS)?;
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        closed(site, &mut cursor, TileName::SUM_OPEN)?;
         let key = self.dotted(site, &mut cursor)?;
         closed(site, &mut cursor, TileName::EQUALS)?;
         let body = site.one(cursor.operands())?;
@@ -2457,8 +2526,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        closed(site, &mut cursor, TileName::AMPERSAND)?;
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        closed(site, &mut cursor, TileName::LAZY_OPEN)?;
         let entries = self.dotted_entries(site, &mut cursor, TileName::FAT_ARROW)?;
         let answer = self
             .answers
@@ -2690,6 +2758,11 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
+        // `(f a).l` observes as `f(a).l` does.
+        let Some(target) = self.ungrouped_target(target, site.at.node)?
+        else {
+            return Ok(Planned(false));
+        };
         let numbered = self.text_at(selected).as_ref().parse::<usize>().is_ok();
         let frame = site.reading.frame();
         let Some(subject) = self.observed_subject(site, frame, target)?
@@ -2862,6 +2935,11 @@ impl<'source> Lowerer<'_, 'source>
         };
         self.scratch = scratch;
         walked?;
+        // `(f a).l.m` observes its chain off `f(a)`, as `f(a).l.m` does.
+        let Some(root) = self.ungrouped_target(root, site.at.node)?
+        else {
+            return Ok(None);
+        };
         let mut subject = if matches!(self.form_at(root)?, Some((_, Former::Name))) {
             let named = Site {
                 at: root,
@@ -3562,17 +3640,24 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify a value function space whose domain list names a binder: the
-    /// telescope Π `(x : A, y : B(x)) => C`.
+    /// telescope Π `(x : A, y : B(x)) -> C`. An implicit group before the
+    /// domain, `[a : Type] (x : a) -> a`, gives the first entries of the
+    /// telescope. Plicity is the declaration's metadata, so the box is the
+    /// box its explicit twin `(a : Type, x : a) -> a` writes.
     ///
     /// # Specification
     /// - requires: `domain` and `codomain` are the operands of the value
     ///   function space at `site`, whose frame is `frame`.
     /// - ensures: planned when `domain` is a parenthesised list one of whose
-    ///   entries is `k : T`: every entry binds a frame extending the one before
+    ///   entries is `k : T`, or an implicit group as [`Self::implicit_entries`]
+    ///   reads it: the implicit entries come first, then each entry of the
+    ///   explicit list, or the explicit operand alone when it is no
+    ///   parenthesised type. Every entry binds a frame extending the one before
     ///   it, an unnamed entry's under a name no source writes, and its arrow is
-    ///   dependent exactly when a later entry or the codomain names it; each
+    ///   dependent exactly when a later entry or the codomain names it. Each
     ///   entry's type is read as a value type under the frames before it and
-    ///   the codomain under all of them; nothing is planned otherwise.
+    ///   the codomain under all of them, as [`Self::box_output`] reads a box's
+    ///   output. Nothing is planned otherwise.
     /// - fails: a duplicate definition for a name bound twice; the binder
     ///   policy's refusal; a misplaced key; a hole's own fault.
     /// - panics: none.
@@ -3582,8 +3667,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a telescope whose second type names the first binder,
-    ///   a mixed one, and a binder written twice.
+    ///   a mixed one, a binder written twice, and an implicit group before a
+    ///   list and before one type.
     /// - witness: `lower::arity::tests::a_telescope_binds_each_entry_in_the_ones_after_it`
+    /// - witness: `lower::arity::tests::an_implicit_group_is_its_explicit_twin_4853`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Telescope(..))))]
     pub(super) fn telescope_function(
         &mut self,
@@ -3593,7 +3680,24 @@ impl<'source> Lowerer<'_, 'source>
         codomain: Placed,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let entries = self.domain_entries(domain, frame)?;
+        let entries = match self.implicit_entries(domain, frame)? {
+            Some((mut implicit, explicit)) => {
+                if matches!(
+                    self.form_at(explicit)?,
+                    Some((_, Former::ParenthesizedType))
+                ) {
+                    implicit.extend(self.domain_entries(explicit, frame)?);
+                }
+                else {
+                    implicit.push(Entry {
+                        key: Key::Positional,
+                        held: Held::Operand(explicit),
+                    });
+                }
+                implicit
+            },
+            None => self.domain_entries(domain, frame)?,
+        };
         if !entries
             .iter()
             .any(|entry| matches!(entry.key, Key::Label(..)))
@@ -3605,7 +3709,16 @@ impl<'source> Lowerer<'_, 'source>
         let mut inner = frame;
         for entry in &entries {
             let declared = entry.held.at();
-            self.read(declared.node, Reading::ValueType(inner));
+            // Names that share a type, `x y : a`, read it once, under the
+            // first name's frame; the mint lifts it past the names between.
+            let shared = self.parameters.len() > start
+                && self
+                    .parameters
+                    .last()
+                    .is_some_and(|last| last.declared == Maybe::Present(declared.node));
+            if !shared {
+                self.read(declared.node, Reading::ValueType(inner));
+            }
             self.label_entry(entry, Reading::ValueType(inner));
             let (binder, bound, written) = match entry.key {
                 Key::Label(bound, key) => {
@@ -3637,7 +3750,8 @@ impl<'source> Lowerer<'_, 'source>
             });
             inner = Frame::Inner(extended);
         }
-        self.read(codomain.node, Reading::ValueType(inner));
+        let output = self.box_output(codomain, inner)?;
+        self.read(codomain.node, output);
         self.plan(
             site,
             Plan::Telescope(
@@ -3768,20 +3882,22 @@ impl<'source> Lowerer<'_, 'source>
 
     /// The outputs the call `bound` returns, as its callee writes them, read
     /// under `frame` ahead of the walk from `anchor`: those of the earlier
-    /// declaration its head names, when that declaration's result is written
-    /// as a group. An operation of several outputs writes its outputs as
-    /// ports, and its call returns one positional entry for each output.
+    /// declaration or the parameter its head names, when the result the
+    /// callee writes is a group. An operation of several outputs writes its
+    /// outputs as ports, and its call returns one positional entry for each
+    /// output.
     ///
     /// # Specification
     /// - requires: `bound` is `anchor` or under it.
     /// - ensures: the entries of the group the callee's result writes, in
     ///   order, when `bound` is a call whose head is one name resolving to a
     ///   declaration whose result is planned as a [`Plan::Returns`] or written
-    ///   as a group, as [`Self::written_group`] reads it. One positional entry
-    ///   for each output when the name resolves to an operation of several
-    ///   outputs. Nothing for any other form, a head a binder answers, or a
-    ///   callee returning one value. The nodes under `bound` take `anchor`'s
-    ///   owner, as the walk would give them.
+    ///   as a group, as [`Self::written_group`] reads it, or to a declaration
+    ///   or a binder whose written type is a box returning such a group. One
+    ///   positional entry for each output when the name resolves to an
+    ///   operation of several outputs. Nothing for any other form or a callee
+    ///   returning one value. The nodes under `bound` take `anchor`'s owner, as
+    ///   the walk would give them.
     /// - fails: the name's resolution refusal; a foreign mold.
     /// - panics: none.
     ///
@@ -3789,10 +3905,12 @@ impl<'source> Lowerer<'_, 'source>
     /// As [`Self::resolve_name`], and [`LoweringRefusal::UnknownMold`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a call of a function returning two outputs, and one
-    ///   returning a pair.
+    /// - hypothesis: L3 — a call of a function returning two outputs, one
+    ///   returning a pair, one of a box signature and one of a parameter at a
+    ///   box.
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_a_call`
     /// - witness: `lower::arity::tests::a_tuple_pattern_binds_each_output_of_an_operation_4855`
+    /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
     #[spec(ensures: |ret| !matches!(ret, Ok(Some(_))) || matches!(self.form_at(bound), Ok(Some((_, Former::Call)))))]
     pub(super) fn called_outputs(
         &mut self,
@@ -3832,24 +3950,38 @@ impl<'source> Lowerer<'_, 'source>
             name,
             reading: Reading::Head(frame),
         };
-        let Maybe::Present(Resolved::Declaration { constant, .. }) =
-            self.resolve_name(site, frame, self.name_at(head))?
-        else {
-            return Ok(None);
+        let callee = match self.resolve_name(site, frame, self.name_at(head))? {
+            // A callee classified ahead of this call gives its result; one
+            // the walk has not reached is read off the box its signature
+            // writes.
+            Maybe::Present(Resolved::Declaration { constant, declared }) => {
+                // An operation of several outputs writes them as ports.
+                if let Some(plan) = self
+                    .collected
+                    .operations
+                    .get(&crate::module::SlotIndex::from(usize::from(constant)))
+                {
+                    let count = usize::from(plan.output_count());
+                    let positional = Entry {
+                        key: Key::Positional,
+                        held: Held::Operand(bound),
+                    };
+                    return Ok((count > 1).then(|| alloc::vec![positional; count]));
+                }
+                match (self.callee_result(constant), declared) {
+                    (Some(at), _) => Some(at),
+                    (None, Maybe::Present(written)) => self.written_output(written)?,
+                    (None, Maybe::Absent(_)) => None,
+                }
+            },
+            // A parameter at a box returns what its box does.
+            Maybe::Present(Resolved::Binder(Bound {
+                declared: Maybe::Present(written),
+                ..
+            })) => self.written_output(written)?,
+            Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_) => None,
         };
-        if let Some(plan) = self
-            .collected
-            .operations
-            .get(&crate::module::SlotIndex::from(usize::from(constant)))
-        {
-            let count = usize::from(plan.output_count());
-            let positional = Entry {
-                key: Key::Positional,
-                held: Held::Operand(bound),
-            };
-            return Ok((count > 1).then(|| alloc::vec![positional; count]));
-        }
-        let Some(mut at) = self.callee_result(constant)
+        let Some(mut at) = callee
         else {
             return Ok(None);
         };
@@ -3869,6 +4001,46 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         }
         Ok(Some(self.domain_entries(result, frame)?))
+    }
+
+    /// The output the box written at `written` returns, read off its syntax:
+    /// `B` of `A -> B`.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: the operand after the arrow when `written` is an arrow or a
+    ///   value function type; nothing otherwise.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a box signature and of a parameter at a box
+    ///   each bind every output.
+    /// - witness: `lower::arity::tests::a_box_returns_a_group_under_a_row_4853`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |output| output.is_none_or(|node| self.tree.node(node).is_some())))]
+    fn written_output(
+        &self,
+        written: NodeIndex,
+    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
+    {
+        let Some(tree) = self.tree.node(written)
+        else {
+            return Ok(None);
+        };
+        let written = Placed::of(written, tree);
+        if !matches!(self.form_at(written)?, Some((_, Former::ArrowType))) {
+            return Ok(None);
+        }
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, written.node, &mut pieces)?;
+
+        Ok(match pieces.pieces.last() {
+            Some(&Piece::Operand(output)) => Some(output.node),
+            _ => None,
+        })
     }
 
     /// The outputs of the result the body `site` ends answers, when that
@@ -4086,22 +4258,14 @@ impl<'source> Lowerer<'_, 'source>
         pieces: &Pieces,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        let Ok((mut target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
         else {
             return Ok(Planned(false));
         };
-        // `(f(a)).l` selects as `f(a).l` does.
-        while let Some((_, Former::Parenthesized)) = self.form_at(target)? {
-            let mut grouped = Pieces::new();
-            read_pieces(self.pbg, self.tree, target.node, &mut grouped)?;
-            let mut cursor = Cursor::new(&grouped.pieces, target.span);
-            let _open = cursor.tile(TileName::PAREN_OPEN);
-            let Run::One(inner) = cursor.operands()
-            else {
-                return Ok(Planned(false));
-            };
-            target = inner;
-        }
+        let Some(target) = self.ungrouped_target(target, site.at.node)?
+        else {
+            return Ok(Planned(false));
+        };
         let frame = site.reading.frame();
         let Some(outputs) = self.called_outputs(frame, target, site.at.node)?
         else {
@@ -4123,6 +4287,57 @@ impl<'source> Lowerer<'_, 'source>
         });
 
         Ok(Planned(true))
+    }
+
+    /// The form a selection's or a view block's target `target` writes inside
+    /// any parentheses around it, `f a` of `(f a).l`, of `((f a)).l` and of
+    /// `(f a) as w { … }`, its nodes owned as the selection or the view block
+    /// `anchor` is.
+    ///
+    /// # Specification
+    /// - requires: `target` is the target of the selection or the view block at
+    ///   `anchor`.
+    /// - ensures: `target` itself when no parentheses hold it; otherwise the
+    ///   one operand the innermost parentheses hold, every unowned node under
+    ///   it given `anchor`'s owner, as the walk reads none of them as a form of
+    ///   its own. Nothing for parentheses that hold no single operand.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor's port and a codata observation off a
+    ///   call, each selected through parentheses, lower as they do without
+    ///   them.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
+    /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |inner| inner.is_none_or(|inner| inner.span.start() >= target.span.start() && inner.span.end() <= target.span.end())))]
+    pub(super) fn ungrouped_target(
+        &mut self,
+        mut target: Placed,
+        anchor: NodeIndex,
+    ) -> Result<Option<Placed>, LoweringRefusal<'source>>
+    {
+        let written = target;
+        while let Some((_, Former::Parenthesized)) = self.form_at(target)? {
+            let mut grouped = Pieces::new();
+            read_pieces(self.pbg, self.tree, target.node, &mut grouped)?;
+            let mut cursor = Cursor::new(&grouped.pieces, target.span);
+            let _open = cursor.tile(TileName::PAREN_OPEN);
+            let Run::One(inner) = cursor.operands()
+            else {
+                return Ok(None);
+            };
+            target = inner;
+        }
+        if target.node != written.node {
+            self.own_written(written.node, anchor);
+        }
+
+        Ok(Some(target))
     }
 
     /// Classify a plugging `left |> right`: every output of `left` into the
@@ -4384,6 +4599,69 @@ impl<'source> Lowerer<'_, 'source>
         read
     }
 
+    /// The implicit group of the domain `domain` under `frame`, and the
+    /// explicit operand after it: `[a : Type] (x : a)` gives the entry `a :
+    /// Type` and the operand `(x : a)`.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the operand written before the box's arrow.
+    /// - ensures: the entries between `[` and `]` in written order and the one
+    ///   operand after `]`, when `domain` is a returner type that opens with
+    ///   `[` and every entry is `k : T`; `None` otherwise. A row of interfaces
+    ///   is no implicit group, so it stays a row the domain refuses.
+    /// - fails: a misplaced key or tile; a hole's own fault.
+    /// - panics: none.
+    /// - executable: none — the entries are read off the syntax tree, which a
+    ///   predicate could check only by repeating the read.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::UnknownMold`]
+    /// and [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an implicit group before a list and before one type.
+    /// - witness: `lower::arity::tests::an_implicit_group_is_its_explicit_twin_4853`
+    fn implicit_entries(
+        &mut self,
+        domain: Placed,
+        frame: Frame,
+    ) -> Result<Option<(Vec<Entry<'source>>, Placed)>, LoweringRefusal<'source>>
+    {
+        let Some((name, Former::ReturnerType)) = self.form_at(domain)?
+        else {
+            return Ok(None);
+        };
+        let group = Site {
+            at: domain,
+            name,
+            reading: Reading::ValueType(frame),
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, domain.node, &mut scratch).and_then(|()| {
+            if let Maybe::Present(_) = scratch.repair {
+                return Ok(None);
+            }
+            let mut cursor = Cursor::new(&scratch.pieces, domain.span);
+            if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
+                return Ok(None);
+            }
+            let entries = self.listed_entries(group, &mut cursor, TileName::BRACKET_CLOSE)?;
+            if entries.is_empty()
+                || entries
+                    .iter()
+                    .any(|entry| !matches!(entry.key, Key::Label(..)))
+            {
+                return Ok(None);
+            }
+            let explicit = group.one(cursor.operands())?;
+            exhausted(group, &cursor)?;
+            Ok(Some((entries, explicit)))
+        });
+        self.scratch = scratch;
+
+        read
+    }
+
     /// The domains of the value function space whose domain operand is
     /// `domain`, read under `frame`: what a lambda under it binds, in order.
     ///
@@ -4401,9 +4679,9 @@ impl<'source> Lowerer<'_, 'source>
     /// and [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a lambda under `A => B` binds `A`, two nested under
-    ///   `(A, C) => B` bind `A` then `C`, and two nested under the telescope
-    ///   `(a : A, C) => B` bind `A` then `C`.
+    /// - hypothesis: L3 — a lambda under `A -> B` binds `A`, two nested under
+    ///   `(A, C) -> B` bind `A` then `C`, and two nested under the telescope
+    ///   `(a : A, C) -> B` bind `A` then `C`.
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
     #[spec(
@@ -5233,8 +5511,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: every entry's type and the codomain are already minted or
     ///   absent.
-    /// - ensures: `+U (Π A1. … Π An. -F B)`, an entry's arrow dependent when
-    ///   the telescope names its frame, as [`Self::names_own_binder`] reads it,
+    /// - ensures: `+U (Π A1. … Π An. C)`, `C` the computation type
+    ///   [`Self::box_returns`] gives, an entry's arrow dependent when the
+    ///   telescope names its frame, as [`Self::names_own_binder`] reads it,
     ///   every node with the written origin; nothing when a type did not lower.
     /// - fails: never.
     /// - panics: none.
@@ -5253,22 +5532,27 @@ impl<'source> Lowerer<'_, 'source>
     {
         let written = stretch(&self.parameters, entries);
         let mut domains: Vec<ValueTypeId> = Vec::with_capacity(written.len());
-        for parameter in written {
+        for (index, parameter) in written.iter().enumerate() {
             let Maybe::Present(declared) = parameter.declared
             else {
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
             match self.value_type_at(declared) {
-                Maybe::Present(domain) => domains.push(domain),
+                Maybe::Present(domain) => domains.push(Self::shared_domain(
+                    written.get(.. index).unwrap_or_default(),
+                    parameter,
+                    |named| bool::from(self.names_own_binder(codomain, named.frame)),
+                    domain,
+                    sink,
+                    origin,
+                )),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let returned = match self.value_type_at(codomain) {
-            Maybe::Present(returned) => returned,
+        let mut arrow = match self.box_returns(codomain, sink, origin) {
+            Maybe::Present(arrow) => arrow,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let mut arrow = sink.arena.comp_type_returner(returned);
-        sink.origins.record_comp_type(arrow, origin);
         for (parameter, &domain) in written.iter().zip(&domains).rev() {
             arrow = if bool::from(self.names_own_binder(codomain, parameter.frame)) {
                 let id = sink.arena.comp_type_pi(domain, arrow);

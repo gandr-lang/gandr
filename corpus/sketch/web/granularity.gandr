@@ -46,7 +46,7 @@ pub module PerSpecification where
   /// DOM operation the test reaches, and forwards the rest.
   pub def session (button : Dom.Element, wait : () -> [Dom] ()) -> [Dom] () =
     let listener = Dom.addEventListener (Dom.Element.eventTarget button) "click" (fun (_) { () })
-    wait()
+    wait ()
     Dom.removeEventListener listener
 
 /// One effect per interface: `EventTarget`, `Node` and `Element` are three effects.
@@ -77,7 +77,7 @@ pub module PerInterface where
   /// program that also builds the tree adds `Node` and `Document` to its row.
   pub def session (button : Element.Handle, wait : () -> [EventTarget] ()) -> [EventTarget] () =
     let listener = EventTarget.addEventListener (Element.eventTarget button) "click" (fun (_) { () })
-    wait()
+    wait ()
     EventTarget.removeEventListener listener
 
 /// One effect for the host: every platform operation is an operation of `Js`.
@@ -107,5 +107,5 @@ pub module OneHost where
   /// platform, and a row cannot tell a listener from a fetch.
   pub def session (button : Js.Element, wait : () -> [Js] ()) -> [Js] () =
     let listener = Js.addEventListener (Js.Element.eventTarget button) "click" (fun (_) { () })
-    wait()
+    wait ()
     Js.removeEventListener listener

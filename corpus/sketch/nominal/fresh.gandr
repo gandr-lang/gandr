@@ -16,23 +16,19 @@ import std.nominal (Fresh, fresh, swap, Abs);
 import "./pi-calculus.gandr";
 
 /// Runs a body under a private name that `fresh()` draws.
-def spawn(body : (a : Name) ->[#] Proc) -> [Fresh] Proc {
-  let a = fresh();
-  body(a)
-}
+def spawn(body : (a : Name) ->[#] Proc) -> [Fresh] Proc =
+  let a = fresh ()
+  body a
 
 /// Two processes that share one private channel and nothing else.
-def pair(left : (a : Name) ->[#] Proc, right : (a : Name) ->[#] Proc) -> [Fresh] Proc {
-  Pi.nu(fun (a) { Pi.par(left(a), right(a)) })
-}
+def pair(left : (a : Name) ->[#] Proc, right : (a : Name) ->[#] Proc) -> [Fresh] Proc =
+  Pi.nu(fun (a) { Pi.par(left a, right a) })
 
 /// Exchanges two names in a process, which keeps every freshness fact.
-def rename(a : Name, b : Name, p : Proc) -> Proc {
+def rename(a : Name, b : Name, p : Proc) -> Proc =
   swap(a, b, p)
-}
 
 /// Whether a process may drop its restriction, which the garbage rule's
 /// condition decides.
-def collectable(a : Name, p : Proc) -> Bool {
+def collectable(a : Name, p : Proc) -> Bool =
   a # p
-}

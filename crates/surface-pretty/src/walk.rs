@@ -19,18 +19,18 @@
 //!
 //! The core's product and sum hold a list of components
 //! ([#134](https://github.com/gandr-lang/gandr/issues/134)), and the explicit
-//! form writes each between its delimiters at any arity from one: `#{A}` and
-//! `#{A, B, C}`, `+{A}` and `+{A, B, C}`, a nested product or sum one
+//! form writes each between its delimiters at any arity from one: `*{A}` and
+//! `*{A, B, C}`, `+{A}` and `+{A, B, C}`, a nested product or sum one
 //! component among them. The 0-ary product is `Unit`, the 0-ary sum `Void`,
 //! and the sum of two units `Bool`, the fixed names the lowering resolves. A
 //! `Former` counts the components rather than holding them, and the printer
 //! asks the source for each one by position (`Source::component`), because
 //! the core's components are value-type ids while its handles are
 //! `CoreNode`s; a component the source does not answer is written `?`. A
-//! tuple is read the same way, `#{a}` and `#{a, b, c}`, the empty tuple
-//! `unit`; an injection is `+{.i = v}` at its summand's position. A record
-//! type and a record are `#{a : A, b : B}` and `#{.a = v, .b = w}`, in label
-//! order; the empty record, which the surface does not write (`#{}` is the
+//! tuple is read the same way, `*{a}` and `*{a, b, c}`, the empty tuple
+//! `*{}`; an injection is `+{.i = v}` at its summand's position. A record
+//! type and a record are `*{a : A, b : B}` and `*{.a = v, .b = w}`, in label
+//! order; the empty record, which the surface does not write (`*{}` is the
 //! unit), is `?`. The lazy product is `&{C, D}`, binary as the core holds it.
 //!
 //! The sugared form writes a product or a sum of two components or more
@@ -50,15 +50,15 @@
 //!
 //! # Native universe paths
 //!
-//! The native presentations are `Path_U(a, b)`, `refl(a)` and `equiv(f, g)`.
+//! The native presentations are `Path_U(a, b)`, `refl a` and `equiv f g`.
 //! Endpoint and map order is retained. Each is explicitly
 //! `Fidelity::Approximate`: these forms have no surface parser syntax, and an
 //! equivalence’s display does not include its classifier or replay evidence.
 //! The core adapter and checkpoint adapter expose the same value-child
-//! positions. The product of two universe paths, `Path.product(p, q)`, is the
+//! positions. The product of two universe paths, `Path.product p q`, is the
 //! one native former the surface writes: the lowering reads the call back to
 //! the same node, so it is faithful, its components in order and each as
-//! faithful as its own spelling. Its directed twin `Flow.product(p, q)` is the
+//! faithful as its own spelling. Its directed twin `Flow.product p q` is the
 //! kernel's own former, written and printed the same way.
 //!
 //! **Choice.** Show the structural constructor instead of an unreadable marker,
@@ -72,16 +72,16 @@
 //!
 //! # Element identity
 //!
-//! `Path.here(a)` is the surface spelling of element identity, and it is
+//! `Path.here a` is the surface spelling of element identity, and it is
 //! faithful: the grammar parses the call and the lowering mints the witness. It
 //! is not the native `refl`, which stays approximate. The point is the call's
-//! one argument, so a pair reads `Path.here(#{2, 2})`. Function extensionality
-//! is `Path.funext(f, g)` and a universe equivalence `equiv(f, g)` by the same
+//! one argument, so a pair reads `Path.here *{2, 2}`. Function extensionality
+//! is `Path.funext f g` and a universe equivalence `equiv f g` by the same
 //! reasoning, their two functions in order; the native certificate a checked
 //! `equiv` erases to prints the same call, approximately, without its evidence.
-//! Univalence at a stratum is `ua[n, k](a, b, f, g)`, faithful too: the
-//! stratum's degree and bound in the head, the descriptions by name and the
-//! translator records in label order, as the lowering reads them.
+//! Univalence at a stratum is `ua[n, k] A B f g`, faithful too: the stratum's
+//! degree and bound in the head, the descriptions by name and the translator
+//! records in label order, as the lowering reads them.
 //!
 //! - **Alternatives.** Writing `?`, the spelling of a node the surface does not
 //!   write, would hide a former the grammar parses.
@@ -90,7 +90,7 @@
 //! # Native lists
 //!
 //! The native list type is `List(A)`, its empty list `nil` and its cell
-//! `cons(h, t)`, each faithful: the lowering reads the three spellings back to
+//! `cons h t`, each faithful: the lowering reads the three spellings back to
 //! the same formers. A list is written cell by cell, never as a literal
 //! `[a, b]`, because a cell whose tail is no literal has no literal spelling.
 //!
@@ -1779,6 +1779,12 @@ enum Surface
     Expression,
     /// As a type: a signature, an annotation, a type application's argument.
     Type,
+    /// As an expression a type encloses: the head and the arguments of a call
+    /// that stands where a type is read. They are read as expressions, so a
+    /// type argument there is quoted (#1102), but the grammar reads them in
+    /// the type's sort, which writes a call glued: there `f x` reads as the
+    /// moded type `m T`.
+    Enclosed,
 }
 
 /// Whether a checker elaborates the text at a node: whether it inserts the
@@ -1809,10 +1815,12 @@ enum Elaboration
 ///   grammar embeds a type; `surface` itself otherwise. A quote, any other
 ///   nested or returned computation and an ascription, elided or written as the
 ///   match that answers it, write nothing of their own around a slot, so their
-///   slot is read as they are; a type former's value slot is read as the type
-///   is, since every type application reads its arguments in the type's own
-///   sort and a path or a flow whose endpoints are codes is over a universe,
-///   which reads them as types. A call reads its own head and arguments as
+///   slot is read as they are; the endpoints of a path or a bridge type,
+///   `Path(A, x, y)`, are expressions in either sort unless its carrier is a
+///   universe, since the grammar reads a universe's endpoints, codes, as types
+///   and any other carrier's as expressions; any other type former's value slot
+///   is read as the type is, since every type application reads its arguments
+///   in the type's own sort. A call reads its own head and arguments as
 ///   expressions, which [`Walk::visit`] schedules itself.
 /// - provides: whether a quote in the slot stands where an expression reads.
 /// - fails: never.
@@ -1828,7 +1836,8 @@ enum Elaboration
 /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
 /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
 /// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
-#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some() {
+#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
+    || (endpoints_read_as_expressions(source, former) == Endpoints::Expressions && !matches!(admits, Admits::ValueType)) {
     Surface::Expression
 } else if !matches!(*former,
     Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
@@ -1861,6 +1870,14 @@ where
     {
         return Surface::Expression;
     }
+    // A path type's endpoints are expressions wherever the type stands, but
+    // over a universe: the grammar reads `Path(A, x, y)`'s endpoints so, its
+    // carrier a type, and `Path(Type, A, B)`'s as types.
+    if endpoints_read_as_expressions(source, former) == Endpoints::Expressions
+        && !matches!(admits, Admits::ValueType)
+    {
+        return Surface::Expression;
+    }
     let writes_nothing = matches!(
         *former,
         Former::Quote(_)
@@ -1881,14 +1898,179 @@ where
     }
 }
 
+/// How the grammar reads a path's or a bridge's endpoints.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Endpoints
+{
+    /// As expressions: a carrier other than a universe, or none written.
+    Expressions,
+    /// As types, or the former is no path and no bridge.
+    Types,
+}
+
+/// Whether `former` is a path or a bridge type whose endpoints the grammar
+/// reads as expressions: one over a carrier other than a universe, or one
+/// whose carrier is left to its endpoints.
+///
+/// # Specification
+/// trivial.
+fn endpoints_read_as_expressions<S>(
+    source: &S,
+    former: &Former<'_, S::Node>,
+) -> Endpoints
+where
+    S: Source + ?Sized,
+{
+    let expressions = matches!(
+        *former,
+        Former::Path { carrier, .. } | Former::Bridge { carrier, .. }
+            if carrier.is_none_or(|carrier| !matches!(source.read(carrier), Former::Universe { .. }))
+    );
+    if expressions {
+        Endpoints::Expressions
+    }
+    else {
+        Endpoints::Types
+    }
+}
+
+/// Whether a type classifies codes as the lowering reads it off its spelling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Classifies
+{
+    /// It classifies codes: a universe, the row kind, or a static arrow whose
+    /// domain does.
+    Codes,
+    /// It classifies values.
+    Values,
+}
+
+/// Whether the type at `node` classifies codes as the lowering reads it off
+/// its spelling: a universe, the row kind, or a static arrow whose domain
+/// does. A box written over such a domain, `Type -> B`, reads back as the
+/// static Pi, so the box keeps its thunk there.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Classifies::Codes`] for a universe, the row kind and a static
+///   Pi whose domain classifies codes, read down at most [`DEPTH_LIMIT`]
+///   domains; [`Classifies::Values`] for any other node.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — a clause would restate the walk down the domains.
+///
+/// # Termination
+/// Each round descends to a domain, and the loop stops at [`DEPTH_LIMIT`]
+/// rounds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the thunk of an arrow over a universe reads back equal,
+///   where the alias `Type -> Type` read back as the static Pi.
+/// - witness: `tests::goldens::a_box_over_a_type_keeps_its_thunk_4853`
+fn classifies_codes<S>(
+    source: &S,
+    node: S::Node,
+) -> Classifies
+where
+    S: Source + ?Sized,
+{
+    let mut at = node;
+    for _ in 0_u32 .. DEPTH_LIMIT.0 {
+        let read = source.read(at);
+        if matches!(read, Former::Universe { .. } | Former::RowType) {
+            return Classifies::Codes;
+        }
+        let Former::StaticPi { domain, .. } = read
+        else {
+            return Classifies::Values;
+        };
+        at = domain;
+    }
+    Classifies::Values
+}
+
+/// `written`, a constructor's name, juxtaposed where an expression reads it,
+/// or nothing where it stands as written. The lowering mints a word's inverse
+/// letter and its empty word as the call a pattern and a type read glued,
+/// `back(loop)` and `Path.here(Base)`; an expression reads that call
+/// juxtaposed, `back loop` and `Path.here Base`, an application, its operand
+/// bare when it is one name and parenthesised otherwise, `Path.here (spin
+/// Base)`.
+///
+/// # Specification
+/// trivial.
+fn juxtaposed_name(
+    written: &Written,
+    surface: Surface,
+) -> Option<Written>
+{
+    match surface {
+        Surface::Type | Surface::Enclosed => None,
+        Surface::Expression => match written.0.split_once('(') {
+            Some((head, rest))
+                if !head.is_empty() && !head.ends_with(' ') && rest.ends_with(')') =>
+            {
+                let operand = rest.strip_suffix(')').unwrap_or(rest);
+                let named = !operand.is_empty()
+                    && operand.chars().all(|letter| {
+                        letter.is_alphanumeric() || matches!(letter, '_' | '.' | '\'')
+                    });
+                Some(Written(Cow::Owned(if named {
+                    format!("{head} {operand}")
+                }
+                else {
+                    format!("{head} ({operand})")
+                })))
+            },
+            Some(_) | None => None,
+        },
+    }
+}
+
+/// Whether a child piece stands inside a quote the type grammar reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Quoted
+{
+    /// It stands right after the text `type(`.
+    Inside,
+    /// It stands anywhere else.
+    Outside,
+}
+
+/// Whether the child piece at `index` of `parts` stands right after the text
+/// `type(`, inside a quote the type grammar reads. The pieces count in
+/// writing order, the last child's piece apart, since it takes the last slot
+/// wherever it is written.
+///
+/// # Specification
+/// trivial.
+fn quoted_piece(
+    parts: &[Part],
+    index: Component,
+) -> Quoted
+{
+    let inside = core::iter::once(None)
+        .chain(parts.iter().map(Some))
+        .zip(parts.iter())
+        .filter(|&(_, part)| matches!(*part, Part::Piece(_) | Part::Spliced(_)))
+        .nth(usize::from(index))
+        .is_some_and(|(before, _)| matches!(before, Some(Part::Text(text)) if text == "type("));
+    if inside {
+        Quoted::Inside
+    }
+    else {
+        Quoted::Outside
+    }
+}
+
 /// How loosely a spelled piece binds, tightest first.
 ///
 /// A piece stands bare in a slot that admits its binding and is parenthesized
 /// in one that admits only tighter pieces. The order is the grammar's: an
-/// atom, then the bridges and the keyword-led computations, then a word's
-/// cons, then the infix `*`, `+` and `&` the sugared
-/// form writes, then the relations `≃`, `≅` and `⇝` between types, then `->`
-/// and `=>`, then a bind's statements. Every arity-shaped former is an atom,
+/// atom, then an application, then the bridges and the keyword-led
+/// computations, then a word's cons, then the infix `*`, `+` and `&` the
+/// sugared form writes, then the relations `≃`, `≅` and `⇝` between types,
+/// then `->`, then a bind's statements. Every arity-shaped former is an atom,
 /// its entries between its own delimiters.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Binding
@@ -1897,8 +2079,12 @@ enum Binding
     /// payload, where the send's or receive's own `.` would end the payload at
     /// the path's first `.`, so it is parenthesized there, `!(M.T). S`.
     Qualified,
-    /// A name, a literal, a universe, a bracketed or braced form, a call.
+    /// A name, a literal, a universe, a bracketed or braced form, a
+    /// projection.
     Atom,
+    /// `f a b`, an application: its head an application or an atom, each
+    /// argument an atom, nested to the left.
+    Application,
     /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fun (x) { c }`, the
     /// static lambda `fun (a) { v }` or `thunk { c }`.
     Prefix,
@@ -1912,7 +2098,7 @@ enum Binding
     Lazy,
     /// `A ≃ B`, `A ≅ B` or `A ⇝ B`, nested to the right.
     Relation,
-    /// `A -> C`, `(x : A) -> C` or `A => B`.
+    /// `A -> C`, `(x : A) -> C`, or the box `A -> B` between value types.
     Arrow,
     /// `let x = c ; rest`, whose rest runs to the end of the block it stands
     /// in; anywhere else it is a block of its own, `{ … }`.
@@ -2572,8 +2758,8 @@ enum Prefix
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Brace
 {
-    /// `#{…}`: a product, a tuple, a record type or a record.
-    Hash,
+    /// `*{…}`: a product, a tuple, a record type or a record.
+    Star,
     /// `+{…}`: a sum or an injection.
     Plus,
     /// `&{…}`: a lazy product.
@@ -2585,7 +2771,7 @@ impl Brace
     /// The opening delimiter.
     ///
     /// # Specification
-    /// - ensures: `#{` for [`Self::Hash`], `+{` for [`Self::Plus`] and `&{` for
+    /// - ensures: `*{` for [`Self::Star`], `+{` for [`Self::Plus`] and `&{` for
     ///   [`Self::Ampersand`].
     /// - panics: none.
     ///
@@ -2594,12 +2780,12 @@ impl Brace
     ///   fixtures distinguish a swapped delimiter.
     /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
     #[spec(ensures: |ret| matches!((self, ret.0.as_bytes()),
-        (Self::Hash, b"#{") | (Self::Plus, b"+{") | (Self::Ampersand, b"&{")
+        (Self::Star, b"*{") | (Self::Plus, b"+{") | (Self::Ampersand, b"&{")
     ))]
     const fn opener(self) -> Glyphs<'static>
     {
         match self {
-            Self::Hash => Glyphs("#{"),
+            Self::Star => Glyphs("*{"),
             Self::Plus => Glyphs("+{"),
             Self::Ampersand => Glyphs("&{"),
         }
@@ -2640,13 +2826,13 @@ enum Bracket
     List,
     /// A native path classifier.
     PathUniverse,
-    /// Element identity, `Path.here(a)`.
+    /// Element identity, `Path.here a`.
     Here,
-    /// Function extensionality, `Path.funext(f, g)`.
+    /// Function extensionality, `Path.funext f g`.
     Funext,
-    /// A universe equivalence, `equiv(f, g)`.
+    /// A universe equivalence, `equiv f g`.
     Equiv,
-    /// Univalence, `ua(e)`.
+    /// Univalence, `ua e`.
     Univalence,
     /// Native reflexivity.
     PathRefl,
@@ -2654,25 +2840,25 @@ enum Bracket
     PathEquiv,
     /// A native product path.
     PathProduct,
-    /// A native cell, `cons(head, tail)`.
+    /// A native cell, `cons head tail`.
     ListCons,
-    /// A session equivalence, `Path.bisim(a, b)`.
+    /// A session equivalence, `Path.bisim a b`.
     Bisim,
-    /// A session equivalence with its payload paths, `Path.bisim(a, b, p)`.
+    /// A session equivalence with its payload paths, `Path.bisim a b p`.
     BisimPaid,
-    /// A session simulation, `Flow.sim(a, b)`.
+    /// A session simulation, `Flow.sim a b`.
     Sim,
-    /// Directed reflexivity, `Flow.stay(a)`.
+    /// Directed reflexivity, `Flow.stay a`.
     Stay,
-    /// A path's inverse, `Path.back(p)`.
+    /// A path's inverse, `Path.back p`.
     Back,
-    /// A map's action on a path, `Path.ap(f, p)`.
+    /// A map's action on a path, `Path.ap f p`.
     Cong,
-    /// The product of two universe flows, `Flow.product(p, q)`.
+    /// The product of two universe flows, `Flow.product p q`.
     FlowProduct,
-    /// A forward flow, `Flow.into(f)`.
+    /// A forward flow, `Flow.into f`.
     Forward,
-    /// A function flow, `Flow.arrow(d, c)`.
+    /// A function flow, `Flow.arrow d c`.
     Arrow,
     /// The recorded runs of a session code, `Run(s)`.
     Run,
@@ -2688,50 +2874,142 @@ enum Bracket
     Break,
 }
 
+/// How a bracketed former writes its operands after its head.
+#[derive(Clone, Copy, Debug)]
+enum Opener
+{
+    /// The head and `(`: a type former where a type is read, `type(T)` or
+    /// `break(v)`, its operands apart by commas before the closer.
+    Parenthesized(Glyphs<'static>),
+    /// The head alone: a value former the source applies, `Path.here a`, or
+    /// a type former where an expression is read, `List Integer`, its
+    /// operands juxtaposed.
+    Juxtaposed(Glyphs<'static>),
+}
+
+impl Opener
+{
+    /// A type former's opener in `surface`: its head alone where an
+    /// expression is read, which applies it as it applies any function, and
+    /// `opened`, its head and `(`, where a type is read.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn applied(
+        surface: Surface,
+        head: Glyphs<'static>,
+        opened: Glyphs<'static>,
+    ) -> Self
+    {
+        match surface {
+            Surface::Expression => Self::Juxtaposed(head),
+            Surface::Type | Surface::Enclosed => Self::Parenthesized(opened),
+        }
+    }
+}
+
 impl Bracket
 {
-    /// The head and opening parenthesis a bracketed former is spelled with.
+    /// The head a bracketed former is spelled with in `surface`, and how its
+    /// operands follow it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the former's head followed by `(`; a native equivalence's
-    ///   maps share `equiv(` with a universe equivalence, and a paid
-    ///   bisimulation `Path.bisim(` with an unpaid one.
+    /// - ensures: `type` and `break` as their head followed by `(`; a type
+    ///   former so where a type is read and as its head alone where an
+    ///   expression is read; every other former as its head alone, its operands
+    ///   juxtaposed; a native equivalence's maps share `equiv` with a universe
+    ///   equivalence, and a paid bisimulation `Path.bisim` with an unpaid one.
     /// - provides: the opening glyphs of every bracketed former.
     /// - panics: none.
     /// - executable: none — a clause would restate the match arm by arm.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the prefix type in the type goldens opens with its
-    ///   own head, which an empty or swapped opener does not write.
+    ///   own head, which an empty or swapped opener does not write, and the
+    ///   value goldens write each value former's head before its operands.
     /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
-    const fn opener(self) -> Glyphs<'static>
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    const fn opener(
+        self,
+        surface: Surface,
+    ) -> Opener
     {
-        Glyphs(match self {
-            Self::Stack => "Stack(",
-            Self::List => "List(",
-            Self::PathUniverse => "Path_U(",
-            Self::Here => "Path.here(",
-            Self::Funext => "Path.funext(",
-            Self::Equiv | Self::PathEquiv => "equiv(",
-            Self::Univalence => "ua(",
-            Self::PathRefl => "refl(",
-            Self::PathProduct => "Path.product(",
-            Self::ListCons => "cons(",
-            Self::Bisim | Self::BisimPaid => "Path.bisim(",
-            Self::Sim => "Flow.sim(",
-            Self::Stay => "Flow.stay(",
-            Self::Back => "Path.back(",
-            Self::Cong => "Path.ap(",
-            Self::FlowProduct => "Flow.product(",
-            Self::Forward => "Flow.into(",
-            Self::Arrow => "Flow.arrow(",
-            Self::Run => "Run(",
-            Self::Prefix => "Prefix(",
-            Self::Dialogue => "Dialogue(",
-            Self::Decompose => "decompose(",
-            Self::TypeQuote => "type(",
-            Self::Break => "break(",
+        match self {
+            Self::Stack => Opener::applied(surface, Glyphs("Stack"), Glyphs("Stack(")),
+            Self::List => Opener::applied(surface, Glyphs("List"), Glyphs("List(")),
+            Self::PathUniverse => Opener::applied(surface, Glyphs("Path_U"), Glyphs("Path_U(")),
+            Self::Run => Opener::applied(surface, Glyphs("Run"), Glyphs("Run(")),
+            Self::Prefix => Opener::applied(surface, Glyphs("Prefix"), Glyphs("Prefix(")),
+            Self::Dialogue => Opener::applied(surface, Glyphs("Dialogue"), Glyphs("Dialogue(")),
+            Self::TypeQuote => Opener::Parenthesized(Glyphs("type(")),
+            Self::Break => Opener::Parenthesized(Glyphs("break(")),
+            Self::Here => Opener::Juxtaposed(Glyphs("Path.here")),
+            Self::Funext => Opener::Juxtaposed(Glyphs("Path.funext")),
+            Self::Equiv | Self::PathEquiv => Opener::Juxtaposed(Glyphs("equiv")),
+            Self::Univalence => Opener::Juxtaposed(Glyphs("ua")),
+            Self::PathRefl => Opener::Juxtaposed(Glyphs("refl")),
+            Self::PathProduct => Opener::Juxtaposed(Glyphs("Path.product")),
+            Self::ListCons => Opener::Juxtaposed(Glyphs("cons")),
+            Self::Bisim | Self::BisimPaid => Opener::Juxtaposed(Glyphs("Path.bisim")),
+            Self::Sim => Opener::Juxtaposed(Glyphs("Flow.sim")),
+            Self::Stay => Opener::Juxtaposed(Glyphs("Flow.stay")),
+            Self::Back => Opener::Juxtaposed(Glyphs("Path.back")),
+            Self::Cong => Opener::Juxtaposed(Glyphs("Path.ap")),
+            Self::FlowProduct => Opener::Juxtaposed(Glyphs("Flow.product")),
+            Self::Forward => Opener::Juxtaposed(Glyphs("Flow.into")),
+            Self::Arrow => Opener::Juxtaposed(Glyphs("Flow.arrow")),
+            Self::Decompose => Opener::Juxtaposed(Glyphs("decompose")),
+        }
+    }
+
+    /// How many operands a bracketed former takes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: three for a paid bisimulation; two for a stack, a path
+    ///   classifier, an equivalence, a product path, function extensionality, a
+    ///   list cell, a bisimulation, a simulation, a flow product, a congruence
+    ///   and a function flow; one for every other former.
+    /// - provides: the operands a bracket's join takes off the stack.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the match arm by arm.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the value and type goldens write every former at its
+    ///   own count; a former that took one operand too few or too many would
+    ///   leave the stack unbalanced.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    const fn operands(self) -> Arity
+    {
+        Arity(match self {
+            Self::BisimPaid => 3_usize,
+            Self::PathUniverse
+            | Self::Stack
+            | Self::PathEquiv
+            | Self::PathProduct
+            | Self::Funext
+            | Self::Equiv
+            | Self::ListCons
+            | Self::Bisim
+            | Self::Sim
+            | Self::FlowProduct
+            | Self::Cong
+            | Self::Arrow => 2_usize,
+            Self::Here
+            | Self::Univalence
+            | Self::PathRefl
+            | Self::List
+            | Self::Stay
+            | Self::Back
+            | Self::Forward
+            | Self::Run
+            | Self::Prefix
+            | Self::Dialogue
+            | Self::Decompose
+            | Self::TypeQuote
+            | Self::Break => 1_usize,
         })
     }
 }
@@ -2832,7 +3110,7 @@ enum Join
         entries: Entries,
     },
     /// A record update over its base and this many labelled fields,
-    /// `#{b | l = a, …}`.
+    /// `*{b | l = a, …}`.
     Update(Arity),
     /// An infix chain over this many operands, two or more.
     Infix
@@ -2842,14 +3120,14 @@ enum Join
         /// How many operands it joins.
         arity: Arity,
     },
-    /// A tuple of this many components, two or more, `(a, b)`.
-    Tuple(Arity),
     /// The returner of a group of this many results, `-F (A, B)`, `-F ()`.
     Returns(Arity),
-    /// The value-function alias over this many domains and then its
-    /// codomain: `() => C`, `A => C`, `(A, B) => C`; where an occurrence named
-    /// a dependent arrow's binder, the thunk over the arrows it stands for.
-    ValueFunction(Arity, Dependent),
+    /// The box over this many domains and then its codomain: `() -> C`,
+    /// `A -> C`, `(A, B) -> C`, a codomain that is an arrow in parentheses;
+    /// where an occurrence named a dependent arrow's binder, or the first
+    /// dependent domain classifies codes, the thunk over the arrows it stands
+    /// for.
+    ValueFunction(Arity, Dependent, Classifies),
     /// An arrow over its domain and codomain.
     Arrow,
     /// A dependent arrow over its domain and codomain, its binder named by the
@@ -2879,7 +3157,7 @@ enum Join
     /// a dependent arrow's is.
     Sequence,
     /// A bind of a call whose binder the rest never reads, its binder
-    /// written `_`: `let _ = f(a) ; rest`, which runs the call, as a `let`
+    /// written `_`: `let _ = f a ; rest`, which runs the call, as a `let`
     /// naming it would not (#4466).
     DiscardedSequence,
     /// A bind of each value a computation of several results returns, over
@@ -2901,16 +3179,17 @@ enum Join
     /// A bracketed value former over its items.
     Bracket(Bracket),
     /// Univalence at a stratum over its two translator records, after the
-    /// head spelling its stratum and its descriptions, `ua[n, k](a, b,`.
+    /// head spelling its stratum and its descriptions, `ua[n, k] A B`.
     Ua(Doc),
     /// Unbiased composition at a stratum over its cells, after the head
-    /// spelling its stratum and its shape, `compose[n, k](chain(m),` or
-    /// `compose[n, k](chain(m, (a₁, …, aₘ)),`: one cell bare, more as a tuple.
+    /// spelling its stratum and its shape, `compose[n, k] (chain m)` or
+    /// `compose[n, k] (chain m (a₁, …, aₘ))`: one cell an atom, more as a
+    /// group.
     Compose(Doc, Arity),
     /// A filler generator at a stratum over its generator and its cells,
-    /// after the head spelling its stratum and its shape, `fill[n,
-    /// k](chain(m),` or its level-two shape: the generator, then the cells as
-    /// a composite's.
+    /// after the head spelling its stratum and its shape, `fill[n, k] (chain
+    /// m)` or its level-two shape: the generator, then the cells as a
+    /// composite's.
     Fill(Doc, Arity),
     /// A session type over its payloads, spelled by the template the visit
     /// pushed, binding as the template's head does.
@@ -2988,6 +3267,24 @@ const fn writes<T>(
 {
     let _ = rule;
     produced
+}
+
+/// How a type former applied to its operands binds in `surface`, the
+/// production `rule` where a type is read: an atom there, its operands between
+/// its own parentheses, and an application where an expression is read.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn type_applied(
+    surface: Surface,
+    rule: Production,
+) -> Binding
+{
+    match surface {
+        Surface::Expression => writes(Production("application_expression"), Binding::Application),
+        Surface::Type | Surface::Enclosed => writes(rule, Binding::Atom),
+    }
 }
 
 /// Whether a row writes any interface, and any instance by its label.
@@ -4147,7 +4444,7 @@ fn passing<Node>(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Derived<Node>
 {
-    /// `Path.step(p, q)`: `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)`.
+    /// `Path.step p q`: `Path.walk (fun (y) { Path[.A = A](a, y) }) q p`.
     Composite
     {
         /// The first path, the transported value.
@@ -4155,11 +4452,11 @@ enum Derived<Node>
         /// The second path, along which it moves.
         path: Node,
     },
-    /// `Path.back(p)`: `Path.walk(fun (y) { Path[.A = A](y, a) }, p,
-    /// Path.here(a))`.
+    /// `Path.back p`: `Path.walk (fun (y) { Path[.A = A](y, a) }) p (Path.here
+    /// a)`.
     Inverse(Node),
-    /// `Path.ap(f, p)`: `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p,
-    /// Path.here(f(a)))`.
+    /// `Path.ap f p`: `Path.walk (fun (y) { Path[.A = B](f(a), f(y)) }) p
+    /// (Path.here (f a))`.
     Congruence
     {
         /// The map, as the motive holds it, one binder deeper.
@@ -4188,12 +4485,12 @@ enum Derived<Node>
 ///   down through every child [`children`] lists, name no intuitionistic
 ///   variable counting out to the motive's binder; absent otherwise, and absent
 ///   when that scan reads more than [`VISIT_BUDGET`] nodes. A composite that
-///   moves `Path.here(a)` is absent where the motive's other endpoint reads
-///   [`Start::Apart`] from `a`, since `Path.step(p, q)` reads back taking `p`'s
+///   moves `Path.here a` is absent where the motive's other endpoint reads
+///   [`Start::Apart`] from `a`, since `Path.step p q` reads back taking `p`'s
 ///   start for it. A well-typed transport of these shapes moves the reflexivity
 ///   at the endpoint the derivation would, up to conversion, so the operation
 ///   stands for it.
-/// - provides: the shapes `Path.step(p, q)`, `Path.back(p)` and `Path.ap(f, p)`
+/// - provides: the shapes `Path.step p q`, `Path.back p` and `Path.ap f p`
 ///   derive (`gandr_core_term::identity`), which the sugared form writes as the
 ///   lowering reads them back.
 /// - fails: never.
@@ -4439,8 +4736,8 @@ where
 
 /// The former the walk reads at `node` in `form`, in a position admitting
 /// `admits`: the source's, but in the sugared form a returned transport that
-/// a derived path operation builds reads as that operation, `Path.step(p, q)`,
-/// `Path.back(p)` or `Path.ap(f, p)`, where the position states its type.
+/// a derived path operation builds reads as that operation, `Path.step p q`,
+/// `Path.back p` or `Path.ap f p`, where the position states its type.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
@@ -4620,20 +4917,20 @@ impl Parts
         self.part(Part::Spliced(content))
     }
 
-    /// Appends `, ` and a soft line before every entry of a block but the
-    /// first, `index` counting the entries.
+    /// Appends a soft line before every arm of a block but the first, `index`
+    /// counting the arms, then the bar that leads each arm, `| `.
     ///
     /// # Specification
     /// trivial.
-    fn separated(
+    fn barred(
         &mut self,
         index: Component,
     ) -> &mut Self
     {
         if usize::from(index) > 0_usize {
-            let _ = self.text(",").part(Part::Line);
+            let _ = self.part(Part::Line);
         }
-        self
+        self.text("| ")
     }
 
     /// Appends the names of the first `count` binders the children open,
@@ -4690,6 +4987,44 @@ impl Parts
         self.part(Part::Tight).text(")")
     }
 
+    /// Appends a call's `count` arguments juxtaposed, each after a space, an
+    /// atom or parenthesized; a call of none applies its head to the empty
+    /// group, ` ()`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn juxtaposed(
+        &mut self,
+        count: Arity,
+    ) -> &mut Self
+    {
+        if count.0 == 0_usize {
+            return self.text(" ()");
+        }
+        for _ in 0_usize .. count.0 {
+            let _ = self.part(Part::Space).piece(Binding::Atom);
+        }
+        self
+    }
+
+    /// Appends a type former's `count` operands as `surface` reads them:
+    /// juxtaposed where an expression is read, which applies the former as it
+    /// applies any function, and between parentheses where a type is read.
+    ///
+    /// # Specification
+    /// trivial.
+    fn applied(
+        &mut self,
+        count: Arity,
+        surface: Surface,
+    ) -> &mut Self
+    {
+        match surface {
+            Surface::Expression => self.juxtaposed(count),
+            Surface::Type | Surface::Enclosed => self.arguments(count),
+        }
+    }
+
     /// Appends a block over the next child's piece: the parts so far its
     /// head, ending with its opening brace.
     ///
@@ -4733,8 +5068,9 @@ struct Link<Node>
 struct Dependent(u64);
 
 /// A value-function alias as [`Walk::alias`] found it: its arrows, outermost
-/// first, which of them are dependent, and its codomain.
-type AliasChain<Node> = (Vec<Link<Node>>, Dependent, Codomain<Node>);
+/// first, which of them are dependent, its codomain, and whether its first
+/// domain classifies codes.
+type AliasChain<Node> = (Vec<Link<Node>>, Dependent, Codomain<Node>, Classifies);
 
 /// How a static redex's reduct is spelled.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5525,10 +5861,10 @@ fn universe(
     }))
 }
 
-/// The pasting a composite names, as the source writes it: `chain(m)` at
-/// level one, or `chain(m, (a₁, …, aₘ))` at level two. Past level two the
+/// The pasting a composite names, as the source writes it: `(chain m)` at
+/// level one, or `(chain m (a₁, …, aₘ))` at level two. Past level two the
 /// source has no spelling, so the printer writes its notation
-/// `tree(l, [[[]], [[]]])`: the level, then the tree as nested brackets.
+/// `(tree l [[[]], [[]]])`: the level, then the tree as nested brackets.
 ///
 /// # Specification
 /// trivial.
@@ -5536,7 +5872,7 @@ fn spelled(pasting: Pasting) -> Spelled
 {
     let (level, tree) = match pasting.form() {
         gandr_core_term::compose::Form::Chain(cells) => {
-            return Spelled(alloc::format!("chain({})", usize::from(cells)));
+            return Spelled(alloc::format!("(chain {})", usize::from(cells)));
         },
         gandr_core_term::compose::Form::Columns(tree) => {
             let columns: Vec<String> = tree
@@ -5544,14 +5880,14 @@ fn spelled(pasting: Pasting) -> Spelled
                 .map(|height| alloc::format!("{}", usize::from(height)))
                 .collect();
             return Spelled(alloc::format!(
-                "chain({}, ({}))",
+                "(chain {} ({}))",
                 columns.len(),
                 columns.join(", ")
             ));
         },
         gandr_core_term::compose::Form::Tree { level, tree } => (level, tree),
     };
-    let mut text = alloc::format!("tree({}, [", usize::from(level));
+    let mut text = alloc::format!("(tree {} [", usize::from(level));
     let mut after_sibling = false;
     for step in tree.walk() {
         match step {
@@ -5715,27 +6051,30 @@ fn literal(literal: &Literal) -> Spelled
 
 /// A causal web's modular decomposition as the surface writes it.
 ///
-/// `series(…)`, `parallel(…)` and `prime(…)` over their factors, and a leaf
-/// `event(left, 0)` naming a move by its endpoint and its position in that
-/// endpoint's order: how a web value prints, and how a traced run's channel
-/// spells the web its play decomposes to.
+/// `series`, `parallel` and `prime` applied to their factors, and a leaf
+/// `event left 0` naming a move by its endpoint and its position in that
+/// endpoint's order, each factor an operand in parentheses: `series (event
+/// left 0) (parallel (event left 1) (event right 0))`. This is how a web
+/// value prints, and how a traced run's channel spells the web its play
+/// decomposes to.
 ///
 /// # Specification
 /// - requires: nothing; a node owed more factors than the pieces hold is closed
 ///   where the pieces end.
-/// - ensures: one call per piece in preorder, each node's factors between its
-///   parentheses, separated by `, `; one line.
+/// - ensures: one application per piece in preorder, each factor of a node
+///   after one space and between parentheses, the outermost piece bare; one
+///   line.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the series-parallel and the prime web of the goldens
-///   observe nesting, separators and leaves; a dropped parenthesis or a swapped
+///   observe nesting, operands and leaves; a dropped parenthesis or a swapped
 ///   endpoint changes the text.
 /// - witness: `tests::goldens::a_dialogue_and_its_web_spell_as_the_surface_writes_them`
 #[spec(ensures: |ret| !ret.contains('\n')
     && ret.matches('(').count() == ret.matches(')').count()
-    && ret.matches("event(").count() == pieces.iter().filter(|piece| matches!(**piece, WebPiece::Event { .. })).count())]
+    && ret.matches("event ").count() == pieces.iter().filter(|piece| matches!(**piece, WebPiece::Event { .. })).count())]
 #[inline]
 #[must_use]
 pub fn web_spelled(pieces: &[WebPiece]) -> String
@@ -5752,7 +6091,7 @@ struct WebSpelling<'pieces>(&'pieces [WebPiece]);
 
 impl core::fmt::Display for WebSpelling<'_>
 {
-    /// Write each piece in preorder, each node's factors between its
+    /// Write each piece in preorder, each factor of a node as an operand in
     /// parentheses.
     ///
     /// # Specification
@@ -5774,42 +6113,44 @@ impl core::fmt::Display for WebSpelling<'_>
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result
     {
-        // Each open node's factors still owed, and whether one is written.
-        let mut open: Vec<(usize, Factors)> = Vec::new();
+        // Each open node's factors still owed, and whether it is itself a
+        // factor, written in parentheses.
+        let mut open: Vec<(usize, Wrapped)> = Vec::new();
         for &piece in self.0 {
-            if let Some(&mut (_, ref mut factors)) = open.last_mut() {
-                if *factors == Factors::Begun {
-                    f.write_str(", ")?;
-                }
-                *factors = Factors::Begun;
+            let wrapped = if open.is_empty() {
+                Wrapped::No
             }
+            else {
+                f.write_str(" (")?;
+                Wrapped::Yes
+            };
             let owed = match piece {
                 WebPiece::Event { endpoint, index } => {
                     let side = match endpoint {
                         Endpoint::Left => "left",
                         Endpoint::Right => "right",
                     };
-                    write!(f, "event({side}, {index})")?;
+                    write!(f, "event {side} {index}")?;
                     0_usize
                 },
                 WebPiece::Series(factors) => {
-                    f.write_str("series(")?;
+                    f.write_str("series")?;
                     factors
                 },
                 WebPiece::Parallel(factors) => {
-                    f.write_str("parallel(")?;
+                    f.write_str("parallel")?;
                     factors
                 },
                 WebPiece::Prime(factors) => {
-                    f.write_str("prime(")?;
+                    f.write_str("prime")?;
                     factors
                 },
             };
             if owed > 0_usize {
-                open.push((owed, Factors::Unbegun));
+                open.push((owed, wrapped));
                 continue;
             }
-            if !matches!(piece, WebPiece::Event { .. }) {
+            if wrapped == Wrapped::Yes {
                 f.write_str(")")?;
             }
             // The piece is whole: each node it completes closes in turn.
@@ -5818,28 +6159,32 @@ impl core::fmt::Display for WebSpelling<'_>
                 if *left > 0_usize {
                     break;
                 }
-                let _ = open.pop();
-                f.write_str(")")?;
+                if let Some((_, Wrapped::Yes)) = open.pop() {
+                    f.write_str(")")?;
+                }
             }
         }
-        for _ in open {
-            f.write_str(")")?;
+        for (_, wrapped) in open.into_iter().rev() {
+            if wrapped == Wrapped::Yes {
+                f.write_str(")")?;
+            }
         }
         Ok(())
     }
 }
 
-/// Whether an open web node has written a factor yet.
+/// Whether a web piece is a factor of the node above it, written as an
+/// operand in parentheses.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Factors
+enum Wrapped
 {
-    /// None yet: the next factor follows the parenthesis.
-    Unbegun,
-    /// One or more: the next follows a separator.
-    Begun,
+    /// It is the outermost piece, written bare.
+    No,
+    /// It is a factor, written in parentheses.
+    Yes,
 }
 
 /// The walk's state: the builder it writes into, the finished pieces, the
@@ -6001,15 +6346,15 @@ impl Walk<'_, '_>
         self.builder.text(glyphs)
     }
 
-    /// A former written at a stratum: its head `keyword[n, k](operands,`, a
+    /// A former written at a stratum: its head `keyword[n, k] operands`, a
     /// text leaf `join` takes. The stratum's two numerals are the
     /// instantiation's type residents, each a numeral where a type is read.
     ///
     /// # Specification
     /// - requires: `keyword` and `operands` hold no line feed, carriage return
     ///   or tab.
-    /// - ensures: `join` takes one text leaf holding exactly `keyword[n,
-    ///   k](operands,`, `n` the stratum's degree and `k` its bound.
+    /// - ensures: `join` takes one text leaf holding exactly `keyword[n, k]
+    ///   operands`, `n` the stratum's degree and `k` its bound.
     /// - provides: the heads of `ua`, `compose` and `fill`.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -6037,7 +6382,7 @@ impl Walk<'_, '_>
     ) -> Result<Join, PresentationError>
     {
         let head = format!(
-            "{}[{}, {}]({operands},",
+            "{}[{}, {}] {operands}",
             keyword.0,
             usize::from(stratum.degree),
             usize::from(stratum.bound),
@@ -6049,10 +6394,56 @@ impl Walk<'_, '_>
                 Production("instantiation.type"),
                 writes(
                     Production("number.type"),
-                    writes(Production("call_expression"), join(head)),
+                    writes(Production("application_expression"), join(head)),
                 ),
             ),
         ))
+    }
+
+    /// How a type former applied to its operands binds on the walk's surface,
+    /// as [`type_applied`] states, noting the juxtaposed form a type inside
+    /// an expression takes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`type_applied`]'s binding for the walk's surface and `rule`;
+    ///   on the expression surface where `admits` reads a type,
+    ///   `Notation::TypeApplication` is among the notes, since the type grammar
+    ///   reads no juxtaposed application until #5200. A value the expression
+    ///   grammar reads, `pure (Vec MkIx)`, takes no note.
+    /// - provides: the one way a type former's applied binding is chosen.
+    /// - panics: none.
+    /// - executable: none — the binding is `type_applied`'s, and the note is
+    ///   one call.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `endForced`'s ascription to `Path(3, _)` inside an
+    ///   expression is held by the body parity sweep, and `pure (Vec MkIx)`
+    ///   stays faithful.
+    /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a juxtaposed type application has no type syntax until #5200: written \
+                      in the printer's notation"
+        )
+    )]
+    fn applied_type(
+        &mut self,
+        rule: Production,
+        admits: Admits,
+    ) -> Binding
+    {
+        if self.surface == Surface::Expression
+            && matches!(
+                admits,
+                Admits::Type | Admits::ValueType | Admits::CompType | Admits::Thunked
+            )
+        {
+            self.note(Unspelled::Notation(Notation::TypeApplication));
+        }
+        type_applied(self.surface, rule)
     }
 
     /// Pushes a finished atom holding `glyphs`.
@@ -6495,7 +6886,9 @@ impl Walk<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one atom piece holding [`Self::variable_leaf`]'s leaf.
+    /// - ensures: one piece: an atom holding [`Self::variable_leaf`]'s leaf,
+    ///   or, while a static redex substitutes arguments, the substituted
+    ///   argument's piece with its own binding.
     /// - provides: the spelling of a bound variable.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -6512,7 +6905,7 @@ impl Walk<'_, '_>
         ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
             && match *ret {
                 | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
-                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom),
+                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom || !self.substituted.is_empty()),
                 | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
                 | Err(_) => false,
             },
@@ -6568,7 +6961,7 @@ impl Walk<'_, '_>
     /// The binder and the label a positional selection `node` reads by, when
     /// it selects one field of a dependent record an open binder or a binder
     /// of the context holds: `((r.1).1).0` reads the third field, `z` of
-    /// `#{x, y, z, f, g}`.
+    /// `*{x, y, z, f, g}`.
     ///
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
@@ -7174,7 +7567,9 @@ impl Walk<'_, '_>
     ///   the arrows after it, so the join decides between the alias and the
     ///   thunk (#736). None when a link is anything else — an effectful
     ///   returner, an arrow under a redex, a dependent arrow past the
-    ///   sixty-fourth link, a missing or misplaced node — or the walk's
+    ///   sixty-fourth link, a missing or misplaced node — when the first link
+    ///   is no dependent arrow and its domain classifies codes, which the
+    ///   lowering reads written as `A -> B` as the static Pi, or the walk's
     ///   remaining visits run out first. Every link read is one visit spent.
     /// - provides: the shape `+U (A1 -> … -> An -> -F C)` the alias `(A1, …,
     ///   An) => C` stands for, which the lowering reads back to the same type.
@@ -7195,6 +7590,7 @@ impl Walk<'_, '_>
     ///   reads.
     /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
     /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `tests::goldens::a_box_over_a_type_keeps_its_thunk_4853`
     /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     #[spec(
@@ -7241,10 +7637,19 @@ impl Walk<'_, '_>
                     link = codomain;
                 },
                 Former::Returner(result) => {
+                    let first = links.first().map_or(Classifies::Values, |first| {
+                        classifies_codes(source, first.domain)
+                    });
+                    let kinded = first == Classifies::Codes
+                        && links.first().is_some_and(|first| first.opener.is_none());
+                    if kinded {
+                        return None;
+                    }
                     return Some((
                         links,
                         dependent,
                         entered.map_or(Codomain::Result(result), Codomain::Reduct),
+                        first,
                     ));
                 },
                 // A decode and a quote print as the node they hold, so the
@@ -7400,23 +7805,23 @@ impl Walk<'_, '_>
     }
 
     /// Push the tasks that write `chain`, the arrows and the codomain
-    /// [`Walk::alias`] read, as the value-function alias `(A1, …, An) => C`:
+    /// [`Walk::alias`] read, as the box `(A1, …, An) -> C`:
     /// the join, an unbind for each dependent arrow, the codomain, then each
     /// domain under the binders before it, so the domains are visited first.
     ///
     /// # Specification
     /// trivial.
     fn aliased<N>(
-        (links, dependent, codomain): AliasChain<N>,
+        (links, dependent, codomain, first): AliasChain<N>,
         depth: ValueDepth,
         tasks: &mut Vec<Task<N>>,
     )
     {
         tasks.push(Task::Join(writes(
-            Production("value_function_type"),
+            Production("function_type"),
             writes(
                 Production("parenthesized_type"),
-                Join::ValueFunction(Arity(links.len()), dependent),
+                Join::ValueFunction(Arity(links.len()), dependent, first),
             ),
         )));
         for _ in 0_u32 .. dependent.0.count_ones() {
@@ -7442,7 +7847,7 @@ impl Walk<'_, '_>
         }
     }
 
-    /// The dependent value-function alias, `(a : A, B) => C`, over its spelled
+    /// The dependent box, `(a : A, B) -> C`, over its spelled
     /// domains and codomain: the spelling of an alias chain where an
     /// occurrence named a dependent arrow's binder, the grammar's sugar for
     /// `+U ((a : A) -> B -> -F C)`.
@@ -7450,11 +7855,13 @@ impl Walk<'_, '_>
     /// # Specification
     /// - requires: `domains` are the chain's arrows' domains, outermost first,
     ///   `dependent` marks the dependent ones, and their binders, closed, sat
-    ///   from the open count up, one per dependent arrow in order.
+    ///   from the open count up, one per dependent arrow in order; `first`
+    ///   tells whether the first domain classifies codes.
     /// - ensures: the domains between parentheses, separated by commas, each
     ///   written as the walk writes its arrow alone: a dependent domain as `a :
-    ///   A`, named by its binder, where an occurrence named it or the walk
-    ///   approximated, and bare otherwise; then `=>` and the codomain.
+    ///   A`, named by its binder, where an occurrence named it, the walk
+    ///   approximated, or it is the first and classifies codes; bare otherwise;
+    ///   then `->` and the codomain.
     /// - provides: the alias join's dependent spelling, which decides only once
     ///   every occurrence was met.
     /// - fails: the builder's refusal.
@@ -7476,6 +7883,7 @@ impl Walk<'_, '_>
         &mut self,
         domains: &[Piece],
         dependent: Dependent,
+        first: Classifies,
         codomain: Piece,
     ) -> Result<(Doc, Binding), PresentationError>
     {
@@ -7495,7 +7903,11 @@ impl Walk<'_, '_>
             else {
                 binders = binders.saturating_sub(1_usize);
                 let position = OpenBinders(open.saturating_add(binders));
-                (self.fidelity != Fidelity::Faithful || self.occurring.contains(&position))
+                // A bare domain that classifies codes, `(Type) -> B`, reads
+                // as the static Pi. The first such binder keeps its name.
+                (self.fidelity != Fidelity::Faithful
+                    || self.occurring.contains(&position)
+                    || (at == 0_usize && first == Classifies::Codes))
                     .then_some(OpenBinders(binders))
             };
             let doc = if let Some(offset) = named {
@@ -7514,10 +7926,11 @@ impl Walk<'_, '_>
         }
         entries.reverse();
         let domain = self.listed(&entries)?;
-        let arrow = self.leaf(Glyphs(" =>"))?;
+        let arrow = self.leaf(Glyphs(" ->"))?;
         let head = self.builder.concat(domain, arrow)?;
         let head = self.space_or_break(head)?;
-        Ok((self.builder.concat(head, codomain.doc)?, Binding::Arrow))
+        let codomain = self.bare_up_to(codomain, Binding::Relation)?;
+        Ok((self.builder.concat(head, codomain)?, Binding::Arrow))
     }
 
     /// The computation and the value type of the typed bind whose bound
@@ -7708,7 +8121,7 @@ impl Walk<'_, '_>
     /// a session type standing at a receive `?A. S`, a selection `+{…}` or an
     /// offer `&{…}`; a sum or a lazy product, written between braces or, in
     /// the sugared form, as a chain an expression reads as arithmetic; a
-    /// labelled record type `#{a : A}` or a telescope type `#{a : A, b : B}`,
+    /// labelled record type `*{a : A}` or a telescope type `*{a : A, b : B}`,
     /// whose entries an expression does not read; a model type, `Model(T)` or
     /// `Model(T) with sort C = A`, which no expression reads; a product
     /// written as such a chain, `A * B`; or a path-shaped type that supplies
@@ -7791,7 +8204,7 @@ impl Walk<'_, '_>
         else if let Former::Model { .. } = former {
             true
         }
-        // `#{A, B}` reads as the product's code, `A * B` as the product of two
+        // `*{A, B}` reads as the product's code, `A * B` as the product of two
         // codes.
         else if let Former::Product(arity) = former {
             form == Form::Sugared && usize::from(arity) >= 2_usize
@@ -7813,8 +8226,8 @@ impl Walk<'_, '_>
 
     /// Whether the type `quoted`, written bare where an expression is read,
     /// holds a part no expression reads: its own head or the head of a type
-    /// among its parts, which an expression reads as its own parts — `#{Unit,
-    /// +{Unit}}` does not read where `#{Unit, Integer}` does.
+    /// among its parts, which an expression reads as its own parts — `*{Unit,
+    /// +{Unit}}` does not read where `*{Unit, Integer}` does.
     ///
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
@@ -7867,7 +8280,7 @@ impl Walk<'_, '_>
                 return Bare::Unread;
             }
             let former = source.read(node);
-            // An expression reads `#{a, b}` as the tuple of the values `a` and
+            // An expression reads `*{a, b}` as the tuple of the values `a` and
             // `b`, so a component a decode of a value fills, a variable or a
             // call, keeps the explicit product's quote (#5060). A binder a
             // static redex substitutes is written as its argument, a code an
@@ -7949,6 +8362,54 @@ impl Walk<'_, '_>
         let inner = self.none_or_break(inner)?;
         let close = self.leaf(Glyphs(")"))?;
         self.builder.concat(inner, close)
+    }
+
+    /// `head a b …`: `head`, then each of `operands` in order, each an atom
+    /// or parenthesized, apart by a space or a break.
+    ///
+    /// # Specification
+    /// - requires: `head` is a document that binds at most as an application.
+    /// - ensures: `head`, then for each operand a space or a break and the
+    ///   operand bare up to [`Binding::Atom`]; `head ()`, the head applied to
+    ///   the empty group, when `operands` is empty.
+    /// - provides: the juxtaposed application of a call, of a built-in former
+    ///   and of a former written at a stratum.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — calls of one and of several arguments, an argument
+    ///   that is itself a call, and the built-in formers' goldens expose a lost
+    ///   space, reordered operands and a missing parenthesis.
+    /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
+    /// - witness: `tests::goldens::univalence_spells_its_stratum_and_descriptions`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(_) | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn juxtaposed(
+        &mut self,
+        head: Doc,
+        operands: Vec<Piece>,
+    ) -> Result<Doc, PresentationError>
+    {
+        if operands.is_empty() {
+            let empty = self.leaf(Glyphs(" ()"))?;
+            return self.builder.concat(head, empty);
+        }
+        let mut call = head;
+        for operand in operands {
+            let operand = self.bare_up_to(operand, Binding::Atom)?;
+            let apart = self.space_or_break(call)?;
+            call = self.builder.concat(apart, operand)?;
+        }
+        Ok(call)
     }
 
     /// `piece` bare when it binds at most as loosely as `loosest`, a block
@@ -8097,14 +8558,13 @@ impl Walk<'_, '_>
         self.builder.concat(head, choice)
     }
 
-    /// `head`, then the cells of a composite or a fill and the call's closer:
-    /// one cell bare, more as a tuple.
+    /// `head`, then the cells of a composite or a fill: one cell an atom or
+    /// parenthesized, more as a group.
     ///
     /// # Specification
     /// - requires: `cells` are the cell pieces, in vertex order.
-    /// - ensures: the call closed after its cells, the head and the cells apart
-    ///   by a space or a break, and the closer after a break where the cells
-    ///   break.
+    /// - ensures: the head and the cells apart by a space or a break; one cell
+    ///   bare up to [`Binding::Atom`], more between one pair of parentheses.
     /// - fails: the builder's refusal, a cell too loose for an argument among
     ///   them.
     /// - panics: none.
@@ -8133,21 +8593,21 @@ impl Walk<'_, '_>
         let diagram = if cells.len() == 1_usize
             && let Some(cell) = cells.pop()
         {
-            self.bare_up_to(cell, Binding::ARGUMENT)?
+            self.bare_up_to(cell, Binding::Atom)?
         }
         else {
             self.listed(&cells)?
         };
         let head = self.space_or_break(head)?;
-        let inner = self.builder.concat(head, diagram)?;
-        let inner = self.none_or_break(inner)?;
-        let close = self.leaf(Glyphs(")"))?;
-        self.builder.concat(inner, close)
+        self.builder.concat(head, diagram)
     }
 
     /// `head`, `body` and a closing brace, as one group: on one line, a space
     /// inside each brace, or `body` on its own lines two columns in and the
-    /// brace on a line of its own.
+    /// brace on a line of its own. `body` is aligned at the column it starts
+    /// at: a line it breaks on the brace's own line starts at its first
+    /// token's column, where the layout begins the brace's next item, or past
+    /// it under a nest, where the layout reads the item on.
     ///
     /// # Specification
     /// - requires: `head` ends with its opening brace.
@@ -8155,7 +8615,7 @@ impl Walk<'_, '_>
     ///   either side of `body` and whose broken branch breaks after `head`,
     ///   indents `body` two columns and puts the closer on its own line; every
     ///   soft line inside `body` breaks with the group unless a group of its
-    ///   own holds it.
+    ///   own holds it, and indents from the column `body` starts at.
     /// - provides: the layout of a lambda's, a thunk's and a bound block's
     ///   body.
     /// - fails: the builder's refusal.
@@ -8184,6 +8644,7 @@ impl Walk<'_, '_>
     ) -> Result<Doc, PresentationError>
     {
         let line = Doc::LINE;
+        let body = self.builder.align(body)?;
         let inner = self.builder.concat(line, body)?;
         let inner = self.builder.nest(NestAmount::from(CONTINUATION), inner)?;
         let close = self.leaf(Glyphs("}"))?;
@@ -8430,7 +8891,7 @@ impl Walk<'_, '_>
                 return writes(Production("boolean.expression"), self.atom(word));
             },
             Former::Unit => {
-                return writes(Production("unit.expression"), self.atom(Glyphs("unit")));
+                return writes(Production("telescope_expression"), self.atom(Glyphs("*{}")));
             },
             Former::ListNil => {
                 return writes(
@@ -8470,6 +8931,24 @@ impl Walk<'_, '_>
                         Production("typed_number.expression")
                     },
                 };
+                // A negative number is `- 1`: a glued `-1` is one run, a
+                // name. The minus binds as a prefix does, so an operand
+                // writes it in parentheses, `f (- 1)`.
+                if let Some(magnitude) = spelled.0.strip_prefix('-')
+                    && matches!(*value, Literal::Integer(_) | Literal::Numeric(_))
+                {
+                    let written = format!("- {magnitude}");
+                    return writes(
+                        Production("unary_expression"),
+                        self.leaf(Glyphs(written.as_str())).map(|doc| {
+                            self.pieces.push(Piece {
+                                doc,
+                                binding: Binding::Prefix,
+                                fields: None,
+                            });
+                        }),
+                    );
+                }
                 return writes(production, self.atom(Glyphs(spelled.0.as_str())));
             },
             Former::Capability {
@@ -8868,60 +9347,60 @@ impl Walk<'_, '_>
             Former::PathRefl(_) => {
                 self.note(Unspelled::Notation(Notation::PathRefl));
                 Some(writes(
-                    Production("call_expression"),
+                    Production("application_expression"),
                     Join::Bracket(Bracket::PathRefl),
                 ))
             },
             Former::Here(_) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Here),
             )),
             Former::Funext(..) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Funext),
             )),
             Former::Equiv(..) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Equiv),
             )),
             Former::Univalence(_) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Univalence),
             )),
             Former::SessionRelated(SessionRelation::Equivalence, _, _, Some(_)) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::BisimPaid),
             )),
             Former::SessionRelated(SessionRelation::Equivalence, ..) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Bisim),
             )),
             Former::SessionRelated(SessionRelation::Subtyping, ..) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Sim),
             )),
             Former::Stay(_) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Stay),
             )),
             Former::FlowProduct(..) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::FlowProduct),
             )),
             Former::Back(_) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Back),
             )),
             Former::Cong(..) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Cong),
             )),
             Former::Forward(_) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Forward),
             )),
             Former::FunctionFlow(..) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Arrow),
             )),
             // A homed type former its source writes through its home's path
@@ -8944,7 +9423,7 @@ impl Walk<'_, '_>
                 Join::Bracket(Bracket::Dialogue),
             )),
             Former::Decompose(_) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::Decompose),
             )),
             Former::PrefixType(_) => Some(writes(
@@ -8959,7 +9438,7 @@ impl Walk<'_, '_>
             } => Some(self.at_stratum(
                 Glyphs("ua"),
                 stratum,
-                format_args!("{}, {}", from.as_ref(), to.as_ref()),
+                format_args!("{} {}", from.as_ref(), to.as_ref()),
                 Join::Ua,
             )?),
             Former::Compose { composite, cells } => {
@@ -8991,12 +9470,12 @@ impl Walk<'_, '_>
             Former::PathEquiv(..) => {
                 self.note(Unspelled::Notation(Notation::PathEquiv));
                 Some(writes(
-                    Production("call_expression"),
+                    Production("application_expression"),
                     Join::Bracket(Bracket::PathEquiv),
                 ))
             },
             Former::PathProduct(..) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::PathProduct),
             )),
             // A product a dependent record nests, whose first field's label
@@ -9026,20 +9505,14 @@ impl Walk<'_, '_>
                     arity: Arity(usize::from(arity)),
                 }))
             },
-            Former::Tuple(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
-                Some(writes(
-                    Production("parenthesized_expression"),
-                    Join::Tuple(Arity(usize::from(arity))),
-                ))
-            },
             Former::Product(arity) => Some(writes(Production("telescope_type"), Join::Braced {
-                brace: Brace::Hash,
+                brace: Brace::Star,
                 arity: Arity(usize::from(arity)),
                 entries: Entries::Positional,
             })),
             Former::Tuple(arity) => {
                 Some(writes(Production("telescope_expression"), Join::Braced {
-                    brace: Brace::Hash,
+                    brace: Brace::Star,
                     arity: Arity(usize::from(arity)),
                     entries: Entries::Positional,
                 }))
@@ -9050,7 +9523,7 @@ impl Walk<'_, '_>
                 entries: Entries::Positional,
             })),
             Former::RecordType(arity) => Some(writes(Production("telescope_type"), Join::Braced {
-                brace: Brace::Hash,
+                brace: Brace::Star,
                 arity: Arity(usize::from(arity)),
                 entries: Entries::Labelled(Label::Field),
             })),
@@ -9067,7 +9540,27 @@ impl Walk<'_, '_>
                 }
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
             },
-            Former::Returner(_) => {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a family applied under a returner inside an expression has no type \
+                              syntax until #5200: written in the printer's notation"
+                )
+            )]
+            Former::Returner(result) => {
+                // Inside an expression the type grammar reads a returner's
+                // result, and a family applied there is juxtaposed,
+                // `-F (Maybe a)`, which it reads only once #5200 lands.
+                if self.surface == Surface::Expression
+                    && matches!(
+                        source.read(result),
+                        Former::Data { arity, .. } | Former::Codata { arity, .. }
+                            if usize::from(arity) > 0_usize
+                    )
+                {
+                    self.note(Unspelled::Notation(Notation::TypeApplication));
+                }
                 Some(writes(Production("f_type"), Join::Prefix(Prefix::Returner)))
             },
             // A group of outputs is written after the returner it is,
@@ -9170,7 +9663,7 @@ impl Walk<'_, '_>
             },
             Former::Record(arity) => {
                 Some(writes(Production("telescope_expression"), Join::Braced {
-                    brace: Brace::Hash,
+                    brace: Brace::Star,
                     arity: Arity(usize::from(arity)),
                     entries: Entries::Labelled(Label::Assignment),
                 }))
@@ -9180,7 +9673,7 @@ impl Walk<'_, '_>
                 Join::Update(Arity(usize::from(arity))),
             )),
             Former::ListCons(..) => Some(writes(
-                Production("call_expression"),
+                Production("application_expression"),
                 Join::Bracket(Bracket::ListCons),
             )),
             Former::Injection(..) => Some(writes(
@@ -9208,7 +9701,7 @@ impl Walk<'_, '_>
                     )));
                 }
                 self.call(source, function, argument, depth, tasks);
-                return writes(Production("call_expression"), Ok(()));
+                return writes(Production("application_expression"), Ok(()));
             },
             // A body that ends answering a type's code keeps its `pure`: the
             // lowering reads a type at a body's end only as a returned value.
@@ -9270,7 +9763,7 @@ impl Walk<'_, '_>
                     && let Some((bounds, rest)) = linear_runs(source, node) =>
             {
                 Self::read_at_binders(&bounds, rest, admits, below(depth, kind), tasks);
-                return writes(Production("call_expression"), Ok(()));
+                return writes(Production("application_expression"), Ok(()));
             },
             Former::Bind(bound, rest)
                 if let Some((ascribed, result)) = self.typed_bind(source, bound) =>
@@ -9429,7 +9922,7 @@ impl Walk<'_, '_>
                 if nested_call(source, body).is_some() =>
             {
                 Self::inlined(source, body, below(depth, kind), tasks);
-                return writes(Production("call_expression"), Ok(()));
+                return writes(Production("application_expression"), Ok(()));
             },
             // A quoted type whose head no expression reads, standing where an
             // expression is read, is written in the quote's own spelling,
@@ -9437,7 +9930,7 @@ impl Walk<'_, '_>
             // type written where a value is read, and a type position reads
             // the type itself.
             Former::Quote(quoted) | Former::QuoteComputation(quoted)
-                if self.surface == Surface::Expression
+                if matches!(self.surface, Surface::Expression | Surface::Enclosed)
                     && self.unread_as_expression(source, quoted, self.form) == Bare::Unread =>
             {
                 Some(writes(
@@ -9447,8 +9940,8 @@ impl Walk<'_, '_>
             },
             // A quoted type stands where an expression is read, which takes
             // every alias but the one over no domain: a group followed by
-            // `=>` reads as the alias's domain list, `(c : U) => el(c)`, and
-            // `() => C` as an expression. That one is written as the thunk it
+            // `->` reads as the box's domain list, `(c : U) -> el c`, and
+            // `() -> C` as an expression. That one is written as the thunk it
             // stands for, `+U (-F C)`.
             Former::Quote(quoted)
                 if self.form == Form::Sugared
@@ -9473,6 +9966,27 @@ impl Walk<'_, '_>
             )]
             Former::Element(code) if let Some(notation) = positional(source, code) => {
                 self.note(Unspelled::Notation(notation));
+                None
+            },
+            // A decode of a code a call builds, inside an expression, is
+            // written juxtaposed, `-F (Maybe a)`, which the type grammar reads
+            // only once #5200 lands: until then the printer's notation.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a juxtaposed application in a type has no type syntax until #5200: \
+                              written in the printer's notation"
+                )
+            )]
+            Former::Element(code)
+                if self.surface == Surface::Expression
+                    && matches!(
+                        source.read(code),
+                        Former::Application(..) | Former::StaticApplication(..)
+                    ) =>
+            {
+                self.note(Unspelled::Notation(Notation::TypeApplication));
                 None
             },
             // A computation where a value is read stands bare, its run left
@@ -9576,12 +10090,28 @@ impl Walk<'_, '_>
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(Task::Unbind);
             }
-            let surface = surface_below(source, self.surface, &former, slot.admits);
+            // A quote written in its own spelling, `type(T)`, holds its type in
+            // the type grammar, whatever sort the quote stands in: a quote's
+            // own, a static lambda's quoted body, and a piece a former's parts
+            // write inside `type(`, as a transport's quoted motive.
+            let quoted = matches!(
+                join,
+                Some(Join::Bracket(Bracket::TypeQuote) | Join::StaticLambda { quoted: true })
+            ) || (matches!(join, Some(Join::Form { .. }))
+                && self.forms.last().is_some_and(|parts| {
+                    quoted_piece(parts, Component::from(index)) == Quoted::Inside
+                }));
+            let surface = if quoted {
+                Surface::Type
+            }
+            else {
+                surface_below(source, self.surface, &former, slot.admits)
+            };
             // Below a type no checker elaborates, whatever sort a slot is
             // spelled in there.
             let elaboration = match surface {
                 Surface::Type => Elaboration::Read,
-                Surface::Expression => self.elaboration,
+                Surface::Expression | Surface::Enclosed => self.elaboration,
             };
             if elaboration != self.elaboration {
                 tasks.push(Task::Elaboration(self.elaboration));
@@ -9680,7 +10210,7 @@ impl Walk<'_, '_>
     }
 
     /// Schedules a static application and the applications under its
-    /// operator as one application, `f(a1, …, an)`, or, where the operator is
+    /// operator as one application, `f a1 … an`, or, where the operator is
     /// a static abstraction, as the redex's reduct.
     ///
     /// # Specification
@@ -9864,7 +10394,7 @@ impl Walk<'_, '_>
     }
 
     /// Schedules an application and the applications under its function as
-    /// one call, `f(a1, …, an)`, or, where the function is a function literal
+    /// one call, `f a1 … an`, or, where the function is a function literal
     /// whose body returns, as the value the call returns.
     ///
     /// # Specification
@@ -9883,10 +10413,11 @@ impl Walk<'_, '_>
     ///   parameter ([`Self::uniform`]) is scheduled as its context binder
     ///   between the head and the first argument, outermost first, and the join
     ///   counts them among the arguments. A call standing where a type is read
-    ///   has the walk's surface set to an expression over its head and its
-    ///   arguments and restored past its join, since a call reads them as
+    ///   has the walk's surface set to [`Surface::Enclosed`] over its head and
+    ///   its arguments and restored past its join, since a call reads them as
     ///   expressions wherever it stands: a type argument there is quoted
-    ///   (#1102). Where the head forces a constant whose telescope
+    ///   (#1102), and the join writes the call glued, `f(a, b)`, as the type's
+    ///   sort reads it. Where the head forces a constant whose telescope
     ///   ([`Source::implicits`]) names an implicit at the place of an argument
     ///   the call writes, and the spine is read whole, the join is instead the
     ///   form `f[.x = a, …](b, …)`: the head, then each such argument after its
@@ -9939,10 +10470,10 @@ impl Walk<'_, '_>
                     && all.iter().filter(|task| matches!(**task, Task::Hold)).count() == count
                     && count.checked_mul(3_usize).and_then(|every| every.checked_add(2_usize)) == Some(all.len());
             }
-            let scheduled = if surface == Surface::Expression {
+            let scheduled = if surface != Surface::Type {
                 all
             } else if matches!(all.first(), Some(&Task::Surface(restored)) if restored == surface)
-                && matches!(all.last(), Some(&Task::Surface(Surface::Expression)))
+                && matches!(all.last(), Some(&Task::Surface(Surface::Enclosed)))
             {
                 all.get(1_usize .. all.len().saturating_sub(1_usize)).unwrap_or_default()
             } else {
@@ -9952,7 +10483,7 @@ impl Walk<'_, '_>
             else { return false; };
             let joined = if let Join::Apply(Arity(arity)) = join {
                 arity.checked_add(1_usize)
-            } else if let Join::Form { pieces: Arity(pieces), binding: Binding::Atom } = join {
+            } else if let Join::Form { pieces: Arity(pieces), binding: Binding::Application } = join {
                 Some(pieces)
             } else {
                 None
@@ -10153,9 +10684,9 @@ impl Walk<'_, '_>
             Resident::Path(_) => true,
         });
         // A call reads its head and its arguments as expressions wherever it
-        // stands: where a type is read, the walk reads them as expressions
-        // and returns to the type past the call's join.
-        let switched = self.surface != Surface::Expression;
+        // stands: where a type is read, the walk reads them as expressions the
+        // type encloses and returns to the type past the call's join.
+        let switched = self.surface == Surface::Type;
         if switched {
             tasks.push(Task::Surface(self.surface));
         }
@@ -10182,21 +10713,16 @@ impl Walk<'_, '_>
                     },
                 }
             }
-            let _ = parts.text("](");
-            for index in 0_usize .. arguments.len() {
-                if index > 0_usize {
-                    let _ = parts.text(",").part(Part::Space);
-                }
-                let _ = parts.piece(Binding::ARGUMENT);
-            }
-            let _ = parts.text(")");
+            let _ = parts
+                .text("]")
+                .applied(Arity(arguments.len()), self.surface);
             let pieces = Arity(parts.pieces);
             self.forms.push(parts.parts);
             tasks.push(Task::Join(writes(
                 Production("instantiation_expression"),
                 Join::Form {
                     pieces,
-                    binding: Binding::Atom,
+                    binding: Binding::Application,
                 },
             )));
         }
@@ -10241,7 +10767,7 @@ impl Walk<'_, '_>
             }
         });
         if switched {
-            tasks.push(Task::Surface(Surface::Expression));
+            tasks.push(Task::Surface(Surface::Enclosed));
         }
     }
 
@@ -10531,7 +11057,7 @@ impl Walk<'_, '_>
     }
 
     /// The product of `first` and `second`: `A * B` sugared, each operand
-    /// tighter than the chain, and `#{A, B}` explicit.
+    /// tighter than the chain, and `*{A, B}` explicit.
     ///
     /// # Specification
     /// trivial.
@@ -10553,7 +11079,7 @@ impl Walk<'_, '_>
             Ok((self.builder.concat(head, second)?, Infix::Product.binding()))
         }
         else {
-            let opener = self.leaf(Brace::Hash.opener())?;
+            let opener = self.leaf(Brace::Star.opener())?;
             let comma = self.leaf(Glyphs(","))?;
             let comma = self.space_or_break(comma)?;
             let inner = self
@@ -10565,7 +11091,7 @@ impl Walk<'_, '_>
         }
     }
 
-    /// A dependent record's `fields` in its braces, `#{l : A, …}`.
+    /// A dependent record's `fields` in its braces, `*{l : A, …}`.
     ///
     /// # Specification
     /// trivial.
@@ -10577,7 +11103,7 @@ impl Walk<'_, '_>
         fields: Doc,
     ) -> Result<Doc, PresentationError>
     {
-        let open = self.leaf(Glyphs("#{"))?;
+        let open = self.leaf(Brace::Star.opener())?;
         let inner = self.builder.concat(open, fields)?;
         let inner = self.none_or_break(inner)?;
         let close = self.leaf(Glyphs("}"))?;
@@ -10964,37 +11490,37 @@ impl Walk<'_, '_>
     ///   its name, applied to its components when it has any, a parameterised
     ///   constructor written against its family as [`children`] reads its
     ///   classifier; a primitive as a call of its name, an operation performed
-    ///   as the call `I.op(v)` through its interface's name, but a string
-    ///   append as the interpolated string `"…${ v }…"` that lowers to it;
-    ///   `Path.walk(…)` over its motive — `fun (a) { M }`, or `+U M` for a
-    ///   telescope — and operands; `v.l` and `v.i`; `match v { … }` with one
-    ///   arm per branch but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or
-    ///   a constructor's applied to its field binders, its equations unwritten,
-    ///   `?` for a constructor the source cannot name; `handle { c } with {
-    ///   pure(x) => r, oper op(p, k) => b }`, the scope's head `handle c : I`,
-    ///   over a theory `handle c : T with sort C = A …` with the sorts its
-    ///   manifest fixes, in the order written, its pieces the scope's last, and
-    ///   a scope a model answers `{ c } with N`, or `{ c }` for the one in
-    ///   scope, in place of its clauses; a returner whose row's theory entries
-    ///   fix sorts, `-F [a : T with sort C = A, I | t] B`, each fixed type a
-    ///   piece, then the tail's and the result's; `c.op(v)`; `send(e, v)`,
-    ///   `recv(e)`, `select(e, l)`, `offer(e) { l => c }`, `close(e)` and `let
-    ///   a = fork (a : S) { t } ; u`, each endpoint named by its binder; a
-    ///   resumption of a continuation binder with a returned value as the
-    ///   continuation's call, `k(v)`; a return ascribed its returner as the
-    ///   annotated value `(v : T)`, under a `pure` unless a body ends there,
-    ///   its two pieces the value and the type the visit shaped; a value
-    ///   ascription as `(v : T)`, its two pieces the value and the type, but a
-    ///   binary natural ascribed `Nat` as its numeral, `(5 : Nat)`, its one
-    ///   piece the type; a truth value ascribed `Bool` the visit writes as its
-    ///   word; a homed type former whose source records a name for its head as
-    ///   that name applied to its one piece, `std.list.List(A)`. The forms the
-    ///   grammar does not write — native transport, a fixpoint `rec f { c }`, a
-    ///   fold, any other resumption `resume(k, c)`, `reset { c }`, `shift k { c
-    ///   }`, a lazy product `&{c, …}` and its observation `c.0`, and a
-    ///   positional projection off anything but a name, `(v.1).0` — make the
-    ///   presentation approximate, and so does a nested computation or a
-    ///   returned value, which the visit leaves for its slot to brace.
+    ///   as the call `I.op v` through its interface's name, but a string append
+    ///   as the interpolated string `"…${ v }…"` that lowers to it; `Path.walk
+    ///   …` over its motive — `fun (a) { M }`, or `+U M` for a telescope — and
+    ///   operands; `v.l` and `v.i`; `match v { … }` with one arm per branch but
+    ///   a pruned one, its pattern `+{.i = a}`, `*{a, b}` or a constructor's
+    ///   applied to its field binders, its equations unwritten, `?` for a
+    ///   constructor the source cannot name; `handle { c } with { pure(x) => r,
+    ///   oper op(p, k) => b }`, the scope's head `handle c : I`, over a theory
+    ///   `handle c : T with sort C = A …` with the sorts its manifest fixes, in
+    ///   the order written, its pieces the scope's last, and a scope a model
+    ///   answers `{ c } with N`, or `{ c }` for the one in scope, in place of
+    ///   its clauses; a returner whose row's theory entries fix sorts, `-F [a :
+    ///   T with sort C = A, I | t] B`, each fixed type a piece, then the tail's
+    ///   and the result's; `c.op(v)`; `send(e, v)`, `recv(e)`, `select(e, l)`,
+    ///   `offer(e) { l => c }`, `close(e)` and `let a = fork (a : S) { t } ;
+    ///   u`, each endpoint named by its binder; a resumption of a continuation
+    ///   binder with a returned value as the continuation's call, `k(v)`; a
+    ///   return ascribed its returner as the annotated value `(v : T)`, under a
+    ///   `pure` unless a body ends there, its two pieces the value and the type
+    ///   the visit shaped; a value ascription as `(v : T)`, its two pieces the
+    ///   value and the type, but a binary natural ascribed `Nat` as its
+    ///   numeral, `(5 : Nat)`, its one piece the type; a truth value ascribed
+    ///   `Bool` the visit writes as its word; a homed type former whose source
+    ///   records a name for its head as that name applied to its one piece,
+    ///   `std.list.List(A)`. The forms the grammar does not write — native
+    ///   transport, a fixpoint `rec f { c }`, a fold, any other resumption
+    ///   `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c,
+    ///   …}` and its observation `c.0`, and a positional projection off
+    ///   anything but a name, `(v.1).0` — make the presentation approximate,
+    ///   and so does a nested computation or a returned value, which the visit
+    ///   leaves for its slot to brace.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -11041,6 +11567,7 @@ impl Walk<'_, '_>
             let _ = parts
                 .text(" with {")
                 .part(Part::Open)
+                .barred(Component::from(0_usize))
                 .text("pure(")
                 .part(Part::Binder(0_usize))
                 .text(") => ")
@@ -11049,8 +11576,7 @@ impl Walk<'_, '_>
                 let label = source.label(node, Component::from(index));
                 let name = walk.spelled(label, Unspelled::Missing);
                 let _ = parts
-                    .text(",")
-                    .part(Part::Line)
+                    .barred(Component::from(index.saturating_add(1_usize)))
                     .text("oper ")
                     .text(name)
                     .text("(");
@@ -11099,16 +11625,16 @@ impl Walk<'_, '_>
             // through its own production, its endpoints terms; a flow is a
             // type application.
             Former::Path { carrier: None, .. } => {
-                let _ = parts.text("Path").arguments(Arity(2_usize));
-                writes(Production("path_type"), Binding::Atom)
+                let _ = parts.text("Path").applied(Arity(2_usize), self.surface);
+                self.applied_type(Production("path_type"), admits)
             },
             Former::Bridge { carrier: None, .. } => {
-                let _ = parts.text("Bridge").arguments(Arity(2_usize));
-                writes(Production("bridge_type"), Binding::Atom)
+                let _ = parts.text("Bridge").applied(Arity(2_usize), self.surface);
+                self.applied_type(Production("bridge_type"), admits)
             },
             Former::Flow { carrier: None, .. } => {
-                let _ = parts.text("Flow").arguments(Arity(2_usize));
-                writes(Production("type_application"), Binding::Atom)
+                let _ = parts.text("Flow").applied(Arity(2_usize), self.surface);
+                self.applied_type(Production("type_application"), admits)
             },
             Former::Path {
                 carrier: Some(_), ..
@@ -11132,8 +11658,8 @@ impl Walk<'_, '_>
                 let spelled = relation_spelled(relation);
                 match (self.spelling, spelled.ascii) {
                     (grammar::Spelling::Ascii, grammar::Ascii::Head(head)) => {
-                        let _ = parts.text(head.0).arguments(Arity(2_usize));
-                        writes(Production("type_application"), Binding::Atom)
+                        let _ = parts.text(head.0).applied(Arity(2_usize), self.surface);
+                        self.applied_type(Production("type_application"), admits)
                     },
                     (grammar::Spelling::Unicode, _)
                     | (grammar::Spelling::Ascii, grammar::Ascii::Token(_)) => {
@@ -11167,53 +11693,54 @@ impl Walk<'_, '_>
             },
             Former::Recorded { moves, .. } | Former::Dialogue { moves, .. } => {
                 let head = if matches!(*former, Former::Dialogue { .. }) {
-                    "dialogue("
+                    "dialogue"
                 }
                 else {
-                    "recorded("
+                    "recorded"
                 };
                 let _ = parts.text(head);
-                for (index, step) in moves.moves().into_iter().enumerate() {
-                    if index > 0_usize {
-                        let _ = parts.text(",").part(Part::Space);
-                    }
+                let steps = moves.moves();
+                if steps.is_empty() {
+                    let _ = parts.text(" ()");
+                }
+                for step in steps {
+                    let _ = parts.part(Part::Space).text("(");
                     let _ = match step.endpoint {
-                        Some(Endpoint::Left) => parts.text("left("),
-                        Some(Endpoint::Right) => parts.text("right("),
+                        Some(Endpoint::Left) => parts.text("left ("),
+                        Some(Endpoint::Right) => parts.text("right ("),
                         None => &mut parts,
                     };
                     let _ = match step.action {
-                        ActionKind::Send => parts.text("sent(").piece(Binding::ARGUMENT).text(")"),
-                        ActionKind::Receive => {
-                            parts.text("received(").piece(Binding::ARGUMENT).text(")")
-                        },
+                        ActionKind::Send => parts.text("sent ").piece(Binding::Atom),
+                        ActionKind::Receive => parts.text("received ").piece(Binding::Atom),
                         ActionKind::Select => {
                             let label = self.spelled(step.label, Unspelled::Missing);
-                            parts.text("selected(").text(label).text(")")
+                            parts.text("selected ").text(label)
                         },
                         ActionKind::Offer => {
                             let label = self.spelled(step.label, Unspelled::Missing);
-                            parts.text("offered(").text(label).text(")")
+                            parts.text("offered ").text(label)
                         },
                         ActionKind::Close => parts.text("closed"),
                     };
                     if step.endpoint.is_some() {
                         let _ = parts.text(")");
                     }
+                    let _ = parts.text(")");
                 }
-                let _ = parts.part(Part::Tight).text(")");
-                writes(Production("call_expression"), Binding::Atom)
+                writes(Production("application_expression"), Binding::Application)
             },
             Former::Web(pieces) => {
                 let _ = parts.text(web_spelled(pieces));
-                writes(Production("call_expression"), Binding::Atom)
+                writes(Production("application_expression"), Binding::Atom)
             },
             Former::Constructor {
                 name,
                 placement: Placement::Consed,
                 ..
             } => {
-                let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let spelled = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let name = juxtaposed_name(&spelled, self.surface).unwrap_or(spelled);
                 let _ = parts
                     .text(name)
                     .text(" ")
@@ -11232,8 +11759,8 @@ impl Walk<'_, '_>
                     None => parts.text(name),
                 };
                 if usize::from(arity) > 0_usize {
-                    let _ = parts.arguments(Arity(usize::from(arity)));
-                    writes(Production("type_application"), Binding::Atom)
+                    let _ = parts.applied(Arity(usize::from(arity)), self.surface);
+                    type_applied(self.surface, Production("type_application"))
                 }
                 else {
                     writes(Production("type_identifier"), Binding::Atom)
@@ -11252,22 +11779,26 @@ impl Walk<'_, '_>
                 let annotated = classifier.is_some()
                     && self.bodies == Bodies::Spelled
                     && admits != Admits::Stated;
-                let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let spelled = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let called = juxtaposed_name(&spelled, self.surface);
+                // A name written as a call is an application, as one applied
+                // to its components is.
+                let calls = usize::from(arity) > 0_usize || called.is_some();
+                let name = called.unwrap_or(spelled);
                 if annotated {
                     let _ = parts.text("(");
                 }
                 let _ = parts.text(name);
                 if usize::from(arity) > 0_usize {
-                    let _ = parts.arguments(Arity(usize::from(arity)));
+                    let _ = parts.applied(Arity(usize::from(arity)), self.surface);
                 }
                 if annotated {
                     let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
                 }
-                let applied = if usize::from(arity) > 0_usize {
-                    writes(Production("call_expression"), Binding::Atom)
-                }
-                else {
-                    writes(Production("constructor.expression"), Binding::Atom)
+                let applied = match (calls, annotated) {
+                    (true, true) => writes(Production("application_expression"), Binding::Atom),
+                    (true, false) => type_applied(self.surface, Production("type_application")),
+                    (false, _) => writes(Production("constructor.expression"), Binding::Atom),
                 };
                 if annotated {
                     writes(Production("parenthesized_expression"), applied)
@@ -11365,8 +11896,8 @@ impl Walk<'_, '_>
                     ) => {
                         let name =
                             self.spelled(Some(Name::from(name.as_ref())), Unspelled::Missing);
-                        let _ = parts.text(name).arguments(Arity(usize::from(arity)));
-                        writes(Production("call_expression"), Binding::Atom)
+                        let _ = parts.text(name).juxtaposed(Arity(usize::from(arity)));
+                        writes(Production("application_expression"), Binding::Application)
                     },
                 }
             },
@@ -11381,21 +11912,21 @@ impl Walk<'_, '_>
                     .text(interface)
                     .text(".")
                     .text(operation)
-                    .arguments(Arity(1_usize));
+                    .juxtaposed(Arity(1_usize));
                 writes(
                     Production("projection_expression"),
-                    writes(Production("call_expression"), Binding::Atom),
+                    writes(Production("application_expression"), Binding::Application),
                 )
             },
             Former::Transport(..) => {
                 self.note(Unspelled::Notation(Notation::Transport));
-                let _ = parts.text("Path.walk").arguments(Arity(2_usize));
-                writes(Production("call_expression"), Binding::Atom)
+                let _ = parts.text("Path.walk").juxtaposed(Arity(2_usize));
+                writes(Production("application_expression"), Binding::Application)
             },
             Former::Resume(stack, computation) => {
                 if resumed_reply(source, stack, computation).is_some() {
-                    let _ = parts.piece(Binding::Atom).arguments(Arity(1_usize));
-                    writes(Production("call_expression"), Binding::Atom)
+                    let _ = parts.piece(Binding::Application).juxtaposed(Arity(1_usize));
+                    writes(Production("application_expression"), Binding::Application)
                 }
                 else {
                     self.note(Unspelled::Notation(Notation::Resume));
@@ -11404,8 +11935,8 @@ impl Walk<'_, '_>
                 }
             },
             Former::Abandon(_) => {
-                let _ = parts.text("abandon").arguments(Arity(1_usize));
-                writes(Production("call_expression"), Binding::Atom)
+                let _ = parts.text("abandon").juxtaposed(Arity(1_usize));
+                writes(Production("application_expression"), Binding::Application)
             },
             // The motive is a static lambda, its body read in the expression
             // grammar between the braces: a type no expression reads there,
@@ -11413,10 +11944,10 @@ impl Walk<'_, '_>
             // the quote's own spelling, `type(T)` (#4508).
             Former::PathTransport { motive, .. } | Former::Ride { motive, .. } => {
                 let lead = if matches!(*former, Former::Ride { .. }) {
-                    "Flow.ride(fun ("
+                    "Flow.ride (fun ("
                 }
                 else {
-                    "Path.walk(fun ("
+                    "Path.walk (fun ("
                 };
                 let quoted = matches!(source.read(motive), Former::Product(arity) if usize::from(arity) >= 1_usize)
                     || self.unread_as_expression(source, motive, Form::Sugared) == Bare::Unread;
@@ -11431,15 +11962,15 @@ impl Walk<'_, '_>
                 else {
                     opened.piece(Binding::Arrow)
                 };
-                let _ = closed.part(Part::Space).text("}").rest(Arity(2_usize));
-                writes(Production("call_expression"), Binding::Atom)
+                let _ = closed
+                    .part(Part::Space)
+                    .text("})")
+                    .juxtaposed(Arity(2_usize));
+                writes(Production("application_expression"), Binding::Application)
             },
             Former::TelescopeTransport { .. } => {
-                let _ = parts
-                    .text("Path.walk(")
-                    .piece(Binding::ARGUMENT)
-                    .rest(Arity(4_usize));
-                writes(Production("call_expression"), Binding::Atom)
+                let _ = parts.text("Path.walk").juxtaposed(Arity(5_usize));
+                writes(Production("application_expression"), Binding::Application)
             },
             // A loop, from its fixpoint or, threading slots or walking a
             // list, from the fixpoint's application.
@@ -11529,7 +12060,7 @@ impl Walk<'_, '_>
                         continue;
                     }
                     let name = self.spelled(arm.name, Unspelled::Unreadable(Unreadable::Unnamed));
-                    let _ = parts.separated(Component::from(shown)).text(name);
+                    let _ = parts.barred(Component::from(shown)).text(name);
                     shown = shown.saturating_add(1_usize);
                     if arm.placement == Placement::Consed {
                         let _ = parts
@@ -11698,10 +12229,10 @@ impl Walk<'_, '_>
                     .piece(Binding::Atom)
                     .text(".")
                     .text(operation)
-                    .arguments(Arity(1_usize));
+                    .juxtaposed(Arity(1_usize));
                 writes(
                     Production("projection_expression"),
-                    writes(Production("call_expression"), Binding::Atom),
+                    writes(Production("application_expression"), Binding::Application),
                 )
             },
             // A lazy product is the positional copattern block, which the
@@ -11719,21 +12250,18 @@ impl Walk<'_, '_>
                 let _ = parts.part(Part::Tight).text("}");
                 writes(Production("lazy_record_expression"), Binding::Atom)
             },
-            // A flow composite is the call `Flow.then(f, g)`, and a path
+            // A flow composite is the call `Flow.then f g`, and a path
             // composite the sugared form reads off its transport (#754) the
-            // call `Path.step(p, q)`: each operation under its former.
+            // call `Path.step p q`: each operation under its former.
             Former::Then(..) | Former::Step(..) => {
                 let head = if matches!(*former, Former::Then(..)) {
-                    "Flow.then("
+                    "Flow.then"
                 }
                 else {
-                    "Path.step("
+                    "Path.step"
                 };
-                let _ = parts
-                    .text(head)
-                    .piece(Binding::ARGUMENT)
-                    .rest(Arity(1_usize));
-                writes(Production("call_expression"), Binding::Atom)
+                let _ = parts.text(head).juxtaposed(Arity(2_usize));
+                writes(Production("application_expression"), Binding::Application)
             },
             Former::Send { endpoint, .. } => {
                 let _ = parts
@@ -11769,7 +12297,7 @@ impl Walk<'_, '_>
                     let label = source.label(node, Component::from(index));
                     let name = self.spelled(label, Unspelled::Missing);
                     let _ = parts
-                        .separated(Component::from(index))
+                        .barred(Component::from(index))
                         .text(name)
                         .text(" => ")
                         .piece(Binding::Arrow);
@@ -11851,8 +12379,11 @@ impl Walk<'_, '_>
             },
             Former::ConsumeHeld(held) => {
                 self.note(Unspelled::Notation(Notation::Consume));
-                let _ = parts.text("consume(").part(Part::Endpoint(held)).text(")");
-                writes(Production("call_expression"), Binding::Atom)
+                let _ = parts
+                    .text("consume")
+                    .part(Part::Space)
+                    .part(Part::Endpoint(held));
+                writes(Production("application_expression"), Binding::Application)
             },
             // `A at w` binds as loosely as a word's cons, so a bridge over it
             // parenthesizes it and it parenthesizes any operand but an atom.
@@ -11948,8 +12479,8 @@ impl Walk<'_, '_>
             {
                 let _ = parts
                     .text(String::from(head.as_ref()))
-                    .arguments(Arity(1_usize));
-                writes(Production("type_path"), Binding::Atom)
+                    .applied(Arity(1_usize), self.surface);
+                self.applied_type(Production("type_path"), admits)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -12048,12 +12579,12 @@ impl Walk<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing; `former` may be any former.
-    /// - ensures: for a sum case `match v { +{.i = a} => c, … }`, one arm per
-    ///   branch; for a split `match v { #{a, b} => c }`, or `match v { unit =>
-    ///   c }` binding nothing; for a list case `match l { nil => …, cons(x, t)
-    ///   => … }`, noted as the printer's notation; each with ` -> ` and the
-    ///   answer's piece after the scrutinee's when the answer is written. None
-    ///   for any other former, `parts` unchanged.
+    /// - ensures: for a sum case `match v { | +{.i = a} => c … }`, one arm per
+    ///   branch; for a split `match v { | *{a, b} => c }`, or `match v { | *{}
+    ///   => c }` binding nothing; for a list case `match l { | nil => … |
+    ///   cons(x, t) => … }`, noted as the printer's notation; each with ` -> `
+    ///   and the answer's piece after the scrutinee's when the answer is
+    ///   written. None for any other former, `parts` unchanged.
     /// - provides: the one spelling an eliminator and its ascription to its
     ///   answer share.
     /// - fails: never.
@@ -12090,7 +12621,7 @@ impl Walk<'_, '_>
             head(parts);
             for index in 0_usize .. usize::from(arity) {
                 let _ = parts
-                    .separated(Component::from(index))
+                    .barred(Component::from(index))
                     .text(format!("+{{.{index} = "))
                     .part(Part::Binder(0_usize))
                     .text("} => ")
@@ -12107,13 +12638,14 @@ impl Walk<'_, '_>
         }
         if let Former::Split { arity, .. } = *former {
             head(parts);
+            let _ = parts.barred(Component::from(0_usize));
             let pattern = if usize::from(arity) == 0_usize {
-                let _ = parts.text("unit");
-                writes(Production("unit.pattern"), Binding::Prefix)
+                let _ = parts.text("*{}");
+                writes(Production("telescope_pattern"), Binding::Atom)
             }
             else {
                 let _ = parts
-                    .text("#{")
+                    .text("*{")
                     .binders(Arity(usize::from(arity)))
                     .text("}");
                 writes(
@@ -12131,10 +12663,10 @@ impl Walk<'_, '_>
         self.note(Unspelled::Notation(Notation::ListCase));
         head(parts);
         let _ = parts
+            .barred(Component::from(0_usize))
             .text("nil => ")
             .piece(Binding::Arrow)
-            .text(",")
-            .part(Part::Line)
+            .barred(Component::from(1_usize))
             .text("cons(")
             .binders(Arity(2_usize))
             .text(") => ")
@@ -12149,18 +12681,19 @@ impl Walk<'_, '_>
     /// - requires: available operands are the top finished pieces in operand
     ///   order, last on top; application arity comes from a bounded spine.
     /// - ensures: `+U C`, `-F A`, `pure v`, `force v` and `run c` with the
-    ///   operand parenthesized unless it is an atom; `#{…}`, `+{…}` and `&{…}`
+    ///   operand parenthesized unless it is an atom; `*{…}`, `+{…}` and `&{…}`
     ///   around their entries, each bare and after its label when it has one;
     ///   `A -> C` with the domain bare up to a bridge and the codomain bare, a
     ///   break after the arrow; `(x : A) -> C` naming the binder by the binders
-    ///   open outside it, a break after the arrow; `#{x : A, y : B}` naming its
+    ///   open outside it, a break after the arrow; `*{x : A, y : B}` naming its
     ///   first label so and its second by the next name, a break after the
-    ///   comma; `f(a1, …, an)` with the operator parenthesized unless it is an
-    ///   atom, a block when it is a bind; every list with a break after each
-    ///   comma and before the closer; `let x = c ; rest` naming its binder so,
-    ///   the bound computation a block when it is itself a bind, a soft line
-    ///   after the semicolon; `fun (x) { c }` and the static lambda `fun (a) {
-    ///   v }` naming their binder so, and `thunk { c }`, each a block.
+    ///   comma; `f a1 … an` with the operator parenthesized unless it is an
+    ///   atom or an application, each argument unless it is an atom, a block
+    ///   when it is a bind; every list with a break after each comma and before
+    ///   the closer; `let x = c ; rest` naming its binder so, the bound
+    ///   computation a block when it is itself a bind, a soft line after the
+    ///   semicolon; `fun (x) { c }` and the static lambda `fun (a) { v }`
+    ///   naming their binder so, and `thunk { c }`, each a block.
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -12192,9 +12725,9 @@ impl Walk<'_, '_>
             Join::Prefix(_) | Join::OpenRow { .. } | Join::StaticLambda { .. } | Join::Lambda | Join::Thunk
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::Dialogue | Bracket::Decompose | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
-                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) | Join::Returns(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
+                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Returns(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
             Join::Fill(_, Arity(cells)) => cells.checked_add(1_usize),
-            Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
+            Join::ValueFunction(Arity(domains), ..) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Update(Arity(count)) => {
                 let taken = count.checked_mul(2_usize)?;
@@ -12209,6 +12742,9 @@ impl Walk<'_, '_>
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner { .. } | Join::Returns(_) | Join::Lambda | Join::TypedLambda | Join::StaticLambda { .. } | Join::Thunk => Binding::Prefix,
+                    // The join writes a box over a domain that classifies
+                    // codes as its thunk where it names no binder.
+                    Join::ValueFunction(_, _, Classifies::Codes) if piece.binding == Binding::Prefix => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
                     // reads as.
@@ -12219,7 +12755,12 @@ impl Walk<'_, '_>
                     Join::RecordProduct => Infix::Product.binding(),
                     Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
-                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
+                    Join::Bracket(bracket) => match bracket.opener(self.surface) { Opener::Parenthesized(_) => Binding::Atom, Opener::Juxtaposed(_) => Binding::Application },
+                    // The join juxtaposes an application where an expression
+                    // reads it, and glues it, an atom, where a type reads it.
+                    Join::Apply(_) if self.surface != Surface::Expression => Binding::Atom,
+                    Join::Apply(_) | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) => Binding::Application,
+                    Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -12346,7 +12887,7 @@ impl Walk<'_, '_>
                     popped.push(self.pop()?);
                 }
                 let base = self.pop()?;
-                let opener = self.leaf(Brace::Hash.opener())?;
+                let opener = self.leaf(Brace::Star.opener())?;
                 let bar = self.leaf(Glyphs(" |"))?;
                 let head = self.builder.concat_all(&[opener, base.doc, bar])?;
                 let mut items = Vec::from([self.space_or_break(head)?]);
@@ -12381,17 +12922,13 @@ impl Walk<'_, '_>
                     infix.binding(),
                 )
             },
-            Join::Tuple(arity) => {
-                let components = self.take(arity)?;
-                (self.listed(&components)?, Binding::Atom)
-            },
             Join::Returns(arity) => {
                 let results = self.take(arity)?;
                 let group = self.listed(&results)?;
                 let head = self.leaf(Glyphs("-F "))?;
                 (self.builder.concat(head, group)?, Binding::Prefix)
             },
-            Join::ValueFunction(arity, dependent) => {
+            Join::ValueFunction(arity, dependent, first) => {
                 let codomain = self.pop()?;
                 let domains = self.take(arity)?;
                 let open = self.opened.len();
@@ -12401,7 +12938,33 @@ impl Walk<'_, '_>
                 let named = (open .. open.saturating_add(binders))
                     .any(|position| self.occurring.contains(&OpenBinders(position)));
                 if binders > 0_usize && (named || self.fidelity != Fidelity::Faithful) {
-                    self.dependent_alias(&domains, dependent, codomain)?
+                    self.dependent_alias(&domains, dependent, first, codomain)?
+                }
+                else if first == Classifies::Codes {
+                    // The box `Type -> B` reads as the static Pi. A binder
+                    // that nothing names reads back as the plain arrow. The
+                    // join writes the box over a domain that classifies codes
+                    // as its thunk, `+U (Type -> -F B)`.
+                    let returned = self.bare_up_to(codomain, Binding::Atom)?;
+                    let returner = self.leaf(Glyphs("-F "))?;
+                    let mut chain = self.builder.concat(returner, returned)?;
+                    for &domain in domains.iter().rev() {
+                        let domain = self.bare_up_to(domain, Binding::Lazy)?;
+                        let arrow = self.leaf(Glyphs(" ->"))?;
+                        let head = self.builder.concat(domain, arrow)?;
+                        let head = self.space_or_break(head)?;
+                        chain = self.builder.concat(head, chain)?;
+                    }
+                    let inner = self.bare_up_to(
+                        Piece {
+                            doc: chain,
+                            binding: Binding::Arrow,
+                            fields: None,
+                        },
+                        Binding::Atom,
+                    )?;
+                    let thunk = self.leaf(Glyphs("+U "))?;
+                    (self.builder.concat(thunk, inner)?, Binding::Prefix)
                 }
                 else {
                     let domain = match *domains.as_slice() {
@@ -12409,10 +12972,11 @@ impl Walk<'_, '_>
                         [only] => self.bare_up_to(only, Binding::Lazy)?,
                         _ => self.listed(&domains)?,
                     };
-                    let arrow = self.leaf(Glyphs(" =>"))?;
+                    let arrow = self.leaf(Glyphs(" ->"))?;
                     let head = self.builder.concat(domain, arrow)?;
                     let head = self.space_or_break(head)?;
-                    (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+                    let codomain = self.bare_up_to(codomain, Binding::Relation)?;
+                    (self.builder.concat(head, codomain)?, Binding::Arrow)
                 }
             },
             Join::Arrow => {
@@ -12459,7 +13023,7 @@ impl Walk<'_, '_>
             // whose second factor names no binder — a decode the family
             // reduces away (#771) — is written as the product it reads as:
             // `A * B` sugared, each operand tighter than the chain, and
-            // `#{A, B}` explicit.
+            // `*{A, B}` explicit.
             Join::Sigma
                 if self.fidelity == Fidelity::Faithful
                     && !self.occurring.contains(&OpenBinders(self.opened.len())) =>
@@ -12654,114 +13218,57 @@ impl Walk<'_, '_>
                 (self.block(head, body.doc)?, Binding::Prefix)
             },
             Join::Apply(Arity(count)) => {
-                let mut arguments = Vec::with_capacity(count);
-                for _ in 0_usize .. count {
-                    arguments.push(self.pop()?);
-                }
+                let arguments = self.take(Arity(count))?;
                 let operator = self.pop()?;
-                let operator = self.bare_up_to(operator, Binding::Atom)?;
-                let opener = self.leaf(Glyphs("("))?;
-                let mut items = Vec::from([operator, opener]);
-                for (position, &argument) in arguments.iter().rev().enumerate() {
-                    if position > 0_usize {
-                        let comma = self.leaf(Glyphs(","))?;
-                        items.push(self.space_or_break(comma)?);
-                    }
-                    items.push(self.bare_up_to(argument, Binding::ARGUMENT)?);
+                // Where a type's sort reads the application, it is written
+                // glued: there `f x` reads as the moded type `m T`.
+                if self.surface == Surface::Expression {
+                    let operator = self.bare_up_to(operator, Binding::Application)?;
+                    (self.juxtaposed(operator, arguments)?, Binding::Application)
                 }
-                let inner = self.builder.concat_all(&items)?;
-                let inner = self.none_or_break(inner)?;
-                let close = self.leaf(Glyphs(")"))?;
-                (self.builder.concat(inner, close)?, Binding::Atom)
+                else {
+                    let operator = self.bare_up_to(operator, Binding::Atom)?;
+                    let listed = self.listed(&arguments)?;
+                    (self.builder.concat(operator, listed)?, Binding::Atom)
+                }
             },
             Join::Bracket(bracket) => {
-                let mut items = Vec::new();
-                match bracket {
-                    Bracket::PathUniverse
-                    | Bracket::Stack
-                    | Bracket::PathEquiv
-                    | Bracket::PathProduct
-                    | Bracket::Funext
-                    | Bracket::Equiv
-                    | Bracket::ListCons
-                    | Bracket::Bisim
-                    | Bracket::Sim
-                    | Bracket::FlowProduct
-                    | Bracket::Cong
-                    | Bracket::Arrow => {
-                        let second = self.pop()?;
-                        let second = self.bare_up_to(second, Binding::ARGUMENT)?;
-                        let first = self.pop()?;
-                        let first = self.bare_up_to(first, Binding::ARGUMENT)?;
-                        let opener = self.leaf(bracket.opener())?;
-                        let comma = self.leaf(Glyphs(","))?;
-                        let comma = self.space_or_break(comma)?;
-                        items.extend([opener, first, comma, second]);
+                let operands = self.take(bracket.operands())?;
+                match bracket.opener(self.surface) {
+                    Opener::Parenthesized(opener) => {
+                        let mut inner = self.leaf(opener)?;
+                        for (position, operand) in operands.into_iter().enumerate() {
+                            if position > 0_usize {
+                                let comma = self.leaf(Glyphs(","))?;
+                                let comma = self.space_or_break(comma)?;
+                                inner = self.builder.concat(inner, comma)?;
+                            }
+                            let operand = self.bare_up_to(operand, Binding::ARGUMENT)?;
+                            inner = self.builder.concat(inner, operand)?;
+                        }
+                        let inner = self.none_or_break(inner)?;
+                        let close = self.leaf(Glyphs(")"))?;
+                        (self.builder.concat(inner, close)?, Binding::Atom)
                     },
-                    Bracket::BisimPaid => {
-                        let third = self.pop()?;
-                        let third = self.bare_up_to(third, Binding::ARGUMENT)?;
-                        let second = self.pop()?;
-                        let second = self.bare_up_to(second, Binding::ARGUMENT)?;
-                        let first = self.pop()?;
-                        let first = self.bare_up_to(first, Binding::ARGUMENT)?;
-                        let opener = self.leaf(bracket.opener())?;
-                        let comma = self.leaf(Glyphs(","))?;
-                        let comma = self.space_or_break(comma)?;
-                        let last = self.leaf(Glyphs(","))?;
-                        let last = self.space_or_break(last)?;
-                        items.extend([opener, first, comma, second, last, third]);
-                    },
-                    Bracket::Here
-                    | Bracket::Univalence
-                    | Bracket::PathRefl
-                    | Bracket::List
-                    | Bracket::Stay
-                    | Bracket::Back
-                    | Bracket::Forward
-                    | Bracket::Run
-                    | Bracket::Prefix
-                    | Bracket::Dialogue
-                    | Bracket::Decompose
-                    | Bracket::TypeQuote
-                    | Bracket::Break => {
-                        let body = self.pop()?;
-                        let body = self.bare_up_to(body, Binding::ARGUMENT)?;
-                        let opener = self.leaf(bracket.opener())?;
-                        items.extend([opener, body]);
+                    Opener::Juxtaposed(head) => {
+                        let head = self.leaf(head)?;
+                        (self.juxtaposed(head, operands)?, Binding::Application)
                     },
                 }
-                let inner = self.builder.concat_all(&items)?;
-                let inner = self.none_or_break(inner)?;
-                let close = self.leaf(Glyphs(")"))?;
-                (self.builder.concat(inner, close)?, Binding::Atom)
             },
             Join::Ua(head) => {
-                let backward = self.pop()?;
-                let backward = self.bare_up_to(backward, Binding::ARGUMENT)?;
-                let forward = self.pop()?;
-                let forward = self.bare_up_to(forward, Binding::ARGUMENT)?;
-                let head = self.space_or_break(head)?;
-                let comma = self.leaf(Glyphs(","))?;
-                let comma = self.space_or_break(comma)?;
-                let inner = self.builder.concat_all(&[head, forward, comma, backward])?;
-                let inner = self.none_or_break(inner)?;
-                let close = self.leaf(Glyphs(")"))?;
-                (self.builder.concat(inner, close)?, Binding::Atom)
+                let maps = self.take(Arity(2_usize))?;
+                (self.juxtaposed(head, maps)?, Binding::Application)
             },
             Join::Compose(head, cells) => {
                 let taken = self.take(cells)?;
-                (self.composite_cells(head, taken)?, Binding::Atom)
+                (self.composite_cells(head, taken)?, Binding::Application)
             },
             Join::Fill(head, Arity(cells)) => {
-                let mut taken = self.take(Arity(cells.saturating_add(1_usize)))?.into_iter();
-                let generator = taken.next().ok_or(PresentationError::Unbalanced)?;
-                let generator = self.bare_up_to(generator, Binding::ARGUMENT)?;
-                let comma = self.leaf(Glyphs(","))?;
-                let generator = self.builder.concat(generator, comma)?;
-                let head = self.space_or_break(head)?;
-                let head = self.builder.concat(head, generator)?;
-                (self.composite_cells(head, taken.collect())?, Binding::Atom)
+                let mut taken = self.take(Arity(cells.saturating_add(1_usize)))?;
+                let rest = taken.split_off(1_usize.min(taken.len()));
+                let head = self.juxtaposed(head, taken)?;
+                (self.composite_cells(head, rest)?, Binding::Application)
             },
             Join::Form {
                 pieces: Arity(count),

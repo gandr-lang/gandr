@@ -10,19 +10,16 @@
 import "./circle-base.gandr";
 
 /// The loop is not the empty word.
-pub def loop_apart(e : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here(Base))) -> Empty {
+pub def loop_apart(e : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base)) -> Empty =
   match e {}
-}
 
 /// Going around twice is not going around once.
-def twice_apart(e : Path[.A = Path[.A = Circle](Base, Base)](loop ∷ loop, loop)) -> Empty {
+def twice_apart(e : Path[.A = Path[.A = Circle](Base, Base)](loop ∷ loop, loop)) -> Empty =
   match e {}
-}
 
 /// The loop is not its inverse.
 def inverse_apart(e : Path[.A = Path[.A = Circle](Base, Base)](
   loop,
-  back(loop) ∷ Path.here(Base)
-)) -> Empty {
+  back loop ∷ Path.here Base
+)) -> Empty =
   match e {}
-}

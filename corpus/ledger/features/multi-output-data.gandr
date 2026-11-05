@@ -9,38 +9,34 @@
 
 /// Expressions with an explicit share node.
 @[ checks ]
-data Expr : Type where {
+data Expr : Type where
   | Lit : (n : Integer) --> Expr
   | Add : (a : Expr, b : Expr) --> Expr
   | Share : (e : Expr) --> (left : Expr, right : Expr)
-}
 
 /// `size` counts an expression's nodes and reads each port on its own.
 @[ checks ]
-def rec size(e : Expr) -> -F Integer {
-  match e {
-    Lit(n) => return 1,
-    Add(a, b) => { let x = size[<](a); let y = size[<](b); return x + y + 1 },
-    Share(x).left => size[<](x),
-    Share(x).right => size[<](x)
-  }
-}
+def rec size(e : Expr) -> -F Integer =
+  match e
+    | Lit(n) => return 1
+    | Add(a, b) => { let x = size[<] a; let y = size[<] b; return x + y + 1 }
+    | Share(x).left => size[<] x
+    | Share(x).right => size[<] x
 
 /// `twice` adds the sizes of both ports of one share.
 @[ runs("3") ]
-def twice() -> -F Integer { size(Add(Share(Lit(1)).left, Share(Lit(1)).right)) }
+def twice() -> -F Integer { size (Add (Share (Lit 1)).left (Share (Lit 1)).right) }
 
 /// The two ports of a share, as a record.
 @[ checks ]
-def ports : #{left : Expr, right : Expr} = Share(Lit(1));
+def ports : *{left : Expr, right : Expr} = Share (Lit 1);
 
 /// A pair that duplicates a value into two ports of one parameter.
 @[ checks ]
-data Pair(a : Type) : Type where {
+data Pair(a : Type) : Type where
   | Leaf : (x : a) --> Pair(a)
   | Dup : (p : Pair(a)) --> (one : Pair(a), two : Pair(a))
-}
 
 /// A parameterised family's record: each port takes its entry's type.
 @[ checks ]
-def doubled : #{one : Pair(Integer), two : Pair(Integer)} = Dup(Leaf(1));
+def doubled : *{one : Pair(Integer), two : Pair(Integer)} = Dup (Leaf 1);

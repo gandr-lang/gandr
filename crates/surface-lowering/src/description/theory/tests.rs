@@ -407,11 +407,11 @@ fn a_thunk_type_reads_as_the_operation_it_curries_1226()
     );
 }
 
-/// #1329: the value-function alias reads as the thunk it stands for, so
-/// `oper next : T => T` is the operation `(_ : T) --> T` that
-/// `+U (T -> -F T)` is, a builtin result a closed sort.
+/// #1329: the box reads as the thunk it stands for, so `oper next : T -> T`
+/// is the operation `(_ : T) --> T` that `+U (T -> -F T)` is, a builtin
+/// result a closed sort; the computation arrow `T -> -F T` is no box.
 #[test]
-fn the_value_function_alias_reads_as_its_thunk_1329()
+fn the_box_reads_as_its_thunk_1329()
 {
     let operations = |source: &str| {
         let report = described(source);
@@ -445,7 +445,7 @@ fn the_value_function_alias_reads_as_its_thunk_1329()
     };
     assert_eq!(
         operations(
-            "theory Counting where { sort T : Type; oper next : T => T; oper read : T => Integer; }"
+            "theory Counting where { sort T : Type; oper next : T -> T; oper read : T -> Integer; }"
         ),
         operations(
             "theory Counting where { sort T : Type; oper next : +U (T -> -F T); oper read : +U (T -> -F Integer); }"
@@ -453,10 +453,24 @@ fn the_value_function_alias_reads_as_its_thunk_1329()
     );
     assert_eq!(
         operations(
-            "theory Counting where { sort T : Type; oper next : T => T; oper read : T => Integer; }"
+            "theory Counting where { sort T : Type; oper next : T -> T; oper read : T -> Integer; }"
         ),
         "next : T --> T; read : T --> Integer; "
     );
+    let source = "theory Counting where { sort T : Type; oper next : T -> -F T; }";
+    let faults: Vec<_> = described(source)
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.fault.clone(),
+                source
+                    .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    assert_eq!(faults, [(DescriptionFault::Malformed, "T -> -F T")]);
 }
 
 #[test]
@@ -491,12 +505,12 @@ fn the_cat_shape_laws_are_written_faces()
     let report = described(
         "theory CatShape where {
   sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
   oper id : (a : Ob) --> Hom(a, a);
   oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
-  rule unitL : comp(id(a), f) ==> f;
-  rule unitR : comp(f, id(b)) ==> f;
-  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
+  rule unitL : comp (id a) f ==> f;
+  rule unitR : comp f (id b) ==> f;
+  rule assoc : comp (comp f g) h ==> comp f (comp g h);
 }",
     );
     assert_eq!(report.diagnostics, []);
@@ -1530,7 +1544,7 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
     let tree = parse(
         &grammar,
         SourceText::from(
-            "theory CircleShape where { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn(unturn(x)) ==> x; rule unturnTurn : unturn(turn(x)) ==> x; }\ntheory CatShape where { sort Ob : Type; sort Hom(dom: Ob, cod: Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp(id(a), f) ==> f; }\n",
+            "theory CircleShape where { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn (unturn x) ==> x; rule unturnTurn : unturn (turn x) ==> x; }\ntheory CatShape where { sort Ob : Type; sort Hom(dom : Ob, cod : Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp (id a) f ==> f; }\n",
         ),
     )
     .unwrap()
@@ -1634,7 +1648,7 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
 #[test]
 fn the_description_is_read_off_the_value()
 {
-    let source = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp(id(a), f) ==> f;\n}\n";
+    let source = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp (id a) f ==> f;\n}\n";
     let report = described(source);
     assert_eq!(report.diagnostics, []);
     let [ref theory] = *report.declarations.as_slice()
@@ -2349,7 +2363,7 @@ fn a_terminated_block_is_not_told_it_lacks_terminators()
 #[test]
 fn unseparated_members_are_declined_rather_than_dropped()
 {
-    let source = "theory S where {\n  sort Ob : Type\n  sort Ar : Type\n}\n";
+    let source = "theory S where {\n  sort Ob : Type sort Ar : Type\n}\n";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2369,6 +2383,14 @@ fn unseparated_members_are_declined_rather_than_dropped()
             .iter()
             .all(|sort| sort.name.as_ref() != "Ob" && sort.name.as_ref() != "Ar")
     );
+}
+
+#[test]
+fn members_on_their_own_lines_are_separated_by_their_column_4853()
+{
+    let report = described("theory S where {\n  sort Ob : Type\n  sort Ar : Type\n}\n");
+    assert_eq!(report.diagnostics, []);
+    assert_eq!(report.declarations[0].description.sorts.len(), 2);
 }
 
 #[test]
@@ -2407,8 +2429,8 @@ fn a_coherence_between_composites_is_a_higher_cell()
     let source = "theory C where {
   sort Ob : Type;
   oper id : (a : Ob) --> Ob;
-  rule unitL : id(a) ==> a;
-  rule triangle : (Path.step(unitL(a), unitL(a))) ==> unitL(a);
+  rule unitL : id a ==> a;
+  rule triangle : (Path.step (unitL a) (unitL a)) ==> unitL a;
   rule face : (f) ==> (z : Ob) { node : id(f) --> (z); };
 }";
     let report = described(source);
@@ -2457,7 +2479,7 @@ fn presented(declaration: &DescribedDeclaration) -> &Presentation
 #[test]
 fn an_included_theory_is_the_extension_restricted()
 {
-    let source = "theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));\n}\ntheory Pointed where {\n  include Mag;\n  oper one : () --> M;\n  rule unitL : mul(one(), x) ==> x;\n}\ntheory Comm where {\n  include Mag;\n  oper zero : () --> M;\n}\ntheory Both where {\n  include Pointed;\n  include Comm;\n}\n";
+    let source = "theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule assoc : mul (mul x y) z ==> mul x (mul y z);\n}\ntheory Pointed where {\n  include Mag;\n  oper one : () --> M;\n  rule unitL : mul (one ()) x ==> x;\n}\ntheory Comm where {\n  include Mag;\n  oper zero : () --> M;\n}\ntheory Both where {\n  include Pointed;\n  include Comm;\n}\n";
     let report = described(source);
     assert_eq!(report.diagnostics, []);
     let magma = presented(&report.declarations[0]).value.decode().unwrap();
@@ -2620,7 +2642,7 @@ fn an_include_is_refused_at_its_member()
 #[test]
 fn an_included_member_is_refused_at_its_include_2752()
 {
-    let source = "theory Monad where {\n  sort V : Type+;\n  sort C : Type;\n  oper ret : (a : V) --> C;\n  oper ext : (m : C, k : pi+ (x : V) . C) --> C;\n  rule unitR : ext(m, bind x . ret(x)) <=> m;\n}\ntheory Ordered where {\n  include Monad;\n  sort Below(w : C, v : C) : Type;\n  oper refl : (w : C) --> Below(w, w);\n}\n";
+    let source = "theory Monad where {\n  sort V : Type+;\n  sort C : Type;\n  oper ret : (a : V) --> C;\n  oper ext : (m : C, k : pi+ (x : V) . C) --> C;\n  rule unitR : ext m (bind x . (ret x)) <=> m;\n}\ntheory Ordered where {\n  include Monad;\n  sort Below(w : C, v : C) : Type;\n  oper refl : (w : C) --> Below(w, w);\n}\n";
     let grammar = grammar();
     let tree = parse(&grammar, SourceText::from(source))
         .unwrap()
@@ -2679,7 +2701,7 @@ fn an_included_member_is_refused_at_its_include_2752()
 #[test]
 fn a_law_member_reads_its_statement_2356()
 {
-    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path[.A = Bool](eq(a, a), true);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) => Path[.A = Bool](eq(a, b), eq(b, a));\n  law flat : (a : C) => Bool;\n  law late : (a : C, p : Path[.A = Bool](eq(a, a), true), b : C) => Path[.A = Bool](eq(a, b), true);\n  law eq : (a : C) => Path[.A = Bool](eq(a, a), true);\n}\n";
+    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) -> Path[.A = Bool](eq a a, true);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) -> Path[.A = Bool](eq a b, eq b a);\n  law flat : (a : C) -> Bool;\n  law late : (a : C, p : Path[.A = Bool](eq a a, true), b : C) -> Path[.A = Bool](eq a b, true);\n  law eq : (a : C) -> Path[.A = Bool](eq a a, true);\n}\n";
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2747,7 +2769,7 @@ fn a_law_member_reads_its_statement_2356()
 #[test]
 fn a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115()
 {
-    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path[.A = Bool](eq(a, a), yes);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) => Path[.A = Bool](eq(a, b), eq(b, a));\n  law odd : (a : C) => Path[.A = Bool](qe(a, a), true);\n}\n";
+    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) -> Path[.A = Bool](eq a a, yes);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) -> Path[.A = Bool](eq a b, eq b a);\n  law odd : (a : C) -> Path[.A = Bool](qe a a, true);\n}\n";
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2767,14 +2789,14 @@ fn a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115()
                 name: Name::from("refl"),
                 fault: crate::model::ModelFault::Unbound,
             },
-            "law refl : (a : C) => Path[.A = Bool](eq(a, a), yes)"
+            "law refl : (a : C) -> Path[.A = Bool](eq a a, yes)"
         ),
         (
             DescriptionFault::Unstated {
                 name: Name::from("odd"),
                 fault: crate::model::ModelFault::UnknownHead,
             },
-            "law odd : (a : C) => Path[.A = Bool](qe(a, a), true)"
+            "law odd : (a : C) -> Path[.A = Bool](qe a a, true)"
         ),
     ]);
 }
@@ -2822,7 +2844,7 @@ fn an_extension_generates_its_signature()
         "theory Gen where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  oper zero : Val;\n  oper one : Val;\n  ext Cell = Val on left is zero;\n}\n",
     );
     let written = described(
-        "theory Gen where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  sort Cell : Type;\n  oper zero : Val;\n  oper one : Val;\n  oper inCell : (yq : Val) --> Cell;\n  oper outCellp : (e : Cell) --> Val;\n  oper outCellq : (e : Cell) --> Val;\n  rule boundaryCellp : outCellp(e) ==> zero();\n  rule betaCellq : outCellq(inCell(yq)) ==> yq;\n  rule etaCell : inCell(outCellq(e)) ==> e;\n}\n",
+        "theory Gen where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  sort Cell : Type;\n  oper zero : Val;\n  oper one : Val;\n  oper inCell : (yq : Val) --> Cell;\n  oper outCellp : (e : Cell) --> Val;\n  oper outCellq : (e : Cell) --> Val;\n  rule boundaryCellp : outCellp e ==> zero ();\n  rule betaCellq : outCellq (inCell yq) ==> yq;\n  rule etaCell : inCell (outCellq e) ==> e;\n}\n",
     );
     assert_eq!(generated.diagnostics, []);
     assert_eq!(written.diagnostics, []);
@@ -2913,7 +2935,7 @@ fn an_applied_left_variable_reads_as_its_instantiation()
     let var = FreeTerm::var;
     assert_eq!(
         faces(
-            "theory Let where { sort Tm : Type+; oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm; rule zeta : let(u, t) <=> t(u); }"
+            "theory Let where { sort Tm : Type+; oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm; rule zeta : let u t <=> t u; }"
         ),
         [(
             FreeTerm::op("let", [var("u"), var("t")]),
@@ -2923,7 +2945,7 @@ fn an_applied_left_variable_reads_as_its_instantiation()
     );
     assert_eq!(
         faces(
-            "theory Call where { sort Tm : Type; oper t : (Tm) --> Tm; oper g : (Tm) --> Tm; rule r : g(u) <=> t(u); }"
+            "theory Call where { sort Tm : Type; oper t : (Tm) --> Tm; oper g : (Tm) --> Tm; rule r : g u <=> t u; }"
         ),
         [(FreeTerm::op("g", [var("u")]), FreeTerm::op("t", [var("u")]),)],
         "a name the left side does not hold still calls its operation"
@@ -2953,7 +2975,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
     let state = "sort S : Type+; sort C : Type; oper get : (k : pi+ (s : S) . C) --> C;";
     assert_eq!(
         faces(&format!(
-            "theory State where {{ {state} rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s)); }}"
+            "theory State where {{ {state} rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s s)); }}"
         )),
         [(
             get(bind("s", get(bind("t", pattern(["s", "t"]))))),
@@ -2964,7 +2986,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
     );
     assert_eq!(
         faces(&format!(
-            "theory Call where {{ {state} oper f : (a : S) --> C; oper g : () --> C; rule r : get(bind s . f(s)) <=> g(); }}"
+            "theory Call where {{ {state} oper f : (a : S) --> C; oper g : () --> C; rule r : get (bind s . (f s)) <=> g (); }}"
         )),
         [(
             get(bind("s", FreeTerm::op("f", [bound("s")]))),
@@ -2981,7 +3003,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     let signature = format!("{restriction} oper out : (c : Name, p : Proc) --> Proc;");
     let report = described(
         format!(
-            "theory Scope where {{ {restriction} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where {{ | a # q }}; }}"
+            "theory Scope where {{ {restriction} rule scope : par (nu (bind a . p)) q <=> nu (bind a . (par p q)) where {{ | a # q }}; }}"
         )
         .as_str(),
     );
@@ -3027,7 +3049,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     assert_eq!(
         faces(
             format!(
-                "theory Occurs where {{ {signature} rule use : nu(bind a . out(a, nil())) ==> nil(); }}"
+                "theory Occurs where {{ {signature} rule use : nu (bind a . (out a (nil ()))) ==> nil (); }}"
             )
             .as_str()
         ),
@@ -3040,7 +3062,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     assert_eq!(
         faces(
             format!(
-                "theory Beside where {{ {signature} rule use : par(nu(bind a . p), a) ==> nil(); }}"
+                "theory Beside where {{ {signature} rule use : par (nu (bind a . p)) a ==> nil (); }}"
             )
             .as_str()
         ),
@@ -3058,7 +3080,7 @@ fn a_where_clause_states_each_condition_on_its_rule()
     let signature = "sort Name : Atom; sort Proc : Type; oper par : (p : Proc, q : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
     let report = described(
         format!(
-            "theory Scope where {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where {{ | a # q | a # p }}; }}"
+            "theory Scope where {{ {signature} rule scope : par (nu (bind a . p)) q <=> nu (bind a . (par p q)) where {{ | a # q | a # p }}; }}"
         )
         .as_str(),
     );
@@ -3101,7 +3123,7 @@ fn a_where_clause_states_each_condition_on_its_rule()
     );
     let report = described(
         format!(
-            "theory Captured where {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)); }}"
+            "theory Captured where {{ {signature} rule scope : par (nu (bind a . p)) q <=> nu (bind a . (par p q)); }}"
         )
         .as_str(),
     );
@@ -3225,7 +3247,7 @@ fn an_under_row_names_a_theory_at_a_dotted_path_4514()
     let signature = "sort T : Type; oper f : (x : T) --> T; oper g : (x : T) --> T;";
     let report = described(
         format!(
-            "theory Store.Eff where {{ sort S : Type; }}\ntheory Logged where {{ {signature} rule r : f(g(x)) <=> g(x) where {{ | under [Store.Eff | r] }}; }}"
+            "theory Store.Eff where {{ sort S : Type; }}\ntheory Logged where {{ {signature} rule r : f (g x) <=> g x where {{ | under [Store.Eff | r] }}; }}"
         )
         .as_str(),
     );

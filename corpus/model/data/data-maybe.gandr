@@ -9,46 +9,37 @@
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 /// An optional `a`: none, or some value.
-pub data Maybe(a : Type) : Type where {
+pub data Maybe(a : Type) : Type where
   | None : Maybe(a)
   | Some : (x : a) --> Maybe(a)
-}
 
 /// The value inside a present option, or zero for an absent one.
-def unwrap_or_zero() -> Integer {
-  match (Some(3) : Maybe(Integer)) {
-    None => 0,
-    Some(x) => x
-  }
-}
+def unwrap_or_zero() -> Integer =
+  match (Some 3 : Maybe(Integer))
+    | None => 0
+    | Some(x) => x
 
 /// A match over a family of parameters whose answer names its scrutinee:
 /// each arm answers the type as written, `m` read as itself.
-def kept(m : Maybe(Integer)) -> Path(m, m) {
-  match m {
-    None => Path.here(m),
-    Some(x) => Path.here(m)
-  }
-}
+def kept(m : Maybe(Integer)) -> Path(m, m) =
+  match m
+    | None => Path.here m
+    | Some(x) => Path.here m
 
 /// One integer, its constructor named for its type.
-data Tally : Type where {
+data Tally : Type where
   | Tally : (count : Integer) --> Tally
-}
 
 /// Two types side by side, its constructor named for its type.
-data Duo(a : Type, b : Type) : Type where {
+data Duo(a : Type, b : Type) : Type where
   | Duo : (first : a, second : b) --> Duo(a, b)
-}
 
 /// A tally kept as present: `Tally` at `Maybe`'s type parameter names the
 /// type, not the constructor that shares its name.
-def keptTally(t : Tally) -> Maybe(Tally) {
-  (Some(t) : Maybe(Tally))
-}
+def keptTally(t : Tally) -> Maybe(Tally) =
+  (Some t : Maybe(Tally))
 
 /// A duo of tallies kept as present: `Duo(Tally, Tally)` at the same place
 /// is the type applied, and each `Tally` in it the type again.
-def keptDuo(d : Duo(Tally, Tally)) -> Maybe(Duo(Tally, Tally)) {
-  (Some(d) : Maybe(Duo(Tally, Tally)))
-}
+def keptDuo(d : Duo(Tally, Tally)) -> Maybe(Duo(Tally, Tally)) =
+  (Some d : Maybe(Duo(Tally, Tally)))

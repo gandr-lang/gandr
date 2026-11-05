@@ -5,11 +5,12 @@
 //! The shifts between the value and the computation sorts, Levy's `U` and `F`,
 //! are spelled `+U` and `-F`: the sign names the sort the bridge produces, so
 //! the suspension `+U C` is a value type, positive, and the returner `-F A` a
-//! computation type, negative. Each is one compound tile, which the labeler
-//! forms only when the letter ends there: `+Unit` stays the sign before the
-//! word `Unit`, and `A + B` is the sum however it is spaced. A type has no
-//! unary sign, so the compound tile takes no reading from the sum; `A +U B`
-//! reads as a bridge after an operand, which the lowering refuses. The bare
+//! computation type, negative. Each is one tile of the keyword table, which
+//! the labeler forms only when the run is the whole token: `+Unit` is one
+//! name, as every run is whose sign is glued to a word, and `A + B` is the
+//! sum with its operator spaced. A type has no unary sign, so the compound
+//! tile takes no reading from the sum; `A +U B` reads as a bridge after an
+//! operand, which the lowering refuses. The bare
 //! letters `U` and `F` are ordinary type names. The universe is the reserved
 //! word `Type`, with an optional bracket naming its sort by the same signs and,
 //! after a comma, its level: `Type`, `Type[-]`, `Type[+, 1]`. The rules keep
@@ -81,7 +82,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 53 && rules.iter().take(39).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(39).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 52 && rules.iter().take(38).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(38).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -110,7 +111,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 39 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 38 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -127,24 +128,23 @@ fn add_type_rules(
     let type_equivalence = precs.prec(PrecName("type.equivalence"))?;
     let type_arrow = precs.prec(PrecName("type.arrow"))?;
 
-    rules.push(rule(
+    // The arrow `A -> C`. A box, the value function space `(A, B) -> C`, is
+    // this form too: its codomain is a value type, so it is the alias of the
+    // thunked arrow `+U (A -> B -> -F C)`, and its parenthesized domain list
+    // is `parenthesized_type`'s. The lowering tells the two apart by the
+    // codomain's kind.
+    let mut function = rule(
         RuleName("function_type"),
         ty,
         type_arrow,
         Regex::seq([Regex::sort(ty), tile(TileLabel("->")), Regex::sort(ty)]),
+    );
+    function.adaptations.push(Adaptation::new(
+        RuleName("function_type"),
+        SurfaceForm("value_function_type"),
+        AdaptationReason("folded into function_type: the box `(A, B) -> C` is the arrow over a value codomain, so the value function space has no arrow of its own"),
     ));
-    // The value function space `A => B`, the alias of the thunked arrow `+U (A
-    // -> -F B)`, and its n-ary form `(A, B) => C`, whose parenthesized domain
-    // list is `parenthesized_type`'s. It shares `->`'s group, so the two
-    // arrows nest to the right of each other. `=>` also separates a case arm's
-    // pattern from its answer, but that tile follows a pattern and this one a
-    // type, so the two never compete for one slot.
-    rules.push(binary_infix_rule(
-        RuleName("value_function_type"),
-        ty,
-        type_arrow,
-        TileLabel("=>"),
-    ));
+    rules.push(function);
     rules.push(binary_infix_rule(
         RuleName("union_type"),
         ty,
@@ -552,9 +552,9 @@ fn add_type_rules(
             ])),
         ]),
     ));
-    // A type at a stage, `Nat[i]`, or below one, `Nat[<i]`: the stage a
+    // A type at a stage, `Nat[i]`, or below one, `Nat[< i]`: the stage a
     // declaration's implicit `[i : Size]` binds. Postfix in the path band,
-    // so `Nat[<i] => Nat` and `-F Nat[i]` need no parentheses. The same
+    // so `Nat[< i] -> Nat` and `-F Nat[i]` need no parentheses. The same
     // bracket names a method's deduced mode where a view's type reads its
     // element after it, `View[m](a)`.
     rules.push(rule(
@@ -602,7 +602,7 @@ fn add_type_rules(
         ty,
         type_atom,
         Regex::seq([
-            tile(TileLabel("#{")),
+            tile(TileLabel("*{")),
             Regex::optional(comma1(entry_shape(ty))),
             tile(TileLabel("}")),
         ]),
@@ -663,8 +663,7 @@ fn add_type_rules(
         ty,
         type_atom,
         Regex::seq([
-            tile(TileLabel("+")),
-            tile(TileLabel("{")),
+            tile(TileLabel("+{")),
             Regex::optional(comma1(entry_shape(ty))),
             tile(TileLabel("}")),
         ]),
@@ -685,8 +684,7 @@ fn add_type_rules(
         ty,
         type_atom,
         Regex::seq([
-            tile(TileLabel("&")),
-            tile(TileLabel("{")),
+            tile(TileLabel("&{")),
             Regex::optional(comma1(entry_shape(ty))),
             tile(TileLabel("}")),
         ]),
@@ -1398,20 +1396,30 @@ fn entry_shape(sort: Sort) -> Regex
     ])
 }
 
-/// A labelled row's entry: an interface's path, `std.fs.Eff` or `State.Eff`,
-/// standing for its default instance, or `a : I`, the instance of `I` named
-/// `a`, then the sorts it fixes, `State.Eff with sort S = Integer`. The path is
-/// an effect's ([`super::term::effect_path`]): a theory's tiles, or a type,
-/// which reads a package's lowercase path and the `with` after it whole. The
-/// label is an operand, as a telescope's binder is. The manifest tail is the
-/// capability scope's, the same tiles in the same order: its `with` follows
-/// the path and `sort` follows the `with`, so it is decided at its keyword.
+/// An entry of a labelled row. The entry has one of two shapes, and the
+/// second shape has two uses:
+///
+/// | Shape | Example | What it gives |
+/// | --- | --- | --- |
+/// | an interface's path, then the sorts it fixes | `State.Eff with sort S = Integer` | the default instance of the interface |
+/// | a label, a colon and a type | `d : Console` | the instance of the interface that the type spells |
+/// | a label, a colon and a type | `[a : Type] (x : a) -> a` | the implicit binder of a box |
+///
+/// The path is the path of an effect ([`super::term::effect_path`]). It is
+/// the tiles of a theory, or a type. A type reads the lowercase path of a
+/// package and the `with` after it as one node. The type after a label is a
+/// hole. Thus the lowering reads that type as one node, and the `with` of an
+/// interface's sorts reads as part of the node. The label is an operand, as
+/// the binder of a telescope is. The manifest tail has the tiles of the
+/// capability scope in the same order. Its `with` follows the path, and
+/// `sort` follows the `with`. Thus the parser decides the tail at its keyword.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: optionally a hole of the supplied sort and a colon, then an
-///   effect's path, a theory path or a hole of the supplied sort, then any
-///   number of `with sort x = A`, each ending in a hole of the supplied sort.
+/// - ensures: an alternation of two shapes. The first is a hole of the supplied
+///   sort, a colon and a hole of the supplied sort. The second is an effect's
+///   path, a theory path or a hole of the supplied sort, then any number of
+///   `with sort x = A`. Each `with` ends in a hole of the supplied sort.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1421,19 +1429,28 @@ fn entry_shape(sort: Sort) -> Regex
 ///   not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)) && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref paths) if paths.first().is_some_and(|path| matches!(path.shape(), RegexShape::Seq(ref path) if path.first().is_some_and(|head| matches!(head.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")))) && paths.get(1).is_some_and(|path| matches!(path.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(manifest) if matches!(manifest.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|with| matches!(with.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "with")) && sequence.last().is_some_and(|fixed| matches!(fixed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref entries) if entries.len() == 2
+    && entries.first().is_some_and(|labelled| matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3
+        && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty))
+        && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))
+        && sequence.get(2).is_some_and(|typed| matches!(typed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty))))
+    && entries.get(1).is_some_and(|named| matches!(named.shape(), RegexShape::Seq(ref parts) if parts.len() == 2
+        && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref paths) if paths.first().is_some_and(|path| matches!(path.shape(), RegexShape::Seq(ref path) if path.first().is_some_and(|head| matches!(head.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")))) && paths.get(1).is_some_and(|path| matches!(path.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty))))
+        && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(manifest) if matches!(manifest.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|with| matches!(with.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "with")) && sequence.last().is_some_and(|fixed| matches!(fixed.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)))))))))]
 pub(super) fn row_entry(ty: Sort) -> Regex
 {
-    Regex::seq([
-        Regex::optional(Regex::seq([Regex::sort(ty), tile(TileLabel(":"))])),
-        super::term::effect_path(ty),
-        Regex::repeat(Regex::seq([
-            tile(TileLabel("with")),
-            tile(TileLabel("sort")),
-            tile(TileLabel("type_identifier")),
-            tile(TileLabel("=")),
-            Regex::sort(ty),
-        ])),
+    Regex::alt([
+        Regex::seq([Regex::sort(ty), tile(TileLabel(":")), Regex::sort(ty)]),
+        Regex::seq([
+            super::term::effect_path(ty),
+            Regex::repeat(Regex::seq([
+                tile(TileLabel("with")),
+                tile(TileLabel("sort")),
+                tile(TileLabel("type_identifier")),
+                tile(TileLabel("=")),
+                Regex::sort(ty),
+            ])),
+        ]),
     ])
 }
 

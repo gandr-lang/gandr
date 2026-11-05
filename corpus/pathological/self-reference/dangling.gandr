@@ -9,18 +9,17 @@ import std.process;
 
 /// A thunk over the view handed out of the access after its resume.
 @[ refuses("ViewEscaped") ]
-def dangling() -> Integer {
-  var x = 5;
+def dangling() -> Integer =
+  var x = 5
   let r : Integer = handle c : std.process.Exit.Eff {
     let k = access x as v {
-      c.exit(1);
+      c.exit 1;
       resume(v, v + 7);
       pure thunk { pure v }
     };
     force k
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => k(unit)
+    | pure(y) => pure y
+    | oper exit(code, k) => k *{}
   };
   pure x
-}

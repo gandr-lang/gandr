@@ -1,7 +1,7 @@
 /// `identity-types`: `Path[.A = A](a, b)` is the type of paths from `a` to `b` in `A`. `Path(a, b)` leaves `A` to the endpoints. `Path.here(a)` is reflexivity, and `Path.step(p, q)` composes.
 @[ checks ]
 def four_eq_four : Path(4, 4) ;
-def four_eq_four = Path.here(4) ;
+def four_eq_four = Path.here 4 ;
 
 /// Two paths, the second leaving where the first arrives, composed.
 @[ checks ]
@@ -11,22 +11,20 @@ def join(
   c : Integer,
   q : Path(a, b),
   r : Path(b, c)
-) -> -F Path(a, c) {
-  Path.step(q, r)
-}
+) -> -F Path(a, c) =
+  Path.step q r
 
 /// Reflexivity composed with itself by a run.
 @[ checks ]
-def joined : () => Path(4, 4) ;
-def joined = thunk { join(4, 4, 4, four_eq_four, four_eq_four) } ;
+def joined : () -> Path(4, 4) ;
+def joined = thunk { join 4 4 4 four_eq_four four_eq_four } ;
 
 /// The same path, its carrier supplied by name.
 @[ checks ]
 def four_named : Path[.A = Integer](4, 4) ;
-def four_named = Path.here(4) ;
+def four_named = Path.here 4 ;
 
 /// A point identified with itself, the carrier supplied from `A`.
 @[ checks ]
-def itself(A : Type, x : A) -> Path[.A](x, x) {
-  Path.here(x)
-}
+def itself(A : Type, x : A) -> Path[.A](x, x) =
+  Path.here x

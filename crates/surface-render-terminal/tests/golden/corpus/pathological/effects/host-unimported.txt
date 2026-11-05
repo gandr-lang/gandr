@@ -1,16 +1,16 @@
 error[UnresolvedTypeHead]: no type named `std.io.Console.Eff` is written bare
    ╭▸ corpus/pathological/effects/host-unimported.gandr:15:32
    │
-15 │ def say(c : Cap { print }) -> [std.io.Console.Eff] Unit {
+15 │ def say(c : Cap { print }) -> [std.io.Console.Eff] Unit =
    │                                ━━━━━━━━━━━━━━━━━━ no type head of this name and arity
    │
    ├ note: `say` is refused with UnresolvedTypeHead, as its expectation states
    ╰ help: write `import std.io;`, the import of `std.io.Console.Eff`'s module
 
 error[UnresolvedTypeHead]: no type named `std.process.Exit.Eff` is written bare
-   ╭▸ corpus/pathological/effects/host-unimported.gandr:22:14
+   ╭▸ corpus/pathological/effects/host-unimported.gandr:21:14
    │
-22 │   handle c : std.process.Exit.Eff {
+21 │   handle c : std.process.Exit.Eff {
    │              ━━━━━━━━━━━━━━━━━━━━ no type head of this name and arity
    │
    ├ note: `quit` is refused with UnresolvedTypeHead, as its expectation states

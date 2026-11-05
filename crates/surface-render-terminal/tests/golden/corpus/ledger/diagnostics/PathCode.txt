@@ -1,11 +1,11 @@
 error[PathCode]: a universe path needs a quoted, closed, first-order code at each end
-  ╭▸ corpus/ledger/diagnostics/PathCode.gandr:4:38
+  ╭▸ corpus/ledger/diagnostics/PathCode.gandr:4:40
   │
-4 │ def thunked = Path.product(Path.here(+U (-F Integer)), Path.here(Unit)) ;
-  │               ┬──────────────────────┯━━━━━━━━━━━━━━───────────────────
-  │               │                      │
-  │               │                      not a quoted closed first-order code
-  │               checked against `Path[.A = Type]((() => Integer) * Unit, (() => Integer) * Unit)`; while synthesising the first path of this product
+4 │ def thunked = Path.product (Path.here (+U (-F Integer))) (Path.here Unit) ;
+  │               ┬────────────────────────┯━━━━━━━━━━━━━━───────────────────
+  │               │                        │
+  │               │                        not a quoted closed first-order code
+  │               checked against `Path[.A = Type]((() -> Integer) * Unit, (() -> Integer) * Unit)`; while synthesising the first path of this product
   │
   ├ note: `thunked` is refused with PathCode, as its expectation states
   ╰ help: use a quoted closed first-order code at each end

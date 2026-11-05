@@ -1401,7 +1401,7 @@ mod tests
                 ContentNode::Product(Vec::from([n1, n1])),
                 ContentNode::Sum(Vec::new()),
             ]),
-            faithful("#{Integer, #{Integer, Integer}, Void}".into())
+            faithful("*{Integer, *{Integer, Integer}, Void}".into())
         );
         assert_eq!(
             spelled(&[
@@ -1415,7 +1415,7 @@ mod tests
                 ContentNode::Product(Vec::from([n1])),
                 ContentNode::Base(BaseType::Integer),
             ]),
-            faithful("#{Integer}".into())
+            faithful("*{Integer}".into())
         );
         assert_eq!(
             spelled(&[
@@ -1426,7 +1426,7 @@ mod tests
                 ContentNode::Base(BaseType::Integer),
                 ContentNode::Base(BaseType::String),
             ]),
-            faithful("#{n : Integer, v : String}".into())
+            faithful("*{n : Integer, v : String}".into())
         );
         // The empty record type is the unit type; a family spells applied to
         // its arguments, a path type over its carrier and endpoints.

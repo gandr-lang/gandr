@@ -3,14 +3,12 @@
 /// Injects 42 on the left and takes the left arm. The injections are spelled
 /// `Inl` and `Inr` here, names this surface does not define.
 @[ refuses("UnresolvedName") ]
-def pick() -> -F Integer {
-  match (Inl(42) : Integer + String) {
-    Inl(x) => return (x + 1),
-    Inr(s) => return 0
-  }
-}
+def pick() -> -F Integer =
+  match (Inl 42 : Integer + String)
+    | Inl(x) => return (x + 1)
+    | Inr(s) => return 0
 
 /// A call of `pick`, refused above, so it names a declaration whose type is
 /// not known.
 @[ refuses("UnknownConstant") ]
-def picked() -> Integer { pick() }
+def picked() -> Integer { pick () }

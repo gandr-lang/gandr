@@ -18,12 +18,11 @@
 // - see: `../../model/modules/law-collapsed.gandr` — the accepted model
 
 /// A sort whose loops are one.
-theory Collapsed where {
+theory Collapsed where
   /// The loops.
   sort Loop : Type;
   /// Any two loops are one path.
-  law one : (p : Loop, q : Loop) => Path[.A = Loop](p, q);
-}
+  law one : (p : Loop, q : Loop) -> Path[.A = Loop](p, q);
 
 /// Two integers differ, so no proof exists and no host asserts one.
 module CollapsedInteger : Model(Collapsed) with sort Loop = Integer where {
@@ -34,23 +33,21 @@ module CollapsedInteger : Model(Collapsed) with sort Loop = Integer where {
 
 /// A rule from a variable would identify every loop with the trivial one.
 @[ refuses("UndescribedMember.LhsNotOperation") ]
-theory RuledK where {
+theory RuledK where
   /// The carrier.
   sort Carrier : Type;
   /// The trivial loop at a point.
   oper loop : (a : Carrier) --> Carrier;
   /// The rule's left side is a bare variable.
-  rule k : p ==> loop(p);
-}
+  rule k : p ==> loop p;
 
 /// K for the native identity at the carrier, as a law.
 @[ refuses("MalformedForm") ]
-theory WithK where {
+theory WithK where
   /// The carrier.
   sort Carrier : Type;
   /// Every loop at a point is reflexivity: a path between paths.
-  law k : (a : Carrier, p : Path[.A = Carrier](a, a)) => Path[.A = Path[.A = Carrier](a, a)](
+  law k : (a : Carrier, p : Path[.A = Carrier](a, a)) -> Path[.A = Path[.A = Carrier](a, a)](
     p,
-    Path.here(a)
+    Path.here a
   );
-}

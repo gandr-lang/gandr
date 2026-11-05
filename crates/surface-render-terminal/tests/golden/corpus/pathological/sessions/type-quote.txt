@@ -1,8 +1,8 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/sessions/type-quote.gandr:10:68
    │
-10 │ def quoted_receive : Flow[.A = Type](?String. end, !String. end) = Flow.stay(type(?String. end));
-   │                                      ┬───────────  ┬───────────    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
+10 │ def quoted_receive : Flow[.A = Type](?String. end, !String. end) = Flow.stay (type(?String. end));
+   │                                      ┬───────────  ┬───────────    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not both endpoints of the path
    │                                      │             │
    │                                      │             an endpoint the point does not convert to
    │                                      an endpoint the point does not convert to
@@ -11,16 +11,14 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
-   ╭▸ corpus/pathological/sessions/type-quote.gandr:17:59
+   ╭▸ corpus/pathological/sessions/type-quote.gandr:17:49
    │
-16 │   def open_payload : Path[.A = Type](?String. end, ?String. end) = Path.walk(
+16 │   def open_payload : Path[.A = Type](?String. end, ?String. end) = Path.walk (fun (X) {
    │ ┌──────────────────────────────────────────────────────────────────┘
-17 │ │   fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) },
-   │ │                                                           ━━━━━━━ a session payload open over a binder
-18 │ │   Path.here(String),
-19 │ │   Path.here(type(?String. end))
-20 │ │ );
-   │ └─┘ checked against `Path[.A = Type](?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
+17 │ │   type(Path[.A = Type](type(?String. end), type(?X. end)))
+   │ │                                                 ━━━━━━━ a session payload open over a binder
+18 │ │ }) (Path.here String) (Path.here (type(?String. end)));
+   │ └──────────────────────────────────────────────────────┘ checked against `Path[.A = Type](?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
    │
    ├ note: `open_payload` is refused with OpenSessionPayload, as its expectation states
    ╰ help: bind the session payload inside the run's protocol

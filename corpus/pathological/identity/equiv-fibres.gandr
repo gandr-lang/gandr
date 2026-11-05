@@ -6,38 +6,32 @@
 // - see: #514 — `collapsed`
 
 /// Two points.
-pub data Two : Type where {
+pub data Two : Type where
   | Yes : Two
   | No : Two
-}
 
 /// One point.
-pub data One : Type where {
+pub data One : Type where
   | Only : One
-}
 
 /// Both points to the one.
-pub def collapse(x : Two) -> One {
+pub def collapse(x : Two) -> One =
   Only
-}
 
 /// The one point back to the first.
-pub def pick(u : One) -> Two {
+pub def pick(u : One) -> Two =
   Yes
-}
 
 /// Every point of `One` is `Only`, by induction on it.
-pub def single(u : One) -> Path[.A = One](collapse(pick(u)), u) {
-  match u {
-    Only => Path.here(Only)
-  }
-}
+pub def single(u : One) -> Path[.A = One](collapse (pick u), u) =
+  match u
+    | Only => Path.here Only
 
 /// The collapse ascribed an equivalence, refused at the left inverse's round
 /// trip: `pick(collapse(x))` is `Yes` at every `x`, so reflexivity at `x`
 /// does not reach it.
 @[ refuses("EndpointMismatch") ]
-def collapsed : Two ≃ One = (
+def collapsed : Two ≃ One = *{
   collapse,
-  ((pick, thunk { fun (x) { Path.here(x) } }), (pick, single))
-);
+  *{*{pick, thunk { fun (x) { Path.here x } }}, *{pick, single}}
+};

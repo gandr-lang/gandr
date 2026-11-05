@@ -340,6 +340,11 @@ pub enum FragmentBoundary
     /// binds its one linear end to a name: `let x = recv(c);` and
     /// `let d = fork (c : S) t;`.
     Unbound,
+    /// The form is a box whose output is an arrow written without
+    /// parentheses, `A -> B -> C`: arrows do not chain, so the source writes
+    /// one box of two inputs, `(A, B) -> C`, or a box whose output is a box,
+    /// `A -> (B -> C)`.
+    ChainedArrow,
 }
 
 /// Why a source does not export a declaration an importer names.
@@ -421,7 +426,7 @@ impl fmt::Display for FragmentBoundary
                  answers, so a written answer is not read",
             ),
             Self::EmptyList => f.write_str(
-                "is spelled `()`, an empty list and never the unit: the unit value is `unit` and \
+                "is spelled `()`, an empty list and never the unit: the unit value is `*{}` and \
                  its type `Unit`",
             ),
             Self::Endpoint => f.write_str(
@@ -440,6 +445,10 @@ impl fmt::Display for FragmentBoundary
             ),
             Self::Unbound => f.write_str(
                 "gives one linear end, admitted only where a `let` binds it to a name",
+            ),
+            Self::ChainedArrow => f.write_str(
+                "chains arrows, which do not chain: one box of two inputs is `(A, B) -> C`, and a \
+                 box whose output is a box is `A -> (B -> C)`",
             ),
         }
     }
@@ -3374,6 +3383,7 @@ mod tests
             &FragmentBoundary::Held,
             &FragmentBoundary::View,
             &FragmentBoundary::Unbound,
+            &FragmentBoundary::ChainedArrow,
         ]));
         let ill_formed = |kind: crate::WfKind, second: Maybe<SurfaceName<'static>, _>| {
             LoweringRefusal::IllFormedDescription {

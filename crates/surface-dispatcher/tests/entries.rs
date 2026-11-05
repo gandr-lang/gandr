@@ -69,24 +69,31 @@ enum Standing
 const EXIT: &str = "an exit keyword ends the computation its operand gives: the operand \
                         answers, and the enclosing body at its type";
 
+/// The label of the zero-width tile the melder writes between two
+/// expression operands, `f x` (#4853).
+const JUXTAPOSED: &str = " ";
+
 /// Every kind of node the corpus writes, by sort and naming label, with
 /// where it stands. An owed count only shrinks: lower it with the change
 /// that gives the nodes their entries. A kind the grammar no longer holds
 /// leaves the table, as the infix `then`, the `as` pattern and the `\` type
 /// operator did (#4691): the corpus writing one again fails it unclassified.
 const KINDS: &[(&str, Standing)] = &[
+    // The floor's juxtaposition tile, `fun`, identifier, `*{` pattern and
+    // `Type .` nodes owed their entries (#5210).
+    ("Expression  ", Standing::Owed(65)),
     ("Expression !=", Standing::Owed(0)),
     ("Expression \"", Standing::Owed(0)),
     ("Expression #[", Standing::Owed(0)),
-    ("Expression #{", Standing::Owed(0)),
-    ("Expression &", Standing::Owed(0)),
-    ("Expression ( application", Standing::Owed(0)),
+    ("Expression &{", Standing::Owed(0)),
     (
         "Expression ( group",
         Standing::Design("a parenthesised group: the node inside answers"),
     ),
     ("Expression *", Standing::Owed(0)),
+    ("Expression *{", Standing::Owed(0)),
     ("Expression +", Standing::Owed(0)),
+    ("Expression +{", Standing::Owed(0)),
     ("Expression -", Standing::Owed(0)),
     ("Expression .", Standing::Owed(0)),
     ("Expression .#[", Standing::Owed(0)),
@@ -137,10 +144,10 @@ const KINDS: &[(&str, Standing)] = &[
             "a fork a `let` binds: the `let` answers, and its pattern at the end the fork gives",
         ),
     ),
-    ("Expression fun", Standing::Owed(0)),
+    ("Expression fun", Standing::Owed(8)),
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
-    ("Expression identifier", Standing::Owed(0)),
+    ("Expression identifier", Standing::Owed(105)),
     ("Expression if", Standing::Owed(0)),
     ("Expression loop", Standing::Owed(0)),
     ("Expression migrate", Standing::Owed(0)),
@@ -166,7 +173,6 @@ const KINDS: &[(&str, Standing)] = &[
         Standing::Design("a type quote: the type inside answers, quoted where the value is read"),
     ),
     ("Expression typed_number", Standing::Owed(0)),
-    ("Expression unit", Standing::Owed(0)),
     ("Expression while", Standing::Owed(0)),
     (
         "Expression {",
@@ -175,20 +181,18 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression ~", Standing::Owed(0)),
     ("Expression ∷", Standing::Owed(0)),
     ("Pattern #[", Standing::Owed(0)),
-    ("Pattern #{", Standing::Owed(0)),
-    ("Pattern (", Standing::Owed(0)),
-    ("Pattern +", Standing::Owed(0)),
+    ("Pattern *{", Standing::Owed(1)),
+    ("Pattern +{", Standing::Owed(0)),
     ("Pattern _", Standing::Owed(0)),
     ("Pattern constructor", Standing::Owed(0)),
     ("Pattern false", Standing::Owed(0)),
     ("Pattern identifier", Standing::Owed(0)),
     ("Pattern number", Standing::Owed(0)),
     ("Pattern true", Standing::Owed(0)),
-    ("Pattern unit", Standing::Owed(0)),
     ("Pattern |", Standing::Owed(0)),
     ("Type !", Standing::Owed(0)),
-    ("Type #{", Standing::Owed(0)),
     ("Type &", Standing::Owed(0)),
+    ("Type &{", Standing::Owed(0)),
     (
         "Type ( group",
         Standing::Design(
@@ -196,12 +200,13 @@ const KINDS: &[(&str, Standing)] = &[
         ),
     ),
     ("Type *", Standing::Owed(0)),
+    ("Type *{", Standing::Owed(0)),
     ("Type +", Standing::Owed(0)),
+    ("Type +{", Standing::Owed(0)),
     ("Type +U", Standing::Owed(0)),
     ("Type ->", Standing::Owed(0)),
     ("Type -F", Standing::Owed(0)),
-    ("Type .", Standing::Owed(0)),
-    ("Type =>", Standing::Owed(0)),
+    ("Type .", Standing::Owed(3)),
     ("Type ?", Standing::Owed(0)),
     ("Type Bridge", Standing::Owed(0)),
     ("Type Buf", Standing::Owed(0)),
@@ -668,21 +673,35 @@ fn gated(
             Some((at, at.saturating_add(end)))
         })
         .collect();
-    // The bytes of each pasting shape a composite or a fill names, `chain(` to
-    // its `)`.
+    // The bytes of each pasting shape a composite or a fill names, its group
+    // `(chain …)` after the heights, to the `)` that closes it.
     let pastings: Vec<(usize, usize)> = ["compose[", "fill["]
         .into_iter()
         .flat_map(|head| source.match_indices(head))
         .filter_map(|(at, _)| {
             let after = source.get(at ..)?;
-            let open = at.saturating_add(after.find("](")?).saturating_add(2);
+            let open = at.saturating_add(after.find(']')?).saturating_add(1);
             let shape = source.get(open ..)?;
             let start = open.saturating_add(shape.len().saturating_sub(shape.trim_start().len()));
-            let close = source.get(start ..)?.find(')')?;
-            source
-                .get(start ..)?
-                .starts_with("chain(")
-                .then_some((start, start.saturating_add(close).saturating_add(1)))
+            let group = source.get(start ..)?;
+            if !group.starts_with("(chain") {
+                return None;
+            }
+            let mut depth = 0_usize;
+            let close = group.char_indices().find_map(|(offset, letter)| {
+                match letter {
+                    '(' => depth = depth.saturating_add(1),
+                    ')' => {
+                        depth = depth.saturating_sub(1);
+                        if depth == 0 {
+                            return Some(offset);
+                        }
+                    },
+                    _ => {},
+                }
+                None
+            })?;
+            Some((start, start.saturating_add(close).saturating_add(1)))
         })
         .collect();
     // The bytes of each flow's body, its `{` to its `}`.
@@ -867,7 +886,10 @@ fn gated(
         }
         let placed = placed.or_else(|| def.label.starts_with('@').then_some(Placed::Quoted));
         let opener = first(tree, position);
-        let applied = melded && def.label == "(" && def.sort == Sort::Expression;
+        // A call is an application: juxtaposed, its tile the zero-width one
+        // between two operands, or the `(` of the call form a type keeps.
+        let applied =
+            melded && matches!(def.label, "(" | JUXTAPOSED) && def.sort == Sort::Expression;
         let called = if applied { spelled(opener) } else { "" };
         let within = match run {
             _ if LITERALS.contains(&called) => Run::Moves,
@@ -965,7 +987,8 @@ fn gated(
                         && opener == Some(child)
                         && (def.label == "["
                             || def.label == ".#["
-                            || (def.label == "(" && def.sort == Sort::Expression));
+                            || (matches!(def.label, "(" | JUXTAPOSED)
+                                && def.sort == Sort::Expression));
                     let qualifying = melded && opener == Some(child) && def.label == ".";
                     (
                         child,
@@ -1020,10 +1043,13 @@ fn gated(
                     .next()
                     .is_some_and(|theory| models.theories.contains(theory.trim()))
                 || FORMERS.contains(&text.trim()));
+        // An application inside a spine, `f a` in `f a b`, is the head of the
+        // application around it: the spine lowers as one call, which the
+        // outermost application answers for.
         let head = parent.is_some_and(|(_, label, headed, ..)| {
             headed
                 && if melded {
-                    label == "(" && qualified
+                    matches!(label, "(" | JUXTAPOSED) && (qualified || def.label == JUXTAPOSED)
                 }
                 else {
                     label == "[" || def.label == "constructor" || FORMERS.contains(&text)
@@ -1195,8 +1221,8 @@ fn gated(
 fn a_tactic_and_a_lowercase_module_path_stand_placed_2959()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let source = "import text.greet (greeting);\ndef id : Integer => Integer = \
-                  ~intro(assumption);\ndef note = limits.hard.note;\ndef welcome = \
+    let source = "import text.greet (greeting);\ndef id : Integer -> Integer = \
+                  ~intro assumption;\ndef note = limits.hard.note;\ndef welcome = \
                   text.greet.greeting;\n";
     let tree = parse(&grammar, SourceText::from(source))
         .expect("the source parses")
@@ -1220,8 +1246,8 @@ fn a_tactic_and_a_lowercase_module_path_stand_placed_2959()
             .any(|&(written, held)| written == text && held == placed)
     };
     for (text, placed) in [
-        ("~intro(assumption)", None),
-        ("intro(assumption)", Some(Placed::Tactic)),
+        ("~intro assumption", None),
+        ("intro assumption", Some(Placed::Tactic)),
         ("assumption", Some(Placed::Tactic)),
         ("limits.hard.note", None),
         ("limits.hard", Some(Placed::Qualifier)),

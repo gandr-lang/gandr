@@ -53,19 +53,19 @@ fn native_names_operators_and_partial_application_execute()
             "12",
         ),
         (
-            "def answer : +U (-F Integer) ; def answer = thunk { become int.div(19, 4) } ;",
+            "def answer : +U (-F Integer) ; def answer = thunk { become int.div 19 4 } ;",
             "4",
         ),
         (
             "def answer : +U (-F Bool) ; def answer = thunk { become 19 < 7 } ;",
-            "+{.1 = unit}",
+            "+{.1 = *{}}",
         ),
         (
             "def answer : +U (-F Integer) ; def answer = thunk { become -(7) } ;",
-            "-7",
+            "- 7",
         ),
         (
-            "def partial : +U (Integer -> -F Integer) ; def partial = thunk { become sub(19) } ; def answer : +U (-F Integer) ; def answer = thunk { become partial(7) } ;",
+            "def partial : +U (Integer -> -F Integer) ; def partial = thunk { become sub 19 } ; def answer : +U (-F Integer) ; def answer = thunk { become partial 7 } ;",
             "12",
         ),
     ] {
@@ -82,18 +82,18 @@ fn native_errors_and_goal_blame_remain_distinct()
 {
     assert!(matches!(
         run(SourceText::from(
-            "def answer : +U (-F Integer) ; def answer = thunk { become int.div(19, 0) } ;"
+            "def answer : +U (-F Integer) ; def answer = thunk { become int.div 19 0 } ;"
         )),
         Evaluation::Stuck(Stuck::Primitive(PrimitiveError::DivisionByZero))
     ));
     assert!(matches!(
         run(SourceText::from(
-            "def answer : +U (-F Integer) ; def answer = thunk { become sub(\"wrong\", 7) } ;"
+            "def answer : +U (-F Integer) ; def answer = thunk { become sub \"wrong\" 7 } ;"
         )),
         Evaluation::Unrunnable(Unrunnable::Refused(_))
     ));
     assert!(
-        matches!(run(SourceText::from("def owed : Integer ; def answer : +U (-F Integer) ; def answer = thunk { become sub(owed, 7) } ;")), Evaluation::Blamed(name) if name.as_ref() == "owed")
+        matches!(run(SourceText::from("def owed : Integer ; def answer : +U (-F Integer) ; def answer = thunk { become sub owed 7 } ;")), Evaluation::Blamed(name) if name.as_ref() == "owed")
     );
 }
 
@@ -101,8 +101,8 @@ fn native_errors_and_goal_blame_remain_distinct()
 fn source_and_binder_names_shadow_the_outer_prelude()
 {
     for source in [
-        "def add : +U (Integer -> Integer -> -F Integer) ; def add = thunk { fun (x) { fun (y) { return x } } } ; def answer : +U (-F Integer) ; def answer = thunk { become add(19, 7) } ;",
-        "def f : +U (Integer -> -F Integer) ; def f = thunk { fun (add) { return add } } ; def answer : +U (-F Integer) ; def answer = thunk { become f(19) } ;",
+        "def add : +U (Integer -> Integer -> -F Integer) ; def add = thunk { fun (x) { fun (y) { return x } } } ; def answer : +U (-F Integer) ; def answer = thunk { become add 19 7 } ;",
+        "def f : +U (Integer -> -F Integer) ; def f = thunk { fun (add) { return add } } ; def answer : +U (-F Integer) ; def answer = thunk { become f 19 } ;",
     ] {
         let Evaluation::Value(value) = run(SourceText::from(source))
         else {

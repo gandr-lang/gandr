@@ -8,18 +8,16 @@
 import "./model-ascription.gandr";
 
 /// The unit as the first state.
-def unitStart() -> Unit {
-  unit
-}
+def unitStart() -> Unit =
+  *{}
 
 /// The unit as the next state.
-def unitStep(u : Unit) -> Unit {
+def unitStep(u : Unit) -> Unit =
   u
-}
 
 /// A counter over the unit where the carrier is fixed as the integers.
 @[ refuses("TypeMismatch") ]
-def unitCounter : Model(Counter) with sort C = Integer = #{.start = unitStart, .step = unitStep};
+def unitCounter : Model(Counter) with sort C = Integer = *{.start = unitStart, .step = unitStep};
 
 /// A sort the counter does not have.
 @[ refuses("UnknownMember") ]

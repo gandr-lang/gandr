@@ -12,40 +12,36 @@
 //   another count, refused
 
 /// Options.
-data Maybe(a : Type) : Type where {
+data Maybe(a : Type) : Type where
   /// None.
   | Nothing : Maybe(a)
   /// One.
   | Just : (x : a) --> Maybe(a)
-}
 
 /// A module of families.
-module Shapes where {
+module Shapes where
   /// A family of option types.
   type Opt(a : Type) = Maybe(a);
   /// A family of pairs over two types.
   type Pair(a : Type, b : Type) = a * b;
   /// A box of one value.
-  data Box(a : Type) : Type where {
+  data Box(a : Type) : Type where
     /// The box.
     | Hold : (x : a) --> Box(a)
-  }
-}
 
 /// The family's expansion is the option type at `Integer`.
-@[ runs("Just(1)") ]
-def opts() -> Shapes.Opt(Integer) { Just(1) }
+@[ runs("Just 1") ]
+def opts() -> Shapes.Opt(Integer) { Just 1 }
 
 /// The pair family takes both of its types.
-@[ runs("(1, +{.0 = unit})") ]
-def paired() -> Shapes.Pair(Integer, Bool) { (1, true) }
+@[ runs("*{1, +{.0 = *{}}}") ]
+def paired() -> Shapes.Pair(Integer, Bool) { *{1, true} }
 
 /// The data family at `Integer`, built by its constructor.
-@[ runs("Shapes.Hold(2)") ]
-def boxed() -> Shapes.Box(Integer) { Shapes.Hold(2) }
+@[ runs("Shapes.Hold 2") ]
+def boxed() -> Shapes.Box(Integer) { Shapes.Hold 2 }
 
 /// A match opens the box through the module's constructor.
 @[ runs("2") ]
-def opened() -> Integer {
-  match force boxed { Shapes.Hold(x) => x }
-}
+def opened() -> Integer =
+  match force boxed { | Shapes.Hold(x) => x }

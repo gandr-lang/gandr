@@ -25,7 +25,7 @@
 
 /// The CwF signature: four sorts, each over the sorts before it, and the
 /// operations of a category with families.
-pub theory CwF where {
+pub theory CwF where
   /// Contexts.
   sort Con : Type;
   /// Substitutions from `d` to `g`.
@@ -57,123 +57,109 @@ pub theory CwF where {
   oper pair : (s : Sub(d, g), t : Tm(d, subTy(a, s))) --> Sub(d, ext(g, a));
 
   /// The identity on the left.
-  rule idl : comp(id(g), s) ==> s;
+  rule idl : comp (id g) s ==> s;
   /// The identity on the right.
-  rule idr : comp(s, id(d)) ==> s;
+  rule idr : comp s (id d) ==> s;
   /// Composition is associative.
-  rule assoc : comp(comp(s, t), u) ==> comp(s, comp(t, u));
+  rule assoc : comp (comp s t) u ==> comp s (comp t u);
   /// The identity leaves a type as it is.
-  rule tyId : subTy(a, id(g)) ==> a;
+  rule tyId : subTy a (id g) ==> a;
   /// Two substitutions in turn move a type as their composite does.
-  rule tyComp : subTy(subTy(a, s), t) ==> subTy(a, comp(s, t));
-}
+  rule tyComp : subTy (subTy a s) t ==> subTy a (comp s t);
 
 /// The standard model: a context is a type, a type in it a family over it,
 /// and a term a section of the family.
-pub module Standard : Model(CwF) where {
+pub module Standard : Model(CwF) where
   /// A context is a type.
   type Con = Type;
   /// A substitution is a function between contexts.
-  type Sub(d : Con, g : Con) = d => g;
+  type Sub(d : Con, g : Con) = d -> g;
   /// A type in a context is a family over it.
-  type Ty(g : Con) = g => Type;
+  type Ty(g : Con) = g -> Type;
   /// A term is a section: at each point, a value of the family there.
-  type Tm(g : Con, a : Ty(g)) = (x : g) => a(x);
+  type Tm(g : Con, a : Ty(g)) = (x : g) -> a(x);
 
   /// The empty context has one point.
   def empty() -> Type { return Unit }
 
   /// Comprehension pairs a point with a point of its type.
-  def ext(g : Type, a : g => Type) -> Type { return type(#{x : g, y : a(x)}) }
+  def ext(g : Type, a : g -> Type) -> Type { return type(*{x : g, y : a(x)}) }
 
   /// The identity function.
-  def id(g : Type) -> g => g { return fun (x) { x } }
+  def id(g : Type) -> g -> g { return fun (x) { x } }
 
   /// Composition of two functions.
-  def comp(d : Type, g : Type, e : Type, s : d => g, t : e => d) -> e => g {
-    return fun (x) { s(t(x)) }
-  }
+  def comp(d : Type, g : Type, e : Type, s : d -> g, t : e -> d) -> e -> g =
+    return fun (x) { s (t x) }
 
   /// Every point goes to the one point.
-  def eps(g : Type) -> g => Unit { return fun (_x) { unit } }
+  def eps(g : Type) -> g -> Unit { return fun (_x) { *{} } }
 
   /// A family after a function: it reads the family at the function's result.
-  def subTy(g : Type, d : Type, a : g => Type, s : d => g) -> d => Type {
-    return fun (x) { a(s(x)) }
-  }
+  def subTy(g : Type, d : Type, a : g -> Type, s : d -> g) -> d -> Type =
+    return fun (x) { a (s x) }
 
   /// A section read after a function.
-  def subTm(g : Type, a : g => Type, d : Type, t : (x : g) => a(x), s : d => g) -> (
+  def subTm(g : Type, a : g -> Type, d : Type, t : (x : g) -> a(x), s : d -> g) -> (
     x : d
-  ) => a(s(x)) {
-    return fun (x) { t(s(x)) }
-  }
+  ) -> a(s(x)) =
+    return fun (x) { t (s x) }
 
   /// The first projection.
-  def p(g : Type, a : g => Type) -> #{x : g, y : a(x)} => g { return fun (z) { z.0 } }
+  def p(g : Type, a : g -> Type) -> *{x : g, y : a(x)} -> g { return fun (z) { z.0 } }
 
   /// The point a pair holds first.
-  def first(g : Type, a : g => Type, z : #{x : g, y : a(x)}) -> g { z.0 }
+  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }
 
   /// The second projection, at the family read at the first.
-  def q(g : Type, a : g => Type) -> (z : #{x : g, y : a(x)}) => a(first(g, a, z)) {
+  def q(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =
     return fun (z) { z.1 }
-  }
 
   /// The pair of a function and a section: each point goes to its image and
   /// to the section's value there.
   def pair(
     d : Type,
     g : Type,
-    a : g => Type,
-    s : d => g,
-    t : (x : d) => a(s(x))
-  ) -> d => #{x : g, y : a(x)} {
-    return fun (z) { (s(z), t(z)) }
-  }
-}
+    a : g -> Type,
+    s : d -> g,
+    t : (x : d) -> a(s(x))
+  ) -> d -> *{x : g, y : a(x)} =
+    return fun (z) { *{s z, t z} }
 
 /// A family over the integers that is `Bool` at every point.
 def flags(_n : Integer) -> Type { return Bool }
 
 /// The newest variable reads the second point of a pair.
-@[ runs("+{.0 = unit}") ]
-def newest() -> Bool {
-  let read = Standard.q(Integer, flags);
-  read((3, true))
-}
+@[ runs("+{.0 = *{}}") ]
+def newest() -> Bool =
+  let read = Standard.q Integer flags
+  read (3, true)
 
 /// Weakening reads the first point of a pair.
 @[ runs("3") ]
-def weakened() -> Integer {
-  let read = Standard.p(Integer, flags);
-  read((3, false))
-}
+def weakened() -> Integer =
+  let read = Standard.p Integer flags
+  read (3, false)
 
 /// The links of a sort chain or an index chain.
-def rec links(chain : Theory) -> Integer {
-  match chain {
-    Sort(_name, _indices, rest) => { let r = links[<](rest); r + 1 },
-    Port(_name, _sort, _indices, rest) => { let r = links[<](rest); r + 1 },
-    _ => 0
-  }
-}
+def rec links(chain : Theory) -> Integer =
+  match chain
+    | Sort(_name, _indices, rest) => { let r = links[<] rest; r + 1 }
+    | Port(_name, _sort, _indices, rest) => { let r = links[<] rest; r + 1 }
+    | _ => 0
 
 /// The index ports of the last sort of a sort chain.
-def rec lastIndices(chain : Theory) -> Integer {
-  match chain {
-    Sort(_name, indices, rest) => match rest {
-      Sort(_n, _i, _r) => lastIndices[<](rest),
-      _ => links(indices)
-    },
-    _ => 0
-  }
-}
+def rec lastIndices(chain : Theory) -> Integer =
+  match chain
+    | Sort(_name, indices, rest) => match rest
+      | Sort(_n, _i, _r) => lastIndices[<] rest
+      | _ => links indices
+    | _ => 0
 
 /// The CwF declares four sorts.
 @[ runs("4") ]
-def sorts() -> Integer { match CwF { Presents(s, _o, _r) => links(s), _ => 0 } }
+def sorts() -> Integer { match CwF { | Presents(s, _o, _r) => links s | _ => 0 } }
 
 /// `Tm` has two index ports: a context and a type in it.
 @[ runs("2") ]
-def termIndices() -> Integer { match CwF { Presents(s, _o, _r) => lastIndices(s), _ => 0 } }
+def termIndices() -> Integer { match CwF { | Presents(s, _o, _r) => lastIndices s | _ => 0 } }

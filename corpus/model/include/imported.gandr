@@ -10,24 +10,22 @@
 import "./monoid.gandr";
 
 /// A monoid with a chosen element.
-theory PointedMonoid where {
+theory PointedMonoid where
   include Monoid;
   oper point : () --> M;
-}
 
 /// The functions on the integers under composition, pointed at the
 /// successor.
-module Successor : Model(PointedMonoid) where {
-  type M = Integer => Integer;
+module Successor : Model(PointedMonoid) where
+  type M = Integer -> Integer;
 
   /// `f` then `g`, applied.
   def andThen(
-    f : Integer => Integer,
-    g : Integer => Integer,
+    f : Integer -> Integer,
+    g : Integer -> Integer,
     x : Integer
-  ) -> Integer {
-    g(f(x))
-  }
+  ) -> Integer =
+    g (f x)
 
   /// The identity function.
   def ident(x : Integer) -> Integer { x }
@@ -36,46 +34,40 @@ module Successor : Model(PointedMonoid) where {
   def succ(x : Integer) -> Integer { x + 1 }
 
   def mul(
-    f : Integer => Integer,
-    g : Integer => Integer
-  ) -> Integer => Integer {
-    thunk { andThen(f, g) }
-  }
+    f : Integer -> Integer,
+    g : Integer -> Integer
+  ) -> Integer -> Integer =
+    thunk { andThen f g }
 
-  def one() -> Integer => Integer { ident }
+  def one() -> Integer -> Integer { ident }
 
-  def point() -> Integer => Integer { succ }
+  def point() -> Integer -> Integer { succ }
 
   /// Associativity, included through the monoid.
   def assoc(
-    f : Integer => Integer,
-    g : Integer => Integer,
-    h : Integer => Integer
-  ) -> Path(mul(mul(f, g), h), mul(f, mul(g, h))) {
-    Path.here(thunk { andThen(f, thunk { andThen(g, h) }) })
-  }
+    f : Integer -> Integer,
+    g : Integer -> Integer,
+    h : Integer -> Integer
+  ) -> Path(mul (mul f g) h, mul f (mul g h)) =
+    Path.here (thunk { andThen f (thunk { andThen g h }) })
 
   /// The left unit law, included.
-  def unitL(f : Integer => Integer) -> Path(
-    mul(one(), f),
+  def unitL(f : Integer -> Integer) -> Path(
+    mul (one ()) f,
     f
-  ) {
-    Path.here(f)
-  }
+  ) =
+    Path.here f
 
   /// The right unit law, included.
-  def unitR(f : Integer => Integer) -> Path(
-    mul(f, one()),
+  def unitR(f : Integer -> Integer) -> Path(
+    mul f (one ()),
     f
-  ) {
-    Path.here(f)
-  }
-}
+  ) =
+    Path.here f
 
 /// The chosen element, then doubling, at three.
 @[ runs("8") ]
-def pointed() -> Integer {
-  let p = Successor.point();
-  let h = Successor.mul(p, fun (n) { n * 2 });
-  h(3)
-}
+def pointed() -> Integer =
+  let p = Successor.point ()
+  let h = Successor.mul p (fun (n) { n * 2 })
+  h 3

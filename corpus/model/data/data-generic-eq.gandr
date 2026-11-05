@@ -14,103 +14,92 @@
 // - see: #2302
 
 /// A point in the plane.
-data Point : Type where {
+data Point : Type where
   | Point : (x : Integer, y : Integer) --> Point
-}
 
 /// Unary naturals.
-data Peano : Type where {
+data Peano : Type where
   | Nought : Peano
   | Next : (n : Peano) --> Peano
-}
 
 /// A labelled position: a count, a point, a flag and a name.
-data Mark : Type where {
+data Mark : Type where
   | Mark : (count : Peano, place : Point, shown : Bool, label : String) --> Mark
-}
 
 /// Points compared field by field.
-def eqPoint = Eq.generic(Point);
+def eqPoint = Eq.generic Point;
 
 /// Every point is equal to itself under `eqPoint`.
-def reflPoint = Eq.generic.refl(Point);
+def reflPoint = Eq.generic.refl Point;
 
 /// Naturals compared structurally, at the type the derivation states.
-def eqPeano : (Peano, Peano) => Bool = Eq.generic(Peano);
+def eqPeano : (Peano, Peano) -> Bool = Eq.generic Peano;
 
 /// Marks compared field by field, the count and the point by their own
 /// equality.
-def eqMark = Eq.generic(Mark);
+def eqMark = Eq.generic Mark;
 
 /// Points under `==`, every member derived.
 module EqPoint : Model(Eq) with sort Carrier = Point where {
   /// Field by field.
   @[ checks ]
-  def eq = Eq.generic(Point);
+  def eq = Eq.generic Point;
   /// Each coordinate by the host's reflexivity.
   @[ checks ]
-  def refl = Eq.generic.refl(Point);
+  def refl = Eq.generic.refl Point;
   /// Each coordinate by the host's symmetry.
   @[ checks ]
-  def sym = Eq.generic.sym(Point);
+  def sym = Eq.generic.sym Point;
 }
 
 /// One point is itself.
-@[ runs("+{.0 = unit}") ]
-def samePoint() -> Bool { eqPoint(Point(1, 2), Point(1, 2)) }
+@[ runs("+{.0 = *{}}") ]
+def samePoint() -> Bool { eqPoint (Point 1 2) (Point 1 2) }
 
 /// Two points with their coordinates swapped differ.
-@[ runs("+{.1 = unit}") ]
-def swappedPoint() -> Bool { eqPoint(Point(1, 2), Point(2, 1)) }
+@[ runs("+{.1 = *{}}") ]
+def swappedPoint() -> Bool { eqPoint (Point 1 2) (Point 2 1) }
 
 /// Two is two.
-@[ runs("+{.0 = unit}") ]
-def samePeano() -> Bool { eqPeano(Next(Next(Nought)), Next(Next(Nought))) }
+@[ runs("+{.0 = *{}}") ]
+def samePeano() -> Bool { eqPeano (Next (Next Nought)) (Next (Next Nought)) }
 
 /// One is not two: the recursion reaches the nought on one side only.
-@[ runs("+{.1 = unit}") ]
-def shorterPeano() -> Bool { eqPeano(Next(Nought), Next(Next(Nought))) }
+@[ runs("+{.1 = *{}}") ]
+def shorterPeano() -> Bool { eqPeano (Next Nought) (Next (Next Nought)) }
 
 /// Two marks alike in every field.
-@[ runs("+{.0 = unit}") ]
-def sameMark() -> Bool {
-  eqMark(
-    Mark(Next(Nought), Point(3, 4), true, "here"),
-    Mark(Next(Nought), Point(3, 4), true, "here")
-  )
-}
+@[ runs("+{.0 = *{}}") ]
+def sameMark() -> Bool =
+  eqMark
+    (Mark (Next Nought) (Point 3 4) true "here")
+    (Mark (Next Nought) (Point 3 4) true "here")
 
 /// Two marks apart in their point alone.
-@[ runs("+{.1 = unit}") ]
-def movedMark() -> Bool {
-  eqMark(
-    Mark(Next(Nought), Point(3, 4), true, "here"),
-    Mark(Next(Nought), Point(3, 5), true, "here")
-  )
-}
+@[ runs("+{.1 = *{}}") ]
+def movedMark() -> Bool =
+  eqMark
+    (Mark (Next Nought) (Point 3 4) true "here")
+    (Mark (Next Nought) (Point 3 5) true "here")
 
 /// Two marks apart in their flag alone.
-@[ runs("+{.1 = unit}") ]
-def hiddenMark() -> Bool {
-  eqMark(
-    Mark(Next(Nought), Point(3, 4), true, "here"),
-    Mark(Next(Nought), Point(3, 4), false, "here")
-  )
-}
+@[ runs("+{.1 = *{}}") ]
+def hiddenMark() -> Bool =
+  eqMark
+    (Mark (Next Nought) (Point 3 4) true "here")
+    (Mark (Next Nought) (Point 3 4) false "here")
 
 /// Two marks apart in their label alone.
-@[ runs("+{.1 = unit}") ]
-def relabelledMark() -> Bool {
-  eqMark(
-    Mark(Next(Nought), Point(3, 4), true, "here"),
-    Mark(Next(Nought), Point(3, 4), true, "there")
-  )
-}
+@[ runs("+{.1 = *{}}") ]
+def relabelledMark() -> Bool =
+  eqMark
+    (Mark (Next Nought) (Point 3 4) true "here")
+    (Mark (Next Nought) (Point 3 4) true "there")
 
 /// One point is itself under `==`.
-@[ runs("+{.0 = unit}") ]
-def samePointUnderEq() -> Bool { Point(1, 2) == Point(1, 2) }
+@[ runs("+{.0 = *{}}") ]
+def samePointUnderEq() -> Bool { Point 1 2 == Point 1 2 }
 
 /// Two points apart in one coordinate under `==`.
-@[ runs("+{.1 = unit}") ]
-def movedPointUnderEq() -> Bool { Point(1, 2) == Point(1, 3) }
+@[ runs("+{.1 = *{}}") ]
+def movedPointUnderEq() -> Bool { Point 1 2 == Point 1 3 }

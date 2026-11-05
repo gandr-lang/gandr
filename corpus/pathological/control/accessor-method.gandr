@@ -33,49 +33,42 @@ module Misplaced where {
 
 /// A view block after a call of a method that answers no place.
 @[ refuses("ViewOfNoPlace") ]
-def sized() -> -F Integer {
-  var xs = pair;
-  xs.size() as w { pure w }
-}
+def sized() -> -F Integer =
+  var xs = pair
+  (xs.size ()) as w { pure w }
 
 /// A view block on a list no var holds: nothing keeps what an exclusive
 /// view would write back.
 @[ refuses("OutOfFragment.Held") ]
-def unheld(ys : List(Integer)) -> -F Integer {
-  ys.first() as w { pure w }
-}
+def unheld(ys : List(Integer)) -> -F Integer =
+  (ys.first ()) as w { pure w }
 
 /// An exclusive view of a list a shared access already lends.
 @[ refuses("HeldLent") ]
-def raisedWhileRead() -> Integer {
-  var xs = pair;
-  access shared xs as v { xs.first() as w { resume(w, 3) }; pure 0 }
-}
+def raisedWhileRead() -> Integer =
+  var xs = pair
+  access shared xs as v { (xs.first ()) as w { resume(w, 3) }; pure 0 }
 
 /// An index of a list no var holds: there is no place to lend.
 @[ refuses("OutOfFragment.index_expression") ]
-def unheldIndex(ys : List(Integer), i : Integer) -> -F Integer {
-  let y = ys.#[i];
+def unheldIndex(ys : List(Integer), i : Integer) -> -F Integer =
+  let y = ys.#[i]
   pure y
-}
 
 /// An element index with a bare bracket for static arguments. An index uses
 /// the selector `.#[ … ]`.
 @[ refuses("MalformedForm") ]
-def bareIndex() -> -F Integer {
-  var xs = pair;
-  let y = xs[1];
+def bareIndex() -> -F Integer =
+  var xs = pair
+  let y = xs[1]
   pure y
-}
 
 /// A view type standing as a parameter's type.
 @[ refuses("ViewNotPlace") ]
-def stray(v : View[m](Integer)) -> -F Integer {
+def stray(v : View[m](Integer)) -> -F Integer =
   pure 0
-}
 
 /// A mode variable on a parameter that is no receiver.
 @[ refuses("StrayReceiverMode") ]
-def lent[m : Mode](ys : m List(Integer)) -> -F Integer {
+def lent[m : Mode](ys : m List(Integer)) -> -F Integer =
   pure 0
-}

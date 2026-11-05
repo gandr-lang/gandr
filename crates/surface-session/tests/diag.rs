@@ -97,7 +97,7 @@ const ERROR_CORPUS: [Case; 13] = [
         name: "shape-arrow",
         identifier: "ShapeMismatch",
         source: "def h : +U (-F Integer) ;\ndef h = thunk { return 1 } ;\ndef g : +U (-F Integer) ;\ndef g \
-             = thunk { become (force h)(1) } ;\n",
+             = thunk { become (force h) 1 } ;\n",
         locus: "force h",
     },
     Case {
@@ -157,8 +157,8 @@ const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "malformed-form",
         identifier: "MalformedForm",
-        source: "def bad = 1 ^ 2 ;\n",
-        locus: "^",
+        source: "def bad = 1 \u{1} 2 ;\n",
+        locus: "\u{1}",
     },
     Case {
         name: "refused-whole",

@@ -13,7 +13,7 @@
 /// serves, and one message of each type. A report is marked `mobile`: its
 /// representation may cross from the seat's world back to the one that
 /// dispatched it (`../worlds/seat-and-operator.gandr`).
-pub module Seat :> #{
+pub module Seat :> *{
   type Dispatch,
   mobile type Report,
   type Handoff,
@@ -24,7 +24,7 @@ pub module Seat :> #{
   task : Dispatch,
   progress : Report,
   notes : Handoff
-} where {
+} where
   type Dispatch = String;
   type Report = String;
   type Handoff = String;
@@ -34,4 +34,3 @@ pub module Seat :> #{
   def progress = "progress";
   /// The notes it hands off.
   def notes = "notes";
-}

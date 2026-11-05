@@ -12,14 +12,13 @@
 /// A file: the handle its holder closes, the protocol of a closer that takes a
 /// handle and of a writer that takes one and hands it back, and the line a
 /// writer writes.
-module File :> #{
+module File :> *{
   type Handle = end,
   type Closer = ?Handle. end,
   type Writer = ?Handle. !Handle. end,
   type Line,
   line : Line
-} where {
+} where
   type Line = String;
   /// The line a writer writes.
   def line = "line";
-}

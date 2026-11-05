@@ -21,8 +21,7 @@ import "./conversion-base.gandr";
 /// The product of two sums over free naturals, and the same product with its
 /// right factor summed in two steps, share one normal form.
 def productsAgree(x : Nat, y : Nat) -> Path(
-  times(plus(x, sixteen), plus(y, sixteen)),
-  times(plus(x, sixteen), plus(plus(y, four), twelve))
-) {
-  Path.here(times(plus(x, sixteen), plus(y, sixteen)))
-}
+  times (plus x sixteen) (plus y sixteen),
+  times (plus x sixteen) (plus (plus y four) twelve)
+) =
+  Path.here (times (plus x sixteen) (plus y sixteen))

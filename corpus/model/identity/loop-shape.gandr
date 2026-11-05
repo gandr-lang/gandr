@@ -9,36 +9,31 @@ import "./circle-base.gandr";
 
 /// The circle's shape: the same presentation as a signature models interpret.
 /// `Model` reads a `theory` block, so the shape is spelled apart from `Words`.
-theory CircleShape where {
+theory CircleShape where
   sort Pt : Type;
 
   oper base : Pt;
   oper turn : (x : Pt) --> Pt;
   oper unturn : (x : Pt) --> Pt;
 
-  rule turnUnturn : turn(unturn(x)) <=> x;
-  rule unturnTurn : unturn(turn(x)) <=> x;
-}
+  rule turnUnturn : turn (unturn x) <=> x;
+  rule unturnTurn : unturn (turn x) <=> x;
 
 /// The number of laws in a presentation's rule chain.
-def rec laws(chain : Theory) -> Integer {
-  match chain {
-    Rule(name, left, right, rest) => { let r = laws[<](rest); r + 1 },
-    _ => 0
-  }
-}
+def rec laws(chain : Theory) -> Integer =
+  match chain
+    | Rule(name, left, right, rest) => { let r = laws[<] rest; r + 1 }
+    | _ => 0
 
 /// The number of laws a presentation states.
-def law_count(presented : Theory) -> Integer {
-  match presented {
-    Presents(sorts, opers, rules) => laws(rules),
-    _ => 0
-  }
-}
+def law_count(presented : Theory) -> Integer =
+  match presented
+    | Presents(sorts, opers, rules) => laws rules
+    | _ => 0
 
 /// The shape's laws join, so its `Theory` value carries both as `Rule` entries.
 @[ runs("2") ]
-def shape_laws() -> Integer { law_count(CircleShape) }
+def shape_laws() -> Integer { law_count CircleShape }
 
 /// The presented integers as a model of the shape: `base` zero, a value, as
 /// the theory's `base : Pt` is a constant; `turn` the successor and `unturn`
@@ -50,22 +45,19 @@ pub module Winding : Model(CircleShape) where {
 
   def base = Z;
 
-  def turn(n : Int) -> Int { S(n) }
+  def turn(n : Int) -> Int { S n }
 
-  def unturn(n : Int) -> Int { P(n) }
+  def unturn(n : Int) -> Int { P n }
 
-  def turnUnturn(n : Int) -> Path[.A = Int](turn(unturn(n)), n) {
-    Path.here(n)
-  }
+  def turnUnturn(n : Int) -> Path[.A = Int](turn (unturn n), n) =
+    Path.here n
 
-  def unturnTurn(n : Int) -> Path[.A = Int](unturn(turn(n)), n) {
-    Path.here(n)
-  }
+  def unturnTurn(n : Int) -> Path[.A = Int](unturn (turn n), n) =
+    Path.here n
 
-  @[ runs("S(S(Z))") ]
-  def wound() -> Int {
-    turn(turn(base))
-  }
+  @[ runs("S (S Z)") ]
+  def wound() -> Int =
+    turn (turn base)
 }
 
 /// The same shape modelled over the native integers. The laws hold by
@@ -81,14 +73,13 @@ pub module NativeWinding : Model(CircleShape) where {
   def unturn(n : Integer) -> Integer { n - 1 }
 
   @[ owes(1) ]
-  def turnUnturn : (n : Integer) => Path[.A = Integer](turn(unturn(n)), n);
+  def turnUnturn : (n : Integer) -> Path[.A = Integer](turn (unturn n), n);
 
   @[ owes(1) ]
-  def unturnTurn : (n : Integer) => Path[.A = Integer](unturn(turn(n)), n);
+  def unturnTurn : (n : Integer) -> Path[.A = Integer](unturn (turn n), n);
 
   @[ runs("2") ]
-  def wound() -> Integer {
-    let n = turn(base);
-    turn(n)
-  }
+  def wound() -> Integer =
+    let n = turn base
+    turn n
 }

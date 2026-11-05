@@ -42,8 +42,8 @@ const COST: &str = r"theory Cost where {
   oper charge : (c : N, k : C) --> C;
   oper zero : N;
   oper plus : (a : N, b : N) --> N;
-  rule chargeZero : charge(zero(), k) <=> k;
-  rule chargeTwice : charge(a, charge(b, k)) <=> charge(plus(a, b), k);
+  rule chargeZero : charge (zero ()) k <=> k;
+  rule chargeTwice : charge a (charge b k) <=> charge (plus a b) k;
 }";
 
 /// The members of the one theory `source` declares.
@@ -219,8 +219,8 @@ const PUT_LAWS: &str = r"theory StatePutLaws where {
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
-  rule putPut : put(s, put(u, k)) <=> put(u, k);
+  rule putGet : put s (get (bind t . (k t))) <=> put s (k s);
+  rule putPut : put s (put u k) <=> put u k;
 }";
 
 /// Each law of a theory reads for its handler at its place among the
@@ -251,7 +251,7 @@ fn a_theory_s_laws_read_for_its_handler_2272()
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putPut : put(s, put(f(s), k)) <=> put(f(s), k);
+  rule putPut : put s (put (f s) k) <=> put (f s) k;
 }";
     let members_of = members(SourceText::from(odd));
     let read_of = operations(&members_of, &fixed).unwrap();
@@ -281,10 +281,10 @@ fn a_theory_s_laws_rewrite_its_scope_s_subject_2272()
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
-  rule swap : put(s, get(bind t . k(t))) <=> get(bind t . put(s, k(t)));
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
-  rule putPut : put(s, put(u, k)) <=> put(u, k);
+  rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s s));
+  rule swap : put s (get (bind t . (k t))) <=> get (bind t . (put s (k t)));
+  rule putGet : put s (get (bind t . (k t))) <=> put s (k s);
+  rule putPut : put s (put u k) <=> put u k;
 }";
     let members_of = members(SourceText::from(laws_of));
     let operations_of = operations(&members_of, &fixed).unwrap();

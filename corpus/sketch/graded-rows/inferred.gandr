@@ -14,32 +14,27 @@
 import std.cost (Cost, charge);
 
 /// One parse step, whose cost the checker infers as one charge.
-def step(token : Token) -> [Cost] Node {
-  charge(1);
-  Node.of(token)
-}
+def step(token : Token) -> [Cost] Node =
+  charge 1
+  Node.of token
 
 /// Two steps in sequence, whose cost the checker infers as `1 + 1`.
-def twoSteps(a : Token, b : Token) -> [Cost] (Node, Node) {
-  (step(a), step(b))
-}
+def twoSteps(a : Token, b : Token) -> [Cost] *{Node, Node} =
+  *{step a, step b}
 
 /// The exported pair parser. Its signature states the inferred composite, and
 /// the checker holds the body to it.
-pub def parsePair(a : Token, b : Token) -> [Cost <= 2] (Node, Node) {
-  twoSteps(a, b)
-}
+pub def parsePair(a : Token, b : Token) -> [Cost <= 2] *{Node, Node} =
+  twoSteps a b
 
 /// The measure gives a recursive sum its row grade. The checker cannot infer
 /// a recursion's grade, so it asks for the measure.
 pub def sum(xs : List(Integer)) -> [Cost <= xs.length] Integer #spec{
   measure { cost xs.length }
 } {
-  match xs {
+  match xs
     | Nil => 0
-    | Cons(x, rest) => {
-      charge(1);
-      x + sum(rest)
-    }
-  }
+    | Cons(x, rest) =>
+      charge 1;
+      x + sum rest
 }

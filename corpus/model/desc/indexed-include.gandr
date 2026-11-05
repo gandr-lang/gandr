@@ -13,7 +13,7 @@
 
 /// Contexts, types in a context and terms of a type, with an extension, a
 /// weakened type and the newest variable.
-pub theory Scoped where {
+pub theory Scoped where
   /// Contexts.
   sort Con : Type;
   /// Types in a context.
@@ -26,13 +26,11 @@ pub theory Scoped where {
   oper wk : (g : Con, a : Ty(g)) --> Ty(ext(g, a));
   /// The newest variable, whose type is that type in the extended context.
   oper q : (g : Con, a : Ty(g)) --> Tm(ext(g, a), wk(g, a));
-}
 
 /// The same signature through an include.
-pub theory Again where {
+pub theory Again where
   /// The signature of `Scoped`.
   include Scoped;
-}
 
 /// A model of `Scoped`, given back as it is.
 pub def keep(m : Model(Scoped)) -> Model(Scoped) { m }

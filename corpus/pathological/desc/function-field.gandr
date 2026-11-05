@@ -11,16 +11,14 @@ import "../../model/desc/function-field.gandr";
 /// The number of stores a program makes, its reads answered with zero: two
 /// stores and one tell the law's sides apart.
 @[ refuses("RuleNotRespected") ]
-def rec stores(p : Program) -> Integer {
-  match p {
-    Done(_x) => 0,
-    Get(k) => {
-      let q = k(0);
-      stores[<](q)
-    },
-    Put(_t, k) => {
-      let r = stores[<](k);
+def rec stores(p : Program) -> Integer =
+  match p
+    | Done(_x) => 0
+    | Get(k) => {
+      let q = k 0;
+      stores[<] q
+    }
+    | Put(_t, k) => {
+      let r = stores[<] k;
       r + 1
     }
-  }
-}

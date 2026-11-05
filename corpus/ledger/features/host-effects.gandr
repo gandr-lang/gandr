@@ -4,7 +4,6 @@
 import std.io;
 
 /// A greeting printed through the console by its operation's name.
-@[ runs("hello, world!\nunit") ]
-def greet() -> [std.io.Console.Eff] Unit {
-  std.io.Console.print("hello, world!")
-}
+@[ runs("hello, world!\n*{}") ]
+def greet() -> [std.io.Console.Eff] Unit =
+  std.io.Console.print "hello, world!"

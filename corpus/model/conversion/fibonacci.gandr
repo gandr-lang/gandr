@@ -17,28 +17,22 @@ import "../data/data-base.gandr";
 import "./conversion-base.gandr";
 
 /// Fibonacci, the doubly recursive definition.
-def rec fib(n : Nat) -> Nat {
-  match n {
-    Zero => Zero,
-    Succ(m) => match m {
-      Zero => Succ(Zero),
-      Succ(k) => plus(fib[<](m), fib[<](k))
-    }
-  }
-}
+def rec fib(n : Nat) -> Nat =
+  match n
+    | Zero => Zero
+    | Succ(m) => match m
+      | Zero => Succ Zero
+      | Succ(k) => plus (fib[<] m) (fib[<] k)
 
 /// Fibonacci by iteration over a pair of accumulators.
-def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {
-  match n {
-    Zero => a,
-    Succ(m) => fibFrom[<](m, b, plus(a, b))
-  }
-}
+def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat =
+  match n
+    | Zero => a
+    | Succ(m) => fibFrom[<] m b (plus a b)
 
 /// The two definitions agree at fourteen.
 def fibAgrees() -> Path(
-  fib(Succ(Succ(twelve))),
-  fibFrom(Succ(Succ(twelve)), Zero, Succ(Zero))
-) {
-  Path.here(fib(Succ(Succ(twelve))))
-}
+  fib (Succ (Succ twelve)),
+  fibFrom (Succ (Succ twelve)) Zero (Succ Zero)
+) =
+  Path.here (fib (Succ (Succ twelve)))

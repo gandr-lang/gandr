@@ -8,9 +8,9 @@ error[UndescribedMember.LhsNotOperation]: this member rewrites from something ot
   ╰ help: write an operation application on the rule's left side
 
 error[UnstatedComponent.Unsorted]: the model signature cannot state `loose`, which binds a variable no occurrence gives a sort
-   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Unsorted.gandr:12:19
+   ╭▸ corpus/ledger/diagnostics/UnstatedComponent.Unsorted.gandr:11:19
    │
-12 │ def model : Model(T) ;
+11 │ def model : Model(T) ;
    │                   ━ the signature this model derives
    │
    ╰ note: `model` is refused with UnstatedComponent.Unsorted, as its expectation states

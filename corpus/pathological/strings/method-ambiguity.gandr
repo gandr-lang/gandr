@@ -10,18 +10,15 @@ import "../../model/strings/string-base.gandr";
 import "../../model/strings/methods.gandr";
 
 /// A byte list's methods: its own length.
-module Bytes where {
+module Bytes where
   /// The number of bytes in the list, read from a list lent for reading.
-  def len(self : shared List(Integer)) -> Integer {
-    count(self)
-  }
-}
+  def len(self : shared List(Integer)) -> Integer =
+    count self
 
 /// A string's length, which both `Str` and `Bytes` declare as `len`: the call
 /// is refused though only `Str`'s receives a string, since the receiver's
 /// type does not yet choose between them.
 @[ refuses("AmbiguousMethod") ]
-def measured() -> -F Integer {
-  var s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  s.len()
-}
+def measured() -> -F Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  s.len ()

@@ -36,8 +36,11 @@ fn right_associative_type_operator_chains_parse_cleanly() -> Result<(), Box<dyn 
         ),
         ("three-member union", "def f : A | B | C;"),
         ("four-member union", "def f : A | B | C | D;"),
-        ("three-member value function space", "def f : A => B => C;"),
-        ("mixed arrows", "def f : A => +U (B -> -F C) => D;"),
+        (
+            "three-member value function space",
+            "def f : A -> (B -> C);",
+        ),
+        ("mixed arrows", "def f : A -> (+U (B -> -F C) -> D);"),
     ];
     for (case, source) in cases {
         assert_parses_clean(CaseName(case), SourceText::from(source))?;
@@ -49,20 +52,20 @@ fn right_associative_type_operator_chains_parse_cleanly() -> Result<(), Box<dyn 
 fn recursion_marker_instantiations_parse_cleanly() -> Result<(), Box<dyn Error>>
 {
     let cases = [
-        ("descending recursion marker", "def rec f() { f[<]() }"),
-        ("productive recursion marker", "def rec f() { f[>]() }"),
+        ("descending recursion marker", "def rec f() { f[<] () }"),
+        ("productive recursion marker", "def rec f() { f[>] () }"),
         (
             "productive copattern marker",
-            "def rec n() { .head => 0, .tail => n[>]() }",
+            "def rec n() { .head => 0, .tail => n[>] () }",
         ),
-        ("combined recursion markers", "def rec f() { f[<, >]() }"),
-        ("reserved named measure", "def rec f() { f[.n <]() }"),
-        ("reserved explicit resident", "def rec f() { f[.n = 1]() }"),
-        ("punned explicit resident", "def rec f() { f[.n]() }"),
-        ("reserved explicit size", "def rec f() { f[.size = 1]() }"),
-        ("reserved cost bound", "def rec f() { f[.cost = 1]() }"),
-        ("reserved tail resident", "def rec f() { f[tail]() }"),
-        ("qualified outer reference", "def rec f() { (outer.f)() }"),
+        ("combined recursion markers", "def rec f() { f[<, >] () }"),
+        ("reserved named measure", "def rec f() { f[.n <] () }"),
+        ("reserved explicit resident", "def rec f() { f[.n = 1] () }"),
+        ("punned explicit resident", "def rec f() { f[.n] () }"),
+        ("reserved explicit size", "def rec f() { f[.size = 1] () }"),
+        ("reserved cost bound", "def rec f() { f[.cost = 1] () }"),
+        ("reserved tail resident", "def rec f() { f[tail] () }"),
+        ("qualified outer reference", "def rec f() { (outer.f) () }"),
     ];
     for (case, source) in cases {
         assert_parses_clean(CaseName(case), SourceText::from(source))?;
@@ -135,24 +138,24 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
             "abstraction argument",
             r"def f : G(fun (X) { -F (X * X) }, Integer);",
         ),
-        ("unary alias", "def f : Integer => Integer * Integer;"),
-        ("n-ary alias", "def f : (A, B => C) => D;"),
-        ("alias in a product", "def f : (A => B) * ((C, D) => E);"),
+        ("unary alias", "def f : Integer -> Integer * Integer;"),
+        ("n-ary alias", "def f : *{A, B -> C} -> D;"),
+        ("alias in a product", "def f : (A -> B) * (*{C, D} -> E);"),
         (
             "alias in a binder",
-            "def f(k : A => B) -> -F B { become force k }",
+            "def f(k : A -> B) -> -F B { become force k }",
         ),
         (
             "case arm beside the alias",
-            "def f : A => B; def g(c : C) -> -F Integer { match c { Red => pure 0, _ => pure 1 } }",
+            "def f : A -> B; def g(c : C) -> -F Integer { match c { | Red => pure 0 | _ => pure 1 } }",
         ),
         (
             "telescope as a call's argument",
-            "def f = g((y : A, z : P(y)) => B(y, z), x);",
+            "def f = g ((y : A, z : P(y)) -> B(y, z)) x;",
         ),
         (
             "domain list as a call's argument",
-            "def f = g((y : A, P(y)) => B, (x : A));",
+            "def f = g ((y : A, P(y)) -> B) (x : A);",
         ),
     ];
     for (case, source) in cases {
@@ -169,12 +172,15 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
 fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result<(), Box<dyn Error>>
 {
     let cases = [
-        ("def f = g((y : A, z : P(y)) => B);", "parenthesized_type"),
-        ("def f = g((A, B) => C);", "parenthesized_type"),
-        ("def f = g(((A)) => C);", "parenthesized_type"),
-        ("def f = g((x : A), y);", "parenthesized_expression"),
-        ("def f = g((x, y), z);", "parenthesized_expression"),
-        ("def f = g((), z);", "parenthesized_expression"),
+        (
+            "def f = g type((y : A, z : P(y)) -> B);",
+            "parenthesized_type",
+        ),
+        ("def f = g type((A, B) -> C);", "parenthesized_type"),
+        ("def f = g type(((A)) -> C);", "parenthesized_type"),
+        ("def f = g (x : A) y;", "parenthesized_expression"),
+        ("def f = g (x, y) z;", "parenthesized_expression"),
+        ("def f = g () z;", "parenthesized_expression"),
     ];
     let grammar = built();
     for (source, expected) in cases {
@@ -202,6 +208,49 @@ fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result
     Ok(())
 }
 
+/// #4853: an expression operand right after an expression operand applies
+/// it, `f x`, through one zero-width tile per argument. A shell block's words
+/// stay flat, and a block-like statement ends at its brace.
+#[test]
+fn juxtaposition_applies_outside_a_shell_form_4853() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        ("def f = g x y;", 2_usize),
+        ("def f = g x.y;", 1),
+        ("def f = - g x;", 1),
+        ("def f = g x + h y;", 2),
+        ("def f = #!{ echo a b };", 0),
+        ("def f() -> Integer { if c { a } else { b } x }", 0),
+        ("def f = g *{} x;", 2),
+        ("def f = g +{.l = a} *{.x = b} y;", 3),
+        ("def f = g &{ .l => a } x;", 2),
+    ];
+    let grammar = built();
+    for (source, expected) in cases {
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let applied = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Tile(mold) => grammar
+                    .rule_of(mold)
+                    .is_ok_and(|rule| rule.name().0 == "application_expression"),
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Meld(_)
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => false,
+            })
+            .count();
+        assert_eq!(applied, expected, "`{source}`: the applications it reads");
+        if expected > 0 {
+            assert_parses_clean(CaseName(source), SourceText::from(source))?;
+        }
+    }
+    Ok(())
+}
+
 /// Each ASCII token of the spelling table molds as its glyph's tile: a source
 /// written with it is the tree the glyph's source is, mold for mold (#782).
 #[test]
@@ -211,13 +260,13 @@ fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Box<dyn Error>>
         ("def e : A ≃ B;", "def e : A <~> B;"),
         ("def e : A ⇝ B;", "def e : A ~~> B;"),
         (
-            "def w = loop ∷ Path.here(Base);",
-            "def w = loop :: Path.here(Base);",
+            "def w = loop ∷ Path.here Base;",
+            "def w = loop :: Path.here Base;",
         ),
         (
-            "def f(p : Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    loop ∷ q => \
+            "def f(p : Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    | loop ∷ q => \
              1\n  }\n}",
-            "def f(p : Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    loop :: q => \
+            "def f(p : Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    | loop :: q => \
              1\n  }\n}",
         ),
         ("def g : +U[ω] (A -> -F B);", "def g : +U[inf] (A -> -F B);"),

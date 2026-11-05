@@ -19,9 +19,12 @@ use gandr_surface_layout::units::NestAmount;
 use gandr_surface_syntax::SourceFragment;
 
 use crate::FormatError;
+use crate::leaf::Branch;
+use crate::leaf::Direct;
 use crate::leaf::Documentation;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
+use crate::leaf::Offside;
 use crate::space;
 use crate::space::Context;
 use crate::space::Join;
@@ -29,7 +32,7 @@ use crate::space::Kind as Neighbour;
 use crate::space::Padding;
 
 /// The brackets that open a group, each beside the closer that ends it.
-pub const BRACKETS: [(&str, &str); 10] = [
+pub const BRACKETS: [(&str, &str); 14] = [
     ("(", ")"),
     ("type(", ")"),
     ("[", "]"),
@@ -38,6 +41,10 @@ pub const BRACKETS: [(&str, &str); 10] = [
     ("{", "}"),
     ("@[", "]"),
     ("@![", "]"),
+    ("*{", "}"),
+    (".*{", "}"),
+    ("+{", "}"),
+    ("&{", "}"),
     ("#{", "}"),
     (".#{", "}"),
 ];
@@ -141,6 +148,8 @@ enum Element<'source>
     BlockComment(SourceFragment<'source>),
     /// A nested group.
     Group(GroupId),
+    /// A layout block's separator: nothing written, the end of an item.
+    Break,
 }
 
 impl Element<'_>
@@ -154,7 +163,7 @@ impl Element<'_>
         match self {
             Self::LineComment(_) => Kind::LineComment,
             Self::BlockComment(_) => Kind::BlockComment,
-            Self::Text(_) | Self::Verbatim(_) | Self::Group(_) => Kind::Code,
+            Self::Text(_) | Self::Verbatim(_) | Self::Group(_) | Self::Break => Kind::Code,
         }
     }
 }
@@ -185,6 +194,9 @@ struct Placed<'source>
     indent: Indent,
     /// Whether documentation starts or ends at the element.
     edge: Edge,
+    /// Where the element's first leaf stands among its block's items; none
+    /// for a separator and a comment.
+    branch: Option<Branch>,
     /// The element.
     element: Element<'source>,
 }
@@ -228,6 +240,13 @@ enum Frame<'source>
         /// The space before the closing bracket.
         closing: Join,
     },
+    /// A layout block: the column rule, not a bracket, ends it, so it breaks
+    /// one item per line and writes no closer.
+    Layout
+    {
+        /// The token that opens it: a line-final `=`, or nothing.
+        open: SourceFragment<'source>,
+    },
 }
 
 /// A group: a frame and the elements inside it.
@@ -252,13 +271,15 @@ struct Group<'source>
 ///   after its opening bracket and no line comment stands directly in it;
 ///   otherwise each of its items — the elements up to and including a `,` or
 ///   `;`, with a comment on the same line — stands on its own line indented by
-///   two, and a blank line before an item is kept. Two elements on one line are
+///   two, and a blank line before an item is kept. A layout block, which the
+///   column rule ends, always stands so under the token that opens it, its
+///   empty separators and close writing nothing. Two elements on one line are
 ///   as far apart as [`space::join`] decides, except inside a string the
 ///   grammar reads as tiles and beside a token a rewrite wrote, where the
 ///   source's spacing stands as one space or none.
 /// - provides: the layout of each top-level form [`crate::format`] joins.
-/// - fails: [`FormatError::Unbalanced`] when a bracket closes a group it does
-///   not open or a group is left open; a layout ceiling as
+/// - fails: [`FormatError::Unbalanced`] when a bracket or a layout close ends a
+///   group it does not open or a group is left open; a layout ceiling as
 ///   [`FormatError::Build`] or [`FormatError::Render`].
 /// - panics: none.
 /// - intension: one pass building groups with an explicit stack, then the
@@ -289,6 +310,7 @@ pub fn lay_out(
     docs.resize(groups.len(), Built {
         flat: Flat::Fits(empty),
         best: empty,
+        opens: Opens::Other,
     });
     for (index, group) in groups.iter().enumerate().rev() {
         let built = group_doc(&mut builder, group, &docs, blank)?;
@@ -350,6 +372,82 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
         let (element, here) = match leaf.material {
             Material::Token => {
                 let text = <&str>::from(leaf.text);
+                // A layout block's parts: an empty part passes on the gap and
+                // the column before it, as the source's lines are what the
+                // column rule reads.
+                let empty = text.is_empty();
+                match leaf.offside {
+                    Offside::Opens => {
+                        let here = space::Token {
+                            text: leaf.text,
+                            context: leaf.context,
+                            kind: Neighbour::Open,
+                        };
+                        let join = if empty {
+                            Join::Touch
+                        }
+                        else {
+                            between(before, here, (gap, rewrote), inside, quoted)
+                        };
+                        let id = GroupId(groups.len());
+                        groups.push(Group {
+                            frame: Frame::Layout { open: leaf.text },
+                            placed: Vec::new(),
+                        });
+                        place(&mut groups, &open, Placed {
+                            gap: if empty { Gap::Adjacent } else { gap },
+                            join,
+                            indent,
+                            edge,
+                            branch: leaf.branch,
+                            element: Element::Group(id),
+                        })?;
+                        open.push(id);
+                        before = Before::After(here);
+                        if !empty {
+                            gap = Gap::Adjacent;
+                            rewrote = Rewrote::No;
+                            indent = Indent::default();
+                        }
+                        continue;
+                    },
+                    Offside::Separates => {
+                        place(&mut groups, &open, Placed {
+                            gap: Gap::Adjacent,
+                            join: Join::Touch,
+                            indent,
+                            edge,
+                            branch: None,
+                            element: Element::Break,
+                        })?;
+                        before = Before::After(space::Token {
+                            text: leaf.text,
+                            context: leaf.context,
+                            kind: Neighbour::Token,
+                        });
+                        continue;
+                    },
+                    Offside::Closes => {
+                        let Some(&GroupId(top)) = open.last()
+                        else {
+                            return Err(FormatError::Unbalanced);
+                        };
+                        match groups.get(top).map(|group| group.frame) {
+                            Some(Frame::Layout { .. }) => {},
+                            Some(Frame::Form | Frame::Bracketed { .. }) | None => {
+                                return Err(FormatError::Unbalanced);
+                            },
+                        }
+                        let _closed = open.pop();
+                        before = Before::After(space::Token {
+                            text: leaf.text,
+                            context: opened,
+                            kind: Neighbour::Close(inside),
+                        });
+                        continue;
+                    },
+                    Offside::Written => {},
+                }
                 if let Some(&(_, expects)) = BRACKETS.iter().find(|&&(opener, _)| opener == text) {
                     let here = space::Token {
                         text: leaf.text,
@@ -374,6 +472,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                         join,
                         indent,
                         edge,
+                        branch: leaf.branch,
                         element: Element::Group(id),
                     })?;
                     open.push(id);
@@ -404,7 +503,10 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                             *close = leaf.text;
                             *closing = join;
                         },
-                        Some(&mut (Frame::Form | Frame::Bracketed { .. })) | None => {
+                        Some(
+                            &mut (Frame::Form | Frame::Bracketed { .. } | Frame::Layout { .. }),
+                        )
+                        | None => {
                             return Err(FormatError::Unbalanced);
                         },
                     }
@@ -448,6 +550,13 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
             join,
             indent,
             edge,
+            branch: match leaf.material {
+                Material::Token | Material::Verbatim => leaf.branch,
+                Material::LineComment
+                | Material::BlockComment
+                | Material::Shebang
+                | Material::Whitespace => None,
+            },
             element,
         })?;
         before = Before::After(here);
@@ -501,7 +610,7 @@ fn inside_of(
         Some(Frame::Bracketed {
             padding, context, ..
         }) => (padding, context),
-        Some(Frame::Form) | None => (Padding::Hug, space::Context::Plain),
+        Some(Frame::Form | Frame::Layout { .. }) | None => (Padding::Hug, space::Context::Plain),
     }
 }
 
@@ -608,6 +717,19 @@ struct Built
     flat: Flat,
     /// The group laid out as it best fits the page.
     best: DocId,
+    /// What opened the group.
+    opens: Opens,
+}
+
+/// What opened a group: an attribute block, whose member the next line
+/// starts at the attribute's own indent, or anything else.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Opens
+{
+    /// `@[` or `@![`.
+    Attribute,
+    /// Any other opener, or none.
+    Other,
 }
 
 /// Whether a group can stand on one line.
@@ -641,18 +763,39 @@ fn group_doc(
     blank: DocId,
 ) -> Result<Built, FormatError>
 {
-    let Frame::Bracketed {
-        open,
-        close,
-        closing,
-        ..
-    } = group.frame
-    else {
-        let best = run(builder, &group.placed, docs, Mode::Best)?;
-        return Ok(Built {
-            flat: Flat::Breaks,
-            best,
-        });
+    let opens = match group.frame {
+        Frame::Bracketed { open, .. } if matches!(<&str>::from(open), "@[" | "@![") => {
+            Opens::Attribute
+        },
+        Frame::Bracketed { .. } | Frame::Form | Frame::Layout { .. } => Opens::Other,
+    };
+    let (open, close, closing) = match group.frame {
+        Frame::Bracketed {
+            open,
+            close,
+            closing,
+            ..
+        } => (open, close, closing),
+        Frame::Form => {
+            let best = run(builder, &group.placed, docs, Mode::Best)?;
+            return Ok(Built {
+                flat: Flat::Breaks,
+                best,
+                opens,
+            });
+        },
+        // The column rule ends the block, so its items stand one per line
+        // under its open and nothing closes it.
+        Frame::Layout { open } => {
+            let open = builder.text(TextSource::from(<&str>::from(open)))?;
+            let indented = item_lines(builder, &group.placed, docs, blank, Columns::Read)?;
+            let best = builder.concat(open, indented)?;
+            return Ok(Built {
+                flat: Flat::Breaks,
+                best,
+                opens,
+            });
+        },
     };
     let open_text = open;
     let open = builder.text(TextSource::from(<&str>::from(open)))?;
@@ -664,6 +807,7 @@ fn group_doc(
         return Ok(Built {
             flat: Flat::Fits(only),
             best: only,
+            opens,
         });
     };
     let forced = first.gap.breaks() == Breaks::Yes
@@ -676,8 +820,70 @@ fn group_doc(
             matches!(placed.element, Element::Text(text)
                 if SEPARATORS.contains(&<&str>::from(text)))
         });
+    let columns = if <&str>::from(open_text) == "{" {
+        Columns::Read
+    }
+    else {
+        Columns::Unread
+    };
+    let indented = item_lines(builder, &group.placed, docs, blank, columns)?;
+    let hard = builder.hard_line();
+    let broken = builder.concat_all([open, indented, hard, close])?;
+    if forced {
+        return Ok(Built {
+            flat: Flat::Breaks,
+            best: broken,
+            opens,
+        });
+    }
+    let opening = join_doc(builder, first.join)?;
+    let closing = join_doc(builder, closing)?;
+    let content = run(builder, &group.placed, docs, Mode::Flat)?;
+    let inline = builder.concat_all([open, opening, content, closing, close])?;
+    let hugs = group.placed.iter().any(|placed| match placed.element {
+        Element::Group(GroupId(inner)) => docs
+            .get(inner)
+            .is_some_and(|built| matches!(built.flat, Flat::Breaks)),
+        Element::Text(_)
+        | Element::Verbatim(_)
+        | Element::LineComment(_)
+        | Element::BlockComment(_)
+        | Element::Break => false,
+    });
+    let flat = if hugs {
+        Flat::Breaks
+    }
+    else {
+        Flat::Fits(inline)
+    };
+    if !listed {
+        let content = run(builder, &group.placed, docs, Mode::Best)?;
+        let best = builder.concat_all([open, opening, content, closing, close])?;
+        return Ok(Built { flat, best, opens });
+    }
+    Ok(Built {
+        flat,
+        best: builder.choice(inline, broken)?,
+        opens,
+    })
+}
+
+/// The items of `placed`, each on a line of its own and indented under the
+/// line that opens them, a continuation further still, a blank line the
+/// source wrote before an item kept as `blank`.
+///
+/// # Specification
+/// trivial.
+fn item_lines(
+    builder: &mut DocBuilder<'_>,
+    placed: &[Placed<'_>],
+    docs: &[Built],
+    blank: DocId,
+    columns: Columns,
+) -> Result<DocId, FormatError>
+{
     let mut lines: Vec<DocId> = Vec::new();
-    for (index, item) in items(&group.placed).into_iter().enumerate() {
+    for (index, item) in items(placed, docs, columns).into_iter().enumerate() {
         let Some(&Placed { gap, .. }) = item.placed.first()
         else {
             continue;
@@ -694,43 +900,7 @@ fn group_doc(
         });
     }
     let body = builder.concat_all(lines)?;
-    let indented = builder.nest(NestAmount::from(INDENT), body)?;
-    let hard = builder.hard_line();
-    let broken = builder.concat_all([open, indented, hard, close])?;
-    if forced {
-        return Ok(Built {
-            flat: Flat::Breaks,
-            best: broken,
-        });
-    }
-    let opening = join_doc(builder, first.join)?;
-    let closing = join_doc(builder, closing)?;
-    let content = run(builder, &group.placed, docs, Mode::Flat)?;
-    let inline = builder.concat_all([open, opening, content, closing, close])?;
-    let hugs = group.placed.iter().any(|placed| match placed.element {
-        Element::Group(GroupId(inner)) => docs
-            .get(inner)
-            .is_some_and(|built| matches!(built.flat, Flat::Breaks)),
-        Element::Text(_)
-        | Element::Verbatim(_)
-        | Element::LineComment(_)
-        | Element::BlockComment(_) => false,
-    });
-    let flat = if hugs {
-        Flat::Breaks
-    }
-    else {
-        Flat::Fits(inline)
-    };
-    if !listed {
-        let content = run(builder, &group.placed, docs, Mode::Best)?;
-        let best = builder.concat_all([open, opening, content, closing, close])?;
-        return Ok(Built { flat, best });
-    }
-    Ok(Built {
-        flat,
-        best: builder.choice(inline, broken)?,
-    })
+    Ok(builder.nest(NestAmount::from(INDENT), body)?)
 }
 
 /// The document of `join`: nothing, or one space.
@@ -758,54 +928,106 @@ struct Item<'group, 'source>
     continuation: Continuation,
 }
 
+/// Whether the column rule reads a group's lines.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Columns
+{
+    /// It does: a block's braces or a layout block, where a separator, the
+    /// source's or the layout pass's, starts each statement.
+    Read,
+    /// It does not: any other group.
+    Unread,
+}
+
 /// Whether a line of a broken group starts a statement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Continuation
 {
-    /// It starts one: it follows a separator, or the source indented it no
-    /// deeper than the statement before.
+    /// It starts one: it follows a separator, or a bar leads it, or, in a
+    /// group whose lines the column rule does not read, the source indented
+    /// it no deeper than the statement before.
     Statement,
-    /// It continues the statement before, which the source indented it
-    /// deeper than.
+    /// It continues the statement before: no separator stands before it,
+    /// and the column rule reads its group's lines or the source indented it
+    /// deeper than that statement.
     Continued,
 }
 
 /// The items of a group's elements: an item ends after a separator, unless a
-/// comment follows on the separator's line, and before an element the source
-/// wrote on a new line. A separator is a `;`, or a `,` in a group no `;`
-/// separates and no bar opens, so the commas inside a statement, as in a
-/// row's `under [State, Console]` or a clause's `| m, Zero => m`, stay on its
-/// line. An item the source started on a new line, after no separator and
-/// indented deeper than the statement before it, continues that statement,
-/// unless a bar leads it: a `|` at the head of a line is an arm bar, which
-/// opens a member as a separator ends one. A comment is no statement, so code
-/// after a comment the group opens with starts one wherever the comment
-/// stands.
+/// comment follows on the separator's line, before an element the source
+/// wrote on a new line, and before each `|` of the form whose group a bar
+/// opens, whose arms each such bar starts, an or-pattern's left on its line.
+/// A separator is a `;`, a layout block's empty one, or
+/// a `,` in a group neither separates and no bar opens, so the commas inside
+/// a statement, as in a row's `under [State, Console]` or a clause's
+/// `| m, Zero => m`, stay on its line. An item the source started on a new
+/// line, after no separator and indented deeper than the statement before it,
+/// continues that statement, unless a bar leads it: a `|` at the head of a
+/// line is an arm bar, which opens a member as a separator ends one. In a
+/// group whose lines the column rule reads, a block's braces or a layout
+/// block, such an item continues its
+/// statement wherever the source indented it when a separator leads it, which
+/// ends that statement, when the tree holds it in the same branch as the code
+/// before it, or when that code is a tile of the block's own form, as a
+/// line-final `=`; it starts a statement in another branch, as a module's
+/// next member does, and the source's indentation decides where a rewrite
+/// wrote the code. In a group a bar opens, an item no deeper than the arm
+/// before it starts a statement, whatever branch holds it: an arm's own
+/// lines stand deeper than its bar, so a data block's member after its
+/// constructors, at the bars' column, is no part of the last one. A comment
+/// is no statement, so code after a comment the group opens with starts one
+/// wherever the comment stands. A line after an attribute block, `@[ … ]`,
+/// starts the member the attribute decorates, at the attribute's indent.
 ///
 /// # Specification
 /// trivial.
-fn items<'group, 'source>(placed: &'group [Placed<'source>]) -> Vec<Item<'group, 'source>>
+fn items<'group, 'source>(
+    placed: &'group [Placed<'source>],
+    docs: &[Built],
+    columns: Columns,
+) -> Vec<Item<'group, 'source>>
 {
     let mut items = Vec::new();
     let mut start = 0_usize;
     let mut ended = false;
-    let commas_end = !placed
+    // A group a bar opens lists arms: each `|` of its own form opens one, as a
+    // separator ends an item, so a broken arm list stands one arm a line. A
+    // `|` inside a pattern, an or-pattern's, is no arm's.
+    let armed = placed
         .iter()
-        .any(|current| matches!(current.element, Element::Text(text) if <&str>::from(text) == ";"))
-        && !placed
-            .iter()
-            .find(|current| current.element.kind() == Kind::Code)
-            .is_some_and(
-                |first| matches!(first.element, Element::Text(text) if <&str>::from(text) == "|"),
-            );
+        .find(|current| current.element.kind() == Kind::Code)
+        .is_some_and(
+            |first| matches!(first.element, Element::Text(text) if <&str>::from(text) == "|"),
+        );
+    let commas_end = !armed
+        && !placed.iter().any(|current| match current.element {
+            Element::Text(text) => <&str>::from(text) == ";",
+            Element::Break => true,
+            Element::Verbatim(_)
+            | Element::LineComment(_)
+            | Element::BlockComment(_)
+            | Element::Group(_) => false,
+        });
     let mut continuation = Continuation::Statement;
+    // The branch of the last code before the current element: none before any
+    // code, and an unknown one where a rewrite wrote that code.
+    let mut last: Option<Option<Branch>> = None;
+    // What opened the last code when it is a group: a line after an
+    // attribute block starts the member it decorates, at its own indent.
+    let mut after = Opens::Other;
     let mut base: Option<Indent> = placed
         .first()
         .filter(|first| first.gap.breaks() == Breaks::Yes && first.element.kind() == Kind::Code)
         .map(|first| first.indent);
     for (index, current) in placed.iter().enumerate() {
         let breaks = current.gap.breaks() == Breaks::Yes;
-        let starts = index > start && (breaks || (ended && current.element.kind() == Kind::Code));
+        let arm = armed
+            && matches!(current.element, Element::Text(text) if <&str>::from(text) == "|")
+            && current
+                .branch
+                .is_some_and(|branch| branch.direct == Direct::Yes);
+        let starts =
+            index > start && (breaks || arm || (ended && current.element.kind() == Kind::Code));
         if starts {
             if let Some(item) = placed.get(start .. index) {
                 items.push(Item {
@@ -818,15 +1040,40 @@ fn items<'group, 'source>(placed: &'group [Placed<'source>]) -> Vec<Item<'group,
             if current.element.kind() == Kind::Code {
                 let barred =
                     matches!(current.element, Element::Text(text) if <&str>::from(text) == "|");
-                match base {
-                    Some(statement)
-                        if !ended && !barred && breaks && current.indent > statement =>
-                    {
-                        continuation = Continuation::Continued;
-                    },
-                    Some(_) | None => base = Some(current.indent),
+                let unseparated = !ended && !barred && breaks;
+                let deeper = base.is_some_and(|statement| current.indent > statement);
+                // A separator on a line of its own ends the statement before it.
+                let separator = matches!(current.element, Element::Text(text)
+                    if SEPARATORS.contains(&<&str>::from(text)));
+                let continues = after == Opens::Other
+                    && match (columns, last) {
+                        (Columns::Read | Columns::Unread, None) => false,
+                        (Columns::Read, Some(_)) if separator => true,
+                        (Columns::Read, Some(Some(previous))) => {
+                            current.branch.map_or(deeper, |here| {
+                                here.node == previous.node || previous.direct == Direct::Yes
+                            })
+                        },
+                        (Columns::Read, Some(None)) | (Columns::Unread, Some(_)) => deeper,
+                    };
+                if unseparated && continues && (!armed || deeper) {
+                    continuation = Continuation::Continued;
+                }
+                else {
+                    base = Some(current.indent);
                 }
             }
+        }
+        match current.element {
+            Element::Text(_) | Element::Verbatim(_) => {
+                last = Some(current.branch);
+                after = Opens::Other;
+            },
+            Element::Group(GroupId(group)) => {
+                last = Some(current.branch);
+                after = docs.get(group).map_or(Opens::Other, |built| built.opens);
+            },
+            Element::Break | Element::LineComment(_) | Element::BlockComment(_) => {},
         }
         ended = match current.element {
             Element::Text(text) => match <&str>::from(text) {
@@ -834,6 +1081,7 @@ fn items<'group, 'source>(placed: &'group [Placed<'source>]) -> Vec<Item<'group,
                 "," => commas_end,
                 _ => false,
             },
+            Element::Break => true,
             Element::LineComment(_) | Element::BlockComment(_) => ended,
             Element::Verbatim(_) | Element::Group(_) => false,
         };
@@ -910,8 +1158,9 @@ fn element_doc(
             Element::Text(text) | Element::LineComment(text) | Element::BlockComment(text) => {
                 builder.text(TextSource::from(<&str>::from(text)))?
             },
-            Element::Group(_) => return Err(FormatError::Unbalanced),
+            Element::Group(_) | Element::Break => return Err(FormatError::Unbalanced),
         },
+        Element::Break => builder.empty(),
         Element::Group(GroupId(group)) => {
             let built = docs.get(group).ok_or(FormatError::Unbalanced)?;
             match (mode, built.flat) {

@@ -1,17 +1,17 @@
 error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
-   ╭▸ corpus/pathological/holes/pattern-hole-in-a-payload.gandr:15:3
+   ╭▸ corpus/pathological/holes/pattern-hole-in-a-payload.gandr:14:3
    │
-14 │    def describe(m : Maybe) -> Integer {
+13 │    def describe(m : Maybe) -> Integer =
    │    │            ─ checked against `Maybe -> -F Integer`; while checking the body of this function; binds m : Maybe
    │ ┌──┘
    │ │
-15 │ │┏   match m {
-16 │ │┃     Just(?) => 100,
-17 │ │┃     Nothing => 200
-18 │ │┃   }
-   │ │┗━━━┛ an arm left to a pattern hole
-19 │ │  }
-   │ └──┘ checked against `Maybe => Integer`; while checking the body of this thunk
+14 │ │┏   match m
+15 │ │┃     | Just(?) => 100
+16 │ │┃     | Nothing => 200
+   │ │┃                    ╿
+   │ └┃────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━checked against `Maybe -> Integer`; while checking the body of this thunk
+   │                       an arm left to a pattern hole
    │
    ├ note: `describe` is refused with UndecidedCoverage, as its expectation states
    ╰ help: replace the pattern hole with a pattern

@@ -16,11 +16,10 @@ import std.string (empty, concat);
 
 /// The empty string's unit law over the definition `concat` is refused.
 @[ refuses("IllFormedDescription") ]
-theory JoinLaws where {
+theory JoinLaws where
   /// The sort the law ranges over.
   sort S : Type;
 
   /// `concat` with the empty string on its left is the string; it names
   /// a definition the block does not declare.
-  rule unitLeft : concat(empty, s) <=> s;
-}
+  rule unitLeft : concat empty s <=> s;

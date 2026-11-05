@@ -2,15 +2,12 @@
 ///
 /// The naturals.
 @[ checks ]
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 @[ refuses("OutOfFragment.NonUniform") ]
-def rec shadowed(n : Nat, m : Nat) -> -F Nat {
-  match m {
-    Zero => return n,
-    Succ(n) => shadowed[<](n, n)
-  }
-}
+def rec shadowed(n : Nat, m : Nat) -> -F Nat =
+  match m
+    | Zero => return n
+    | Succ(n) => shadowed[<] n n

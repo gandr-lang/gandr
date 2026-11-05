@@ -19,49 +19,41 @@ import "../../model/data/data-base.gandr" ;
 
 /// Vectors of elements of `a`, indexed by their length.
 @[ checks ]
-data Vec(a : Type) : Nat -> Type where {
+data Vec(a : Type) : Nat -> Type where
   | VNil : Vec(a, Zero)
   | VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n))
-}
 
 /// The vector of one integer, one long.
 @[ checks ]
-def single() -> Vec(Integer, Succ(Zero)) {
-  VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
-}
+def single() -> Vec(Integer, Succ(Zero)) =
+  VCons Zero 3 (VNil : Vec(Integer, Zero))
 
 /// A vector of two integers, two long: each `VCons` one past its tail.
 @[ checks ]
-def pair() -> Vec(Integer, Succ(Succ(Zero))) {
-  VCons(
-    Succ(Zero),
-    1,
-    (VCons(Zero, 2, (VNil : Vec(Integer, Zero))) : Vec(Integer, Succ(Zero)))
-  )
-}
+def pair() -> Vec(Integer, Succ(Succ(Zero))) =
+  VCons
+    (Succ Zero)
+    1
+    (VCons Zero 2 (VNil : Vec(Integer, Zero)) : Vec(Integer, Succ(Zero)))
 
 /// A vector of `a` marked at its length: the indices a named telescope, the
 /// type of the vector reading the length before it.
 @[ checks ]
-data Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type where {
+data Sized(a : Type) : (n : Nat, v : Vec(a, n)) --> Type where
   | Measured : (n : Nat, v : Vec(a, n)) --> Sized(a, n, v)
-}
 
 /// A vector of integers, marked at its length.
 @[ checks ]
-def measured(n : Nat, v : Vec(Integer, n)) -> Sized(Integer, n, v) {
-  Measured(n, v)
-}
+def measured(n : Nat, v : Vec(Integer, n)) -> Sized(Integer, n, v) =
+  Measured n v
 
 /// A vector of `a` marked empty: the generator states `VNil` at the vector's
 /// index, typed by that index over the length stated before it.
 @[ checks ]
-data Cleared(a : Type) : (n : Nat, v : Vec(a, n)) --> Type where {
+data Cleared(a : Type) : (n : Nat, v : Vec(a, n)) --> Type where
   | Clear : Cleared(a, Zero, VNil)
-}
 
 /// The empty vector of integers, marked: `VNil` stands at the vector's index.
 @[ checks ]
-def cleared() -> Cleared(Integer, Zero, VNil) {
+def cleared() -> Cleared(Integer, Zero, VNil) =
   Clear
-}

@@ -750,7 +750,7 @@ mod tests
             ),
             (
                 "deeper/mid.gandr",
-                "import \"../base.gandr\" ;\ndef two : Nat ;\ndef two = Succ(Succ(Zero)) ;\n",
+                "import \"../base.gandr\" ;\ndef two : Nat ;\ndef two = Succ (Succ Zero) ;\n",
             ),
             ("lone.gandr", "def four : Integer ;\ndef four = 4 ;\n"),
             ("package.gandr", ROOTED),

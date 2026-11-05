@@ -9,22 +9,20 @@ import "../../model/desc/freshness.gandr";
 /// an instance naming `a` would be captured. The description check refuses
 /// the rule as a capture, an ill-formed description.
 @[ refuses("IllFormedDescription") ]
-theory Captured where {
+theory Captured where
   sort Name : Atom;
   sort Proc : Type;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q));
-}
+  rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q));
 
 /// Garbage collection, `nu(bind a . q) <=> q`, with a condition on `b`, which
 /// no abstraction of the rule abstracts, beside the one the law needs. The
 /// description check refuses the condition as naming an unknown atom, an
 /// ill-formed description.
 @[ refuses("IllFormedDescription") ]
-theory Unknown where {
+theory Unknown where
   sort Name : Atom;
   sort Proc : Type;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule gc : nu(bind a. q) <=> q where { | a # q | b # q };
-}
+  rule gc : nu (bind a. q) <=> q where { | a # q | b # q };

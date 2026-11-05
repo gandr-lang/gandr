@@ -1,6 +1,6 @@
 /// `OpenedElsewhere`: an opening `let x at w` writing another world than the
 /// one its handle stands at.
-module Seat :> #{
+module Seat :> *{
   type Dispatch,
   mobile type Report,
   type Handoff,
@@ -34,7 +34,6 @@ world seat ;
 
 @[ refuses("OpenedElsewhere") ]
 @[ entry(operator) ]
-def openedHere(report : Seat.Report at seat) -> -F Seat.Report {
-  let written at operator = report;
+def openedHere(report : Seat.Report at seat) -> -F Seat.Report =
+  let written at operator = report
   pure written
-}

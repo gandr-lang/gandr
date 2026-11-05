@@ -1,28 +1,24 @@
 @[ refuses("SessionMismatch") ]
-def desk_receives_first() -> Unit {
+def desk_receives_first() -> Unit =
   let desk = fork (seat : ?String. end) { let task = recv(seat); close(seat) };
-  let task = recv(desk);
+  let task = recv(desk)
   close(desk)
-}
 
 @[ refuses("UnofferedLabel") ]
-def desk_selects_no_offered_label() -> Unit {
-  let desk = fork (seat : &{next : end}) { offer(seat) { next => close(seat) } };
-  select(desk, retire);
+def desk_selects_no_offered_label() -> Unit =
+  let desk = fork (seat : &{next : end}) { offer(seat) { | next => close(seat) } };
+  select(desk, retire)
   close(desk)
-}
 
 @[ refuses("OfferArms") ]
-def seat_arms_one_label_of_two() -> Unit {
-  let desk = fork (seat : &{next : end, retire : end}) { offer(seat) { next => close(seat) } };
-  select(desk, next);
+def seat_arms_one_label_of_two() -> Unit =
+  let desk = fork (seat : &{next : end, retire : end}) { offer(seat) { | next => close(seat) } };
+  select(desk, next)
   close(desk)
-}
 
 /// A drop is the end action, so an endpoint whose protocol still selects is
 /// not dropped: the desk drops where it offers.
 @[ refuses("SessionMismatch") ]
-def desk_drops_a_live_endpoint() -> Unit {
+def desk_drops_a_live_endpoint() -> Unit =
   let desk = fork (seat : +{done : end}) { select(seat, done); drop(seat) };
   drop(desk)
-}

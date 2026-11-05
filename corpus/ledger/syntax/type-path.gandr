@@ -1,7 +1,6 @@
 /// `type_path`: a type named through a module, applied when it is a family.
-module Counter where {
-  type Pair(a : Type) = #{a, a};
-}
+module Counter where
+  type Pair(a : Type) = *{a, a};
 @[ checks ]
 def twin : Counter.Pair(Integer) ;
-def twin = #{1, 2} ;
+def twin = *{1, 2} ;

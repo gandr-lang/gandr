@@ -882,7 +882,7 @@ pub enum Former<'source, Node>
         /// How many of them carry a payload.
         payloads: Arity,
     },
-    /// A causal web's modular decomposition, `series(event(left, 0), …)`:
+    /// A causal web's modular decomposition, `series (event left 0) …`:
     /// its pieces in preorder, each node followed by its factors.
     Web(&'source [gandr_core_term::session::WebPiece]),
     /// The value a computation returns, standing where a value is read: the
@@ -1017,8 +1017,8 @@ pub enum Former<'source, Node>
         /// The payload.
         payload: Node,
     },
-    /// A deep handler, `handle { c } with { pure(x) => r, oper op(p, k) => b,
-    /// … }`: the subject, the return clause under one binder, and the
+    /// A deep handler, `handle { c } with { | pure(x) => r | oper op(p, k) => b
+    /// | … }`: the subject, the return clause under one binder, and the
     /// operation clauses the source answers by [`Source::component`] and
     /// names by [`Source::label`], each under the payload's and the
     /// resumption's binders.
@@ -1358,6 +1358,10 @@ pub enum Notation
     /// then its tree as nested brackets. The source writes a pasting only
     /// as a chain or a level-two shape.
     Tree,
+    /// A code a call builds, read as the type it codes inside an expression,
+    /// written juxtaposed, `-F (Maybe a)`: the type grammar reads no
+    /// juxtaposed application until #5200.
+    TypeApplication,
 }
 
 /// A part of a node the presentation leaves out: the text stands for the

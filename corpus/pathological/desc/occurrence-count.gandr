@@ -11,5 +11,5 @@ data Hedge : Type where {
   | Node : (l : Hedge, r : Hedge) --> Hedge
   oper same : (s : Hedge, t : Hedge) --> Hedge;
   @[ refuses("RulesNonLinear") ]
-  rule : same(t, t) ==> Node(t, t);
+  rule : same t t ==> Node t t;
 }

@@ -1,8 +1,8 @@
 error[SessionCodeExpected]: a session identity relates two session types
   ╭▸ corpus/ledger/diagnostics/SessionCodeExpected.gandr:4:27
   │
-4 │ def notSession = Flow.sim(Integer, Integer) ;
-  │                  ┬────────┯━━━━━━──────────
+4 │ def notSession = Flow.sim Integer Integer ;
+  │                  ┬────────┯━━━━━━────────
   │                  │        │
   │                  │        not a session code
   │                  checked against `Flow[.A = Type](Integer, Integer)`; while relating the two protocols of this session statement

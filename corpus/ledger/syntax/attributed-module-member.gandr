@@ -1,4 +1,3 @@
 /// `attributed_module_member`: an attributed definition inside a module body.
-module Answers where {
+module Answers where
   @[ doc("The answer.") ] def answer = 42;
-}

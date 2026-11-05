@@ -14,60 +14,51 @@
 
 /// Three reflexivities composed unbiased are reflexivity.
 def composedAtHere(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](
-  compose[5, 7](chain(3), (Path.here(x), Path.here(x), Path.here(x))),
-  Path.here(x)
-) {
-  Path.here(Path.here(x))
-}
+  compose[5, 7] (chain 3) (Path.here x, Path.here x, Path.here x),
+  Path.here x
+) =
+  Path.here (Path.here x)
 
 /// The right nesting of three paths is their unbiased composite, so reflexivity relates the two.
 def nestedIsComposite(A : Type, x : A, y : A, z : A, w : A, f : Path[.A = A](x, y), g : Path(y, z), h : Path(z, w)) -> Path[.A = Path[.A = A](x, w)](
-  Path.step(f, Path.step(g, h)),
-  compose[5, 7](chain(3), (f, g, h))
-) {
-  Path.here(Path.step(f, Path.step(g, h)))
-}
+  Path.step f (Path.step g h),
+  compose[5, 7] (chain 3) (f, g, h)
+) =
+  Path.here (Path.step f (Path.step g h))
 
 /// The right whisker of `fa` by `g`: the transport along `fa` of the composite's first half.
-def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
-  Path.walk(fun (a) { type(Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(a, g))) }, fa, Path.here(Path.step(fm, g)))
-}
+def rightWhisker(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+  Path.walk (fun (a) { type(Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step a g)) }) fa (Path.here (Path.step fm g))
 
 /// The whisker `[2](1, 0)`: a 2-cell beside a 1-cell, composed at level two.
-def whiskered(A : Type, x : A, y : A, z : A, fm : Path(x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g)) {
-  compose[4, 9](chain(2, (1, 0)), (fa, g))
-}
+def whiskered(A : Type, x : A, y : A, z : A, fm : Path(x, y), fp : Path(x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+  compose[4, 9] (chain 2 (1, 0)) (fa, g)
 
 /// The level-two whisker is the right whisker, so reflexivity relates the two.
-def whiskeredIsRight(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(fm, g), Path.step(fp, g))](
-  whiskered(A, x, y, z, fm, fp, fa, g),
-  rightWhisker(A, x, y, z, fm, fp, fa, g)
-) {
-  Path.here(rightWhisker(A, x, y, z, fm, fp, fa, g))
-}
+def whiskeredIsRight(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path(y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  whiskered A x y z fm fp fa g,
+  rightWhisker A x y z fm fp fa g
+) =
+  Path.here (rightWhisker A x y z fm fp fa g)
 
 /// The whisker at reflexivities runs to reflexivity, so its composite with the inverse of a right whisker is reflexivity.
-def whiskeredThenBackAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here(x), Path.here(x))](
-  Path.step(whiskered(A, x, x, x, Path.here(x), Path.here(x), Path.here(Path.here(x)), Path.here(x)), Path.back(rightWhisker(A, x, x, x, Path.here(x), Path.here(x), Path.here(Path.here(x)), Path.here(x)))),
-  Path.here(Path.here(x))
-) {
-  Path.here(Path.here(Path.here(x)))
-}
+def whiskeredThenBackAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](
+  Path.step (whiskered A x x x (Path.here x) (Path.here x) (Path.here (Path.here x)) (Path.here x)) (Path.back (rightWhisker A x x x (Path.here x) (Path.here x) (Path.here (Path.here x)) (Path.here x))),
+  Path.here (Path.here x)
+) =
+  Path.here (Path.here (Path.here x))
 
 /// The horizontal composite `[2](1, 1)` of two 2-cells side by side.
-def horizontal(A : Type, x : A, y : A, z : A, f : Path(x, y), f2 : Path(x, y), g : Path(y, z), g2 : Path(y, z), a : Path[.A = Path[.A = A](x, y)](f, f2), b : Path[.A = Path[.A = A](y, z)](g, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step(f, g), Path.step(f2, g2)) {
-  compose[5, 11](chain(2, (1, 1)), (a, b))
-}
+def horizontal(A : Type, x : A, y : A, z : A, f : Path(x, y), f2 : Path(x, y), g : Path(y, z), g2 : Path(y, z), a : Path[.A = Path[.A = A](x, y)](f, f2), b : Path[.A = Path[.A = A](y, z)](g, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f2 g2) =
+  compose[5, 11] (chain 2 (1, 1)) (a, b)
 
 /// The left whisker of `ga` by `f`: the transport along `ga` of the composite's second half.
-def leftWhisker(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), gm : Path(y, z), gp : Path(y, z), ga : Path[.A = Path[.A = A](y, z)](gm, gp)) -> Path[.A = Path[.A = A](x, z)](Path.step(f, gm), Path.step(f, gp)) {
-  Path.walk(fun (a) { type(Path[.A = Path[.A = A](x, z)](Path.step(f, gm), Path.step(f, a))) }, ga, Path.here(Path.step(f, gm)))
-}
+def leftWhisker(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), gm : Path(y, z), gp : Path(y, z), ga : Path[.A = Path[.A = A](y, z)](gm, gp)) -> Path[.A = Path[.A = A](x, z)](Path.step f gm, Path.step f gp) =
+  Path.walk (fun (a) { type(Path[.A = Path[.A = A](x, z)](Path.step f gm, Path.step f a)) }) ga (Path.here (Path.step f gm))
 
 /// The horizontal composite is the right whisker of `a` then the left whisker of `b`, so reflexivity relates the two.
-def horizontalIsWhiskers(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), f2 : Path[.A = A](x, y), g : Path(y, z), g2 : Path(y, z), a : Path[.A = Path[.A = A](x, y)](f, f2), b : Path[.A = Path[.A = A](y, z)](g, g2)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step(f, g), Path.step(f2, g2))](
-  horizontal(A, x, y, z, f, f2, g, g2, a, b),
-  Path.step(rightWhisker(A, x, y, z, f, f2, a, g), leftWhisker(A, x, y, z, f2, g, g2, b))
-) {
-  Path.here(horizontal(A, x, y, z, f, f2, g, g2, a, b))
-}
+def horizontalIsWhiskers(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), f2 : Path[.A = A](x, y), g : Path(y, z), g2 : Path(y, z), a : Path[.A = Path[.A = A](x, y)](f, f2), b : Path[.A = Path[.A = A](y, z)](g, g2)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f2 g2)](
+  horizontal A x y z f f2 g g2 a b,
+  Path.step (rightWhisker A x y z f f2 a g) (leftWhisker A x y z f2 g g2 b)
+) =
+  Path.here (horizontal A x y z f f2 g g2 a b)

@@ -1,7 +1,5 @@
 /// `telescope_pattern`: a telescope pattern.
 @[ checks ]
-def nothing(t : #{}) -> -F Integer {
-  match t {
-    #{} => return 0
-  }
-}
+def nothing(t : *{}) -> -F Integer =
+  match t
+    | *{} => return 0

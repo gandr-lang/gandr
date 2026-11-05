@@ -1,11 +1,11 @@
 error[UncertifiedAllowance]: `ua` enumerates catalogues of bound 64 at most, the most vertices a shape holds
-   ╭▸ corpus/ledger/diagnostics/UncertifiedAllowance.gandr:28:12
+   ╭▸ corpus/ledger/diagnostics/UncertifiedAllowance.gandr:24:12
    │
-28 │   def wide = ua[
+24 │   def wide = ua[
    │ ┏━━━━━━━━━━━━┛
-29 │ ┃   1,
-30 │ ┃   65
-31 │ ┃ ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+25 │ ┃   1,
+26 │ ┃   65
+27 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep}) ;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a bound past the largest the site holds
    │
    ├ note: `wide` is refused with UncertifiedAllowance, as its expectation states

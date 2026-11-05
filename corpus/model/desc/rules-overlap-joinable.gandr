@@ -18,31 +18,30 @@ data NatUnits : Type where {
   | Zero : NatUnits
   | Succ : (n : NatUnits) --> NatUnits
   oper add : (m : NatUnits, n : NatUnits) --> NatUnits;
-  rule : add(Zero, n) <=> n;
-  rule : add(m, Zero) <=> m;
-  rule : add(Succ(m), n) <=> Succ(add(m, n));
+  rule : add Zero n <=> n;
+  rule : add m Zero <=> m;
+  rule : add (Succ m) n <=> Succ (add m n);
 }
 
 /// Zero plus zero, where the two unit rules overlap.
 @[ runs("Zero") ]
-def zero_plus_zero() -> NatUnits { add(Zero, Zero) }
+def zero_plus_zero() -> NatUnits { add Zero Zero }
 
 /// One plus zero, where the right unit overlaps the recursion.
-@[ runs("Succ(Zero)") ]
-def one_plus_zero() -> NatUnits { add(Succ(Zero), Zero) }
+@[ runs("Succ Zero") ]
+def one_plus_zero() -> NatUnits { add (Succ Zero) Zero }
 
 /// Two plus one, by the recursion alone.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
-def two_plus_one_overlapping() -> NatUnits { add(Succ(Succ(Zero)), Succ(Zero)) }
+@[ runs("Succ (Succ (Succ Zero))") ]
+def two_plus_one_overlapping() -> NatUnits { add (Succ (Succ Zero)) (Succ Zero) }
 
 /// A semigroup's one law: associativity overlaps itself at
 /// `mul(mul(mul(a, b), c), d)`, and both ways round reach `mul(a, mul(b,
 /// mul(c, d)))`. The rewrite at the peak matches the rule's `z` against a
 /// subterm holding the peak's own `z`, which stays the peak's.
-theory Semigroup where {
+theory Semigroup where
   sort S : Type;
 
   oper mul : (x : S, y : S) --> S;
 
-  rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
-}
+  rule assoc : mul (mul x y) z <=> mul x (mul y z);

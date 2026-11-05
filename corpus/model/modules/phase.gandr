@@ -12,13 +12,12 @@
 //! [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]: https://doi.org/10.1145/3474834 "Sterling and Harper, Logical relations as types: proof-relevant parametricity for program modules"
 
 /// A sign, closed data whose constructors are static.
-data Sign : Type where {
+data Sign : Type where
   | Plus : Sign
   | Minus : Sign
-}
 
 /// A point sealed by its signature: an abstract type and a value of it.
-module Point :> #{ type T, z : T } where {
+module Point :> *{ type T, z : T } where {
   type T = Integer;
   /// The point.
   @[ runs("0") ]
@@ -27,11 +26,11 @@ module Point :> #{ type T, z : T } where {
 
 /// A functor whose type member reads only its argument's type: its result's
 /// static part is a function of the argument's static part.
-module Square(S : #{ type T, z : T }) :> #{ type U, w : U } where {
+module Square(S : *{ type T, z : T }) :> *{ type U, w : U } where {
   type U = S.T * S.T;
   /// The argument's point, twice.
   @[ checks ]
-  def w = (S.z, S.z);
+  def w = *{S.z, S.z};
 }
 
 /// The functor applied to the point.
@@ -49,8 +48,8 @@ module Fixed where {
   type Positive = Path(Plus, Plus);
   /// The constant path at three.
   @[ checks ]
-  def three : Three = Path.here(3);
+  def three : Three = Path.here 3;
   /// The constant path at the plus sign.
   @[ checks ]
-  def positive : Positive = Path.here(Plus);
+  def positive : Positive = Path.here Plus;
 }

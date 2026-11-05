@@ -5,11 +5,10 @@
 ///
 /// - see: #4115
 @[ refuses("UnstatedComponent.Unbound") ]
-theory Loose where {
+theory Loose where
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
-  law loose : (a : Carrier) => Path[.A = Bool](alike(a, b), true);
-}
+  law loose : (a : Carrier) -> Path[.A = Bool](alike a b, true);
 
 @[ refuses("UnstatedComponent.Unbound") ]
 def model : Model(Loose) ;

@@ -12,14 +12,12 @@ import "./circle-base.gandr";
 /// one successor or predecessor of `b` onto `acc`. It respects `Int`'s rules:
 /// at `S(P(x))` it computes `count(P(S(acc)), x)`, which the second rule reads
 /// as `count(acc, x)`.
-def rec count(acc : Int, b : Int) -> Int {
-  match b {
-    Z => acc,
-    S(x) => count[<](S(acc), x),
-    P(x) => count[<](P(acc), x)
-  }
-}
+def rec count(acc : Int, b : Int) -> Int =
+  match b
+    | Z => acc
+    | S(x) => count[<] (S acc) x
+    | P(x) => count[<] (P acc) x
 
 /// One and two by the accumulator: three.
-@[ runs("S(S(S(Z)))") ]
-def accumulated : () => Int = count(S(Z), S(S(Z)));
+@[ runs("S (S (S Z))") ]
+def accumulated : () -> Int = count (S Z) (S (S Z));

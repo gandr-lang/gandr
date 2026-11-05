@@ -17,10 +17,9 @@ def congInAType(
   f1 : Path[.A = A](x, y),
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
-  F : Path[.A = A](x, y) => Path[.A = A](x, w)
-) -> Path[.A = Path[.A = Path[.A = A](x, w)](F(f1), F(f2))](Path.ap(F, a), Path.ap(F, a)) {
-  Path.here(Path.ap(F, a))
-}
+  F : Path[.A = A](x, y) -> Path[.A = A](x, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](F f1, F f2)](Path.ap F a, Path.ap F a) =
+  Path.here (Path.ap F a)
 
 /// A composite whose second operand is that action.
 def thenCongInAType(
@@ -31,14 +30,13 @@ def thenCongInAType(
   f1 : Path[.A = A](x, y),
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
-  F : Path[.A = A](x, y) => Path[.A = A](x, w),
-  b : Path[.A = Path[.A = A](x, w)](F(f1), F(f1))
-) -> Path[.A = Path[.A = Path[.A = A](x, w)](F(f1), F(f2))](
-  Path.step(b, Path.ap(F, a)),
-  Path.step(b, Path.ap(F, a))
-) {
-  Path.here(Path.step(b, Path.ap(F, a)))
-}
+  F : Path[.A = A](x, y) -> Path[.A = A](x, w),
+  b : Path[.A = Path[.A = A](x, w)](F f1, F f1)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](F f1, F f2)](
+  Path.step b (Path.ap F a),
+  Path.step b (Path.ap F a)
+) =
+  Path.here (Path.step b (Path.ap F a))
 
 /// The associator by based path induction on `h`.
 def inductiveAssociator(
@@ -50,21 +48,19 @@ def inductiveAssociator(
   f : Path[.A = A](x, y),
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w)
-) -> Path[.A = Path[.A = A](x, w)](Path.step(Path.step(f, g), h), Path.step(f, Path.step(g, h))) {
-  Path.walk(
-    (
+) -> Path[.A = Path[.A = A](x, w)](Path.step (Path.step f g) h, Path.step f (Path.step g h)) =
+  Path.walk
+    ((
       v : A,
       k : Path[.A = A](z, v)
-    ) => Path[.A = Path[.A = A](x, v)](
-      Path.step(Path.step(f, g), k),
-      Path.step(f, Path.step(g, k))
-    ),
-    h,
-    Path.here(z),
-    Path.here(h),
-    Path.here(Path.step(f, g))
-  )
-}
+    ) -> Path[.A = Path[.A = A](x, v)](
+      Path.step (Path.step f g) k,
+      Path.step f (Path.step g k)
+    ))
+    h
+    (Path.here z)
+    (Path.here h)
+    (Path.here (Path.step f g))
 
 /// Reflexivity before the associator, composed in the type itself.
 def hereThenAssocInAType(
@@ -77,11 +73,10 @@ def hereThenAssocInAType(
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w)
 ) -> Path[.A = Path[.A = Path[.A = A](x, w)](
-  Path.step(Path.step(f, g), h),
-  Path.step(f, Path.step(g, h))
+  Path.step (Path.step f g) h,
+  Path.step f (Path.step g h)
 )](
-  Path.step(Path.here(Path.step(Path.step(f, g), h)), inductiveAssociator(A, x, y, z, w, f, g, h)),
-  inductiveAssociator(A, x, y, z, w, f, g, h)
-) {
-  Path.here(inductiveAssociator(A, x, y, z, w, f, g, h))
-}
+  Path.step (Path.here (Path.step (Path.step f g) h)) (inductiveAssociator A x y z w f g h),
+  inductiveAssociator A x y z w f g h
+) =
+  Path.here (inductiveAssociator A x y z w f g h)

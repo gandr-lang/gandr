@@ -20,7 +20,7 @@
 /// `appCompose` reads a composite, `composeAssoc` orients composition, and
 /// `mapMap` is the law, mapping twice fused into mapping once.
 @[ normalizes("map(inc, map(dbl, cons(one, nil))) ~> cons(app(inc, app(dbl, one)), nil)") ]
-theory ListMap where {
+theory ListMap where
   sort E : Type;
   sort F : Type;
   sort L : Type;
@@ -34,9 +34,8 @@ theory ListMap where {
   oper dbl : F;
   oper one : E;
 
-  rule mapNil : map(f, nil()) <=> nil();
-  rule mapCons : map(f, cons(x, xs)) <=> cons(app(f, x), map(f, xs));
-  rule appCompose : app(compose(f, g), x) <=> app(f, app(g, x));
-  rule composeAssoc : compose(compose(f, g), h) <=> compose(f, compose(g, h));
-  rule mapMap : map(f, map(g, xs)) <=> map(compose(f, g), xs);
-}
+  rule mapNil : map f (nil ()) <=> nil ();
+  rule mapCons : map f (cons x xs) <=> cons (app f x) (map f xs);
+  rule appCompose : app (compose f g) x <=> app f (app g x);
+  rule composeAssoc : compose (compose f g) h <=> compose f (compose g h);
+  rule mapMap : map f (map g xs) <=> map (compose f g) xs;

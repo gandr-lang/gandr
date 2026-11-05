@@ -1,19 +1,17 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/effects/tree-rows.gandr:13:8
+   ╭▸ corpus/pathological/effects/tree-rows.gandr:12:64
    │
-12 │   def leaking : Prog(Either(StateOp, Void), Integer) = Op(
-   │ ┌───────────────────────────┬──────────────────────────┘
+12 │   def leaking : Prog(Either(StateOp, Void), Integer) = Op (Left (Raise 4)) (fun (_r) {
+   │                             ┬──────                    │   ┬─────┯━━━━━━─
+   │                             │                          │   │     │
+   │                             │                          │   │     its type does not convert: expected `StateOp`, found `ExnOp`
+   │                             │                          │   │     the type it synthesises
+   │ ┌───────────────────────────│──────────────────────────┘   checked against `Either(StateOp, Void)`; while finishing the type of this
    │ │                           │
    │ │                           the type it is checked against
-13 │ │   Left(Raise(4)),
-   │ │   ┬────┯━━━━━━━─
-   │ │   │    │
-   │ │   │    its type does not convert: expected `StateOp`, found `ExnOp`
-   │ │   │    the type it synthesises
-   │ │   checked against `Either(StateOp, Void)`; while finishing the type of this
-14 │ │   fun (_r) { (Done(0) : Prog(Either(StateOp, Void), Integer)) }
-15 │ │ );
-   │ └─┘ checked against `Prog(Either(StateOp, Void), Integer)`; while checking the next premise of this
+13 │ │   (Done 0 : Prog(Either(StateOp, Void), Integer))
+14 │ │ });
+   │ └──┘ checked against `Prog(Either(StateOp, Void), Integer)`; while checking the next premise of this
    │
    ├ note: `leaking` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

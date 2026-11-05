@@ -33,14 +33,14 @@ use crate::unit::Unit;
 /// The theory the flagship model signature is derived from.
 const CAT_SHAPE: &str = r"theory CatShape where {
   sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
 
   oper id : (a : Ob) --> Hom(a, a);
   oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
 
-  rule unitL : comp(id(a), f) ==> f;
-  rule unitR : comp(f, id(b)) ==> f;
-  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
+  rule unitL : comp (id a) f ==> f;
+  rule unitR : comp f (id b) ==> f;
+  rule assoc : comp (comp f g) h ==> comp f (comp g h);
 }";
 
 /// The presentation of the one theory `source` declares.
@@ -320,7 +320,7 @@ fn a_computation_sort_derives_a_family_into_computation_types()
 fn a_stated_law_binds_its_written_variables_2356()
 {
     let model = derived(
-        "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path[.A = Bool](same(a, a), true);\n  law sym : (a : Carrier, b : Carrier) => Path[.A = Bool](same(a, b), same(b, a));\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same(a, b), true), q : Path[.A = Bool](same(b, c), true)) => Path[.A = Bool](same(a, c), true);\n  law loose : (a : Carrier) => Path[.A = Bool](same(a, b), true);\n  law odd : (a : Carrier) => Path[.A = Carrier](a, true);\n}",
+        "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool](same a b, same b a);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same a b, true), q : Path[.A = Bool](same b c, true)) -> Path[.A = Bool](same a c, true);\n  law loose : (a : Carrier) -> Path[.A = Bool](same a b, true);\n  law odd : (a : Carrier) -> Path[.A = Carrier](a, true);\n}",
     );
     let names: Vec<&str> = model
         .components
@@ -359,7 +359,7 @@ fn a_constant_derives_its_type_alone()
     let model = derived(
         r"theory Pointed where {
   sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
   oper zero : Ob;
   oper one : () --> Ob;
   oper base : Integer;
@@ -430,17 +430,17 @@ fn an_underivable_component_keeps_its_fault()
     let model = derived(
         r"theory Faulty where {
   sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
   sort Tm : Type+;
   sort Name : Atom;
   oper id : (a : Ob) --> Hom(a, a);
   oper split : (a : Ob) --> (l : Ob, r : Ob);
   oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
   oper nu : (p : bind (c : Name) . Ob) --> Ob;
-  rule twice : id(id(a)) ==> id(a);
-  rule same : lam(bind x . t(x)) ==> lam(bind y . t(y));
+  rule twice : id (id a) ==> id a;
+  rule same : lam (bind x . (t x)) ==> lam (bind y . (t y));
   rule loose : x ==> x;
-  rule halves : split(a) ==> split(a);
+  rule halves : split a ==> split a;
   rule wired : (data x : Ob) ==> (o : Hom(x, x)) {
     node w : id(x) --> (o);
   };
@@ -584,16 +584,16 @@ fn a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted()
         r"theory Mixed where {
   sort Ob : Type;
   sort Pt : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
   oper flip : (x : Ob) --> (y : Pt);
   oper succ : (x : Ob) --> (y : Ob);
   oper pred : (x : Ob) --> (y : Ob);
   oper diag : (f : Hom(c, d)) --> Hom(d, d);
   oper down : (x : Ob) --> Hom(x, pred(x));
   oper back : (f : Hom(a, succ(a))) --> (z : Ob);
-  rule mixed : flip(flip(x)) ==> flip(x);
-  rule cyc : back(diag(h)) ==> back(diag(h));
-  rule skew : back(down(o)) ==> o;
+  rule mixed : flip (flip x) ==> flip x;
+  rule cyc : back (diag h) ==> back (diag h);
+  rule skew : back (down o) ==> o;
 }",
     );
 
@@ -620,10 +620,10 @@ fn a_result_sort_indexed_by_an_operation_instantiates_at_each_use()
     let model = derived(
         r"theory Stepped where {
   sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
   oper next : (a : Ob) --> Ob;
   oper step : (a : Ob) --> Hom(a, next(a));
-  rule again : step(a) ==> step(a);
+  rule again : step a ==> step a;
 }",
     );
     assert_eq!(
@@ -640,14 +640,14 @@ fn an_implicit_object_past_the_last_free_letter_is_numbered()
     let morphisms: Vec<String> = ('n' ..= 'z').map(String::from).collect();
     let mut left = morphisms.first().cloned().unwrap_or_default();
     for morphism in morphisms.iter().skip(1) {
-        left = format!("comp({left}, {morphism})");
+        left = format!("comp ({left}) {morphism}");
     }
     let mut right = morphisms.last().cloned().unwrap_or_default();
     for morphism in morphisms.iter().rev().skip(1) {
-        right = format!("comp({morphism}, {right})");
+        right = format!("comp {morphism} ({right})");
     }
     let model = derived(format!(
-        "theory Long where {{\n  sort Ob : Type;\n  sort Hom(dom: Ob, cod: Ob) : Type;\n  oper comp : (f : \
+        "theory Long where {{\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper comp : (f : \
          Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule chain : {left} ==> {right};\n}}"
     ).as_str());
     let law = spelled(&model, "chain");

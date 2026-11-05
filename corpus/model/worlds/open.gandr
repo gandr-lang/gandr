@@ -26,67 +26,57 @@
 import "./seat-and-operator.gandr";
 
 /// A point the seat measures, two integers.
-data Point : Type where {
+data Point : Type where
   /// The point at `x` and `y`.
   | At : (x : Integer, y : Integer) --> Point
-}
 
 /// A record of integers comes back from the seat.
-@[ entry((operator, seat)), runs("#{.done = 3, .left = 4}") ]
-def counts() -> #{done : Integer, left : Integer} {
-  migrate [seat] { pure #{done = 3, left = 4} }
-}
+@[ entry(*{operator, seat}), runs("*{.done = 3, .left = 4}") ]
+def counts() -> *{done : Integer, left : Integer} =
+  migrate [seat] { pure *{done = 3, left = 4} }
 
 /// A field of that record reads at the operator as it reads in place.
-@[ entry((operator, seat)), runs("3") ]
-def projectedDone() -> Integer {
-  let r : #{done : Integer, left : Integer} = migrate [seat] { pure #{done = 3, left = 4} };
+@[ entry(*{operator, seat}), runs("3") ]
+def projectedDone() -> Integer =
+  let r : *{done : Integer, left : Integer} = migrate [seat] { pure *{done = 3, left = 4} };
   r.done
-}
 
 /// A field of a record nested in the answer reads the same way.
-@[ entry((operator, seat)), runs("3") ]
-def projectedInner() -> Integer {
-  let r : #{inner : #{done : Integer}} = migrate [seat] { pure #{inner = #{done = 3}} };
+@[ entry(*{operator, seat}), runs("3") ]
+def projectedInner() -> Integer =
+  let r : *{inner : *{done : Integer}} = migrate [seat] { pure *{inner = *{done = 3}} };
   r.inner.done
-}
 
 /// A datatype of integers comes back, field by field open.
-@[ entry((operator, seat)), runs("At(1, 2)") ]
-def measured() -> Point {
-  migrate [seat] { pure At(1, 2) }
-}
+@[ entry(*{operator, seat}), runs("At 1 2") ]
+def measured() -> Point =
+  migrate [seat] { pure At 1 2 }
 
 /// A handle to a record of integers comes back as its content.
-@[ entry((operator, seat)), runs("#{.done = 3, .left = 4}") ]
-def heldCounts() -> -F (#{done : Integer, left : Integer} at seat) {
-  migrate [seat] { (hold #{done = 3, left = 4}) }
-}
+@[ entry(*{operator, seat}), runs("*{.done = 3, .left = 4}") ]
+def heldCounts() -> -F (*{done : Integer, left : Integer} at seat) =
+  migrate [seat] { (hold *{done = 3, left = 4}) }
 
 /// A handle to a closed thunk comes back: it captures nothing.
-@[ entry((operator, seat)), runs("thunk { 3 }") ]
-def heldThunk() -> -F ((() => Integer) at seat) {
+@[ entry(*{operator, seat}), runs("thunk { 3 }") ]
+def heldThunk() -> -F ((() -> Integer) at seat) =
   migrate [seat] { (hold thunk { pure 3 }) }
-}
 
 /// A handle to a record holding a closed thunk comes back, each field open.
-@[ entry((operator, seat)), runs("#{.done = 3, .later = thunk { 4 }}") ]
-def heldRecord() -> -F (#{done : Integer, later : () => Integer} at seat) {
-  migrate [seat] { (hold #{done = 3, later = thunk { pure 4 }}) }
-}
+@[ entry(*{operator, seat}), runs("*{.done = 3, .later = thunk { 4 }}") ]
+def heldRecord() -> -F (*{done : Integer, later : () -> Integer} at seat) =
+  migrate [seat] { (hold *{done = 3, later = thunk { pure 4 }}) }
 
 /// The same record without a handle comes back, each field mobile.
-@[ entry((operator, seat)), runs("#{.done = 3, .later = thunk { 4 }}") ]
-def bareRecord() -> #{done : Integer, later : () => Integer} {
-  migrate [seat] { pure #{done = 3, later = thunk { pure 4 }} }
-}
+@[ entry(*{operator, seat}), runs("*{.done = 3, .later = thunk { 4 }}") ]
+def bareRecord() -> *{done : Integer, later : () -> Integer} =
+  migrate [seat] { pure *{done = 3, later = thunk { pure 4 }} }
 
 /// Its thunk, read from the record and forced at the operator, runs there.
-@[ entry((operator, seat)), runs("4") ]
-def forcedLater() -> Integer {
-  let r : #{done : Integer, later : () => Integer} = migrate [seat] {
-    pure #{done = 3, later = thunk { pure 4 }}
+@[ entry(*{operator, seat}), runs("4") ]
+def forcedLater() -> Integer =
+  let r : *{done : Integer, later : () -> Integer} = migrate [seat] {
+    pure *{done = 3, later = thunk { pure 4 }}
   };
-  let later : () => Integer = run r.later;
+  let later : () -> Integer = run r.later
   force later
-}

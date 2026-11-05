@@ -7,12 +7,10 @@
 //! [Pierce-2002-types_and_programming_languages]: https://www.cis.upenn.edu/~bcpierce/tapl/ "Pierce, Types and Programming Languages"
 
 /// Forty-two, read off the one arm a unit takes.
-def answer(u : Unit) -> Integer {
-  match u {
-    unit => 42
-  }
-}
+def answer(u : Unit) -> Integer =
+  match u
+    | *{} => 42
 
 /// The unit takes its arm.
 @[ runs("42") ]
-def answerOfUnit() -> Integer { answer(unit) }
+def answerOfUnit() -> Integer { answer *{} }

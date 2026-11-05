@@ -8,7 +8,6 @@ module Sized where {
 }
 
 @[ refuses("ViewOfNoPlace") ]
-def sized() -> -F Integer {
-  var n = 3;
-  n.size() as w { pure w }
-}
+def sized() -> -F Integer =
+  var n = 3
+  (n.size ()) as w { pure w }

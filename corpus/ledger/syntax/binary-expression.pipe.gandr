@@ -1,15 +1,12 @@
 /// `binary_expression.pipe`: a call's outputs plug into a function's inputs, in order.
 @[ checks ]
-def swap(m : Integer, n : Integer) -> (q : Integer, r : Integer) {
+def swap(m : Integer, n : Integer) -> (q : Integer, r : Integer) =
   (n, m)
-}
 
 @[ checks ]
-def sum(q : Integer, r : Integer) -> Integer {
+def sum(q : Integer, r : Integer) -> Integer =
   q + r
-}
 
 @[ checks ]
-def plugged(n : Integer) -> Integer {
-  swap(n, 2) |> sum
-}
+def plugged(n : Integer) -> Integer =
+  swap n 2 |> sum

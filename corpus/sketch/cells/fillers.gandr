@@ -18,17 +18,17 @@ import std.math.category.Pasting;
 /// composing vertically then horizontally, over the one context of the four
 /// cells.
 def interchange[A : Type, x y z : A, f g h : Path(x, y), k l m : Path(y, z)](
-  α : f => g,
-  α' : g => h,
-  β : k => l,
-  β' : l => m
-) : #fuse{ #fuse{ α α' } #fuse{ β β' } } => #fuse{ #fuse{ α β } #fuse{ α' β' } } =
-  #fill{ α α' β β' : #fuse{ #fuse{ α α' } #fuse{ β β' } } => #fuse{ #fuse{ α β } #fuse{ α' β' } } }
+  α : f -> g,
+  α' : g -> h,
+  β : k -> l,
+  β' : l -> m
+) : #fuse{ #fuse{ α α' } #fuse{ β β' } } -> #fuse{ #fuse{ α β } #fuse{ α' β' } } =
+  #fill{ α α' β β' : #fuse{ #fuse{ α α' } #fuse{ β β' } } -> #fuse{ #fuse{ α β } #fuse{ α' β' } } }
 
 /// The associator's naturality in its first cell, stated by its cells alone:
 /// the canonical coherence over `fa`, `g` and `h`.
 def natassoc[A : Type, x y z w : A, fm fp : Path(x, y)](
-  fa : fm => fp,
+  fa : fm -> fp,
   g : Path(y, z),
   h : Path(z, w)
 ) = #fill{ fa g h }
@@ -39,16 +39,16 @@ def cylinderFill3[
   A : Type,
   x y z : A,
   fm fp pm pp : Path(x, y),
-  am : fm => pm,
-  ap : fp => pp,
+  am : fm -> pm,
+  ap : fp -> pp,
   gm gp qm qp : Path(y, z),
-  km : gm => qm,
-  kp : gp => qp
+  km : gm -> qm,
+  kp : gp -> qp
 ](
-  fa : fm => fp,
-  pa : pm => pp,
-  aa : #fuse{ am pa } => #fuse{ fa ap },
-  ga : gm => gp,
-  qa : qm => qp,
-  ka : #fuse{ km qa } => #fuse{ ga kp }
+  fa : fm -> fp,
+  pa : pm -> pp,
+  aa : #fuse{ am pa } -> #fuse{ fa ap },
+  ga : gm -> gp,
+  qa : qm -> qp,
+  ka : #fuse{ km qa } -> #fuse{ ga kp }
 ) = #fill{ fa pa aa ga qa ka }

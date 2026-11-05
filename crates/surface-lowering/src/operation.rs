@@ -40,8 +40,8 @@
 //! alternative, a refusal at every call, is reversible later; an operation
 //! that never runs refuses nothing today.
 //!
-//! **A law is no arm.** A rule whose left side holds a call, `add(add(m, n), k)
-//! ==> add(m, add(n, k))`, matches no input the tree sees, since a call's
+//! **A law is no arm.** A rule whose left side holds a call, `add (add m n) k
+//! ==> add m (add n k)`, matches no input the tree sees, since a call's
 //! inputs are constructor terms. The tree takes the other rules, and the law
 //! crosses to the kernel with them, which admits the operation only when the
 //! whole system converges. Then every closed call reaches the constructor term

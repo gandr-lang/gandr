@@ -4,10 +4,9 @@
 // - see: #1081 — `flip`
 
 /// A signature with one sort and one operation over it.
-theory Toggle where {
+theory Toggle where
   sort T : Type;
   oper flip : (t : T) --> T;
-}
 
 /// A model of `Toggle` whose one operation names nothing declared.
 module Bits : Model(Toggle) where {

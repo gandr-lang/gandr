@@ -2429,6 +2429,7 @@ INSERT INTO purpose VALUES('surface-grammar','spelling::UNRESTRICTED','constant'
 INSERT INTO purpose VALUES('surface-grammar','spelling::Unspelled','struct','Names why a word is no spelling''s name, so a reader of a setting refuses it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::aliased','function','Names the glyph tile an ASCII token stands for, so the labeler molds the token as the glyph''s tile.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::spelled','function','Names the glyph tile and its ASCII spelling for a tile, so a printer writes the spelling a reader asks for.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-grammar','surface::APPLICATION','constant','Names the label of juxtaposition''s tile, which no lexeme spells, so the melder pushes it and the lowering reads a call.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','surface::PBG_ONLY_KINDS','constant','Names the named kinds only this grammar has, disjoint from the tree-sitter kinds, so the parity inventory never enumerates them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','surface::TREE_SITTER_NAMED_KINDS','constant','Names the named node kinds of the surface''s tree-sitter grammar, so the parity inventory is checked against them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','surface::built_in','function','Builds the built-in surface grammar, so a parser and a highlighter read the gandr surface.',NULL,'fits','sound',NULL);
@@ -2629,10 +2630,13 @@ INSERT INTO purpose VALUES('surface-lowering','error::MatchFault','enum','Names 
 INSERT INTO purpose VALUES('surface-lowering','error::TelescopeFault','enum','Names a telescope''s fault, so the refusal names the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::Unexported','enum','Names why an imported name is not exported, so a private name and an undefined one are refused apart.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::refusal_span::Absent','enum','Names why a refusal''s span is absent, so the refusal names no span.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::Boxed','struct','Names whether an arrow is written as a box, so a box lowers as the thunk of its arrow.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Ending','enum','Names a form''s ending, so the form''s ending is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::FormName','struct','Names the name a diagnostic writes a form as, so a form''s name is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Former','enum','Names the former a form''s kind is read as, so the form''s kind is dispatched.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Offer','enum','Names a form''s offer, so the form''s offer is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::Piece','enum','Names one piece of a form, a tile or an operand, so a form''s pieces are read in written order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::Pieces','struct','Holds a form''s pieces in written order, so a reader walks them once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Placed','struct','Holds a form''s placement, so the form''s placement is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Repair','enum','Names a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Repaired','struct','Holds a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
@@ -2641,6 +2645,8 @@ INSERT INTO purpose VALUES('surface-lowering','form::TileName','struct','Names t
 INSERT INTO purpose VALUES('surface-lowering','form::former::Absent','enum','Names why a form''s kind is read as no former, so the form''s kind is unadmitted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::former_of','function','Names the former a form''s kind is read as, so the form''s kind is dispatched.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::nested::Absent','enum','Names why a form''s kind is read as no nested form, so the form''s kind is unadmitted.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::repair::Absent','enum','Names why a form carries no repair, so an unrepaired form lowers as written.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::writes_box','function','Names whether an arrow is written as a box, so a box lowers as the thunk of its arrow.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::written_children','function','Yields a node''s children with a shared block''s children in its place, so a reader sees its host''s braces as written.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ImportBinding','enum','Names an import''s binding, so the import''s binding is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','import::ImportDeclaration','struct','Holds an import declaration, so the import''s target is resolved.',NULL,'fits','sound',NULL);

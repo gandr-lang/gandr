@@ -1,11 +1,10 @@
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   /// One more.
   | Succ : (
     /// The predecessor.
     n : Nat
   ) --> Nat
-}
 /// Addition.
 def plus(
   /// The first summand.

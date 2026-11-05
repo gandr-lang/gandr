@@ -118,8 +118,8 @@ fn operations_and_rules_preserve_their_boundaries()
         | Zero : Nat
         | Succ : (Nat) --> Nat
         oper add : (m : Nat, n : Nat) --> Nat;
-        rule : add(Zero, n) ==> n;
-        rule : add(Succ(m), n) ==> Succ(add(m, n));
+        rule : add Zero n ==> n;
+        rule : add (Succ m) n ==> Succ (add m n);
     }"#
         .into(),
     );
@@ -425,7 +425,7 @@ fn operation_and_rule_members_elaborate_with_arities_and_faces()
     let report = elaborated(SourceText::from(
         r#"
     data NatOp : Type where { | Zero : NatOp | Succ : (n : NatOp) --> NatOp oper add : (m : NatOp, n : NatOp) --> NatOp; }
-    data NatRule : Type where { | Zero : NatRule | Succ : (n : NatRule) --> NatRule rule : id(Zero) ==> Zero; }
+    data NatRule : Type where { | Zero : NatRule | Succ : (n : NatRule) --> NatRule rule : id Zero ==> Zero; }
     data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); }
         "#,
     ));
@@ -481,7 +481,7 @@ fn a_parenthesized_result_list_reads_as_a_results_tuple()
 {
     use gandr_theory_levitation::FreeTerm;
     let report = elaborated(SourceText::from(
-        "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod(m, Zero) ==> (Zero, m); rule : divmod(Zero, n) ==> (divmod(n, (n))); }",
+        "data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); rule : divmod m Zero ==> (Zero, m); rule : divmod Zero n ==> (divmod n (n)); }",
     ));
     assert_eq!(report.diagnostics, []);
     let [ref delivered, ref grouped] = *report.declarations[0].description.rules
@@ -504,11 +504,11 @@ fn a_parenthesized_result_list_reads_as_a_results_tuple()
 fn the_ruled_face_arrow_elaborates_and_the_retired_one_declines_with_its_respelling()
 {
     let ruled = elaborated(SourceText::from(
-        "data NatFace : Type where { | Zero : NatFace oper id : (x : NatFace) --> NatFace; rule : id(Zero) ==> Zero; }",
+        "data NatFace : Type where { | Zero : NatFace oper id : (x : NatFace) --> NatFace; rule : id Zero ==> Zero; }",
     ));
     assert_eq!(ruled.diagnostics, []);
     assert_eq!(ruled.declarations[0].description.rules.len(), 1);
-    let source = "data NatFace : Type where { | Zero : NatFace oper id : (x : NatFace) --> NatFace; rule : id(Zero) ~> Zero; }";
+    let source = "data NatFace : Type where { | Zero : NatFace oper id : (x : NatFace) --> NatFace; rule : id Zero ~> Zero; }";
     let retired = elaborated(SourceText::from(source));
     assert!(retired.declarations[0].description.rules.is_empty());
     let [ref diagnostic] = *retired.diagnostics.as_slice()
@@ -526,7 +526,7 @@ fn the_ruled_face_arrow_elaborates_and_the_retired_one_declines_with_its_respell
 fn an_equation_states_no_direction()
 {
     let report = elaborated(SourceText::from(
-        "data NatEq : Type where { | Zero : NatEq oper id : (x : NatEq) --> NatEq; rule : id(Zero) <=> Zero; }",
+        "data NatEq : Type where { | Zero : NatEq oper id : (x : NatEq) --> NatEq; rule : id Zero <=> Zero; }",
     ));
     assert_eq!(report.diagnostics, []);
     let rules: Vec<_> = report.declarations[0].rules().collect();
@@ -588,11 +588,6 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
 {
     for (source, what, result) in [
         (
-            "data Cell(a : Type) : Type where { | Mk : (get : a -> a) --> Cell(a) }",
-            "a function field",
-            "Cell(a)",
-        ),
-        (
             "data Box : Type where { | Put : (a : Type) --> Box }",
             "a universe field",
             "Box",
@@ -624,8 +619,9 @@ fn a_family_its_code_cannot_carry_is_left_to_the_native_reading()
             "{what}: the result is kept past the field the code cannot carry"
         );
     }
-    // An operation the description must carry keeps the field's refusal.
-    let source = "data Cell : Type where { | Mk : (get : Integer -> Integer) --> Cell oper reset : (c : Cell) --> Cell; }";
+    // An operation the description must carry keeps the refusal of a field
+    // holding a box below its whole type.
+    let source = "data Cell : Type where { | Mk : (get : List(Integer -> Integer)) --> Cell oper reset : (c : Cell) --> Cell; }";
     let report = elaborated(SourceText::from(source));
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -677,13 +673,43 @@ fn a_multi_output_constructor_describes_one_constructor_per_port()
     );
 }
 
+/// #4853: a rule names a port through parentheses, `(Split t).l`, as it names
+/// it with the constructor's argument glued, `(Split(t)).l`.
+#[test]
+fn a_rule_names_a_port_through_parentheses_4853()
+{
+    let rules = |side: &str| {
+        let source = alloc::format!(
+            "data Tree : Type where {{ | Leaf : (n : Integer) --> Tree | Split : (t : Tree) --> (l : \
+             Tree, r : Tree) oper prune : (t : Tree) --> Tree; rule : prune ({side}) ==> prune t; }}"
+        );
+        let report = elaborated(SourceText::from(source.as_str()));
+        assert_eq!(report.diagnostics, [], "`{side}` reads as a port");
+        let [ref entry] = *report.declarations.as_slice()
+        else {
+            panic!("one description")
+        };
+        entry
+            .description
+            .rules
+            .iter()
+            .map(|face| (face.lhs.clone(), face.rhs.clone()))
+            .collect::<alloc::vec::Vec<_>>()
+    };
+    assert_eq!(
+        rules("(Split t).l"),
+        rules("(Split(t)).l"),
+        "a port written with its argument juxtaposed is the port written glued"
+    );
+}
+
 #[test]
 fn a_value_function_field_is_the_function_former()
 {
-    let source = "data Prog : Type where { | Done : (x : Integer) --> Prog | Get : (k : Integer => Prog) --> Prog | \
-                  Both : (k : (Integer, String) => Prog) --> Prog | Twice : (k : Integer => Integer => Prog) --> Prog \
-                  | Pure : (f : Integer => Integer) --> Prog | Put : (s : Integer, k : Prog) --> Prog rule : Put(s, \
-                  Put(u, k)) <=> Put(u, k); }";
+    let source = "data Prog : Type where { | Done : (x : Integer) --> Prog | Get : (k : Integer -> Prog) --> Prog | \
+                  Both : (k : (Integer, String) -> Prog) --> Prog | Twice : (k : Integer -> (Integer -> Prog)) --> Prog \
+                  | Pure : (f : Integer -> Integer) --> Prog | Put : (s : Integer, k : Prog) --> Prog rule : Put s \
+                  (Put u k) <=> Put u k; }";
     let report = elaborated(SourceText::from(source));
     assert_eq!(report.diagnostics, [], "every field is carried");
     assert!(
@@ -737,6 +763,24 @@ fn a_value_function_field_is_the_function_former()
         1,
         "and the family keeps its rule"
     );
+    // The thin arrow writes the same box, so the fields read as the same codes.
+    let thin = "data Prog : Type where { | Done : (x : Integer) --> Prog | Get : (k : Integer -> Prog) --> Prog | \
+                Both : (k : (Integer, String) -> Prog) --> Prog | Twice : (k : Integer -> (Integer -> Prog)) --> \
+                Prog | Pure : (f : Integer -> Integer) --> Prog | Put : (s : Integer, k : Prog) --> Prog rule : \
+                Put s (Put u k) <=> Put u k; }";
+    let thin = elaborated(SourceText::from(thin));
+    assert_eq!(thin.diagnostics, []);
+    let [ref read] = *thin.declarations.as_slice()
+    else {
+        panic!("one description")
+    };
+    let read: Vec<_> = read
+        .description
+        .ctors
+        .iter()
+        .map(|ctor| &ctor.code)
+        .collect();
+    assert_eq!(read, codes);
 }
 
 /// #3194: the formatter spells `Ā => B` explicitly as the thunked arrow
@@ -746,19 +790,19 @@ fn a_value_function_field_is_the_function_former()
 fn the_thunked_arrow_is_the_function_former_it_spells_3194()
 {
     let fields = [
-        ("One", "Integer => Prog", "+U (Integer -> -F Prog)"),
+        ("One", "Integer -> Prog", "+U (Integer -> -F Prog)"),
         (
             "Two",
-            "(Integer, String) => Prog",
+            "(Integer, String) -> Prog",
             "+U (Integer -> String -> -F Prog)",
         ),
         (
             "Nested",
-            "Integer => Integer => Prog",
+            "Integer -> (Integer -> Prog)",
             "+U (Integer -> -F (+U (Integer -> -F Prog)))",
         ),
-        ("Thunk", "() => Prog", "+U (-F Prog)"),
-        ("Pure", "Integer => Integer", "+U (Integer -> -F Integer)"),
+        ("Thunk", "() -> Prog", "+U (-F Prog)"),
+        ("Pure", "Integer -> Integer", "+U (Integer -> -F Integer)"),
     ];
     let source = |thunked: bool| {
         let mut written = String::from("data Prog : Type where { | Done : (x : Integer) --> Prog ");
@@ -774,7 +818,7 @@ fn the_thunked_arrow_is_the_function_former_it_spells_3194()
             }
         }
         written.push_str(
-            "| Put : (s : Integer, k : Prog) --> Prog rule : Put(s, Put(u, k)) <=> Put(u, k); }",
+            "| Put : (s : Integer, k : Prog) --> Prog rule : Put s (Put u k) <=> Put u k; }",
         );
         written
     };
@@ -1081,7 +1125,7 @@ fn member_refusals_keep_their_spans_and_other_declarations()
     use crate::namespace::Recognition;
     let grammar = grammar();
     let source =
-        "data Flag : Type where { | Off : Flag rule : bad(x) ~> x; | On : Flag } def later = 7;";
+        "data Flag : Type where { | Off : Flag rule : bad x ~> x; | On : Flag } def later = 7;";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1134,8 +1178,8 @@ fn a_held_member_states_its_own_expectation_1462()
     use crate::namespace::Recognition;
     let grammar = grammar();
     let source = "@[ checks ] data Sub : Type where { | Zero : Sub oper minus : (m : Sub, n : Sub) --> Sub; \
-                  @[ refuses(\"RulesNonLinear\") ] rule : minus(x, x) ==> Zero; oper same : (m : Sub, \
-                  n : Sub) --> Sub; rule : same(y, y) ==> Zero; }";
+                  @[ refuses(\"RulesNonLinear\") ] rule : minus x x ==> Zero; oper same : (m : Sub, \
+                  n : Sub) --> Sub; rule : same y y ==> Zero; }";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1224,7 +1268,7 @@ fn an_unended_family_is_refused_once_at_its_close()
     let grammar = grammar();
     for (source, why) in [
         (
-            "data Bit : Type where {\n  | Zero : Bit\n  | One : Bit\n  rule : and(x, x) ==> x;\n",
+            "data Bit : Type where {\n  | Zero : Bit\n  | One : Bit\n  rule : and x x ==> x;\n",
             "a data family whose last member the cell gate refuses",
         ),
         (
@@ -1669,7 +1713,7 @@ fn a_mutual_block_with_one_data_family_reads_no_group_5018()
             | Succ : (n : Nat) --> Nat
         }
         def rec twice(n : Nat) -> Nat {
-            match n { Zero => Zero, Succ(m) => Succ(Succ(twice[<](m))) }
+            match n { | Zero => Zero | Succ(m) => Succ (Succ (twice[<] m)) }
         }
     }
     rec {

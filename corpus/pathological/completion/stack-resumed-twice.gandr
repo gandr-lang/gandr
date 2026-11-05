@@ -18,7 +18,7 @@ import std.process;
 /// in a body the operation's clause resumes twice: the clause owes that body
 /// one end, and the second resumption is refused.
 @[ refuses("ContinuationUsedTwice") ]
-def resumedTwice() -> Unit {
+def resumedTwice() -> Unit =
   handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {
       let sqe = recv(kernel);
@@ -26,11 +26,10 @@ def resumedTwice() -> Unit {
       close(kernel)
     };
     send(ring, Ring.read);
-    c.exit(1);
+    c.exit 1;
     let cqe = recv(ring);
     close(ring)
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => { let first = k(unit); k(unit) }
+    | pure(x) => pure x
+    | oper exit(code, k) => { let first = k *{}; k *{} }
   }
-}

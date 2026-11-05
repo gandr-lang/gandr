@@ -10,7 +10,7 @@
 /// `outCellp(inCell(yq))` reads `zero` by the boundary and `yq` by the
 /// written rule.
 @[ refuses("RulesUncompleted") ]
-theory Leaked where {
+theory Leaked where
   boundary Two { p, q };
   face left = {p};
   sort Val : Type;
@@ -18,5 +18,4 @@ theory Leaked where {
   oper zero : Val;
   ext Cell = Val on left is zero;
 
-  rule leaked : outCellp(inCell(yq)) ==> yq;
-}
+  rule leaked : outCellp (inCell yq) ==> yq;

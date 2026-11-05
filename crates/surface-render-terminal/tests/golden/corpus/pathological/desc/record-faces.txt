@@ -8,9 +8,9 @@ error[IllFormedDescription]: the face `bad` holds a name the boundary `Outside` 
    ╰ help: put in the face only names that the boundary lists
 
 error[IllFormedDescription]: the boundary `Twice` names the face `addr` twice
-   ╭▸ corpus/pathological/desc/record-faces.gandr:28:10
+   ╭▸ corpus/pathological/desc/record-faces.gandr:27:10
    │
-28 │     face addr = { port };
+27 │     face addr = { port };
    │          ━━━━ what the description check refuses
    │
    ├ note: `Twice` is refused with IllFormedDescription, as its expectation states

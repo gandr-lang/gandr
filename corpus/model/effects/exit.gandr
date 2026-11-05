@@ -13,70 +13,65 @@ import std.process;
 
 /// The clause resumes the body, whose value passes through the `pure` clause.
 @[ runs("101") ]
-def resumed() -> Integer {
+def resumed() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(5);
+    c.exit 5;
     pure 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => k(unit)
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => k *{}
   }
-}
 
 /// The clause answers for the handler, and the rest of the body never runs.
 @[ runs("9") ]
-def answered() -> Integer {
+def answered() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(5);
+    c.exit 5;
     pure 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => pure 9
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => pure 9
   }
-}
 
 /// The clause answers the operation's payload.
 @[ runs("5") ]
-def coded() -> Integer {
+def coded() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(5);
+    c.exit 5;
     pure 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => pure code
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => pure code
   }
-}
 
 /// The handler is deep: the second exit is handled in the body the first
 /// resumed, and each clause adds its code to what the rest answers.
 @[ runs("108") ]
-def summed() -> Integer {
+def summed() -> Integer =
   handle c : std.process.Exit.Eff {
-    c.exit(3);
-    c.exit(4);
+    c.exit 3;
+    c.exit 4;
     pure 1
   } with {
-    pure(x) => pure x + 100,
-    oper exit(code, k) => {
-      let rest = k(unit);
+    | pure(x) => pure x + 100
+    | oper exit(code, k) => {
+      let rest = k *{};
       pure rest + code
     }
   }
-}
 
 /// A second effect crosses through its own free model: each line printed is
 /// counted, and the body's value is dropped.
 @[ runs("2") ]
-def printed() -> Integer {
+def printed() -> Integer =
   handle out : std.io.Console.Eff {
-    out.print("one");
-    out.print("two");
+    out.print "one";
+    out.print "two";
     pure 7
   } with {
-    pure(x) => pure 0,
-    oper print(line, k) => {
-      let rest = k(unit);
+    | pure(x) => pure 0
+    | oper print(line, k) => {
+      let rest = k *{};
       pure rest + 1
     }
   }
-}

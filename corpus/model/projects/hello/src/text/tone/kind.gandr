@@ -8,10 +8,9 @@
 // - see: #2874
 
 /// The tone a greeting takes.
-pub data Tone : Type where {
+pub data Tone : Type where
   /// A warm greeting.
   | Warm : Tone
-}
 
 /// The tone the package greets in.
 pub def warm : Tone = Warm;

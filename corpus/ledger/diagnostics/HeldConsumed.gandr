@@ -10,8 +10,7 @@ module Taken where {
 }
 
 @[ refuses("HeldConsumed") ]
-def readAfterTaken() -> -F Integer {
-  var n = 3;
-  let m = n.take();
-  n.look()
-}
+def readAfterTaken() -> -F Integer =
+  var n = 3
+  let m = n.take ()
+  n.look ()

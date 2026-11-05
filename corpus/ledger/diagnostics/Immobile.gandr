@@ -1,5 +1,5 @@
 /// `Immobile`: a value crossing to a world its type does not reach.
-module Seat :> #{
+module Seat :> *{
   type Dispatch,
   task : Dispatch
 } where {
@@ -16,7 +16,6 @@ world operator;
 world seat;
 
 @[ refuses("Immobile") ]
-@[ entry((operator, seat)) ]
-def unmarkedBack() -> Seat.Dispatch {
+@[ entry(*{operator, seat}) ]
+def unmarkedBack() -> Seat.Dispatch =
   migrate [seat] { pure Seat.task }
-}

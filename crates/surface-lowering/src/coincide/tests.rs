@@ -25,9 +25,9 @@ const BOTH_UNITS: &str = r#"data NatUnits : Type where {
     | Zero : NatUnits
     | Succ : (n : NatUnits) --> NatUnits
     oper add : (m : NatUnits, n : NatUnits) --> NatUnits;
-    rule : add(Zero, n) ==> n;
-    rule : add(m, Zero) ==> m;
-    rule : add(Succ(m), n) ==> Succ(add(m, n));
+    rule : add Zero n ==> n;
+    rule : add m Zero ==> m;
+    rule : add (Succ m) n ==> Succ (add m n);
 }"#;
 
 /// Lower `source` and hand the module to `inspect`.
@@ -128,8 +128,8 @@ const CIRCLE: &str = r#"data Circle : Type where {
     | Base : Circle
     | Loop : (c : Circle) --> Circle
     | Unloop : (c : Circle) --> Circle
-    rule : Loop(Unloop(x)) ==> x;
-    rule : Unloop(Loop(x)) ==> x;
+    rule : Loop (Unloop x) ==> x;
+    rule : Unloop (Loop x) ==> x;
 }"#;
 
 #[test]
@@ -210,9 +210,9 @@ data Circle : Type where {
     | Base : Circle
     | Loop : (c : Circle) --> Circle
     | Unloop : (c : Circle) --> Circle
-    rule : Loop(Unloop(x)) ==> x;
-    rule : Unloop(Loop(x)) ==> x;
-    rule : Loop(Loop(x)) ==> x;
+    rule : Loop (Unloop x) ==> x;
+    rule : Unloop (Loop x) ==> x;
+    rule : Loop (Loop x) ==> x;
 }"#,
     );
     lowered(source, |module| {
@@ -227,12 +227,12 @@ data Circle : Type where {
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : Loop(Loop(x)) ==> x",
+            "rule : Loop (Loop x) ==> x",
             "the refusal stands at the third rule"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule : Loop(Unloop(x)) ==> x",
+            "rule : Loop (Unloop x) ==> x",
             "and names the cancellation it parts from"
         );
         assert_eq!(
@@ -266,8 +266,8 @@ const CIRCLE_SHAPE: &str = r#"theory CircleShape where {
     oper base : Pt;
     oper turn : (x : Pt) --> Pt;
     oper unturn : (x : Pt) --> Pt;
-    rule turnUnturn : turn(unturn(x)) ==> x;
-    rule unturnTurn : unturn(turn(x)) ==> x;
+    rule turnUnturn : turn (unturn x) ==> x;
+    rule unturnTurn : unturn (turn x) ==> x;
 }"#;
 
 /// The peaks of a block's term certificates, spelled, or the block's cell
@@ -378,9 +378,9 @@ data NatApart : Type where {
     | Zero : NatApart
     | Succ : (n : NatApart) --> NatApart
     oper add : (m : NatApart, n : NatApart) --> NatApart;
-    rule : add(Zero, n) ==> n;
-    rule : add(m, Zero) ==> Succ(m);
-    rule : add(Succ(m), n) ==> Succ(add(m, n));
+    rule : add Zero n ==> n;
+    rule : add m Zero ==> Succ m;
+    rule : add (Succ m) n ==> Succ (add m n);
 }
 def later = 7;"#,
     );
@@ -396,12 +396,12 @@ def later = 7;"#,
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : add(m, Zero) ==> Succ(m)",
+            "rule : add m Zero ==> Succ m",
             "the refusal stands at the later rule"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule : add(Zero, n) ==> n",
+            "rule : add Zero n ==> n",
             "and names the earlier one"
         );
         assert_eq!(
@@ -442,9 +442,9 @@ const GROUP: &str = r#"theory Group where {
     oper b : G;
     oper inv : (x : G) --> G;
     oper mul : (x : G, y : G) --> G;
-    rule unitL : mul(e(), x) <=> x;
-    rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
-    rule invL : mul(inv(x), x) <=> e();
+    rule unitL : mul (e ()) x <=> x;
+    rule assoc : mul (mul x y) z <=> mul x (mul y z);
+    rule invL : mul (inv x) x <=> e ();
 }"#;
 
 #[test]
@@ -522,8 +522,8 @@ const SCOPE_EXTRUSION: &str = "theory S where {
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : Proc) --> Proc;
-  rule gc : nu(nil()) ==> nil();
-  rule scope : par(nu(p), q) ==> nu(par(p, q));
+  rule gc : nu (nil ()) ==> nil ();
+  rule scope : par (nu p) q ==> nu (par p q);
 ";
 
 #[test]
@@ -543,7 +543,7 @@ fn a_scope_extrusion_family_never_completes()
         };
         assert_eq!(
             text(source, first).as_ref(),
-            "rule scope : par(nu(p), q) ==> nu(par(p, q))",
+            "rule scope : par (nu p) q ==> nu (par p q)",
             "the refusal names the written rule the family overlaps"
         );
         assert_eq!(
@@ -571,8 +571,8 @@ fn a_scope_extrusion_family_never_completes()
     // after the second or the third derived rule, though each derived rule
     // wraps the one before.
     for flat in [
-        "rule flat : par(par(par(nil(), p), q), r) ==> par(par(nil(), q), r);",
-        "rule flat : par(par(par(par(nil(), p), q), r), s) ==> par(par(par(nil(), q), r), s);",
+        "rule flat : par (par (par (nil ()) p) q) r ==> par (par (nil ()) q) r;",
+        "rule flat : par (par (par (par (nil ()) p) q) r) s ==> par (par (par (nil ()) q) r) s;",
     ] {
         let block = alloc::format!("{SCOPE_EXTRUSION}  {flat}\n}}");
         lowered(SourceText::from(block.as_str()), |module| {
@@ -602,8 +602,8 @@ fn a_permuted_call_no_order_orients_is_uncompleted()
     | Succ : (n : Nat) --> Nat
     oper plus : (m : Nat, n : Nat) --> Nat;
     oper pick : (m : Nat, n : Nat) --> Nat;
-    rule : pick(m, n) ==> plus(m, n);
-    rule : pick(Zero, n) ==> plus(n, Zero);
+    rule : pick m n ==> plus m n;
+    rule : pick Zero n ==> plus n Zero;
 }"#,
     );
     lowered(source, |module| {
@@ -618,12 +618,12 @@ fn a_permuted_call_no_order_orients_is_uncompleted()
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : pick(Zero, n) ==> plus(n, Zero)",
+            "rule : pick Zero n ==> plus n Zero",
             "the refusal stands at the later rule"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule : pick(m, n) ==> plus(m, n)",
+            "rule : pick m n ==> plus m n",
             "and names the earlier one"
         );
         assert_eq!(
@@ -656,10 +656,10 @@ fn a_data_blocks_derived_rule_is_a_pattern_rule()
     | Succ : (n : NatSwap) --> NatSwap
     oper add : (m : NatSwap, n : NatSwap) --> NatSwap;
     oper swap : (m : NatSwap, n : NatSwap) --> NatSwap;
-    rule : add(Zero, n) ==> n;
-    rule : add(Succ(m), n) ==> Succ(add(m, n));
-    rule : swap(m, n) ==> add(m, n);
-    rule : swap(Zero, n) ==> add(n, Zero);
+    rule : add Zero n ==> n;
+    rule : add (Succ m) n ==> Succ (add m n);
+    rule : swap m n ==> add m n;
+    rule : swap Zero n ==> add n Zero;
 }"#,
     );
     lowered(completed, |module| {
@@ -695,10 +695,10 @@ fn a_data_blocks_derived_rule_is_a_pattern_rule()
     | Succ : (n : NatTwice) --> NatTwice
     oper add : (m : NatTwice, n : NatTwice) --> NatTwice;
     oper pick : (m : NatTwice, n : NatTwice) --> NatTwice;
-    rule : add(Zero, n) ==> n;
-    rule : add(Succ(m), n) ==> Succ(add(m, n));
-    rule : pick(m, n) ==> n;
-    rule : pick(Zero, n) ==> add(n, n);
+    rule : add Zero n ==> n;
+    rule : add (Succ m) n ==> Succ (add m n);
+    rule : pick m n ==> n;
+    rule : pick Zero n ==> add n n;
 }"#,
     );
     lowered(repeated, |module| {
@@ -726,9 +726,9 @@ data NatApart : Type where {
     | Zero : NatApart
     | Succ : (n : NatApart) --> NatApart
     oper add : (m : NatApart, n : NatApart) --> NatApart;
-    rule : add(m, Zero) ==> Succ(m);
-    rule : add(Zero, n) ==> n;
-    rule : add(Succ(m), n) ==> Succ(add(m, n));
+    rule : add m Zero ==> Succ m;
+    rule : add Zero n ==> n;
+    rule : add (Succ m) n ==> Succ (add m n);
 }"#,
     );
     lowered(source, |module| {
@@ -743,12 +743,12 @@ data NatApart : Type where {
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : add(Zero, n) ==> n",
+            "rule : add Zero n ==> n",
             "the refusal stands at the later rule"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule : add(m, Zero) ==> Succ(m)",
+            "rule : add m Zero ==> Succ m",
             "and names the earlier one"
         );
         assert_eq!(
@@ -771,8 +771,8 @@ fn a_pinned_rule_orients_only_the_way_it_is_pinned()
     | Z : Int
     | S : (x : Int) --> Int
     | P : (x : Int) --> Int
-    rule : x <=> S(P(x));
-    rule : P(S(x)) <=> x;
+    rule : x <=> S (P x);
+    rule : P (S x) <=> x;
 }"#,
     );
     lowered(source, |module| {
@@ -804,7 +804,7 @@ fn a_pinned_rule_orients_only_the_way_it_is_pinned()
         r#"data Pair : Type where {
     | Z : Pair
     oper add : (m : Pair, n : Pair) --> Pair;
-    rule : add(m, n) <=> add(n, m);
+    rule : add m n <=> add n m;
 }"#,
     );
     lowered(commuting, |module| {
@@ -838,7 +838,7 @@ fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
     | Zero : NatGrow
     | Succ : (n : NatGrow) --> NatGrow
     oper grow : (n : NatGrow) --> NatGrow;
-    rule : grow(n) ==> Succ(grow(n));
+    rule : grow n ==> Succ (grow n);
 }"#,
     );
     lowered(source, |module| {
@@ -852,7 +852,7 @@ fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
         );
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule : grow(n) ==> Succ(grow(n))"
+            "rule : grow n ==> Succ (grow n)"
         );
         assert_eq!(
             module.declarations().iter().next().unwrap().outcome(),
@@ -873,12 +873,12 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
     oper zero : () --> Tm;
     oper f : (a : Tm) --> Tm;
     oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
-    rule zeta : let(u, t) <=> t(u);
+    rule zeta : let u t <=> t u;
     {rules}
 }}"
         )
     };
-    let joins = theory("rule zetaZero : let(zero(), t) <=> t(zero());");
+    let joins = theory("rule zetaZero : let (zero ()) t <=> t (zero ());");
     lowered(SourceText::from(joins.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -888,12 +888,12 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
     });
     for (rules, later) in [
         (
-            "rule toZero : let(zero(), t) <=> zero();",
-            "rule toZero : let(zero(), t) <=> zero()",
+            "rule toZero : let (zero ()) t <=> zero ();",
+            "rule toZero : let (zero ()) t <=> zero ()",
         ),
         (
-            "rule under : f(let(u, t)) <=> f(u);",
-            "rule under : f(let(u, t)) <=> f(u)",
+            "rule under : f (let u t) <=> f u;",
+            "rule under : f (let u t) <=> f u",
         ),
     ] {
         let source = theory(rules);
@@ -911,7 +911,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
             assert_eq!(text(source, diagnostic.span).as_ref(), later);
             assert_eq!(
                 text(source, first).as_ref(),
-                "rule zeta : let(u, t) <=> t(u)",
+                "rule zeta : let u t <=> t u",
                 "{later} names ζ"
             );
             assert_eq!(
@@ -923,7 +923,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
             );
         });
     }
-    let apart = theory("rule fZero : f(zero()) <=> zero();");
+    let apart = theory("rule fZero : f (zero ()) <=> zero ();");
     lowered(SourceText::from(apart.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -952,7 +952,7 @@ fn a_pattern_overlapping_its_own_rule_joins_2115()
         )
     };
     let get_get =
-        theory("rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));");
+        theory("rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s s));");
     lowered(SourceText::from(get_get.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -961,7 +961,7 @@ fn a_pattern_overlapping_its_own_rule_joins_2115()
              normalize to `get(bind s . k(s, s, s))`"
         );
     });
-    let right_unit = theory("rule unitR : ext(m, bind x . ret(x)) <=> m;");
+    let right_unit = theory("rule unitR : ext m (bind x . (ret x)) <=> m;");
     lowered(SourceText::from(right_unit.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -990,8 +990,9 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
 }}"
         )
     };
-    let scope = "rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where { | a # q };";
-    let gc = "rule gc : nu(bind a . p) <=> p where { | a # p };";
+    let scope =
+        "rule scope : par (nu (bind a . p)) q <=> nu (bind a . (par p q)) where { | a # q };";
+    let gc = "rule gc : nu (bind a . p) <=> p where { | a # p };";
     for channel in ["Name", "Proc"] {
         let collecting = theory(channel, &format!("{scope}\n    {gc}"));
         lowered(SourceText::from(collecting.as_str()), |module| {
@@ -1005,7 +1006,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
     }
     let quiet = theory(
         "Name",
-        &format!("{gc}\n    rule quiet : nu(bind a . out(a, nil())) <=> nil();"),
+        &format!("{gc}\n    rule quiet : nu (bind a . (out a (nil ()))) <=> nil ();"),
     );
     lowered(SourceText::from(quiet.as_str()), |module| {
         assert_eq!(
@@ -1017,7 +1018,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
     });
     let vacant = theory(
         "Name",
-        &format!("{scope}\n    rule vacant : nu(bind a . nil()) <=> nil();"),
+        &format!("{scope}\n    rule vacant : nu (bind a . (nil ())) <=> nil ();"),
     );
     let source = SourceText::from(vacant.as_str());
     lowered(source, |module| {
@@ -1034,11 +1035,11 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule vacant : nu(bind a . nil()) <=> nil()"
+            "rule vacant : nu (bind a . (nil ())) <=> nil ()"
         );
         assert_eq!(
             text(source, first).as_ref(),
-            "rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where { | a # q }",
+            "rule scope : par (nu (bind a . p)) q <=> nu (bind a . (par p q)) where { | a # q }",
             "the vacant restriction names extrusion"
         );
         assert_eq!(
@@ -1059,8 +1060,8 @@ fn an_equation_written_backwards_orients_forwards()
     | Z : Int
     | S : (x : Int) --> Int
     | P : (x : Int) --> Int
-    rule : x <=> S(P(x));
-    rule : P(S(x)) <=> x;
+    rule : x <=> S (P x);
+    rule : P (S x) <=> x;
 }"#,
     );
     lowered(source, |module| {
@@ -1142,7 +1143,7 @@ fn a_congruence_is_no_rewrite_of_its_own()
         r#"theory Nat where {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
-  rule left : add(x, y) ==> x;
+  rule left : add x y ==> x;
 
   rule cong1 : (
     rule p : Nat ==> Nat,
@@ -1180,11 +1181,11 @@ fn a_call_reads_its_normal_form_or_says_why_not()
   | Succ : (n : NatDiv) --> NatDiv
   oper walk : (m : NatDiv, g : NatDiv, d : NatDiv, q : NatDiv, r : NatDiv) --> (quot : NatDiv, rem : NatDiv);
   oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);
-  rule : walk(Zero, g, d, q, r) ==> (q, r);
-  rule : walk(Succ(m), Zero, d, q, r) ==> walk(m, d, d, Succ(q), Zero);
-  rule : walk(Succ(m), Succ(g), d, q, r) ==> walk(m, g, d, q, Succ(r));
-  rule : divmod(m, Zero) ==> (Zero, m);
-  rule : divmod(m, Succ(d)) ==> walk(m, d, d, Zero, Zero);
+  rule : walk Zero g d q r ==> (q, r);
+  rule : walk (Succ m) Zero d q r ==> walk m d d (Succ q) Zero;
+  rule : walk (Succ m) (Succ g) d q r ==> walk m g d q (Succ r);
+  rule : divmod m Zero ==> (Zero, m);
+  rule : divmod m (Succ d) ==> walk m d d Zero Zero;
 }
 def later = 7;"#,
     );
@@ -1247,7 +1248,7 @@ def later = 7;"#,
   oper nil : () --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule unheard : nu(bind a . out(a, p)) ==> nil();
+  rule unheard : nu (bind a . (out a p)) ==> nil ();
 }"#,
     );
     lowered(restriction, |module| {
@@ -1299,7 +1300,7 @@ fn a_call_nesting_operations_reads_over_terms_1510()
   oper cut : () --> M(bot());
   oper fail : () --> M(top());
   oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
-  rule cutLeft : orBot(x, y) ==> x;
+  rule cutLeft : orBot x y ==> x;
 }"#,
     );
     let plain = SourceText::from(
@@ -1308,7 +1309,7 @@ fn a_call_nesting_operations_reads_over_terms_1510()
   oper first : () --> N;
   oper second : () --> N;
   oper choose : (x : N, y : N) --> N;
-  rule left : choose(x, y) ==> x;
+  rule left : choose x y ==> x;
 }"#,
     );
     let two_cells = SourceText::from(
@@ -1322,7 +1323,7 @@ fn a_call_nesting_operations_reads_over_terms_1510()
   oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
   oper vcomp : (s : Two(f, g), t : Two(g, k)) --> Two(f, k);
   oper whiskerR : (s : Two(f, g), h : Hom(b, c)) --> Two(comp(f, h), comp(g, h));
-  rule vassoc : vcomp(vcomp(s, t), u) ==> vcomp(s, vcomp(t, u));
+  rule vassoc : vcomp (vcomp s t) u ==> vcomp s (vcomp t u);
 }"#,
     );
     for (source, calls) in [
@@ -1395,7 +1396,7 @@ fn an_instantiating_rule_fires_at_an_inspected_call_2966()
   oper z : () --> V;
   oper post : (v : V) --> C;
   oper app : (k : pi+ (x : V). C, a : V) --> C;
-  rule beta : app(k, a) ==> k(a);
+  rule beta : app k a ==> k a;
 }"#,
     );
     let continued = SourceText::from(
@@ -1411,8 +1412,8 @@ fn an_instantiating_rule_fires_at_an_inspected_call_2966()
   oper hole : () --> E;
   oper post : (v : V) --> C;
   oper wp : (e : E, k : pi+ (v : V). C, r : pi+ (v : V). C) --> C;
-  rule literal : wp(lit(n), k, r) ==> k(int(n));
-  rule returned : wp(ret(e), k, r) ==> wp(e, r, r);
+  rule literal : wp (lit n) k r ==> k (int n);
+  rule returned : wp (ret e) k r ==> wp e r r;
 }"#,
     );
     for (source, calls) in [

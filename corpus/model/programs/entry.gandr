@@ -14,12 +14,10 @@
 import std.list (List);
 
 /// The number of strings in a list.
-pub def rec count(xs : List(String)) -> Integer {
-  match xs {
-    #[] => 0,
-    #[x, ..rest] => { let n = count[<](rest); n + 1 }
-  }
-}
+pub def rec count(xs : List(String)) -> Integer =
+  match xs
+    | #[] => 0
+    | #[x, ..rest] => { let n = count[<] rest; n + 1 }
 
 /// The entry: its exit code is the number of its arguments.
-def main(args : List(String)) -> Integer { count(args) }
+def main(args : List(String)) -> Integer { count args }

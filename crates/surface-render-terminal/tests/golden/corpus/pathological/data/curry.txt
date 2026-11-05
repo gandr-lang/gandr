@@ -1,41 +1,37 @@
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/data/curry.gandr:28:19
+   ╭▸ corpus/pathological/data/curry.gandr:26:21
    │
-26 │    def bad(b : Bad) -> Empty {
+24 │    def bad(b : Bad) -> Empty =
    │    │       ─ checked against `Bad -> -F Empty`; while checking the body of this function; binds b : Bad
    │ ┌──┘
    │ │
-27 │ │┌   match b {
-28 │ ││     MkBad(f) => f(b)
-   │ ││                 ┬─┯─
-   │ ││                 │ │
-   │ ││                 │ not below the stage its recursion wants
-   │ ││                 checked against `-F Empty`; while checking the argument of this application
-29 │ ││   }
-   │ │└───┘ checked against `-F Empty`; while checking the body of this function; binds f : Bad => Empty
-30 │ │  }
-   │ └──┘ checked against `Bad => Empty`; while checking the body of this thunk
+25 │ │┌   match b
+26 │ ││     | MkBad(f) => f b
+   │ ││                   ┬─┯
+   │ ││                   │ │
+   │ └│───────────────────│─not below the stage its recursion wants
+   │  └───────────────────│─checked against `Bad -> Empty`; while checking the body of this thunk
+   │                      │ checked against `-F Empty`; while checking the body of this function; binds f : Bad -> Empty
+   │                      checked against `-F Empty`; while checking the argument of this application
    │
    ├ note: `bad` is refused with StageNotBelow, as its expectation states
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/data/curry.gandr:37:23
+   ╭▸ corpus/pathological/data/curry.gandr:33:25
    │
-35 │    def smuggled(b : Bad) -> Empty {
+31 │    def smuggled(b : Bad) -> Empty =
    │    │            ─ checked against `Bad -> -F Empty`; while checking the body of this function; binds b : Bad
    │ ┌──┘
    │ │
-36 │ │┌   match b {
-37 │ ││     MkBad(f) => apply(f, b)
-   │ ││                 ┬─────┯────
-   │ ││                 │     │
-   │ ││                 │     not below the stage its recursion wants
-   │ ││                 checked against `-F Empty`; while checking the argument of this application
-38 │ ││   }
-   │ │└───┘ checked against `-F Empty`; while checking the body of this function; binds f : Bad => Empty
-39 │ │  }
-   │ └──┘ checked against `Bad => Empty`; while checking the body of this thunk
+32 │ │┌   match b
+33 │ ││     | MkBad(f) => apply f b
+   │ ││                   ┬─────┯─│
+   │ └│───────────────────│─────│─│
+   │  └───────────────────│─────│─checked against `Bad -> Empty`; while checking the body of this thunk
+   │                      │     │ checked against `-F Empty`; while checking the body of this function; binds f : Bad -> Empty
+   │                      │     not below the stage its recursion wants
+   │                      checked against `-F Empty`; while checking the argument of this application
    │
    ├ note: `smuggled` is refused with StageNotBelow, as its expectation states
    ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

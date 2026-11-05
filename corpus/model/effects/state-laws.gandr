@@ -11,53 +11,49 @@ import "./state.gandr";
 /// applies what runs after it at the state, and a store applies it at the
 /// stored value. Both sides of put-get store and continue at the stored
 /// value, and both sides of put-put continue at the second.
-def counter() -> (Integer => Integer) {
+def counter() -> (Integer -> Integer) =
   handle st : StatePutLaws with sort S = Integer {
-    st.put(1);
-    let a = st.get();
-    st.put(a + 1);
-    let b = st.get();
+    st.put 1;
+    let a = st.get ();
+    st.put (a + 1);
+    let b = st.get ();
     pure fun (s : Integer) { pure b }
   } with {
-    pure(x) => pure x,
-    oper get(k) => pure fun (s : Integer) { let g = k(s); g(s) },
-    oper put(s, k) => pure fun (t : Integer) { let g = k(unit); g(s) }
+    | pure(x) => pure x
+    | oper get(k) => pure fun (s : Integer) { let g = k s; g s }
+    | oper put(s, k) => pure fun (t : Integer) { let g = k *{}; g s }
   }
-}
 
 /// Whatever the state starts at, the second read sees the first's successor.
 @[ runs("2") ]
-def counted() -> Integer {
-  let f = counter();
-  f(0)
-}
+def counted() -> Integer =
+  let f = counter ()
+  f 0
 
 /// Reading twice is reading once: every read answers four, so both sides of
 /// get-get continue at four twice. The subject normalises by get-get before
 /// it runs, so the handler answers one read and `b` is bound to `a`.
 @[ runs("8") ]
-def readTwice() -> Integer {
+def readTwice() -> Integer =
   handle st : StateGetGet with sort S = Integer {
-    let a = st.get();
-    let b = st.get();
+    let a = st.get ();
+    let b = st.get ();
     pure a + b
   } with {
-    pure(x) => pure x,
-    oper get(k) => k(4)
+    | pure(x) => pure x
+    | oper get(k) => k 4
   }
-}
 
 /// Storing twice keeps the second value: every store is forgotten, so both
 /// sides of put-put continue once.
 @[ runs("3") ]
-def storeTwice() -> Integer {
+def storeTwice() -> Integer =
   handle st : StatePutPut with sort S = Integer {
-    st.put(1);
-    st.put(2);
+    st.put 1;
+    st.put 2;
     pure 3
   } with {
-    pure(x) => pure x,
-    oper get(k) => k(4),
-    oper put(s, k) => k(unit)
+    | pure(x) => pure x
+    | oper get(k) => k 4
+    | oper put(s, k) => k *{}
   }
-}

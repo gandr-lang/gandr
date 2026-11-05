@@ -1,45 +1,39 @@
 @[ checks, form(explicit) ]
-def none : #{};
-def none = #{};
+def none : *{};
+def none = *{};
 
 @[ checks ]
-def one : #{Integer};
-def one = #{1};
+def one : *{Integer};
+def one = *{1};
 
 @[ checks ]
-def three : #{Integer, String, Unit};
-def three = #{1, "a", unit};
+def three : *{Integer, String, Unit};
+def three = *{1, "a", *{}};
 
 @[ checks ]
-def reordered : #{Integer, String};
-def reordered = #{.1 = "b", .0 = 2};
+def reordered : *{Integer, String};
+def reordered = *{.1 = "b", .0 = 2};
 
 @[ refuses("ShapeMismatch") ]
-def bumped = #{reordered | n = 4};
+def bumped = *{reordered | n = 4};
 
 @[ refuses("TypeMismatch") ]
-def sigma : #{k : Integer, v : k};
+def sigma : *{k : Integer, v : k};
 
 @[ checks ]
-def nothing(t : #{}) -> -F Integer {
-  match t {
-    #{} => return 0
-  }
-}
+def nothing(t : *{}) -> -F Integer =
+  match t
+    | *{} => return 0
 
 @[ checks ]
-def only(t : #{Integer}) -> -F Integer {
-  match t {
-    #{x} => return x
-  }
-}
+def only(t : *{Integer}) -> -F Integer =
+  match t
+    | *{x} => return x
 
 @[ checks ]
-def last(t : #{Integer, Integer, Integer}) -> -F Integer {
-  match t {
-    #{x, y, z} => return z
-  }
-}
+def last(t : *{Integer, Integer, Integer}) -> -F Integer =
+  match t
+    | *{x, y, z} => return z
 
 @[ runs("3") ]
-def picked() -> -F Integer { last(#{1, 2, 3}) }
+def picked() -> -F Integer { last (*{1, 2, 3}) }

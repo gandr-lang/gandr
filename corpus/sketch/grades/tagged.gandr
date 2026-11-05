@@ -19,7 +19,7 @@ def retries = Count.3;
 
 /// Probes a host as often as the deployment allows. The arms of an `if` add
 /// their uses, so the longest path makes three calls.
-def probe(ping : +U[retries] (String -> Bool), host : String) : Bool = if ping(host) { true } else if ping(host) { true } else { ping(host) }
+def probe(ping : +U[retries] (String -> Bool), host : String) : Bool = if ping host { true } else if ping host { true } else { ping host }
 
 /// Probes two hosts, each as often as the deployment allows. The sum reads in
 /// `Count`, since `retries` does.
@@ -27,4 +27,4 @@ def rollout(ping : +U[retries + retries] (String -> Bool)) : Bool = probe(ping, 
 
 /// Takes a function used once. `Usage.Once` names the grade a bare `1` reads
 /// as where `Usage` grades the position.
-def once(f : +U[Usage.Once] (Unit -> Unit)) : Unit = f(unit)
+def once(f : +U[Usage.Once] (Unit -> Unit)) : Unit = f (*{})

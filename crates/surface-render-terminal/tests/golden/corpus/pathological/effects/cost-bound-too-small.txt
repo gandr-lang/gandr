@@ -1,10 +1,10 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/effects/cost-bound-too-small.gandr:36:75
+   ╭▸ corpus/pathological/effects/cost-bound-too-small.gandr:34:77
    │
-36 │ def boundTwo : Path(Count.le(countOf(countedSteps()), (2 : Nat)), true) = Path.here(true);
-   │                     ┬───────────────────────────────────────────  ┬───    ━━━━━━━━━━━━━━━ not both endpoints of the path
-   │                     │                                             │
-   │                     │                                             an endpoint the point does not convert to
+34 │ def boundTwo : Path(Count.le (countOf (countedSteps ())) (2 : Nat), true) = Path.here true;
+   │                     ┬─────────────────────────────────────────────  ┬───    ━━━━━━━━━━━━━━ not both endpoints of the path
+   │                     │                                               │
+   │                     │                                               an endpoint the point does not convert to
    │                     an endpoint the point does not convert to
    │
    ├ note: `boundTwo` is refused with EndpointMismatch, as its expectation states

@@ -9,16 +9,14 @@
 
 // Squaring, documented by its attribute and marked deprecated.
 @[ doc("Squares its argument.") ]
-@[ deprecated(#{since = "0.2", note = "use square_checked"}) ]
-def square(x : Integer) -> Integer {
+@[ deprecated(*{since = "0.2", note = "use square_checked"}) ]
+def square(x : Integer) -> Integer =
   x * x
-}
 
 // Two uses of it: the function checks, and each use is reported with the
 // version and the note.
-def fourth(x : Integer) -> Integer {
-  square(square(x))
-}
+def fourth(x : Integer) -> Integer =
+  square (square x)
 
 // A value marked bare, stating neither the version nor the note.
 @[ deprecated ]
@@ -31,7 +29,7 @@ def current = legacy;
 module Shapes where {
   // The side, marked with a note alone.
   @[ checks ]
-  @[ deprecated(#{note = "use area"}) ]
+  @[ deprecated(*{note = "use area"}) ]
   def side = 2;
 }
 

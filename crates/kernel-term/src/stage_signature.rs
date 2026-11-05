@@ -1,7 +1,7 @@
 //! A definition's signature quantified over stages.
 //!
-//! `def applyAt[i : Size](f : Nat[<i] => Nat, x : Nat[<i])` takes a stage
-//! `i` beside its parameters. The declared type crosses erased, `(Nat => Nat,
+//! `def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i])` takes a stage
+//! `i` beside its parameters. The declared type crosses erased, `(Nat -> Nat,
 //! Nat) -> F Nat`, and the signature says where each binder stands in it: a
 //! [`StageMark`] is a path from the declared type to a data-type occurrence,
 //! each step a child the stage order places, and the stage that occurrence is

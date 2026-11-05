@@ -10,28 +10,24 @@
 /// - see: #4571 — the user notations sketch, its rulings in the issue body
 
 /// The three primary colours, compared and printed by derived members.
-@[derive(Eq, Show)]
-pub data Colour : Type where {
+@[derive(Eq, Show]
+pub data Colour : Type where
   /// Red.
   | Red : Colour
   /// Green.
   | Green : Colour
   /// Blue.
   | Blue : Colour
-}
 
 /// A point in the plane, ordered by its first coordinate, then its second.
 @[derive(Eq, Ord, Show)]
-pub data Point : Type where {
+pub data Point : Type where
   | Point : (x : Integer, y : Integer) --> Point
-}
 
 /// Whether a colour is the first of the three.
-pub def isRed(c : Colour) -> Bool {
+pub def isRed(c : Colour) -> Bool =
   c == Red
-}
 
 /// The lesser of two points, by the derived order.
-pub def least(p : Point, q : Point) -> Point {
+pub def least(p : Point, q : Point) -> Point =
   if p <= q { p } else { q }
-}

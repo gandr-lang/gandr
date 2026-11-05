@@ -6,21 +6,21 @@
 
 /// The stem and extension of a file name, captured by name.
 @[ refuses("OutOfFragment.projection_expression") ]
-def caps = regex.extract("^(?<stem>.*)\\.(?<ext>gandr)$", "examples/demo.gandr");
+def caps = regex.extract "^(?<stem>.*)\\.(?<ext>gandr)$" "examples/demo.gandr";
 
 /// A directory and a file name, joined.
 @[ refuses("OutOfFragment.projection_expression") ]
-def demo_path = path.join("examples", "demo.gandr");
+def demo_path = path.join "examples" "demo.gandr";
 
 /// The joined path's last component.
 @[ refuses("OutOfFragment.projection_expression") ]
-def leaf = path.basename(demo_path);
+def leaf = path.basename demo_path;
 
 /// The joined path's extension.
 @[ refuses("OutOfFragment.projection_expression") ]
-def suffix = path.extension(demo_path);
+def suffix = path.extension demo_path;
 
 /// The three gathered in a record, each refused above, so it names a
 /// declaration whose type is not known.
 @[ refuses("UnknownConstant") ]
-def gathered = #{capture = caps, leaf = leaf, path_ext = suffix};
+def gathered = *{capture = caps, leaf = leaf, path_ext = suffix};

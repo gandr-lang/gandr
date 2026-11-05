@@ -9,7 +9,7 @@ import "../../model/completion/ring-base.gandr";
 
 /// The target's half sends its completion and ends without closing.
 @[ refuses("LinearResidue") ]
-def halfUnclosed() -> Unit {
+def halfUnclosed() -> Unit =
   let pending = fork (target : Ring.Submission) {
     let sqe = recv(target);
     send(target, Ring.done);
@@ -19,10 +19,9 @@ def halfUnclosed() -> Unit {
     send(canceller, Ring.done);
     close(canceller)
   };
-  send(pending, Ring.read);
-  send(cancel, Ring.read);
-  let first = recv(pending);
-  let second = recv(cancel);
-  close(pending);
+  send(pending, Ring.read)
+  send(cancel, Ring.read)
+  let first = recv(pending)
+  let second = recv(cancel)
+  close(pending)
   close(cancel)
-}

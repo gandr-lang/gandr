@@ -2,10 +2,9 @@
 ///
 /// A unit: a carrier and its one element.
 @[ checks ]
-theory Pointed where {
+theory Pointed where
   sort C : Type;
   oper point : C;
-}
 
 /// Zero as the point.
 module Zero : Model(Pointed) where {
@@ -28,4 +27,4 @@ module One : Model(Pointed) where {
 def pointOf[p : Model(Pointed)](c : p.C) -> p.C { p.point }
 
 @[ refuses("ModelAmbiguous") ]
-def ambiguous() -> Integer { pointOf(3) }
+def ambiguous() -> Integer { pointOf 3 }

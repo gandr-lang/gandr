@@ -4,31 +4,25 @@
 // by an integer, the shape of a hom-set indexed by its objects.
 
 /// Reflexivity at a variable of a type parameter.
-def path_var(a : Type, x : a) -> Path(x, x) {
-  Path.here(x)
-}
+def path_var(a : Type, x : a) -> Path(x, x) =
+  Path.here x
 
 /// Reflexivity at a function.
-def path_fun(f : Integer => Integer) -> Path(f, f) {
-  Path.here(f)
-}
+def path_fun(f : Integer -> Integer) -> Path(f, f) =
+  Path.here f
 
 /// Reflexivity at an application.
-def path_app(n : Integer) -> Path(n + 1, n + 1) {
-  Path.here(n + 1)
-}
+def path_app(n : Integer) -> Path(n + 1, n + 1) =
+  Path.here (n + 1)
 
 /// A family indexed by an integer, one element at each index.
-data Ix(n : Integer) : Type where {
+data Ix(n : Integer) : Type where
   | MkIx : Ix(n)
-}
 
 /// The identity at every index of the family.
-def ix_id(n : Integer, w : Ix(n)) -> Ix(n) {
+def ix_id(n : Integer, w : Ix(n)) -> Ix(n) =
   w
-}
 
 /// The identity at one closed index.
-def ix_ctor(w : Ix(1)) -> Ix(1) {
+def ix_ctor(w : Ix(1)) -> Ix(1) =
   w
-}

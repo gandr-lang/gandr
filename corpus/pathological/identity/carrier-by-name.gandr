@@ -12,16 +12,16 @@
 
 /// `Path`'s carrier is the implicit `A`, and no implicit `B`.
 @[ refuses("UnresolvedName") ]
-def strayPath : Path[.B = Integer](4, 4) = Path.here(4);
+def strayPath : Path[.B = Integer](4, 4) = Path.here 4;
 
 /// `Bridge`'s carrier is the implicit `A`, and no implicit `B`.
 @[ refuses("UnresolvedName") ]
-def strayBridge : Bridge[.B = Integer](4, 4) = unit;
+def strayBridge : Bridge[.B = Integer](4, 4) = *{};
 
 /// `Flow`'s carrier is the implicit `A`, and no implicit `B`.
 @[ refuses("UnresolvedName") ]
-def strayFlow : Flow[.B = Integer](4, 4) = Flow.stay(4);
+def strayFlow : Flow[.B = Integer](4, 4) = Flow.stay 4;
 
 /// Two lambdas synthesise no type, so nothing fixes the omitted carrier.
 @[ refuses("ImplicitUnsolved") ]
-def unfixedFlow : Flow(fun (y) { y }, fun (y) { y }) = Flow.stay(fun (y) { y });
+def unfixedFlow : Flow(fun (y) { y }, fun (y) { y }) = Flow.stay (fun (y) { y });

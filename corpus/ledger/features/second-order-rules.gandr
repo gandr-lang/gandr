@@ -29,58 +29,52 @@
 /// ζ: `let` binds a term over its body, and its rule substitutes the bound
 /// term into the body.
 @[ checks ]
-theory Let where {
+theory Let where
   sort Tm : Type+;
   oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
-  rule zeta : let(u, t) <=> t(u);
-}
+  rule zeta : let u t <=> t u;
 
 /// A body binding two terms is instantiated at two arguments, outermost
 /// binder first.
 @[ checks ]
-theory LetPair where {
+theory LetPair where
   sort Tm : Type+;
   oper let2 : (u : Tm, v : Tm, t : (x : Tm) -> (y : Tm) -> Tm) --> Tm;
-  rule zeta2 : let2(u, v, t) <=> t(u, v);
-}
+  rule zeta2 : let2 u v t <=> t u v;
 
 /// ζ beside first-order rules whose pair parts: completion joins `f`'s two
 /// rules as it would without ζ, which overlaps neither.
 @[ checks ]
-theory LetBeside where {
+theory LetBeside where
   sort Tm : Type+;
   oper zero : () --> Tm;
   oper one : () --> Tm;
   oper f : (a : Tm) --> Tm;
   oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
-  rule zeta : let(u, t) <=> t(u);
-  rule fZero : f(a) <=> zero();
-  rule fOne : f(a) <=> one();
-}
+  rule zeta : let u t <=> t u;
+  rule fZero : f a <=> zero ();
+  rule fOne : f a <=> one ();
 
 /// ζ beside a rule rewriting `let` at `zero()`: their left sides overlap at
 /// the root, both reducts are `t(zero())`, and an inspected call
 /// fires both by substitution, the inner `let` at `x` and the outer at
 /// `zero()`.
 @[ normalizes("let(zero, bind x . let(x, bind y . y)) ~> zero") ]
-theory LetOverlap where {
+theory LetOverlap where
   sort Tm : Type+;
   oper zero : () --> Tm;
   oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
-  rule zeta : let(u, t) <=> t(u);
-  rule zetaZero : let(zero(), t) <=> t(zero());
-}
+  rule zeta : let u t <=> t u;
+  rule zetaZero : let (zero ()) t <=> t (zero ());
 
 /// ζ's right side is the instantiation of `t`, which the presentation keeps
 /// as an `Inst` node.
 @[ runs("1") ]
 def instantiates() -> Integer { match Let {
-  Presents(sorts, opers, rules) => match rules {
-    Rule(name, left, right, rest) => match right {
-      Inst(variable, arguments) => 1,
-      _ => 0
-    },
-    _ => 0
-  },
-  _ => 0
+  | Presents(sorts, opers, rules) => match rules
+    | Rule(name, left, right, rest) => match right
+      | Inst(variable, arguments) => 1
+      | _ => 0
+    | _ => 0
+  | _ => 0
 } }

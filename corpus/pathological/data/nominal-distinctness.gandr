@@ -7,14 +7,12 @@
 // - see: #2075 — `ascribed`, `aliased`
 
 /// A temperature in Celsius.
-data Celsius : Type where {
+data Celsius : Type where
   | Cel : (x : Integer) --> Celsius
-}
 
 /// A temperature in Fahrenheit, the same shape.
-data Fahrenheit : Type where {
+data Fahrenheit : Type where
   | Fah : (x : Integer) --> Fahrenheit
-}
 
 /// The Fahrenheit type under another name.
 type Temp = Fahrenheit;
@@ -22,13 +20,13 @@ type Temp = Fahrenheit;
 /// A Celsius value ascribed Fahrenheit: the constructor keeps its own family,
 /// never read as the Fahrenheit constructor of its place.
 @[ refuses("TypeMismatch") ]
-def ascribed = (Cel(20) : Fahrenheit);
+def ascribed = (Cel 20 : Fahrenheit);
 
 /// A Celsius value ascribed Fahrenheit through the alias.
 @[ refuses("TypeMismatch") ]
-def aliased = (Cel(20) : Temp);
+def aliased = (Cel 20 : Temp);
 
 /// A Celsius value ascribed Fahrenheit, judged as every declaration is before
 /// anything runs it.
 @[ refuses("TypeMismatch") ]
-def mislabelled = (Cel(20) : Fahrenheit);
+def mislabelled = (Cel 20 : Fahrenheit);

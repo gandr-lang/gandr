@@ -21,15 +21,13 @@ import std.foreign.spec (Spec, Places);
 type Thir = ~rust.thir(crate = "corten", toolchain = "nightly-2026-10-01");
 
 /// The buddy allocator's `pop`, its body a THIR value.
-def popBody : Thir.Body = ~rust.body("corten::buddy::pop");
+def popBody : Thir.Body = ~rust.body "corten::buddy::pop";
 
 /// What `pop` promises: it answers the head of an order's free list and
 /// leaves the rest free.
-def popSpec(order : Nat) -> Spec(Places, Option(Thir.Value)) {
-  Spec.ensures(fun (r, mem) { freeHead(mem, order, r) })
-}
+def popSpec(order : Nat) -> Spec(Places, Option(Thir.Value)) =
+  Spec.ensures (fun (r, mem) { freeHead mem order r })
 
 /// `pop` meets its specification, read off the folded precondition.
-def popMeets(order : Nat) -> Rust.wp(popBody) <= popSpec(order) {
-  Spec.byUnfolding(Rust.wp(popBody))
-}
+def popMeets(order : Nat) -> Rust.wp(popBody) <= popSpec order =
+  Spec.byUnfolding (Rust.wp popBody)

@@ -1,5 +1,4 @@
 /// `pure_expression`: a pure computation returning a value.
 @[ checks ]
-def answer() -> -F Integer {
+def answer() -> -F Integer =
   pure 42
-}

@@ -396,7 +396,10 @@ impl Reading
                         head: head(tree, &index, at, &symbol),
                         members: match symbol.kind {
                             SymbolKind::INTERFACE | SymbolKind::ENUM | SymbolKind::STRUCT => {
-                                runs(tree, at).into_iter().map(|run| run.span).collect()
+                                runs(grammar, tree, at)
+                                    .into_iter()
+                                    .map(|run| run.span)
+                                    .collect()
                             },
                             _ => Vec::new(),
                         },
@@ -480,7 +483,9 @@ impl Reading
     }
 
     /// The tile holding `offset`, from its first byte to its last; none
-    /// between tiles or when the text was not read.
+    /// between tiles or when the text was not read. A zero-width tile, which
+    /// juxtaposition and the layout pass write, holds no offset, so one that
+    /// starts where a written tile does never hides it.
     ///
     /// # Specification
     /// trivial.
@@ -493,7 +498,10 @@ impl Reading
         let tiles = self.tiles();
         let after = tiles.partition_point(|tile| tile.span.start() <= offset);
         tiles
-            .get(after.checked_sub(1_usize)?)
+            .get(.. after)?
+            .iter()
+            .rev()
+            .find(|tile| tile.span.start() < tile.span.end())
             .filter(|tile| offset < tile.span.end())
             .copied()
     }

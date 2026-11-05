@@ -14,29 +14,26 @@ import "./magma-base.gandr";
 import "../identity/univalence.gandr";
 
 /// The magma's degree telescope at degree one, and the swap's path on it.
-pub module AtStratum where {
+pub module AtStratum where
   type Tel = Unit * (+{Unit} * Bool);
 
   /// The magma to itself by the swap, at degree one: a path in `Type`.
   def opposite : Path[.A = Type](Tel, Tel) = ua[
     1,
     4
-  ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
+  ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
   /// The statement over the user universe, at the stratum code.
-  def atTel() -> Path[.A = Type](Tel, Tel) ≃ (Tel ≃ Tel) {
-    univalence(Tel, Tel)
-  }
+  def atTel() -> Path[.A = Type](Tel, Tel) ≃ (Tel ≃ Tel) =
+    univalence Tel Tel
 
   /// The stratum path packaged as an equivalence.
-  def swapped() -> Tel ≃ Tel {
-    idtoequiv(Tel, Tel, opposite)
-  }
+  def swapped() -> Tel ≃ Tel =
+    idtoequiv Tel Tel opposite
 
   /// Transport along `ua` of the packaged stratum path is transport along the
   /// path itself.
-  def repackaged : Path[.A = Tel => Tel](
-    fun (x) { fwdAlong(Tel, Tel, ua(idtoequiv(Tel, Tel, opposite)), x) },
-    fun (x) { fwdAlong(Tel, Tel, opposite, x) }
-  ) = Path.here(fun (x) { fwdAlong(Tel, Tel, opposite, x) });
-}
+  def repackaged : Path[.A = Tel -> Tel](
+    fun (x) { fwdAlong Tel Tel (ua (idtoequiv Tel Tel opposite)) x },
+    fun (x) { fwdAlong Tel Tel opposite x }
+  ) = Path.here (fun (x) { fwdAlong Tel Tel opposite x });

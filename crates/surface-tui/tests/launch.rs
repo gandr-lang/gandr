@@ -492,7 +492,7 @@ fn a_fixed_session_paints_as_the_golden()
         String::from("def answer = 42 ;"),
         format!("def later : {string} ;"),
         String::from("def copy = ("),
-        String::from("answer) ;"),
+        String::from("  answer) ;"),
         String::from(":type answer"),
     ] {
         assert_eq!(enter(&mut app, line.as_str()), Handled::Continue, "{line}");
@@ -513,7 +513,7 @@ fn a_fixed_session_paints_as_the_golden()
         format!("▸ def later : {string} ;"),
         format!("? later : {string}"),
         String::from("▸ def copy = ("),
-        String::from("  answer) ;"),
+        String::from("    answer) ;"),
         format!("copy : {integer}"),
         String::from("= 42"),
         String::from("▸ :type answer"),

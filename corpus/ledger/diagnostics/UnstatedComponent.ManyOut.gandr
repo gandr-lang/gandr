@@ -2,11 +2,10 @@
 ///
 /// The theory the model derives from.
 @[ checks ]
-theory T where {
+theory T where
   sort Nat : Type;
   oper pair : (a : Nat, b : Nat) --> (c : Nat, d : Nat);
-  rule swap : pair(x, y) ==> (y, x);
-}
+  rule swap : pair x y ==> (y, x);
 
 @[ refuses("UnstatedComponent.ManyOut") ]
 def model : Model(T) ;

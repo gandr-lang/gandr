@@ -5,17 +5,15 @@
 // - see: #1310
 
 /// Doubles its argument, the parameter typed where the lambda binds it.
-def double : Integer => Integer = fun (x : Integer) { x + x };
+def double : Integer -> Integer = fun (x : Integer) { x + x };
 
 /// A function of a lazy record, handed its argument.
 def lend(
-  f : +U &{get : -F Integer, put : -F String} => Integer,
+  f : +U &{get : -F Integer, put : -F String} -> Integer,
   m : +U &{get : -F Integer, put : -F String}
-) -> Integer {
-  f(m)
-}
+) -> Integer =
+  f m
 
 /// Lends `lend` a lambda whose parameter states the record it observes.
-def lent(m : +U &{get : -F Integer, put : -F String}) -> Integer {
-  lend(fun (n : +U &{get : -F Integer, put : -F String}) { n.get }, m)
-}
+def lent(m : +U &{get : -F Integer, put : -F String}) -> Integer =
+  lend (fun (n : +U &{get : -F Integer, put : -F String}) { n.get }) m

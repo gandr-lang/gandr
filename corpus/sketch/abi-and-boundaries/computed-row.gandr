@@ -24,7 +24,7 @@ import std.abi.C;
 /// The demo library's two functions. `Option(&u32)` is one word with `None`
 /// as null, so the computed row matches the library's.
 extern C from "lib:demo" {
-  fun f(x : Option(&u32), n : u32) -> u32;
+  fun f(x : Option(& u32), n : u32) -> u32;
   fun sum(xs : Ptr(u32), len : usize) -> u64;
 }
 
@@ -35,16 +35,13 @@ extern C from "lib:z" {
 }
 
 /// The value behind a reference that may be absent, the default otherwise.
-pub def orDefault(x : Option(&u32), d : u32) -> u32 {
-  f(x, d)
-}
+pub def orDefault(x : Option(& u32), d : u32) -> u32 =
+  f x d
 
 /// The checksum of `len` bytes from zlib's initial value.
-pub def checksum(buf : Ptr(u8), len : u32) -> u64 {
-  crc32(0, buf, len)
-}
+pub def checksum(buf : Ptr(u8), len : u32) -> u64 =
+  crc32 0 buf len
 
 /// Two buffers' checksum, the second continuing the first's.
-pub def checksumBoth(a : Ptr(u8), alen : u32, b : Ptr(u8), blen : u32) -> u64 {
-  crc32(crc32(0, a, alen), b, blen)
-}
+pub def checksumBoth(a : Ptr(u8), alen : u32, b : Ptr(u8), blen : u32) -> u64 =
+  crc32 (crc32 0 a alen) b blen

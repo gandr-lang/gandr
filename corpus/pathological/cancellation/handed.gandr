@@ -10,24 +10,22 @@ import "../../model/cancellation/cancel-base.gandr";
 import std.process;
 
 /// Resumes the stack it is handed: a stack a parameter holds owes nothing.
-def resume_stack(j : Stack(-F Unit, -F Unit)) -> Unit {
-  j(unit)
-}
+def resume_stack(j : Stack(-F Unit, -F Unit)) -> Unit =
+  j *{}
 
 /// A scope whose exit clause hands the rest to `resume_stack` while its task's
 /// end is open.
 @[ refuses("ContinuationAsValue") ]
-def handed() -> Unit {
+def handed() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
       send(task, Cancel.notes);
       close(task)
     };
-    c.exit(1);
+    c.exit 1;
     let text = recv(found);
     close(found)
   } with {
-    pure(x) => pure x,
-    oper exit(code, k) => resume_stack(k)
+    | pure(x) => pure x
+    | oper exit(code, k) => resume_stack k
   }
-}

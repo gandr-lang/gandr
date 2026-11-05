@@ -1,8 +1,8 @@
 // A record updated at one field: a new record, the other fields kept.
 
 /// A point of two fields.
-def point = #{x = 1, y = 2};
+def point = *{x = 1, y = 2};
 
 /// `point` updated at `x`: a new record, `y` kept.
-@[ runs("#{.x = 9, .y = 2}") ]
-def moved() -> #{x : Integer, y : Integer} { #{point | x = 9} }
+@[ runs("*{.x = 9, .y = 2}") ]
+def moved() -> *{x : Integer, y : Integer} { *{point | x = 9} }

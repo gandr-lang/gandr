@@ -38,7 +38,7 @@ use crate::verify_rewritten;
 
 /// A source whose product's operands differ, so swapping them changes what
 /// it means.
-const SOURCE: &str = "def pair : #{Integer, String} ;\n";
+const SOURCE: &str = "def pair : *{Integer, String} ;\n";
 
 /// The bundled grammar.
 ///

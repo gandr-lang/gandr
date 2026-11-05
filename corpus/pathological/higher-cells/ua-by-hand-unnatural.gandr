@@ -1,8 +1,7 @@
-theory Rig where {
+theory Rig where
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
-}
 
 /// The binary corolla's code holds `plus`, `plus` with its inputs swapped,
 /// `times` and `times` swapped. `cross` exchanges `plus` and `times` and fixes
@@ -13,21 +12,18 @@ module Unnatural where {
   type Tel = Unit * (Unit + Unit + Unit + Unit);
 
   @[ checks ]
-  def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
-    match e {
-      +{.0 = u} => +{.2 = u},
-      +{.1 = u} => +{.1 = u},
-      +{.2 = u} => +{.0 = u},
-      +{.3 = u} => +{.3 = u}
-    }
-  }
+  def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
+    match e
+      | +{.0 = u} => +{.2 = u}
+      | +{.1 = u} => +{.1 = u}
+      | +{.2 = u} => +{.0 = u}
+      | +{.3 = u} => +{.3 = u}
 
   @[ checks ]
-  def crossed_by_hand : Path[.A = Type](Tel, Tel) = Path.product(
-    Path.here(Unit),
-    equiv(cross, cross)
-  );
+  def crossed_by_hand : Path[.A = Type](Tel, Tel) = Path.product
+    (Path.here (Unit))
+    (equiv cross cross);
 
   @[ refuses("NotNatural") ]
-  def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross});
+  def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});
 }

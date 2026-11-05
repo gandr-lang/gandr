@@ -16,36 +16,35 @@
 import "./magma-base.gandr";
 
 /// The swap three times, which is the swap.
-def flip(b : Bool) -> Bool {
-  let c = exchange(b);
-  exchange(exchange(c))
-}
+def flip(b : Bool) -> Bool =
+  let c = exchange b
+  exchange (exchange c)
 
 /// The magma to itself by the swap at the binary corolla.
 def opposite = ua[
   1,
   4
-](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
 /// Transport along it swaps the binary corolla's boolean.
 def moves : Path[.A = Unit * (+{Unit} * Bool)](
-  Path.walk(fun (X) { X }, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
-  (unit, (+{.0 = unit}, +{.1 = unit}))
-) = Path.here((unit, (+{.0 = unit}, +{.1 = unit})));
+  Path.walk (fun (X) { X }) opposite (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
+  *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}
+) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
 /// It does not leave the boolean where it was.
 @[ refuses("EndpointMismatch") ]
 def stays : Path[.A = Unit * (+{Unit} * Bool)](
-  Path.walk(fun (X) { X }, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
-  (unit, (+{.0 = unit}, +{.0 = unit}))
-) = Path.here((unit, (+{.0 = unit}, +{.0 = unit})));
+  Path.walk (fun (X) { X }) opposite (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
+  *{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}
+) = Path.here (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}});
 
 /// The magma to itself by the swap written three times.
-def reopposite = ua[1, 4](Magma, Magma, #{.mul = flip, .one = keep}, #{.mul = flip, .one = keep});
+def reopposite = ua[1, 4] Magma Magma (*{.mul = flip, .one = keep}) (*{.mul = flip, .one = keep});
 
 /// The swap and the swap three times agree at every boolean.
-def agree : Path[.A = Bool => Bool](exchange, flip) = Path.funext(exchange, flip);
+def agree : Path[.A = Bool -> Bool](exchange, flip) = Path.funext exchange flip;
 
 /// The swap and the identity do not.
 @[ refuses("PointwiseDistinct") ]
-def disagree : Path[.A = Bool => Bool](exchange, boolId) = Path.funext(exchange, boolId);
+def disagree : Path[.A = Bool -> Bool](exchange, boolId) = Path.funext exchange boolId;

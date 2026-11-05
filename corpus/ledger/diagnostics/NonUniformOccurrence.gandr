@@ -1,5 +1,4 @@
 /// `NonUniformOccurrence`: a data declaration's own family is applied off its parameters.
 @[ refuses("NonUniformOccurrence") ]
-data Cell(a : Type) : Type where {
+data Cell(a : Type) : Type where
   | Mk : (n : a, m : Cell(Integer)) --> Cell(a)
-}

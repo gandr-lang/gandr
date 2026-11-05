@@ -15,60 +15,53 @@ import std.cost (Cost, Counting, costs, counted, countOf);
 import std.grade (Count);
 
 /// Three steps: a charge of one, a charge of two, then seven.
-def threeSteps() -> [cost : Cost.Eff with sort N = Nat => Nat] Integer {
-  let _a = cost.charge(costs((1 : Nat)));
-  let _b = cost.charge(costs((2 : Nat)));
+def threeSteps() -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
+  let _a = cost.charge (costs (1 : Nat))
+  let _b = cost.charge (costs (2 : Nat))
   pure 7
-}
 
 /// The steps under the counting model.
-def countedSteps() -> (Nat => Nat) => Nat {
-  handle cost : Cost.Eff with sort N = Nat => Nat {
-    let _answer = threeSteps();
+def countedSteps() -> (Nat -> Nat) -> Nat =
+  handle cost : Cost.Eff with sort N = Nat -> Nat {
+    let _answer = threeSteps ();
     pure counted
   } with Counting
-}
 
 /// The count of the steps is three.
-def costsThree : Path(countOf(countedSteps()), (3 : Nat)) = Path.here((3 : Nat));
+def costsThree : Path(countOf (countedSteps ()), (3 : Nat)) = Path.here (3 : Nat);
 
 /// Whether the count of the steps is at most `n`.
-def within(n : Nat) -> Bool {
-  Count.le(countOf(countedSteps()), n)
-}
+def within(n : Nat) -> Bool =
+  Count.le (countOf (countedSteps ())) n
 
 /// The bound three holds: conversion decides it, and the kernel replays it.
-def boundThree : Path(within((3 : Nat)), true) = Path.here(true);
+def boundThree : Path(within (3 : Nat), true) = Path.here true;
 
 /// The extensional reading at integer answers: every charge is the identity.
-module Erased : Model(Cost.Eff) with sort N = Nat => Nat where {
+module Erased : Model(Cost.Eff) with sort N = Nat -> Nat where
   /// The answer itself.
   type C = Integer;
   /// A charge leaves what runs after it as it is.
-  def charge(c : Nat => Nat, k : Integer) -> Integer { k }
+  def charge(c : Nat -> Nat, k : Integer) -> Integer { k }
   /// No cost.
-  def zero : Nat => Nat = thunk { fun (n) { pure n } };
+  def zero : Nat -> Nat = thunk { fun (n) { pure n } };
   /// Two costs, composed.
-  def plus(a : Nat => Nat, b : Nat => Nat) -> Nat => Nat {
-    thunk { fun (n) { let m = b(n); a(m) } }
-  }
+  def plus(a : Nat -> Nat, b : Nat -> Nat) -> Nat -> Nat =
+    thunk { fun (n) { let m = b n; a m } }
   /// Charging nothing is the identity.
-  def chargeZero(k : Integer) -> Path(charge(zero, k), k) { Path.here(k) }
+  def chargeZero(k : Integer) -> Path(charge zero k, k) { Path.here k }
   /// Two charges are one.
-  def chargeTwice(a : Nat => Nat, b : Nat => Nat, k : Integer) -> Path(
-    charge(a, charge(b, k)),
-    charge(plus(a, b), k)
-  ) {
-    Path.here(k)
-  }
-}
+  def chargeTwice(a : Nat -> Nat, b : Nat -> Nat, k : Integer) -> Path(
+    charge a (charge b k),
+    charge (plus a b) k
+  ) =
+    Path.here k
 
 /// The steps under the erasing model.
-def erasedSteps() -> Integer {
-  handle cost : Cost.Eff with sort N = Nat => Nat {
-    threeSteps()
+def erasedSteps() -> Integer =
+  handle cost : Cost.Eff with sort N = Nat -> Nat {
+    threeSteps ()
   } with Erased
-}
 
 /// Erased, the steps answer as the program does with no charge.
-def erasedAnswer : Path(erasedSteps(), 7) = Path.here(7);
+def erasedAnswer : Path(erasedSteps (), 7) = Path.here 7;

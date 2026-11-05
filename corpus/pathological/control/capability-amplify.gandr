@@ -11,11 +11,9 @@
 // The filesystem's host interface.
 import std.fs;
 
-def save(c : Cap { read, write }) -> [std.fs.Eff] Unit {
-  c.write("notes", "draft")
-}
+def save(c : Cap { read, write }) -> [std.fs.Eff] Unit =
+  c.write "notes" "draft"
 
 @[ refuses("CapabilityAmplified") ]
-def widen(c : Cap { read }) -> [std.fs.Eff] Unit {
-  save(c)
-}
+def widen(c : Cap { read }) -> [std.fs.Eff] Unit =
+  save c

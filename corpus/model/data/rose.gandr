@@ -30,53 +30,43 @@ import "./recursive-lists.gandr";
 
 /// The direct form: a node over a list of nodes, nested through `List`'s
 /// strictly positive parameter.
-data Bush : Type where {
+data Bush : Type where
   | Sprout : (kids : List(Bush)) --> Bush
-}
 
 /// A node without children, written directly.
-def sprig : Bush = Sprout((Nil : List(Bush)));
+def sprig : Bush = Sprout (Nil : List(Bush));
 
 /// A node over two childless nodes, written directly.
-def shrub : Bush = Sprout((Cons(
-  sprig,
-  (Cons(sprig, (Nil : List(Bush))) : List(Bush))
-) : List(Bush)));
+def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List(Bush)) : List(Bush)) : List(Bush));
 
 /// A list of numbers, summed.
-def rec sum(xs : List(Nat)) -> Nat {
-  match xs {
-    Nil => Zero,
-    Cons(x, rest) => plus(x, sum[<](rest))
-  }
-}
+def rec sum(xs : List(Nat)) -> Nat =
+  match xs
+    | Nil => Zero
+    | Cons(x, rest) => plus x (sum[<] rest)
 
 /// The nodes of a bush, its children's measured through `map`: the call
 /// instantiates `map`'s element at the children's stage, below the node's,
 /// so `nodes[<]` takes each child.
-def rec nodes(t : Bush) -> Nat {
-  match t {
-    Sprout(kids) => Succ(sum(map(Bush, Nat, nodes[<], kids)))
-  }
-}
+def rec nodes(t : Bush) -> Nat =
+  match t
+    | Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
 
 /// A map over the tree: every node gains a childless node beside its
 /// children, each child grown through `map` at its stage.
-def rec grow(t : Bush) -> Bush {
-  match t {
-    Sprout(kids) => Sprout((Cons(sprig, map(Bush, Bush, grow[<], kids)) : List(Bush)))
-  }
-}
+def rec grow(t : Bush) -> Bush =
+  match t
+    | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List(Bush))
 
 /// The shrub's three nodes, its children counted through `map` at the
 /// children's type.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
-def shrub_nodes : () => Nat = nodes(shrub);
+@[ runs("Succ (Succ (Succ Zero))") ]
+def shrub_nodes : () -> Nat = nodes shrub;
 
 /// The shrub grown, then counted: the root gains a childless node and each
 /// of its two children gains one, six nodes in all.
-@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
-def grown_nodes : () => Nat = nodes(grow(shrub));
+@[ runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))") ]
+def grown_nodes : () -> Nat = nodes (grow shrub);
 
 /// The tree and its forest, one block: each family names the other, and
 /// the two measures recurse through each other.
@@ -97,34 +87,31 @@ rec {
   /// The nodes of a tree: its own and its children's.
   @[ checks ]
   def rec treeSize(t : Rose) -> Nat {
-    match t {
-      Node(kids) => { let s = forestSize[<](kids); Succ(s) }
-    }
+    match t
+      | Node(kids) => { let s = forestSize[<] kids; Succ s }
   }
 
   /// The nodes of a forest: each tree's, summed.
   @[ checks ]
-  def rec forestSize(ts : Forest) -> Nat {
-    match ts {
-      Empty => Zero,
-      More(t, rest) => { let a = treeSize[<](t); let b = forestSize[<](rest); plus(a, b) }
-    }
-  }
+  def rec forestSize(ts : Forest) -> Nat =
+    match ts
+      | Empty => Zero
+      | More(t, rest) => { let a = treeSize[<] t; let b = forestSize[<] rest; plus a b }
 }
 
 /// A node without children.
-def leaf : Rose = Node(Empty);
+def leaf : Rose = Node Empty;
 
 /// A node over two leaves.
-def sapling : Rose = Node(More(leaf, More(leaf, Empty)));
+def sapling : Rose = Node (More leaf (More leaf Empty));
 
 /// The sapling's three nodes.
-@[ runs("Succ(Succ(Succ(Zero)))") ]
-def sapling_nodes : () => Nat = treeSize(sapling);
+@[ runs("Succ (Succ (Succ Zero))") ]
+def sapling_nodes : () -> Nat = treeSize sapling;
 
 /// A forest of a sapling and a leaf: four nodes.
-@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def forested : () => Nat = forestSize(More(sapling, More(leaf, Empty)));
+@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
+def forested : () -> Nat = forestSize (More sapling (More leaf Empty));
 
 /// Two measures that pass a weight to each other unchanged, one block. Each
 /// descends on its first parameter, and the joint passes `k` on.
@@ -132,21 +119,18 @@ rec {
   /// The nodes of a tree, each weighing `k`.
   @[ checks ]
   def rec treeWeight(t : Rose, k : Nat) -> Nat {
-    match t {
-      Node(kids) => plus(k, forestWeight[<](kids, k))
-    }
+    match t
+      | Node(kids) => plus k (forestWeight[<] kids k)
   }
 
   /// The nodes of a forest, each weighing `k`.
   @[ checks ]
-  def rec forestWeight(ts : Forest, k : Nat) -> Nat {
-    match ts {
-      Empty => Zero,
-      More(t, rest) => plus(treeWeight[<](t, k), forestWeight[<](rest, k))
-    }
-  }
+  def rec forestWeight(ts : Forest, k : Nat) -> Nat =
+    match ts
+      | Empty => Zero
+      | More(t, rest) => plus (treeWeight[<] t k) (forestWeight[<] rest k)
 }
 
 /// The sapling's three nodes, each weighing two.
-@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
-def sapling_weight : () => Nat = treeWeight(sapling, Succ(Succ(Zero)));
+@[ runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))") ]
+def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero));

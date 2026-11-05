@@ -1,5 +1,5 @@
 /// `CapabilityMissing`: a migration with no capability for its world.
-module Seat :> #{
+module Seat :> *{
   type Dispatch,
   mobile type Report,
   type Handoff,
@@ -33,6 +33,5 @@ world seat ;
 
 @[ refuses("CapabilityMissing") ]
 @[ entry(operator) ]
-def unheld() -> -F Seat.Report {
+def unheld() -> -F Seat.Report =
   migrate [seat] { pure Seat.progress }
-}

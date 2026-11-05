@@ -195,6 +195,7 @@ pub use crate::spelling::UNRESTRICTED;
 pub use crate::spelling::Unspelled;
 pub use crate::spelling::aliased;
 pub use crate::spelling::spelled;
+pub use crate::surface::APPLICATION;
 pub use crate::surface::PBG_ONLY_KINDS;
 pub use crate::surface::TREE_SITTER_NAMED_KINDS;
 pub use crate::surface::built_in;

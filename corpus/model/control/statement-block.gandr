@@ -15,12 +15,11 @@ import std.process;
 /// stating no type: the block synthesises its last computation's type, and
 /// the clause resumes the rest once.
 @[ runs("0") ]
-def statement() -> Integer {
+def statement() -> Integer =
   handle c : std.process.Exit.Eff {
-    let n = { c.exit(1); pure 0 };
+    let n = { c.exit 1; pure 0 };
     pure n
   } with {
-    pure(y) => pure y,
-    oper exit(code, k) => k(unit)
+    | pure(y) => pure y
+    | oper exit(code, k) => k *{}
   }
-}

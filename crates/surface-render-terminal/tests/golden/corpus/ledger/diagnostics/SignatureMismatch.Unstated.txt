@@ -1,22 +1,22 @@
 error[SignatureMismatch.Unstated]: this import is read at `Greeted`, whose `greeting` the match reads no type for, so this source's declarations are not read
-  ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Unstated.gandr:9:59
+  ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Unstated.gandr:8:59
   │
-3 │ theory Greeted where {
+3 │ theory Greeted where
   │        ─────── declared here
   ┆
-9 │ import "../features/package-address.gandr" as addressed : Greeted;
+8 │ import "../features/package-address.gandr" as addressed : Greeted;
   │                                                           ━━━━━━━ a member the match reads no type for
   │
   ├ note: `Greeted` is refused with SignatureMismatch.Unstated, as its expectation states
   ╰ help: give the source's `greeting` a signature, or state only operations in `Greeted`
 
 error[SignatureMismatch.Unstated]: this import is read at `Greeted`, whose `greeting` the match reads no type for, so this source's declarations are not read
-   ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Unstated.gandr:9:59
+   ╭▸ corpus/ledger/diagnostics/SignatureMismatch.Unstated.gandr:8:59
    │
- 9 │ import "../features/package-address.gandr" as addressed : Greeted;
+ 8 │ import "../features/package-address.gandr" as addressed : Greeted;
    │                                                           ━━━━━━━ a member the match reads no type for
    ┆
-12 │ def relayed = addressed.greeting;
+11 │ def relayed = addressed.greeting;
    │     ─────── declared here
    │
    ├ note: `relayed` is refused with SignatureMismatch.Unstated, as its expectation states

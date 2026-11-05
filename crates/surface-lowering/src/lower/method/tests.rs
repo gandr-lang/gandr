@@ -39,9 +39,9 @@ const COUNTER: &str = r"module Counter where {
 }
 def used() -> -F Integer {
   var s = 1;
-  let n = s.read();
-  let _ = s.bump(2);
-  let m = s.spend();
+  let n = s.read ();
+  let _ = s.bump 2;
+  let m = s.spend ();
   pure n + m
 }
 ";
@@ -123,8 +123,8 @@ fn a_written_through_body_returns_its_receiver()
 fn a_receiver_not_held_is_passed_or_refused()
 {
     let source = format!(
-        "{COUNTER}def passed(t : Integer) -> -F Integer {{\n  let n = t.read();\n  t.spend()\n}}\n\
-         def written(t : Integer) -> -F Unit {{ t.bump(1) }}\n"
+        "{COUNTER}def passed(t : Integer) -> -F Integer {{\n  let n = t.read ();\n  t.spend ()\n}}\n\
+         def written(t : Integer) -> -F Unit {{ t.bump 1 }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -151,7 +151,7 @@ fn a_method_two_modules_declare_is_refused_naming_both()
 {
     let source = "module A where { def size(self : shared Integer) -> -F Integer { pure self } }\n\
                   module B where { def size(self : shared Integer) -> -F Integer { pure 0 } }\n\
-                  def measured() -> -F Integer { var s = 1; s.size() }\n";
+                  def measured() -> -F Integer { var s = 1; s.size () }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert!(
@@ -233,9 +233,9 @@ fn a_receiver_is_a_typed_first_self()
                   def other(x : Integer) -> -F Integer { pure x }\n\
                   def generic[a : Type](self : shared a) -> -F a { pure self }\n\
                   }\n\
-                  def first() -> -F Integer { var s = 1; s.untyped() }\n\
-                  def second() -> -F Integer { var s = 1; s.other() }\n\
-                  def third() -> -F Integer { var s = 1; s.generic() }\n";
+                  def first() -> -F Integer { var s = 1; s.untyped () }\n\
+                  def second() -> -F Integer { var s = 1; s.other () }\n\
+                  def third() -> -F Integer { var s = 1; s.generic () }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     for name in ["first", "second"] {
@@ -262,15 +262,15 @@ fn a_receiver_is_a_typed_first_self()
 /// the element at an index, and calls lending each to a block that reads it and
 /// to one that writes it back.
 const PLACES: &str = r"def pair : List(Integer) ;
-def pair = cons(1, cons(2, nil)) ;
+def pair = cons 1 (cons 2 nil) ;
 module Places where {
   def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { self.#[0] }
   def nth[m : Mode](self : m List(Integer), i : Integer) -> View[m](Integer) { self.#[i] }
 }
-def head() -> -F Integer { var xs = pair; let h = xs.first(); pure h }
-def doubled() -> -F Integer { var xs = pair; xs.first() as w { pure w + w } }
-def raised() -> -F Integer { var xs = pair; xs.nth(1) as w { resume(w, w + 3) }; pure 0 }
-def untouched() -> -F Integer { var xs = pair; xs.first() as w { abort(w) }; pure 0 }
+def head() -> -F Integer { var xs = pair; let h = xs.first (); pure h }
+def doubled() -> -F Integer { var xs = pair; (xs.first ()) as w { pure w + w } }
+def raised() -> -F Integer { var xs = pair; (xs.nth 1) as w { resume(w, w + 3) }; pure 0 }
+def untouched() -> -F Integer { var xs = pair; (xs.first ()) as w { abort(w) }; pure 0 }
 ";
 
 #[test]
@@ -483,7 +483,7 @@ fn a_view_block_lends_at_the_mode_it_asks()
 fn a_view_block_after_no_place_is_refused()
 {
     let source = format!(
-        "{COUNTER}def viewed() -> -F Integer {{ var s = 1; s.read() as w {{ pure w }} }}\n\
+        "{COUNTER}def viewed() -> -F Integer {{ var s = 1; (s.read ()) as w {{ pure w }} }}\n\
          def called() -> -F Integer {{ var s = 1; s as w {{ pure w }} }}\n"
     );
     let mut arena = CoreArena::new();

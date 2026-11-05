@@ -152,7 +152,7 @@ fn an_entry_returns_the_unit_2279()
         );
     }
     let source =
-        "def main() -> -F [std.io.Console.Eff] Unit { std.io.Console.print(\"hello, world!\") }\n";
+        "def main() -> -F [std.io.Console.Eff] Unit { std.io.Console.print \"hello, world!\" }\n";
     let text = hosting(source);
     let module = hosted(&text, &mut arena);
     assert!(
@@ -172,7 +172,7 @@ fn an_entry_returns_the_unit_2279()
 fn an_entry_takes_the_ambient_authority_2970()
 {
     let source = "def main(authority : Cap { print }) -> [std.io.Console.Eff] Unit {\n  \
-                  authority.print(\"hello, world!\")\n}\n";
+                  authority.print \"hello, world!\"\n}\n";
     let mut arena = CoreArena::new();
     let text = hosting(source);
     let module = hosted(&text, &mut arena);

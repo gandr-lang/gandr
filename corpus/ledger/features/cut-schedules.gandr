@@ -15,43 +15,36 @@
 /// - owes: #2954 — the rule that spawns a writer at each independent cut
 
 /// The depth of a complete tree.
-data Depth : Type where {
+data Depth : Type where
   /// The depth of a single leaf.
   | Zero : Depth
   /// One level deeper than `p`.
   | Succ : (p : Depth) --> Depth
-}
 
 /// A binary tree with an integer at each leaf.
-data Tree : Type where {
+data Tree : Type where
   /// A leaf holding `n`.
   | Leaf : (n : Integer) --> Tree
   /// A node over the subtrees `l` and `r`.
   | Node : (l : Tree, r : Tree) --> Tree
-}
 
 /// The complete tree of depth `d` with a one at every leaf, each subtree built under a cut.
-def rec full(d : Depth) -> Tree {
-  match d {
-    Zero => Leaf(1),
-    Succ(p) => Node(full[<](p), full[<](p))
-  }
-}
+def rec full(d : Depth) -> Tree =
+  match d
+    | Zero => Leaf 1
+    | Succ(p) => Node (full[<] p) (full[<] p)
 
 /// The sum of the leaves of `t`, each half summed under its own cut.
-def rec sum(t : Tree) -> Integer {
-  match t {
-    Leaf(n) => n,
-    Node(l, r) => {
-      let a = sum[<](l);
-      let b = sum[<](r);
+def rec sum(t : Tree) -> Integer =
+  match t
+    | Leaf(n) => n
+    | Node(l, r) => {
+      let a = sum[<] l;
+      let b = sum[<] r;
       a + b
     }
-  }
-}
 
 /// The sum over the complete tree of depth three, eight leaves of one each.
 @[ runs("8") ]
-def small() -> Integer {
-  sum(full(Succ(Succ(Succ(Zero)))))
-}
+def small() -> Integer =
+  sum (full (Succ (Succ (Succ Zero))))

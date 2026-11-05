@@ -1,6 +1,6 @@
 /// `UndescribedMember.NestedOperation`: a member the description does not read: a rule with an operation nested in producer position.
 @[ refuses("UndescribedMember.NestedOperation") ]
-theory GradedChoice where {
+theory GradedChoice where
   sort Grade : Type;
   sort M(g : Grade) : Type;
 
@@ -9,6 +9,5 @@ theory GradedChoice where {
   oper cut : () --> M(bot());
   oper or : (x : M(d), y : M(e)) --> M(meet(d, e));
 
-  rule meetBot : meet(bot(), e) ==> bot();
-  rule cutLeft : or(cut(), y) ==> cut();
-}
+  rule meetBot : meet (bot ()) e ==> bot ();
+  rule cutLeft : or (cut ()) y ==> cut ();

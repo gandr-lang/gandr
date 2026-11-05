@@ -7,39 +7,33 @@
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
 /// A colour as its three channels.
-data Color3 : Type where {
+data Color3 : Type where
   | RGB : (r : Integer, g : Integer, b : Integer) --> Color3
-}
 
 /// The green channel of a colour, bound by its position in the constructor.
-def green_channel() -> Integer {
-  match (RGB(10, 20, 30) : Color3) {
-    RGB(r, g, b) => g
-  }
-}
+def green_channel() -> Integer =
+  match (RGB 10 20 30 : Color3)
+    | RGB(r, g, b) => g
 
 /// The blue channel of a colour, read by the field's name: the match above,
 /// its one arm returning the field.
-def blue_channel(color : Color3) -> Integer {
+def blue_channel(color : Color3) -> Integer =
   color.b
-}
 
 /// Whether a colour's red channel exceeds its green, each read by name where
 /// no answer is stated, so typed by the field's declaration.
-def reddish(color : Color3) -> Bool {
+def reddish(color : Color3) -> Bool =
   color.r > color.g
-}
 
 /// Whether a colour's red and green channels are one, both read by name: the
 /// first channel's type binds the model of `Eq` the comparison resolves.
-def grey(color : Color3) -> Bool {
+def grey(color : Color3) -> Bool =
   color.r == color.g
-}
 
 /// A colour whose red and green channels are one.
-@[ runs("+{.0 = unit}") ]
-def greyRun() -> Bool { grey(RGB(5, 5, 9)) }
+@[ runs("+{.0 = *{}}") ]
+def greyRun() -> Bool { grey (RGB 5 5 9) }
 
 /// A colour whose red channel exceeds its green.
-@[ runs("+{.0 = unit}") ]
-def reddishRun() -> Bool { reddish(RGB(9, 5, 1)) }
+@[ runs("+{.0 = *{}}") ]
+def reddishRun() -> Bool { reddish (RGB 9 5 1) }

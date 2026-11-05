@@ -13,19 +13,18 @@
 
 /// Unary naturals: a unit and a recursive occurrence.
 @[ checks ]
-data Nat : Type where {
+data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
-}
 
 /// Naturals compared constructor by constructor, recursing at `var Nat`.
 @[ checks ]
-def eqNat = Eq.generic(Nat) ;
+def eqNat = Eq.generic Nat ;
 
 /// Two is two.
-@[ runs("+{.0 = unit}") ]
-def sameNat() -> Bool { eqNat(Succ(Succ(Zero)), Succ(Succ(Zero))) }
+@[ runs("+{.0 = *{}}") ]
+def sameNat() -> Bool { eqNat (Succ (Succ Zero)) (Succ (Succ Zero)) }
 
 /// One is not two: the recursion reaches `Zero` on one side only.
-@[ runs("+{.1 = unit}") ]
-def shorterNat() -> Bool { eqNat(Succ(Zero), Succ(Succ(Zero))) }
+@[ runs("+{.1 = *{}}") ]
+def shorterNat() -> Bool { eqNat (Succ Zero) (Succ (Succ Zero)) }

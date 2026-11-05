@@ -10,6 +10,5 @@ import std.layout (U8, U16, Done, Field, Layout, structLayout);
 
 /// `struct Outer { a: u8, inner: Small }`, `Small` written as its fields where a scalar stands, is refused.
 @[ refuses("TypeMismatch") ]
-def nested() -> Layout {
-  structLayout(Field("a", U8, Field("inner", Field("x", U16, Field("y", U8, Done)), Done)))
-}
+def nested() -> Layout =
+  structLayout (Field "a" U8 (Field "inner" (Field "x" U16 (Field "y" U8 Done)) Done))

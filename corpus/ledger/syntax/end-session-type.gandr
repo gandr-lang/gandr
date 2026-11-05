@@ -1,5 +1,4 @@
 /// `end_session_type`: the ended session.
 @[ checks ]
-def finish(c : end) -> -F Unit {
+def finish(c : end) -> -F Unit =
   close(c)
-}

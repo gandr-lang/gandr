@@ -80,116 +80,92 @@ import std.layout (U32, Ref, Done, Field, NoVariant, Variant);
 import "../../specification/niche-realizability.gandr";
 
 /// `Option<&u32>`.
-pub def optRef : Code = Sum(Variant("Some", Field("0", Ref, Done), Variant("None", Done, NoVariant)));
+pub def optRef : Code = Sum (Variant "Some" (Field "0" Ref Done) (Variant "None" Done NoVariant));
 
 /// `u32`.
-pub def u32 : Code = Plain(U32);
+pub def u32 : Code = Plain U32;
 
 /// `Option<&u32>`'s record: one word, as rustc prints it.
-@[ runs("Witness(8, 8, 8, Bitwise)") ]
-def optRefSummary() -> Witness { summary(optRef) }
+@[ runs("Witness 8 8 8 Bitwise") ]
+def optRefSummary() -> Witness { summary optRef }
 
 /// `u32`'s record.
-@[ runs("Witness(4, 4, 4, Bitwise)") ]
-def u32Summary() -> Witness { summary(u32) }
+@[ runs("Witness 4 4 4 Bitwise") ]
+def u32Summary() -> Witness { summary (u32) }
 
 /// `Option<&u32>`'s discriminant is the reference's null, so its realisers
 /// are the null niche's.
-@[ runs("+{.0 = unit}") ]
-def optRefNiched() -> Bool { niched(optRef) }
+@[ runs("+{.0 = *{}}") ]
+def optRefNiched() -> Bool { niched optRef }
 
 /// `f`'s row: `Option<&u32>` and `u32` to `u32`.
-pub def fRow : Row = Row(Arg(optRef, Arg(u32, NoCode)), u32);
+pub def fRow : Row = Row (Arg optRef (Arg (u32) NoCode)) (u32);
 
 /// `Option<&u32>` as rustc printed it: one word, its discriminant in the
 /// reference's niche.
-def printedOptRef : Printed = Printed(8, 8, true, false);
+def printedOptRef : Printed = Printed 8 8 true false;
 
 /// `u32` as rustc lays it out.
-def printedU32 : Printed = Printed(4, 4, false, false);
+def printedU32 : Printed = Printed 4 4 false false;
 
 /// `f` as rustc built it.
 @[ runs("Admitted") ]
-def fAdmitted() -> Admission {
-  admit(Declared(Param("x", printedOptRef, Param("n", printedU32, NoParam)), printedU32), fRow)
-}
+def fAdmitted() -> Admission =
+  admit (Declared (Param "x" printedOptRef (Param "n" printedU32 NoParam)) printedU32) fRow
 
 /// `g` takes `n: u64`, eight bytes where the row's `u32` is four.
-@[ runs("Unrealised(Size(Argument(1)))") ]
-def gUnrealised() -> Admission {
-  admit(
-    Declared(
-      Param("x", printedOptRef, Param("n", Printed(8, 8, false, false), NoParam)),
-      printedU32
-    ),
+@[ runs("Unrealised (Size (Argument 1))") ]
+def gUnrealised() -> Admission =
+  admit
+    (Declared (Param "x" printedOptRef (Param "n" (Printed 8 8 false false) NoParam)) printedU32)
     fRow
-  )
-}
 
 /// `h` takes `x: &u32`: one word, but never null, where the row's null
 /// stands for `None`.
-@[ runs("Unrealised(Niche(Argument(0)))") ]
-def hUnrealised() -> Admission {
-  admit(
-    Declared(Param("x", Printed(8, 8, false, false), Param("n", printedU32, NoParam)), printedU32),
+@[ runs("Unrealised (Niche (Argument 0))") ]
+def hUnrealised() -> Admission =
+  admit
+    (Declared (Param "x" (Printed 8 8 false false) (Param "n" printedU32 NoParam)) printedU32)
     fRow
-  )
-}
 
 /// `t` takes `x: Tagged`, two words where the row's is one. Its realisers are
 /// the niche's (`nicheTaggedEquiv`), so a call across marshals with `fromOpt`.
-@[ runs("Unrealised(Size(Argument(0)))") ]
-def tUnrealised() -> Admission {
-  admit(
-    Declared(Param("x", Printed(16, 8, false, false), Param("n", printedU32, NoParam)), printedU32),
+@[ runs("Unrealised (Size (Argument 0))") ]
+def tUnrealised() -> Admission =
+  admit
+    (Declared (Param "x" (Printed 16 8 false false) (Param "n" printedU32 NoParam)) printedU32)
     fRow
-  )
-}
 
 /// `b` takes `x: Option<Box<u32>>`, one word with the same niche. It owns its
 /// cell, which the callee frees, where the row's reference is borrowed.
-@[ runs("Unrealised(Destroy(Argument(0)))") ]
-def bUnrealised() -> Admission {
-  admit(
-    Declared(Param("x", Printed(8, 8, true, true), Param("n", printedU32, NoParam)), printedU32),
+@[ runs("Unrealised (Destroy (Argument 0))") ]
+def bUnrealised() -> Admission =
+  admit
+    (Declared (Param "x" (Printed 8 8 true true) (Param "n" printedU32 NoParam)) printedU32)
     fRow
-  )
-}
 
 /// `a` takes `n: Packed`: four bytes, as the row's `u32`, but aligned to one
 /// where the row's is four.
-@[ runs("Unrealised(Align(Argument(1)))") ]
-def aUnrealised() -> Admission {
-  admit(
-    Declared(
-      Param("x", printedOptRef, Param("n", Printed(4, 1, false, false), NoParam)),
-      printedU32
-    ),
+@[ runs("Unrealised (Align (Argument 1))") ]
+def aUnrealised() -> Admission =
+  admit
+    (Declared (Param "x" printedOptRef (Param "n" (Printed 4 1 false false) NoParam)) printedU32)
     fRow
-  )
-}
 
 /// `w` answers a `u64` where the row answers a `u32`.
-@[ runs("Unrealised(Size(Result))") ]
-def wUnrealised() -> Admission {
-  admit(
-    Declared(
-      Param("x", printedOptRef, Param("n", printedU32, NoParam)),
-      Printed(8, 8, false, false)
-    ),
+@[ runs("Unrealised (Size Result)") ]
+def wUnrealised() -> Admission =
+  admit
+    (Declared (Param "x" printedOptRef (Param "n" printedU32 NoParam)) (Printed 8 8 false false))
     fRow
-  )
-}
 
 /// `k` takes no `n`.
-@[ runs("Unrealised(Arity)") ]
-def kUnrealised() -> Admission {
-  admit(Declared(Param("x", printedOptRef, NoParam), printedU32), fRow)
-}
+@[ runs("Unrealised Arity") ]
+def kUnrealised() -> Admission =
+  admit (Declared (Param "x" printedOptRef NoParam) printedU32) fRow
 
 /// `f`'s triple, `{V_opt(x)} f(x, n) {V_opt(x)}`, needs the reference's cells
 /// alone, the integer and the result owning nothing. That `f`'s body meets it
 /// is assumed, since nothing here reads its body.
-pub def fMeets(x : Nat, n : Nat, h : Heap) -> vOpt(vInt, x, h) => derefOrWp(x, n, keptOpt, h) {
-  derefOrMeets(x, n, h)
-}
+pub def fMeets(x : Nat, n : Nat, h : Heap) -> vOpt(vInt, x, h) -> derefOrWp(x, n, keptOpt, h) =
+  derefOrMeets x n h

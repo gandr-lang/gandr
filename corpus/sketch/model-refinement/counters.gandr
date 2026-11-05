@@ -12,7 +12,7 @@
 /// - see: corpus/model/identity/model-counter-manifest.gandr — the same programs as a `with sort` chain
 
 /// A theory of two carriers and one value of each.
-pub theory Pairing where {
+pub theory Pairing where
   /// The first carrier.
   sort A : Type;
   /// The second carrier.
@@ -21,10 +21,9 @@ pub theory Pairing where {
   oper left : A;
   /// A value of the second.
   oper right : B;
-}
 
 /// A counter: a zero, a step and a reading.
-pub theory Counter where {
+pub theory Counter where
   /// The counts.
   sort C : Type;
   /// The first count.
@@ -33,30 +32,28 @@ pub theory Counter where {
   oper incr : (c : C) --> C;
   /// What a count reads as.
   oper read : (c : C) --> Integer;
-}
 
 /// One and the unit as a pair, whose type fixes both carriers.
 def bothManifest : Model(Pairing) with {
   | sort A = Integer
   | sort B = Unit
-} = #{
+} = *{
   .left = 1,
-  .right = unit
+  .right = *{}
 };
 
 /// One fixed sort fits on one line, so its bar stays out.
-def firstManifest : Model(Pairing) with { sort A = Integer } = #{
+def firstManifest : Model(Pairing) with { sort A = Integer } = *{
   .left = 1,
-  .right = unit
+  .right = *{}
 };
 
 /// A count of a counter whose counts are integers is an integer.
 def countOfIntegers(a : Model(Counter) with { sort C = Integer }, c : a.C) -> Integer { c }
 
 /// `b` counts in `a`'s counts, so a count of `a` steps in `b`.
-def stepShared(a : Model(Counter), b : Model(Counter) with { sort C = a.C }, c : a.C) -> Integer {
-  b.read(b.incr(c))
-}
+def stepShared(a : Model(Counter), b : Model(Counter) with { sort C = a.C }, c : a.C) -> Integer =
+  b.read (b.incr c)
 
 /// A pair whose first carrier is an integer and whose second is `m`'s.
 def rightBeside(
@@ -65,6 +62,5 @@ def rightBeside(
     | sort A = Integer
     | sort B = m.B
   }
-) -> Integer {
+) -> Integer =
   n.left
-}

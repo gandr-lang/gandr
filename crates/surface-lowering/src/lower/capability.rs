@@ -78,13 +78,13 @@
 //!
 //! # A scope's clauses
 //!
-//! `handle c : I { M } with { pure(x) => N, oper op(p, k) => N_op, … }` binds
-//! `c` over `M` alone, `x` over `N`, and `p` then `k` over `N_op`. The return
-//! clause is spelled `pure`, the returner's own keyword, because `return` is
-//! the function exit in this surface; an operation clause is led by `oper`,
-//! the keyword a signature declares an operation with. The alternative was an
-//! operation clause led by the operation's name, `op(p, k) => N_op`; it was
-//! declined because its tiles gave every damaged call `f(a, b)` a stray
+//! `handle c : I { M } with { | pure(x) => N | oper op(p, k) => N_op | … }`
+//! binds `c` over `M` alone, `x` over `N`, and `p` then `k` over `N_op`. The
+//! return clause is spelled `pure`, the returner's own keyword, because
+//! `return` is the function exit in this surface; an operation clause is led by
+//! `oper`, the keyword a signature declares an operation with. The alternative
+//! was an operation clause led by the operation's name, `op(p, k) => N_op`; it
+//! was declined because its tiles gave every damaged call `f(a, b)` a stray
 //! clause to read, and the parser's recovery from a dropped token worsened
 //! wherever a call stood. Reversal: a recovery that never reads a form's
 //! inner tiles without the tile that opens it. Within an operation clause
@@ -2096,11 +2096,11 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify a capability scope,
-    /// `handle c : I { M } with { pure(x) => N, oper op(p, k) => N_op, … }`,
-    /// its interface a host's or a theory's with its value sorts, `handle c :
-    /// T with sort S = A { M } with { … }`, the clauses of a theory's scope
-    /// given by a model of it the scope names, `with N`, or by the one model
-    /// in scope, for a scope writing no `with`.
+    /// `handle c : I { M } with { | pure(x) => N | oper op(p, k) => N_op | …
+    /// }`, its interface a host's or a theory's with its value sorts,
+    /// `handle c : T with sort S = A { M } with { … }`, the clauses of a
+    /// theory's scope given by a model of it the scope names, `with N`, or
+    /// by the one model in scope, for a scope writing no `with`.
     ///
     /// # Specification
     /// - requires: `site` is a capability scope in term position.
@@ -2320,6 +2320,8 @@ impl<'source> Lowerer<'_, 'source>
             });
         }
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+        // The clauses each open with an arm bar, or are separated by `,`.
+        let barred = matches!(cursor.tile(TileName::ARM_BAR), Maybe::Present(_));
         let mut on_return: Maybe<(NodeIndex, Placed, NodeIndex), clause::Absent> =
             Maybe::Absent(clause::Absent::Unwritten);
         let mut clauses = Vec::new();
@@ -2434,6 +2436,12 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(_) => {
                     return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
                 },
+            }
+            if barred {
+                if let Maybe::Absent(_) = cursor.tile(TileName::ARM_BAR) {
+                    break;
+                }
+                continue;
             }
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
                 break;

@@ -183,7 +183,7 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
         &format!(
             "pub module Site : Model(Site) where {{\n  def key = \"{SITE_KEY}\";\n  def sockets = \
              \"\";\n  def secret = \"far\";\n}}\npub def placements : List(Placement) = \
-             #[Instances(\"far\", pack Site at Model(Site), 2)];\n"
+             #[Instances \"far\" (pack Site at Model(Site)) 2];\n"
         ),
     );
     assert!(
@@ -211,7 +211,7 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
     assert!(
         matches!(
             Manifold::read(&listed),
-            Err(Undeployed::Unplaced { ref came, .. }) if came == "cons(\"far\", nil)"
+            Err(Undeployed::Unplaced { ref came, .. }) if came == "cons \"far\" nil"
         ),
         "placements that are no placements are refused with what they ran to"
     );
@@ -250,10 +250,10 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
 const KEPT: &str = "pub theory Kept where {\n  sort V : Type+;\n  sort C : Type;\n  oper get : (key \
                     : V, k : pi+ (v : V). C) --> C;\n  oper put : (key : V, value : V, k : C) \
                     --> C;\n}\npub module Echo : Model(Kept) with sort V = String where {\n  type C = \
-                    String;\n  def get(key : String, k : String => String) -> String { k(key) \
+                    String;\n  def get(key : String, k : String -> String) -> String { k key \
                     }\n  def put(key : String, value : String, k : String) -> String { k }\n}\npub \
                     module Counted : Model(Kept) with sort V = Integer where {\n  type C = Integer;\n  \
-                    def get(key : Integer, k : Integer => Integer) -> Integer { k(key) }\n  def \
+                    def get(key : Integer, k : Integer -> Integer) -> Integer { k key }\n  def \
                     put(key : Integer, value : Integer, k : Integer) -> Integer { k }\n}\n";
 
 #[test]
@@ -361,9 +361,9 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
              \"./bare.gandr\" as bare;\npub module Manifold : Model(Manifold) where {{\n  def artifact \
              = \"p.gandr\";\n}}\npub module Local : Model(Site) where {{\n  def key = \"{local}\";\n  \
              def sockets = \"\";\n  def secret = \"local\";\n}}\npub def placements : \
-             List(Placement) = #[\n  At(\"far\", answered.site),\n  At(\"far\", typed.site),\n  \
-             At(\"far\", bare.site),\n  At(\"netted\", answered.site),\n  At(\"far\", pack Local \
-             at Model(Site)),\n  At(\"lost\", typed.site),\n];\n"
+             List(Placement) = #[\n  At \"far\" answered.site,\n  At \"far\" typed.site,\n  \
+             At \"far\" bare.site,\n  At \"netted\" answered.site,\n  At \"far\" (pack Local \
+             at Model(Site)),\n  At \"lost\" typed.site,\n];\n"
         )),
     );
     let refused = judged(&manifold);
@@ -429,7 +429,7 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
             Path::new(name),
             Text(&format!(
                 "pub module Secrets : Model(Secrets) with sort K = Secret.T where {{\n  def \
-                 secret(name : String) -> Secret.T {{ Secret.seal(\"{text}\") }}\n}}\n"
+                 secret(name : String) -> Secret.T {{ Secret.seal \"{text}\" }}\n}}\n"
             )),
         )
     };

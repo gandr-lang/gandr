@@ -18,9 +18,9 @@ import "./solver.gandr";
 
 /// Removes the front element. The solver in scope proves its size bound.
 pub def pop[a : Type](q : Queue(a)) -> [State(Heap)] Maybe(a) #spec{
-  ensures r { | size(q) <= old(size(q)) with ~smt }
+  ensures r { | size(q) <= old (size q) with ~smt }
 } {
-  dequeue(q)
+  dequeue q
 }
 
 /// The midpoint of two indices. A named model proves its overflow check
@@ -40,5 +40,5 @@ pub def midpoint(lo : u32, hi : u32) -> u32 #spec{
 pub def disjoint(s : Schedule) -> Bool #spec{
   ensures ok { | ok == noOverlap(s.slots) with ~smt(budget = 2 s) }
 } {
-  all(pairs(s.slots), fun ((x, y)) { x.end <= y.start || y.end <= x.start })
+  all(pairs s.slots, fun (*{x, y}) { x.end <= y.start || y.end <= x.start })
 }

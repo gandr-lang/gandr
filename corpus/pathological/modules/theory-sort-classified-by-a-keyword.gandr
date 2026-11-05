@@ -1,4 +1,3 @@
 @[ refuses("MalformedForm") ]
-theory Magma where {
+theory Magma where
   sort M : type;
-}

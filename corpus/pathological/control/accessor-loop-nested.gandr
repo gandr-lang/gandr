@@ -6,9 +6,9 @@
 /// - see: #1143
 /// - see: #1481
 @[ refuses("HeldCaptured") ]
-def nested() -> [Partial] Integer {
-  var n = 0;
-  var i = 3;
+def nested() -> [Partial] Integer =
+  var n = 0
+  var i = 3
   while i > 0 {
     while n < 3 {
       access n as v { resume(v, v + 1) }
@@ -16,4 +16,3 @@ def nested() -> [Partial] Integer {
     access i as u { resume(u, u - 1) }
   };
   pure n
-}

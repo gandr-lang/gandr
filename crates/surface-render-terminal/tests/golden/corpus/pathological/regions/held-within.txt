@@ -1,57 +1,59 @@
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
    ╭▸ corpus/pathological/regions/held-within.gandr:18:68
    │
-15 │ ┌  def keptPastHold() -> Integer {
+15 │ ┌  def keptPastHold() -> Integer =
 16 │ │┌   handle inner : std.process.Exit.Eff {
 17 │ ││     var l = 42;
    │ ││     ─── checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking the scope of this hold
-18 │ ││     let q : (() => Integer) at inner = access shared l as w { pure thunk { pure w } };
+18 │ ││     let q : (() -> Integer) at inner = access shared l as w { pure thunk { pure w } };
    │ ││     ┬──                                ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
    │ ││     │                                  │                      │    │
    │ ││     │                                  │                      │    a view outliving its access
-   │ ││     │                                  │                      checked against `-F ((() => Integer) at inner)`; while judging the value this returns
-   │ ││     │                                  checked against `-F ((() => Integer) at inner)`; while checking the body of this access
+   │ ││     │                                  │                      checked against `-F ((() -> Integer) at inner)`; while judging the value this returns
+   │ ││     │                                  checked against `-F ((() -> Integer) at inner)`; while checking the body of this access
    │ ││     checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while finishing the type of this
 19 │ ││     force q
    ┆ ┆┆
-22 │ ││     oper exit(code, k) => pure 0
+22 │ ││     | oper exit(code, k) => pure 0
 23 │ ││   }
-   │ │└───┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
-24 │ │  }
-   │ └──┘ checked against `() => Integer`; while checking the body of this thunk
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Integer`; while checking the body of this thunk
+   │      checked against `-F Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
    │
    ├ note: `keptPastHold` is refused with ViewEscaped, as its expectation states
    ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
-   ╭▸ corpus/pathological/regions/held-within.gandr:33:70
+   ╭▸ corpus/pathological/regions/held-within.gandr:32:70
    │
-29 │ ┌   def keptPastNestedHold() -> Integer {
-30 │ │┌    handle outer : std.process.Exit.Eff {
-31 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
+28 │ ┌   def keptPastNestedHold() -> Integer =
+29 │ │┌    handle outer : std.process.Exit.Eff {
+30 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
    │ ││┌─────┬─────────────────┘
    │ │││     │
    │ │││     checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while finishing the type of this
-32 │ │││       var l = 42;
+31 │ │││       var l = 42;
    │ │││       ─── checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking the scope of this hold
-33 │ │││       let q : (() => Integer) at inner = access shared l as w { pure thunk { pure w } };
+32 │ │││       let q : (() -> Integer) at inner = access shared l as w { pure thunk { pure w } };
    │ │││       ┬──                                ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
    │ │││       │                                  │                      │    │
    │ │││       │                                  │                      │    a view outliving its access
-   │ │││       │                                  │                      checked against `-F ((() => Integer) at inner)`; while judging the value this returns
-   │ │││       │                                  checked against `-F ((() => Integer) at inner)`; while checking the body of this access
+   │ │││       │                                  │                      checked against `-F ((() -> Integer) at inner)`; while judging the value this returns
+   │ │││       │                                  checked against `-F ((() -> Integer) at inner)`; while checking the body of this access
    │ │││       checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while finishing the type of this
-34 │ │││       force q
+33 │ │││       force q
    ┆ ┆┆┆
-37 │ │││       oper exit(code, k) => pure 0
-38 │ │││     };
+36 │ │││       | oper exit(code, k) => pure 0
+37 │ │││     };
    │ ││└─────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
    ┆ ┆┆
-42 │ ││      oper exit(code, k) => pure 0
-43 │ ││    }
-   │ │└────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds outer : Cap {exit}
-44 │ │   }
-   │ └───┘ checked against `() => Integer`; while checking the body of this thunk
+41 │ ││      | oper exit(code, k) => pure 0
+42 │ ││    }
+   │ ││    │
+   │ └│────│
+   │  └────checked against `() -> Integer`; while checking the body of this thunk
+   │       checked against `-F Integer`; while checking the subject of this scope under its capability; binds outer : Cap {exit}
    │
    ├ note: `keptPastNestedHold` is refused with ViewEscaped, as its expectation states
    ╰ help: use the view outside a thunk, or open the `access` inside it
