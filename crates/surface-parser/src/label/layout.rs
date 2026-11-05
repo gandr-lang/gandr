@@ -536,7 +536,11 @@ pub(super) fn lay_out(
             line_indent = column;
         }
         if line_start && !opened {
-            let stays = !closer && bool::from(dented(bytes, tokens, index, column, &mut frames));
+            let line = LineStart {
+                rest: tokens.get(index ..).unwrap_or_default(),
+                column,
+            };
+            let stays = !closer && bool::from(dented(bytes, line, &mut frames));
             while !stays
                 && frames.len() > 1
                 && let Some(&frame) = frames.last()
@@ -746,10 +750,20 @@ primitive_copy_wrapper!(
     struct Stays(bool);
 );
 
-/// Whether the line `token` at `index` begins, at `column`, stays in the
-/// innermost layout block although it stands left of the block's column. The
-/// line stays when it stands at no column of an open block, it ends with no
-/// token that the next line continues, and one of two readings holds:
+/// A line's first token, as [`dented`] reads it.
+#[derive(Clone, Copy, Debug)]
+struct LineStart<'tokens>
+{
+    /// The line's first token and every token after it.
+    rest: &'tokens [Token],
+    /// The column of the line's first token.
+    column: u32,
+}
+
+/// Whether `line` stays in the innermost layout block although it stands
+/// left of the block's column. The line stays when it stands at no column of
+/// an open block, it ends with no token that the next line continues, and one
+/// of two readings holds:
 ///
 /// | reading | the next line | the block | the block's column |
 /// | --- | --- | --- | --- |
@@ -760,19 +774,28 @@ primitive_copy_wrapper!(
 /// stays. A dent there cannot tell which nested block it leaves.
 ///
 /// # Specification
-/// - requires: `token` is the first token of its line, `column` its column, and
-///   `frames` the open frames before it.
-/// - ensures: true only when the innermost frame is a layout block right of
-///   `column`, and then the block's column is the one the table names.
+/// - requires: `line` begins at the first token of its line, and `frames` are
+///   the open frames before it.
+/// - ensures: true only when the innermost frame is a layout block right of the
+///   line's column, and then the block's column is the one the table names.
 /// - panics: none.
+/// - executable: none — the clauses read the frames before the call and the
+///   lines around the token, which the witnesses fix for each reading.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dent, a first line too far right and a line that the
+///   next line continues each take their own reading; a reading left out or
+///   misapplied changes a witness's marks.
+/// - witness: `label::layout::tests::a_line_left_of_its_block_stays_when_the_next_line_returns`
+/// - witness: `label::layout::tests::a_block_moves_left_to_the_column_its_lines_keep`
+/// - witness: `label::layout::tests::a_line_that_another_line_continues_never_stays`
 fn dented(
     bytes: SourceBytes<'_>,
-    tokens: &[Token],
-    index: usize,
-    column: u32,
+    line: LineStart<'_>,
     frames: &mut [Frame],
 ) -> Stays
 {
+    let column = line.column;
     let Some((top, below)) = frames.split_last_mut()
     else {
         return Stays(false);
@@ -794,7 +817,7 @@ fn dented(
     let NextLine {
         column: next,
         continued,
-    } = next_line(bytes, tokens, index);
+    } = next_line(bytes, line.rest);
     if continued {
         return Stays(false);
     }
@@ -822,15 +845,14 @@ struct NextLine
     continued: bool,
 }
 
-/// The line after the token at `from`, and whether the line `from` stands on
-/// belongs to an item before it.
+/// The line after the first of `rest`, and whether the line the first of
+/// `rest` stands on belongs to an item before it.
 ///
 /// # Specification
 /// trivial.
 fn next_line(
     bytes: SourceBytes<'_>,
-    tokens: &[Token],
-    from: usize,
+    rest: &[Token],
 ) -> NextLine
 {
     let spelled = |token: &Token| {
@@ -852,7 +874,7 @@ fn next_line(
                 )
         )
     };
-    let Some(&first) = tokens.get(from)
+    let Some((&first, after)) = rest.split_first()
     else {
         return NextLine {
             column: None,
@@ -877,7 +899,7 @@ fn next_line(
     };
     nest(&first, &mut depth, &mut closes_earlier);
     let mut last = first;
-    for &token in tokens.get(from.saturating_add(1) ..).unwrap_or_default() {
+    for &token in after {
         if token.lexeme == Lexeme::Space {
             continue;
         }
