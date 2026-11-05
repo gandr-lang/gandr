@@ -8,8 +8,8 @@
 //! holds or fails. The machine works on an obligation one certificate step
 //! at a time, so each unit
 //! of work adds one step of the certificate that [`crate::certificate::check`]
-//! replays. The work of one step is at most two exact squares of dyadics within
-//! the checker's width quota.
+//! replays. The work of one step is at most two exact squares, or four exact
+//! products, of dyadics within the checker's width quota.
 //!
 //! An obligation ends in one of five [`Outcome`]s. [`Outcome::Certified`]
 //! carries the certificate. [`Outcome::Suspended`] states why the machine
@@ -18,22 +18,26 @@
 //! unless its certificate concludes it: a failure is evidence only when an
 //! obligation asks for it and the certificate replays.
 //!
-//! The certificate format of stage A has rules for constants, registered cuts
-//! and strict comparisons of such reals. An obligation on any other form
-//! suspends with [`SuspendReason::NoRule`] until its rule lands.
+//! The machine has rules for constants, registered cuts, strict comparisons of
+//! such reals, and bounded quantifiers over intervals whose body compares
+//! polynomials in the bound variable. The search of a quantifier is
+//! `crate::bisection`. An obligation on any other form suspends with
+//! [`SuspendReason::NoRule`] until its rule lands.
 
 use alloc::vec::Vec;
 
 use anodized::spec;
 use num_bigint::BigInt;
 
+use crate::bisection::Search;
+use crate::bisection::Turn;
 use crate::certificate::Certificate;
 use crate::certificate::CertificateCheck;
 use crate::certificate::CheckerQuotas;
 use crate::certificate::FormatVersion;
 use crate::certificate::Step;
 use crate::certificate::StepId;
-use crate::certificate::check;
+use crate::certificate::replay_prefix;
 use crate::dovetail::ResumeError;
 use crate::dovetail::Steps;
 use crate::dyadic::Dyadic;
@@ -283,6 +287,8 @@ enum State
         /// operands share the first chain when they are one node.
         right: Option<Chain>,
     },
+    /// The search of a bounded quantifier's domain.
+    Searching(Search),
     /// The certificate of the evidence asked for.
     Certified(Certificate),
     /// The reason the machine stopped.
@@ -325,17 +331,18 @@ impl Progress
     /// The work on `obligation` that `steps` record, as a checkpoint holds it.
     ///
     /// # Specification
-    /// - ensures: the steps replay in [`crate::certificate::check`] within
-    ///   `quotas`, and each chain of the work names the step that concludes its
-    ///   current enclosure. The work goes on as the work that wrote the steps
-    ///   goes on.
+    /// - ensures: the steps replay as a prefix of a certificate, as
+    ///   [`crate::certificate::check`] replays them, within `quotas`, and each
+    ///   chain of the work names the step that concludes its current enclosure.
+    ///   The work goes on as the work that wrote the steps goes on.
     /// - fails: refuses steps that do not replay with the checker's refusal,
     ///   and steps that the machine does not write for a live obligation as
     ///   [`ResumeError::Steps`]: a chain of another node, a split of an
     ///   enclosure that a later step narrows, or a step that concludes.
     /// - panics: none.
     /// - executable: none — the clause speaks of the work that wrote the steps.
-    /// - intension: one replay of the steps, then one walk of them.
+    /// - intension: one replay of the steps, then one walk of them for a chain,
+    ///   or one run of the search to the same steps for a quantifier.
     ///
     /// # Errors
     /// - [`ResumeError::Replay`]: the steps do not replay.
@@ -357,15 +364,58 @@ impl Progress
         if steps.is_empty() {
             return Ok(Self::new(obligation));
         }
-        let certificate = Certificate::new(FormatVersion::CURRENT, steps);
-        check(plan, &certificate, quotas).map_err(ResumeError::Replay)?;
-        let steps = certificate.into_steps();
+        replay_prefix(plan, &steps, quotas).map_err(ResumeError::Replay)?;
+        if matches!(
+            plan.plan().node(obligation.node),
+            Ok(&Node::Open(Open::Exists(_) | Open::Forall(_)))
+        ) {
+            return Self::rerun(plan, obligation, &steps, quotas);
+        }
         let state = rebuilt(plan.plan(), obligation, &steps)?;
         return Ok(Self {
             obligation,
             steps,
             state,
         });
+    }
+
+    /// The work on a quantified `obligation` that `steps` record, rebuilt by
+    /// running its search again until it writes as many steps.
+    ///
+    /// # Specification
+    /// - ensures: the work writes `steps` and is live, so it goes on as the
+    ///   work that wrote them goes on. The search is deterministic, so a run
+    ///   writes the same steps from the same plan.
+    /// - fails: refuses steps that the search does not write, or that it writes
+    ///   only after it settles, as [`ResumeError::Steps`].
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the run that wrote the steps.
+    /// - intension: one run of the search over as many units as `steps`, and
+    ///   one comparison of the steps.
+    ///
+    /// # Errors
+    /// - [`ResumeError::Steps`]: the search does not write these steps.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a checkpoint of a generated quantified formula at
+    ///   every turn resumes to the run that never stops. L3 — steps that the
+    ///   search does not write.
+    /// - witness: `tests::quantifier::a_search_resumes_from_its_checkpoint`
+    fn rerun(
+        plan: &ValidatedPlan,
+        obligation: Obligation,
+        steps: &[Step],
+        quotas: &CheckerQuotas,
+    ) -> Result<Self, ResumeError>
+    {
+        let mut progress = Self::new(obligation);
+        while progress.steps.len() < steps.len() && progress.settled().is_none() {
+            progress.unit(plan.plan(), quotas);
+        }
+        if progress.settled().is_some() || progress.steps != steps {
+            return Err(ResumeError::Steps);
+        }
+        return Ok(progress);
     }
 
     /// The obligation.
@@ -395,7 +445,9 @@ impl Progress
         return match self.state {
             State::Certified(ref certificate) => Some(Outcome::Certified(certificate)),
             State::Suspended(reason) => Some(Outcome::Suspended(reason)),
-            State::Fresh | State::Enclosing(_) | State::Comparing { .. } => None,
+            State::Fresh | State::Enclosing(_) | State::Comparing { .. } | State::Searching(_) => {
+                None
+            },
         };
     }
 
@@ -458,6 +510,7 @@ impl Progress
             State::Comparing { less, left, right } => {
                 self.compare(plan, less, (left, right), quotas)
             },
+            State::Searching(search) => self.search(plan, search, quotas),
             settled @ (State::Certified(_) | State::Suspended(_)) => (settled, Unit::Stopped),
         };
         self.state = state;
@@ -489,6 +542,12 @@ impl Progress
                 if chainable(plan, first.node()).0 && chainable(plan, second.node()).0 =>
             {
                 self.compare(plan, node, (None, None), quotas)
+            },
+            (Ok(&Node::Open(Open::Exists(_) | Open::Forall(_))), Demand::Holds | Demand::Fails) => {
+                match Search::new(plan, node, self.obligation.demand) {
+                    Ok(search) => self.search(plan, search, quotas),
+                    Err(reason) => (State::Suspended(reason), Unit::Stopped),
+                }
             },
             (Ok(_) | Err(_), _) => suspended,
         };
@@ -741,6 +800,24 @@ impl Progress
         };
     }
 
+    /// One unit of work on a quantifier: one step of its search.
+    ///
+    /// # Specification
+    /// trivial.
+    fn search(
+        &mut self,
+        plan: &Plan,
+        mut search: Search,
+        quotas: &CheckerQuotas,
+    ) -> (State, Unit)
+    {
+        return match search.unit(plan, &mut self.steps, quotas) {
+            Ok(Turn::Stepped) => (State::Searching(search), Unit::Stepped),
+            Ok(Turn::Concluded) => (self.certified(), Unit::Concluded),
+            Err(reason) => (State::Suspended(reason), Unit::Stopped),
+        };
+    }
+
     /// The certificate of the steps written so far.
     ///
     /// # Specification
@@ -758,7 +835,7 @@ impl Progress
 ///
 /// # Specification
 /// trivial.
-const fn suspension(check: CertificateCheck) -> SuspendReason
+pub(crate) const fn suspension(check: CertificateCheck) -> SuspendReason
 {
     return match check {
         CertificateCheck::StepQuota | CertificateCheck::WidthQuota => SuspendReason::Quota,
@@ -772,7 +849,13 @@ const fn suspension(check: CertificateCheck) -> SuspendReason
         | CertificateCheck::NotLower
         | CertificateCheck::NotUpper
         | CertificateCheck::OutsideEnclosure
-        | CertificateCheck::NotSeparated => SuspendReason::NoRule,
+        | CertificateCheck::NotSeparated
+        | CertificateCheck::Reversed
+        | CertificateCheck::Hypothesis
+        | CertificateCheck::Hypothetical
+        | CertificateCheck::OutsideDomain
+        | CertificateCheck::Gap
+        | CertificateCheck::Modality => SuspendReason::NoRule,
     };
 }
 
@@ -852,7 +935,16 @@ fn rebuilt(
                 refinement.split(point.clone(), side);
                 *step = id;
             },
-            Step::Below { .. } | Step::NotBelow { .. } => return Err(ResumeError::Steps),
+            Step::Below { .. }
+            | Step::NotBelow { .. }
+            | Step::Variable { .. }
+            | Step::Sum { .. }
+            | Step::Difference { .. }
+            | Step::Product { .. }
+            | Step::Witness { .. }
+            | Step::Cover { .. }
+            | Step::Counterexample { .. }
+            | Step::Refutation { .. } => return Err(ResumeError::Steps),
         }
     }
     let node = obligation.node;

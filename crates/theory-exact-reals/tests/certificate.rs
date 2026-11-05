@@ -531,6 +531,12 @@ fn failures_render_distinct_phrases()
         CertificateCheck::NotUpper,
         CertificateCheck::OutsideEnclosure,
         CertificateCheck::NotSeparated,
+        CertificateCheck::Reversed,
+        CertificateCheck::Hypothesis,
+        CertificateCheck::Hypothetical,
+        CertificateCheck::OutsideDomain,
+        CertificateCheck::Gap,
+        CertificateCheck::Modality,
     ];
     let lines: Vec<String> = checks.iter().map(ToString::to_string).collect();
     for (index, line) in lines.iter().enumerate() {

@@ -18,4 +18,6 @@ mod oracle;
 #[cfg(test)]
 mod plan;
 #[cfg(test)]
+mod quantifier;
+#[cfg(test)]
 mod validate;

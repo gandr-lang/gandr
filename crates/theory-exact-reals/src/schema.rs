@@ -498,7 +498,7 @@ impl Refinement
 ///
 /// # Specification
 /// trivial.
-fn exact(result: Result<Rounded, DyadicError>) -> Result<Dyadic, CertificateCheck>
+pub(crate) fn exact(result: Result<Rounded, DyadicError>) -> Result<Dyadic, CertificateCheck>
 {
     return result
         .map_err(|_overflow| CertificateCheck::WidthQuota)
@@ -509,7 +509,7 @@ fn exact(result: Result<Rounded, DyadicError>) -> Result<Dyadic, CertificateChec
 ///
 /// # Specification
 /// trivial.
-fn midpoint(
+pub(crate) fn midpoint(
     low: &Dyadic,
     high: &Dyadic,
 ) -> Result<Dyadic, CertificateCheck>

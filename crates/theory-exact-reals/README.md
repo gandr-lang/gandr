@@ -51,7 +51,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Certificate`, `Step`, `Side`, `StepId` and `FormatVersion`: a versioned certificate; `encode` to `CertificateBytes` and `decode` from `EncodedCertificate`.
 - `check`: the replay within `CheckerQuotas`, a `Checked` `Conclusion` or a `CertificateRefusal` that names its `StepSite` and its `CertificateCheck`.
 - `square_root`, `square_root_of_two`, `radicand` and `refine`: the registered cut schema, its recognition, and its refinement to a power of two with a certificate.
-- `Obligation`, `Outcome` and `Dovetail`: the refinement machine's obligations, their five outcomes, the scheduler that runs them in bounded quanta within a budget, and its checkpoint, which `Dovetail::resume` reads back. The `semidecision` and `dovetail` module documentation states each.
+- `Obligation`, `Outcome` and `Dovetail`: the refinement machine's obligations, their five outcomes, the scheduler that runs them in bounded quanta within a budget, and its checkpoint, which `Dovetail::resume` reads back. It settles a bounded quantifier by a cover or a witness. The `semidecision`, `dovetail` and `bisection` module documentation states each.
 
 ## Expected features
 
@@ -119,11 +119,11 @@ A plan is untrusted input, so only a `ValidatedPlan` reaches the later stages. `
 
 ## Certificates
 
-A `Certificate` is a list of steps, each a primitive rule over the nodes of a plan and over earlier steps. The checker reads a certificate against a validated plan. It uses exact dyadic comparisons and exact squares alone, and it never calls the interval code. It returns the last step's conclusion, or it refuses the first step that fails and names the check. The checker knows one cut schema, the square root of a positive dyadic, and it refuses a cut of any other shape as forged. `refine` narrows such a cut from its hull to a requested power of two with one step for each halving. The square root of two at a width of `2^-256` takes 257 steps. The `certificate` module documentation tables the rules, and the `schema` module documentation states the schema.
+A `Certificate` is a list of steps, each a primitive rule over the nodes of a plan and over earlier steps. The checker reads a certificate against a validated plan. It uses exact dyadic arithmetic and comparisons alone, and it never calls the interval code. It returns the last step's conclusion, or it refuses the first step that fails and names the check. The checker knows one cut schema, the square root of a positive dyadic, and it refuses a cut of any other shape as forged. `refine` narrows such a cut from its hull to a requested power of two with one step for each halving. The square root of two at a width of `2^-256` takes 257 steps. The `certificate` module documentation tables the rules, and the `schema` module documentation states the schema.
 
 ## Measurement
 
-`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits. It times the canonical form, the bytes, the reading back, the validation and the dual approximation at 64 bits of three plans. It times the refinement, the check and the bytes of the square root of two at three widths. It times one turn of the scheduler at quanta of 1, 8 and 64 steps, and a run until a comparison settles beside one that never settles. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
+`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits. It times the canonical form, the bytes, the reading back, the validation and the dual approximation at 64 bits of three plans. It times the refinement, the check and the bytes of the square root of two at three widths. It times one turn of the scheduler at quanta of 1, 8 and 64 steps, and a run until a comparison settles beside one that never settles. It times the settlement of five quantified formulas and the check of their certificates. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
 
 ## License
 

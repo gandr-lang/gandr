@@ -127,6 +127,22 @@ mod step_kind
     pub(super) const BELOW: Kind = Kind(0x33);
     /// A not-below step.
     pub(super) const NOT_BELOW: Kind = Kind(0x34);
+    /// A variable step.
+    pub(super) const VARIABLE: Kind = Kind(0x35);
+    /// A sum step.
+    pub(super) const SUM: Kind = Kind(0x36);
+    /// A difference step.
+    pub(super) const DIFFERENCE: Kind = Kind(0x37);
+    /// A product step.
+    pub(super) const PRODUCT: Kind = Kind(0x38);
+    /// A witness step.
+    pub(super) const WITNESS: Kind = Kind(0x39);
+    /// A cover step.
+    pub(super) const COVER: Kind = Kind(0x3a);
+    /// A counterexample step.
+    pub(super) const COUNTEREXAMPLE: Kind = Kind(0x3b);
+    /// A refutation step.
+    pub(super) const REFUTATION: Kind = Kind(0x3c);
 }
 
 /// A one-byte kind: of a node, or of an interval's orientation, endpoint or
@@ -1356,6 +1372,24 @@ impl Entry
         self.word(Word(u32::from(id)));
     }
 
+    /// Write a step of `kind` over the node `node` with two premises.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn binary(
+        &mut self,
+        kind: Kind,
+        node: NodeId,
+        (left, right): (StepId, StepId),
+    )
+    {
+        self.kind(kind);
+        self.child(node);
+        self.premise(left);
+        self.premise(right);
+    }
+
     /// Write one certificate step: its kind, then its fields.
     ///
     /// # Specification
@@ -1402,16 +1436,64 @@ impl Entry
                 self.child(real);
             },
             Step::Below { less, left, right } => {
-                self.kind(step_kind::BELOW);
-                self.child(less);
-                self.premise(left);
-                self.premise(right);
+                self.binary(step_kind::BELOW, less, (left, right));
             },
             Step::NotBelow { less, left, right } => {
-                self.kind(step_kind::NOT_BELOW);
-                self.child(less);
-                self.premise(left);
-                self.premise(right);
+                self.binary(step_kind::NOT_BELOW, less, (left, right));
+            },
+            Step::Variable {
+                real,
+                ref lower,
+                ref upper,
+            } => {
+                self.kind(step_kind::VARIABLE);
+                self.child(real);
+                self.dyadic(lower);
+                self.dyadic(upper);
+            },
+            Step::Sum { real, left, right } => self.binary(step_kind::SUM, real, (left, right)),
+            Step::Difference { real, left, right } => {
+                self.binary(step_kind::DIFFERENCE, real, (left, right));
+            },
+            Step::Product { real, left, right } => {
+                self.binary(step_kind::PRODUCT, real, (left, right));
+            },
+            Step::Witness {
+                exists: node,
+                premise,
+            }
+            | Step::Counterexample {
+                forall: node,
+                premise,
+            } => {
+                self.kind(if matches!(*step, Step::Witness { .. }) {
+                    step_kind::WITNESS
+                }
+                else {
+                    step_kind::COUNTEREXAMPLE
+                });
+                self.child(node);
+                self.premise(premise);
+            },
+            Step::Cover {
+                forall: node,
+                ref premises,
+            }
+            | Step::Refutation {
+                exists: node,
+                ref premises,
+            } => {
+                self.kind(if matches!(*step, Step::Cover { .. }) {
+                    step_kind::COVER
+                }
+                else {
+                    step_kind::REFUTATION
+                });
+                self.child(node);
+                self.count(ByteCount(premises.len()));
+                for &premise in premises {
+                    self.premise(premise);
+                }
             },
         }
     }
@@ -1443,6 +1525,19 @@ impl Reader<'_>
     {
         let node = |reader: &mut Self| reader.word().map(|word| NodeId::from(word.0));
         let premise = |reader: &mut Self| reader.word().map(|word| StepId::from(word.0));
+        let premises = |reader: &mut Self| -> Result<Vec<StepId>, DecodeError> {
+            let count = reader.count()?.0;
+            // Each premise takes four bytes, so the bytes left bound the
+            // storage that the count may ask for.
+            let mut premises = Vec::with_capacity(count.min(reader.rest.len()));
+            for _ in 0 .. count {
+                premises.push(premise(reader)?);
+            }
+            return Ok(premises);
+        };
+        let operands = |reader: &mut Self| -> Result<(NodeId, StepId, StepId), DecodeError> {
+            return Ok((node(reader)?, premise(reader)?, premise(reader)?));
+        };
         return match self.kind()? {
             step_kind::WITNESSES => Ok(Step::Witnesses {
                 cut: node(self)?,
@@ -1474,6 +1569,39 @@ impl Reader<'_>
                 left: premise(self)?,
                 right: premise(self)?,
             }),
+            step_kind::VARIABLE => Ok(Step::Variable {
+                real: node(self)?,
+                lower: self.dyadic()?,
+                upper: self.dyadic()?,
+            }),
+            step_kind::SUM => {
+                let (real, left, right) = operands(self)?;
+                Ok(Step::Sum { real, left, right })
+            },
+            step_kind::DIFFERENCE => {
+                let (real, left, right) = operands(self)?;
+                Ok(Step::Difference { real, left, right })
+            },
+            step_kind::PRODUCT => {
+                let (real, left, right) = operands(self)?;
+                Ok(Step::Product { real, left, right })
+            },
+            step_kind::WITNESS => Ok(Step::Witness {
+                exists: node(self)?,
+                premise: premise(self)?,
+            }),
+            step_kind::COUNTEREXAMPLE => Ok(Step::Counterexample {
+                forall: node(self)?,
+                premise: premise(self)?,
+            }),
+            step_kind::COVER => Ok(Step::Cover {
+                forall: node(self)?,
+                premises: premises(self)?,
+            }),
+            step_kind::REFUTATION => Ok(Step::Refutation {
+                exists: node(self)?,
+                premises: premises(self)?,
+            }),
             _ => Err(DecodeError::UnknownKind),
         };
     }
@@ -1485,8 +1613,9 @@ impl Certificate
     ///
     /// The bytes open with the magic `GXRC`, the format as a `u16` and the step
     /// count as a `u64`. Each step is its kind, then its fields: a node or a
-    /// premise as a `u32`, a dyadic as the plan layout writes it, and a side as
-    /// `0x00` for the lower cut or `0x01` for the upper cut.
+    /// premise as a `u32`, a dyadic as the plan layout writes it, a side as
+    /// `0x00` for the lower cut or `0x01` for the upper cut, and a list of
+    /// premises as its count as a `u64`, then each premise.
     ///
     /// | Step | Byte | Fields |
     /// | ---- | ---- | ------ |
@@ -1495,6 +1624,14 @@ impl Certificate
     /// | constant | `0x32` | the constant node |
     /// | below | `0x33` | the comparison, the first premise, the second premise |
     /// | not below | `0x34` | the comparison, the first premise, the second premise |
+    /// | variable | `0x35` | the variable, the lower end, the upper end |
+    /// | sum | `0x36` | the sum, the first premise, the second premise |
+    /// | difference | `0x37` | the difference, the first premise, the second premise |
+    /// | product | `0x38` | the product, the first premise, the second premise |
+    /// | witness | `0x39` | the existential, the premise |
+    /// | cover | `0x3a` | the universal, the list of premises |
+    /// | counterexample | `0x3b` | the universal, the premise |
+    /// | refutation | `0x3c` | the existential, the list of premises |
     ///
     /// # Specification
     /// - ensures: the magic, the format, the step count, then each step's kind

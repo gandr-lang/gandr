@@ -43,6 +43,7 @@
 extern crate alloc;
 
 pub mod approx;
+pub mod bisection;
 pub mod certificate;
 pub mod codec;
 pub mod dovetail;

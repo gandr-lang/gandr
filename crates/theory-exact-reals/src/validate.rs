@@ -18,7 +18,7 @@
 //! | [`Check::WidthQuota`], [`Check::PowerQuota`] | a dyadic wider than the width quota, or a power above the power quota |
 //! | [`Check::EscapedBinder`] | a bound variable whose index reaches past its binders on some path from the root |
 //! | [`Check::CutHull`] | a cut whose hull is dual or unbounded |
-//! | [`Check::DomainHull`] | an interval domain that is dual, or compact evidence on a hull that is not closed and bounded |
+//! | [`Check::DomainHull`] | an interval domain that is dual or unbounded, or compact evidence on a hull that is not closed |
 //! | [`Check::UnknownEvidence`], [`Check::EvidenceKind`] | an evidence reference that the [`EvidenceTable`] does not register, or registers for another judgement |
 //! | [`Check::DomainEvidence`] | a quantifier whose evidence differs from the evidence its interval domain states |
 //!
@@ -339,8 +339,8 @@ pub enum Check
     EscapedBinder,
     /// A cut's hull is dual or unbounded.
     CutHull,
-    /// An interval domain is dual, or its compact evidence stands on a hull
-    /// that is not closed and bounded.
+    /// An interval domain is dual or unbounded, or its compact evidence
+    /// stands on a hull that is not closed.
     DomainHull,
     /// An evidence reference that the table does not register.
     UnknownEvidence,
@@ -395,7 +395,7 @@ impl fmt::Display for Check
             Self::EscapedBinder => f.write_str("a bound variable reaches past its binders"),
             Self::CutHull => f.write_str("a cut's hull is dual or unbounded"),
             Self::DomainHull => f.write_str(
-                "an interval domain is dual, or compact on a hull that is not closed and bounded",
+                "an interval domain is dual or unbounded, or compact on a hull that is not closed",
             ),
             Self::UnknownEvidence => {
                 f.write_str("the evidence table does not register a reference")
@@ -665,10 +665,10 @@ pub fn admit(
 /// # Specification
 /// - ensures: answers `Ok` exactly when each dyadic of the node keeps the width
 ///   quota, a power keeps the power quota, a cut's hull is proper and bounded,
-///   an interval domain is proper and its compact evidence stands on a closed
-///   bounded hull, each evidence reference names the judgement its slot takes,
-///   and a quantifier over an interval domain names the evidence that the
-///   domain states.
+///   an interval domain is proper and bounded and its compact evidence stands
+///   on a closed hull, each evidence reference names the judgement its slot
+///   takes, and a quantifier over an interval domain names the evidence that
+///   the domain states.
 /// - fails: returns the first check that fails, in that order.
 /// - panics: none.
 /// - executable: none — the clause restates the checks.
@@ -746,6 +746,11 @@ fn payload(
                         check
                     };
                 })?;
+                // A quantifier ranges over a bounded domain alone, so its
+                // search splits a finite interval.
+                if !bool::from(Shape::of(hull).bounded) {
+                    return Err(Check::DomainHull);
+                }
                 if matches!(compact, EvidenceSlot::Given(_))
                     && !bool::from(Shape::of(hull).closed_and_bounded)
                 {
