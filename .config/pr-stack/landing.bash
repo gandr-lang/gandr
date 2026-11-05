@@ -179,11 +179,14 @@ done < <(jq -c '.[]' <<< "$actions")
 # The depth gate's promotion (#5074): a pull request the gate stopped that a
 # landing has moved to depth 3 or less runs its cancelled CI run again, and
 # the gate passes it this time. One run listing and one rerun request each.
+# The rerun goes through `RERUN_TOKEN`, the workflow's own token: the job
+# grants it `actions: write`, and the fine-grained `LANDING_TOKEN` holds no
+# Actions permission, so GitHub refuses it the rerun (HTTP 403).
 while read -r number oid; do
   run=$(gh api "repos/$repo/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$oid&per_page=1" \
     --jq '.workflow_runs[0] | select(.conclusion == "cancelled") | .id') || continue
   [[ -n $run ]] || continue
-  if gh api --method POST "repos/$repo/actions/runs/$run/rerun" > /dev/null 2> "$err"; then
+  if GH_TOKEN=${RERUN_TOKEN:-$GH_TOKEN} gh api --method POST "repos/$repo/actions/runs/$run/rerun" > /dev/null 2> "$err"; then
     echo "#$number: at depth 3 or less; CI run $run runs again"
   else
     echo "::warning::#$number: the rerun of CI run $run failed: $(< "$err")"

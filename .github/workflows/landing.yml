@@ -119,4 +119,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.LANDING_TOKEN || steps.app.outputs.token || github.token }}
           LANDING_TOKEN_HELD: ${{ secrets.LANDING_TOKEN != '' || steps.app.outputs.token != '' }}
+          # The depth gate's promotion reruns a cancelled CI run through the
+          # workflow's own token, which this job grants `actions: write`; the
+          # fine-grained `LANDING_TOKEN` holds no Actions permission.
+          RERUN_TOKEN: ${{ github.token }}
         run: .config/pr-stack/landing.bash
