@@ -3,9 +3,9 @@
 # on 32 cores, and the enforcing suite's slowest tests, which pass alone in 9 to
 # 11 seconds, timed out at 30: a false red that costs a rerun and hides a real
 # one. So `mise run check` holds one of `GANDR_GATE_SLOTS` (default 2) slots for
-# its whole run. Its two test suites, `check:tests` and `check:tests-enforcing`,
-# run at once, so each takes the host's cores divided by the slots and by the
-# two suites, never more.
+# its whole run. It runs one full test suite, `check:tests-enforcing`, as CI
+# does (#5216), so the suite takes the host's cores divided by the slots, never
+# more. The plain build runs only `check:tests-plain-only`, one test.
 #
 # One lane once held both slots, its two worktrees' gates running at once, and
 # the host's load reached 70 on 32 cores (#4911). So a gate first takes its
@@ -58,13 +58,13 @@ hold_gate_slot() {
   trap 'host_unlock 9; host_unlock 8' EXIT
 }
 
-# The test threads each of a gate's two suites takes: the host's cores
-# divided by the slots and by the suites, at least one, and never more than a
-# `NEXTEST_TEST_THREADS` already set.
+# The test threads a gate's suite takes: the host's cores divided by the
+# slots, at least one, and never more than a `NEXTEST_TEST_THREADS` already
+# set.
 gate_threads() {
   local cores share
   cores=$(getconf _NPROCESSORS_ONLN)
-  share=$(( cores / gate_slots / 2 ))
+  share=$(( cores / gate_slots ))
   (( share >= 1 )) || share=1
   if [[ ${NEXTEST_TEST_THREADS:-} =~ ^[1-9][0-9]*$ ]] && (( NEXTEST_TEST_THREADS < share )); then
     share=$NEXTEST_TEST_THREADS

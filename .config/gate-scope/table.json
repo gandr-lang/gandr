@@ -12,7 +12,6 @@
       "check:dylint",
       "check:fmt",
       "check:obligations",
-      "check:tests",
       "check:tests-enforcing",
       "check:tests-plain-only",
       "check:witnesses"

@@ -786,7 +786,7 @@ jobs:
       - name: test workspace targets
         if: ${{ env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' }}
         env:
-          CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'check:tests' || 'check:tests-plain-only' }}
+          CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'ci:plain-baseline' || 'check:tests-plain-only' }}
           NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
         run: mise run "$CI_TEST_TASK"
       # Each Linux enforcing shard lists its tests where they were built and
