@@ -325,9 +325,10 @@ fn socket_name(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the socket's directory exists, created readable by its owner
-///   alone when this call made it. A socket another hub accepts on is
-///   [`bind::Absent::Served`] and left alone; a socket file nothing accepts on
-///   is stale, removed and bound afresh.
+///   alone when this call made it. A socket a listener accepts on is
+///   [`bind::Absent::Served`] and left alone, whichever process holds that
+///   listener. A socket file nothing accepts on is stale, removed and bound
+///   afresh.
 /// - provides: the one hub per socket a client's start relies on.
 /// - fails: when the directory cannot be made or the socket bound.
 /// - panics: none.
@@ -336,9 +337,11 @@ fn socket_name(
 /// The error creating the directory, removing a stale socket or binding.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — binding a live hub's socket answers Served; binding the
-///   socket a dropped listener left behind succeeds.
+/// - hypothesis: L3 — binding a live hub's socket answers Served; binding a
+///   socket whose listener a child process still holds answers Served; binding
+///   a socket file nothing accepts on succeeds.
 /// - witness: `hub::tests::a_socket_has_one_hub`
+/// - witness: `hub::tests::a_listener_a_child_holds_is_served_5332`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |bound|
     !matches!(*bound, Maybe::Present(_)) || socket.exists()))]
 #[inline]
@@ -1004,9 +1007,13 @@ mod tests
     use std::io::BufRead as _;
     use std::io::BufReader;
     use std::io::Write as _;
+    use std::os::fd::OwnedFd;
+    use std::os::unix::net::UnixDatagram;
     use std::os::unix::net::UnixStream;
     use std::path::Path;
     use std::path::PathBuf;
+    use std::process::Command;
+    use std::process::Stdio;
     use std::thread;
     use std::thread::JoinHandle;
 
@@ -1280,6 +1287,11 @@ mod tests
         );
     }
 
+    /// A served socket is left to its hub, and a socket file nothing accepts
+    /// on is stale and bound afresh. The stale file is one a datagram socket
+    /// leaves. A stream listener dropped here can still accept while a child
+    /// that another test spawns holds it (#5332), and no stream connects to a
+    /// datagram socket.
     #[test]
     fn a_socket_has_one_hub()
     {
@@ -1296,12 +1308,42 @@ mod tests
         );
         drop(first);
         assert!(socket.exists(), "a dropped listener leaves its file behind");
+        std::fs::remove_file(&socket).expect("the dropped listener's file is removed");
+        drop(UnixDatagram::bind(&socket).expect("a datagram socket binds"));
         assert!(
             matches!(
                 bind(&socket).expect("a stale socket binds"),
                 Maybe::Present(_)
             ),
             "a socket nothing accepts on is stale and bound afresh"
+        );
+    }
+
+    /// #5332: a listener that a child process holds still accepts after this
+    /// process drops its own copy. So `bind` reads its socket as served until
+    /// the child lets the listener go.
+    #[test]
+    fn a_listener_a_child_holds_is_served_5332()
+    {
+        let scratch = Scratch::new(Json("held"));
+        let socket = scratch.socket();
+        let Maybe::Present(listener) = bind(&socket).expect("a fresh socket binds")
+        else {
+            panic!("a fresh socket has no hub");
+        };
+        let mut child = {
+            let mut command = Command::new("sleep");
+            command
+                .arg("20")
+                .stdin(Stdio::from(OwnedFd::from(listener)));
+            command.spawn().expect("the child starts")
+        };
+        let read = bind(&socket).expect("a held socket is read");
+        child.kill().expect("the child stops");
+        child.wait().expect("the child is reaped");
+        assert!(
+            matches!(read, Maybe::Absent(super::bind::Absent::Served)),
+            "a listener the child holds is served"
         );
     }
 
