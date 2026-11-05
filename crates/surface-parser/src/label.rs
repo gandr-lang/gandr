@@ -1424,10 +1424,7 @@ impl LabelMode
             // by a brace or a connective's opener deepens this frame; a `}`
             // that empties it closes the interpolation and resumes the
             // containing string.
-            if matches!(
-                text.0,
-                b"{" | b"*{" | b"+{" | b"&{" | b"#{" | b".*{" | b".#{"
-            ) {
+            if matches!(text.0, b"{" | b"*{" | b"+{" | b"&{" | b".*{") {
                 *depth = depth.saturating_add(1);
             }
             else if bool::from(text.equals(BytePattern(b"}"))) {
@@ -1933,7 +1930,7 @@ fn scan_shell_double_interior(
 ///   and failure to advance change a row; shell brackets are subshell
 ///   delimiters, not host punctuation, and a lone `#` stays unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'[') => ret.lexeme == Lexeme::SubshellOpen, Some(b']') => ret.lexeme == Lexeme::SubshellClose, Some(b'#') if !matches!(bytes.0.get(pos.0 ..).and_then(|rest| rest.get(1)), Some(b'!' | b'{')) => ret.lexeme == Lexeme::Unknown, _ => true }))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'[') => ret.lexeme == Lexeme::SubshellOpen, Some(b']') => ret.lexeme == Lexeme::SubshellClose, Some(b'#') if bytes.0.get(pos.0 ..).and_then(|rest| rest.get(1)) != Some(&b'!') => ret.lexeme == Lexeme::Unknown, _ => true }))]
 fn scan_shell_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2216,24 +2213,24 @@ fn scan_slash(
         _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
-/// Scan a lexeme led by `#`: shebang, shell/record start, the sequence
-/// literal's `#[`, the freshness relation, or a stray byte.
+/// Scan a lexeme led by `#`: a shebang, a shell start, the sequence literal's
+/// `#[`, the freshness relation, or a stray byte.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; shebangs are layout, record, sequence and
-///   valid shell openers are punctuation, a `#` that opens none is the one-byte
-///   punctuation of a freshness condition `a # t`, and a `#!` that opens no
-///   shell is unknown.
+/// - ensures: scanning advances; shebangs are layout, sequence and valid shell
+///   openers are punctuation, a `#` that opens none is the one-byte punctuation
+///   of a freshness condition `a # t`, and a `#!` that opens no shell is
+///   unknown.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
 ///   complete tokens, adjacent delimiters and truncated tails are compared with
 ///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; shebangs are layout, record and valid
-///   shell openers are punctuation, a lone hash is punctuation and a `#!` that
-///   opens no shell is unknown.
+///   and failure to advance change a row; shebangs are layout, sequence and
+///   valid shell openers are punctuation, a lone hash is punctuation and a `#!`
+///   that opens no shell is unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 #[spec(requires: bytes.0.get(pos.0) == Some(&b'#'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_hash(
@@ -2251,8 +2248,8 @@ fn scan_hash(
             // `#!{` or `#!dialect{` shell-block start.
             _ => scan_shell_start(bytes, pos, SourceByte::from(b'{')),
         },
-        // `#{` record / record-type / record-pattern open; `#[` a sequence.
-        Some(b'{' | b'[') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
+        // `#[` opens a sequence.
+        Some(b'[') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
         // `a # t`: the freshness relation.
         _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
     }
@@ -2854,7 +2851,7 @@ fn suffix_len(
 }
 
 /// Scan a lexeme led by `.`: the `..` rest token, the `.@` as-pattern alias,
-/// the selectors `.#[`, `.#{` and `.*{`, or a bare `.`.
+/// the selectors `.#[` and `.*{`, or a bare `.`.
 ///
 /// A dot before a digit stands alone too, so `.1` is the leading-dot label
 /// of a positional entry, `+{ .1 = b }`, rather than a number with no whole
@@ -2864,7 +2861,7 @@ fn suffix_len(
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
 /// - ensures: scanning advances; a pair `..` or `.@` is one punctuation, so is
-///   a selector `.#[`, `.#{` or `.*{`, and every other dot, one before a digit
+///   a selector `.#[` or `.*{`, and every other dot, one before a digit
 ///   included, stands alone.
 /// - panics: none.
 ///
@@ -2883,9 +2880,8 @@ fn scan_dot(
 {
     let second = bytes.byte(pos.advance(ByteWidth::ONE));
     let third = bytes.byte(pos.advance(ByteWidth::TWO));
-    let brace = third == Some(SourceByte::from(b'{'));
-    if (second == Some(SourceByte::from(b'#')) && (third == Some(SourceByte::from(b'[')) || brace))
-        || (second == Some(SourceByte::from(b'*')) && brace)
+    if (second == Some(SourceByte::from(b'#')) && third == Some(SourceByte::from(b'[')))
+        || (second == Some(SourceByte::from(b'*')) && third == Some(SourceByte::from(b'{')))
     {
         ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::THREE))
     }
@@ -3463,6 +3459,7 @@ mod tests
                 ("]x", Lexeme::SubshellClose, 1),
                 ("# q", Lexeme::Unknown, 1),
                 ("#[x", Lexeme::Unknown, 1),
+                ("#{x", Lexeme::Unknown, 1),
                 ("word=ok;", Lexeme::EnvAssign, 7),
                 (" \t", Lexeme::Space, 2),
                 ("2>x", Lexeme::FileDescriptor, 1),
@@ -3486,7 +3483,7 @@ mod tests
             (super::scan_hash, &[
                 ("#!/x\n", Lexeme::Space, 4),
                 ("#!sh{x", Lexeme::Punct, 5),
-                ("#{x", Lexeme::Punct, 2),
+                ("#{x", Lexeme::Punct, 1),
                 ("#[x", Lexeme::Punct, 2),
                 ("#!bad", Lexeme::Unknown, 1),
                 ("#", Lexeme::Punct, 1),
@@ -3554,7 +3551,7 @@ mod tests
                 (".@ x", Lexeme::Punct, 2),
                 (".x", Lexeme::Punct, 1),
                 (".#[i]", Lexeme::Punct, 3),
-                (".#{.a}", Lexeme::Punct, 3),
+                (".#{.a}", Lexeme::Punct, 1),
                 (".# q", Lexeme::Punct, 1),
                 (".*{x", Lexeme::Punct, 3),
                 (".* {", Lexeme::Punct, 1),
@@ -3867,10 +3864,10 @@ mod tests
     #[test]
     fn string_interpolation_nests_braces_and_strings()
     {
-        // A record inside an interpolation keeps its own `#{ … }` braces, and a
+        // A record inside an interpolation keeps its own `*{ … }` braces, and a
         // nested string with its own interpolation re-enters string mode — the
         // brace-depth stack resolves both to the correct closing `}`.
-        let record = "\"v=${ #{ a = 1 } }\"";
+        let record = "\"v=${ *{ a = 1 } }\"";
         assert_eq!(
             tiles(
                 SourceFragment::from(record),
@@ -3880,7 +3877,7 @@ mod tests
                 (Lexeme::Quote, "\"".to_owned()),
                 (Lexeme::StringFragment, "v=".to_owned()),
                 (Lexeme::Punct, "${".to_owned()),
-                (Lexeme::Punct, "#{".to_owned()),
+                (Lexeme::Punct, "*{".to_owned()),
                 (Lexeme::LowerWord, "a".to_owned()),
                 (Lexeme::Punct, "=".to_owned()),
                 (Lexeme::Number, "1".to_owned()),

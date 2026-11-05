@@ -59,8 +59,7 @@ const FACE: &[RCtxStep] = &[RCtxStep {
 }];
 
 /// The rules whose `*{` opens a module signature, padded by its braces; any
-/// other `*{` opens a record, hugged by them. The retired `#{` reads the
-/// same.
+/// other `*{` opens a record, hugged by them.
 const SIGNATURES: [&str; 2] = ["module_declaration", "nested_module_member"];
 
 /// The keywords whose parenthesis lists binders, one space after the keyword:
@@ -135,7 +134,7 @@ impl Context
                 Self::Operand
             },
             "{" if rule == "theory_declaration" && before == FACE => Self::Telescope,
-            "*{" | "#{" if SIGNATURES.contains(&rule) => Self::Signature,
+            "*{" if SIGNATURES.contains(&rule) => Self::Signature,
             "-" | "+" if rule == "universe_type" => Self::Prefix,
             "?" if rule == "receive_session_type" => Self::Prefix,
             "!" | "\\" | ".." | "~" => Self::Prefix,
@@ -158,9 +157,9 @@ pub enum Join
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Padding
 {
-    /// They do: `(x)`, `[x]`, `#{a, b}`, `+{a : A}`, `[r : Row]`.
+    /// They do: `(x)`, `[x]`, `*{a, b}`, `+{a : A}`, `[r : Row]`.
     Hug,
-    /// One space stands inside each: `{ x }`, `@[ checks ]`, `#{ type T }`.
+    /// One space stands inside each: `{ x }`, `@[ checks ]`, `*{ type T }`.
     Pad,
 }
 
@@ -195,7 +194,7 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Signature
             | Context::Plain => Padding::Pad,
         },
-        "*{" | "#{" => match open.context {
+        "*{" => match open.context {
             Context::Signature => Padding::Pad,
             Context::Operand
             | Context::Prefix

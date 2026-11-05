@@ -3038,7 +3038,7 @@ fn inner_blocks(member: &[Piece]) -> (Vec<&[Piece]>, &[Piece])
                 return None;
             };
             match label.as_ref() {
-                "(" | "[" | "#[" | ".#[" | "{" | "#{" | ".#{" => {
+                "(" | "[" | "#[" | ".#[" | "{" => {
                     depth = depth.saturating_add(1);
                     None
                 },
