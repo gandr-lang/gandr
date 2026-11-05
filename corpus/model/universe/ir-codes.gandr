@@ -1,5 +1,6 @@
 //! Dybjer and Setzer's signatures for inductive-recursive definitions, with
-//! the family a signature defines and its decoder, read through `std.ir`.
+//! the family a signature defines, its decoder and its eliminator, read
+//! through `std.ir`.
 //!
 //! A signature describes a family and its decoder at once. It asks for a
 //! value of a type, for values of the family, or for a stop. The values of
@@ -13,17 +14,35 @@
 //! is `el(d, c, m)`. Its one constructor `Intro` holds the arguments the
 //! signature asks for over the family itself. The pathological twin's `Mu`
 //! and `decodeMu` write the same pair as ordinary source, and stay refused.
+//! `elim` folds the family of an open signature. At `Intro(x)` the fold is
+//! the step at `x` and the fold mapped over `x`, by reflexivity.
 //!
-//! - owes: #5160 — the eliminator of the family, with its computation rule
 //! - see: `pathological/universe/ir-codes.gandr` — the family a code defines
 //!   and its decoder, refused, over the decode of its arguments
+//! - see: `pathological/universe/ir-eliminator.gandr` — an eliminator that
+//!   calls itself on its own value, refused
 //! - cites: [Dybjer-1999-finite_axiomatization_inductiverecursive_definitions]
 //!
 //! [Dybjer-1999-finite_axiomatization_inductiverecursive_definitions]: https://doi.org/10.1007/3-540-48959-2_11 "Dybjer and Setzer, A finite axiomatization of inductive-recursive definitions"
 
-// The signatures, their arguments, the family a signature defines and its
-// decoder.
-import std.ir (DPair, MkDPair, Sig, Iota, SigmaC, DeltaC, args, decodeArgs, IR, Intro, el);
+// The signatures, their arguments, the family a signature defines, its
+// decoder and its eliminator.
+import std.ir (
+  DPair,
+  MkDPair,
+  Sig,
+  Iota,
+  SigmaC,
+  DeltaC,
+  args,
+  decodeArgs,
+  IR,
+  Intro,
+  el,
+  hyps,
+  mapArgs,
+  elim
+);
 
 /// Accepts the arguments of any signature.
 @[ checks ]
@@ -83,3 +102,46 @@ pub def decodedArgs(
   x : args(d, c, IR(d, c), thunk { fun (m) { el d c m } })
 ) -> -F d =
   decodeArgs d c (IR d c) (thunk { fun (n) { el d c n } }) x
+
+/// A fold over the family of an open signature: the eliminator at a motive
+/// and a step.
+@[ checks ]
+pub def fold(
+  d : Type,
+  c : Sig(d),
+  p : IR(d, c) -> Type,
+  s : (
+    x : args(d, c, IR(d, c), thunk { fun (m) { el d c m } }),
+    w : hyps(d, c, IR(d, c), thunk { fun (m) { el d c m } }, p, x)
+  ) -> p((Intro(x) : IR(d, c))),
+  m : IR(d, c)
+) -> p(m) =
+  elim d c p s m
+
+/// The fold at `Intro(x)` is the step at `x` and the fold mapped over `x`:
+/// the eliminator's computation rule, by reflexivity (#5160).
+@[ checks ]
+pub def foldIntro(
+  d : Type,
+  c : Sig(d),
+  s : (
+    x : args(d, c, IR(d, c), thunk { fun (m) { el d c m } }),
+    w : hyps(
+      d,
+      c,
+      IR(d, c),
+      thunk { fun (m) { el d c m } },
+      thunk { fun (m) { return Integer } },
+      x
+    )
+  ) -> Integer,
+  x : args(d, c, IR(d, c), thunk { fun (m) { el d c m } })
+) -> Path[.A = Integer](
+  elim d c (thunk { fun (m) { return Integer } }) s (Intro x),
+  s x (mapArgs d c (IR d c) (thunk { fun (m) { el d c m } }) (thunk {
+    fun (m) { return Integer }
+  }) (thunk { fun (n) { elim d c (thunk { fun (m) { return Integer } }) s n } }) x)
+) =
+  Path.here (s x (mapArgs d c (IR d c) (thunk { fun (m) { el d c m } }) (thunk {
+    fun (m) { return Integer }
+  }) (thunk { fun (n) { elim d c (thunk { fun (m) { return Integer } }) s n } }) x))

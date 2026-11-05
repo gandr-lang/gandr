@@ -295,3 +295,38 @@ fn a_departing_family_and_decoder_are_refused_3575()
         "the family reads `E`, which no declaration holds yet"
     );
 }
+
+#[test]
+fn the_hypotheses_map_and_eliminator_read_their_roles_first_5160()
+{
+    let mut environment = Environment::new();
+    assert_eq!(
+        admit_integer(&mut environment, Builtin::IrHypotheses),
+        Err(KernelError::BuiltinNotCanonical {
+            role: Builtin::IrHypotheses,
+            departure: Departure::Reads(Builtin::IrSignature),
+        }),
+        "the hypotheses read the signature type, which no declaration holds yet"
+    );
+    assert_eq!(
+        admit_integer(&mut environment, Builtin::IrEliminator),
+        Err(KernelError::BuiltinNotCanonical {
+            role: Builtin::IrEliminator,
+            departure: Departure::Reads(Builtin::IrFamily),
+        }),
+        "the eliminator reads the family, which no declaration holds yet"
+    );
+    assert_eq!(admit_signature(&mut environment, Shape::Canonical), Ok(()));
+    assert_eq!(
+        admit_pair(&mut environment, Shape::Canonical, Builtin::IrPair),
+        Ok(())
+    );
+    assert_eq!(
+        admit_integer(&mut environment, Builtin::IrMap),
+        Err(KernelError::BuiltinNotCanonical {
+            role: Builtin::IrMap,
+            departure: Departure::Reads(Builtin::IrArgs),
+        }),
+        "the map reads `E`, which no declaration holds yet"
+    );
+}

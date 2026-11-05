@@ -1,0 +1,9 @@
+error[BuiltinNotCanonical]: this declaration departs from the canonical form of the built-in role `irHypotheses` at its answer at constructor 2 of the signature type
+   ╭▸ corpus/pathological/universe/ir-hypotheses.gandr:44:1
+   │
+44 │ ┏ def hyps(d : Type, c : Sig(d), x : Type, t : x -> d, p : x -> Type, v : args(d, c, x, t)) -> Type =
+45 │ ┃   return Unit
+   │ ┗━━━━━━━━━━━━━┛ a built-in role's holder in another form
+   │
+   ├ note: `hyps` is refused with BuiltinNotCanonical, as its expectation states
+   ╰ help: write the holder in the canonical form of its role

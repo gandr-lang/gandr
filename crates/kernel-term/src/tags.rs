@@ -926,12 +926,13 @@ pub const KIND_DATA_ROLED: WireTag = WireTag(0x10);
 ///
 /// After the [`KIND_DEF`] fields come the pair, law and rule blocks of
 /// [`KIND_DEF_RULED`], each count possibly zero, then one role tag:
-/// [`ROLE_IR_ARGS`], [`ROLE_IR_DECODE`] or [`ROLE_IR_DECODER`]. The kernel
-/// validates the definition against the role's canonical body at admission. A
-/// definition holding no role writes one of the other definition kinds, so
-/// every other artifact keeps its bytes, and a reader predating this kind
-/// refuses it as an unknown declaration kind rather than misreading it, which
-/// is why the format version holds.
+/// [`ROLE_IR_ARGS`], [`ROLE_IR_DECODE`], [`ROLE_IR_DECODER`],
+/// [`ROLE_IR_HYPOTHESES`], [`ROLE_IR_MAP`] or [`ROLE_IR_ELIMINATOR`]. The
+/// kernel validates the definition against the role's canonical body at
+/// admission. A definition holding no role writes one of the other definition
+/// kinds, so every other artifact keeps its bytes, and a reader predating this
+/// kind refuses it as an unknown declaration kind rather than misreading it,
+/// which is why the format version holds.
 pub const KIND_DEF_ROLED: WireTag = WireTag(0x11);
 /// Role tag: the type of inductive-recursive signatures.
 pub const ROLE_IR_SIGNATURE: WireTag = WireTag(0);
@@ -945,6 +946,13 @@ pub const ROLE_IR_PAIR: WireTag = WireTag(3);
 pub const ROLE_IR_FAMILY: WireTag = WireTag(4);
 /// Role tag: the decoder of that family.
 pub const ROLE_IR_DECODER: WireTag = WireTag(5);
+/// Role tag: the induction hypotheses over the fields that a signature asks
+/// for.
+pub const ROLE_IR_HYPOTHESES: WireTag = WireTag(6);
+/// Role tag: the map of a function over those fields into their hypotheses.
+pub const ROLE_IR_MAP: WireTag = WireTag(7);
+/// Role tag: the eliminator of the family.
+pub const ROLE_IR_ELIMINATOR: WireTag = WireTag(8);
 /// Rule node tag: a constructor of the declaration's own table.
 pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
 /// Rule node tag: a pattern variable.

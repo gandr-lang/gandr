@@ -2426,6 +2426,121 @@ mod kernel_presented_readmission
     }
 
     #[test]
+    fn a_forged_hypotheses_and_eliminator_are_refused_by_the_kernel_5160()
+    {
+        use gandr_kernel_term::Builtin;
+        use quenchant_shape::shape::Maybe;
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../library/std/src/ir.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("`std.ir` lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("the nine holders readmit: the kernel admits each in its canonical form");
+        let held = |role: Builtin| {
+            declarations
+                .iter()
+                .position(|marked| marked.declaration().role() == Maybe::Present(role))
+                .unwrap_or_else(|| panic!("a holder of {role:?} crossed with its role"))
+        };
+        let (hypotheses, eliminator) = (held(Builtin::IrHypotheses), held(Builtin::IrEliminator));
+        let _map = held(Builtin::IrMap);
+        // The hypotheses forged to answer the unit type at every code:
+        // `λ d c x t p v. return ⌜Unit⌝`. It answers at `ι`, and at `σ` too,
+        // where both sides are the holder at a code. It departs at `δ`, whose
+        // answer is a pair type.
+        let mut arena = arena;
+        let marked = &declarations[hypotheses];
+        let gandr_kernel_term::DeclarationContent::Def { declared, .. } =
+            *marked.declaration().content()
+        else {
+            panic!("the hypotheses are a definition");
+        };
+        let unit = arena.value_type_unit();
+        let quoted = arena.value_quote(unit);
+        let answer = arena.computation_return(quoted);
+        let curried = (0_u32 .. 6_u32).fold(answer, |body, _| arena.computation_lambda(body));
+        let body = arena.value_thunk(curried);
+        let forged = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(marked.declaration().name().clone())
+            .held(Builtin::IrHypotheses);
+        let mut twin = declarations.clone();
+        twin[hypotheses] = MarkedDeclaration::new(marked.mark(), forged);
+        let refusal = Environment::replay(arena.clone(), &twin)
+            .expect_err("hypotheses of the unit type at `δ` are refused");
+        assert_eq!(usize::from(refusal.position()), hypotheses);
+        assert_eq!(*refusal.error(), KernelError::BuiltinNotCanonical {
+            role: Builtin::IrHypotheses,
+            departure: gandr_kernel_term::Departure::Answer(
+                gandr_kernel_term::ConstructorTag::from(2_usize)
+            ),
+        });
+        // The eliminator forged to call itself on its own value: `λ d c p s.
+        // fix e. λ m. e m`. The kernel types it, as the eliminator's own
+        // fixpoint opens no stage, and refuses it at its answer, which never
+        // converts.
+        let marked = &declarations[eliminator];
+        let gandr_kernel_term::DeclarationContent::Def {
+            declared,
+            body: written,
+            ..
+        } = *marked.declaration().content()
+        else {
+            panic!("the eliminator is a definition");
+        };
+        let Some(&gandr_kernel_term::Value::Thunk(outer)) = arena.value(written)
+        else {
+            panic!("the eliminator's body is a thunk");
+        };
+        let mut cursor = outer;
+        let mut uniform = 0_u32;
+        while let Some(&gandr_kernel_term::Computation::Lambda(inner)) = arena.computation(cursor) {
+            cursor = inner;
+            uniform = uniform.saturating_add(1);
+        }
+        let Some(&gandr_kernel_term::Computation::Fixpoint { evidence, .. }) =
+            arena.computation(cursor)
+        else {
+            panic!("the eliminator's fixpoint stands under its uniform parameters");
+        };
+        assert_eq!(
+            uniform, 4,
+            "`d`, `c`, `p` and `s` stand outside the fixpoint"
+        );
+        let value = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+        let own = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(1_u32));
+        let forced = arena.computation_force(own);
+        let looped = arena.computation_application(forced, value);
+        let lambda = arena.computation_lambda(looped);
+        let fixpoint = arena.computation_fixpoint(lambda, evidence);
+        let over = (0_u32 .. 4_u32).fold(fixpoint, |body, _| arena.computation_lambda(body));
+        let body = arena.value_thunk(over);
+        let looping = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(marked.declaration().name().clone())
+            .held(Builtin::IrEliminator);
+        let mut twin = declarations.clone();
+        twin[eliminator] = MarkedDeclaration::new(marked.mark(), looping);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("an eliminator that never answers at `intro(x)` is refused");
+        assert_eq!(usize::from(refusal.position()), eliminator);
+        assert_eq!(*refusal.error(), KernelError::BuiltinNotCanonical {
+            role: Builtin::IrEliminator,
+            departure: gandr_kernel_term::Departure::Answer(
+                gandr_kernel_term::ConstructorTag::from(0_usize)
+            ),
+        });
+    }
+
+    #[test]
     fn rules_the_body_does_not_compute_are_refused_by_the_kernel_322()
     {
         let pbg = built_in().expect("the built-in grammar builds");

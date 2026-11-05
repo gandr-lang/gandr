@@ -1854,23 +1854,38 @@ fn decide(
             settled @ (Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)),
         ) => settled,
     };
-    // The holders of `E`, `F` and the decoder answer their canonical bodies,
-    // compared before the table takes the definition. A refused holder keeps
-    // no role.
+    // The holders of `E`, `F`, the decoder, the hypotheses, the map and the
+    // eliminator answer their canonical bodies, compared before the table
+    // takes the definition. A refused holder keeps no role.
     let (verdict, failure) = match (declaration.builtin(), verdict) {
         (
             Maybe::Present(
                 role @ (gandr_kernel_term::Builtin::IrArgs
                 | gandr_kernel_term::Builtin::IrDecode
-                | gandr_kernel_term::Builtin::IrDecoder),
+                | gandr_kernel_term::Builtin::IrDecoder
+                | gandr_kernel_term::Builtin::IrHypotheses
+                | gandr_kernel_term::Builtin::IrMap
+                | gandr_kernel_term::Builtin::IrEliminator),
             ),
             Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. },
         ) => {
-            let answered = if role == gandr_kernel_term::Builtin::IrDecoder {
-                crate::canonical::decoder(context, (constant, body))
-            }
-            else {
-                crate::canonical::answers(context, role, (constant, body))
+            let answered = match role {
+                gandr_kernel_term::Builtin::IrDecoder => {
+                    crate::canonical::decoder(context, (constant, body))
+                },
+                gandr_kernel_term::Builtin::IrHypotheses | gandr_kernel_term::Builtin::IrMap => {
+                    crate::canonical::induction(context, role, (constant, body))
+                },
+                gandr_kernel_term::Builtin::IrEliminator => {
+                    crate::canonical::eliminator(context, (constant, body))
+                },
+                gandr_kernel_term::Builtin::IrSignature
+                | gandr_kernel_term::Builtin::IrPair
+                | gandr_kernel_term::Builtin::IrArgs
+                | gandr_kernel_term::Builtin::IrDecode
+                | gandr_kernel_term::Builtin::IrFamily => {
+                    crate::canonical::answers(context, role, (constant, body))
+                },
             };
             match answered {
                 Ok(()) => (verdict, failure),

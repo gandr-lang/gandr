@@ -1,0 +1,45 @@
+// The holders of the roles of inductive-recursive definitions, with
+// hypotheses that depart from the canonical hypotheses.
+//
+// The eliminator steps with one proof at each value of the family that the
+// arguments hold. Hypotheses of the unit type at every code hold no proof,
+// so an eliminator over them would recurse on no field.
+//
+// The checker compares the hypotheses with the canonical hypotheses at each
+// constructor of the signature type. The unit type answers at `ι`, and at `σ`
+// both sides are the hypotheses at the rest. At `δ` the canonical answer is a
+// pair type, so the checker refuses these hypotheses there.
+//
+// - see: `model/universe/ir-codes.gandr` — the hypotheses, the map and the
+//   eliminator of the family a signature defines, admitted
+// - see: `pathological/universe/ir-eliminator.gandr` — an eliminator that
+//   calls itself on its own value, refused
+
+/// The dependent pairs over a family of types.
+@[ builtin(irPair) ]
+data DPair(a : Type, b : a -> Type) : Type where
+  /// A value of the first type with a value of the type it picks.
+  | MkDPair : (x : a, y : b(x)) --> DPair(a, b)
+
+/// The signatures over a type of decodes `d`.
+@[ builtin(irSignature) ]
+data Sig(d : Type) : Type[+, 1] where
+  /// No argument, the decode `e`.
+  | Iota : (e : d) --> Sig(d)
+  /// A value of the type `a`, and the signature the rest reads it by.
+  | SigmaC : (a : Type, f : a -> Sig(d)) --> Sig(d)
+  /// A function from `a` into the family, read through its decodes.
+  | DeltaC : (a : Type, f : (a -> d) -> Sig(d)) --> Sig(d)
+
+/// The arguments a signature asks for over a family `x`.
+@[ builtin(irArgs) ]
+def rec args(d : Type, c : Sig(d), x : Type, t : x -> d) -> Type =
+  match c
+    | Iota(e) => return Unit
+    | SigmaC(a, f) => return (DPair a (fun (y) { args[<] d (f y) x t }))
+    | DeltaC(a, f) => return (DPair (a -> x) (fun (h) { args[<] d (f (fun (z) { t (h z) })) x t }))
+
+/// Hypotheses that hold no proof: the unit type at every code.
+@[ builtin(irHypotheses), refuses("BuiltinNotCanonical") ]
+def hyps(d : Type, c : Sig(d), x : Type, t : x -> d, p : x -> Type, v : args(d, c, x, t)) -> Type =
+  return Unit

@@ -1,0 +1,121 @@
+// The holders of the roles of inductive-recursive definitions, with an
+// eliminator that departs from the canonical eliminator.
+//
+// The eliminator's own fixpoint opens no stage, so the stage order refuses no
+// call of it. Its holder must answer the canonical eliminator, or an
+// eliminator that never answers could take the role.
+//
+// The checker compares the eliminator with the canonical eliminator at
+// `intro(x)`. Only the holder unfolds there. This eliminator calls itself on
+// its own value, so its answer never reads to a normal form. The checker
+// refuses it.
+//
+// - see: `model/universe/ir-codes.gandr` — the eliminator of the family a
+//   signature defines, admitted, with its computation rule
+// - see: `pathological/universe/ir-decoder.gandr` — a decoder that calls
+//   itself on its own value, refused
+
+/// The dependent pairs over a family of types.
+@[ builtin(irPair) ]
+data DPair(a : Type, b : a -> Type) : Type where
+  /// A value of the first type with a value of the type it picks.
+  | MkDPair : (x : a, y : b(x)) --> DPair(a, b)
+
+/// The signatures over a type of decodes `d`.
+@[ builtin(irSignature) ]
+data Sig(d : Type) : Type[+, 1] where
+  /// No argument, the decode `e`.
+  | Iota : (e : d) --> Sig(d)
+  /// A value of the type `a`, and the signature the rest reads it by.
+  | SigmaC : (a : Type, f : a -> Sig(d)) --> Sig(d)
+  /// A function from `a` into the family, read through its decodes.
+  | DeltaC : (a : Type, f : (a -> d) -> Sig(d)) --> Sig(d)
+
+/// The arguments a signature asks for over a family `x`.
+@[ builtin(irArgs) ]
+def rec args(d : Type, c : Sig(d), x : Type, t : x -> d) -> Type =
+  match c
+    | Iota(e) => return Unit
+    | SigmaC(a, f) => return (DPair a (fun (y) { args[<] d (f y) x t }))
+    | DeltaC(a, f) => return (DPair (a -> x) (fun (h) { args[<] d (f (fun (z) { t (h z) })) x t }))
+
+/// The decode of the arguments a signature asks for.
+@[ builtin(irDecode), form(explicit) ]
+def rec decodeArgs(d : Type, c : Sig(d), x : Type, t : x -> d, v : args(d, c, x, t)) -> d =
+  match c
+    | Iota(e) => e
+    | SigmaC(a, f) => match v
+      | MkDPair(y, r) => decodeArgs[<] d (f y) x t r
+    | DeltaC(a, f) => match v
+      | MkDPair(h, r) => decodeArgs[<] d (f (fun (z) { t (h z) })) x t r
+
+/// The family a signature defines, and its decoder.
+rec {
+  /// The family that the signature `c` defines.
+  @[ builtin(irFamily), form(explicit) ]
+  data IR(d : Type, c : Sig(d)) : Type where {
+    /// The arguments over the family.
+    | Intro : (x : args(d, c, IR(d, c), thunk { fun (m) { el d c m } })) --> IR(d, c)
+  }
+
+  /// The decode of a value of the family.
+  @[ builtin(irDecoder) ]
+  def rec el(d : Type, c : Sig(d), m : IR(d, c)) -> d =
+    match m
+      | Intro(x) => decodeArgs d c (IR d c) (thunk { fun (n) { el[<] d c n } }) x
+}
+
+/// The induction hypotheses over the arguments `v`.
+@[ builtin(irHypotheses), form(explicit) ]
+def rec hyps(
+  d : Type,
+  c : Sig(d),
+  x : Type,
+  t : x -> d,
+  p : x -> Type,
+  v : args(d, c, x, t)
+) -> Type =
+  match c
+    | Iota(e) => return Unit
+    | SigmaC(a, f) => match v
+      | MkDPair(y, r) => hyps[<] d (f y) x t p r
+    | DeltaC(a, f) => match v
+      | MkDPair(h, r) => return (DPair ((z : a) -> p(h(z))) (fun (k) {
+        hyps[<] d (f (fun (z) { t (h z) })) x t p r
+      }))
+
+/// The map of `g` over the arguments `v`.
+@[ builtin(irMap), form(explicit) ]
+def rec mapArgs(
+  d : Type,
+  c : Sig(d),
+  x : Type,
+  t : x -> d,
+  p : x -> Type,
+  g : (y : x) -> p(y),
+  v : args(d, c, x, t)
+) -> hyps(d, c, x, t, p, v) =
+  match c
+    | Iota(e) => *{}
+    | SigmaC(a, f) => match v
+      | MkDPair(y, r) => mapArgs[<] d (f y) x t p g r
+    | DeltaC(a, f) => match v
+      | MkDPair(h, r) => MkDPair (thunk { fun (z) { g (h z) } }) (mapArgs[<] d (f (fun (z) {
+        t (h z)
+      })) x t p g r)
+
+/// An eliminator that never answers: it calls itself on the value it
+/// eliminates.
+@[ builtin(irEliminator), refuses("BuiltinNotCanonical") ]
+def rec elim(
+  d : Type,
+  c : Sig(d),
+  p : IR(d, c) -> Type,
+  s : (
+    x : args(d, c, IR(d, c), thunk { fun (m) { el d c m } }),
+    w : hyps(d, c, IR(d, c), thunk { fun (m) { el d c m } }, p, x)
+  ) -> p((Intro(x) : IR(d, c))),
+  m : IR(d, c)
+) -> p(m) =
+  match m
+    | Intro(x) => elim[<] d c p s m

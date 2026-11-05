@@ -13,7 +13,9 @@ use gandr_kernel_term::GroundSort;
 
 use super::answers;
 use super::decoder;
+use super::eliminator;
 use super::family;
+use super::induction;
 use super::pair;
 use super::signature;
 use crate::context::CheckBudget;
@@ -393,6 +395,117 @@ fn a_decoder_is_refused_at_its_departing_answer_3575()
             departure: Departure::Reads(Builtin::IrArgs),
         }),
         "the family reads `E`, which no declaration holds yet"
+    );
+}
+
+#[test]
+fn the_hypotheses_and_the_eliminator_are_refused_at_their_departures_5160()
+{
+    use gandr_kernel_term::Builtin;
+    use quenchant_shape::shape::Maybe;
+
+    let mut arena = CoreArena::new();
+    // The signature type at 0, the pair type at 1, `E` at 2, the family at 3,
+    // the decoder at 4, the hypotheses at 5, the map at 6 and the eliminator
+    // at 7.
+    let at = |position: usize| ConstantIndex::from(position);
+    let codes = alloc::sync::Arc::new(crate::fixture::canonical_signature(&mut arena, at(0_usize)));
+    let pairs = alloc::sync::Arc::new(crate::fixture::canonical_pair(&mut arena));
+    let [parameters, only] = crate::fixture::family_parts(
+        &mut arena,
+        at(3_usize),
+        (at(0_usize), at(2_usize)),
+        at(3_usize),
+    );
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let own = alloc::sync::Arc::new(DataSignature::new(parameters, Vec::from([only]), kind));
+    // `λ O c X t P v. return ⌜Unit⌝`: the unit type at every code.
+    let unit = arena.value_type_unit();
+    let quoted = arena.value_quote(unit);
+    let constant = arena.computation_return(quoted);
+    let curried = (0_u32 .. 6_u32).fold(constant, |body, _| arena.computation_lambda(body));
+    let unital = arena.value_thunk(curried);
+    // `λ O S P s m. return m`: the value itself, no step.
+    let value = arena.value_variable(
+        gandr_core_term::Zone::Intuitionistic,
+        gandr_kernel_term::DeBruijnIndex::from(0_u32),
+    );
+    let returned = arena.computation_return(value);
+    let curried = (0_u32 .. 5_u32).fold(returned, |body, _| arena.computation_lambda(body));
+    let unstepped = arena.value_thunk(curried);
+    let declared = arena.value_type_unit();
+    let held = crate::DeclarationContent::Value {
+        signature: Maybe::Present(declared),
+        body: Maybe::Present(unital),
+    };
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        induction(&mut context, Builtin::IrHypotheses, (at(5_usize), unital)),
+        Err(Departure::Reads(Builtin::IrSignature)),
+        "the hypotheses read the signature type, which no declaration holds yet"
+    );
+    assert_eq!(
+        eliminator(&mut context, (at(7_usize), unstepped)),
+        Err(Departure::Reads(Builtin::IrFamily)),
+        "the eliminator reads the family, which no declaration holds yet"
+    );
+    for (position, role, content) in [
+        (
+            0_usize,
+            Builtin::IrSignature,
+            crate::DeclarationContent::Data(codes),
+        ),
+        (
+            1_usize,
+            Builtin::IrPair,
+            crate::DeclarationContent::Data(pairs),
+        ),
+    ] {
+        assert_eq!(context.claim_builtin(at(position), role, &content), Ok(()));
+    }
+    assert_eq!(
+        induction(&mut context, Builtin::IrMap, (at(6_usize), unital)),
+        Err(Departure::Reads(Builtin::IrArgs)),
+        "the map reads `E`, which no declaration holds yet"
+    );
+    assert_eq!(
+        context.claim_builtin(at(2_usize), Builtin::IrArgs, &held),
+        Ok(())
+    );
+    assert_eq!(
+        induction(&mut context, Builtin::IrMap, (at(6_usize), unital)),
+        Err(Departure::Reads(Builtin::IrHypotheses)),
+        "the map reads the hypotheses, which no declaration holds yet"
+    );
+    assert_eq!(
+        induction(&mut context, Builtin::IrHypotheses, (at(5_usize), unital)),
+        Err(Departure::Answer(ConstructorTag::from(2_usize))),
+        "the unit type answers at `ι` and `σ`, and departs from the pair type at `δ`"
+    );
+    assert_eq!(
+        context.claim_builtin(
+            at(3_usize),
+            Builtin::IrFamily,
+            &crate::DeclarationContent::Data(own)
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        eliminator(&mut context, (at(7_usize), unstepped)),
+        Err(Departure::Reads(Builtin::IrDecoder)),
+        "the eliminator reads the decoder, which no declaration holds yet"
+    );
+    for (position, role) in [
+        (4_usize, Builtin::IrDecoder),
+        (5_usize, Builtin::IrHypotheses),
+        (6_usize, Builtin::IrMap),
+    ] {
+        assert_eq!(context.claim_builtin(at(position), role, &held), Ok(()));
+    }
+    assert_eq!(
+        eliminator(&mut context, (at(7_usize), unstepped)),
+        Err(Departure::Answer(ConstructorTag::from(0_usize))),
+        "a value returned with no step departs from the step at `intro(x)`"
     );
 }
 

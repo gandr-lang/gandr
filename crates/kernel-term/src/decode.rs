@@ -2600,6 +2600,9 @@ fn decode_role(reader: &mut ByteReader<'_>) -> Result<crate::Builtin, DecodeErro
         tags::ROLE_IR_PAIR => Ok(crate::Builtin::IrPair),
         tags::ROLE_IR_FAMILY => Ok(crate::Builtin::IrFamily),
         tags::ROLE_IR_DECODER => Ok(crate::Builtin::IrDecoder),
+        tags::ROLE_IR_HYPOTHESES => Ok(crate::Builtin::IrHypotheses),
+        tags::ROLE_IR_MAP => Ok(crate::Builtin::IrMap),
+        tags::ROLE_IR_ELIMINATOR => Ok(crate::Builtin::IrEliminator),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::Role,
             tag: other,

@@ -7405,14 +7405,21 @@ where
             // the block's families name — reads as the self binder. The holder
             // of the decoder role owns the fixpoint under its uniform
             // parameters' lambdas, where its family names it applied to them.
+            // The holder of the eliminator role owns its fixpoint the same
+            // way, outside any block, so that fixpoint opens no stage either.
             let mut count = 0_u32;
             let mut cursor = match arena.value(body) {
                 Some(&Value::Thunk(root)) => Maybe::Present(root),
                 _ => Maybe::Absent(recursion::Unowned::Outside),
             };
-            let decoder =
-                declaration.role() == Maybe::Present(gandr_kernel_term::Builtin::IrDecoder);
-            while decoder
+            let unstaged = matches!(
+                declaration.role(),
+                Maybe::Present(
+                    gandr_kernel_term::Builtin::IrDecoder
+                        | gandr_kernel_term::Builtin::IrEliminator
+                )
+            );
+            while unstaged
                 && let Maybe::Present(at) = cursor
                 && let Some(&Computation::Lambda(inner)) = arena.computation(at)
             {
@@ -7420,16 +7427,15 @@ where
                 count = count.saturating_add(1);
             }
             let uniform = crate::rewrite::BinderDepth::from(count);
+            let fixpoint = |root: ComputationId| {
+                matches!(arena.computation(root), Some(&Computation::Fixpoint { .. }))
+            };
             let owning = match (ruled.block, cursor) {
-                (Block::Mutual { .. }, Maybe::Present(root))
-                    if matches!(arena.computation(root), Some(&Computation::Fixpoint { .. })) =>
-                {
-                    if decoder {
-                        ruled.owning(root).decoding(uniform)
-                    }
-                    else {
-                        ruled.owning(root)
-                    }
+                (_, Maybe::Present(root)) if unstaged && fixpoint(root) => {
+                    ruled.owning(root).decoding(uniform)
+                },
+                (Block::Mutual { .. }, Maybe::Present(root)) if fixpoint(root) => {
+                    ruled.owning(root)
                 },
                 (
                     Block::Outside

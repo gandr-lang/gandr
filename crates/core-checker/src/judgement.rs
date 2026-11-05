@@ -6723,9 +6723,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     },
                     Some(position) => {
                         self.root = self.fold_root(term, (expected, position), body)?;
-                        // The decoder role's own fixpoint opens no stage. Its
-                        // holder answers the canonical decoder, which decodes
-                        // the fields of a strictly positive family by `F`.
+                        // The decoder or the eliminator role's own fixpoint
+                        // opens no stage. The decoder answers the canonical
+                        // decoder, which decodes the fields of a strictly
+                        // positive family by `F`. The eliminator answers the
+                        // canonical eliminator, which recurses through the map.
                         if self.context.decoder_fixpoint(term) == Maybe::Present(()) {
                             (expected, expected)
                         }

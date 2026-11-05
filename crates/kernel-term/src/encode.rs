@@ -1178,6 +1178,9 @@ const fn role_tag(role: crate::Builtin) -> WireTag
         crate::Builtin::IrPair => tags::ROLE_IR_PAIR,
         crate::Builtin::IrFamily => tags::ROLE_IR_FAMILY,
         crate::Builtin::IrDecoder => tags::ROLE_IR_DECODER,
+        crate::Builtin::IrHypotheses => tags::ROLE_IR_HYPOTHESES,
+        crate::Builtin::IrMap => tags::ROLE_IR_MAP,
+        crate::Builtin::IrEliminator => tags::ROLE_IR_ELIMINATOR,
     }
 }
 

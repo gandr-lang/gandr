@@ -4,8 +4,8 @@
 //! The checker validates every holder (`gandr_core_checker::canonical`), and
 //! the kernel decides the same forms again over its own terms. It never takes
 //! a producer's mark on trust. A role has one holder: the signature type, the
-//! pair type and the family are data declarations, and `E`, `F` and the
-//! decoder are definitions.
+//! pair type and the family are data declarations, and `E`, `F`, the decoder,
+//! the hypotheses `H`, the map `M` and the eliminator are definitions.
 //!
 //! |Role|The canonical form|
 //! |---|---|
@@ -15,10 +15,13 @@
 //! |`irDecode`|the answers of `F` at `ι`, `σ` and `δ`, decided by conversion|
 //! |`irFamily`|the parameters `O : Type` and `S : Sig(O)`, no index, and one constructor of one field, the decode of `E(O, S, ⌜IR(O, S)⌝, λ m. el(O, S, m))`, `el` the declaration after it|
 //! |`irDecoder`|the answer `F(O, S, ⌜IR(O, S)⌝, λ n. el(O, S, n), x)` at `intro(x)`, decided by conversion|
+//! |`irHypotheses`|the answers of `H(O, S, X, t, P, a)` at `ι`, `σ` and `δ`: the unit type, `H` at the rest, and the pair of `(z : A) -> P(h(z))` and `H` at the rest|
+//! |`irMap`|the answers of `M(O, S, X, t, P, g, a)` at `ι`, `σ` and `δ`: the unit, `M` at the rest, and the pair of `λ z. g(h(z))` and `M` at the rest|
+//! |`irEliminator`|the answer `w ← M(O, S, ⌜IR(O, S)⌝, λ m. el(O, S, m), P, λ n. elim(O, S, P, s, n), x); s(x, w)` at `intro(x)`, decided by conversion with only the holder unfolding|
 //!
-//! The family keeps no occurrence walk, and the decoder's own fixpoint opens
-//! no stage (`check::check_declaration_with_memo`): their canonical forms are
-//! strictly positive and structural by construction.
+//! The family keeps no occurrence walk, and the own fixpoints of the decoder
+//! and the eliminator open no stage (`check::check_declaration_with_memo`):
+//! their canonical forms are strictly positive and structural by construction.
 //!
 //! # References
 //!
@@ -129,9 +132,12 @@ pub fn admit(
                 position,
                 (parameters, indices, constructors),
             ),
-            Builtin::IrArgs | Builtin::IrDecode | Builtin::IrDecoder => {
-                Err(Departure::Constructors)
-            },
+            Builtin::IrArgs
+            | Builtin::IrDecode
+            | Builtin::IrDecoder
+            | Builtin::IrHypotheses
+            | Builtin::IrMap
+            | Builtin::IrEliminator => Err(Departure::Constructors),
         },
         DeclarationContent::Def { body, .. } => match role {
             Builtin::IrArgs | Builtin::IrDecode => {
@@ -143,6 +149,18 @@ pub fn admit(
             Builtin::IrDecoder => {
                 let watermark = arena.watermark();
                 let answered = decoder(arena, entries, (position, body));
+                arena.truncate_to(watermark);
+                answered
+            },
+            Builtin::IrHypotheses | Builtin::IrMap => {
+                let watermark = arena.watermark();
+                let answered = induction(arena, entries, role, (position, body));
+                arena.truncate_to(watermark);
+                answered
+            },
+            Builtin::IrEliminator => {
+                let watermark = arena.watermark();
+                let answered = eliminator(arena, entries, (position, body));
                 arena.truncate_to(watermark);
                 answered
             },
@@ -473,7 +491,10 @@ fn answers(
         | Builtin::IrPair
         | Builtin::IrArgs
         | Builtin::IrFamily
-        | Builtin::IrDecoder => None,
+        | Builtin::IrDecoder
+        | Builtin::IrHypotheses
+        | Builtin::IrMap
+        | Builtin::IrEliminator => None,
     };
     let body = arena.value_constant(holder);
     let var = |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
@@ -857,6 +878,433 @@ fn decoder(
     let fields = arena.value_constant(decode);
     let (o, s, x) = (var(arena, 2), var(arena, 1), var(arena, 0));
     let right = call(arena, fields, &[o, s, quoted, decoder, x]);
+    let unfoldings = holding(entries, defined);
+    let verdict = crate::replay::convert_unfolding(
+        arena,
+        &unfoldings,
+        ReplaySides::Computations(left, right),
+        ReplayBudget::DEFAULT,
+    );
+    if verdict != KernelVerdict::Convertible {
+        return Err(Departure::Answer(ConstructorTag::from(0_usize)));
+    }
+    Ok(())
+}
+
+/// Compare `defined`, the body of the holder of the hypotheses or the map at
+/// `holder`, with the canonical body of its role by their answers at each
+/// constructor of the signature type, decided by the kernel's conversion.
+///
+/// # Specification
+/// - requires: `role` is [`Builtin::IrHypotheses`] or [`Builtin::IrMap`];
+///   `arena` holds `defined` and every entry's nodes; the holder takes the
+///   position `holder`, after the last entry.
+/// - ensures: `Ok(())` exactly when, at `ι`, `σ` and `δ` in turn, the holder
+///   applied to the constructor over rigid fields converts with the answer the
+///   module lead states, every definition and the holder unfolding.
+/// - fails: [`Departure::Reads`] for an unheld role the canonical body reads,
+///   then [`Departure::Answer`] at the first constructor whose answer the
+///   conversion does not relate.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the hypotheses read the signature type and the map reads
+///   `E` before any answer. `std.ir`'s `hyps` and `mapArgs` admit, and
+///   hypotheses of the unit type at every code are refused at `δ`, each in
+///   `surface-corpus`'s export cases.
+/// - witness: `builtin::tests::the_hypotheses_map_and_eliminator_read_their_roles_first_5160`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(Departure::Reads(_) | Departure::Answer(_))))]
+fn induction(
+    arena: &mut TermArena,
+    entries: &Entries,
+    role: Builtin,
+    (holder, defined): (ConstantIndex, ValueId),
+) -> Result<(), Departure>
+{
+    let held = |wanted: Builtin| {
+        entries
+            .iter()
+            .position(|entry| entry.declaration().role() == Maybe::Present(wanted))
+            .map(ConstantIndex::from)
+            .ok_or(Departure::Reads(wanted))
+    };
+    let signature = held(Builtin::IrSignature)?;
+    let pairs = held(Builtin::IrPair)?;
+    let fields = held(Builtin::IrArgs)?;
+    let mapping = role == Builtin::IrMap;
+    let hypotheses = if mapping {
+        held(Builtin::IrHypotheses)?
+    }
+    else {
+        holder
+    };
+    // The map takes the function `g` past the predicate, one binder more.
+    let extra = u32::from(mapping);
+    let body = arena.value_constant(holder);
+    let fields = arena.value_constant(fields);
+    let var = |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    // `force head a₀ … aₙ`.
+    let call = |arena: &mut TermArena, head: ValueId, arguments: &[ValueId]| {
+        let forced = arena.computation_force(head);
+        arguments.iter().fold(forced, |applied, &argument| {
+            arena.computation_application(applied, argument)
+        })
+    };
+    // The value that `read` returns at `argument`, where a value stands.
+    let returned = |arena: &mut TermArena, read: ValueId, argument: ValueId| {
+        let run = call(arena, read, &[argument]);
+        arena.value_returned(run)
+    };
+    // The constructor `tag` of the signature over the output `output` binders
+    // out, its fields the variables at `fields`.
+    let code = |arena: &mut TermArena, output: u32, tag: usize, fields: &[u32]| {
+        let output = var(arena, output);
+        let datatype = arena.value_type_data(signature, alloc::vec![output]);
+        let fields = fields.iter().map(|&index| var(arena, index)).collect();
+        arena.value_constructor(datatype, ConstructorTag::from(tag), fields)
+    };
+    let decode = |arena: &mut TermArena, code: ValueId| {
+        arena.value_type_element(code, gandr_kernel_strata::Level::zero())
+    };
+    // The code of `A -> X`, for `A` at `first` and `X` at `over`.
+    let arrow = |arena: &mut TermArena, first: u32, over: u32| {
+        let first = var(arena, first);
+        let domain = decode(arena, first);
+        let over = var(arena, over);
+        let decoded = decode(arena, over);
+        let codomain = arena.comp_type_returner(decoded);
+        let arrow = arena.comp_type_arrow(domain, codomain);
+        let thunk = arena.value_type_thunk(arrow);
+        arena.value_quote(thunk)
+    };
+    // `t ∘ h` as a type writes it, `h z` standing as the value it returns, for
+    // `h` at `inner` and `t` at `outer`.
+    let composite = |arena: &mut TermArena, inner: u32, outer: u32| {
+        let point = var(arena, 0);
+        let read = var(arena, inner.saturating_add(1));
+        let inner = returned(arena, read, point);
+        let decoder = var(arena, outer.saturating_add(1));
+        let outer = call(arena, decoder, &[inner]);
+        let lambda = arena.computation_lambda(outer);
+        arena.value_thunk(lambda)
+    };
+    // `t ∘ h` as a term writes it: `λ z. w ← h z; t w`.
+    let sequenced = |arena: &mut TermArena, inner: u32, outer: u32| {
+        let point = var(arena, 0);
+        let read = var(arena, inner.saturating_add(1));
+        let inner = call(arena, read, &[point]);
+        let bound = var(arena, 0);
+        let decoder = var(arena, outer.saturating_add(2));
+        let outer = call(arena, decoder, &[bound]);
+        let bound = arena.computation_bind(inner, outer);
+        let lambda = arena.computation_lambda(bound);
+        arena.value_thunk(lambda)
+    };
+    // The binders of `σ` and `δ`: `O`, `X`, `t`, `P` and, for the map, `g`
+    // outermost, then `A` 3, `f` 2, the first field 1 and the rest 0.
+    let (output, over, decoder, predicate) = (7 + extra, 6 + extra, 5 + extra, 4 + extra);
+    // The pair type of `E`'s answer at `σ` or `δ`: `Pair(A, λ y. E(O, f(y),
+    // X, t))`, or `Pair(A -> X, λ h. E(O, f(t ∘ h), X, t))` when `decoded`.
+    let asked = |arena: &mut TermArena, decoded: bool| {
+        let first = if decoded {
+            arrow(arena, 3, over)
+        }
+        else {
+            var(arena, 3)
+        };
+        let argument = if decoded {
+            composite(arena, 0, decoder.saturating_add(1))
+        }
+        else {
+            var(arena, 0)
+        };
+        let picker = var(arena, 3);
+        let next = returned(arena, picker, argument);
+        let passed = [
+            var(arena, output + 1),
+            next,
+            var(arena, over + 1),
+            var(arena, decoder + 1),
+        ];
+        let rest = call(arena, fields, &passed);
+        let lambda = arena.computation_lambda(rest);
+        let family = arena.value_thunk(lambda);
+        arena.value_type_data(pairs, alloc::vec![first, family])
+    };
+    // The pair type of `H`'s answer at `δ`, `shift` binders in: `Pair((z : A)
+    // -> P(h(z)), λ k. H(O, f(t ∘ h), X, t, P, r))`, the hypothesis at each
+    // point of the field before those of the rest.
+    let hypothesised = |arena: &mut TermArena, shift: u32| {
+        let point = var(arena, 0);
+        let read = var(arena, 2 + shift);
+        let point = returned(arena, read, point);
+        let proving = var(arena, predicate + 1 + shift);
+        let proved = returned(arena, proving, point);
+        let decoded = decode(arena, proved);
+        let codomain = arena.comp_type_returner(decoded);
+        let first = var(arena, 3 + shift);
+        let domain = decode(arena, first);
+        let each = arena.comp_type_pi(domain, codomain);
+        let each = arena.value_type_thunk(each);
+        let first = arena.value_quote(each);
+        let argument = composite(arena, 2 + shift, decoder + 1 + shift);
+        let picker = var(arena, 3 + shift);
+        let next = returned(arena, picker, argument);
+        let hypotheses = arena.value_constant(hypotheses);
+        let passed = [
+            var(arena, output + 1 + shift),
+            next,
+            var(arena, over + 1 + shift),
+            var(arena, decoder + 1 + shift),
+            var(arena, predicate + 1 + shift),
+            var(arena, 1 + shift),
+        ];
+        let rest = call(arena, hypotheses, &passed);
+        let lambda = arena.computation_lambda(rest);
+        let family = arena.value_thunk(lambda);
+        arena.value_type_data(pairs, alloc::vec![first, family])
+    };
+    // The holder's parameters before its argument, `shift` binders in, the
+    // code `code` in place.
+    let parameters = |arena: &mut TermArena, code: ValueId, (shift, past): (u32, u32)| {
+        let mut passed = alloc::vec![
+            var(arena, output - past + shift),
+            code,
+            var(arena, over - past + shift),
+            var(arena, decoder - past + shift),
+            var(arena, predicate - past + shift),
+        ];
+        if mapping {
+            passed.push(var(arena, 4 - past + shift));
+        }
+        passed
+    };
+    // ι, under the parameters and `e` 0.
+    let iota = {
+        let stop = code(arena, output - 3, 0, &[0]);
+        let mut passed = parameters(arena, stop, (0, 3));
+        let unit = arena.value_unit();
+        passed.push(unit);
+        let left = call(arena, body, &passed);
+        let right = if mapping {
+            let unit = arena.value_unit();
+            arena.computation_return(unit)
+        }
+        else {
+            let unit = arena.value_type_unit();
+            let quoted = arena.value_quote(unit);
+            arena.computation_return(quoted)
+        };
+        (left, right)
+    };
+    let mut step = |tag: usize, decoded: bool| {
+        let read = code(arena, output, tag, &[3, 2]);
+        let datatype = asked(arena, decoded);
+        let (head, rest) = (var(arena, 1), var(arena, 0));
+        let given = arena.value_constructor(datatype, ConstructorTag::from(0_usize), alloc::vec![
+            head, rest
+        ]);
+        let mut passed = parameters(arena, read, (0, 0));
+        passed.push(given);
+        let left = call(arena, body, &passed);
+        let argument = if decoded {
+            sequenced(arena, 1, decoder)
+        }
+        else {
+            var(arena, 1)
+        };
+        let picker = var(arena, 2);
+        let next = returned(arena, picker, argument);
+        let mut passed = parameters(arena, next, (0, 0));
+        passed.push(var(arena, 0));
+        let recursed = call(arena, body, &passed);
+        let right = if !decoded {
+            // `P`'s hypotheses or `g`'s map over the rest at `f(y)`.
+            recursed
+        }
+        else if mapping {
+            // `w ← M(O, f(t ∘ h), X, t, P, g, r); return (λ z. g(h z), w)`,
+            // `h z` standing as the value it returns.
+            let point = var(arena, 0);
+            let read = var(arena, 3);
+            let point = returned(arena, read, point);
+            let function = var(arena, 6);
+            let applied = call(arena, function, &[point]);
+            let lambda = arena.computation_lambda(applied);
+            let each = arena.value_thunk(lambda);
+            let rest = var(arena, 0);
+            let datatype = hypothesised(arena, 1);
+            let made =
+                arena.value_constructor(datatype, ConstructorTag::from(0_usize), alloc::vec![
+                    each, rest
+                ]);
+            let made = arena.computation_return(made);
+            arena.computation_bind(recursed, made)
+        }
+        else {
+            let datatype = hypothesised(arena, 0);
+            let quoted = arena.value_quote(datatype);
+            arena.computation_return(quoted)
+        };
+        (left, right)
+    };
+    let equations = [iota, step(1, false), step(2, true)];
+    let unfoldings = holding(entries, defined);
+    for (tag, (left, right)) in equations.into_iter().enumerate() {
+        let verdict = crate::replay::convert_unfolding(
+            arena,
+            &unfoldings,
+            ReplaySides::Computations(left, right),
+            ReplayBudget::DEFAULT,
+        );
+        if verdict != KernelVerdict::Convertible {
+            return Err(Departure::Answer(ConstructorTag::from(tag)));
+        }
+    }
+    Ok(())
+}
+
+/// Compare `defined`, the body of the holder of the eliminator role at
+/// `holder`, with the canonical eliminator by its answer at the family's one
+/// constructor.
+///
+/// # Specification
+/// - requires: `arena` holds `defined` and every entry's nodes; the holder
+///   takes the position `holder`, after the last entry.
+/// - ensures: `Ok(())` exactly when, under rigid variables for `O`, `S`, `P`,
+///   the step `s` and the field `x`, the holder at `intro(x)` converts with `w
+///   ← M(O, S, ⌜IR(O, S)⌝, λ m. el(O, S, m), P, λ n. elim(O, S, P, s, n), x);
+///   s(x, w)`. Only the holder unfolds, and every entry before it stays rigid.
+///   Every value of the family is `intro(x)` for some `x`, so the holder
+///   answers as the canonical eliminator at every value.
+/// - fails: [`Departure::Reads`] for an unheld role the canonical form reads,
+///   then [`Departure::Answer`] at the one constructor.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the eliminator reads the family before any other role.
+///   `std.ir`'s `elim` admits, and an eliminator that calls itself on its own
+///   value is refused at the constructor, each in `surface-corpus`'s export
+///   cases.
+/// - witness: `builtin::tests::the_hypotheses_map_and_eliminator_read_their_roles_first_5160`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(Departure::Reads(_) | Departure::Answer(_))))]
+fn eliminator(
+    arena: &mut TermArena,
+    entries: &Entries,
+    (holder, defined): (ConstantIndex, ValueId),
+) -> Result<(), Departure>
+{
+    let held = |wanted: Builtin| {
+        entries
+            .iter()
+            .position(|entry| entry.declaration().role() == Maybe::Present(wanted))
+            .map(ConstantIndex::from)
+            .ok_or(Departure::Reads(wanted))
+    };
+    let family = held(Builtin::IrFamily)?;
+    let decoder = held(Builtin::IrDecoder)?;
+    let map = held(Builtin::IrMap)?;
+    let var = |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    // `force head a₀ … aₙ`.
+    let call = |arena: &mut TermArena, head: ValueId, arguments: &[ValueId]| {
+        let forced = arena.computation_force(head);
+        arguments.iter().fold(forced, |applied, &argument| {
+            arena.computation_application(applied, argument)
+        })
+    };
+    // `IR(O, S)`, under `O` 4 and `S` 3.
+    let own = |arena: &mut TermArena| {
+        let (output, signature) = (var(arena, 4), var(arena, 3));
+        arena.value_type_data(family, alloc::vec![output, signature])
+    };
+    let body = arena.value_constant(holder);
+    // Under `O` 4, `S` 3, `P` 2, `s` 1 and `x` 0: `elim(O, S, P, s, intro(x))`.
+    let datatype = own(arena);
+    let field = var(arena, 0);
+    let intro =
+        arena.value_constructor(datatype, ConstructorTag::from(0_usize), alloc::vec![field]);
+    let passed = [
+        var(arena, 4),
+        var(arena, 3),
+        var(arena, 2),
+        var(arena, 1),
+        intro,
+    ];
+    let left = call(arena, body, &passed);
+    // `w ← M(O, S, ⌜IR(O, S)⌝, λ m. el(O, S, m), P, λ n. elim(O, S, P, s, n),
+    // x); s(x, w)`.
+    let datatype = own(arena);
+    let quoted = arena.value_quote(datatype);
+    let decodes = {
+        let decoder = arena.value_constant(decoder);
+        let passed = [var(arena, 5), var(arena, 4), var(arena, 0)];
+        let decoded = call(arena, decoder, &passed);
+        let lambda = arena.computation_lambda(decoded);
+        arena.value_thunk(lambda)
+    };
+    let recurses = {
+        let passed = [
+            var(arena, 5),
+            var(arena, 4),
+            var(arena, 3),
+            var(arena, 2),
+            var(arena, 0),
+        ];
+        let recursed = call(arena, body, &passed);
+        let lambda = arena.computation_lambda(recursed);
+        arena.value_thunk(lambda)
+    };
+    let mapped = {
+        let map = arena.value_constant(map);
+        let passed = [
+            var(arena, 4),
+            var(arena, 3),
+            quoted,
+            decodes,
+            var(arena, 2),
+            recurses,
+            var(arena, 0),
+        ];
+        call(arena, map, &passed)
+    };
+    let right = {
+        let step = var(arena, 2);
+        let passed = [var(arena, 1), var(arena, 0)];
+        let stepped = call(arena, step, &passed);
+        arena.computation_bind(mapped, stepped)
+    };
+    // Only the holder unfolds, as in the checker: each side calls the map's
+    // holder by its name, and a conversion that unfolds the map at the open
+    // signature `S` meets the eliminator again in each `δ` arm.
+    let unfoldings = alone(entries, defined);
+    let verdict = crate::replay::convert_unfolding(
+        arena,
+        &unfoldings,
+        ReplaySides::Computations(left, right),
+        ReplayBudget::DEFAULT,
+    );
+    if verdict != KernelVerdict::Convertible {
+        return Err(Departure::Answer(ConstructorTag::from(0_usize)));
+    }
+    Ok(())
+}
+
+/// The unfoldings a holder's answers convert under: each entry's definition
+/// unfolds to its body, and the holder unfolds to `defined`.
+///
+/// # Specification
+/// trivial.
+fn holding(
+    entries: &Entries,
+    defined: ValueId,
+) -> Unfoldings
+{
     let mut bodies: Vec<Unfoldable> = entries
         .iter()
         .map(|entry| match *entry.content() {
@@ -868,19 +1316,26 @@ fn decoder(
         })
         .collect();
     bodies.push(Unfoldable::Body(defined));
-    let unfoldings = Unfoldings::new(bodies)
+    Unfoldings::new(bodies)
         .presenting(crate::presented::Presentations::of(entries))
-        .identifying(entries);
-    let verdict = crate::replay::convert_unfolding(
-        arena,
-        &unfoldings,
-        ReplaySides::Computations(left, right),
-        ReplayBudget::DEFAULT,
-    );
-    if verdict != KernelVerdict::Convertible {
-        return Err(Departure::Answer(ConstructorTag::from(0_usize)));
-    }
-    Ok(())
+        .identifying(entries)
+}
+
+/// The unfoldings under which only the holder unfolds, to `defined`: every
+/// entry before it stays rigid.
+///
+/// # Specification
+/// trivial.
+fn alone(
+    entries: &Entries,
+    defined: ValueId,
+) -> Unfoldings
+{
+    let mut bodies: Vec<Unfoldable> = entries.iter().map(|_entry| Unfoldable::Opaque).collect();
+    bodies.push(Unfoldable::Body(defined));
+    Unfoldings::new(bodies)
+        .presenting(crate::presented::Presentations::of(entries))
+        .identifying(entries)
 }
 
 #[cfg(test)]

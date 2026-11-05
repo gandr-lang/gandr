@@ -193,7 +193,7 @@
     {"exemplar":"../corpus/ledger/attributes/identity.gandr","name":"identity","payload":{"schema":"interface"},"reads":"a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law"},
     {"exemplar":"../corpus/ledger/attributes/deprecated.gandr","name":"deprecated","payload":{"fields":["since","note"],"schema":"marker_or_record"},"reads":"no payload or a record of the texts `since`, `note`"},
     {"exemplar":"../corpus/ledger/attributes/boundary.gandr","name":"boundary","payload":{"schema":"names"},"reads":"a declared name or a tuple of declared names"},
-    {"exemplar":"../corpus/ledger/attributes/builtin.gandr","name":"builtin","payload":{"schema":"word","words":["irSignature","irPair","irArgs","irDecode","irFamily","irDecoder"]},"reads":"one of the words `irSignature`, `irPair`, `irArgs`, `irDecode`, `irFamily`, `irDecoder`"}
+    {"exemplar":"../corpus/ledger/attributes/builtin.gandr","name":"builtin","payload":{"schema":"word","words":["irSignature","irPair","irArgs","irDecode","irFamily","irDecoder","irHypotheses","irMap","irEliminator"]},"reads":"one of the words `irSignature`, `irPair`, `irArgs`, `irDecode`, `irFamily`, `irDecoder`, `irHypotheses`, `irMap`, `irEliminator`"}
   ],
   "menus": [
     {"label":"identifier","molds":407,"opening":3,"rules":60},

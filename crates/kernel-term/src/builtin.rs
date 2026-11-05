@@ -8,14 +8,17 @@
 //! too. The family that a signature defines and its decoder are ordinary
 //! declarations in one mutual block: the family's one constructor holds the
 //! fields of `E` over the family and its decoder, and the decoder decodes
-//! them by `F`. A declaration that the source marks `@[ builtin(…) ]` takes
-//! one of these roles, and both checkers and the kernel compare it with the
-//! canonical form of its role.
+//! them by `F`. The eliminator of the family and the two functions it reads,
+//! the induction hypotheses over the fields and their map, are ordinary
+//! declarations too (§ 2.2.3). A declaration that the source marks
+//! `@[ builtin(…) ]` takes one of these roles, and both checkers and the
+//! kernel compare it with the canonical form of its role.
 //!
 //! The mark states a role and decides nothing else. A role that two
 //! declarations claim is refused, and so is a mark on a declaration of the
 //! wrong judgement: the signature type, the pair type and the family are
-//! data declarations, and `E`, `F` and the decoder are value declarations.
+//! data declarations, and `E`, `F`, the decoder, the hypotheses, the map and
+//! the eliminator are value declarations.
 //!
 //! # References
 //!
@@ -55,6 +58,17 @@ pub enum Builtin
     /// The decoder of that family, a value declaration that decodes the one
     /// field of the family's constructor by `F`.
     IrDecoder,
+    /// The induction hypotheses over the fields that a signature asks for:
+    /// one proof of a predicate for each value of the family among them, a
+    /// value declaration by recursion on the signature.
+    IrHypotheses,
+    /// The map of a function over those fields into their hypotheses, a value
+    /// declaration by recursion on the signature.
+    IrMap,
+    /// The eliminator of the family, a value declaration whose answer at the
+    /// family's one constructor is the step at the fields and the map of the
+    /// eliminator over them.
+    IrEliminator,
 }
 
 /// The word that an attribute names a built-in role by, as the source spells
@@ -137,16 +151,22 @@ impl Builtin
         "irDecode",
         "irFamily",
         "irDecoder",
+        "irHypotheses",
+        "irMap",
+        "irEliminator",
     ];
 
     /// Every role, in the order of [`Self::WORDS`].
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 9] = [
         Self::IrSignature,
         Self::IrPair,
         Self::IrArgs,
         Self::IrDecode,
         Self::IrFamily,
         Self::IrDecoder,
+        Self::IrHypotheses,
+        Self::IrMap,
+        Self::IrEliminator,
     ];
 
     /// The word that an attribute names this role by.
@@ -164,6 +184,9 @@ impl Builtin
             Self::IrDecode => "irDecode",
             Self::IrFamily => "irFamily",
             Self::IrDecoder => "irDecoder",
+            Self::IrHypotheses => "irHypotheses",
+            Self::IrMap => "irMap",
+            Self::IrEliminator => "irEliminator",
         })
     }
 
@@ -202,7 +225,12 @@ impl Builtin
     {
         match self {
             Self::IrSignature | Self::IrPair | Self::IrFamily => Holder::Data,
-            Self::IrArgs | Self::IrDecode | Self::IrDecoder => Holder::Value,
+            Self::IrArgs
+            | Self::IrDecode
+            | Self::IrDecoder
+            | Self::IrHypotheses
+            | Self::IrMap
+            | Self::IrEliminator => Holder::Value,
         }
     }
 }

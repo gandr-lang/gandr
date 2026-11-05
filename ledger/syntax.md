@@ -260,7 +260,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`identity`](../corpus/ledger/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law |
 | [`deprecated`](../corpus/ledger/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
-| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | one of the words `irSignature`, `irPair`, `irArgs`, `irDecode`, `irFamily`, `irDecoder` |
+| [`builtin`](../corpus/ledger/attributes/builtin.gandr) | one of the words `irSignature`, `irPair`, `irArgs`, `irDecode`, `irFamily`, `irDecoder`, `irHypotheses`, `irMap`, `irEliminator` |
 
 ## Decisions — 113 of 170 rules decided at every token
 

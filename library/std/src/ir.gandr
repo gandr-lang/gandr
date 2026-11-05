@@ -1,6 +1,6 @@
 // `std.ir`: Dybjer and Setzer's signatures for inductive-recursive
 // definitions, as data, with the arguments a signature asks for, their
-// decode, and the family a signature defines with its decoder.
+// decode, the family a signature defines with its decoder, and its eliminator.
 //
 // A signature describes a family and its decoder at once. A signature asks
 // for a value of a type, for values of the family, or for a stop. The values
@@ -11,17 +11,22 @@
 // `x`, which `t` decodes. `decodeArgs` decodes those arguments. Each recurses
 // on the signature. `IR(d, c)` is the family that the signature `c` defines.
 // Its one constructor holds the arguments `c` asks for over `IR(d, c)` itself.
-// `el` decodes a value of the family by `decodeArgs`.
+// `el` decodes a value of the family by `decodeArgs`. `hyps` gives the type
+// of the induction hypotheses over the arguments, one proof of `p` at each
+// value of the family that they hold. `mapArgs` maps a proof over them.
+// `elim` proves `p` at each value of the family from a step.
 //
-// Each of the six holds a role by its `builtin` mark: `DPair` holds `irPair`,
-// `Sig` holds `irSignature`, `args` holds `irArgs`, `decodeArgs` holds
-// `irDecode`, `IR` holds `irFamily` and `el` holds `irDecoder`. A role has one
-// holder, and the checker refuses a second. The checker and the kernel
-// compare each holder with the canonical form of its role. The family keeps
-// no occurrence check and the decoder no stage check, since the canonical
-// forms are strictly positive and structural by construction.
+// Each of the nine holds a role by its `builtin` mark: `DPair` holds
+// `irPair`, `Sig` holds `irSignature`, `args` holds `irArgs`, `decodeArgs`
+// holds `irDecode`, `IR` holds `irFamily`, `el` holds `irDecoder`, `hyps`
+// holds `irHypotheses`, `mapArgs` holds `irMap` and `elim` holds
+// `irEliminator`. A role has one holder, and the checker refuses a second.
+// The checker and the kernel compare each holder with the canonical form of
+// its role. The family keeps no occurrence check, and the decoder and the
+// eliminator no stage check, since the canonical forms are strictly positive
+// and structural by construction. `elim` at `Intro(x)` is the step at `x`
+// and the map of `elim` over `x`, its computation rule.
 //
-// - owes: #5160 — the eliminator of the family, with its computation rule
 // - cites: [Dybjer-1999-finite_axiomatization_inductiverecursive_definitions]
 // - cites: [Kovacs-2026-canonicity_indexed_inductiverecursive_types]
 //
@@ -82,3 +87,62 @@ rec {
     match m
       | Intro(x) => decodeArgs d c (IR d c) (thunk { fun (n) { el[<] d c n } }) x
 }
+
+/// The induction hypotheses over the arguments `v`: one proof of `p` at each
+/// value of the family that `v` holds.
+@[ builtin(irHypotheses), form(explicit) ]
+pub def rec hyps(
+  d : Type,
+  c : Sig(d),
+  x : Type,
+  t : x -> d,
+  p : x -> Type,
+  v : args(d, c, x, t)
+) -> Type =
+  match c
+    | Iota(e) => return Unit
+    | SigmaC(a, f) => match v
+      | MkDPair(y, r) => hyps[<] d (f y) x t p r
+    | DeltaC(a, f) => match v
+      | MkDPair(h, r) => return (DPair ((z : a) -> p(h(z))) (fun (k) {
+        hyps[<] d (f (fun (z) { t (h z) })) x t p r
+      }))
+
+/// The map of `g` over the arguments `v`: `g` at each value of the family
+/// that `v` holds.
+@[ builtin(irMap), form(explicit) ]
+pub def rec mapArgs(
+  d : Type,
+  c : Sig(d),
+  x : Type,
+  t : x -> d,
+  p : x -> Type,
+  g : (y : x) -> p(y),
+  v : args(d, c, x, t)
+) -> hyps(d, c, x, t, p, v) =
+  match c
+    | Iota(e) => *{}
+    | SigmaC(a, f) => match v
+      | MkDPair(y, r) => mapArgs[<] d (f y) x t p g r
+    | DeltaC(a, f) => match v
+      | MkDPair(h, r) => MkDPair (thunk { fun (z) { g (h z) } }) (mapArgs[<] d (f (fun (z) {
+        t (h z)
+      })) x t p g r)
+
+/// The eliminator of the family: a proof of `p` at each value of the family,
+/// from the step `s` at the arguments of its constructor and their hypotheses.
+@[ builtin(irEliminator) ]
+pub def rec elim(
+  d : Type,
+  c : Sig(d),
+  p : IR(d, c) -> Type,
+  s : (
+    x : args(d, c, IR(d, c), thunk { fun (m) { el d c m } }),
+    w : hyps(d, c, IR(d, c), thunk { fun (m) { el d c m } }, p, x)
+  ) -> p((Intro(x) : IR(d, c))),
+  m : IR(d, c)
+) -> p(m) =
+  match m
+    | Intro(x) => s x (mapArgs d c (IR d c) (thunk { fun (m) { el d c m } }) p (thunk {
+      fun (n) { elim[<] d c p s n }
+    }) x)

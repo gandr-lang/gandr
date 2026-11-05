@@ -2480,7 +2480,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     }),
                 gandr_kernel_term::Builtin::IrArgs
                 | gandr_kernel_term::Builtin::IrDecode
-                | gandr_kernel_term::Builtin::IrDecoder => Ok(()),
+                | gandr_kernel_term::Builtin::IrDecoder
+                | gandr_kernel_term::Builtin::IrHypotheses
+                | gandr_kernel_term::Builtin::IrMap
+                | gandr_kernel_term::Builtin::IrEliminator => Ok(()),
             };
             canonical.map_err(|departure| CheckRefusal::BuiltinNotCanonical { role, departure })?;
         }
@@ -5173,8 +5176,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// Take `body`, the definition under way's body, as its own fixpoint's
     /// when the definition is a mutual block's and its body thunks one, with
     /// none open yet: only a block's families name its definitions. When the
-    /// definition holds the decoder role, also take the fixpoint under its
-    /// uniform parameters' lambdas as the one that opens no stage.
+    /// definition holds the decoder or the eliminator role, also take the
+    /// fixpoint under its uniform parameters' lambdas as the one that opens no
+    /// stage.
     ///
     /// # Specification
     /// trivial.
@@ -5199,9 +5203,13 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.own = (root, Maybe::Absent(own::Absent::Unopened));
         // The decoder role's holder takes the fixpoint under its uniform
         // parameters' lambdas as its own: its family's field names it applied
-        // to those parameters, which a case reads as the self binder.
+        // to those parameters, which a case reads as the self binder. The
+        // eliminator's holder recurses through the map, which applies it only
+        // to the fields its canonical form reads.
         let holds = matches!(self.admitted, Maybe::Present(constant)
-            if self.builtins.get(&gandr_kernel_term::Builtin::IrDecoder) == Some(&constant));
+            if [gandr_kernel_term::Builtin::IrDecoder, gandr_kernel_term::Builtin::IrEliminator]
+                .iter()
+                .any(|role| self.builtins.get(role) == Some(&constant)));
         self.decoding = Maybe::Absent(own::Absent::Unopened);
         if let (true, Some(&Value::Thunk(mut cursor))) = (holds, self.arena.value(body)) {
             let mut uniform = gandr_core_term::Binders::NONE;
@@ -5236,9 +5244,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
     }
 
-    /// The decoder role's own fixpoint is `fixpoint`, when the declaration
-    /// under way holds that role and `fixpoint` stands under its uniform
-    /// parameters.
+    /// The decoder or the eliminator role's own fixpoint is `fixpoint`, when
+    /// the declaration under way holds that role and `fixpoint` stands under
+    /// its uniform parameters.
     ///
     /// # Specification
     /// trivial.

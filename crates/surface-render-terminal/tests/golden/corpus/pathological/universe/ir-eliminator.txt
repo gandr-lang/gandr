@@ -1,0 +1,14 @@
+error[BuiltinNotCanonical]: this declaration departs from the canonical form of the built-in role `irEliminator` at its answer at constructor 0 of the signature type
+    ╭▸ corpus/pathological/universe/ir-eliminator.gandr:110:1
+    │
+110 │ ┏ def rec elim(
+111 │ ┃   d : Type,
+112 │ ┃   c : Sig(d),
+113 │ ┃   p : IR(d, c) -> Type,
+    ┆ ┇
+120 │ ┃   match m
+121 │ ┃     | Intro(x) => elim[<] d c p s m
+    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a built-in role's holder in another form
+    │
+    ├ note: `elim` is refused with BuiltinNotCanonical, as its expectation states
+    ╰ help: write the holder in the canonical form of its role

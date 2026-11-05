@@ -1986,6 +1986,9 @@ mod tests
                     "irDecode",
                     "irFamily",
                     "irDecoder",
+                    "irHypotheses",
+                    "irMap",
+                    "irEliminator",
                 ]),
             ),
         ];
