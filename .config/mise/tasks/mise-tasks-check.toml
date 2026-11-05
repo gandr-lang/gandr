@@ -466,6 +466,18 @@ env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = "quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 
+# The blocking set of the queue on `landing` (#5439) is Clippy's two passes
+# and the compiler policy with its specification gates. The queue runs these
+# tasks over the workspace in two jobs of `ci.yml`: `check Clippy wall` and
+# `check quenchant compiler policy`. The gate runs them over the change's
+# packages before `pr:open`. `check:landing-queue` holds the two jobs to this
+# list. Thus the two sets stay one. The integration cycle runs the tests, the
+# sweeps and the other gates (#5438).
+["check:landing"]
+description = "The checks a merge group on landing runs: Clippy and the compiler policy"
+depends = ["check:clippy-plain-only", "check:clippy-enforcing", "check:dylint", "check:anodized", "check:anodized-enforcing"]
+run = "echo 'landing check OK: Clippy and the compiler policy hold'"
+
 # CI separates compilation from execution so failed tests retain built state.
 # The plain build still covers every workspace target before test execution.
 ["build:tests"]
@@ -1879,6 +1891,32 @@ if [[ -n "$refusals" ]]; then
   exit 1
 fi
 echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as recorded; the measure runs in parts that make up the whole"
+'''
+
+# The queue on `landing` runs the blocking set alone (#5439).
+# `.config/landing/jobs.jq` refuses four faults. The first is a job that runs
+# in a merge group on `landing` outside the blocking set and the run's setup.
+# The second is a check in that set that `check:landing` does not name. The
+# third is a task of `check:landing` that no job of that set runs. The fourth
+# is Clippy on a pull request on `landing`. Each case in
+# `.config/landing/cases.json` gives its refusals. Then the jobs of
+# `.github/workflows/ci.yml`, anchors expanded, give none against the tasks
+# that `check:landing` depends on.
+["check:landing-queue"]
+description = "A merge group on landing runs only the run's setup and the tasks of check:landing, and a pull request on landing runs no Clippy"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash landing .config/landing/cases.json --program .config/landing/jobs.jq --mode c
+landing=$(mise tasks ls --json | jq -c '[.[] | select(.name == "check:landing") | .depends[]]')
+refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/ci.yml | jq -c --argjson landing "$landing" '{jobs: ., landing: $landing}' | jq -r -f .config/landing/jobs.jq | jq -r '.[] | ".github/workflows/ci.yml: \(.)"')
+if [[ -n "$refusals" ]]; then
+  printf '%s\n' "$refusals" >&2
+  exit 1
+fi
+echo "landing queue check OK: $(jq length .config/landing/cases.json) cases read as recorded; a merge group on landing runs the setup and the $(jq length <<< "$landing") tasks of check:landing alone"
 '''
 
 # The commit rules over a branch's own commits (`.config/commits/lint.bash`,
