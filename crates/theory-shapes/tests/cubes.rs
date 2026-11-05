@@ -12,11 +12,12 @@
 //! order.
 //!
 //! A polynomial is also a face formula over carriers of two points, with the
-//! atom `xᵢ ∈ {1}` for each generator. This crate decides such a formula only
-//! when it is `⊥` or one term. A join of terms on two variables is a
-//! disjunction across variables, and this crate refuses it. The suite checks
-//! the decisions against the truth tables wherever this crate decides. It
-//! also counts the polynomials that this crate refuses.
+//! atom `xᵢ ∈ {1}` for each generator. Every atom of it is monotone, so this
+//! crate decides it in the monotone band, also when it joins terms on two
+//! variables. The suite checks each decision against the truth tables. A
+//! formula that pins a vertex holds the lower point `xᵢ ∈ {0}` as well, and
+//! beside a join of terms this crate refuses it. The suite checks that
+//! refusal too.
 //!
 //! The reference readings are written apart from both crates: a table is
 //! monotone when it holds above every vertex where it holds, and a set of
@@ -766,53 +767,52 @@ fn a_composite_of_maps_is_a_substitution_of_polynomials()
 }
 
 #[test]
-fn the_crate_decides_a_polynomial_only_when_it_is_one_term()
+fn the_crate_decides_every_monotone_polynomial()
 {
-    // At each vertex this crate decides each term of a polynomial, and the
-    // join of those answers is the truth table. It admits the whole
-    // polynomial only when it is `⊥` or one term, and then it agrees with the
-    // table. It refuses the rest as disjunctions across variables. The ones
-    // it decides are the join-irreducible elements and `⊥`, `2ⁿ + 1` of the
-    // Dedekind number.
-    for (size, decided) in [2_usize, 3, 5, 9, 17].into_iter().enumerate() {
+    // The crate admits every polynomial as a formula. The corner term of a
+    // vertex entails a polynomial exactly when its table holds at the vertex,
+    // and between two polynomials entailment is the inclusion of their
+    // tables. A formula that pins a vertex below the top holds a lower point,
+    // and beside a join of terms it stays refused.
+    for (size, &elements) in DEDEKIND.iter().enumerate() {
         let axes = GeneratorCount::from(size);
         let polynomials = antichains(axes);
-        let mut admitted = 0_usize;
-        for polynomial in &polynomials {
-            let table = table_of(axes, polynomial);
-            // The count stops at two terms. Two terms already decide the band.
-            let terms = polynomial.terms().iter().take(2).count();
+        assert_eq!(polynomials.len(), elements);
+        let tables: Vec<Table> = polynomials
+            .iter()
+            .map(|polynomial| table_of(axes, polynomial))
+            .collect();
+        let top = vertices(axes).last().expect("a vertex");
+        for (polynomial, &table) in polynomials.iter().zip(&tables) {
+            let whole = polynomial_formula(axes, polynomial);
             for vertex in vertices(axes) {
-                let by_terms = holds_by_terms(axes, polynomial, vertex);
-                assert_eq!(by_terms, holds(table, vertex));
-                let whole = polynomial_formula(axes, polynomial);
-                match entailed(axes, vertex_formula(axes, vertex), whole) {
-                    Ok(answer) => {
-                        assert!(terms <= 1, "{polynomial:?} is admitted");
-                        assert_eq!(answer, holds(table, vertex));
-                    },
-                    Err(ShapeError::Disjunction(_)) => {
-                        assert!(terms > 1, "{polynomial:?} is refused");
-                    },
-                    Err(error) => panic!("{polynomial:?} is refused by {error:?}"),
+                assert_eq!(
+                    holds_by_terms(axes, polynomial, vertex),
+                    holds(table, vertex)
+                );
+                let corner =
+                    polynomial_formula(axes, &Polynomial::term(Term::from(u64::from(vertex))));
+                assert_eq!(
+                    entailed(axes, corner, whole.clone()),
+                    Ok(holds(table, vertex)),
+                    "{vertex:?} against {polynomial:?}"
+                );
+                let pinned = entailed(axes, vertex_formula(axes, vertex), whole.clone());
+                if polynomial.terms().len() > 1 && vertex != top {
+                    assert!(
+                        matches!(pinned, Err(ShapeError::Disjunction(_))),
+                        "{vertex:?} against {polynomial:?}"
+                    );
+                }
+                else {
+                    assert_eq!(pinned, Ok(holds(table, vertex)));
                 }
             }
-            if terms <= 1 {
-                admitted = admitted.saturating_add(1);
-            }
         }
-        assert_eq!(admitted, decided);
-        // Between the polynomials it decides, this crate's entailment is the
-        // order of the lattice.
-        let singles: Vec<&Polynomial> = polynomials
-            .iter()
-            .filter(|polynomial| polynomial.terms().iter().take(2).count() <= 1)
-            .collect();
-        for lower in &singles {
-            for upper in &singles {
-                let lower_table = u64::from(table_of(axes, lower));
-                let upper_table = u64::from(table_of(axes, upper));
-                let order = if lower_table & upper_table == lower_table {
+        for (lower, &lower_table) in polynomials.iter().zip(&tables) {
+            for (upper, &upper_table) in polynomials.iter().zip(&tables) {
+                let lower_bits = u64::from(lower_table);
+                let order = if lower_bits & u64::from(upper_table) == lower_bits {
                     Membership::Inside
                 }
                 else {

@@ -1,24 +1,34 @@
-//! Entailment in the conjunctive band and its column disjunctions, decided
-//! with evidence either way, and the two validators that check that evidence
-//! against the query alone.
+//! Entailment in the conjunctive band, its column disjunctions and the
+//! monotone band, decided with evidence either way, and the two validators
+//! that check that evidence against the query alone.
 
 use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_theory_stone_duality::Comparison;
+use gandr_theory_stone_duality::Generator;
+use gandr_theory_stone_duality::Membership as Holds;
+use gandr_theory_stone_duality::Polynomial;
+use gandr_theory_stone_duality::Term;
+use gandr_theory_stone_duality::Vertex;
 
 use crate::error::ShapeError;
 use crate::finite::Inclusion;
 use crate::finite::Membership;
 use crate::finite::SetOperation;
 use crate::finite::Subshape;
+use crate::formula::Band;
 use crate::formula::Formula;
 use crate::formula::Node;
 use crate::formula::Problem;
 use crate::formula::Truth;
+use crate::formula::evaluate;
 use crate::formula::truth;
 use crate::index::NodeId;
 use crate::index::Point;
+use crate::index::PointCount;
+use crate::index::TermIndex;
 use crate::index::Variable;
 
 /// The premise membership atoms one step of a derivation rests on.
@@ -46,10 +56,11 @@ pub struct Citation
 /// checked by [`Self::validate`].
 ///
 /// # Specification
-/// - provides: the four ways an entailment in the band holds over finite
-///   carriers: no assignment exists, the premise reaches `⊥`, the premise's
-///   atoms on one variable meet in the empty subshape, or every conclusion
-///   conjunct includes the meet of premise atoms on its variable.
+/// - provides: the five ways an entailment holds over finite carriers: no
+///   assignment exists, the premise reaches `⊥`, the premise's atoms on one
+///   variable meet in the empty subshape, every conclusion conjunct includes
+///   the meet of premise atoms on its variable, or, in the monotone band, every
+///   term of the premise's normal form lies below a term of the conclusion's.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -74,6 +85,11 @@ pub enum Derivation
     /// (`∧`-elimination, meet, monotonicity, `∨`-introduction, then
     /// `∧`-introduction).
     Supported(Vec<Citation>),
+    /// One cover per term of the premise's normal form, in term order, for a
+    /// query of the monotone band: the position of a conclusion term that the
+    /// premise term lies below. Each premise term then entails the
+    /// conclusion, and the premise is the join of its terms.
+    Covered(Vec<TermIndex>),
 }
 
 /// A total assignment claimed to satisfy the premise and falsify the
@@ -136,7 +152,12 @@ struct Column
 ///   in node order whose subshape misses a point of its variable's meet, every
 ///   variable at the least point of its meet and the refuted variable at the
 ///   least point the conjunct misses; otherwise `Supported`, citing for each
-///   conclusion conjunct every premise atom on its variable.
+///   conclusion conjunct every premise atom on its variable. A query of the
+///   monotone band, past `EmptyCarrier`, is decided in its normal forms:
+///   `Refuted` at the first premise term that lies below no conclusion term,
+///   with the upper point on each variable of the term and the lower point
+///   elsewhere; otherwise `Covered`, naming the first conclusion term above
+///   each premise term.
 /// - fails: only on a broken invariant of an admitted [`Problem`], as a typed
 ///   refusal; never an answer.
 /// - panics: none.
@@ -145,7 +166,9 @@ struct Column
 ///   the numbers of conclusion conjuncts and premise atoms and `d` the largest
 ///   carrier, the time is `O(s + o·d + c·(p + d))` and a `Supported` derivation
 ///   cites at most `c·p` atoms: polynomial in the query, never a case tree over
-///   the carriers' product.
+///   the carriers' product. In the monotone band, with `p` and `c` the two
+///   normal forms' term counts, the time is `O(p·c)` word comparisons and the
+///   derivation holds `p` covers.
 ///
 /// # Errors
 /// - [`ShapeError::VariableOutside`], [`ShapeError::MalformedFormula`]:
@@ -168,6 +191,7 @@ struct Column
 /// - witness: `tests::faces::a_column_disjunction_is_decided_as_its_union`
 /// - witness: `tests::faces::conjunctive_evidence_stays_polynomial`
 /// - witness: `tests::faces::deep_formulas_use_no_call_stack`
+/// - witness: `tests::cubes::the_crate_decides_every_monotone_polynomial`
 #[inline]
 #[spec(ensures: |ref ret| match *ret {
     Ok(Evidence::Holds(ref derivation)) => derivation.validate(problem).is_ok(),
@@ -184,6 +208,13 @@ pub fn decide(problem: &Problem) -> Result<Evidence, ShapeError>
         return Ok(Evidence::Holds(Derivation::EmptyCarrier(Variable::from(
             variable,
         ))));
+    }
+    if let Band::Monotone {
+        premise: ref premise_form,
+        conclusion: ref conclusion_form,
+    } = *problem.band()
+    {
+        return Ok(covering(context, premise_form, conclusion_form));
     }
     let mut columns: Vec<Column> = context
         .iter()
@@ -269,6 +300,93 @@ pub fn decide(problem: &Problem) -> Result<Evidence, ShapeError>
         });
     }
     Ok(Evidence::Holds(Derivation::Supported(supports)))
+}
+
+/// Decides a query of the monotone band in its normal forms: the premise
+/// entails the conclusion exactly when each premise term lies below a
+/// conclusion term.
+///
+/// # Specification
+/// - ensures: `Covered` names, for each premise term, the first conclusion term
+///   it lies below; `Refuted` sets the upper point on each variable of the
+///   first uncovered premise term and the lower point on every other variable.
+/// - panics: none.
+/// - intension: one scan of the conclusion's terms per premise term, so the
+///   time is the product of the two term counts, and the only allocation is the
+///   evidence.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every pair of polynomials on up to four variables, and
+///   every term against every polynomial, decide as their truth tables.
+/// - witness: `tests::cubes::the_crate_decides_every_monotone_polynomial`
+#[spec(ensures: |ref ret| match *ret {
+    Evidence::Holds(Derivation::Covered(ref covers)) => covers.len() == premise.terms().len(),
+    Evidence::Refuted(ref countermodel) => countermodel.assignment.len() == context.len(),
+    Evidence::Holds(_) => false,
+})]
+fn covering(
+    context: &[PointCount],
+    premise: &Polynomial,
+    conclusion: &Polynomial,
+) -> Evidence
+{
+    let mut covers = Vec::with_capacity(premise.terms().len());
+    for &term in premise.terms() {
+        match cover(term, conclusion) {
+            Some(index) => covers.push(index),
+            None => {
+                return Evidence::Refuted(Countermodel {
+                    assignment: corner(context, term),
+                });
+            },
+        }
+    }
+    Evidence::Holds(Derivation::Covered(covers))
+}
+
+/// The position of the first conclusion term that a premise term lies below.
+///
+/// # Specification
+/// trivial.
+fn cover(
+    term: Term,
+    conclusion: &Polynomial,
+) -> Option<TermIndex>
+{
+    conclusion
+        .terms()
+        .iter()
+        .position(|upper| term.compare(*upper) == Comparison::Below)
+        .map(TermIndex::from)
+}
+
+/// The assignment at the corner of a term: the upper point on each variable
+/// of the term, and the lower point on every other variable.
+///
+/// # Specification
+/// - requires: every variable of the term has a carrier of two points, and
+///   every other carrier is inhabited.
+/// - ensures: one point per variable of the context.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every countermodel of the monotone band on up to four
+///   variables is accepted by the validator and read by an independent
+///   evaluator.
+/// - witness: `tests::cubes::the_crate_decides_every_monotone_polynomial`
+#[spec(ensures: |ref ret| ret.len() == context.len())]
+fn corner(
+    context: &[PointCount],
+    term: Term,
+) -> Vec<Point>
+{
+    let vertex = Vertex::from(u64::from(term));
+    (0 .. context.len())
+        .map(|variable| match vertex.on(Generator::from(variable)) {
+            Holds::Inside => Point::from(1_usize),
+            Holds::Outside => Point::from(0_usize),
+        })
+        .collect()
 }
 
 /// A column disjunction's variable and the union of its atoms' membership
@@ -365,7 +483,12 @@ impl Derivation
     ///   `Supported` holds one citation per conclusion conjunct, in node order,
     ///   each citing premise membership atoms of that conjunct's variable whose
     ///   meet the conjunct's subshape (a column's union) includes, and no
-    ///   conclusion conjunct is `⊥`.
+    ///   conclusion conjunct is `⊥`; `Covered` holds one cover per term of the
+    ///   premise's normal form, each naming a conclusion term the premise term
+    ///   lies below. `Supported` is admitted only in the conjunctive band and
+    ///   `Covered` only in the monotone band. In the monotone band the
+    ///   validator reads the normal forms that admission built, and the
+    ///   agreement suites check those against truth tables.
     /// - fails: a derivation that does not establish the entailment is refused
     ///   with the first defect found, by the variable or node it concerns.
     /// - panics: none.
@@ -390,6 +513,12 @@ impl Derivation
     ///   per conclusion conjunct.
     /// - [`ShapeError::Unsupported`]: a conclusion conjunct is `⊥`, or does not
     ///   include the meet of its citation.
+    /// - [`ShapeError::OutsideBand`]: `Supported` is offered for a query of the
+    ///   monotone band, or `Covered` for one of the conjunctive band.
+    /// - [`ShapeError::CoverCount`]: `Covered` does not hold one cover per
+    ///   premise term.
+    /// - [`ShapeError::NotCovered`]: a cover names no conclusion term, or one
+    ///   that its premise term does not lie below.
     /// - [`ShapeError::MalformedFormula`], [`ShapeError::DifferentAmbient`]:
     ///   unreachable for an admitted problem; a disjunction that is no column.
     ///
@@ -399,6 +528,7 @@ impl Derivation
     ///   one defect, are refused with the exact refusal, and a valid derivation
     ///   replayed against another query is refused.
     /// - witness: `tests::faces::forged_evidence_is_refused`
+    /// - witness: `tests::faces::forged_monotone_evidence_is_refused`
     /// - witness: `tests::faces::generated_queries_agree_with_brute_force`
     #[inline]
     pub fn validate(
@@ -438,6 +568,9 @@ impl Derivation
                 }
             },
             Self::Supported(ref citations) => {
+                if matches!(*problem.band(), Band::Monotone { .. }) {
+                    return Err(ShapeError::OutsideBand);
+                }
                 if citations.len() != problem.conclusion_atoms().len() {
                     return Err(ShapeError::CitationCount);
                 }
@@ -463,6 +596,29 @@ impl Derivation
                     let inclusion = meet.included(required)?;
                     if let Inclusion::Escapes(_) = inclusion {
                         return Err(ShapeError::Unsupported(atom));
+                    }
+                }
+                Ok(())
+            },
+            Self::Covered(ref covers) => {
+                let Band::Monotone {
+                    premise: ref premise_form,
+                    conclusion: ref conclusion_form,
+                } = *problem.band()
+                else {
+                    return Err(ShapeError::OutsideBand);
+                };
+                if covers.len() != premise_form.terms().len() {
+                    return Err(ShapeError::CoverCount);
+                }
+                for (position, (term, cover)) in premise_form.terms().iter().zip(covers).enumerate()
+                {
+                    let below = conclusion_form
+                        .terms()
+                        .get(usize::from(*cover))
+                        .is_some_and(|upper| term.compare(*upper) == Comparison::Below);
+                    if !below {
+                        return Err(ShapeError::NotCovered(TermIndex::from(position)));
                     }
                 }
                 Ok(())
@@ -613,6 +769,9 @@ impl Countermodel
     ///   outside its carrier.
     /// - [`ShapeError::NotCountermodel`]: the premise fails or the conclusion
     ///   holds.
+    /// - [`ShapeError::VariableOutside`], [`ShapeError::PointOutside`],
+    ///   [`ShapeError::MalformedFormula`]: unreachable for an admitted problem;
+    ///   an atom the assignment does not read.
     ///
     /// # Adequacy
     /// - hypothesis: L1 — every countermodel the oracle returns on generated
@@ -636,8 +795,16 @@ impl Countermodel
                 return Err(ShapeError::AssignedOutside(Variable::from(variable)));
             }
         }
-        let premise_truth = truth(premise, problem.premise_atoms(), &self.assignment)?;
-        let conclusion_truth = truth(conclusion, problem.conclusion_atoms(), &self.assignment)?;
+        let (premise_truth, conclusion_truth) = match *problem.band() {
+            Band::Conjunctive => (
+                truth(premise, problem.premise_atoms(), &self.assignment)?,
+                truth(conclusion, problem.conclusion_atoms(), &self.assignment)?,
+            ),
+            Band::Monotone { .. } => (
+                evaluate(premise, &self.assignment)?,
+                evaluate(conclusion, &self.assignment)?,
+            ),
+        };
         if premise_truth == Truth::Yes && conclusion_truth == Truth::No {
             Ok(())
         }

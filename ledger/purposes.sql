@@ -4066,12 +4066,14 @@ INSERT INTO purpose VALUES('theory-shapes','finite::Membership','enum','Names th
 INSERT INTO purpose VALUES('theory-shapes','finite::SetOperation','enum','Names the two lattice operations on the subshapes of one carrier, so the operation''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','finite::Subshape','struct','Holds a decidable subshape of a finite carrier, so the subshape''s membership decisions are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','finite::UnionSquare','struct','Holds the outer pushout square of two subshapes over their meet, so the square''s blocks are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-shapes','formula::Band','enum','Names the band an admitted query lies in, with each side''s normal form in the monotone band, so the decision''s path is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','formula::Formula','struct','Holds a face formula, so the formula''s nodes are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','formula::Node','enum','Names one node of a formula table, so the node''s kind is read.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('theory-shapes','formula::Problem','struct','Holds an entailment query in the conjunctive band, so the query''s premise and conclusion are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-shapes','formula::Problem','struct','Holds an entailment query in the conjunctive or the monotone band, so the query''s premise and conclusion are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','index::NodeId','struct','Names a formula node''s position in its flat table, so the position''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','index::Point','struct','Names a point of a finite carrier, so the point''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','index::PointCount','struct','Names the number of points of a finite carrier, so the count''s value is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-shapes','index::TermIndex','struct','Names a term''s position in a monotone normal form, so a cover''s target is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','index::Variable','struct','Names a shape variable, so the variable''s position is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','oracle::Citation','struct','Holds the premise membership atoms one step of a derivation rests on, so the citation''s nodes are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-shapes','oracle::Countermodel','struct','Holds a total assignment claimed to satisfy the premise and falsify the conclusion, so the assignment''s points are read.',NULL,'fits','sound',NULL);

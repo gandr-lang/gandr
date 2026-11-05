@@ -87,7 +87,7 @@ crates/
 ├── theory-order-maintenance/      order maintenance with constant-time comparison
 ├── theory-ordered-algebras/       one law checker for ordered semirings, a counterexample for each broken law, and the max-plus semiring and the Lawvere quantale over exact dyadics
 ├── theory-path-orders/            path orders over second-order algebraic terms, the precedence as data, returning a derivation a checker replays
-├── theory-shapes/                 finite shapes: decidable subshapes, inclusions with complements, the outer pushout and its mediator, and face entailment in the conjunctive band and its column disjunctions, derived or refuted
+├── theory-shapes/                 finite shapes: decidable subshapes, inclusions with complements, the outer pushout and its mediator, and face entailment in three bands, derived or refuted
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
 ├── theory-stone-duality/          finite Stone duality: the free distributive lattice in normal form, finite Birkhoff duality, and monotone maps as lattice homomorphisms
