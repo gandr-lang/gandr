@@ -4,6 +4,8 @@
 #[cfg(test)]
 mod approx;
 #[cfg(test)]
+mod certificate;
+#[cfg(test)]
 mod dyadic;
 #[cfg(test)]
 mod interval;

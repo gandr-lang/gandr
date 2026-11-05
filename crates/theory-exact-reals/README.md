@@ -14,6 +14,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - [Plans and their bytes](#plans-and-their-bytes)
 - [Validation](#validation)
 - [Dual approximation](#dual-approximation)
+- [Certificates](#certificates)
 - [Measurement](#measurement)
 - [License](#license)
 
@@ -21,9 +22,9 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 
 ## Synopsis
 
-**What.** `Dyadic` holds a number `m · 2^e` in one canonical form. `NumericInterval` holds two bounds, each a dyadic or an infinity with a closure, and an explicit orientation. Every dyadic operation rounds to a requested precision toward the floor or the ceiling and reports whether it lost bits. Every interval operation rounds outward. `Plan` holds a computation over the reals as a finite DAG of real, open and domain nodes, and it has one canonical byte form. `approximate` encloses each real node of a validated plan, and it gives each open node a positive and a negative approximant. The crate is `no_std` and depends only on the `num-bigint` carrier and the specification facade.
+**What.** `Dyadic` holds a number `m · 2^e` in one canonical form. `NumericInterval` holds two bounds, each a dyadic or an infinity with a closure, and an explicit orientation. Every dyadic operation rounds to a requested precision toward the floor or the ceiling and reports whether it lost bits. Every interval operation rounds outward. `Plan` holds a computation over the reals as a finite DAG of real, open and domain nodes, and it has one canonical byte form. `approximate` encloses each real node of a validated plan, and it gives each open node a positive and a negative approximant. `check` replays a `Certificate` of a judgement with no search, and `refine` narrows the registered cut of a square root with a certificate. The crate is `no_std` and depends only on the `num-bigint` carrier and the specification facade.
 
-**Why.** An exact real is an infinite object, and a program holds only finite approximations of it. Floating point rounds each result without a record, so an enclosure built from it is not sound. A dyadic is exact, a sum or a product of dyadics is a dyadic, and directed rounding keeps an enclosure sound while it bounds the bits. The refinement machine of the exact-reals design computes with these values and emits certificates that a checker replays. An interval alone is never evidence of truth. Truth needs a proven approximant, and a later certificate replays it. The crate does not depend on the kernel, and no real number enters kernel conversion.
+**Why.** An exact real is an infinite object, and a program holds only finite approximations of it. Floating point rounds each result without a record, so an enclosure built from it is not sound. A dyadic is exact, a sum or a product of dyadics is a dyadic, and directed rounding keeps an enclosure sound while it bounds the bits. An interval alone is never evidence of truth. Truth needs a certificate that a checker replays with exact comparisons alone. The crate does not depend on the kernel, and no real number enters kernel conversion.
 
 **How.** A nonzero mantissa is odd, and zero has the exponent zero, so the derived equality agrees with the exact order. A mantissa that fits an `i64` is inline, and the arithmetic on two inline values runs in `i128` with no allocation. A wider mantissa is a `num_bigint::BigInt`. The work of a sum is bounded by the operand widths and the precision, never by the gap between the exponents (see [Rounding and its bound](#rounding-and-its-bound)).
 
@@ -49,6 +50,9 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `validate` and `admit`: the total validation pass from bytes or from a plan, with its `Quotas`, its `EvidenceTable` of `Judgement`s, and a `ValidatedPlan` or a `Refusal` that names its `Site` and its `Check`.
 - `Scope`, `Height` and `ByteLength`: whether an edge enters a binder, and the nominal parts of the quotas.
 - `approximate`: the dual approximation of a validated plan at one precision, an `Approximation` that answers `enclosure` and `approximants` by node, each pair of approximants a `BilateralApprox` of a `PositiveApprox` and a `NegativeApprox`.
+- `Certificate`, `Step`, `Side`, `StepId` and `FormatVersion`: a versioned certificate; `encode` to `CertificateBytes` and `decode` from `EncodedCertificate`.
+- `check`: the replay within `CheckerQuotas`, a `Checked` `Conclusion` or a `CertificateRefusal` that names its `StepSite` and its `CertificateCheck`.
+- `square_root`, `square_root_of_two`, `radicand` and `refine`: the registered cut schema, its recognition, and its refinement to a power of two with a certificate.
 
 ## Expected features
 
@@ -114,9 +118,13 @@ A plan is untrusted input, so only a `ValidatedPlan` reaches the later stages. `
 
 `approximate` gives each node of a validated plan an approximation at one precision. A real node gets an enclosure that holds its value, rounded outward. An open node gets a positive and a negative approximant, and each one is sound on its own. When neither proves its side, the proposition stays undecided at that precision, and the crate never reports it as false. The `approx` module documentation tables the approximation of each node kind and states the bounds of the pass.
 
+## Certificates
+
+A `Certificate` is a list of steps, each a primitive rule over the nodes of a plan and over earlier steps. The checker reads a certificate against a validated plan. It uses exact dyadic comparisons and exact squares alone, and it never calls the interval code. It returns the last step's conclusion, or it refuses the first step that fails and names the check. The checker knows one cut schema, the square root of a positive dyadic, and it refuses a cut of any other shape as forged. `refine` narrows such a cut from its hull to a requested power of two with one step for each halving. The square root of two at a width of `2^-256` takes 257 steps. The `certificate` module documentation tables the rules, and the `schema` module documentation states the schema.
+
 ## Measurement
 
-`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits. It times the canonical form, the bytes, the reading back, the validation and the dual approximation at 64 bits of three plans. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
+`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits. It times the canonical form, the bytes, the reading back, the validation and the dual approximation at 64 bits of three plans. It times the refinement, the check and the bytes of the square root of two at three widths. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
 
 ## License
 
