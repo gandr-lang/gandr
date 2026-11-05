@@ -2119,11 +2119,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   manifest's sorts ([`Self::theory_slot`]) and what `N` passes for it
     ///   ([`Self::named_model`]), or, for no `with`, that slot and its holes
     ///   ([`Self::answering_model`]).
-    /// - fails: the wrong-sort refusal where no computation is read, at a
-    ///   module a host interface's scope names, and at the interface of a host
-    ///   scope writing no `with`; out of the fragment (`extern_block`) at the
-    ///   interface of a scope over an extern block's interface, which the host
-    ///   the run is offered to answers; the refusals of [`Self::handled`],
+    /// - fails: the wrong-sort refusal where no computation is read and at a
+    ///   module a host interface's scope names; a missing-operand fault where
+    ///   the subject of a host scope writing no `with` ends, which its clauses
+    ///   follow; out of the fragment (`extern_block`) at the interface of a
+    ///   scope over an extern block's interface, which the host the run is
+    ///   offered to answers; the refusals of [`Self::handled`],
     ///   [`Self::theory_slot`], [`Self::named_model`] and
     ///   [`Self::answering_model`]; [`LoweringRefusal::UninterfacedMember`] at
     ///   the theory's name with [`InterfaceFault::Value`] for a scope writing
@@ -2250,15 +2251,11 @@ impl<'source> Lowerer<'_, 'source>
                 at: written.last,
                 ..site
             };
+            // Only clauses answer a host's interface, so a host scope that
+            // writes no `with` leaves them out where its subject ends. A
+            // doubled `}` that closes the scope early leaves the same gap.
             if !matches!(interface, Interface::Theory(_)) {
-                let whole = Site {
-                    at: crate::form::Placed {
-                        node: written.last.node,
-                        span: written.span(),
-                    },
-                    ..site
-                };
-                return Err(whole.out(FragmentBoundary::WrongSort));
+                return Err(site.fault(cursor.here(), FormFault::MissingOperand));
             }
             let slot = self.theory_slot(named, &written, site.at.span.start(), &stated)?;
             let supplied = self.answering_model(site, written.name(self.tree), &slot)?;

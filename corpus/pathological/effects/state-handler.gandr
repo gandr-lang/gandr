@@ -109,7 +109,7 @@ def ambiguousInScope() -> Integer -> Integer =
 
 /// A host interface writing no `with`: no model answers a host's
 /// operations, so it writes its clauses.
-@[ refuses("OutOfFragment.WrongSort") ]
+@[ refuses("MalformedForm") ]
 def unansweredForConsole() -> Integer =
   handle c : std.io.Console.Eff {
     pure 1

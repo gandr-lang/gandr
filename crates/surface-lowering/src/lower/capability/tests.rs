@@ -2355,8 +2355,8 @@ const ZERO_AND_ONE: &str = concat!(
 /// modules as its candidates. `Passing`, the one model of `StatePutPut`,
 /// answers such a scope, which checks owing no law. Two models of `State`
 /// answering one are refused as ambiguous; none at its stored sort, as
-/// unanswered. A host interface's scope writing no `with` is refused at its
-/// interface as a former of the wrong sort.
+/// unanswered. A host interface's scope writing no `with` is refused where
+/// its subject ends, as a form that leaves its clauses unwritten.
 #[test]
 fn a_scope_is_answered_by_the_model_in_scope_2272()
 {
@@ -2457,14 +2457,52 @@ fn a_scope_is_answered_by_the_model_in_scope_2272()
     assert!(
         matches!(
             outcome_of(&module, "hosted".into()),
-            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
                 span,
-                boundary: FragmentBoundary::WrongSort,
+                fault: crate::error::FormFault::MissingOperand,
                 ..
-            }) if text.get(usize::from(span.start()) .. usize::from(span.end())) == Some("std.process.Exit.Eff")
+            }) if span.start() == span.end()
+                && text.get(.. usize::from(span.start())).is_some_and(|before| before.ends_with("{ pure *{} }"))
         ),
         "{:?}",
         outcome_of(&module, "hosted".into())
+    );
+}
+
+/// A `}` written twice after a host scope's subject closes the scope before
+/// its `with`, and the clauses stand at the root. The scope is refused where
+/// its subject ends, between the two closers, so the refusal marks the bytes
+/// written wrong (#5302).
+#[test]
+fn a_doubled_closer_before_a_scope_s_clauses_is_refused_there_5302()
+{
+    let mut arena = CoreArena::new();
+    let text = hosting(concat!(
+        "def quiet(n : Integer) -> -F Integer =\n",
+        "  handle c : std.process.Exit.Eff {\n",
+        "    c.exit 1;\n",
+        "    return n\n",
+        "  }} with {\n",
+        "    | pure(x) => pure x\n",
+        "    | oper exit(code, k) => k *{}\n",
+        "  }\n",
+    ));
+    let module = crate::fixture::hosted_repaired(&text, &mut arena);
+    let between = text
+        .find("}}")
+        .map(|at| at.saturating_add(1))
+        .expect("the closer is doubled");
+    assert!(
+        matches!(
+            outcome_of(&module, "quiet".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
+                span,
+                fault: crate::error::FormFault::MissingOperand,
+                ..
+            }) if usize::from(span.start()) == between && usize::from(span.end()) == between
+        ),
+        "{:?}",
+        outcome_of(&module, "quiet".into())
     );
 }
 

@@ -7,14 +7,14 @@ error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computa
    ├ note: `answeredForConsole` is refused with OutOfFragment.WrongSort, as its expectation states
    ╰ help: write a computation in this position
 
-error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computation is expected
-    ╭▸ corpus/pathological/effects/state-handler.gandr:114:14
+error[MalformedForm]: an operand is missing in this handle expression
+    ╭▸ corpus/pathological/effects/state-handler.gandr:116:4
     │
-114 │   handle c : std.io.Console.Eff {
-    │              ━━━━━━━━━━━━━━━━━━ a form of another sort than this position takes
+116 │   }
+    │    ━ an operand is missing here
     │
-    ├ note: `unansweredForConsole` is refused with OutOfFragment.WrongSort, as its expectation states
-    ╰ help: write a computation in this position
+    ├ note: `unansweredForConsole` is refused with MalformedForm, as its expectation states
+    ╰ help: write the missing operand
 
 error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `S`, which is a sort the operations do not return, which the manifest leaves unfixed
    ╭▸ corpus/pathological/effects/state-handler.gandr:18:15
