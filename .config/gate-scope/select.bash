@@ -21,11 +21,15 @@ if ! base=$(git merge-base origin/main "${head:-HEAD}" 2> /dev/null); then
   jq -r '.[]' <<< "$tasks"
   exit 0
 fi
-if [[ -n $head ]]; then
-  changed=$(git diff --no-renames --name-only "$base" "$head" | jq -R . | jq -cs .)
-else
-  changed=$({ git diff --no-renames --name-only "$base"; git ls-files --others --exclude-standard; } | jq -R . | jq -cs .)
-fi
-jq -n --argjson tasks "$tasks" --argjson changed "$changed" '{tasks: $tasks, changed: $changed}' \
+# The changed paths reach jq on its standard input, never as an argument: a
+# large change makes a list longer than one argument can hold (#5220).
+{
+  if [[ -n $head ]]; then
+    git diff --no-renames --name-only "$base" "$head"
+  else
+    git diff --no-renames --name-only "$base"
+    git ls-files --others --exclude-standard
+  fi
+} | jq -nR --argjson tasks "$tasks" '{tasks: $tasks, changed: [inputs]}' \
   | jq -r -L "$here" -f "$here/select.jq" \
   | jq -r '.[]'
