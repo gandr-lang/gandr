@@ -26,6 +26,4 @@ def sides : Path(width, height) = Path.funext width height;
 /// read as a tail; the coverage does not read one yet, so no function
 /// extensionality decides it.
 @[ refuses("FunextUnsupported") ]
-def restepped : Path(Renumber.step, Renumber.step) = Path.funext
-  Renumber.step
-  Renumber.step;
+def restepped : Path(Renumber.step, Renumber.step) = Path.funext Renumber.step Renumber.step;

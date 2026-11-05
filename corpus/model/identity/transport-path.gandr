@@ -31,7 +31,9 @@ def along_returned(
   a : Type,
   x : a
 ) -> Path(
-  Path.walk (fun (X) { X }) (Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here a))
+  Path.walk (fun (X) { X }) (Path.walk (fun (c) {
+    type(Path[.A = Type](c, a))
+  }) (Path.here a) (Path.here a))
     x,
   x
 ) =

@@ -42,7 +42,10 @@ def decoded(a : Answer) -> Path(decode (encode a), a) =
     | Yes => Path.here Yes
 
 /// The bits and the answers are one type, by univalence.
-pub def codes : Path[.A = Type](Bit, Answer) = ua (*{decode, *{*{encode, encoded}, *{encode, decoded}}});
+pub def codes : Path[.A = Type](Bit, Answer) = ua (*{
+  decode,
+  *{*{encode, encoded}, *{encode, decoded}}
+});
 
 /// A protocol that hears a bit, and one that hears an answer.
 module Ask where

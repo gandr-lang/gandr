@@ -34,7 +34,10 @@ pub def rec spinWords(n : Int) -> Words =
 def spun() -> Words { spinWords (S (S Z)) }
 
 /// Conversion runs spinning at a closed word: two successors are two loops.
-def spun_twice : Path[.A = Words](spinWords (S (S Z)), Loop (Loop Nil)) = Path.here (Loop (Loop Nil));
+def spun_twice : Path[.A = Words](
+  spinWords (S (S Z)),
+  Loop (Loop Nil)
+) = Path.here (Loop (Loop Nil));
 
 /// A cancelled count spins to the empty word.
 def spun_back : Path[.A = Words](spinWords (S (P Z)), Nil) = Path.here Nil;
@@ -62,7 +65,10 @@ def spun_wound_cancelled : Path[.A = Words](
 ) = Path.here (Loop Nil);
 
 /// A respelled count comes back as its normal form, one predecessor.
-def wound_spun_respelled : Path[.A = Int](windWords (spinWords (S (P (P Z)))), P Z) = Path.here (P Z);
+def wound_spun_respelled : Path[.A = Int](
+  windWords (spinWords (S (P (P Z)))),
+  P Z
+) = Path.here (P Z);
 
 /// The round trip does not lose the loop: it is not the empty word.
 @[ refuses("EndpointMismatch") ]

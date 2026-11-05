@@ -66,10 +66,14 @@ def raising : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op (Right (L
 });
 
 /// Over state alone: read, and answer what was read.
-def quiet : Prog(Either(StateOp, Void), Integer) = Op (Left Get) (fun (a) { (Done a : Prog(Either(StateOp, Void), Integer)) });
+def quiet : Prog(Either(StateOp, Void), Integer) = Op (Left Get) (fun (a) {
+  (Done a : Prog(Either(StateOp, Void), Integer))
+});
 
 /// Over exceptions alone: raise four.
-def failing : Prog(Either(ExnOp, Void), Integer) = Op (Left (Raise 4)) (fun (_r) { (Done 0 : Prog(Either(ExnOp, Void), Integer)) });
+def failing : Prog(Either(ExnOp, Void), Integer) = Op (Left (Raise 4)) (fun (_r) {
+  (Done 0 : Prog(Either(ExnOp, Void), Integer))
+});
 
 /// Exceptions peeled, then state from four, then nothing left: the second
 /// read sees the stored five. Each handler is called at the row it leaves,

@@ -28,8 +28,7 @@ pub def reporting : Prefix(Seat.SeatEnd) = recorded (received Seat.task) (select
 def shown() -> Prefix(Seat.SeatEnd) { reporting }
 
 /// A run the seat completed is a prefix too.
-def retired : Prefix(Seat.SeatEnd) = recorded (received Seat.task) (selected report) (sent Seat.progress) (offered retire)
-  closed;
+def retired : Prefix(Seat.SeatEnd) = recorded (received Seat.task) (selected report) (sent Seat.progress) (offered retire) closed;
 
 /// A seat that reports forever has no complete run, and every record of it
 /// is a prefix: two reports so far.

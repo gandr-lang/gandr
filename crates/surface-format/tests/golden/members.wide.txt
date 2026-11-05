@@ -27,5 +27,5 @@ codata Stream(a : Type) : Type[-] where
 module M where {
   /// One.
   @[ checks ]
-    def one = 1;
+  def one = 1;
 }

@@ -43,9 +43,9 @@ pub def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type =
   match c
     | Iota(e) => return Unit
     | SigmaC(a, f) => return (Sig a (thunk { fun (y) { args[<] d (f y) x t } }))
-    | DeltaC(a, f) => return (Sig
-      (+U (a -> -F x))
-      (thunk { fun (h) { args[<] d (f (thunk { fun (z) { t (h z) } })) x t } }))
+    | DeltaC(a, f) => return (Sig (+U (a -> -F x)) (thunk {
+      fun (h) { args[<] d (f (thunk { fun (z) { t (h z) } })) x t }
+    }))
 
 /// Accepts the arguments of any code.
 @[ checks ]

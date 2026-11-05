@@ -64,9 +64,9 @@ def rightward : Model(Counter) with sort C = Unit + (Unit + Unit) = *{
 };
 
 /// The same counter carried to the left nesting.
-def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = Path.walk (fun (x) { type(Model(Counter) with sort C = x) })
-  nestings
-  rightward;
+def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = Path.walk (fun (x) {
+  type(Model(Counter) with sort C = x)
+}) nestings rightward;
 
 /// A counter over the right nesting stepped once from its start.
 def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =

@@ -37,9 +37,7 @@ data Bush : Type where
 def sprig : Bush = Sprout (Nil : List(Bush));
 
 /// A node over two childless nodes, written directly.
-def shrub : Bush = Sprout (Cons
-  sprig
-  (Cons sprig (Nil : List(Bush)) : List(Bush)) : List(Bush));
+def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List(Bush)) : List(Bush)) : List(Bush));
 
 /// A list of numbers, summed.
 def rec sum(xs : List(Nat)) -> Nat =

@@ -117,9 +117,7 @@ def fAdmitted() -> Admission =
 @[ runs("Unrealised (Size (Argument 1))") ]
 def gUnrealised() -> Admission =
   admit
-    (Declared
-      (Param "x" printedOptRef (Param "n" (Printed 8 8 false false) NoParam))
-      printedU32)
+    (Declared (Param "x" printedOptRef (Param "n" (Printed 8 8 false false) NoParam)) printedU32)
     fRow
 
 /// `h` takes `x: &u32`: one word, but never null, where the row's null
@@ -151,18 +149,14 @@ def bUnrealised() -> Admission =
 @[ runs("Unrealised (Align (Argument 1))") ]
 def aUnrealised() -> Admission =
   admit
-    (Declared
-      (Param "x" printedOptRef (Param "n" (Printed 4 1 false false) NoParam))
-      printedU32)
+    (Declared (Param "x" printedOptRef (Param "n" (Printed 4 1 false false) NoParam)) printedU32)
     fRow
 
 /// `w` answers a `u64` where the row answers a `u32`.
 @[ runs("Unrealised (Size Result)") ]
 def wUnrealised() -> Admission =
   admit
-    (Declared
-      (Param "x" printedOptRef (Param "n" printedU32 NoParam))
-      (Printed 8 8 false false))
+    (Declared (Param "x" printedOptRef (Param "n" printedU32 NoParam)) (Printed 8 8 false false))
     fRow
 
 /// `k` takes no `n`.

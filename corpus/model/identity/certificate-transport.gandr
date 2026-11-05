@@ -64,5 +64,7 @@ def carried(x : Int, f : Path[.A = Int](S (P (S x)), S x) -> Int) -> Path[.A = P
 /// transports `S(Z)` along the certificate and keeps it.
 @[ runs("S Z") ]
 def carriedRun() -> Int =
-  let g = Path.walk (fun (X) { X -> Int }) (certificates Z) (fun (c) { Path.walk (fun (y) { Int }) c (S Z) })
+  let g = Path.walk (fun (X) { X -> Int }) (certificates Z) (fun (c) {
+    Path.walk (fun (y) { Int }) c (S Z)
+  })
   g (Path.here (S Z))

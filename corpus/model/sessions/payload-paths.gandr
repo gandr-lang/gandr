@@ -43,7 +43,7 @@ def renested : Path[.A = Type](
 
 /// Each verdict a judge hears is its own payload pair, so hearing two owes
 /// two paths, in the order the protocol hears them.
-def renestedTwice : Path[.A = Type](Judge.RightTwice, Judge.LeftTwice) = Path.bisim
-  Judge.RightTwice
+def renestedTwice : Path[.A = Type](
+  Judge.RightTwice,
   Judge.LeftTwice
-  (*{nestings, nestings});
+) = Path.bisim Judge.RightTwice Judge.LeftTwice (*{nestings, nestings});

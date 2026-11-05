@@ -60,6 +60,4 @@ def unswitched(light : Light) -> Light =
 
 /// Switching twice is leaving the light as it is: the two agree at both
 /// states.
-def switchedTwice : Path(switchTwice, unswitched) = Path.funext
-  switchTwice
-  unswitched;
+def switchedTwice : Path(switchTwice, unswitched) = Path.funext switchTwice unswitched;

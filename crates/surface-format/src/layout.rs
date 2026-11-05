@@ -310,6 +310,7 @@ pub fn lay_out(
     docs.resize(groups.len(), Built {
         flat: Flat::Fits(empty),
         best: empty,
+        opens: Opens::Other,
     });
     for (index, group) in groups.iter().enumerate().rev() {
         let built = group_doc(&mut builder, group, &docs, blank)?;
@@ -716,6 +717,19 @@ struct Built
     flat: Flat,
     /// The group laid out as it best fits the page.
     best: DocId,
+    /// What opened the group.
+    opens: Opens,
+}
+
+/// What opened a group: an attribute block, whose member the next line
+/// starts at the attribute's own indent, or anything else.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Opens
+{
+    /// `@[` or `@![`.
+    Attribute,
+    /// Any other opener, or none.
+    Other,
 }
 
 /// Whether a group can stand on one line.
@@ -749,6 +763,12 @@ fn group_doc(
     blank: DocId,
 ) -> Result<Built, FormatError>
 {
+    let opens = match group.frame {
+        Frame::Bracketed { open, .. } if matches!(<&str>::from(open), "@[" | "@![") => {
+            Opens::Attribute
+        },
+        Frame::Bracketed { .. } | Frame::Form | Frame::Layout { .. } => Opens::Other,
+    };
     let (open, close, closing) = match group.frame {
         Frame::Bracketed {
             open,
@@ -761,6 +781,7 @@ fn group_doc(
             return Ok(Built {
                 flat: Flat::Breaks,
                 best,
+                opens,
             });
         },
         // The column rule ends the block, so its items stand one per line
@@ -772,6 +793,7 @@ fn group_doc(
             return Ok(Built {
                 flat: Flat::Breaks,
                 best,
+                opens,
             });
         },
     };
@@ -785,6 +807,7 @@ fn group_doc(
         return Ok(Built {
             flat: Flat::Fits(only),
             best: only,
+            opens,
         });
     };
     let forced = first.gap.breaks() == Breaks::Yes
@@ -810,6 +833,7 @@ fn group_doc(
         return Ok(Built {
             flat: Flat::Breaks,
             best: broken,
+            opens,
         });
     }
     let opening = join_doc(builder, first.join)?;
@@ -835,11 +859,12 @@ fn group_doc(
     if !listed {
         let content = run(builder, &group.placed, docs, Mode::Best)?;
         let best = builder.concat_all([open, opening, content, closing, close])?;
-        return Ok(Built { flat, best });
+        return Ok(Built { flat, best, opens });
     }
     Ok(Built {
         flat,
         best: builder.choice(inline, broken)?,
+        opens,
     })
 }
 
@@ -858,7 +883,7 @@ fn item_lines(
 ) -> Result<DocId, FormatError>
 {
     let mut lines: Vec<DocId> = Vec::new();
-    for (index, item) in items(placed, columns).into_iter().enumerate() {
+    for (index, item) in items(placed, docs, columns).into_iter().enumerate() {
         let Some(&Placed { gap, .. }) = item.placed.first()
         else {
             continue;
@@ -951,12 +976,14 @@ enum Continuation
 /// lines stand deeper than its bar, so a data block's member after its
 /// constructors, at the bars' column, is no part of the last one. A comment
 /// is no statement, so code after a comment the group opens with starts one
-/// wherever the comment stands.
+/// wherever the comment stands. A line after an attribute block, `@[ … ]`,
+/// starts the member the attribute decorates, at the attribute's indent.
 ///
 /// # Specification
 /// trivial.
 fn items<'group, 'source>(
     placed: &'group [Placed<'source>],
+    docs: &[Built],
     columns: Columns,
 ) -> Vec<Item<'group, 'source>>
 {
@@ -985,6 +1012,9 @@ fn items<'group, 'source>(
     // The branch of the last code before the current element: none before any
     // code, and an unknown one where a rewrite wrote that code.
     let mut last: Option<Option<Branch>> = None;
+    // What opened the last code when it is a group: a line after an
+    // attribute block starts the member it decorates, at its own indent.
+    let mut after = Opens::Other;
     let mut base: Option<Indent> = placed
         .first()
         .filter(|first| first.gap.breaks() == Breaks::Yes && first.element.kind() == Kind::Code)
@@ -1015,16 +1045,17 @@ fn items<'group, 'source>(
                 // A separator on a line of its own ends the statement before it.
                 let separator = matches!(current.element, Element::Text(text)
                     if SEPARATORS.contains(&<&str>::from(text)));
-                let continues = match (columns, last) {
-                    (Columns::Read | Columns::Unread, None) => false,
-                    (Columns::Read, Some(_)) if separator => true,
-                    (Columns::Read, Some(Some(previous))) => {
-                        current.branch.map_or(deeper, |here| {
-                            here.node == previous.node || previous.direct == Direct::Yes
-                        })
-                    },
-                    (Columns::Read, Some(None)) | (Columns::Unread, Some(_)) => deeper,
-                };
+                let continues = after == Opens::Other
+                    && match (columns, last) {
+                        (Columns::Read | Columns::Unread, None) => false,
+                        (Columns::Read, Some(_)) if separator => true,
+                        (Columns::Read, Some(Some(previous))) => {
+                            current.branch.map_or(deeper, |here| {
+                                here.node == previous.node || previous.direct == Direct::Yes
+                            })
+                        },
+                        (Columns::Read, Some(None)) | (Columns::Unread, Some(_)) => deeper,
+                    };
                 if unseparated && continues && (!armed || deeper) {
                     continuation = Continuation::Continued;
                 }
@@ -1034,8 +1065,13 @@ fn items<'group, 'source>(
             }
         }
         match current.element {
-            Element::Text(_) | Element::Verbatim(_) | Element::Group(_) => {
+            Element::Text(_) | Element::Verbatim(_) => {
                 last = Some(current.branch);
+                after = Opens::Other;
+            },
+            Element::Group(GroupId(group)) => {
+                last = Some(current.branch);
+                after = docs.get(group).map_or(Opens::Other, |built| built.opens);
             },
             Element::Break | Element::LineComment(_) | Element::BlockComment(_) => {},
         }

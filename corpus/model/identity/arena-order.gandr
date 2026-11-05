@@ -19,9 +19,10 @@ def swapFirstTwo(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
     | +{.1 = +{.1 = u}} => +{.1 = +{.1 = u}}
 
 /// The ids to themselves along the relabelling, its own inverse.
-def relabelling : Path[.A = Type](Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv
-  swapFirstTwo
-  swapFirstTwo;
+def relabelling : Path[.A = Type](
+  Unit + (Unit + Unit),
+  Unit + (Unit + Unit)
+) = equiv swapFirstTwo swapFirstTwo;
 
 /// The ring `a → b → c → a` with `a` allocated first, then `b`, then `c`:
 /// each id links to the next one allocated.
@@ -111,6 +112,4 @@ def walkedAlike() -> Path(walk builtABC, walk builtBAC) =
 /// The labels left at their ids are not the other order's: an id names a
 /// node only within its arena.
 @[ refuses("PointwiseDistinct") ]
-def labelsUnrelabelled : Path(labelABC, labelBAC) = Path.funext
-  labelABC
-  labelBAC;
+def labelsUnrelabelled : Path(labelABC, labelBAC) = Path.funext labelABC labelBAC;

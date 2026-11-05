@@ -47,7 +47,9 @@ def overGenerated(
   Path.here (Path.here x),
   Path.here (Path.here x)
 )](
-  Path.walk (fun (s) { type(Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](s, s)) }) (fill[1, 3] (chain 1) (selfLoop A x x) (Path.here (Path.here x)))
+  Path.walk (fun (s) {
+    type(Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](s, s))
+  }) (fill[1, 3] (chain 1) (selfLoop A x x) (Path.here (Path.here x)))
     v,
   v
 ) =

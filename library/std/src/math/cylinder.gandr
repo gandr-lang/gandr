@@ -57,13 +57,7 @@ pub def cylinderComposite2(
   Path.step xs (Path.step f2 g2)
 ) =
   Path.step
-    (Path.step
-      (Path.step
-        (Path.step
-          (assoc A x y z z2 f g zs)
-          (whiskerLeft A x y z2 f (Path.step g zs) (Path.step ys g2) b))
-        (Path.back (assoc A x y y2 z2 f ys g2)))
-      (whiskerRight A x y2 z2 (Path.step f ys) (Path.step xs f2) a g2))
+    (Path.step (Path.step (Path.step (assoc A x y z z2 f g zs) (whiskerLeft A x y z2 f (Path.step g zs) (Path.step ys g2) b)) (Path.back (assoc A x y y2 z2 f ys g2))) (whiskerRight A x y2 z2 (Path.step f ys) (Path.step xs f2) a g2))
     (assoc A x x2 y2 z2 xs f2 g2)
 
 /// A stack of two squares composes to a square: Catt's `cylstack(2)`, the composite of their transposes read back.
@@ -88,23 +82,7 @@ pub def cylinderStack2(
   Path.step f (Path.step ys ys2),
   Path.step (Path.step xs xs2) f3
 ) =
-  Path.back (cylinderComposite2
-    A
-    x
-    x2
-    xs
-    y
-    y2
-    ys
-    f
-    f2
-    (Path.back a)
-    x3
-    xs2
-    y3
-    ys2
-    f3
-    (Path.back b))
+  Path.back (cylinderComposite2 A x x2 xs y y2 ys f f2 (Path.back a) x3 xs2 y3 ys2 f3 (Path.back b))
 
 /// Two triangles over one apex compose to a triangle: Catt's `conecomp(2,1,2)`.
 pub def coneComposite2(
@@ -126,7 +104,10 @@ pub def coneComposite2(
     (Path.back (assoc A x y w c f g r))
 
 /// The 2-chain's pasting context into its composite: Example 1.2's generator over `x, y, f, z, g`.
-def chainComposite(A : Type) -> (x : A) -> ((y : A) -> (Path[.A = A](x, y) -> ((z : A) -> (Path[.A = A](
+def chainComposite(A : Type) -> (x : A) -> ((y : A) -> (Path[.A = A](
+  x,
+  y
+) -> ((z : A) -> (Path[.A = A](
   y,
   z
 ) -> Path[.A = A](
@@ -261,28 +242,8 @@ pub def cylinderFill3(
   kp : Path[.A = Path[.A = A](y, z)](gp, qp),
   ka : Path[.A = Path[.A = Path[.A = A](y, z)](gm, qp)](Path.step km qa, Path.step ga kp)
 ) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm gm, Path.step pp qp)](
-  Path.step (cylinderFillAt2 A x y z fm pm am gm qm km) (liftHorizontal
-    A
-    x
-    y
-    z
-    pm
-    pp
-    pa
-    qm
-    qp
-    qa),
-  Path.step (liftHorizontal A x y z fm fp fa gm gp ga) (cylinderFillAt2
-    A
-    x
-    y
-    z
-    fp
-    pp
-    ap
-    gp
-    qp
-    kp)
+  Path.step (cylinderFillAt2 A x y z fm pm am gm qm km) (liftHorizontal A x y z pm pp pa qm qp qa),
+  Path.step (liftHorizontal A x y z fm fp fa gm gp ga) (cylinderFillAt2 A x y z fp pp ap gp qp kp)
 ) =
   fill[5, 11] (chain 2 (1, 1)) (cylinderFillOver2 A x y z) (fa, pa, aa, ga, qa, ka)
 
@@ -443,27 +404,22 @@ pub def cylinderSuspended3(
   Path.step (compose[4, 9] (chain 2 (1, 0)) (Path.step fa ga, ys)) c,
   Path.step a (compose[4, 9] (chain 2 (0, 1)) (xs, Path.step fa2 ga2))
 ) =
-  Path.step (Path.step
-    (compose[4, 9] (chain 2 (1, 0)) (interchangeRight A x y y2 f g h fa ga ys, c))
-    (cylinderFill2
-      (type(Path[.A = A](x, y2)))
-      (Path.step f ys)
-      (Path.step g ys)
-      (compose[4, 9] (chain 2 (1, 0)) (fa, ys))
-      (Path.step xs f2)
-      (Path.step xs g2)
-      (compose[4, 9] (chain 2 (0, 1)) (xs, fa2))
-      a
-      b
-      m
-      (Path.step h ys)
-      (compose[4, 9] (chain 2 (1, 0)) (ga, ys))
-      (Path.step xs h2)
-      (compose[4, 9] (chain 2 (0, 1)) (xs, ga2))
-      c
-      n)) (compose[4, 9]
-    (chain 2 (0, 1))
-    (a, Path.back (interchangeLeft A x x2 y2 xs f2 g2 h2 fa2 ga2)))
+  Path.step (Path.step (compose[4, 9] (chain 2 (1, 0)) (
+    interchangeRight A x y y2 f g h fa ga ys,
+    c
+  )) (cylinderFill2 (type(Path[.A = A](x, y2))) (Path.step f ys) (Path.step g ys) (compose[
+    4,
+    9
+  ] (chain 2 (1, 0)) (fa, ys)) (Path.step xs f2) (Path.step xs g2) (compose[4, 9] (chain 2 (0, 1)) (
+    xs,
+    fa2
+  )) a b m (Path.step h ys) (compose[4, 9] (chain 2 (1, 0)) (ga, ys)) (Path.step xs h2) (compose[
+    4,
+    9
+  ] (chain 2 (0, 1)) (xs, ga2)) c n)) (compose[4, 9] (chain 2 (0, 1)) (
+    a,
+    Path.back (interchangeLeft A x x2 y2 xs f2 g2 h2 fa2 ga2)
+  ))
 
 /// Two triangles from one apex compose to a triangle: Catt's `op{1,2} conecomp(2,1,2)`, the right whisker of one then the other.
 pub def coneOpposite2(
@@ -512,16 +468,10 @@ pub def coneSuspended3(
 ) =
   Path.step
     (compose[4, 9] (chain 2 (0, 1)) (b, interchangeRight A x y c f g h fa ga q))
-    (coneOpposite2
-      (type(Path[.A = A](x, c)))
-      (Path.step h q)
-      (Path.step g q)
-      (compose[4, 9] (chain 2 (1, 0)) (ga, q))
-      p
-      e
-      d
-      n
-      (Path.step f q)
-      (compose[4, 9] (chain 2 (1, 0)) (fa, q))
-      b
-      m)
+    (coneOpposite2 (type(Path[.A = A](x, c))) (Path.step h q) (Path.step g q) (compose[
+      4,
+      9
+    ] (chain 2 (1, 0)) (ga, q)) p e d n (Path.step f q) (compose[4, 9] (chain 2 (1, 0)) (
+      fa,
+      q
+    )) b m)

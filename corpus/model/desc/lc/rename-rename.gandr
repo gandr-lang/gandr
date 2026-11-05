@@ -41,25 +41,21 @@ pub def rec renameRename(
     | Ix(n) => Path.ap ixOf (h n)
     | Lam(b) => Path.ap
       lamOf
-      (renameRename[<]
-        b
-        (RLift a1)
-        (RLift a2)
-        (RLift a3)
-        (fun (n) { renameRenameLift a1 a2 a3 h n }))
+      (renameRename[<] b (RLift a1) (RLift a2) (RLift a3) (fun (n) {
+        renameRenameLift a1 a2 a3 h n
+      }))
     | Ap(f, x) => Path.walk
       (fun (z) { type(Path[.A = Term](
         Ap (rename (rename f a1) a2) (rename (rename x a1) a2),
         Ap z (rename x a3)
       )) })
       (renameRename[<] f a1 a2 a3 h)
-      (Path.walk
-        (fun (z) { type(Path[.A = Term](
+      (Path.walk (fun (z) {
+        type(Path[.A = Term](
           Ap (rename (rename f a1) a2) (rename (rename x a1) a2),
           Ap (rename (rename f a1) a2) z
-        )) })
-        (renameRename[<] x a1 a2 a3 h)
-        (Path.here (Ap (rename (rename f a1) a2) (rename (rename x a1) a2))))
+        ))
+      }) (renameRename[<] x a1 a2 a3 h) (Path.here (Ap (rename (rename f a1) a2) (rename (rename x a1) a2))))
 
 /// A pointwise agreement of two composites holds of their lifts.
 def renameSquareLift(
@@ -88,23 +84,18 @@ pub def rec renameSquare(
     | Ix(n) => Path.ap ixOf (h n)
     | Lam(b) => Path.ap
       lamOf
-      (renameSquare[<]
-        b
-        (RLift a1)
-        (RLift a2)
-        (RLift a3)
-        (RLift a4)
-        (fun (n) { renameSquareLift a1 a2 a3 a4 h n }))
+      (renameSquare[<] b (RLift a1) (RLift a2) (RLift a3) (RLift a4) (fun (n) {
+        renameSquareLift a1 a2 a3 a4 h n
+      }))
     | Ap(f, x) => Path.walk
       (fun (z) { type(Path[.A = Term](
         Ap (rename (rename f a1) a2) (rename (rename x a1) a2),
         Ap z (rename (rename x a3) a4)
       )) })
       (renameSquare[<] f a1 a2 a3 a4 h)
-      (Path.walk
-        (fun (z) { type(Path[.A = Term](
+      (Path.walk (fun (z) {
+        type(Path[.A = Term](
           Ap (rename (rename f a1) a2) (rename (rename x a1) a2),
           Ap (rename (rename f a1) a2) z
-        )) })
-        (renameSquare[<] x a1 a2 a3 a4 h)
-        (Path.here (Ap (rename (rename f a1) a2) (rename (rename x a1) a2))))
+        ))
+      }) (renameSquare[<] x a1 a2 a3 a4 h) (Path.here (Ap (rename (rename f a1) a2) (rename (rename x a1) a2))))

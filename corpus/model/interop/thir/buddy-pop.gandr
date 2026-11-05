@@ -260,17 +260,10 @@ pub def wpMemFn(body : MemExpr, env : Vals, post : Out -> Type, s : State) -> Ty
   wpMem (Return body) env post post s
 
 /// `pop`'s arm at a head `b`: the head's link written to the heads, then `b` answered.
-pub def someArm : MemExpr = Seq
-  (Assign
-    (Index (Field (Deref (Succ Zero)) (Succ Zero)) (Succ (Succ Zero)))
-    (Read (Field (Index (Field (Deref (Succ Zero)) Zero) Zero) Zero)))
-  (SomeE (Var Zero));
+pub def someArm : MemExpr = Seq (Assign (Index (Field (Deref (Succ Zero)) (Succ Zero)) (Succ (Succ Zero))) (Read (Field (Index (Field (Deref (Succ Zero)) Zero) Zero) Zero))) (SomeE (Var Zero));
 
 /// `pop`'s body, its locals `self` then `order`, and `b` inside the arm that binds it.
-pub def popBody : MemExpr = MatchOpt
-  (Read (Index (Field (Deref Zero) (Succ Zero)) (Succ Zero)))
-  NoneE
-  someArm;
+pub def popBody : MemExpr = MatchOpt (Read (Index (Field (Deref Zero) (Succ Zero)) (Succ Zero))) NoneE someArm;
 
 /// The receiver: the blocks, then the heads.
 pub def buddy(blocks : Vals, heads : Vals) -> Val =

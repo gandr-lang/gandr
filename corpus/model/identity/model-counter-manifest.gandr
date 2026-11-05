@@ -45,10 +45,9 @@ def observedManifest() -> Integer { observe upManifest }
 def observedAscribed() -> Integer { observe (upManifest : Model(Counter)) }
 
 /// The manifest counter carried along negation.
-pub def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = Path.walk
-  (fun (x) { type(Model(Counter) with sort C = x) })
-  countsNegated
-  upManifest;
+pub def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = Path.walk (fun (x) {
+  type(Model(Counter) with sort C = x)
+}) countsNegated upManifest;
 
 /// The carried counter where a counter is asked: forgetting at the far end
 /// reads it as counting up reads.
@@ -102,10 +101,9 @@ def observedBoth() -> Integer { observeShown upBoth }
 
 /// The counter with both sorts manifest carried along negation of its
 /// counts, its readings fixed as they are.
-def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = Path.walk
-  (fun (x) { type(Model(ReadCounter) with sort C = x with sort R = Integer) })
-  countsNegated
-  upBoth;
+def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = Path.walk (fun (x) {
+  type(Model(ReadCounter) with sort C = x with sort R = Integer)
+}) countsNegated upBoth;
 
 /// The carried counter where any such counter is asked: the map is a family
 /// in the counts, so forgetting at the far end reads it as counting up reads.
