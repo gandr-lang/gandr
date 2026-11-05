@@ -410,6 +410,9 @@ pub struct CheckingContext<'arena>
     /// The rules of the operation each ruled declaration lowered from, by
     /// position; the judgement carries them to the kernel unread.
     operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The matches of each declaration's body with their derivations, by
+    /// position; the judgement carries them to the kernel unread.
+    covers: BTreeMap<ConstantIndex, Vec<(ComputationId, gandr_kernel_term::cover::Cover)>>,
     /// The stage signature of each definition quantified over stages, by
     /// position: its binders' bounds and the occurrences its plain declared
     /// type holds each binder's stage at.
@@ -650,6 +653,8 @@ pub struct Checkpoint
     laws: BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
     /// [`CheckingContext::operation_rules`].
     operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// [`CheckingContext::covers`].
+    covers: BTreeMap<ConstantIndex, Vec<(ComputationId, gandr_kernel_term::cover::Cover)>>,
     /// [`CheckingContext::stage_signatures`].
     stage_signatures: BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
     /// [`CheckingContext::natives`].
@@ -811,6 +816,7 @@ impl<'arena> CheckingContext<'arena>
             restatements: BTreeMap::new(),
             laws: BTreeMap::new(),
             operation_rules: BTreeMap::new(),
+            covers: BTreeMap::new(),
             stage_signatures: BTreeMap::new(),
             sealed: BTreeMap::new(),
             builtins: BTreeMap::new(),
@@ -894,6 +900,7 @@ impl<'arena> CheckingContext<'arena>
             ref restatements,
             ref laws,
             ref operation_rules,
+            ref covers,
             ref stage_signatures,
             ref natives,
             ref sealed,
@@ -953,6 +960,7 @@ impl<'arena> CheckingContext<'arena>
             restatements: restatements.clone(),
             laws: laws.clone(),
             operation_rules: operation_rules.clone(),
+            covers: covers.clone(),
             stage_signatures: stage_signatures.clone(),
             natives: natives.clone(),
             sealed: sealed.clone(),
@@ -1033,6 +1041,7 @@ impl<'arena> CheckingContext<'arena>
             restatements,
             laws,
             operation_rules,
+            covers,
             stage_signatures,
             natives,
             sealed,
@@ -1090,6 +1099,7 @@ impl<'arena> CheckingContext<'arena>
             restatements,
             laws,
             operation_rules,
+            covers,
             stage_signatures,
             natives,
             sealed,
@@ -4243,6 +4253,45 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         if !rules.rules().is_empty() {
             self.operation_rules.insert(constant, rules);
         }
+    }
+
+    /// Keep `covers` as the derivations of the matches in the body of the
+    /// declaration at `constant`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `constant` has `covers` when any is given; otherwise nothing
+    ///   changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the derivations cross to the kernel with their
+    ///   declaration.
+    /// - witness: `bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
+    #[spec(captures: entry = covers.len(), ensures: entry == 0 || self.covers.get(&constant).map(Vec::len) == Some(entry))]
+    pub(crate) fn keep_covers(
+        &mut self,
+        constant: ConstantIndex,
+        covers: Vec<(ComputationId, gandr_kernel_term::cover::Cover)>,
+    )
+    {
+        if !covers.is_empty() {
+            self.covers.insert(constant, covers);
+        }
+    }
+
+    /// The matches of each declaration's body with their derivations, by
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn covers(
+        &self
+    ) -> &BTreeMap<ConstantIndex, Vec<(ComputationId, gandr_kernel_term::cover::Cover)>>
+    {
+        &self.covers
     }
 
     /// The rules of the operation the declaration under judgement lowered

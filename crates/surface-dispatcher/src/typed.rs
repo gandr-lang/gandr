@@ -1553,7 +1553,7 @@ impl TypeTable
         else {
             return refused.unwrap_or_default();
         };
-        let declarations = adapt(&module);
+        let declarations = adapt(&module, &arena);
         let written = written_types(&module, &arena, base);
         let wanted = wanted_types(&written);
         let after = match checking {

@@ -7477,6 +7477,12 @@ where
             )?;
             // A presentation's rules are decided as its value states them.
             crate::theory_rules::admit(arena, judgement.entries, (declared, body))?;
+            // Each match's derivation replays against its tree.
+            cover::admit(
+                arena,
+                (judgement.entries, judgement.presentations),
+                declaration.covers(),
+            )?;
             Ok(())
         },
         DeclarationContent::Axiom { .. } => Ok(()),
@@ -10399,6 +10405,8 @@ mod tests
 }
 
 mod codata;
+
+mod cover;
 
 mod former;
 

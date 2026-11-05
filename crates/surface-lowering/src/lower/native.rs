@@ -5280,10 +5280,9 @@ impl<'source> Lowerer<'_, 'source>
             (rows, Depth::default(), BTreeSet::new(), stated),
         )?;
         let loops = self.loop_arms(site, &tests, looped)?;
-        kept.cover = match self.owed_loops(&loops, arms.len()) {
-            Some(owed) => covered(&tests, &owed),
-            None => Cover::new(),
-        };
+        kept.cover = self
+            .owed_loops(&loops, ArmAt(arms.len()))
+            .map_or_else(Cover::new, |owed| covered(&tests, &owed));
         let eliminates = tests.iter().any(|test| {
             matches!(
                 *test,
@@ -6413,8 +6412,8 @@ impl<'source> Lowerer<'_, 'source>
     fn owed_loops(
         &self,
         loops: &[LoopArm],
-        first: usize,
-    ) -> Option<Vec<(Loop, usize)>>
+        first: ArmAt,
+    ) -> Option<Vec<(Loop, ArmAt)>>
     {
         loops
             .iter()
@@ -6424,7 +6423,7 @@ impl<'source> Lowerer<'_, 'source>
                 let constant = self.collected.slots.get(usize::from(words.slot))?.constant;
                 Some((
                     Loop::new(constant, CellIndex::from(arm.generator)),
-                    first.saturating_add(place),
+                    ArmAt(first.0.saturating_add(place)),
                 ))
             })
             .collect()
@@ -12683,7 +12682,7 @@ fn refinings(tests: &[Test]) -> Refinings
 #[spec(ensures: |ret| ret.steps().count() <= tests.len().saturating_mul(2).saturating_add(looped.len()))]
 fn covered(
     tests: &[Test],
-    looped: &[(Loop, usize)],
+    looped: &[(Loop, ArmAt)],
 ) -> Cover
 {
     let mut cover = Cover::new();
@@ -12839,7 +12838,7 @@ where
 fn with_loop_arms(
     cover: &mut Cover,
     split: Step,
-    owed: &[(Loop, usize)],
+    owed: &[(Loop, ArmAt)],
 ) -> Step
 {
     match split {
@@ -12847,7 +12846,10 @@ fn with_loop_arms(
             cases,
             mut branches,
         } => {
-            branches.extend(owed.iter().map(|&(_loop, arm)| cover.mint(Step::Var(arm))));
+            branches.extend(
+                owed.iter()
+                    .map(|&(_loop, arm)| cover.mint(Step::Var(arm.0))),
+            );
             Step::Split { cases, branches }
         },
         other @ (Step::Var(_) | Step::Compose(_)) => other,

@@ -1055,9 +1055,10 @@ def broken = missing ;"#,
             Recognition::default(),
         )
         .expect("the module lowers");
+        let declarations = adapt(&module, &arena);
         let verdicts = check_module(
             &mut CheckingContext::new(&mut arena, CheckBudget::from(0_usize)),
-            &adapt(&module),
+            &declarations,
         );
         let kernel = bridge::readmit(&mut arena, &verdicts).export(module.structured_names());
         let mut program = Program::new(&arena, &module, &verdicts);

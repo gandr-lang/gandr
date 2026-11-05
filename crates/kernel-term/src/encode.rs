@@ -3548,7 +3548,7 @@ mod tests
         }];
         let definition = builder
             .def(LevelSignature::monomorphic(), unit_type, body)
-            .covered(covers.clone());
+            .covered(covers);
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, definition)];
         let bytes = super::encode(&arena, &declarations);
         let image = bytes.as_image();

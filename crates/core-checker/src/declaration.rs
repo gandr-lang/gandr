@@ -47,6 +47,7 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
@@ -483,6 +484,11 @@ pub struct Declaration
     /// reads none of them: the kernel decides them where the declaration
     /// crosses.
     operation_rules: gandr_kernel_term::OperationRules,
+    /// The matches of a value declaration's body, each by the root of its
+    /// tree with the derivation that covers it; none for every other
+    /// declaration. The judgement reads none of them: the kernel replays them
+    /// where the declaration crosses.
+    covers: Vec<(ComputationId, gandr_kernel_term::cover::Cover)>,
     /// The stage binders a value declaration is quantified over, each with
     /// its bound; none for every other declaration. Its declared type names
     /// each binder's stage by the binder's ordinal.
@@ -543,6 +549,7 @@ impl Declaration
             origin,
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            covers: Vec::new(),
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
@@ -595,6 +602,7 @@ impl Declaration
             content: DeclarationContent::Data(signature),
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            covers: Vec::new(),
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
@@ -622,6 +630,7 @@ impl Declaration
             content: DeclarationContent::Codata(signature),
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            covers: Vec::new(),
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
@@ -649,6 +658,7 @@ impl Declaration
             content: DeclarationContent::Abstract(sealed),
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            covers: Vec::new(),
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
@@ -675,6 +685,7 @@ impl Declaration
             content: DeclarationContent::World,
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
+            covers: Vec::new(),
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
@@ -857,6 +868,56 @@ impl Declaration
             | DeclarationContent::Abstract(_)
             | DeclarationContent::World => self,
         }
+    }
+
+    /// This value declaration carrying `covers` as its matches' derivations,
+    /// each beside the root of its tree, everything else unchanged; any other
+    /// declaration unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the kernel replays each derivation against the
+    ///   tree its root names where the declaration crosses.
+    /// - ensures: a value declaration carries exactly `covers`; any other
+    ///   declaration is returned unchanged.
+    /// - provides: how a producer attaches the derivations its lowering
+    ///   recorded beside each match.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match's derivation crosses to the kernel, which
+    ///   replays it against the match's tree.
+    /// - witness: `bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
+    #[spec(
+        captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.covers.len(), covers.len()),
+        ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
+            && ret.covers.len() == if entry.2 { entry.4 } else { entry.3 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn covering(
+        self,
+        covers: Vec<(ComputationId, gandr_kernel_term::cover::Cover)>,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Value { .. } => Self { covers, ..self },
+            DeclarationContent::Data(_)
+            | DeclarationContent::Codata(_)
+            | DeclarationContent::Abstract(_)
+            | DeclarationContent::World => self,
+        }
+    }
+
+    /// The matches of the value declaration's body, each by the root of its
+    /// tree with the derivation that covers it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn covers(&self) -> &[(ComputationId, gandr_kernel_term::cover::Cover)]
+    {
+        &self.covers
     }
 
     /// This value declaration quantified over `stages`, the stage binders

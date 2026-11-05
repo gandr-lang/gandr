@@ -337,9 +337,10 @@ mod tests
             Recognition::default(),
         )
         .expect("the module lowers");
+        let declarations = adapt(&module, &arena);
         let report = check_module(
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-            &adapt(&module),
+            &declarations,
         );
         cache
             .readmit(

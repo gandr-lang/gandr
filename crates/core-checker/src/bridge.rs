@@ -2204,6 +2204,7 @@ where
         restatements: report.restatements(),
         laws: report.laws(),
         operation_rules: report.operation_rules(),
+        covers: report.covers(),
         stage_signatures: report.stage_signatures(),
         natives: report.natives(),
         definitions: report.definitions(),
@@ -2410,6 +2411,7 @@ where
                         .operation_rules
                         .get(&constant)
                         .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                    covers: source.covers.get(&constant).map_or(&[], Vec::as_slice),
                     stages: source
                         .stage_signatures
                         .get(&constant)
@@ -2555,6 +2557,7 @@ fn block_offers<'report>(
                         .operation_rules
                         .get(&constant)
                         .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                    covers: source.covers.get(&constant).map_or(&[], Vec::as_slice),
                     stages: source
                         .stage_signatures
                         .get(&constant)
@@ -2581,6 +2584,7 @@ fn block_offers<'report>(
                         .operation_rules
                         .get(&constant)
                         .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                    covers: source.covers.get(&constant).map_or(&[], Vec::as_slice),
                     stages: source
                         .stage_signatures
                         .get(&constant)
@@ -2714,6 +2718,9 @@ struct Source<'source>
     /// The rules of the operation each ruled declaration lowered from, by
     /// position.
     operation_rules: &'source BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The matches of each declaration's body with their derivations, by
+    /// position.
+    covers: &'source BTreeMap<ConstantIndex, Vec<(ComputationId, gandr_kernel_term::cover::Cover)>>,
     /// The stage signature of each definition quantified over stages, by
     /// position.
     stage_signatures: &'source BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
@@ -2756,6 +2763,9 @@ enum Offer<'signature>
         laws: &'signature [ConstantIndex],
         /// The rules of the operation it lowered from, over module positions.
         operation_rules: &'signature [gandr_kernel_term::OperationRule],
+        /// The matches of its body, each by the root of its tree with the
+        /// derivation that covers it.
+        covers: &'signature [(ComputationId, gandr_kernel_term::cover::Cover)],
         /// The stages it is quantified over and the occurrences of its plain
         /// declared type each binder's stage refines.
         stages: &'signature gandr_kernel_term::StageSignature,
@@ -3068,7 +3078,7 @@ where
 {
     let next = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
-    let (erased, unseeded) = {
+    let (erased, unseeded, covered) = {
         let restated = match offer {
             Offer::Definition { restated, .. } => restated,
             Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => &[],
@@ -3084,7 +3094,15 @@ where
                     .replay_certificates(staging.arena(), vouch)
                     .map(|replayed| (erased, replayed))
             });
-        (erased, erasure.unseeded)
+        // Each match's derivation crosses at its root's image, its families
+        // at their kernel positions.
+        let covered = match offer {
+            Offer::Definition { covers, .. } => erasure.covered(covers),
+            Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => {
+                Vec::new()
+            },
+        };
+        (erased, erasure.unseeded, covered)
     };
     let (erased, replayed) = match (erased, unseeded) {
         (Ok(crossing), _) => crossing,
@@ -3189,7 +3207,8 @@ where
             .relating(related)
             .lawful(laws)
             .ruled(operation_rules)
-            .staged(stages),
+            .staged(stages)
+            .covered(covered),
         Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
         Erased::Codata {
             parameters,
@@ -5815,6 +5834,105 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             (Mode::Verbatim | Mode::Normalizing, _) => Err(Refusal::Withheld { at, constant }),
         }
+    }
+
+    /// Each of `covers`' derivations at its root's image in the kernel arena,
+    /// each family and loop it names at the kernel position its declaration
+    /// crossed at or is about to take; a derivation whose root this erasure
+    /// did not reach, or that names a declaration no position holds, is left
+    /// out.
+    ///
+    /// # Specification
+    /// - requires: the erasure has run over the definition `covers` belongs to.
+    /// - ensures: one derivation for each of `covers` whose root was erased and
+    ///   whose constants resolve, in the order given, its steps minted in the
+    ///   order they were.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match's derivation crosses at its root's image and
+    ///   the kernel replays it.
+    /// - witness: `bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
+    #[spec(ensures: |ret| ret.len() <= covers.len())]
+    fn covered(
+        &self,
+        covers: &[(ComputationId, gandr_kernel_term::cover::Cover)],
+    ) -> Vec<gandr_kernel_term::cover::Covered>
+    {
+        covers
+            .iter()
+            .filter_map(|&(root, ref cover)| {
+                let Some(&Image::Erased(image)) = self.normalized.computations.get(&root)
+                else {
+                    return None;
+                };
+                Some(gandr_kernel_term::cover::Covered {
+                    root: image,
+                    cover: self.kernel_cover(cover)?,
+                })
+            })
+            .collect()
+    }
+
+    /// `cover` with each family and loop it names at its kernel position, or
+    /// nothing when one has none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same steps in the same order, each constant replaced by
+    ///   the position [`Positions::admitted`] or the crossing block gives it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::covered`].
+    /// - witness: `bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|kernel| kernel.steps().count() == cover.steps().count()))]
+    fn kernel_cover(
+        &self,
+        cover: &gandr_kernel_term::cover::Cover,
+    ) -> Option<gandr_kernel_term::cover::Cover>
+    {
+        use gandr_kernel_term::cover::Cases;
+        use gandr_kernel_term::cover::Loop;
+        use gandr_kernel_term::cover::Step;
+        let position = |constant: ConstantIndex| {
+            self.positions.admitted.get(&constant).copied().or_else(|| {
+                self.crossing
+                    .binary_search_by_key(&constant, |&(member, _)| member)
+                    .ok()
+                    .and_then(|found| self.crossing.get(found))
+                    .map(|&(_, kernel)| kernel)
+            })
+        };
+        let mut kernel = gandr_kernel_term::cover::Cover::new();
+        for (_id, step) in cover.steps() {
+            let step = match *step {
+                Step::Split {
+                    cases:
+                        Cases::Data {
+                            family,
+                            ref constructors,
+                            ref loops,
+                        },
+                    ref branches,
+                } => Step::Split {
+                    cases: Cases::Data {
+                        family: position(family)?,
+                        constructors: constructors.clone(),
+                        loops: loops
+                            .iter()
+                            .map(|owed| Some(Loop::new(position(owed.words())?, owed.cell())))
+                            .collect::<Option<Vec<Loop>>>()?,
+                    },
+                    branches: branches.clone(),
+                },
+                ref other @ (Step::Var(_) | Step::Compose(_) | Step::Split { .. }) => other.clone(),
+            };
+            let _id = kernel.mint(step);
+        }
+        Some(kernel)
     }
 
     /// One certified step at `code`'s head, its certificate collected.

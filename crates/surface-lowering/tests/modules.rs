@@ -4269,3 +4269,42 @@ fn a_recursive_member_declares_under_its_module_4145()
         "each member checks, got {judged:?}"
     );
 }
+
+#[test]
+fn a_definitions_matches_carry_their_derivations_5104()
+{
+    let source = "data Two : Type where {\n  | Z : Two\n  | S : (u : Integer) --> Two\n}\ndef f(t : Two) \
+                  -> Integer {\n  match t { | Z => 0 | S(n) => n }\n}\ndef g(n : Integer) -> Integer \
+                  {\n  n\n}\n";
+    let lowered = lower(source);
+    let covered = |name: &str| {
+        let declaration = lowered
+            .module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .expect("the declaration lowers");
+        match declaration.outcome() {
+            DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
+                lowered.module.covers(&lowered.arena, body)
+            },
+            DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_) => panic!("`{name}` has a body"),
+        }
+    };
+    let matched = covered("f");
+    assert_eq!(matched.len(), 1, "`f`'s one match carries its derivation");
+    assert_eq!(
+        matched.first().map(|&(_, ref cover)| cover.steps().count()),
+        Some(3),
+        "a split over `Two` and a leaf for each arm"
+    );
+    assert!(
+        covered("g").is_empty(),
+        "a body holding no match carries none"
+    );
+}

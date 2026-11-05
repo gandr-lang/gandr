@@ -310,6 +310,7 @@ fn erase(
         restatements: &BTreeMap::new(),
         laws: &BTreeMap::new(),
         operation_rules: &BTreeMap::new(),
+        covers: &BTreeMap::new(),
         stage_signatures: &BTreeMap::new(),
         natives: &BTreeMap::new(),
         definitions: &definitions,
@@ -5681,6 +5682,7 @@ fn the_machine_faults_are_refused_exactly()
         restatements: &BTreeMap::new(),
         laws: &BTreeMap::new(),
         operation_rules: &BTreeMap::new(),
+        covers: &BTreeMap::new(),
         stage_signatures: &BTreeMap::new(),
         natives: &BTreeMap::new(),
         definitions: &definitions,
@@ -6459,6 +6461,7 @@ fn a_static_lambda_crosses_only_as_a_closed_operator()
         restatements: &BTreeMap::new(),
         laws: &BTreeMap::new(),
         operation_rules: &BTreeMap::new(),
+        covers: &BTreeMap::new(),
         stage_signatures: &BTreeMap::new(),
         natives: &BTreeMap::new(),
         definitions: &definitions,
@@ -7522,3 +7525,105 @@ fn a_path_type_over_an_omitted_model_converts_once_resolved_2391()
 }
 
 mod bridges;
+
+#[test]
+fn a_matches_derivation_crosses_and_the_kernel_replays_it_5104()
+{
+    // data Two : Type where { | Z : Two | S : (u : ()) --> Two } ;
+    // def f : U (Two -> F ()) = λt. case t { Z => return (), S(_) => return () } ;
+    use alloc::sync::Arc;
+
+    use gandr_core_term::DataSignature;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::FieldCount;
+    use gandr_kernel_term::cover::Cases;
+    use gandr_kernel_term::cover::Cover;
+    use gandr_kernel_term::cover::CoverRefusal;
+    use gandr_kernel_term::cover::Step;
+    use gandr_kernel_term::cover::StepId;
+
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let unit_type = arena.value_type_unit();
+    let signature = Arc::new(DataSignature::new(
+        Vec::new(),
+        Vec::from([Vec::new(), Vec::from([unit_type])]),
+        kind,
+    ));
+    let two = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let unit = arena.value_unit();
+    let returned = arena.computation_return(unit);
+    let past_field = arena.computation_lambda(returned);
+    let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let motive = arena.comp_type_returner(unit_type);
+    let case = arena.computation_data_case(
+        scrutinee,
+        motive,
+        Vec::from([returned, past_field]),
+        Vec::from([FieldCount::from(0_usize), FieldCount::from(1_usize)]),
+    );
+    let lambda = arena.computation_lambda(case);
+    let body = arena.value_thunk(lambda);
+    let arrow = arena.comp_type_arrow(two, motive);
+    let function = arena.value_type_thunk(arrow);
+    // The derivation of the case, with `S` kept or left out.
+    let derivation = |kept: bool| {
+        let mut cover = Cover::new();
+        let zero = cover.mint(Step::Var(0));
+        let mut branches = Vec::from([zero]);
+        let mut constructors =
+            Vec::from([(ConstructorTag::from(0_usize), FieldCount::from(0_usize))]);
+        if kept {
+            branches.push(cover.mint(Step::Var(1)));
+            constructors.push((ConstructorTag::from(1_usize), FieldCount::from(1_usize)));
+        }
+        let _root = cover.mint(Step::Split {
+            cases: Cases::Data {
+                family: ConstantIndex::from(0_usize),
+                constructors,
+                loops: Vec::new(),
+            },
+            branches,
+        });
+        cover
+    };
+    let declarations = |kept: bool| {
+        [
+            Declaration::data(
+                ConstantIndex::from(0_usize),
+                Arc::clone(&signature),
+                OriginToken::from(0_usize),
+            ),
+            declaration(At(1), Maybe::Present(function), Maybe::Present(body))
+                .covering(Vec::from([(case, derivation(kept))])),
+        ]
+    };
+    let (_, readmission) = judge_and_readmit(&mut arena, &declarations(true));
+    assert!(
+        matches!(
+            readmission.readmitted()[1].outcome(),
+            Outcome::Defined { .. }
+        ),
+        "the derivation replays against its case: {:?}",
+        readmission.readmitted()[1].outcome()
+    );
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let crossed: Vec<usize> = artifact
+        .declarations()
+        .iter()
+        .map(|entry| entry.declaration().covers().len())
+        .collect();
+    assert_eq!(
+        crossed.iter().sum::<usize>(),
+        1,
+        "the one derivation travels on its definition: {crossed:?}"
+    );
+    let (_, readmission) = judge_and_readmit(&mut arena, &declarations(false));
+    assert_eq!(
+        readmission.readmitted()[1].outcome(),
+        &Outcome::Rejected(gandr_kernel_core::KernelError::CoverDisagrees(
+            CoverRefusal::ConstructorCount(StepId::from(1_u32))
+        )),
+        "a derivation that leaves `S` out is the kernel's to refuse"
+    );
+}

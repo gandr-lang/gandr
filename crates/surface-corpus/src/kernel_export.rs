@@ -635,9 +635,10 @@ fn export(
             return Swept::RefusedWhole;
         },
     };
+    let adapted = declarations(&module, &arena);
     let verdicts = check_module(
         &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-        &declarations(&module),
+        &adapted,
     );
     let natives: BTreeSet<StructuredName> = arena
         .native_primitives()

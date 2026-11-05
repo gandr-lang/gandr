@@ -1313,6 +1313,7 @@ INSERT INTO purpose VALUES('kernel-term','cover::BranchCount','struct','How many
 INSERT INTO purpose VALUES('kernel-term','cover::Cases','enum','The cases one split of a cover derivation lists: a data family''s constructors with their field counts and the loops its case owes, a boolean, an integer literal, a tuple, a record, a sum, a list, a guard, or none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','cover::Cover','struct','A match''s cover derivation, each part minted before the step holding it, that a check reads against the field counts and the arm count, and that the kernel replays against the admitted environment.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','cover::CoverRefusal','enum','Why a cover derivation is refused, naming the first step that breaks a rule.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::Covered','struct','A match in a definition''s body and the derivation that covers it, which the kernel replays at admission.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','cover::Loop','struct','One loop a case over a presented sort owes: its type of words and its cell.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','cover::Step','enum','One step of a cover derivation: a var naming an arm, a split over one column''s cases, or a composition under a branch.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','cover::StepId','struct','The id of a step in a Cover.',NULL,'fits','sound',NULL);

@@ -311,7 +311,7 @@ impl Step
 
 /// A cover derivation, each part minted before the step holding it; the
 /// last step minted is the root.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct Cover
 {
@@ -564,7 +564,7 @@ impl Cover
 /// - hypothesis: L3 — a covered definition carries its derivations through the
 ///   wire unchanged.
 /// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Covered
 {
     /// The root of the match's tree.

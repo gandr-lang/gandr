@@ -5489,7 +5489,6 @@ crates/kernel-conversion-trace/README.md STE-3.5 bb0fa5bb2f2531a6
 crates/kernel-conversion-trace/README.md STE-9.3 bb0fa5bb2f2531a6
 crates/kernel-conversion-trace/README.md STE-1.2 bb0fa5bb2f2531a6
 crates/kernel-conversion-trace/README.md STE-1.2 cc0350c3e408f96b
-crates/kernel-core/README.md STE-9.3 4f6f161f91cbab8f
 crates/kernel-core/README.md STE-1.2 af19150085c869b1
 crates/kernel-strata/README.md STE-3.6 8c2b0a95ba7378ac
 crates/kernel-term/README.md STE-3.5 551670b90a21424d

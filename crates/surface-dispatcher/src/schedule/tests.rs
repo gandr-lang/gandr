@@ -87,7 +87,7 @@ fn typed(listed: &crate::tests::Listed) -> (LoweredModule<'_>, CoreArena, TypedM
     else {
         panic!("the source is a module");
     };
-    let declarations = adapt(&module);
+    let declarations = adapt(&module, &arena);
     let mut context = checking_context(
         &mut arena,
         Opening::UNBOUNDED,
