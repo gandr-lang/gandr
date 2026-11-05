@@ -1272,7 +1272,7 @@ mod tests
                 ContentNode::Product(Vec::new()),
                 ContentNode::Base(BaseType::Integer),
             ]),
-            approximate("Path_U(Unit, Integer)".into())
+            approximate("Path_U Unit Integer".into())
         );
         // One 3-ary product, the nested product one of its components; the
         // empty sum; the sum of two units; the 1-ary product; and a record
@@ -1337,7 +1337,7 @@ mod tests
                 ContentNode::Quote(NodeIndex::from(5)),
                 ContentNode::Base(BaseType::Integer),
             ]),
-            faithful("Path[.A = List(Integer)](nil, empty)".into())
+            faithful("Path[.A = List Integer](nil, empty)".into())
         );
         assert_eq!(
             spelled(&[
