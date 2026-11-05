@@ -80,9 +80,7 @@ const JUXTAPOSED: &str = " ";
 /// leaves the table, as the infix `then`, the `as` pattern and the `\` type
 /// operator did (#4691): the corpus writing one again fails it unclassified.
 const KINDS: &[(&str, Standing)] = &[
-    // The floor's juxtaposition tile, `fun`, identifier, `*{` pattern and
-    // `Type .` nodes owed their entries (#5210).
-    ("Expression  ", Standing::Owed(65)),
+    ("Expression  ", Standing::Owed(0)),
     ("Expression !=", Standing::Owed(0)),
     ("Expression \"", Standing::Owed(0)),
     ("Expression #[", Standing::Owed(0)),
@@ -145,10 +143,10 @@ const KINDS: &[(&str, Standing)] = &[
             "a fork a `let` binds: the `let` answers, and its pattern at the end the fork gives",
         ),
     ),
-    ("Expression fun", Standing::Owed(8)),
+    ("Expression fun", Standing::Owed(0)),
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
-    ("Expression identifier", Standing::Owed(105)),
+    ("Expression identifier", Standing::Owed(0)),
     ("Expression if", Standing::Owed(0)),
     ("Expression loop", Standing::Owed(0)),
     ("Expression migrate", Standing::Owed(0)),
@@ -182,7 +180,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression ~", Standing::Owed(0)),
     ("Expression ∷", Standing::Owed(0)),
     ("Pattern #[", Standing::Owed(0)),
-    ("Pattern *{", Standing::Owed(1)),
+    ("Pattern *{", Standing::Owed(0)),
     ("Pattern +{", Standing::Owed(0)),
     ("Pattern _", Standing::Owed(0)),
     ("Pattern constructor", Standing::Owed(0)),
@@ -208,7 +206,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type +U", Standing::Owed(0)),
     ("Type ->", Standing::Owed(0)),
     ("Type -F", Standing::Owed(0)),
-    ("Type .", Standing::Owed(3)),
+    ("Type .", Standing::Owed(0)),
     ("Type ?", Standing::Owed(0)),
     ("Type Bridge", Standing::Owed(0)),
     ("Type Buf", Standing::Owed(0)),
@@ -280,8 +278,8 @@ const FORMERS: &[&str] = &[
     "ua",
 ];
 
-/// The moves a run literal `recorded(m₀, …, mₙ)` or a dialogue literal
-/// `dialogue(left(m₀), right(m₁), …)` is written in, a dialogue's each under
+/// The moves a run literal `recorded m₀ … mₙ` or a dialogue literal
+/// `dialogue (left m₀) (right m₁) …` is written in, a dialogue's each under
 /// the endpoint it is made at. A move is read by its shape, never resolved:
 /// the literal is the core node, and a payload inside a move is a term of its
 /// own.
@@ -303,7 +301,7 @@ enum Run
     Outside,
     /// Among a run literal's moves.
     Moves,
-    /// Inside a move that names a label, `selected(l)` or `offered(l)`.
+    /// Inside a move that names a label, `selected l` or `offered l`.
     Labelled,
 }
 
@@ -332,6 +330,48 @@ fn first(
         tree.node(child)
             .is_some_and(|node| node.label() != NodeLabel::Space)
     })
+}
+
+/// The head of the juxtaposed spine at `position`, with its arguments first
+/// to last in `arguments`, or `None` when `position` is no juxtaposed
+/// application `f x`. The spine `f a b` nests to the left, so its head is
+/// the leftmost operand, and each application down the spine adds one
+/// argument.
+///
+/// # Specification
+/// trivial.
+fn spine(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'_>,
+    position: NodeIndex,
+    arguments: &mut Vec<NodeIndex>,
+) -> Option<NodeIndex>
+{
+    let juxtaposed = |at: NodeIndex| {
+        matches!(tree.node(at).map(Node::label), Some(NodeLabel::Meld(mold))
+            if grammar
+                .mold(mold)
+                .is_ok_and(|def| def.label == JUXTAPOSED && def.sort == Sort::Expression))
+    };
+    arguments.clear();
+    if !juxtaposed(position) {
+        return None;
+    }
+    let mut head = position;
+    while juxtaposed(head) {
+        let mut parts = tree.children(head).filter(|&child| {
+            tree.node(child)
+                .is_some_and(|node| node.label() != NodeLabel::Space)
+        });
+        let (Some(left), Some(_), Some(right)) = (parts.next(), parts.next(), parts.next())
+        else {
+            break;
+        };
+        arguments.push(right);
+        head = left;
+    }
+    arguments.reverse();
+    Some(head)
 }
 
 /// The kind key of a gated node: its sort and naming label, as `def`
@@ -438,8 +478,8 @@ enum Placed
     /// lowering's result is the term the program means, and the case around
     /// the value answers.
     Discarded,
-    /// A lambda `Path.ap` maps a path by, `fun (q) { Path.step(q, g) }` in
-    /// `Path.ap(fun (q) { Path.step(q, g) }, a)` (#3773): the lowering reads
+    /// A lambda `Path.ap` maps a path by, `fun (q) { Path.step q g }` in
+    /// `Path.ap (fun (q) { Path.step q g }) a` (#3773): the lowering reads
     /// the lambda's body into the transport's motive, its binder the
     /// motive's, so no judged core node holds the lambda itself; its body's
     /// nodes and the `Path.ap` answer.
@@ -483,10 +523,10 @@ enum Placed
     /// the theory whose record the pack builds or whose map the call applies,
     /// neither a core node of its own, so the pack or the call answers.
     Packed,
-    /// A variable a binding port binds, `t` in `rule zeta : let(u, t) <=>
-    /// t(u)` and in `t(u)`, one a rule writes bare at a binding port under
-    /// another name, `l` in `ext(m, l)` (#2360), or an abstracting operation
-    /// applied in a theory's rule, `nu` in `nu(bind a . p)`: the variable is
+    /// A variable a binding port binds, `t` in `rule zeta : let u t <=> t u`
+    /// and in `t u`, one a rule writes bare at a binding port under another
+    /// name, `l` in `ext m l` (#2360), or an abstracting operation applied
+    /// in a theory's rule, `nu` in `nu (bind a . p)`: the variable is
     /// written without the field its port binds, and no core type states a
     /// `bind` port, so these names answer nowhere, and the application around
     /// answers at its sort.
@@ -507,11 +547,11 @@ enum Placed
     /// ~admitted;`: the admission is the member's form, no term the checker
     /// judges, so the member answers.
     Admission,
-    /// A node of a flow's body, `reply` in `flow f : V1 ~~> V2 { def answer =
-    /// reply ; }`: the body is a template, judged only through the instance
-    /// an import mints, a flow its source publishes is applied only in its
-    /// importers, and a renaming's image is the source's declaration itself,
-    /// so no core node of the walked source holds it, and the import
+    /// A node of a flow's body, `reply` in `flow f : V1 ~~> V2 where def
+    /// answer = reply ;`: the body is a template, judged only through the
+    /// instance an import mints, a flow its source publishes is applied only
+    /// in its importers, and a renaming's image is the source's declaration
+    /// itself, so no core node of the walked source holds it, and the import
     /// answers.
     Template,
     /// A node of a world's requirement row, `store` and `String` in `world
@@ -523,8 +563,10 @@ enum Placed
     /// answers.
     Required,
     /// A host interface's path, `std.io.Console.Eff` in a row's entry or a
-    /// `handle` head: the name of an interface, neither a term nor a type the
-    /// lowering forms, so the row or the scope answers.
+    /// `handle` head, or the path of the effect a row's entry names,
+    /// `Counter.Eff` in `[n : Counter.Eff] Integer`: the name of an
+    /// interface, neither a term nor a type the lowering forms, so the row
+    /// or the scope answers.
     Interface,
     /// The implicit a path-shaped type supplies its carrier by, `A` in
     /// `Path[.A = C](a, b)`: the name of the former's implicit, neither a
@@ -706,32 +748,6 @@ fn gated(
             Some((start, start.saturating_add(close).saturating_add(1)))
         })
         .collect();
-    // The bytes of each flow's body, its `{` to its `}`.
-    let flows: Vec<(usize, usize)> = source
-        .match_indices("flow ")
-        .filter(|&(at, _)| {
-            source.get(.. at).is_some_and(|before| {
-                before.is_empty() || before.ends_with('\n') || before.ends_with("pub ")
-            })
-        })
-        .filter_map(|(at, _)| {
-            let open = at.saturating_add(source.get(at ..)?.find('{')?);
-            let mut depth = 0_usize;
-            for (offset, letter) in source.get(open ..)?.char_indices() {
-                match letter {
-                    '{' => depth = depth.saturating_add(1),
-                    '}' => {
-                        depth = depth.saturating_sub(1);
-                        if depth == 0 {
-                            return Some((open, open.saturating_add(offset)));
-                        }
-                    },
-                    _ => {},
-                }
-            }
-            None
-        })
-        .collect();
     // The parts of the parenthesised list opening at `open`, each its bytes,
     // split at the commas no nested parenthesis holds.
     let parts = |open: usize| {
@@ -758,47 +774,29 @@ fn gated(
         }
         parts
     };
-    // Each variable a rule writes bare at a binding port, `l` in `ext(m, l)`
-    // for `oper ext : (m : C, k : pi+ (x : V) . C)`, by where it starts: the
-    // variable the port binds, whatever the rule names it. An application's
-    // operation is the one the last declaration of its name before the rule
-    // declares.
-    let bare: BTreeSet<usize> = rules
-        .iter()
-        .flat_map(|&(start, end)| {
-            source
-                .get(start .. end)
-                .unwrap_or("")
-                .match_indices('(')
-                .map(move |(offset, _)| start.saturating_add(offset))
-        })
-        .flat_map(|open| {
-            let rule = rules
-                .iter()
-                .find(|&&(start, end)| start <= open && open < end)
-                .map_or(0_usize, |&(start, _)| start);
-            let declared = named(source.get(.. open).unwrap_or(""))
-                .filter(|name| name.starts_with(char::is_alphabetic))
-                .and_then(|name| {
-                    let before = source.get(.. rule)?;
-                    before
-                        .rmatch_indices("oper ")
-                        .map(|(at, _)| at)
-                        .find(|&at| {
-                            before
-                                .get(at.saturating_add(5) ..)
-                                .and_then(|after| after.strip_prefix(name.as_str()))
-                                .is_some_and(|after| after.starts_with(" :"))
-                        })
-                })
-                .and_then(|oper| {
-                    source
-                        .get(oper ..)?
-                        .find('(')
-                        .map(|offset| oper.saturating_add(offset))
-                });
-            let binds: Vec<bool> = declared.map_or_else(Vec::new, |ports| {
-                parts(ports)
+    // Which ports of the operation `name` bind, in order, as the last
+    // declaration of its name before the rule starting at `rule` writes them:
+    // a port binds when its sort is `pi+` or `bind`.
+    let ports = |name: &str, rule: usize| -> Vec<bool> {
+        let before = source.get(.. rule).unwrap_or("");
+        before
+            .rmatch_indices("oper ")
+            .map(|(at, _)| at)
+            .find(|&at| {
+                name.starts_with(char::is_alphabetic)
+                    && before
+                        .get(at.saturating_add(5) ..)
+                        .and_then(|after| after.strip_prefix(name))
+                        .is_some_and(|after| after.starts_with(" :"))
+            })
+            .and_then(|oper| {
+                source
+                    .get(oper ..)?
+                    .find('(')
+                    .map(|offset| oper.saturating_add(offset))
+            })
+            .map_or_else(Vec::new, |open| {
+                parts(open)
                     .into_iter()
                     .map(|(from, to)| {
                         source
@@ -806,27 +804,52 @@ fn gated(
                             .is_some_and(|port| port.contains(": pi+") || port.contains(": bind"))
                     })
                     .collect()
-            });
-            parts(open)
-                .into_iter()
-                .zip(binds)
-                .filter_map(|((from, to), binds)| {
-                    let written = source.get(from .. to)?;
-                    let variable = written.trim();
-                    (binds
-                        && !variable.is_empty()
-                        && variable
-                            .chars()
-                            .all(|letter| letter.is_alphanumeric() || letter == '_'))
-                    .then(|| {
-                        from.saturating_add(
-                            written.len().saturating_sub(written.trim_start().len()),
-                        )
-                    })
-                })
-                .collect::<Vec<usize>>()
-        })
-        .collect();
+            })
+    };
+    let spelled = |at: Option<NodeIndex>| {
+        at.and_then(|at| tree.node(at))
+            .and_then(|node| {
+                source.get(usize::from(node.span().start()) .. usize::from(node.span().end()))
+            })
+            .unwrap_or("")
+    };
+    // Each variable a rule writes bare at a binding port, `l` in `ext m l`
+    // for `oper ext : (m : C, k : pi+ (x : V) . C)`, by where it starts: the
+    // variable the port binds, whatever the rule names it. Each call of a
+    // rule is a juxtaposed spine, and its head names the operation.
+    let mut bare: BTreeSet<usize> = BTreeSet::new();
+    let mut arguments: Vec<NodeIndex> = Vec::new();
+    let mut pending = vec![tree.root()];
+    while let Some(position) = pending.pop() {
+        pending.extend(tree.children(position));
+        let Some(node) = tree.node(position)
+        else {
+            continue;
+        };
+        let (start, end) = (
+            usize::from(node.span().start()),
+            usize::from(node.span().end()),
+        );
+        let Some(&(rule, _)) = rules.iter().find(|&&(from, to)| from <= start && end <= to)
+        else {
+            continue;
+        };
+        let Some(head) = spine(grammar, tree, position, &mut arguments)
+        else {
+            continue;
+        };
+        for (&argument, binds) in arguments.iter().zip(ports(spelled(Some(head)), rule)) {
+            if binds
+                && let Some(written) = tree.node(argument)
+                && let NodeLabel::Tile(mold) = written.label()
+                && grammar
+                    .mold(mold)
+                    .is_ok_and(|def| def.label == "identifier")
+            {
+                let _new = bare.insert(usize::from(written.span().start()));
+            }
+        }
+    }
     let mut gated = Vec::new();
     let mut stack = vec![(
         tree.root(),
@@ -835,13 +858,6 @@ fn gated(
         Run::Outside,
         false,
     )];
-    let spelled = |at: Option<NodeIndex>| {
-        at.and_then(|at| tree.node(at))
-            .and_then(|node| {
-                source.get(usize::from(node.span().start()) .. usize::from(node.span().end()))
-            })
-            .unwrap_or("")
-    };
     let mut children: Vec<NodeIndex> = Vec::new();
     let mut binds: Vec<bool> = Vec::new();
     while let Some((position, placed, parent, run, discarding)) = stack.pop() {
@@ -889,10 +905,16 @@ fn gated(
         let placed = placed.or_else(|| def.label.starts_with('@').then_some(Placed::Quoted));
         let opener = first(tree, position);
         // A call is an application: juxtaposed, its tile the zero-width one
-        // between two operands, or the `(` of the call form a type keeps.
+        // between two operands, or the `(` of the call form a type keeps. A
+        // juxtaposed call names the head of its spine, `recorded` in
+        // `recorded (received Yes) closed`.
         let applied =
             melded && matches!(def.label, "(" | JUXTAPOSED) && def.sort == Sort::Expression;
-        let called = if applied { spelled(opener) } else { "" };
+        let called = match (applied, def.label) {
+            (false, _) => "",
+            (true, JUXTAPOSED) => spelled(spine(grammar, tree, position, &mut arguments)),
+            (true, _) => spelled(opener),
+        };
         let within = match run {
             _ if LITERALS.contains(&called) => Run::Moves,
             Run::Moves if called == "selected" || called == "offered" => Run::Labelled,
@@ -980,11 +1002,17 @@ fn gated(
         // The splice a law member admits by: every child of a module member
         // holding a `law` tile.
         let admitting = melded && def.sort == Sort::ModuleMember && lawful;
+        // A flow's body: every child of a flow declaration after its `where`.
+        // The pass over the children below opens the body at that tile.
+        let flow = melded && def.label == "flow" && def.sort == Sort::Item;
+        let mut opened = false;
         stack.extend(
             children
                 .iter()
                 .zip(binds.iter().copied())
                 .map(|(&child, discards)| {
+                    let bodied = opened;
+                    opened = opened || (flow && spelled(Some(child)) == "where");
                     let headed = melded
                         && opener == Some(child)
                         && (def.label == "["
@@ -1012,6 +1040,9 @@ fn gated(
                         }
                         else if admitting {
                             placed.or(Some(Placed::Admission))
+                        }
+                        else if bodied {
+                            placed.or(Some(Placed::Template))
                         }
                         else {
                             placed
@@ -1167,25 +1198,45 @@ fn gated(
                     && rules.iter().any(|&(start, end)| {
                         start <= usize::from(span.start()) && usize::from(span.end()) <= end
                     })));
+        // The lambda `Path.ap` maps by, its first argument, in parentheses.
         let mapped = melded
             && def.label == "fun"
             && def.sort == Sort::Expression
             && source
                 .get(.. usize::from(span.start()))
-                .is_some_and(|before| before.trim_end().ends_with("Path.ap("));
-        let templated = flows.iter().any(|&(start, end)| {
-            start <= usize::from(span.start()) && usize::from(span.end()) <= end
-        });
+                .and_then(|before| before.trim_end().strip_suffix('('))
+                .is_some_and(|before| before.trim_end().ends_with("Path.ap"));
         let pasted = pastings.iter().any(|&(start, end)| {
             start <= usize::from(span.start()) && usize::from(span.end()) <= end
         });
+        // A host interface's path, or the effect a row's entry names: the path
+        // after `label :` in a row a returner or an arrow writes, `Counter.Eff`
+        // in `-> [n : Counter.Eff] Integer`.
         let interfaced = melded
             && def.label == "."
             && def.sort == Sort::Type
-            && text
+            && (text
                 .trim()
                 .rsplit_once('.')
-                .is_some_and(|(home, _)| namespaces.contains(home.trim()));
+                .is_some_and(|(home, _)| namespaces.contains(home.trim()))
+                || source
+                    .get(.. usize::from(span.start()))
+                    .and_then(|before| {
+                        let open = before.rfind('[')?;
+                        let lead = before.get(.. open)?.trim_end();
+                        let entry = before.get(open.saturating_add(1) ..)?.rsplit(',').next()?;
+                        let (label, after) = entry.split_once(':')?;
+                        let label = label.trim();
+                        Some(
+                            (lead.ends_with("->") || lead.ends_with("-F"))
+                                && after.trim().is_empty()
+                                && !label.is_empty()
+                                && label
+                                    .chars()
+                                    .all(|letter| letter.is_alphanumeric() || letter == '_'),
+                        )
+                    })
+                    .unwrap_or(false));
         let conditioned = melded
             && def.label == "."
             && def.sort == Sort::Expression
@@ -1199,7 +1250,6 @@ fn gated(
                 .get(usize::from(span.end()) ..)
                 .is_some_and(|after| after.trim_start().starts_with('='));
         let placed = placed
-            .or_else(|| templated.then_some(Placed::Template))
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))
             .or_else(|| pasted.then_some(Placed::Pasting))
@@ -1301,6 +1351,57 @@ fn every_kind_the_table_names_is_a_form_the_grammar_holds_4691()
         Vec::<&str>::new(),
         "each kind the table names is a form the grammar holds"
     );
+}
+
+/// The floor's juxtaposed calls and its layout bodies stand as the call and
+/// brace forms stood: a run literal's moves, the lambda `Path.ap` maps by, a
+/// variable at a rule's binding port, a flow's body and the effect a row's
+/// entry names each need no entry of their own (#5210).
+#[test]
+fn the_floor_s_forms_stand_placed_as_the_call_forms_stood_5210()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let source = "theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> \
+                  C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure \
+                  0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : \
+                  (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> \
+                  ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded \
+                  (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g \
+                  }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n";
+    let tree = parse(&grammar, SourceText::from(source))
+        .expect("the source parses")
+        .into_tree();
+    let gated: Vec<(&str, Option<Placed>)> =
+        gated(&grammar, &tree, &BTreeSet::new(), &Models::default())
+            .into_iter()
+            .filter_map(|(_, span, placed)| {
+                source
+                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                    .map(|text| (text, placed))
+            })
+            .collect();
+    let stands = |text: &str, placed: Option<Placed>| {
+        gated
+            .iter()
+            .any(|&(written, held)| written == text && held == placed)
+    };
+    for (text, placed) in [
+        ("Counter.Eff", Some(Placed::Interface)),
+        ("l", Some(Placed::Unstated)),
+        ("m", None),
+        ("recorded (received One) closed", None),
+        ("received One", Some(Placed::Move)),
+        ("received", Some(Placed::Move)),
+        ("closed", Some(Placed::Move)),
+        ("One", None),
+        ("fun (q) { Path.step q g }", Some(Placed::Mapped)),
+        ("reply", Some(Placed::Template)),
+    ] {
+        assert!(
+            stands(text, placed),
+            "`{text}` stands {placed:?}: {gated:?}"
+        );
+    }
 }
 
 /// The entry sweep: the gate over the corpus's sources.
