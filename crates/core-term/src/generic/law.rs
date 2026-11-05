@@ -881,6 +881,7 @@ impl Proving<'_, '_, '_, '_>
                     level = plus(level, Binders::ONE)?;
                 }
                 let built = self.deriving.arena.value_constructor(
+                    at,
                     carrier,
                     ConstructorTag::from(tag),
                     fields,

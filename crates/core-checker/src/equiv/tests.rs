@@ -379,6 +379,7 @@ fn a_data_type_covers_as_its_constructors_fields()
                 datatype,
                 tag,
                 ref fields,
+                ..
             }) = context.arena().value(pattern.value())
             else {
                 panic!("a constructor pattern");

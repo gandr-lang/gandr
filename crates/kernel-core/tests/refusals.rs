@@ -453,8 +453,12 @@ fn refusals() -> Vec<Refusal>
             what: "zero of 1 : 1, a constructor of no data type",
             build: |a| {
                 let one = a.value_type_unit();
-                let constructed =
-                    a.value_constructor(one, ConstructorTag::from(0_usize), Vec::new());
+                let constructed = a.value_constructor(
+                    gandr_kernel_term::ConstantIndex::from(0_usize),
+                    one,
+                    ConstructorTag::from(0_usize),
+                    Vec::new(),
+                );
                 (one, constructed)
             },
             refused: |error| {

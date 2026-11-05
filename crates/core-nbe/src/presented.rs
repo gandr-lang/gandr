@@ -305,7 +305,7 @@ pub fn normal_form(
             Origin::Written(id) => id,
             Origin::Rewritten => {
                 let span = domain.hold_fields(fields);
-                domain.value_constructor(datatype, tag, span, TermFace::Reduced)
+                domain.value_constructor(own, datatype, tag, span, TermFace::Reduced)
             },
         };
         built.push(rebuilt);

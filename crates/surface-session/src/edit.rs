@@ -3278,6 +3278,7 @@ where
             datatype,
             tag,
             ref fields,
+            ..
         }) => ContentNode::Constructor {
             datatype: child(Root::ValueType(datatype)),
             tag,

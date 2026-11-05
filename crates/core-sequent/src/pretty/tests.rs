@@ -312,7 +312,7 @@ fn renders_datatype_heads_nominal_matches_and_recursive_thunks()
             tag: ConstructorTag::Data {
                 tag: gandr_kernel_term::ConstructorTag::from(0_usize),
                 arity: ProducerArity::ZERO,
-                family: None,
+                family: gandr_kernel_term::ConstantIndex::from(0_usize),
             },
             producers: Box::from([]),
             consumers: Box::from([]),
@@ -326,7 +326,7 @@ fn renders_datatype_heads_nominal_matches_and_recursive_thunks()
             tag: ConstructorTag::Data {
                 tag: gandr_kernel_term::ConstructorTag::from(1_usize),
                 arity: ProducerArity::TWO,
-                family: None,
+                family: gandr_kernel_term::ConstantIndex::from(0_usize),
             },
             producers: Box::from([constant, zero]),
             consumers: Box::from([]),
@@ -369,7 +369,7 @@ fn renders_datatype_heads_nominal_matches_and_recursive_thunks()
                 constructor: ConstructorTag::Data {
                     tag: gandr_kernel_term::ConstructorTag::from(2_usize),
                     arity: ProducerArity::TWO,
-                    family: None,
+                    family: gandr_kernel_term::ConstantIndex::from(0_usize),
                 },
                 body: returned,
             }]),

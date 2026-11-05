@@ -86,8 +86,18 @@ fn a_later_position_extends_the_block_through_every_former()
         arena.value_run(reads),
         arena.value_quote(later_type),
         arena.value_quote_computation(returns_later),
-        arena.value_constructor(later_type, ConstructorTag::from(0_usize), Vec::new()),
-        arena.value_constructor(unit, ConstructorTag::from(0_usize), Vec::from([later])),
+        arena.value_constructor(
+            ConstantIndex::from(7_usize),
+            later_type,
+            ConstructorTag::from(0_usize),
+            Vec::new(),
+        ),
+        arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            unit,
+            ConstructorTag::from(0_usize),
+            Vec::from([later]),
+        ),
         arena.value_path_equiv(
             later_type,
             nothing,

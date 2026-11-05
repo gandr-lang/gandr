@@ -161,7 +161,7 @@ fn helped(
     let arena = staging.arena();
     let nat_type = arena.value_type_data(nat, vec![]);
     let returner = arena.comp_type_returner(nat_type);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
     let on_zero = arena.computation_return(zero);
     let head = arena.value_constant(apply);
     let claim = arena.value_variable(DeBruijnIndex::from(2));
@@ -393,7 +393,7 @@ fn a_bounded_binder_read_above_its_bound_is_refused_1241()
         let arena = staging.arena();
         let nat_type = arena.value_type_data(nat, vec![]);
         let returner = arena.comp_type_returner(nat_type);
-        let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+        let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
         let on_zero = arena.computation_return(zero);
         // Under λp: `p` 0, `n` 1, `h` 2.
         let head = arena.value_constant(bounded);

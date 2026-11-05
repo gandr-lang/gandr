@@ -165,7 +165,12 @@ fn helped(
     let nat = nat(arena);
     let declared = function_of(arena, nat);
     let returner = arena.comp_type_returner(nat);
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
     let on_zero = arena.computation_return(zero);
     let apply = arena.value_constant(ConstantIndex::from(1));
     let h = var(arena, DeBruijnIndex::from(2));
@@ -559,7 +564,12 @@ fn looping(
     let nat = nat(arena);
     let declared = function_of(arena, nat);
     let returner = arena.comp_type_returner(nat);
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
     let on_zero = arena.computation_return(zero);
     let bounded = arena.value_constant(ConstantIndex::from(1));
     let p = var(arena, DeBruijnIndex::from(0));
@@ -656,7 +666,12 @@ fn a_stage_on_no_data_type_is_refused()
     let staged = arena.value_type_staged(integer, Stage::At(StageId::from(0_usize)));
     let declared = function_of(&mut arena, staged);
     let nat = nat(&mut arena);
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
     let returned = arena.computation_return(zero);
     let lambda = arena.computation_lambda(returned);
     let body = arena.value_thunk(lambda);

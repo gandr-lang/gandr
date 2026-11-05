@@ -1088,6 +1088,7 @@ fn a_data_domain_covers_as_its_constructors()
             datatype,
             tag: found,
             ref fields,
+            ..
         }) = arena.value(pattern.left)
         else {
             panic!("a constructor pattern");

@@ -923,8 +923,12 @@ fn native_snapshot(changed: Option<Leaf>) -> Snapshot
     };
     let values = [0_usize, 1, 2, 3].map(|at| arena.value_literal(leaf_content(Leaf(at), changed)));
     let datatype = arena.value_type_data(ConstantIndex::from(0_usize), values.to_vec());
-    let constructor =
-        arena.value_constructor(datatype, ConstructorTag::from(3_usize), values.to_vec());
+    let constructor = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        datatype,
+        ConstructorTag::from(3_usize),
+        values.to_vec(),
+    );
     let fields = ["a", "b", "c", "d"].map(|name| FieldLabel::from(String::from(name)));
     let record_type = arena.value_type_record(
         fields

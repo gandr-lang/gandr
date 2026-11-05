@@ -97,7 +97,7 @@ fn nominal_identity_and_constructor_refusals()
         let arena = staging.arena();
         let datatype = arena.value_type_data(first, vec![]);
         let unit = arena.value_unit();
-        let constructor = arena.value_constructor(datatype, tag, vec![unit; field_count]);
+        let constructor = arena.value_constructor(first, datatype, tag, vec![unit; field_count]);
         let declaration = staging.def(LevelSignature::monomorphic(), datatype, constructor);
         assert_eq!(environment.add_decl(declaration), Err(expected));
     }
@@ -106,7 +106,8 @@ fn nominal_identity_and_constructor_refusals()
     let first_type = arena.value_type_data(first, vec![]);
     let second_type = arena.value_type_data(second, vec![]);
     let unit = arena.value_unit();
-    let constructor = arena.value_constructor(first_type, ConstructorTag::from(0), vec![unit]);
+    let constructor =
+        arena.value_constructor(first, first_type, ConstructorTag::from(0), vec![unit]);
     let declaration = staging.def(LevelSignature::monomorphic(), second_type, constructor);
     assert!(matches!(
         environment.add_decl(declaration),
@@ -117,7 +118,7 @@ fn nominal_identity_and_constructor_refusals()
     let arena = staging.arena();
     let datatype = arena.value_type_data(first, vec![]);
     let unit = arena.value_unit();
-    let constructor = arena.value_constructor(datatype, ConstructorTag::from(0), vec![unit]);
+    let constructor = arena.value_constructor(first, datatype, ConstructorTag::from(0), vec![unit]);
     let declaration = staging.def(LevelSignature::monomorphic(), datatype, constructor);
     let admitted = environment
         .add_decl(declaration)
@@ -128,7 +129,7 @@ fn nominal_identity_and_constructor_refusals()
     let arena = staging.arena();
     let datatype = arena.value_type_data(first, vec![]);
     let unit = arena.value_unit();
-    let constructor = arena.value_constructor(datatype, ConstructorTag::from(0), vec![unit]);
+    let constructor = arena.value_constructor(first, datatype, ConstructorTag::from(0), vec![unit]);
     let declaration =
         staging.sealed_def(LevelSignature::monomorphic(), datatype, constructor, vec![
             first,
@@ -224,7 +225,8 @@ fn data_parameters_preserve_open_indices()
     let mut staging = environment.stage();
     let arena = staging.arena();
     let datatype = arena.value_type_data(nominal, vec![one, zero]);
-    let constructor = arena.value_constructor(datatype, ConstructorTag::from(0), vec![zero]);
+    let constructor =
+        arena.value_constructor(nominal, datatype, ConstructorTag::from(0), vec![zero]);
     let result = arena.computation_return(constructor);
     let inner = arena.computation_lambda(result);
     let outer = arena.computation_lambda(inner);
@@ -329,7 +331,7 @@ fn vector(
     let arena = staging.arena();
     let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
     let length = arena.value_type_data(nat, vec![]);
-    let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, length, ConstructorTag::from(0), vec![]);
     // Past `n`, the parameter is one out; past `n` and `x`, two.
     let code = arena.value_variable(DeBruijnIndex::from(1));
     let element = arena.value_type_element(code, Level::zero());
@@ -338,7 +340,7 @@ fn vector(
     let tail = arena.value_type_data(position, vec![code, tail_length]);
     // Past all three fields, `n` is two out and `x` one.
     let field = arena.value_variable(DeBruijnIndex::from(2));
-    let successor = arena.value_constructor(length, ConstructorTag::from(1), vec![field]);
+    let successor = arena.value_constructor(nat, length, ConstructorTag::from(1), vec![field]);
     let element_value = arena.value_variable(DeBruijnIndex::from(1));
     let cons = match stated {
         Stated::Successor => vec![successor],
@@ -391,15 +393,16 @@ fn an_indexed_constructor_stands_at_its_stated_index()
         let unit = arena.value_type_unit();
         let code = arena.value_quote(unit);
         let length = arena.value_type_data(nat, vec![]);
-        let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
-        let one = arena.value_constructor(length, ConstructorTag::from(1), vec![zero]);
+        let zero = arena.value_constructor(nat, length, ConstructorTag::from(0), vec![]);
+        let one = arena.value_constructor(nat, length, ConstructorTag::from(1), vec![zero]);
         let empty = arena.value_type_data(family, vec![code, zero]);
-        let nil = arena.value_constructor(empty, ConstructorTag::from(0), vec![]);
+        let nil = arena.value_constructor(family, empty, ConstructorTag::from(0), vec![]);
         let index = if successor { one } else { zero };
         let datatype = arena.value_type_data(family, vec![code, index]);
         let element = arena.value_unit();
-        let cons =
-            arena.value_constructor(datatype, ConstructorTag::from(1), vec![zero, element, nil]);
+        let cons = arena.value_constructor(family, datatype, ConstructorTag::from(1), vec![
+            zero, element, nil,
+        ]);
         let declaration = staging.def(LevelSignature::monomorphic(), datatype, cons);
         environment.add_decl(declaration).map(|_admitted| ())
     };
@@ -415,9 +418,9 @@ fn an_indexed_constructor_stands_at_its_stated_index()
     let unit = arena.value_type_unit();
     let code = arena.value_quote(unit);
     let length = arena.value_type_data(nat, vec![]);
-    let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, length, ConstructorTag::from(0), vec![]);
     let empty = arena.value_type_data(family, vec![code, zero]);
-    let nil = arena.value_constructor(empty, ConstructorTag::from(0), vec![]);
+    let nil = arena.value_constructor(family, empty, ConstructorTag::from(0), vec![]);
     // `case Nil { Nil => λe. return (); Cons(n, x, xs) => λe. return x }`:
     // each branch binds its own constructor's fields, then the equation from
     // its constructor's index to the scrutinee's, `Cons`'s at an index `Nil`
@@ -466,14 +469,16 @@ fn an_indexed_case_prunes_a_constructor_at_an_apart_index()
             let unit = arena.value_type_unit();
             let code = arena.value_quote(unit);
             let length = arena.value_type_data(nat, vec![]);
-            let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
-            let one = arena.value_constructor(length, ConstructorTag::from(1), vec![zero]);
+            let zero = arena.value_constructor(nat, length, ConstructorTag::from(0), vec![]);
+            let one = arena.value_constructor(nat, length, ConstructorTag::from(1), vec![zero]);
             let empty = arena.value_type_data(family, vec![code, zero]);
-            let nil = arena.value_constructor(empty, ConstructorTag::from(0), vec![]);
+            let nil = arena.value_constructor(family, empty, ConstructorTag::from(0), vec![]);
             let scrutinee = if successor {
                 let datatype = arena.value_type_data(family, vec![code, one]);
                 let element = arena.value_unit();
-                arena.value_constructor(datatype, ConstructorTag::from(1), vec![zero, element, nil])
+                arena.value_constructor(family, datatype, ConstructorTag::from(1), vec![
+                    zero, element, nil,
+                ])
             }
             else {
                 nil
@@ -539,7 +544,8 @@ fn data_case_checks_coverage_and_motive()
         let datatype = arena.value_type_data(nominal, vec![]);
         let unit_type = arena.value_type_unit();
         let unit = arena.value_unit();
-        let constructor = arena.value_constructor(datatype, ConstructorTag::from(0), vec![unit]);
+        let constructor =
+            arena.value_constructor(nominal, datatype, ConstructorTag::from(0), vec![unit]);
         let motive = arena.comp_type_returner(unit_type);
         let body = arena.computation_return(unit);
         let branch = arena.computation_lambda(body);
@@ -557,7 +563,8 @@ fn data_case_checks_coverage_and_motive()
     let datatype = arena.value_type_data(nominal, vec![]);
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
-    let constructor = arena.value_constructor(datatype, ConstructorTag::from(0), vec![unit]);
+    let constructor =
+        arena.value_constructor(nominal, datatype, ConstructorTag::from(0), vec![unit]);
     let motive = arena.comp_type_returner(unit_type);
     let parameter = arena.value_variable(DeBruijnIndex::from(0));
     let body = arena.computation_return(parameter);
@@ -632,7 +639,8 @@ fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357()
         let mut staging = environment.stage();
         let arena = staging.arena();
         let datatype = arena.value_type_data(nominal, vec![]);
-        let zero = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
+        let zero =
+            arena.value_constructor(nominal, datatype, ConstructorTag::from(0_usize), vec![]);
         let unit_type = arena.value_type_unit();
         let unit = arena.value_unit();
         let motive = arena.comp_type_returner(unit_type);
@@ -739,10 +747,12 @@ fn a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint()
         let field = arena.value_variable(DeBruijnIndex::from(0_u32));
         let passed = if wound {
             let state = arena.value_variable(DeBruijnIndex::from(1_u32));
-            arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![state])
+            arena.value_constructor(nominal, datatype, ConstructorTag::from(1_usize), vec![
+                state,
+            ])
         }
         else {
-            arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![])
+            arena.value_constructor(nominal, datatype, ConstructorTag::from(0_usize), vec![])
         };
         let forced = arena.computation_force(recursive);
         let called = arena.computation_application(forced, field);
@@ -961,7 +971,8 @@ fn a_fold_into_the_paths_of_a_set_respects_its_rules()
     let point = |arena: &mut gandr_kernel_term::TermArena, set: bool| {
         if set {
             let datatype = arena.value_type_data(integers, vec![]);
-            let zero = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
+            let zero =
+                arena.value_constructor(integers, datatype, ConstructorTag::from(0_usize), vec![]);
             (datatype, zero)
         }
         else {
@@ -1231,10 +1242,12 @@ fn an_absurd_case_rests_on_apart_endpoints()
         let mut staging = environment.stage();
         let arena = staging.arena();
         let datatype = arena.value_type_data(nominal, vec![]);
-        let zero = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
+        let zero =
+            arena.value_constructor(nominal, datatype, ConstructorTag::from(0_usize), vec![]);
         let mut left = zero;
         for _ in 0 .. successors {
-            left = arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![left]);
+            left = arena
+                .value_constructor(nominal, datatype, ConstructorTag::from(1_usize), vec![left]);
         }
         let path = arena.value_type_path(datatype, left, zero);
         let unit = arena.value_type_unit();
@@ -1374,7 +1387,8 @@ fn native_declarations_and_eliminators_survive_canonical_decode()
     let arena = staging.arena();
     let datatype = arena.value_type_data(nominal, vec![]);
     let unit = arena.value_unit();
-    let constructor = arena.value_constructor(datatype, ConstructorTag::from(0), vec![unit]);
+    let constructor =
+        arena.value_constructor(nominal, datatype, ConstructorTag::from(0), vec![unit]);
     let motive = arena.comp_type_returner(unit_type);
     let body = arena.computation_return(unit);
     let branch = arena.computation_lambda(body);
@@ -1761,14 +1775,27 @@ fn build(
 {
     let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
     let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
-    let empty = arena.value_constructor(words, ConstructorTag::from(0_usize), vec![]);
+    let empty = arena.value_constructor(
+        ConstantIndex::from(WORDS),
+        words,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
     match built {
-        Built::Point => arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![]),
+        Built::Point => arena.value_constructor(
+            ConstantIndex::from(SORT),
+            carrier,
+            ConstructorTag::from(0_usize),
+            vec![],
+        ),
         Built::Empty => empty,
         Built::Named => arena.value_constant(ConstantIndex::from(LOOP)),
-        Built::Inverse => {
-            arena.value_constructor(words, ConstructorTag::from(2_usize), vec![empty])
-        },
+        Built::Inverse => arena.value_constructor(
+            ConstantIndex::from(WORDS),
+            words,
+            ConstructorTag::from(2_usize),
+            vec![empty],
+        ),
         Built::Stays => arena.value_here(empty),
     }
 }
@@ -1818,7 +1845,12 @@ fn one_loop() -> Environment
     let path = arena.value_type_path(carrier, point, point);
     let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
     let empty = build(arena, Built::Empty);
-    let letter = arena.value_constructor(words, ConstructorTag::from(1_usize), vec![empty]);
+    let letter = arena.value_constructor(
+        ConstantIndex::from(WORDS),
+        words,
+        ConstructorTag::from(1_usize),
+        vec![empty],
+    );
     let staged = staging.def(LevelSignature::monomorphic(), path, letter);
     let _loop = environment
         .add_decl(staged)
@@ -2435,7 +2467,12 @@ fn a_word_appends_on_its_first_word()
         let empty = build(arena, Built::Empty);
         let parameter = arena.value_variable(DeBruijnIndex::from(0_u32));
         let letter = |arena: &mut TermArena, tag: usize, rest: ValueId| {
-            arena.value_constructor(words, ConstructorTag::from(tag), vec![rest])
+            arena.value_constructor(
+                ConstantIndex::from(WORDS),
+                words,
+                ConstructorTag::from(tag),
+                vec![rest],
+            )
         };
         let (moved, right) = match case {
             Case::Unit => (empty, parameter),
@@ -2502,8 +2539,18 @@ fn a_word_of_two_letters_moves_a_path_letter_by_letter()
         let point = build(arena, Built::Point);
         let empty = build(arena, Built::Empty);
         let twice = |arena: &mut TermArena, tag: usize| {
-            let once = arena.value_constructor(words, ConstructorTag::from(tag), vec![empty]);
-            arena.value_constructor(words, ConstructorTag::from(tag), vec![once])
+            let once = arena.value_constructor(
+                ConstantIndex::from(WORDS),
+                words,
+                ConstructorTag::from(tag),
+                vec![empty],
+            );
+            arena.value_constructor(
+                ConstantIndex::from(WORDS),
+                words,
+                ConstructorTag::from(tag),
+                vec![once],
+            )
         };
         let along = twice(arena, 1);
         let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -2774,7 +2821,12 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
     let forced = arena.computation_force(recursive);
     let called = arena.computation_application(forced, field);
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let lettered = arena.value_constructor(words, ConstructorTag::from(1_usize), vec![bound]);
+    let lettered = arena.value_constructor(
+        ConstantIndex::from(WORDS),
+        words,
+        ConstructorTag::from(1_usize),
+        vec![bound],
+    );
     let returned = arena.computation_return(lettered);
     let sequenced = arena.computation_bind(called, returned);
     let at_successor = arena.computation_lambda(sequenced);
@@ -2802,7 +2854,12 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
         let at_point = arena.value_type_path(carrier, point, point);
         let n = arena.value_variable(DeBruijnIndex::from(0_u32));
         let argument = if successor {
-            arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![n])
+            arena.value_constructor(
+                ConstantIndex::from(NAT),
+                nat,
+                ConstructorTag::from(1_usize),
+                vec![n],
+            )
         }
         else {
             n
@@ -2815,7 +2872,12 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
             called
         }
         else {
-            arena.value_constructor(words, ConstructorTag::from(1_usize), vec![called])
+            arena.value_constructor(
+                ConstantIndex::from(WORDS),
+                words,
+                ConstructorTag::from(1_usize),
+                vec![called],
+            )
         };
         let stated = arena.value_type_path(at_point, endpoint, endpoint);
         let returner = arena.comp_type_returner(stated);
@@ -2879,7 +2941,12 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
     // Past the bind: `z` 0, `y` 1.
     let first = arena.value_variable(DeBruijnIndex::from(1_u32));
     let second = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let lettered = arena.value_constructor(words, ConstructorTag::from(1_usize), vec![first]);
+    let lettered = arena.value_constructor(
+        ConstantIndex::from(WORDS),
+        words,
+        ConstructorTag::from(1_usize),
+        vec![first],
+    );
     let returned = arena.computation_return_all(&[lettered, second]);
     let sequenced = arena.computation_bind_all(called, ResultCount::from(2_usize), returned);
     let at_successor = arena.computation_lambda(sequenced);
@@ -2907,7 +2974,12 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
         let at_point = arena.value_type_path(carrier, point, point);
         let n = arena.value_variable(DeBruijnIndex::from(0_u32));
         let argument = if successor {
-            arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![n])
+            arena.value_constructor(
+                ConstantIndex::from(NAT),
+                nat,
+                ConstructorTag::from(1_usize),
+                vec![n],
+            )
         }
         else {
             n
@@ -2923,7 +2995,12 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
             called
         }
         else {
-            arena.value_constructor(words, ConstructorTag::from(1_usize), vec![called])
+            arena.value_constructor(
+                ConstantIndex::from(WORDS),
+                words,
+                ConstructorTag::from(1_usize),
+                vec![called],
+            )
         };
         let stated = arena.value_type_path(at_point, endpoint, endpoint);
         let returner = arena.comp_type_returner(stated);
@@ -2972,7 +3049,7 @@ fn moved_along(
     let mut staging = environment.stage();
     let arena = staging.arena();
     let nat = arena.value_type_data(naturals, vec![]);
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+    let zero = arena.value_constructor(naturals, nat, ConstructorTag::from(0_usize), vec![]);
     let path = match along {
         Along::Naturals => arena.value_type_path(nat, zero, zero),
         Along::Circle => {

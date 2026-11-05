@@ -45,7 +45,7 @@ fn tag_arities_are_stable()
             ConstructorTag::Data {
                 tag: gandr_kernel_term::ConstructorTag::from(1_usize),
                 arity: ProducerArity::from(3_usize),
-                family: None,
+                family: gandr_kernel_term::ConstantIndex::from(0_usize),
             },
             3_usize,
         ),
@@ -102,7 +102,7 @@ fn tag_consumer_arities_are_declared()
         ConstructorTag::Data {
             tag: gandr_kernel_term::ConstructorTag::from(0_usize),
             arity: ProducerArity::TWO,
-            family: None,
+            family: gandr_kernel_term::ConstantIndex::from(0_usize),
         },
         ConstructorTag::Record(alloc::sync::Arc::from([gandr_core_term::FieldLabel::from(
             String::from("a"),

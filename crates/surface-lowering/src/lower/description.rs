@@ -459,7 +459,7 @@ impl<'source> Lowerer<'_, 'source>
             // code it is a value of: only the value takes the block's origin.
             let declared = sink.arena.value_type_data(constant, Vec::new());
             let before = sink.arena.watermark();
-            let body = presentation_term(sink.arena, value.as_value(), declared);
+            let body = presentation_term(sink.arena, value.as_value(), (constant, declared));
             self.record_since(sink, before, block.node);
             match body {
                 Ok(body) => {
@@ -755,10 +755,11 @@ enum Step<'value>
 }
 
 /// The core term of `value`, a value of the description of `Theory`, each node
-/// of it a constructor of `datatype`.
+/// of it a constructor of `family` at `datatype`.
 ///
 /// # Specification
-/// - requires: `datatype` is the nominal type `Theory`.
+/// - requires: `datatype` is the nominal type `Theory`, the application of
+///   `family`.
 /// - ensures: one constructor per constructor of `value`, at its tag, over its
 ///   fields in payload order — each name field a `String` literal of the name's
 ///   text, each recursive field the term of its value.
@@ -781,7 +782,7 @@ enum Step<'value>
 fn presentation_term(
     arena: &mut CoreArena,
     value: &DescValue,
-    datatype: ValueTypeId,
+    (family, datatype): (ConstantIndex, ValueTypeId),
 ) -> Result<ValueId, TheoryFault>
 {
     let mut steps = vec![Step::Visit(value.ctor, value.payload.to_node())];
@@ -831,6 +832,7 @@ fn presentation_term(
             Step::Build(tag, count) => {
                 let fields = built.split_off(built.len().saturating_sub(count));
                 built.push(arena.value_constructor(
+                    family,
                     datatype,
                     gandr_kernel_term::ConstructorTag::from(usize::from(tag)),
                     fields,

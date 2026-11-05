@@ -443,7 +443,7 @@ pub fn derive(
         let shifted_family = gandr_core_term::shift_value_type(arena, family, width).settle(arena);
         let values = variables(arena, width);
         let constructor =
-            arena.value_constructor(shifted_family, ConstructorTag::from(tag), values);
+            arena.value_constructor(position, shifted_family, ConstructorTag::from(tag), values);
         let lifted = gandr_core_term::shift_comp_type_under(arena, motive, Binders::ONE, width)
             .settle(arena);
         let mut ty = gandr_core_term::instantiate_comp_type(arena, lifted, constructor);

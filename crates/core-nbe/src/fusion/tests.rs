@@ -168,7 +168,12 @@ fn core_terms(
 ) -> [gandr_core_term::ComputationId; 2]
 {
     let own = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let base = core.value_constructor(own, ConstructorTag::from(0_usize), Vec::new());
+    let base = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let path = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let inner = core.value_constant(spelled.inner.constant());
     let first = gandr_core_term::identity::cong(core, own, inner, base, path);
@@ -199,7 +204,9 @@ fn core_letter(
     let word = match letter.tag() {
         Some(tag) => {
             let occurrence = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-            core.value_constructor(own, tag, alloc::vec![occurrence])
+            core.value_constructor(ConstantIndex::from(0_usize), own, tag, alloc::vec![
+                occurrence
+            ])
         },
         None => core.value_constant(ConstantIndex::from(4_usize)),
     };
@@ -333,14 +340,21 @@ fn replayed(
     let letter = |arena: &mut TermArena, letter: Letter| {
         let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
         let tag = letter.tag().expect("a word letter");
-        let word = arena.value_constructor(own, tag, alloc::vec![occurrence]);
+        let word = arena.value_constructor(ConstantIndex::from(0_usize), own, tag, alloc::vec![
+            occurrence
+        ]);
         let returned = arena.computation_return(word);
         let lambda = arena.computation_lambda(returned);
         arena.value_thunk(lambda)
     };
     let looped = letter(&mut arena, Loop);
     let unlooped = letter(&mut arena, Unloop);
-    let base = arena.value_constructor(own, ConstructorTag::from(0_usize), Vec::new());
+    let base = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let path = arena.value_variable(DeBruijnIndex::from(0_u32));
     let cong = |arena: &mut TermArena, applied: Letter, start| {
         let function = arena.value_constant(applied.constant());

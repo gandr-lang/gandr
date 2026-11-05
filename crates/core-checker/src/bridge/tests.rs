@@ -4391,8 +4391,12 @@ fn a_funext_returning_a_constructor_crosses_with_it()
     let function = arena.value_type_thunk(arrow);
     let [left, right] = [(), ()].map(|()| {
         let zero = arena.value_literal(integer_literal());
-        let both =
-            arena.value_constructor(two, ConstructorTag::from(0_usize), Vec::from([zero, zero]));
+        let both = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            two,
+            ConstructorTag::from(0_usize),
+            Vec::from([zero, zero]),
+        );
         let body = arena.computation_return(both);
         let lambda = arena.computation_lambda(body);
         arena.value_thunk(lambda)

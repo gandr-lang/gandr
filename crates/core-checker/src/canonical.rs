@@ -429,7 +429,7 @@ pub fn answers(
     let code = |arena: &mut CoreArena, output: u32, tag: usize, fields: &[u32]| {
         let datatype = ir(arena, output);
         let fields = fields.iter().map(|&index| var(arena, index)).collect();
-        arena.value_constructor(datatype, ConstructorTag::from(tag), fields)
+        arena.value_constructor(signature, datatype, ConstructorTag::from(tag), fields)
     };
     let decode = |arena: &mut CoreArena, index: u32| {
         let code = var(arena, index);
@@ -522,10 +522,12 @@ pub fn answers(
             let asked = family(arena, fields, (2, 6, 5, 4), decoded);
             let datatype = arena.value_type_data(pair, alloc::vec![first, asked]);
             let (head, rest) = (var(arena, 1), var(arena, 0));
-            let given =
-                arena.value_constructor(datatype, ConstructorTag::from(0_usize), alloc::vec![
-                    head, rest
-                ]);
+            let given = arena.value_constructor(
+                pair,
+                datatype,
+                ConstructorTag::from(0_usize),
+                alloc::vec![head, rest],
+            );
             let (output, over, decoder) = (var(arena, 6), var(arena, 5), var(arena, 4));
             let left = call(arena, body, &[output, read, over, decoder, given]);
             let argument = if decoded {

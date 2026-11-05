@@ -9858,6 +9858,7 @@ mod tests
                 let injected = mint.value_injection(summand, own);
                 let tag = mint.value_type_data(tags, vec![injected]);
                 let made = mint.value_constructor(
+                    tags,
                     tag,
                     gandr_kernel_term::ConstructorTag::from(0_usize),
                     vec![],

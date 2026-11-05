@@ -347,11 +347,17 @@ fn a_bridge_at_a_data_type_relates_constructor_by_constructor()
     let two = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let letter = text(&mut arena, String::from("a"));
     let both = arena.value_constructor(
+        ConstantIndex::from(0_usize),
         two,
         ConstructorTag::from(0_usize),
         Vec::from([letter, letter]),
     );
-    let none = arena.value_constructor(two, ConstructorTag::from(1_usize), Vec::new());
+    let none = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        two,
+        ConstructorTag::from(1_usize),
+        Vec::new(),
+    );
     let one = arena.value_unit();
     let fields = arena.value_tuple(&[one, one]);
     let at_both = arena.value_type_bridge(two, both, both);

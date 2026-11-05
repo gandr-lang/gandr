@@ -304,7 +304,7 @@ fn generated(
     sink.origins
         .record_value_type(classifier, origin.inserted(Insertion::Classifier));
     sink.arena
-        .value_constructor(classifier, generator.tag, fields)
+        .value_constructor(generator.family, classifier, generator.tag, fields)
 }
 
 /// The binary digits of `magnitude`, the lowest first; none for zero.

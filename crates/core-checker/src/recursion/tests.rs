@@ -150,7 +150,12 @@ fn nat_signature(arena: &mut CoreArena) -> DataSignature
 fn zero(arena: &mut CoreArena) -> ValueId
 {
     let nat = data(arena, ConstantIndex::from(0), vec![]);
-    arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![])
+    arena.value_constructor(
+        ConstantIndex::from(0),
+        nat,
+        ConstructorTag::from(0_usize),
+        vec![],
+    )
 }
 
 /// `Succ value`.
@@ -163,7 +168,12 @@ fn succ(
 ) -> ValueId
 {
     let nat = data(arena, ConstantIndex::from(0), vec![]);
-    arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![value])
+    arena.value_constructor(
+        ConstantIndex::from(0),
+        nat,
+        ConstructorTag::from(1_usize),
+        vec![value],
+    )
 }
 
 /// `Nat → F Nat`, thunked.
@@ -749,7 +759,12 @@ fn a_constructor_of_plain_fields_needs_a_value_below_the_stage()
     let declared = arena.value_type_thunk(arrow);
     // Under `Leaf`'s field: `n` 0, `t` 1, `f` 2.
     let n = var(&mut arena, DeBruijnIndex::from(0));
-    let leaf = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![n]);
+    let leaf = arena.value_constructor(
+        ConstantIndex::from(0),
+        own,
+        ConstructorTag::from(0_usize),
+        vec![n],
+    );
     let recursive = var(&mut arena, DeBruijnIndex::from(2));
     let on_leaf = call(&mut arena, recursive, &[leaf]);
     let on_leaf = arena.computation_lambda(on_leaf);
@@ -813,7 +828,12 @@ fn thunked_call(
     let diverging = arena.computation_fixpoint(forced, FixpointEvidence::Partial);
     let lambda = arena.computation_lambda(diverging);
     let thunked = arena.value_thunk(lambda);
-    let built = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![thunked]);
+    let built = arena.value_constructor(
+        ConstantIndex::from(1),
+        own,
+        ConstructorTag::from(0_usize),
+        vec![thunked],
+    );
     // Under λt: `t` 0, `f` 1.
     let recursive = var(arena, DeBruijnIndex::from(1));
     let called = call(arena, recursive, &[built]);
@@ -931,7 +951,12 @@ fn map_declaration(arena: &mut CoreArena) -> Declaration
     let on_nil = {
         let b = var(arena, DeBruijnIndex::from(3));
         let to = data(arena, ConstantIndex::from(1), vec![b]);
-        let nil = arena.value_constructor(to, ConstructorTag::from(0_usize), vec![]);
+        let nil = arena.value_constructor(
+            ConstantIndex::from(1),
+            to,
+            ConstructorTag::from(0_usize),
+            vec![],
+        );
         arena.computation_return(nil)
     };
     let on_cons = {
@@ -948,7 +973,12 @@ fn map_declaration(arena: &mut CoreArena) -> Declaration
         let to = data(arena, ConstantIndex::from(1), vec![element]);
         let image = var(arena, DeBruijnIndex::from(1));
         let images = var(arena, DeBruijnIndex::from(0));
-        let cons = arena.value_constructor(to, ConstructorTag::from(1_usize), vec![image, images]);
+        let cons = arena.value_constructor(
+            ConstantIndex::from(1),
+            to,
+            ConstructorTag::from(1_usize),
+            vec![image, images],
+        );
         let returned = arena.computation_return(cons);
         let inner = arena.computation_bind(recursed, returned);
         let outer = arena.computation_bind(mapped, inner);
@@ -1017,9 +1047,19 @@ fn size_declaration(
         Children::Field => var(arena, DeBruijnIndex::from(0)),
         Children::Forged => {
             let list = data(arena, ConstantIndex::from(1), vec![rose_code]);
-            let nil = arena.value_constructor(list, ConstructorTag::from(0_usize), vec![]);
+            let nil = arena.value_constructor(
+                ConstantIndex::from(1),
+                list,
+                ConstructorTag::from(0_usize),
+                vec![],
+            );
             let t = var(arena, DeBruijnIndex::from(1));
-            arena.value_constructor(list, ConstructorTag::from(1_usize), vec![t, nil])
+            arena.value_constructor(
+                ConstantIndex::from(1),
+                list,
+                ConstructorTag::from(1_usize),
+                vec![t, nil],
+            )
         },
     };
     let mapped = call(arena, map, &[rose_code, nat_code, mapped_function, listed]);

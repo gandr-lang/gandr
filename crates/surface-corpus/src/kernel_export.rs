@@ -2059,6 +2059,7 @@ mod kernel_presented_readmission
             panic!("`not_zero` takes a path");
         };
         let Some(Value::Constructor {
+            family,
             datatype,
             tag,
             fields,
@@ -2066,8 +2067,9 @@ mod kernel_presented_readmission
         else {
             panic!("`S(Z)` is a constructor");
         };
-        let predecessor = arena.value_constructor(datatype, ConstructorTag::from(2_usize), fields);
-        let cancelled = arena.value_constructor(datatype, tag, vec![predecessor]);
+        let predecessor =
+            arena.value_constructor(family, datatype, ConstructorTag::from(2_usize), fields);
+        let cancelled = arena.value_constructor(family, datatype, tag, vec![predecessor]);
         let forged = arena.value_type_path(carrier, cancelled, right);
         let forged = if dependent {
             arena.comp_type_pi(forged, codomain)
@@ -2808,6 +2810,7 @@ mod kernel_presentation_readmission
             panic!("`Unital` is a definition");
         };
         let Some(Value::Constructor {
+            family,
             datatype,
             tag,
             fields,
@@ -2845,9 +2848,12 @@ mod kernel_presentation_readmission
         // its first argument, `e()`, where `unitL` gives `x`.
         let unit = arguments[0];
         let twin_name = arena.value_literal(Literal::Text(StringLiteral::new("twin".into())));
-        let parting = arena.value_constructor(datatype, rule, vec![twin_name, left, unit, rest]);
-        let unit_law = arena.value_constructor(datatype, rule, vec![name, left, right, parting]);
-        let forged = arena.value_constructor(datatype, tag, vec![sorts, operations, unit_law]);
+        let parting =
+            arena.value_constructor(family, datatype, rule, vec![twin_name, left, unit, rest]);
+        let unit_law =
+            arena.value_constructor(family, datatype, rule, vec![name, left, right, parting]);
+        let forged =
+            arena.value_constructor(family, datatype, tag, vec![sorts, operations, unit_law]);
         let twin_declaration = DeclarationBuilder::new(&mut arena)
             .def(marked.declaration().levels().clone(), declared, forged)
             .named(marked.declaration().name().clone());
@@ -3022,6 +3028,7 @@ mod kernel_effect_tree_readmission
         };
         let raise = raised[0];
         let Some(Value::Constructor {
+            family,
             datatype,
             tag,
             fields,
@@ -3032,7 +3039,7 @@ mod kernel_effect_tree_readmission
         // The twin keeps `quiet`'s type, `Prog(Either(StateOp, Void),
         // Integer)`, and its continuation, and performs `Left(Raise(4))`:
         // the front of its row is `StateOp`, and `Raise(4)` is an `ExnOp`.
-        let forged = arena.value_constructor(datatype, tag, vec![raise, fields[1]]);
+        let forged = arena.value_constructor(family, datatype, tag, vec![raise, fields[1]]);
         let marked = &declarations[quiet];
         let twin_declaration = DeclarationBuilder::new(&mut arena)
             .def(marked.declaration().levels().clone(), declared, forged)

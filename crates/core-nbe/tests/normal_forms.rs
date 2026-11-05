@@ -267,8 +267,12 @@ fn values() -> [Row; 18]
             build: |a| {
                 let unit = a.value_unit();
                 let datatype = a.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-                let constructed =
-                    a.value_constructor(datatype, ConstructorTag::from(0_usize), Vec::from([unit]));
+                let constructed = a.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    datatype,
+                    ConstructorTag::from(0_usize),
+                    Vec::from([unit]),
+                );
                 let one = integer(a, Digits("1"));
                 let nil = a.value_list_nil();
                 let cell = a.value_list_cons(one, nil);
@@ -802,8 +806,12 @@ fn redexes() -> [Row; 16]
             what: "case K1 at s. ↑() { K0 ⇒ return 0; K1 ⇒ return 1 }",
             build: |a| {
                 let datatype = a.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-                let scrutinee =
-                    a.value_constructor(datatype, ConstructorTag::from(1_usize), Vec::new());
+                let scrutinee = a.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    datatype,
+                    ConstructorTag::from(1_usize),
+                    Vec::new(),
+                );
                 let motive = returns_unit(a);
                 let branches = [Digits("0"), Digits("1")].map(|digits| {
                     let answer = integer(a, digits);
@@ -1108,7 +1116,12 @@ fn unfolds() -> [Unfold; 14]
             what: "case c at s. ↑() { K ⇒ return () }",
             definition: |a| {
                 let datatype = a.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-                a.value_constructor(datatype, ConstructorTag::from(0_usize), Vec::new())
+                a.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    datatype,
+                    ConstructorTag::from(0_usize),
+                    Vec::new(),
+                )
             },
             unfolded: |a| {
                 let unit = a.value_unit();
@@ -1730,8 +1743,12 @@ fn codes() -> [Code; 27]
             build: |a, h| {
                 let decoded = element(a, h);
                 let datatype = a.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-                let constructed =
-                    a.value_constructor(datatype, ConstructorTag::from(0_usize), Vec::from([h]));
+                let constructed = a.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    datatype,
+                    ConstructorTag::from(0_usize),
+                    Vec::from([h]),
+                );
                 let path = a.value_type_path(decoded, constructed, constructed);
                 a.value_quote(path)
             },
@@ -1960,8 +1977,12 @@ fn twins() -> [Twin; 24]
             apart: MachineVerdict::NotConvertible,
             build: |a, h| {
                 let datatype = a.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-                let constructed =
-                    a.value_constructor(datatype, ConstructorTag::from(0_usize), Vec::from([h]));
+                let constructed = a.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    datatype,
+                    ConstructorTag::from(0_usize),
+                    Vec::from([h]),
+                );
                 bound_in_a_code(a, constructed)
             },
         },

@@ -1945,11 +1945,13 @@ fn native_types_compare_identity_labels_and_value_arguments()
     let relabeled = core.value_type_data(name, Vec::from([other_record]));
     let constructor_type = core.value_type_data(other_name, Vec::new());
     let constructor = core.value_constructor(
+        other_name,
         constructor_type,
         ConstructorTag::from(0_usize),
         Vec::from([first]),
     );
     let other_constructor = core.value_constructor(
+        other_name,
         constructor_type,
         ConstructorTag::from(1_usize),
         Vec::from([first]),
@@ -2152,6 +2154,7 @@ fn first_order_arguments_compare_by_shape_and_arity()
             core.value_tuple(&[unit, unit]),
             core.value_injection(Summand::from(1_usize), unit),
             core.value_constructor(
+                ConstantIndex::from(1_usize),
                 constructor_type,
                 ConstructorTag::from(0_usize),
                 Vec::from([unit]),

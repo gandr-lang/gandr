@@ -2933,6 +2933,7 @@ fn close_value(
     };
     match *node {
         Value::Constructor {
+            family,
             datatype,
             tag,
             ref fields,
@@ -2954,6 +2955,7 @@ fn close_value(
             }
             else {
                 arena.value_constructor(
+                    family,
                     classifier,
                     tag,
                     rewritten.unwrap_or_else(|| fields.clone()),

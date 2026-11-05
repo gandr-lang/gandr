@@ -288,10 +288,20 @@ fn a_data_type_relates_its_constructors_fieldwise()
     };
     let (first, second) = (scalars.first, scalars.second);
     let circle = |arena: &mut TermArena, radius| {
-        arena.value_constructor(shape, ConstructorTag::from(0_usize), vec![radius])
+        arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            shape,
+            ConstructorTag::from(0_usize),
+            vec![radius],
+        )
     };
     let rectangle = |arena: &mut TermArena, width, height| {
-        arena.value_constructor(shape, ConstructorTag::from(1_usize), vec![width, height])
+        arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            shape,
+            ConstructorTag::from(1_usize),
+            vec![width, height],
+        )
     };
     let round = circle(&mut arena, first);
     let other_round = circle(&mut arena, second);

@@ -374,10 +374,11 @@ fn structural_equality_ignores_addresses_but_not_labels()
     let left_injection = left.value_injection(Side::Left.into(), left_unit);
     let left_lift = left.value_lift(Level::zero(), left_unit);
     let left_datatype = left.value_type_data(0_usize.into(), alloc::vec![]);
-    let left_constructor = left.value_constructor(left_datatype, 1_usize.into(), alloc::vec![
-        left_unit,
-        left_variable
-    ]);
+    let left_constructor =
+        left.value_constructor(0_usize.into(), left_datatype, 1_usize.into(), alloc::vec![
+            left_unit,
+            left_variable
+        ]);
     let mut right = CoreArena::new();
     let other_zone = right.value_variable(Zone::Linear, 0_u32.into());
     let right_unit = right.value_unit();
@@ -388,17 +389,24 @@ fn structural_equality_ignores_addresses_but_not_labels()
     let right_injection = right.value_injection(Side::Left.into(), right_unit);
     let right_lift = right.value_lift(Level::zero(), right_unit);
     let erased = right.value_type_unknown();
-    let right_constructor = right.value_constructor(erased, 1_usize.into(), alloc::vec![
-        right_unit,
-        right_variable
-    ]);
-    let changed_ordinal = right.value_constructor(erased, 0_usize.into(), alloc::vec![
-        right_unit,
-        right_variable
-    ]);
+    let right_constructor =
+        right.value_constructor(0_usize.into(), erased, 1_usize.into(), alloc::vec![
+            right_unit,
+            right_variable
+        ]);
+    let changed_ordinal =
+        right.value_constructor(0_usize.into(), erased, 0_usize.into(), alloc::vec![
+            right_unit,
+            right_variable
+        ]);
     let changed_field =
-        right.value_constructor(erased, 1_usize.into(), alloc::vec![right_unit, right_unit]);
-    let dropped_field = right.value_constructor(erased, 1_usize.into(), alloc::vec![right_unit]);
+        right.value_constructor(0_usize.into(), erased, 1_usize.into(), alloc::vec![
+            right_unit, right_unit
+        ]);
+    let dropped_field =
+        right.value_constructor(0_usize.into(), erased, 1_usize.into(), alloc::vec![
+            right_unit
+        ]);
     for (a, b) in [
         (left_unit, right_unit),
         (left_variable, right_variable),

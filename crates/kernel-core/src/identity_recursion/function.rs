@@ -1316,10 +1316,10 @@ struct Crossing
 /// # Specification
 /// - requires: `fields` holds each field's patterns in declaration order.
 /// - ensures: one pattern per choice of a pattern at every field, in the order
-///   a nested product's patterns take, each side a constructor of `datatype` at
-///   `tag` over the field values the choice makes.
+///   a nested product's patterns take, each side a constructor of `datatype`'s
+///   family at `tag` over the field values the choice makes.
 /// - fails: Budget when `allowance` runs out or a telescope's length leaves the
-///   binder range.
+///   binder range; Arena when `datatype` is no data application.
 /// - panics: none.
 ///
 /// # Errors
@@ -1340,10 +1340,14 @@ fn constructor_patterns(
 ) -> Result<Vec<RelatedPattern>, RelationError>
 {
     let (datatype, tag) = shape;
+    let Some(&ValueType::Data { declaration, .. }) = arena.value_type(datatype)
+    else {
+        return Err(RelationError::Arena);
+    };
     let mut fields = fields.into_iter().rev();
     let Some(last) = fields.next()
     else {
-        let value = arena.value_constructor(datatype, tag, Vec::new());
+        let value = arena.value_constructor(declaration, datatype, tag, Vec::new());
         return Ok(Vec::from([RelatedPattern {
             context: Vec::new(),
             left: value,
@@ -1409,12 +1413,12 @@ fn constructor_patterns(
         .into_iter()
         .map(|crossing| {
             let shared = crossing.lefts == crossing.rights;
-            let left = arena.value_constructor(datatype, tag, crossing.lefts);
+            let left = arena.value_constructor(declaration, datatype, tag, crossing.lefts);
             let right = if shared {
                 left
             }
             else {
-                arena.value_constructor(datatype, tag, crossing.rights)
+                arena.value_constructor(declaration, datatype, tag, crossing.rights)
             };
             RelatedPattern {
                 context: crossing.context,

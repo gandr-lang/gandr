@@ -2070,7 +2070,12 @@ fn a_partial_fixpoint_that_never_reads_itself_unfolds_at_its_gate_2833()
     let mut arena = TermArena::new();
     let none = Unfoldings::default();
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let unit = arena.value_unit();
     let motive = arena.comp_type_returner(nat);
     let returns_unit = arena.computation_return(unit);
@@ -2119,8 +2124,18 @@ fn a_fixpoint_at_a_returned_endpoint_runs_the_endpoint_first()
     let mut arena = TermArena::new();
     let none = Unfoldings::default();
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
-    let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![zero]);
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let one = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![zero],
+    );
     let motive = arena.comp_type_returner(nat);
     let on_zero = arena.computation_return(zero);
     let field = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -2167,16 +2182,30 @@ fn a_stuck_fixpoint_compares_its_leading_arguments_626()
     // by its body and its leading argument.
     let mut arena = TermArena::new();
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
-    let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![zero]);
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let one = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![zero],
+    );
     let motive = arena.comp_type_returner(nat);
     let accumulated = arena.value_variable(DeBruijnIndex::from(1_u32));
     let on_zero = arena.computation_return(accumulated);
     let recursive = arena.value_variable(DeBruijnIndex::from(3_u32));
     let forced = arena.computation_force(recursive);
     let accumulator = arena.value_variable(DeBruijnIndex::from(2_u32));
-    let grown =
-        arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![accumulator]);
+    let grown = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![accumulator],
+    );
     let leading = arena.computation_application(forced, grown);
     let field = arena.value_variable(DeBruijnIndex::from(0_u32));
     let call = arena.computation_application(leading, field);
@@ -2188,7 +2217,12 @@ fn a_stuck_fixpoint_compares_its_leading_arguments_626()
         position: gandr_kernel_term::StagedPosition::from(1_usize),
     });
     let free = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![free]);
+    let successor = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![free],
+    );
     let from_one = arena.computation_application(count, one);
     let stuck = arena.computation_application(from_one, free);
     let from_zero = arena.computation_application(count, zero);
@@ -2237,8 +2271,18 @@ fn a_projected_joint_fixpoint_unfolds_at_its_component_s_constructor_3879()
     // return.
     let mut arena = TermArena::new();
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
-    let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![zero]);
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let one = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![zero],
+    );
     let motive = arena.comp_type_returner(nat);
     // Under `self, n`, then the successor's field `x`.
     let component = |arena: &mut TermArena, on_zero: ValueId, other: usize| {
@@ -2302,8 +2346,18 @@ fn a_staged_fixpoint_unfolds_the_constant_at_its_staged_argument_3387()
     // `one`, apart from `return Z`.
     let mut arena = TermArena::new();
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
-    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![zero]);
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let successor = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![zero],
+    );
     let motive = arena.comp_type_returner(nat);
     let leading = arena.value_variable(DeBruijnIndex::from(1_u32));
     let on_zero = arena.computation_return(leading);
@@ -2358,7 +2412,12 @@ fn an_endpoint_reads_a_bind_through_its_stuck_call()
     // the returner stay apart.
     let mut arena = TermArena::new();
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let motive = arena.comp_type_returner(nat);
     let on_zero = arena.computation_return(zero);
     let field = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -2368,12 +2427,22 @@ fn an_endpoint_reads_a_bind_through_its_stuck_call()
     let body = arena.computation_lambda(cases);
     let pred = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
     let stuck = arena.computation_application(pred, field);
-    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![field]);
+    let successor = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![field],
+    );
     let continuation = arena.computation_return(successor);
     let bound = arena.computation_bind(stuck, continuation);
     let endpoint = arena.value_returned(bound);
     let call = arena.value_returned(stuck);
-    let expected = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![call]);
+    let expected = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![call],
+    );
     let returned = arena.computation_return(expected);
     let watermark = arena.watermark();
 
@@ -2409,7 +2478,12 @@ fn an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_definition_761()
     // whole and the sides stood apart.
     let mut arena = TermArena::new();
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let motive = arena.comp_type_returner(nat);
     let on_zero = arena.computation_return(zero);
     let field = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -2419,7 +2493,12 @@ fn an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_definition_761()
     let body = arena.computation_lambda(cases);
     let pred = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
     let stuck = arena.computation_application(pred, field);
-    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![field]);
+    let successor = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![field],
+    );
     let wrapped = arena.computation_return(successor);
     let wrapping = arena.computation_lambda(wrapped);
     let wrapping = arena.value_thunk(wrapping);
@@ -2430,7 +2509,12 @@ fn an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_definition_761()
     let bound = arena.computation_bind(stuck, continuation);
     let endpoint = arena.value_returned(bound);
     let call = arena.value_returned(stuck);
-    let expected = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![call]);
+    let expected = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![call],
+    );
     let unfold = [
         ConversionDecision::Unfold {
             constant: ReplayNode::Constant(ConstantIndex::from(1_usize)),
@@ -2464,7 +2548,12 @@ fn an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_binder_2773()
     // whole and the first pair stood apart.
     let mut arena = TermArena::new();
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let motive = arena.comp_type_returner(nat);
     let on_zero = arena.computation_return(zero);
     let field = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -2595,7 +2684,12 @@ fn an_endpoint_passes_over_a_bind_its_own_elimination_built()
     // out, over both, as `S` over the call.
     let mut arena = TermArena::new();
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let motive = arena.comp_type_returner(nat);
     let on_zero = arena.computation_return(zero);
     let field = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -2607,12 +2701,22 @@ fn an_endpoint_passes_over_a_bind_its_own_elimination_built()
     let stuck = arena.computation_application(pred, field);
     let inner = arena.value_returned(stuck);
     let outer = arena.computation_application(pred, inner);
-    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![field]);
+    let successor = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![field],
+    );
     let continuation = arena.computation_return(successor);
     let bound = arena.computation_bind(outer, continuation);
     let endpoint = arena.value_returned(bound);
     let call = arena.value_returned(outer);
-    let expected = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![call]);
+    let expected = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![call],
+    );
 
     assert_eq!(
         convert(
@@ -2636,7 +2740,12 @@ fn an_endpoint_stays_over_the_eta_expansion_of_its_stuck_call_473()
     // budget.
     let mut arena = TermArena::new();
     let nat = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let opaque = arena.value_constant(ConstantIndex::from(0_usize));
     let forced = arena.computation_force(opaque);
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -2669,7 +2778,12 @@ fn an_endpoint_stays_over_the_run_of_its_transported_operand_473()
     // and convert.
     let mut arena = TermArena::new();
     let nat = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let opaque = arena.value_constant(ConstantIndex::from(0_usize));
     let forced = arena.computation_force(opaque);
     let endpoint = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -2876,14 +2990,18 @@ fn a_returned_leaf_of_a_presented_term_reads_before_the_rules()
         let _circle = environment.add_decl(staged).expect("the circle admits");
         let mut arena = environment.arena().clone();
         let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-        let at_base = arena.value_constructor(own, base, Vec::new());
-        let back = arena.value_constructor(own, unlooped, alloc::vec![at_base]);
+        let at_base = arena.value_constructor(ConstantIndex::from(0_usize), own, base, Vec::new());
+        let back =
+            arena.value_constructor(ConstantIndex::from(0_usize), own, unlooped, alloc::vec![
+                at_base
+            ]);
         let returns_back = arena.computation_return(back);
         let wound = arena.value_thunk(returns_back);
         let named = arena.value_constant(ConstantIndex::from(1_usize));
         let forced = arena.computation_force(named);
         let leaf = arena.value_returned(forced);
-        let word = arena.value_constructor(own, looped, alloc::vec![leaf]);
+        let word =
+            arena.value_constructor(ConstantIndex::from(0_usize), own, looped, alloc::vec![leaf]);
         let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque, Unfoldable::Body(wound)])
             .presenting(Presentations::of(environment.entries()));
         run(
@@ -2949,15 +3067,26 @@ fn a_compared_pair_reads_presented_points_by_their_rules_1723()
         let mut arena = environment.arena().clone();
         let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
         let point = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let word = arena.value_constructor(own, looped, alloc::vec![point]);
+        let word = arena.value_constructor(ConstantIndex::from(0_usize), own, looped, alloc::vec![
+            point
+        ]);
         let left = arena.value_here(word);
         let right = if peaked {
-            let back = arena.value_constructor(own, unlooped, alloc::vec![word]);
-            let peak = arena.value_constructor(own, looped, alloc::vec![back]);
+            let back =
+                arena.value_constructor(ConstantIndex::from(0_usize), own, unlooped, alloc::vec![
+                    word
+                ]);
+            let peak =
+                arena.value_constructor(ConstantIndex::from(0_usize), own, looped, alloc::vec![
+                    back
+                ]);
             arena.value_here(peak)
         }
         else {
-            let other = arena.value_constructor(own, unlooped, alloc::vec![point]);
+            let other =
+                arena.value_constructor(ConstantIndex::from(0_usize), own, unlooped, alloc::vec![
+                    point
+                ]);
             arena.value_here(other)
         };
         let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque])
@@ -3056,13 +3185,16 @@ fn a_cong_chain_composing_to_the_identity_replays_as_its_path()
         let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
         let letter = |arena: &mut TermArena, tag| {
             let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
-            let word = arena.value_constructor(own, tag, alloc::vec![occurrence]);
+            let word =
+                arena.value_constructor(ConstantIndex::from(0_usize), own, tag, alloc::vec![
+                    occurrence
+                ]);
             let returned = arena.computation_return(word);
             let lambda = arena.computation_lambda(returned);
             arena.value_thunk(lambda)
         };
         let functions = [letter(&mut arena, looped), letter(&mut arena, unlooped)];
-        let at_base = arena.value_constructor(own, base, Vec::new());
+        let at_base = arena.value_constructor(ConstantIndex::from(0_usize), own, base, Vec::new());
         let path = arena.value_variable(DeBruijnIndex::from(0_u32));
         let cong = |arena: &mut TermArena, function: usize, (along_bound, at_here, left_fixed)| {
             let named = arena.value_constant(ConstantIndex::from(function));
@@ -3205,13 +3337,16 @@ fn a_run_composing_to_the_identity_reads_as_its_bound_computation_4255()
         let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
         let letter = |arena: &mut TermArena, tag| {
             let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
-            let word = arena.value_constructor(own, tag, alloc::vec![occurrence]);
+            let word =
+                arena.value_constructor(ConstantIndex::from(0_usize), own, tag, alloc::vec![
+                    occurrence
+                ]);
             let returned = arena.computation_return(word);
             let lambda = arena.computation_lambda(returned);
             arena.value_thunk(lambda)
         };
         let functions = [letter(&mut arena, looped), letter(&mut arena, unlooped)];
-        let at_base = arena.value_constructor(own, base, Vec::new());
+        let at_base = arena.value_constructor(ConstantIndex::from(0_usize), own, base, Vec::new());
         // `cong(function, v)` for the constant at `function`, `v` the
         // variable at index 0: the transport of `here(base)` along `v` in
         // the family `c. Path[.A = own](base, function(c))`.
@@ -4730,8 +4865,10 @@ fn a_refutation_at_a_presented_term_is_not_authoritative()
         let _sort = environment.add_decl(staged).expect("the sort admits");
         let mut arena = environment.arena().clone();
         let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-        let at_base = arena.value_constructor(own, base, Vec::new());
-        let word = arena.value_constructor(own, looped, alloc::vec![at_base]);
+        let at_base = arena.value_constructor(ConstantIndex::from(0_usize), own, base, Vec::new());
+        let word = arena.value_constructor(ConstantIndex::from(0_usize), own, looped, alloc::vec![
+            at_base
+        ]);
         let unit = arena.value_unit();
         let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque])
             .presenting(Presentations::of(environment.entries()));
@@ -5098,7 +5235,12 @@ fn a_recursion_under_its_parameters_reads_as_its_call_3733()
     };
     // `⟨c(d, e, S(m))⟩` for the free `d` 2, `e` 1 and `m` 0.
     let m = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), alloc::vec![m]);
+    let successor = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        alloc::vec![m],
+    );
     let run = call(&mut arena, [2, 1], successor);
     let run = arena.value_returned(run);
     // `thunk { λz. c(x, y, m) }`, the free variables one binder deeper.

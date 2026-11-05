@@ -94,6 +94,7 @@ impl Machine<'_, '_>
                 ref datatype,
                 ref tag,
                 ref fields,
+                ..
             } => (*datatype, *tag, fields.len()),
             &Value::Primitive { .. }
             | &Value::PathRefl(_)
@@ -279,6 +280,7 @@ impl Machine<'_, '_>
             datatype,
             tag,
             ref fields,
+            ..
         } = self.value(term)?
         else {
             return Err(CheckRefusal::MachineInvariant);
@@ -578,6 +580,7 @@ impl Machine<'_, '_>
             return Err(mismatch);
         }
         let &Value::Constructor {
+            family,
             datatype: written,
             ref fields,
             ..
@@ -587,7 +590,7 @@ impl Machine<'_, '_>
         };
         let fields = fields.clone();
         let arena = self.context.arena_mut();
-        let at_stated = arena.value_constructor(stated, tag, fields);
+        let at_stated = arena.value_constructor(family, stated, tag, fields);
         let restated = arena.value_ascribe(at_stated, written);
         self.context.record_restated(term, restated);
         Ok(())

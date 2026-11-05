@@ -308,9 +308,18 @@ fn forms() -> Vec<Form>
             what: "case Succ(Zero) { Zero => 0, Succ(n) => 1 }",
             build: |core| {
                 let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-                let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
-                let one =
-                    core.value_constructor(nat, ConstructorTag::from(1_usize), Vec::from([zero]));
+                let zero = core.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    nat,
+                    ConstructorTag::from(0_usize),
+                    Vec::new(),
+                );
+                let one = core.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    nat,
+                    ConstructorTag::from(1_usize),
+                    Vec::from([zero]),
+                );
                 let [first, _, _] = one_two_three(core);
                 let naught = integer(core, Integer(0));
                 let returns_naught = core.computation_return(naught);
@@ -500,9 +509,18 @@ fn forms() -> Vec<Form>
             what: "return Succ(Zero)",
             build: |core| {
                 let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-                let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
-                let one =
-                    core.value_constructor(nat, ConstructorTag::from(1_usize), Vec::from([zero]));
+                let zero = core.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    nat,
+                    ConstructorTag::from(0_usize),
+                    Vec::new(),
+                );
+                let one = core.value_constructor(
+                    ConstantIndex::from(0_usize),
+                    nat,
+                    ConstructorTag::from(1_usize),
+                    Vec::from([zero]),
+                );
                 (core.computation_return(one), Vec::from([None]))
             },
             ends: Ends::Shows("⟨ctor[1](ctor[0]()) |+ ★⟩"),

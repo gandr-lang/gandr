@@ -440,6 +440,7 @@ pub(super) fn constructor(
             ref datatype,
             ref tag,
             ref fields,
+            ..
         } => (*datatype, *tag, fields.len()),
         &Value::Record(_)
         | &Value::SessionPath { .. }
@@ -709,7 +710,7 @@ fn result_index(
 pub(super) fn branch_type(
     arena: &mut TermArena,
     session: &mut SupportContext,
-    (datatype, tag): (ValueTypeId, ConstructorTag),
+    (declaration, datatype, tag): (ConstantIndex, ValueTypeId, ConstructorTag),
     (fields, parameters): (&[ValueTypeId], ParameterPrefix),
     (indices, stated): (&[ValueTypeId], &[ValueId]),
     motive: CompTypeId,
@@ -730,7 +731,7 @@ pub(super) fn branch_type(
         .rev()
         .map(|index| arena.value_variable(DeBruijnIndex::from(index)))
         .collect();
-    let constructor = arena.value_constructor(shifted_datatype, tag, values);
+    let constructor = arena.value_constructor(declaration, shifted_datatype, tag, values);
     let shifted = rewrite::shift_comp_type(
         arena,
         table,
@@ -988,7 +989,7 @@ pub(super) fn case(
         let expected = branch_type(
             arena,
             session,
-            (datatype, tag),
+            (declaration, datatype, tag),
             (fields, ParameterPrefix(signature.parameters.len())),
             (signature.indices, stated),
             motive,

@@ -696,7 +696,8 @@ impl Code
         fields: Vec<ValueId>,
     ) -> ValueId
     {
-        self.arena.value_constructor(self.theory, tag, fields)
+        self.arena
+            .value_constructor(ConstantIndex::from(0_usize), self.theory, tag, fields)
     }
 
     /// The end of a chain.

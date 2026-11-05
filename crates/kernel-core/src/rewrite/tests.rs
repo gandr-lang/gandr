@@ -1753,7 +1753,12 @@ fn build(
         Former::Constructor => {
             let datatype = c.value_type(arena);
             let fields = Vec::from([c.value(arena), c.value(arena)]);
-            AnyNode::Value(arena.value_constructor(datatype, ConstructorTag::from(0_usize), fields))
+            AnyNode::Value(arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                datatype,
+                ConstructorTag::from(0_usize),
+                fields,
+            ))
         },
         Former::Record => {
             let fields =

@@ -1164,7 +1164,12 @@ fn cases() -> Vec<Case>
     let mut core = CoreArena::new();
     let nat = core.value_type_data(ConstantIndex::from(1_usize), alloc::vec![]);
     let seven = integer(&mut core, Integer(7));
-    let scrutinee = core.value_constructor(nat, 1_usize.into(), alloc::vec![seven]);
+    let scrutinee = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        1_usize.into(),
+        alloc::vec![seven],
+    );
     let returned_type = core.value_type_unit();
     let motive = core.comp_type_returner(returned_type);
     let one = integer(&mut core, Integer(1));
@@ -1189,8 +1194,18 @@ fn cases() -> Vec<Case>
 
     let mut core = CoreArena::new();
     let nat = core.value_type_data(ConstantIndex::from(1_usize), alloc::vec![]);
-    let zero = core.value_constructor(nat, 0_usize.into(), alloc::vec![]);
-    let one = core.value_constructor(nat, 1_usize.into(), alloc::vec![zero]);
+    let zero = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        0_usize.into(),
+        alloc::vec![],
+    );
+    let one = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        1_usize.into(),
+        alloc::vec![zero],
+    );
     let returned_type = core.value_type_unit();
     let motive = core.comp_type_returner(returned_type);
     let base = core.computation_return(zero);

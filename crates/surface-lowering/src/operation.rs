@@ -1419,7 +1419,7 @@ fn built_value(
                     .map(|field| minted.get(field).copied())
                     .collect::<Option<Vec<_>>>()
                     .unwrap_or_default();
-                let constructed = mint.arena.value_constructor(datatype, tag, values);
+                let constructed = mint.arena.value_constructor(family, datatype, tag, values);
                 mint.value(constructed)
             },
         };

@@ -104,7 +104,8 @@ impl Minting<'_>
         fields: Vec<ValueId>,
     ) -> ValueId
     {
-        self.arena.value_constructor(self.code, tag, fields)
+        self.arena
+            .value_constructor(ConstantIndex::from(0_usize), self.code, tag, fields)
     }
 
     /// The value of the term `tokens` spell in pre-order.

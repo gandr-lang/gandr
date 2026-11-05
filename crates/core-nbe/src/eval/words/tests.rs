@@ -84,10 +84,30 @@ fn circle(core: &mut CoreArena) -> Circle
 {
     let carrier = core.value_type_data(ConstantIndex::from(SORT), Vec::new());
     let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
-    let point = core.value_constructor(carrier, ConstructorTag::from(0_usize), Vec::new());
-    let empty = core.value_constructor(own, ConstructorTag::from(0_usize), Vec::new());
-    let letter = core.value_constructor(own, ConstructorTag::from(1_usize), vec![empty]);
-    let inverse = core.value_constructor(own, ConstructorTag::from(2_usize), vec![empty]);
+    let point = core.value_constructor(
+        ConstantIndex::from(SORT),
+        carrier,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let empty = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let letter = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![empty],
+    );
+    let inverse = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(2_usize),
+        vec![empty],
+    );
     let named = core.value_constant(ConstantIndex::from(LOOP));
     let kept = core.comp_type_returner(carrier);
     let at_point = core.computation_return(point);
@@ -354,7 +374,12 @@ fn cong_along_the_loop_reads_both_arguments_of_a_diagonal_464()
     let chain = chain(&circle, Count::Recorded);
     let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
     let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let twice = core.value_constructor(own, ConstructorTag::from(1_usize), vec![circle.letter]);
+    let twice = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![circle.letter],
+    );
     let twice = core.computation_return(twice);
     let looped = core.computation_return(circle.letter);
     // `cong(y. first(y, y), loop)` and `cong(y. second(y, y), loop)`: the
@@ -442,12 +467,22 @@ fn a_word_appends_on_its_first_word()
         "the empty word moved along a path is the path"
     );
     // `(loop ∷ p) then q` is `loop ∷ (p then q)`.
-    let consed = core.value_constructor(own, ConstructorTag::from(1_usize), vec![before]);
+    let consed = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![before],
+    );
     let appended = core.computation_path_transport(family, after, consed);
     let appended = binary(&mut core, appended);
     let rest = core.computation_path_transport(family, after, before);
     let held = core.value_returned(rest);
-    let prefixed = core.value_constructor(own, ConstructorTag::from(1_usize), vec![held]);
+    let prefixed = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(1_usize),
+        vec![held],
+    );
     let prefixed = core.computation_return(prefixed);
     let prefixed = binary(&mut core, prefixed);
     assert_eq!(
@@ -455,7 +490,12 @@ fn a_word_appends_on_its_first_word()
         Some(MachineVerdict::Convertible),
         "a letter before a path moved along another stays first"
     );
-    let inverted = core.value_constructor(own, ConstructorTag::from(2_usize), vec![held]);
+    let inverted = core.value_constructor(
+        ConstantIndex::from(WORDS),
+        own,
+        ConstructorTag::from(2_usize),
+        vec![held],
+    );
     let inverted = core.computation_return(inverted);
     let inverted = binary(&mut core, inverted);
     assert_eq!(
@@ -586,13 +626,18 @@ fn spelled(
 {
     let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
     letters.iter().rev().fold(
-        core.value_constructor(own, ConstructorTag::from(0_usize), Vec::new()),
+        core.value_constructor(
+            ConstantIndex::from(WORDS),
+            own,
+            ConstructorTag::from(0_usize),
+            Vec::new(),
+        ),
         |tail, letter| {
             let tag = match *letter {
                 Letter::Loop => ConstructorTag::from(1_usize),
                 Letter::Inverse => ConstructorTag::from(2_usize),
             };
-            core.value_constructor(own, tag, vec![tail])
+            core.value_constructor(ConstantIndex::from(WORDS), own, tag, vec![tail])
         },
     )
 }

@@ -162,7 +162,12 @@ fn program() -> Program
         arena.value_type_thunk(arrow)
     };
     let doubling = {
-        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+        let zero = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            nat,
+            ConstructorTag::from(0_usize),
+            vec![],
+        );
         let on_zero = arena.computation_return(zero);
         // Under the field: p 0, x 1, rec 2.
         let recursive = var(&mut arena, DeBruijnIndex::from(2));
@@ -170,8 +175,18 @@ fn program() -> Program
         let forced = arena.computation_force(recursive);
         let call = arena.computation_application(forced, field);
         let result = var(&mut arena, DeBruijnIndex::from(0));
-        let once = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![result]);
-        let twice = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![once]);
+        let once = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            nat,
+            ConstructorTag::from(1_usize),
+            vec![result],
+        );
+        let twice = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            nat,
+            ConstructorTag::from(1_usize),
+            vec![once],
+        );
         let returned = arena.computation_return(twice);
         let bound = arena.computation_bind(call, returned);
         let on_successor = arena.computation_lambda(bound);
@@ -423,7 +438,12 @@ fn rose_program() -> Program
         let motive = arena.comp_type_returner(to);
         let element = var(&mut arena, DeBruijnIndex::from(3));
         let to = arena.value_type_data(ConstantIndex::from(1_usize), vec![element]);
-        let nil = arena.value_constructor(to, ConstructorTag::from(0_usize), vec![]);
+        let nil = arena.value_constructor(
+            ConstantIndex::from(1_usize),
+            to,
+            ConstructorTag::from(0_usize),
+            vec![],
+        );
         let on_nil = arena.computation_return(nil);
         // Under λx λrest: `rest` 0, `x` 1, `m` 3, `g` 4; under `y`, `rest`
         // 1 and `m` 4; under `r`, `r` 0, `y` 1 and `b` 7.
@@ -437,7 +457,12 @@ fn rose_program() -> Program
         let to = arena.value_type_data(ConstantIndex::from(1_usize), vec![element]);
         let image = var(&mut arena, DeBruijnIndex::from(1));
         let images = var(&mut arena, DeBruijnIndex::from(0));
-        let cons = arena.value_constructor(to, ConstructorTag::from(1_usize), vec![image, images]);
+        let cons = arena.value_constructor(
+            ConstantIndex::from(1_usize),
+            to,
+            ConstructorTag::from(1_usize),
+            vec![image, images],
+        );
         let returned = arena.computation_return(cons);
         let inner = arena.computation_bind(recursed, returned);
         let outer = arena.computation_bind(mapped, inner);
@@ -463,8 +488,18 @@ fn rose_program() -> Program
         let classifier = arena.comp_type_arrow(rose, returner);
         let declared = arena.value_type_thunk(classifier);
         let nat_code = arena.value_quote(nat);
-        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
-        let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![zero]);
+        let zero = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            nat,
+            ConstructorTag::from(0_usize),
+            vec![],
+        );
+        let one = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            nat,
+            ConstructorTag::from(1_usize),
+            vec![zero],
+        );
         let counted = arena.computation_return(one);
         // The node's arm under `kids` 0, `t` 1, `s` 2.
         let helper = arena.value_constant(ConstantIndex::from(3_usize));

@@ -412,14 +412,15 @@ fn constructed(
 ) -> ValueId
 {
     let index = popped_value(arena, values);
-    let datatype = arena.value_type_data(ConstantIndex::from(0_usize), Vec::from([index]));
+    let family = ConstantIndex::from(0_usize);
+    let datatype = arena.value_type_data(family, Vec::from([index]));
     let fields = if tag == ConstructorTag::from(0_usize) {
         Vec::new()
     }
     else {
         Vec::from([popped_value(arena, values)])
     };
-    arena.value_constructor(datatype, tag, fields)
+    arena.value_constructor(family, datatype, tag, fields)
 }
 
 /// How many cells a generated list holds.

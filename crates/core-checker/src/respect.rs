@@ -252,6 +252,10 @@ pub fn respected(
         ),
         Reading::Case { datatype } => (at, datatype, 0_u32),
     };
+    let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(datatype)
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
     for (index, rule) in signature.presentation().rules().iter().enumerate() {
         let bound = u32::from(rule.variables());
         let amount = Binders::from(
@@ -281,7 +285,9 @@ pub fn respected(
                     Zone::Intuitionistic,
                     pattern_binder(rule.variables(), variable),
                 ),
-                RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
+                RuleNode::Constructor(tag) => {
+                    arena.value_constructor(declaration, datatype, tag, fields)
+                },
             })
             .map_err(|_fault| CheckRefusal::MachineInvariant)
         };

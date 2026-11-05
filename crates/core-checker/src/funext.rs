@@ -258,8 +258,9 @@ enum Task
     /// Pair the two coverages beneath, the second on top.
     Product,
     /// Cross this many field coverages beneath, the last on top, and apply
-    /// this data type's constructor of this tag to each crossing.
-    Constructor(ValueTypeId, ConstructorTag, usize),
+    /// this family's constructor of this tag, at this data type, to each
+    /// crossing.
+    Constructor(ConstantIndex, ValueTypeId, ConstructorTag, usize),
     /// Join the coverages of this many constructors, the last on top, and
     /// close this data declaration, which opened them.
     Data(ConstantIndex, usize),
@@ -812,6 +813,7 @@ fn coverage(
                         tasks.push(Task::Data(declaration, signature.constructors().len()));
                         for (tag, fields) in signature.constructors().iter().enumerate().rev() {
                             tasks.push(Task::Constructor(
+                                declaration,
                                 head,
                                 ConstructorTag::from(tag),
                                 fields.len(),
@@ -933,7 +935,7 @@ fn coverage(
             // patterns: the earlier sides and their coordinates shift past the
             // new field's binders, so every variable stays distinct, and the
             // first field's patterns stay outermost, as a pair's do.
-            Task::Constructor(datatype, tag, arity) => {
+            Task::Constructor(declaration, datatype, tag, arity) => {
                 let start = built
                     .len()
                     .checked_sub(arity)
@@ -982,12 +984,12 @@ fn coverage(
                 for (sides, binders, coordinates) in crossings {
                     let (lefts, rights): (Vec<ValueId>, Vec<ValueId>) = sides.into_iter().unzip();
                     let shared = lefts == rights;
-                    let left = arena.value_constructor(datatype, tag, lefts);
+                    let left = arena.value_constructor(declaration, datatype, tag, lefts);
                     let right = if shared {
                         left
                     }
                     else {
-                        arena.value_constructor(datatype, tag, rights)
+                        arena.value_constructor(declaration, datatype, tag, rights)
                     };
                     joined.push(Pattern {
                         binders,
