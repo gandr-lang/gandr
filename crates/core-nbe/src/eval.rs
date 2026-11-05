@@ -222,7 +222,9 @@
 //! fuel every task is charged, not by the claim. Certification is where the
 //! claim matters. The kernel replays a structural-descent unfolding at a
 //! constructor and declines a partial one, so a decision the machine reached
-//! through a partial unfolding is computed but never certified.
+//! through a partial unfolding is computed but never certified. The fixpoint
+//! of a ruled operation is the exception: its rules terminate, and the kernel
+//! replays its unfolding too.
 //!
 //! # The fixpoint decision
 //!

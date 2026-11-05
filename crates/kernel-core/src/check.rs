@@ -585,7 +585,7 @@ fn read_returned(
     if structural == Convertibility::Distinct && judgement.related.is_empty() {
         return Ok(EndpointReading::Apart);
     }
-    let unfoldings = entry_unfoldings(judgement);
+    let unfoldings = entry_unfoldings(arena, judgement);
     if structural == Convertibility::Convertible
         && read_endpoints(
             arena,
@@ -604,14 +604,14 @@ fn read_returned(
 }
 
 /// The unfoldings a judgement's readings run at: the body of every admitted
-/// definition, every other entry opaque, the judgement's presentations and
-/// its lawful atoms' relations.
+/// definition, every other entry opaque, the judgement's presentations, its
+/// lawful atoms' relations and its ruled definitions' fixpoints.
 ///
 /// # Specification
 /// - ensures: one unfolding per entry of `judgement`, in order — the body of a
 ///   definition, [`Unfoldable::Opaque`] for a datatype, a codata type, an axiom
-///   or an abstract type — presenting the judgement's presentations and
-///   identifying its entries' lawful atoms.
+///   or an abstract type — presenting the judgement's presentations,
+///   identifying its entries' lawful atoms and ruling its ruled definitions.
 /// - executable: none — the unfoldings expose no per-constant listing to
 ///   compare with the entries.
 ///
@@ -622,7 +622,10 @@ fn read_returned(
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
 /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
-fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
+fn entry_unfoldings(
+    arena: &TermArena,
+    judgement: Judgement<'_>,
+) -> Unfoldings
 {
     Unfoldings::new(
         judgement
@@ -639,6 +642,7 @@ fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
     )
     .presenting(judgement.presentations.clone())
     .identifying(judgement.entries)
+    .ruling(arena, judgement.entries)
 }
 
 /// `ty`, or the type its code quotes when `ty` decodes a returned code that
@@ -688,7 +692,7 @@ fn read_returned_decode(
     if !matches!(arena.value(code), Some(Value::Returned(_))) {
         return ty;
     }
-    let unfoldings = entry_unfoldings(judgement);
+    let unfoldings = entry_unfoldings(arena, judgement);
     read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(ty)
 }
 
@@ -731,7 +735,7 @@ fn read_returned_comp_decode(
     if !matches!(arena.value(code), Some(Value::Returned(_))) {
         return ty;
     }
-    let unfoldings = entry_unfoldings(judgement);
+    let unfoldings = entry_unfoldings(arena, judgement);
     read_comp_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(ty)
 }
 
@@ -3328,17 +3332,19 @@ fn resolve_constant(
 }
 
 /// The δ-rules the admission log offers a replay: each definition's body at
-/// its admission position, every other declaration opaque; and the presented
-/// types whose terms the replay rewrites.
+/// its admission position, every other declaration opaque; the presented
+/// types whose terms the replay rewrites; and the ruled definitions'
+/// fixpoints, which unfold at a partial gate.
 ///
 /// # Specification
 /// - requires: the judgement's entries are the environment's admission log, in
-///   admission order, every body minted into the arena the replay runs in, and
-///   its presentations are those of the entries.
+///   admission order, every body minted into `arena`, the arena the replay runs
+///   in, and its presentations are those of the entries.
 /// - ensures: [`Unfoldable::Body`] at each definition's position and
 ///   [`Unfoldable::Opaque`] at every data declaration, axiom and abstract type,
 ///   one entry per admitted declaration, presenting the judgement's
-///   presentations and identifying its entries' lawful atoms.
+///   presentations, identifying its entries' lawful atoms and ruling its ruled
+///   definitions.
 /// - provides: the unfoldings a persisted higher evaluation and a universe
 ///   path's round trips replay under, so a function either relates may name
 ///   what was admitted before it; and the bodies a respect obligation's cong
@@ -3361,7 +3367,10 @@ fn resolve_constant(
         | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
     }
 }) && ret.presentations() == judgement.presentations)]
-fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
+fn admitted_unfoldings(
+    arena: &TermArena,
+    judgement: Judgement<'_>,
+) -> Unfoldings
 {
     Unfoldings::new(
         judgement
@@ -3378,6 +3387,7 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
     )
     .presenting(judgement.presentations.clone())
     .identifying(judgement.entries)
+    .ruling(arena, judgement.entries)
 }
 
 /// Run the checker machine from an initial goal and context to a verdict,
@@ -4141,7 +4151,7 @@ where
                     else {
                         return Err(KernelError::ArenaFault);
                     };
-                    let unfoldings = entry_unfoldings(judgement);
+                    let unfoldings = entry_unfoldings(arena, judgement);
                     let Some(decoded) =
                         read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT)
                     else {
@@ -4399,10 +4409,11 @@ where
                         let dialogues = alloc::sync::Arc::clone(dialogues);
                         owed_components.clear();
                         owed_components.extend_from_slice(components);
+                        let unfoldings = admitted_unfoldings(arena, judgement);
                         let mut remaining = crate::element_identity::evaluation_obligations(
                             arena,
                             (
-                                &admitted_unfoldings(judgement),
+                                &unfoldings,
                                 crate::identity_recursion::Interfaces::of(judgement.entries),
                             ),
                             expected,
@@ -4430,10 +4441,11 @@ where
                         let steps = alloc::sync::Arc::clone(steps);
                         owed_values.clear();
                         owed_values.extend_from_slice(children);
+                        let unfoldings = admitted_unfoldings(arena, judgement);
                         let mut remaining = crate::element_identity::quantified_obligations(
                             arena,
                             (
-                                &admitted_unfoldings(judgement),
+                                &unfoldings,
                                 crate::identity_recursion::Interfaces::of(judgement.entries),
                             ),
                             expected,
@@ -5258,9 +5270,10 @@ where
                     }
                 },
                 Frame::Respect(case, reading) => {
+                    let unfoldings = admitted_unfoldings(arena, judgement);
                     respect::respected(
                         arena,
-                        (judgement.entries, &admitted_unfoldings(judgement)),
+                        (judgement.entries, &unfoldings),
                         case,
                         reading,
                         judgement.laws,
@@ -5272,12 +5285,8 @@ where
                     if matches!(M::ACTIVITY, MemoActivity::Active) {
                         session.read(arena.computation_support(case), &context);
                     }
-                    loops::respected(
-                        arena,
-                        &admitted_unfoldings(judgement),
-                        context.as_slice(),
-                        (case, datatype),
-                    )?;
+                    let unfoldings = admitted_unfoldings(arena, judgement);
+                    loops::respected(arena, &unfoldings, context.as_slice(), (case, datatype))?;
                 },
                 // A dependent split forms its motive under the scrutinee's
                 // binder, checks its body under the two components against the
@@ -5523,7 +5532,7 @@ where
                     // A translator may name what the environment admitted
                     // before it, so both round trips unfold its definitions.
                     let evidence = alloc::sync::Arc::clone(evidence);
-                    let unfoldings = admitted_unfoldings(judgement);
+                    let unfoldings = admitted_unfoldings(arena, judgement);
                     let watermark = arena.watermark();
                     let source = crate::path_universe::coverage::round_trip(
                         arena,
@@ -5613,9 +5622,10 @@ where
                     right,
                     dialogues,
                 } => {
+                    let unfoldings = admitted_unfoldings(arena, judgement);
                     crate::element_identity::reflexive_endpoints(
                         arena,
-                        &admitted_unfoldings(judgement),
+                        &unfoldings,
                         judgement.taking,
                         point,
                         (left, right),
@@ -5885,7 +5895,7 @@ where
                         | Value::QuoteComputation(_)
                         | Value::StaticApplication(..) => return Err(KernelError::ArenaFault),
                     };
-                    let unfoldings = admitted_unfoldings(judgement);
+                    let unfoldings = admitted_unfoldings(arena, judgement);
                     let watermark = arena.watermark();
                     let result = crate::flow_universe::forward(
                         arena,

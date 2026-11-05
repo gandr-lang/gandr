@@ -1,0 +1,33 @@
+// Paths whose endpoints call a recursive operation of a data block.
+//
+// The kernel replays each path that the checker admits. So the two engines
+// must reduce a call of the operation at an endpoint to the same value.
+//
+// The operation's rules compute the call. A path by reflexivity reads the
+// call at its endpoint, and the checker and the kernel reduce it to one value.
+//
+// - see: #4291 — `zeroPlusZero`, `zeroIsZeroPlusZero`, `onePlusOne`
+
+/// The naturals in unary, with an addition that its rules compute.
+data NatUnits : Type where {
+  /// Zero.
+  | Zero : NatUnits
+  /// The successor of `n`.
+  | Succ : (n : NatUnits) --> NatUnits
+  /// The sum of `m` and `n`, which the two rules compute by recursion on `m`.
+  oper add : (m : NatUnits, n : NatUnits) --> NatUnits;
+  /// Zero plus `n` is `n`.
+  rule : add Zero n <=> n;
+  /// The successor of `m`, plus `n`, is the successor of `m` plus `n`.
+  rule : add (Succ m) n <=> Succ (add m n);
+}
+
+/// The first rule makes zero plus zero zero.
+def zeroPlusZero : Path(add Zero Zero, Zero) = Path.here Zero;
+
+/// The call stands at the right endpoint. The point is its value.
+def zeroIsZeroPlusZero : Path(Zero, add Zero Zero) = Path.here Zero;
+
+/// One plus one is two. The second rule calls the operation again, and the
+/// first rule ends the call.
+def onePlusOne : Path(add (Succ Zero) (Succ Zero), Succ (Succ Zero)) = Path.here (Succ (Succ Zero));
