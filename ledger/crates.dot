@@ -17,6 +17,7 @@ digraph crates {
     "theory-deep-inference";
     "theory-dynamic-graphs";
     "theory-exact-reals";
+    "theory-graded-posets";
     "theory-graphs";
     "theory-levitation";
     "theory-nominal-automata";
@@ -336,6 +337,7 @@ digraph crates {
   "theory-deep-inference" -> "theory-coherent-resolutions";
   "theory-dynamic-graphs" -> "theory-graphs";
   "theory-dynamic-graphs" -> "theory-order-maintenance";
+  "theory-graded-posets" -> "theory-stone-duality";
   "theory-graphs" -> "theory-spec-combinators";
   "theory-levitation" -> "theory-path-orders";
   "theory-ordered-algebras" -> "theory-exact-reals";

@@ -557,3 +557,37 @@ fn the_face_poset_is_the_spectrum_only_where_each_face_is_a_least_face()
         );
     }
 }
+
+#[test]
+fn the_band_entails_one_corpus_face_from_another_exactly_by_inclusion()
+{
+    // The face poset of a corpus shape: its nonempty named faces and the
+    // whole carrier. `gandr-theory-graded-posets` orders these cells by
+    // inclusion of their points, and this crate's entailment decides the same
+    // order for each pair.
+    let mut cells: Vec<Mask> = Vec::new();
+    for shape in corpus() {
+        cells.clear();
+        cells.extend(
+            shape
+                .faces
+                .members()
+                .filter(|face| face.0 != 0)
+                .chain([whole(shape.carrier)]),
+        );
+        for &lower in &cells {
+            for &upper in &cells {
+                let order = match included(lower, upper) {
+                    Membership::Inside => Verdict::Holds,
+                    Membership::Outside => Verdict::Refuted,
+                };
+                assert_eq!(
+                    entails(shape.carrier, lower, Family::single(upper)),
+                    order,
+                    "the cells {lower:?} and {upper:?} of {}",
+                    shape.named
+                );
+            }
+        }
+    }
+}

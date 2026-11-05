@@ -71,7 +71,7 @@ Two crate families present a space. The cell family presents a space by its cell
 
 | Family | Presents a space by | Crates |
 | ------ | ------------------- | ------ |
-| cell | its cells and their faces | none yet |
+| cell | its cells and their faces | `theory-graded-posets` |
 | algebra | its algebra of observations | `theory-stone-duality`, `theory-ordered-algebras`, `theory-exact-reals` |
 
 Each crate above has one place in the frame.
@@ -88,6 +88,7 @@ Each crate above has one place in the frame.
 | `theory-computads` | present: descriptions elaborated into cells |
 | `theory-dynamic-graphs` | measure: the tropical potentials of universe levels |
 | `theory-exact-reals` | the algebra family's exact reals |
+| `theory-graded-posets` | the cell family's present: a finite poset with its cells as data, and its lattice of subcomplexes |
 | `theory-ordered-algebras` | the algebra family's measure: ordered semirings and their law checks |
 | `theory-shapes` | present: finite shapes and their face formulas |
 | `theory-sites` | present: the site of shapes |

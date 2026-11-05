@@ -19,5 +19,3 @@ mod faces;
 mod finite;
 #[cfg(test)]
 mod spectrum;
-#[cfg(test)]
-mod subcomplexes;

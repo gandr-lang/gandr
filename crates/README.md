@@ -81,13 +81,14 @@ crates/
 ├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web and its linearizations, the flow projection, guarded-family prices
 ├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
 ├── theory-exact-reals/            canonical dyadics with directed rounding, oriented intervals with outward-rounded arithmetic, and the scoped plan DAG with its canonical bytes, beside the kernel and never inside it
+├── theory-graded-posets/          graded posets with cells as data
 ├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             the code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
 ├── theory-nominal-automata/       nominal word and tree automata over caller-owned names, literal word membership and name dropping
 ├── theory-order-maintenance/      order maintenance with constant-time comparison
 ├── theory-ordered-algebras/       one law checker for ordered semirings, a counterexample for each broken law, and the max-plus semiring and the Lawvere quantale over exact dyadics
 ├── theory-path-orders/            path orders over second-order algebraic terms, the precedence as data, returning a derivation a checker replays
-├── theory-shapes/                 finite shapes: decidable subshapes, inclusions with complements, the outer pushout and its mediator, and face entailment in three bands, derived or refuted
+├── theory-shapes/                 finite shapes: decidable subshapes, inclusions, the outer pushout, and face entailment in three bands, derived or refuted
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
 ├── theory-stone-duality/          finite Stone duality: the free distributive lattice in normal form, finite Birkhoff duality, and monotone maps as lattice homomorphisms
