@@ -81,6 +81,33 @@ pub enum Holder
     Value,
 }
 
+/// The first place where a role's holder departs from the canonical form of
+/// its role.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Departure
+{
+    /// The parameter telescope: another number of parameters, or a parameter
+    /// that is no value universe.
+    Parameters,
+    /// An index telescope, where the canonical form has none.
+    Indices,
+    /// The constructor table: another number of constructors.
+    Constructors,
+    /// One constructor's fields: another number of fields.
+    Arity(crate::ConstructorTag),
+    /// One field of one constructor.
+    Field
+    {
+        /// The constructor.
+        tag: crate::ConstructorTag,
+        /// The field.
+        field: crate::FieldPosition,
+    },
+}
+
 impl Builtin
 {
     /// The words that an attribute names the roles by, in the order of

@@ -205,6 +205,7 @@ pub use crate::budget::MAX_EXPANDED_TERM_WORK;
 pub use crate::budget::MAX_TABLE_ENTRIES;
 pub use crate::budget::TableEntryCount;
 pub use crate::builtin::Builtin;
+pub use crate::builtin::Departure;
 pub use crate::builtin::Holder;
 pub use crate::builtin::RoleWord;
 pub use crate::builtin::builtin_role;
