@@ -171,6 +171,7 @@ INSERT INTO reference VALUES('doi:10.1016/1385-7258(72)90034-0','core-checker','
 INSERT INTO reference VALUES('doi:10.1016/1385-7258(72)90034-0','surface-lowering','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/b978-0-08-012975-4.50028-x','theory-coherent-resolutions','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.aim.2018.03.016','theory-decomposition-spaces','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1016/j.jpaa.2022.107306','theory-graded-posets','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.jpaa.2022.107306','theory-stone-duality','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.jpdc.2026.105238','theory-order-maintenance','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/j.peva.2014.07.016','storage-chunker','','background',NULL,NULL,NULL);
@@ -534,6 +535,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theor
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','stratum::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-diagnostics','obstruction','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-shapes','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-stone-duality','','exemplar',NULL,NULL,NULL);

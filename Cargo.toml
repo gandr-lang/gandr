@@ -51,6 +51,7 @@ members = [
   "crates/theory-deep-inference",
   "crates/theory-dynamic-graphs",
   "crates/theory-exact-reals",
+  "crates/theory-graded-posets",
   "crates/theory-graphs",
   "crates/theory-levitation",
   "crates/theory-nominal-automata",
@@ -172,6 +173,7 @@ default-features = false
 # - theory-deep-inference
 # - theory-dynamic-graphs
 # - theory-exact-reals
+# - theory-graded-posets
 # - theory-graphs
 # - theory-levitation
 # - theory-nominal-automata
@@ -1013,6 +1015,7 @@ path = "crates/theory-spec-combinators"
 # features:
 # - none: alloc-only lattices, posets and maps.
 # consumers:
+# - theory-graded-posets
 # - theory-shapes
 [workspace.dependencies.gandr-theory-stone-duality]
 path = "crates/theory-stone-duality"
