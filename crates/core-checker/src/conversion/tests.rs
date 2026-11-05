@@ -451,6 +451,51 @@ fn a_decode_of_a_defined_code_converts_with_its_body()
     );
 }
 
+/// A data type's code arguments convert as the types they quote: `D(Num)`
+/// and `D(Integer)` agree when `Num`'s body is `Integer`. A code argument
+/// that quotes another type stays apart (#5381).
+#[test]
+fn code_arguments_convert_as_the_types_they_quote_5381()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let body = arena.value_quote(integer);
+    let num = arena.value_constant(ConstantIndex::from(0_usize));
+    let decoded = arena.value_type_element(num, Level::zero());
+    let quoted_decoded = arena.value_quote(decoded);
+    let quoted_integer = arena.value_quote(integer);
+    let quoted_string = arena.value_quote(string);
+    let family = ConstantIndex::from(1_usize);
+    let at_decoded = arena.value_type_data(family, alloc::vec![quoted_decoded]);
+    let at_integer = arena.value_type_data(family, alloc::vec![quoted_integer]);
+    let at_string = arena.value_type_data(family, alloc::vec![quoted_string]);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[small, small]);
+    context.define(
+        ConstantIndex::from(0_usize),
+        crate::formation::FormedValueType::derived(small),
+        body,
+    );
+    assert_eq!(
+        convert(
+            &mut context,
+            Pairing::Values(at_decoded.into(), at_integer.into())
+        ),
+        Ok(Agreement::Convertible),
+        "the argument that quotes the decode converts with the one that quotes its body"
+    );
+    assert_eq!(
+        convert(
+            &mut context,
+            Pairing::Values(at_decoded.into(), at_string.into())
+        ),
+        Ok(Agreement::Apart),
+        "the quoted types are compared, not assumed"
+    );
+}
+
 /// Codes compare at their reduced heads: a static instance of a defined
 /// operator by its reduct, a rigid one by head and argument, a static
 /// lambda by its body.
