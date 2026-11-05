@@ -3104,6 +3104,53 @@ fn a_family_at_a_call_argument_converts_with_the_type_written_with_it_720()
     );
 }
 
+/// #5321: a lambda passed for a parameter that a later parameter's type reads
+/// was bound ahead of that type's code, `w ← λ n. return Integer`. A lambda is
+/// no returner, so the readback faulted and the checker answered `Undecided`.
+/// The lambda stands in the type as the thunk it is, and the call checks.
+#[test]
+fn a_lambda_argument_a_later_type_reads_stands_as_its_thunk_5321()
+{
+    // def take : U ((f : U (Integer -> F Type)) -> El⟨f(3)⟩ -> F Integer) ;
+    // take(λ n. return Integer, 5) : F Integer
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let returns_small = arena.comp_type_returner(small);
+    let family = arena.comp_type_arrow(integer, returns_small);
+    let family = arena.value_type_thunk(family);
+    // `take`'s second domain, the family at its first binder read at a point.
+    let f = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(f);
+    let three = arena.value_literal(integer_literal());
+    let read = arena.computation_application(forced, three);
+    let code = arena.value_returned(read);
+    let decoded = arena.value_type_element(code, Level::zero());
+    let taking = arena.comp_type_arrow(decoded, returns_integer);
+    let taking = arena.comp_type_pi(family, taking);
+    let taking = arena.value_type_thunk(taking);
+    // The call, its family written as a lambda.
+    let quoted = arena.value_quote(integer);
+    let returned = arena.computation_return(quoted);
+    let lambda = arena.computation_lambda(returned);
+    let lambda = arena.value_nested(lambda);
+    let take = arena.value_constant(ConstantIndex::from(0_usize));
+    let head = arena.computation_force(take);
+    let first = arena.computation_application(head, lambda);
+    let five = arena.value_literal(integer_literal());
+    let applied = arena.computation_application(first, five);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &[taking]);
+    let expected = form_comp_type(&mut context, returns_integer).unwrap();
+    let verdict = check_comp(&mut context, applied, expected);
+    assert!(
+        verdict.is_ok(),
+        "`take`'s second domain at the lambda is `El⟨(thunk λ)(3)⟩`, which reads `Integer`: \
+         {verdict:?}"
+    );
+}
+
 /// #3937: a call passed for a type parameter `B` left a later domain `El B`
 /// decoding the nested call, `El(Nested(tm(0)))`, where the argument's type is
 /// written `El⟨tm(0)⟩`, so the two were apart. The decode of the binder reads

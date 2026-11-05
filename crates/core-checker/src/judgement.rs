@@ -8751,9 +8751,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   ([`crate::recursion::instantiation`]), and at the lifted code when the
     ///   argument crossed the value bridge with a lift, so the codomain reads
     ///   the code at the universe the domain names. An argument written as a
-    ///   call, nested or returned, is instantiated with the call bound ahead of
-    ///   each decode whose returned code reads it, and returned at each decode
-    ///   of the binder itself
+    ///   lambda stands as the thunk it is: bound ahead, it would bind a
+    ///   computation that no returner ends (#5321). Any other argument written
+    ///   as a call, nested or returned, is instantiated with the call bound
+    ///   ahead of each decode whose returned code reads it, and returned at
+    ///   each decode of the binder itself
     ///   ([`gandr_core_term::instantiate_comp_type_at_call`]). Everywhere else
     ///   a nested call decided [`Nesting::Returned`] stands as the value it
     ///   returns ([`gandr_core_term::CoreArena::value_returned`]), the form the
@@ -8775,6 +8777,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_dependent_application_instantiates_its_codomain_at_the_argument`
     /// - witness: `judgement::tests::a_family_at_a_call_argument_converts_with_the_type_written_with_it_720`
     /// - witness: `judgement::tests::a_composite_started_at_a_call_argument_converts_with_the_type_written_with_it_4065`
+    /// - witness: `judgement::tests::a_lambda_argument_a_later_type_reads_stands_as_its_thunk_5321`
     /// - witness: `recursion::tests::a_type_parameter_instantiates_at_a_staged_code`
     #[spec(ensures: |ret| match codomain {
         | Codomain::Ambient(held) => ret == Ok(held),
@@ -8817,6 +8820,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let arena = self.context.arena_mut();
                 if lift.is_none() && instance == argument {
                     match arena.value(argument) {
+                        // A lambda is no returner, so a type reads it as the
+                        // thunk it stands for, never as a run bound ahead.
+                        Some(&Value::Nested(lambda))
+                            if matches!(
+                                arena.computation(lambda),
+                                Some(&Computation::Lambda(_))
+                            ) =>
+                        {
+                            let thunk = arena.value_thunk(lambda);
+                            return Ok(instantiate_comp_type(arena, codomain, thunk));
+                        },
                         // A pure run a type reads stands there as the value
                         // it returns, which is how the elaboration rebuilds it
                         // and how a type written with the call holds it.
