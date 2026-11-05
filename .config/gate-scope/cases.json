@@ -9,7 +9,7 @@
         "check:doc",
         "check:extension",
         "check:fmt",
-        "check:tests",
+        "check:tests-enforcing",
         "check:typos"
       ],
       "changed": [
@@ -31,7 +31,7 @@
         "check:doc",
         "check:extension",
         "check:fmt",
-        "check:tests",
+        "check:tests-enforcing",
         "check:typos"
       ],
       "changed": [".config/claims/epic-deps.bash", "crates/core-term/src/lib.rs"]
@@ -42,7 +42,7 @@
       "check:doc",
       "check:extension",
       "check:fmt",
-      "check:tests",
+      "check:tests-enforcing",
       "check:typos"
     ]
   },
@@ -56,7 +56,7 @@
         "check:doc",
         "check:extension",
         "check:fmt",
-        "check:tests",
+        "check:tests-enforcing",
         "check:typos"
       ],
       "changed": ["Cargo.lock"]
@@ -67,7 +67,7 @@
       "check:doc",
       "check:extension",
       "check:fmt",
-      "check:tests",
+      "check:tests-enforcing",
       "check:typos"
     ]
   },
@@ -81,7 +81,7 @@
         "check:doc",
         "check:extension",
         "check:fmt",
-        "check:tests",
+        "check:tests-enforcing",
         "check:typos"
       ],
       "changed": ["README.md", "mise.toml"]
@@ -92,7 +92,7 @@
       "check:doc",
       "check:extension",
       "check:fmt",
-      "check:tests",
+      "check:tests-enforcing",
       "check:typos"
     ]
   },
@@ -115,7 +115,7 @@
         "check:doc",
         "check:extension",
         "check:fmt",
-        "check:tests",
+        "check:tests-enforcing",
         "check:typos"
       ],
       "changed": ["corpus/model/basics/definitions.gandr", "library/std/list.gandr"]
@@ -132,12 +132,12 @@
         "check:doc",
         "check:extension",
         "check:fmt",
-        "check:tests",
+        "check:tests-enforcing",
         "check:typos"
       ],
       "changed": [".config/nextest.toml"]
     },
-    "output": ["check:claims", "check:doc", "check:fmt", "check:tests", "check:typos"]
+    "output": ["check:claims", "check:doc", "check:fmt", "check:tests-enforcing", "check:typos"]
   },
   {
     "name": "#4911: the extension's source selects the extension's checks",
@@ -149,7 +149,7 @@
         "check:doc",
         "check:extension",
         "check:fmt",
-        "check:tests",
+        "check:tests-enforcing",
         "check:typos"
       ],
       "changed": ["contrib/gandr-vscode/src/extension.ts"]

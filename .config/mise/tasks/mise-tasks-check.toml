@@ -212,7 +212,7 @@ run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | de
 
 # Runtime sentinels exist only with enforcement enabled. Lint them under the
 # same profile, flags and target directory as the cached enforcing test build.
-# The features unify over the whole workspace, as `check:tests` unifies them:
+# The features unify over the whole workspace, as `check:tests-enforcing` does:
 # a `GATE_SCOPE` that keeps no member using `anodized` otherwise builds
 # `quenchant-anodized` without its feature under the cfg, and its build stops.
 ["check:clippy-enforcing"]
@@ -471,10 +471,20 @@ run = "quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 description = "Compile every plain workspace target without running tests"
 run = ".config/mise/scope cargo build --locked --workspace --all-targets --profile test"
 
-# The enforcing run is CI's full test pass, so the plain lane compiles and
-# runs only what that run cannot: the tests gated `cfg(not(anodized_panic))`.
-# A new such test joins both filters below and `check:clippy-plain-only`'s
-# list, which fails on a plain-only file outside it.
+# The plain baseline: every workspace test without enforcement, which CI's
+# daily `cargo-test-plain-baseline` lane times so that the enforcing lane can
+# report what each test's specifications cost it. It is a report, so its
+# name keeps it out of the `check:*` glob: the gate runs one full test pass,
+# the enforcing one, as CI does (#5216).
+["ci:plain-baseline"]
+description = "Every workspace test without specification enforcement, the baseline CI times daily"
+run = ".config/mise/gated .config/mise/scope cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
+
+# The enforcing run is the one full test pass, in CI and in the gate, so the
+# plain lane and the gate's plain build compile and run only what that run
+# cannot: the tests gated `cfg(not(anodized_panic))`. A new such test joins
+# both filters below and `check:clippy-plain-only`'s list, which fails on a
+# plain-only file outside it.
 ["build:tests-plain-only"]
 description = "Compile the plain-only test targets without running them"
 run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --no-run"
@@ -1111,10 +1121,6 @@ if [[ -n $findings ]]; then
 fi
 echo "tracking check OK: $(jq length .config/tracking/cases.json) cases; $(jq length "$tmp/constants.json") tracking issues and $(jq length "$tmp/rows.json") declined rows each open or decided"
 '''
-
-["check:tests"]
-description = "Unit and integration tests over every target"
-run = ".config/mise/gated .config/mise/scope cargo nextest run {{ env.GATE_SCOPE | default(value='--workspace') }} --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The corpus's two roots, run through the driver as an author runs them: the
 # strict root under `check`, every declaration checking and owing nothing, the

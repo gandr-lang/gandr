@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Runs a heavy `check:*` task's command in a gate slot (#4911). Run alone, the
 # task takes its lane's lock and a slot as `mise run check` does
-# (`.config/mise/gate.bash`), so a seat that runs `check:tests` beside another
-# lane's gate shares the host as two gates do. Inside a gate, which exports
-# `GANDR_GATE_SLOT`, the gate's slot already covers it and it takes none. The
-# command runs as a child, never by `exec`, so the slot is released from the
-# `EXIT` trap even while a daemon the command started keeps the descriptor.
+# (`.config/mise/gate.bash`), so a seat that runs `check:tests-enforcing`
+# beside another lane's gate shares the host as two gates do. Inside a gate,
+# which exports `GANDR_GATE_SLOT`, the gate's slot already covers it and it
+# takes none. The command runs as a child, never by `exec`, so the slot is
+# released from the `EXIT` trap even while a daemon the command started keeps
+# the descriptor.
 set -euo pipefail
 
 if [[ -z ${GANDR_GATE_SLOT:-} ]]; then
