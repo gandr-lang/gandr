@@ -2250,6 +2250,7 @@ impl<'source> Respelling<'_, 'source>
                 // A kind arrow, `Type -> Type`, is a static arrow, no box.
                 if matches!(self.context(at), Context::Law | Context::Kind)
                     || self.boxes(at) == Boxed(false)
+                    || self.read_as(at) == Read::Computation
                 {
                     return None;
                 }
@@ -2402,6 +2403,47 @@ impl<'source> Respelling<'_, 'source>
     ) -> Boxed
     {
         writes_box(self.grammar, self.tree, at, &mut Pieces::default()).unwrap_or(Boxed(false))
+    }
+
+    /// Where the type at `at` stands: a computation type is read as the
+    /// operand of a thunk, `+U`, and as the codomain of an arrow read there,
+    /// under any parentheses around either. An arrow read there is the
+    /// computation arrow, which the lowering reads as written, so no box
+    /// wraps it (#5207).
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_as(
+        &self,
+        at: NodeIndex,
+    ) -> Read
+    {
+        let mut at = at;
+        while let Some(&parent) = self.parents.get(&at) {
+            match self.rule(parent) {
+                Some(MoldName("u_type")) => return Read::Computation,
+                Some(MoldName("parenthesized_type")) => at = parent,
+                // The codomain is the arrow's last child. The tree answers
+                // it: the children of a form not yet left are not respelled.
+                Some(MoldName("function_type")) => {
+                    let codomain = self
+                        .tree
+                        .children(parent)
+                        .filter(|&child| {
+                            self.tree.node(child).is_some_and(|node| {
+                                !matches!(node.label(), NodeLabel::Space | NodeLabel::Doc)
+                            })
+                        })
+                        .last();
+                    if codomain != Some(at) {
+                        break;
+                    }
+                    at = parent;
+                },
+                Some(_) | None => break,
+            }
+        }
+        Read::Value
     }
 
     /// Write `operands` joined by `infix`, the first operand placed at the
@@ -3691,6 +3733,17 @@ enum Valued
     Value,
     /// An arrow, a pure returner or a lazy product.
     Computation,
+}
+
+/// Where a type stands in the types around it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Read
+{
+    /// Where a computation type is read: the operand of `+U`, or the codomain
+    /// of an arrow read there.
+    Computation,
+    /// Anywhere else.
+    Value,
 }
 
 /// Whether a child is written as given spellings, token by token.

@@ -945,6 +945,43 @@ fn a_composite_s_cells_are_not_a_tuple_3957()
     );
 }
 
+/// An arrow written under a thunk inside a type quote is the computation
+/// arrow, and so is its codomain arrow. The explicit form keeps both as
+/// written and braces the product of the two thunks, as the printer does. The
+/// sugared form writes the product back (#5207).
+#[test]
+fn a_product_of_thunks_in_a_type_quote_is_braced_5207()
+{
+    let grammar = grammar();
+    let quoted = "type(*{+U (A -> T(A)), +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))})";
+    let source = "def raw : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) { fun (A) { fun (B) { \
+                  type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } };\n";
+    let form = |source: &str, form: Form| {
+        let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+        let options = FormatOptions {
+            form,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(
+            formatted.withdrawn(),
+            &[],
+            "no declaration keeps its spelling"
+        );
+        formatted.into_text()
+    };
+    let explicit = form(source, Form::Explicit);
+    assert!(
+        explicit.contains(quoted),
+        "each arrow under a thunk stays as written: {explicit}"
+    );
+    let sugared = form(&explicit, Form::Sugared);
+    assert!(
+        sugared.contains("type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)))"),
+        "the product of the thunks sugars back: {sugared}"
+    );
+}
+
 /// A parenthesised list after a fill's generator is its cells, not a tuple:
 /// the explicit form keeps it and withdraws nothing (#4075).
 #[test]
