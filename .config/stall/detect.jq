@@ -47,12 +47,11 @@
 #                  a restored seat's watchers died with its old process, and
 #                  nothing claims for it. A lane holds the claims whose marker
 #                  names it, and a markerless claim carrying one of its areas,
-#                  as `claim:next` places a claim (#4174). Its line
-#                  names the claim to run. It has no pull request, so it is
+#                  as `claim:next` places a claim (#4174). Its line asks the
+#                  coordinator for the lane's next work, since the coordinator
+#                  keeps each lane's order. It has no pull request, so it is
 #                  keyed by its lane, paged once while it lasts and never
-#                  stalled or paged again. With a programme focus set and no
-#                  open member unowned (#3959), the line names the focus: no
-#                  claim serves the lane, so the coordinator assigns it.
+#                  stalled or paged again.
 # A pull request's lane is the lane its first closing issue's claim marker
 # names (#4524): the lane that claimed the unit holds what lands it, whatever
 # the branch is called. With no claimed closing issue, it is the longest lane
@@ -90,9 +89,6 @@
 #   seats       the lanes that hold a seat; absent reads as none;
 #   areas       each lane's areas, `{"<lane>": ["<area>"]}`; a seat's lane
 #               it lacks is read by no kind;
-#   focus       the programme focus, `{epics, open}`, `open` its open members
-#               no seat owns, not epics, not deferred or discarded; absent or
-#               null reads as none;
 #   hold        the stack top's hold, `{holder, head, began, deadline}`, the
 #               times in epoch seconds; absent or null reads as none;
 #   seen        when each `<number>:conflicting:<head>`,
@@ -219,9 +215,7 @@
       | $seen_now["\($lane):seat-idle"] as $since
       | select($in.now - $since >= $t.idle * 60)
       | ($in.now - $since | minutes) as $age
-      | (if $in.focus != null and ($in.focus.open | length) == 0
-         then "no open pull request and no claim it holds, and the focus \($in.focus.epics | map("#\(.)") | join(" ")) holds no unowned member; the coordinator assigns its next work"
-         else "no open pull request and no claim it holds; run `mise run claim:next \($lane)`" end) as $what
+      | "no open pull request and no claim it holds; the coordinator queues its next work" as $what
       | {kind: "seat-idle", number: null, lane: $lane, placed: true, age: $age,
          line: "STALL seat-idle \($lane) \($age)m: \($what)"})
   ]

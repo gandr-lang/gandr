@@ -1894,7 +1894,7 @@
       },
       "seen": { "program-logic:seat-idle": 1793263620, "triage:seat-idle": 1793263620 }
     },
-    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds; run `mise run claim:next program-logic`\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; run `mise run claim:next triage`\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds; run `mise run claim:next program-logic`\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; run `mise run claim:next triage`\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"program-logic:seat-idle\":1793263620,\"triage:seat-idle\":1793263620},\"paged\":{\"program-logic:seat-idle\":{\"first\":1793264820,\"last\":1793264820},\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
+    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds; the coordinator queues its next work\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds; the coordinator queues its next work\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"program-logic:seat-idle\":1793263620,\"triage:seat-idle\":1793263620},\"paged\":{\"program-logic:seat-idle\":{\"first\":1793264820,\"last\":1793264820},\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
   },
   {
     "name": "#3822: a seated lane with a claimed issue in one of its areas is busy, one idle inside the threshold is remembered and not paged, and a seat's lane no row names is read by no kind",
@@ -1957,7 +1957,7 @@
       },
       "seen": { "elaboration:seat-idle": 1793263620, "triage:seat-idle": 1793263620 }
     },
-    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; run `mise run claim:next triage`\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; run `mise run claim:next triage`\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793263620},\"paged\":{\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
+    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793263620},\"paged\":{\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
   },
   {
     "name": "#3822: a seat-idle finding paged long ago is never paged again and stalls nothing",
@@ -1986,123 +1986,7 @@
       "seen": { "triage:seat-idle": 1793263620 },
       "paged": { "triage:seat-idle": { "first": 1793264820, "last": 1793264820 } }
     },
-    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":106,\"line\":\"STALL seat-idle triage 106m: no open pull request and no claim it holds; run `mise run claim:next triage`\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793263620},\"paged\":{\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
-  },
-  {
-    "name": "#3959: a seated lane idle while the focus holds no unowned member names the focus, and the coordinator assigns it",
-    "program": "detect.jq",
-    "input": {
-      "now": 1793264820,
-      "trunk": "main",
-      "required": ["test"],
-      "thresholds": {
-        "root_unqueued": 20,
-        "ejections": 2,
-        "ejection_window": 360,
-        "depth": 6,
-        "red": 60,
-        "conflicting": 30,
-        "base_blocked": 10,
-        "unfiled": 10,
-        "idle": 20,
-        "escalate": 10,
-        "repage": 10
-      },
-      "prs": [
-        {
-          "number": 3725,
-          "draft": false,
-          "bot": false,
-          "head": "core-3725-content-children",
-          "base": "main",
-          "oid": "o3725",
-          "created": 1793260000,
-          "mergeable": "MERGEABLE",
-          "queued": true,
-          "removals": [],
-          "checks": []
-        }
-      ],
-      "claimed": [
-        {
-          "number": 3725,
-          "areas": ["area:core"]
-        }
-      ],
-      "seats": ["core", "program-logic", "triage"],
-      "areas": {
-        "core": ["core", "kernel"],
-        "program-logic": ["program-logic", "runtime"],
-        "triage": ["workflow", "ci"]
-      },
-      "seen": {
-        "program-logic:seat-idle": 1793263620,
-        "triage:seat-idle": 1793263620
-      },
-      "focus": {
-        "epics": [3714, 3954, 3955],
-        "open": []
-      }
-    },
-    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds, and the focus #3714 #3954 #3955 holds no unowned member; the coordinator assigns its next work\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds, and the focus #3714 #3954 #3955 holds no unowned member; the coordinator assigns its next work\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds, and the focus #3714 #3954 #3955 holds no unowned member; the coordinator assigns its next work\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds, and the focus #3714 #3954 #3955 holds no unowned member; the coordinator assigns its next work\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"program-logic:seat-idle\":1793263620,\"triage:seat-idle\":1793263620},\"paged\":{\"program-logic:seat-idle\":{\"first\":1793264820,\"last\":1793264820},\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
-  },
-  {
-    "name": "#3959: a seated lane idle while the focus holds an unowned member keeps the claim line",
-    "program": "detect.jq",
-    "input": {
-      "now": 1793264820,
-      "trunk": "main",
-      "required": ["test"],
-      "thresholds": {
-        "root_unqueued": 20,
-        "ejections": 2,
-        "ejection_window": 360,
-        "depth": 6,
-        "red": 60,
-        "conflicting": 30,
-        "base_blocked": 10,
-        "unfiled": 10,
-        "idle": 20,
-        "escalate": 10,
-        "repage": 10
-      },
-      "prs": [
-        {
-          "number": 3725,
-          "draft": false,
-          "bot": false,
-          "head": "core-3725-content-children",
-          "base": "main",
-          "oid": "o3725",
-          "created": 1793260000,
-          "mergeable": "MERGEABLE",
-          "queued": true,
-          "removals": [],
-          "checks": []
-        }
-      ],
-      "claimed": [
-        {
-          "number": 3725,
-          "areas": ["area:core"]
-        }
-      ],
-      "seats": ["core", "program-logic", "triage"],
-      "areas": {
-        "core": ["core", "kernel"],
-        "program-logic": ["program-logic", "runtime"],
-        "triage": ["workflow", "ci"]
-      },
-      "seen": {
-        "program-logic:seat-idle": 1793263620,
-        "triage:seat-idle": 1793263620
-      },
-      "focus": {
-        "epics": [3714, 3954, 3955],
-        "open": [3958]
-      }
-    },
-    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds; run `mise run claim:next program-logic`\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; run `mise run claim:next triage`\"}],\"pages\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"program-logic\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle program-logic 20m: no open pull request and no claim it holds; run `mise run claim:next program-logic`\"},{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":20,\"line\":\"STALL seat-idle triage 20m: no open pull request and no claim it holds; run `mise run claim:next triage`\"}],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"program-logic:seat-idle\":1793263620,\"triage:seat-idle\":1793263620},\"paged\":{\"program-logic:seat-idle\":{\"first\":1793264820,\"last\":1793264820},\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
+    "output": "{\"findings\":[{\"kind\":\"seat-idle\",\"number\":null,\"lane\":\"triage\",\"placed\":true,\"age\":106,\"line\":\"STALL seat-idle triage 106m: no open pull request and no claim it holds; the coordinator queues its next work\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{\"triage:seat-idle\":1793263620},\"paged\":{\"triage:seat-idle\":{\"first\":1793264820,\"last\":1793264820}},\"stalled\":{}}"
   },
   {
     "name": "a pull request in the merge queue of a branch no open pull request heads is queued-off-trunk at once, and a queued member above an open head is not (#4168)",
@@ -2480,9 +2364,9 @@
       "lane": "theory",
       "placed": true,
       "age": 20,
-      "line": "STALL seat-idle theory 20m: no open pull request and no claim it holds; run `mise run claim:next theory`"
+      "line": "STALL seat-idle theory 20m: no open pull request and no claim it holds; the coordinator queues its next work"
     },
-    "output": "STALL seat-idle theory 20m: no open pull request and no claim it holds; run `mise run claim:next theory`. Decide: page the seat to claim; assign its next work"
+    "output": "STALL seat-idle theory 20m: no open pull request and no claim it holds; the coordinator queues its next work. Decide: page the seat to claim; assign its next work"
   },
   {
     "name": "#5116: a cancelled check on a head the CI depth gate stopped reads pending, a failure on it still fails, and a mark naming another head leaves its cancelled check failed (#5074)",

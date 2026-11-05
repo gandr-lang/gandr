@@ -2,9 +2,8 @@
 # Each reading is one JSON file in the run's board directory, and jq reads it
 # through `--slurpfile`, never as an argument. Linux refuses one argument
 # longer than 131072 bytes, and the board's readings grow past that limit
-# (#2671): the bodies of the merged pull requests that the `from:` lines name
-# went past it first.
-claim_readings=(areas issues order refusals prs focus landings live lanes branches reread)
+# (#2671).
+claim_readings=(areas issues order refusals prs live lanes branches reread)
 
 # claim_input <dir> <lane> <now>: the input object of `next.jq`, each reading
 # read from `<dir>/<reading>.json`.
