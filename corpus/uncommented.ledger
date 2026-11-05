@@ -1817,9 +1817,9 @@ pending/surface/data-operation-members.gandr:NatRule:48bc1087d354c32d uncommente
 pending/surface/desc-declined-metadata.gandr:<file> uncommented
 pending/surface/desc-declined-metadata.gandr:Declared.Mk:8ebba07737aad3eb uncommented
 pending/surface/desc-declined-metadata.gandr:Declared:3c7079fcd8fbb7e1 uncommented
-sketch/abi-and-boundaries/trusted-contract.gandr:C:37c2692ab1f640fb uncommented
-sketch/cells/composites.gandr:Pasting:a179431df5436d70 uncommented
+sketch/abi-and-boundaries/trusted-contract.gandr:abi:ca07f8e3ebfe2e4f uncommented
 sketch/cells/composites.gandr:block:ce43988d8da80b25 uncommented
+sketch/cells/composites.gandr:category:7f3c2941ed73bcc7 uncommented
 sketch/cells/composites.gandr:function_type:2220a0a5bff508ca uncommented
 sketch/cells/composites.gandr:function_type:31e2119ba5cdc5a9 uncommented
 sketch/cells/composites.gandr:function_type:948eb7ccc64b9985 uncommented
@@ -1827,7 +1827,7 @@ sketch/cells/composites.gandr:universe_type:184466608a09f8b1 uncommented
 sketch/cells/composites.gandr:x:0ddae60b115f9845 uncommented
 sketch/cells/composites.gandr:y:4397f5db1135fc41 uncommented
 sketch/cells/composites.gandr:y:c53c30893ed3cddf uncommented
-sketch/cells/functions.gandr:Pasting:a179431df5436d70 uncommented
+sketch/cells/functions.gandr:category:7f3c2941ed73bcc7 uncommented
 sketch/cells/functions.gandr:wordCount:cb29c846aa1e10b3 uncommented
 sketch/cost/amortised.gandr:Banked:215f91ac21a4f9d2 uncommented
 sketch/cost/amortised.gandr:pop:9a6b96940e765aa9 uncommented
