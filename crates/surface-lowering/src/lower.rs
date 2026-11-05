@@ -24635,6 +24635,7 @@ impl Sink<'_>
                 | Insertion::Classifier
                 | Insertion::Match
                 | Insertion::Fixpoint
+                | Insertion::Joint
                 | Insertion::Loop
                 | Insertion::Statement
                 | Insertion::Endpoint
