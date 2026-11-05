@@ -66,6 +66,8 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "evidence:base", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "evidence:obligations, pr:open and pr:land: the open pulls, one page" },
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "evidence:obligations", api = "rest", identity = "read", calls = 3, points = 4, measured = "rest", hour = 16, trigger = "a seat's evidence run: each issue's labels, about two, and a head's checks" },
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "evidence:obligations", api = "rest", identity = "actions", calls = 3, points = 3, measured = "rest", hour = 24, trigger = "the obligations job of each pull request's CI run: each issue's labels, about two, and the head's checks; the event names the head" },
+  { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "report:gate-time", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 1, trigger = "gate:all on main's tree past its budget: the open issue of that title, one search; a gate on main runs at most once an hour on a host" },
+  { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "report:gate-time", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 1, trigger = "gate:all on main's tree past its budget, when its issue is open: the issue looked up, then its body written" },
 
   # The ci tasks (Actions).
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "branches:sweep", api = "graphql", identity = "read", calls = 4, points = 11, measured = "cost", hour = 1, trigger = "branches:sweep by hand: the repository twice, the open pulls, the open issues in 8 pages" },
