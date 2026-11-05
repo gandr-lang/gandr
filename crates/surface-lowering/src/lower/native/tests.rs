@@ -1440,6 +1440,55 @@ fn a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036()
     );
 }
 
+/// #3880: the members of a mutual block return different types. The tree's
+/// copy returns a tree and the forest's returns a forest, so the joint is
+/// ascribed a dependent arrow whose result decodes a case over the sum, and
+/// the block checks.
+#[test]
+fn a_mutual_block_whose_members_return_different_types_checks_3880()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}rec {{\n  data Rose : Type where {{ | Node : (kids : Forest) --> Rose }}\n  data Forest : Type where {{ | Empty : Forest | More : (head : Rose, tail : Forest) --> Forest }}\n  def rec bumpTree(t : Rose) -> -F Rose {{ match t {{ | Node(kids) => {{ let k = bumpForest[<] kids; return Node k }} }} }}\n  def rec bumpForest(ts : Forest) -> -F Forest {{ match ts {{ | Empty => return Empty | More(t, rest) => {{ let a = bumpTree[<] t; let r = bumpForest[<] rest; return More a r }} }} }}\n}}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["bumpTree", "bumpForest"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    let Some(&Value::Thunk(member)) =
+        arena.value(body_named(&module, SurfaceName::from("bumpTree")))
+    else {
+        panic!("the member lowers to a thunk");
+    };
+    let Some(&Computation::Lambda(call)) = arena.computation(member)
+    else {
+        panic!("the member is a lambda over its parameter");
+    };
+    let Some(&Computation::Application(joint, _)) = arena.computation(call)
+    else {
+        panic!("the member calls the joint");
+    };
+    let Some(&Computation::Ascribe { ty, .. }) = arena.computation(joint)
+    else {
+        panic!("the joint is ascribed");
+    };
+    assert!(
+        matches!(arena.comp_type(ty), Some(&gandr_core_term::CompType::Pi { codomain, .. })
+            if matches!(arena.comp_type(codomain), Some(&gandr_core_term::CompType::Element { code, .. })
+                if matches!(arena.value(code), Some(&Value::Returned(_))))),
+        "the joint's result decodes a case over the sum: {:?}",
+        arena.comp_type(ty)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// A member of a mutual block whose sibling the lowering refused calls the
 /// sibling's declaration, so the checker meets a constant it has no type for
 /// rather than an injection into a joint that never formed (#2340): refused
