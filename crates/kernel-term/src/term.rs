@@ -49,13 +49,15 @@
 //! is an ordinary nominal application whose declaration index is the
 //! declaration's own position. Admission, not the reader, decides whether that
 //! occurrence is strictly positive and uniform. The fixpoint carries one
-//! evidence byte, [`FIXPOINT_PARTIAL`], [`FIXPOINT_STRUCTURAL_DESCENT`] or
-//! [`FIXPOINT_STAGED`] followed by the staged position as a varint, then one
-//! computation child: its body under the self binder. Any other evidence byte
-//! is refused as an unknown tag at the evidence site. The byte records a claim
-//! kernel admission replays as the stage typing, the descent byte at position
-//! zero; decoding it grants nothing. The encoder's entry goldens and the
-//! decoder's former-preservation witness pin every byte.
+//! evidence byte, [`FIXPOINT_PARTIAL`], [`FIXPOINT_STRUCTURAL_DESCENT`],
+//! [`FIXPOINT_STAGED`] followed by the staged position as a varint, or
+//! [`FIXPOINT_JOINT`] followed by the count of components and each
+//! component's position as varints, then one computation child: its body
+//! under the self binder. Any other evidence byte is refused as an unknown tag
+//! at the evidence site. The byte records a claim kernel admission replays as
+//! the stage typing, the descent byte at position zero; decoding it grants
+//! nothing. The encoder's entry goldens and the decoder's former-preservation
+//! witness pin every byte.
 //!
 //! **Choice.** Native identity and field structure, not atom names or product
 //! offsets. New node and declaration-kind bytes extend the closed vocabulary
@@ -71,6 +73,7 @@
 //! [`FIXPOINT_PARTIAL`]: crate::FIXPOINT_PARTIAL
 //! [`FIXPOINT_STRUCTURAL_DESCENT`]: crate::FIXPOINT_STRUCTURAL_DESCENT
 //! [`FIXPOINT_STAGED`]: crate::FIXPOINT_STAGED
+//! [`FIXPOINT_JOINT`]: crate::FIXPOINT_JOINT
 
 use anodized::spec;
 use gandr_kernel_strata::Level;
@@ -746,6 +749,16 @@ pub enum FixpointEvidence
         /// The arrow of the fixpoint's type the stage refines.
         position: StagedPosition,
     },
+    /// Structural recursion of a joint fixpoint at a lazy product of arrows,
+    /// a mutual block's members: each component recurses on the parameter at
+    /// its own position, every component under one stage, and every
+    /// self-reference `Project(i, force self)` takes its argument there
+    /// strictly below that stage.
+    Joint
+    {
+        /// Each component's recursed-on arrow, in component order.
+        positions: JointPositions,
+    },
 }
 
 impl FixpointEvidence
@@ -756,7 +769,8 @@ impl FixpointEvidence
     /// - requires: nothing.
     /// - ensures: a staged fixpoint's own position, the first argument under
     ///   structural descent, and none for a partial fixpoint, which claims no
-    ///   descent.
+    ///   descent, and for a joint one, whose components each descend on their
+    ///   own position ([`Self::component`]).
     /// - provides: the position a typing replays a descent claim at.
     /// - fails: never.
     /// - panics: none.
@@ -769,16 +783,49 @@ impl FixpointEvidence
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret == match self {
-        Self::Partial => None,
+        Self::Partial | Self::Joint { .. } => None,
         Self::StructuralDescent => Some(StagedPosition(0)),
         Self::Staged { position } => Some(position),
     })]
     pub fn descent(self) -> Option<StagedPosition>
     {
         match self {
-            Self::Partial => None,
+            Self::Partial | Self::Joint { .. } => None,
             Self::StructuralDescent => Some(StagedPosition::default()),
             Self::Staged { position } => Some(position),
+        }
+    }
+
+    /// The argument a joint fixpoint's `component` descends on.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the position the joint claim names for `component`; none for
+    ///   a component past the claim's count and for every other claim, whose
+    ///   fixpoint has no components.
+    /// - provides: the position the replay reads a projected joint fixpoint's
+    ///   argument at.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a joint claim of two components answers each and none
+    ///   past them, and a staged claim answers none.
+    /// - witness: `term::tests::a_joint_claim_names_each_component_s_position_3879`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret == match self {
+        Self::Joint { positions } => positions.get(component),
+        Self::Partial | Self::StructuralDescent | Self::Staged { .. } => None,
+    })]
+    pub fn component(
+        self,
+        component: Component,
+    ) -> Option<StagedPosition>
+    {
+        match self {
+            Self::Joint { positions } => positions.get(component),
+            Self::Partial | Self::StructuralDescent | Self::Staged { .. } => None,
         }
     }
 
@@ -947,6 +994,91 @@ impl From<StagedPosition> for usize
     fn from(position: StagedPosition) -> Self
     {
         position.0
+    }
+}
+
+/// The staged positions of a joint fixpoint's components, in component
+/// order, held inline so the claim stays a copy and allocates nothing.
+///
+/// It holds at most [`JointPositions::CAPACITY`] components, each position
+/// below 256. A mutual block past either bound takes no joint claim, and its
+/// fixpoint stays partial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct JointPositions
+{
+    /// How many components the claim names.
+    count: u8,
+    /// Each component's position, zero past `count`.
+    positions: [u8; 14],
+}
+
+impl JointPositions
+{
+    /// The most components one claim names.
+    pub const CAPACITY: usize = 14;
+
+    /// The claim naming `positions`, one per component in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a claim whose components read back as `positions`, in order,
+    ///   when there are at most [`Self::CAPACITY`] of them and each is below
+    ///   256; none otherwise.
+    /// - provides: the one constructor, which keeps the slots past the count
+    ///   zero, so two claims of the same positions are equal and hash alike.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two positions read back in order, a position of 256
+    ///   and fifteen components answer none.
+    /// - witness: `term::tests::a_joint_claim_names_each_component_s_position_3879`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.map_or_else(
+        || positions.len() > Self::CAPACITY || positions.iter().any(|&position| position.0 > usize::from(u8::MAX)),
+        |claim| claim.iter().eq(positions.iter().copied()),
+    ))]
+    pub fn new(positions: &[StagedPosition]) -> Option<Self>
+    {
+        let count = u8::try_from(positions.len())
+            .ok()
+            .filter(|&count| usize::from(count) <= Self::CAPACITY)?;
+        let mut held = [0_u8; 14];
+        for (slot, position) in held.iter_mut().zip(positions) {
+            *slot = u8::try_from(position.0).ok()?;
+        }
+        Some(Self {
+            count,
+            positions: held,
+        })
+    }
+
+    /// The position of `component`, if the claim names it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn get(
+        self,
+        component: Component,
+    ) -> Option<StagedPosition>
+    {
+        self.iter().nth(usize::from(component))
+    }
+
+    /// Each component's position, in component order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn iter(self) -> impl Iterator<Item = StagedPosition>
+    {
+        self.positions
+            .into_iter()
+            .take(usize::from(self.count))
+            .map(|position| StagedPosition(usize::from(position)))
     }
 }
 
@@ -1191,8 +1323,10 @@ mod tests
     use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_conversion_trace::ConversionSide;
 
+    use super::Component;
     use super::EvidenceWord;
     use super::FixpointEvidence;
+    use super::JointPositions;
     use super::StagedPosition;
 
     #[test]
@@ -1212,6 +1346,52 @@ mod tests
             assert_eq!(evidence.descent(), descent, "{evidence:?}");
             assert_eq!(evidence.gate(), gate, "{evidence:?}");
         }
+    }
+
+    #[test]
+    fn a_joint_claim_names_each_component_s_position_3879()
+    {
+        let first = StagedPosition::from(0_usize);
+        let third = StagedPosition::from(2_usize);
+        let positions =
+            JointPositions::new(&[third, first]).expect("two positions below 256 fit the claim");
+        assert_eq!(positions.iter().count(), 2_usize);
+        assert_eq!(positions.iter().collect::<alloc::vec::Vec<_>>(), [
+            third, first
+        ]);
+        let joint = FixpointEvidence::Joint { positions };
+        assert_eq!(joint.component(Component::from(0_usize)), Some(third));
+        assert_eq!(joint.component(Component::from(1_usize)), Some(first));
+        assert_eq!(
+            joint.component(Component::from(2_usize)),
+            None,
+            "past the claim"
+        );
+        assert_eq!(
+            joint.descent(),
+            None,
+            "a joint claim descends per component"
+        );
+        assert_eq!(
+            FixpointEvidence::Staged { position: third }.component(Component::from(0_usize)),
+            None,
+            "a lone fixpoint has no components"
+        );
+        assert_eq!(
+            JointPositions::new(&[StagedPosition::from(256_usize)]),
+            None,
+            "a position of 256 is past the claim's width"
+        );
+        assert_eq!(
+            JointPositions::new(&[first; JointPositions::CAPACITY + 1]),
+            None,
+            "one component past the capacity"
+        );
+        assert_eq!(
+            JointPositions::new(&[third, first]),
+            Some(positions),
+            "two claims of the same positions are one"
+        );
     }
 
     #[test]

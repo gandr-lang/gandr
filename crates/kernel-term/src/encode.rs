@@ -1871,8 +1871,18 @@ fn encode_entry(
             Some(&Computation::Fixpoint { evidence, .. }) => {
                 out.put_tag(tags::NODE_C_FIXPOINT);
                 out.put_tag(evidence_tag(evidence));
-                if let crate::FixpointEvidence::Staged { position } = evidence {
-                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(position))));
+                match evidence {
+                    crate::FixpointEvidence::Staged { position } => {
+                        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(position))));
+                    },
+                    crate::FixpointEvidence::Joint { positions } => {
+                        out.put_uvarint(WireU64::from(WireUsize::from(positions.iter().count())));
+                        for position in positions.iter() {
+                            out.put_uvarint(WireU64::from(WireUsize::from(usize::from(position))));
+                        }
+                    },
+                    crate::FixpointEvidence::Partial
+                    | crate::FixpointEvidence::StructuralDescent => {},
                 }
             },
             Some(&Computation::Application(..)) => out.put_tag(tags::NODE_C_APPLICATION),
@@ -2285,6 +2295,7 @@ fn sign_tag(sign: Sign) -> WireTag
         crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
         crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
         crate::FixpointEvidence::Staged { .. } => tags::FIXPOINT_STAGED,
+        crate::FixpointEvidence::Joint { .. } => tags::FIXPOINT_JOINT,
     },
 )]
 #[inline]
@@ -2294,6 +2305,7 @@ fn evidence_tag(evidence: crate::FixpointEvidence) -> WireTag
         crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
         crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
         crate::FixpointEvidence::Staged { .. } => tags::FIXPOINT_STAGED,
+        crate::FixpointEvidence::Joint { .. } => tags::FIXPOINT_JOINT,
     }
 }
 

@@ -8097,15 +8097,37 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         // fixpoint's gate it declines rather than refutes. A
                         // partial fixpoint whose body never reads its own binder
                         // is a definition: unfolding it substitutes nothing and
-                        // cannot recur, so it unfolds at that gate (#2833).
+                        // cannot recur, so it unfolds at that gate (#2833). A
+                        // joint fixpoint's gate stands under the projection that
+                        // selects a component, at that component's position.
                         Some(&Computation::Fixpoint { body, evidence }) => {
-                            let position = usize::from(evidence.gate());
+                            let (position, projected) = match evidence {
+                                FixpointEvidence::Joint { .. } => {
+                                    match frames.last().map(|frame| frame.node) {
+                                        Some(Frame::Project(component)) => {
+                                            match evidence.component(component) {
+                                                Some(position) => (usize::from(position), 1_usize),
+                                                None => return Err(unreadable()),
+                                            }
+                                        },
+                                        Some(
+                                            Frame::Apply(_) | Frame::Bind(_) | Frame::BindAll(..),
+                                        )
+                                        | None => break,
+                                    }
+                                },
+                                FixpointEvidence::Partial
+                                | FixpointEvidence::StructuralDescent
+                                | FixpointEvidence::Staged { .. } => {
+                                    (usize::from(evidence.gate()), 0_usize)
+                                },
+                            };
                             // The argument at the staged position, read through
                             // the cells: that many applications down the stack,
                             // every frame above it an application too.
                             let mut reached = None;
                             let mut observed = false;
-                            for (offset, frame) in frames.iter().rev().enumerate() {
+                            for (offset, frame) in frames.iter().rev().skip(projected).enumerate() {
                                 match frame.node {
                                     Frame::Apply(argument) => {
                                         if offset == position {
@@ -8130,6 +8152,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             {
                                 let mut applied = self.unload(&mut cells, focus);
                                 let mut outer = self.unload_frames(&mut cells, &mut frames);
+                                // A joint fixpoint's projection stands between it and
+                                // its arguments, and stays there.
+                                if projected > 0_usize {
+                                    let Some(Frame::Project(component)) = outer.pop()
+                                    else {
+                                        return Err(unreadable());
+                                    };
+                                    applied = self.arena.computation_project(component, applied);
+                                }
                                 let mut endpoint = None;
                                 for _argument in 0 ..= offset {
                                     let Some(Frame::Apply(argument)) = outer.pop()
@@ -8182,7 +8213,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             match (evidence, gate) {
                                 (
                                     FixpointEvidence::StructuralDescent
-                                    | FixpointEvidence::Staged { .. },
+                                    | FixpointEvidence::Staged { .. }
+                                    | FixpointEvidence::Joint { .. },
                                     Gate::Constructor,
                                 ) => {
                                     let recursive = focus.with(self.arena.value_thunk(focus.node));
@@ -8214,7 +8246,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 },
                                 (
                                     FixpointEvidence::StructuralDescent
-                                    | FixpointEvidence::Staged { .. },
+                                    | FixpointEvidence::Staged { .. }
+                                    | FixpointEvidence::Joint { .. },
                                     Gate::Canonical | Gate::Observed | Gate::Shut,
                                 )
                                 | (FixpointEvidence::Partial, Gate::Shut) => break,

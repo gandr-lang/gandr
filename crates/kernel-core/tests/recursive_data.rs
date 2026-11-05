@@ -31,6 +31,7 @@ use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::JointPositions;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::ParameterPosition;
@@ -3082,5 +3083,140 @@ fn a_mutual_recursion_descends_through_its_block_s_families()
     assert!(
         matches!(level, Err(KernelError::StageNotBelow { .. })),
         "{level:?}"
+    );
+}
+
+/// Where a joint fixpoint over a rose tree's block calls itself, and what it
+/// claims.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Joint
+{
+    /// Each call one stage below its scrutinee, both components claimed at
+    /// their first parameter.
+    Below,
+    /// The node arm calls the tree component on the node itself, at the
+    /// fixpoint's own stage.
+    Level,
+    /// The claim names one component of the two.
+    Short,
+}
+
+/// Admit the rose tree's block as [`forest`] does; then offer the joint of
+/// its two recursions, `fix self. ⟨λt. case t of { Node ↦ λkids.
+/// self.1 kids }, λts. case ts of { Nil ↦ return (); Cons ↦ λhead tail. _ ←
+/// self.0 head; self.1 tail }⟩`, at `(Rose → F 1) & (Forest → F 1)`, `self.i`
+/// the projection `Project(i, force self)`, as `joint` says.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the kernel's verdict on the block, then on the joint, admitted at
+///   the position after the block's two families.
+/// - panics: none.
+///
+/// # Errors
+/// The kernel's refusal of the block or of the joint.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the three joints differ only in the node arm's call and
+///   the claim's count, so each verdict is that call's stage or that count.
+/// - witness: `tests::recursive_data::a_joint_recursion_descends_through_each_component_3879`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|_| true, |id| usize::from(id.position()) == 2))]
+fn joint_forest(joint: Joint) -> Result<CheckedId, KernelError>
+{
+    let mut environment = Environment::new();
+    let tree = ConstantIndex::from(0_usize);
+    let forest = ConstantIndex::from(1_usize);
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let forests = arena.value_type_data(forest, vec![]);
+    let node = staging.data(
+        LevelSignature::monomorphic(),
+        vec![],
+        vec![vec![forests]],
+        kind,
+    );
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let trees = arena.value_type_data(tree, vec![]);
+    let forests = arena.value_type_data(forest, vec![]);
+    let list = staging.data(
+        LevelSignature::monomorphic(),
+        vec![],
+        vec![vec![], vec![trees, forests]],
+        kind,
+    );
+    let _block = environment.add_block(vec![node, list])?;
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let trees = arena.value_type_data(tree, vec![]);
+    let forests = arena.value_type_data(forest, vec![]);
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    // `Project(component, force self) v`, `self` the variable at `own`.
+    let call = |arena: &mut TermArena, own: u32, component: usize, argument: u32| {
+        let head = arena.value_variable(DeBruijnIndex::from(own));
+        let forced = arena.computation_force(head);
+        let projected = arena.computation_project(Component::from(component), forced);
+        let argument = arena.value_variable(DeBruijnIndex::from(argument));
+        arena.computation_application(projected, argument)
+    };
+    // Under `self, t, kids`: the children, or the node `t` itself.
+    let node_arm = match joint {
+        Joint::Below | Joint::Short => call(arena, 2, 1, 0),
+        Joint::Level => call(arena, 2, 0, 1),
+    };
+    let node_arm = arena.computation_lambda(node_arm);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let on_tree = arena.computation_data_case(scrutinee, returns, vec![node_arm]);
+    let on_tree = arena.computation_lambda(on_tree);
+    let unit_value = arena.value_unit();
+    let on_nil = arena.computation_return(unit_value);
+    // Under `self, ts, head, tail`, then the bind's binder.
+    let on_head = call(arena, 3, 0, 1);
+    let on_tail = call(arena, 4, 1, 1);
+    let on_cons = arena.computation_bind(on_head, on_tail);
+    let on_cons = arena.computation_lambda(on_cons);
+    let on_cons = arena.computation_lambda(on_cons);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let on_forest = arena.computation_data_case(scrutinee, returns, vec![on_nil, on_cons]);
+    let on_forest = arena.computation_lambda(on_forest);
+    let body = arena.computation_with(&[on_tree, on_forest]);
+    let claimed = match joint {
+        Joint::Below | Joint::Level => vec![StagedPosition::from(0_usize); 2],
+        Joint::Short => vec![StagedPosition::from(0_usize)],
+    };
+    let positions = JointPositions::new(&claimed).expect("two positions fit the claim");
+    let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::Joint { positions });
+    let value = arena.value_thunk(fixpoint);
+    let on_trees = arena.comp_type_arrow(trees, returns);
+    let on_forests = arena.comp_type_arrow(forests, returns);
+    let both = arena.comp_type_with(&[on_trees, on_forests]);
+    let declared = arena.value_type_thunk(both);
+    let size = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(size)
+}
+
+/// A joint fixpoint at a lazy product of a mutual block's recursions opens
+/// one stage for both components: a node's children and a list's head and
+/// tail each stand one stage below their scrutinee, so the calls on them
+/// through either component are admitted; a component calling its sibling
+/// on the node itself is refused; and a claim of one position at a lazy
+/// product of two is refused.
+#[test]
+fn a_joint_recursion_descends_through_each_component_3879()
+{
+    let below = joint_forest(Joint::Below);
+    assert!(below.is_ok(), "{below:?}");
+    let level = joint_forest(Joint::Level);
+    assert!(
+        matches!(level, Err(KernelError::StageNotBelow { .. })),
+        "{level:?}"
+    );
+    let short = joint_forest(Joint::Short);
+    assert!(
+        matches!(short, Err(KernelError::JointClaimArity { .. })),
+        "{short:?}"
     );
 }

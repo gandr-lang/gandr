@@ -2560,11 +2560,28 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     gandr_kernel_term::FixpointEvidence::Staged { .. } => {
                         gandr_kernel_term::FIXPOINT_STAGED
                     },
+                    gandr_kernel_term::FixpointEvidence::Joint { .. } => {
+                        gandr_kernel_term::FIXPOINT_JOINT
+                    },
                 });
-                if let gandr_kernel_term::FixpointEvidence::Staged { position } = evidence {
-                    record.put_word(EncodedWord(
-                        u64::try_from(usize::from(position)).unwrap_or(u64::MAX),
-                    ));
+                match evidence {
+                    gandr_kernel_term::FixpointEvidence::Staged { position } => {
+                        record.put_word(EncodedWord(
+                            u64::try_from(usize::from(position)).unwrap_or(u64::MAX),
+                        ));
+                    },
+                    gandr_kernel_term::FixpointEvidence::Joint { positions } => {
+                        record.put_word(EncodedWord(
+                            u64::try_from(positions.iter().count()).unwrap_or(u64::MAX),
+                        ));
+                        for position in positions.iter() {
+                            record.put_word(EncodedWord(
+                                u64::try_from(usize::from(position)).unwrap_or(u64::MAX),
+                            ));
+                        }
+                    },
+                    gandr_kernel_term::FixpointEvidence::Partial
+                    | gandr_kernel_term::FixpointEvidence::StructuralDescent => {},
                 }
                 record.put_content(self.content_of(AnyNode::Computation(body)));
             },

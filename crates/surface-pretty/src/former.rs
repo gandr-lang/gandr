@@ -184,7 +184,9 @@ impl From<FixpointEvidence> for Recursion
     fn from(evidence: FixpointEvidence) -> Self
     {
         match evidence {
-            FixpointEvidence::StructuralDescent | FixpointEvidence::Staged { .. } => Self::Descends,
+            FixpointEvidence::StructuralDescent
+            | FixpointEvidence::Staged { .. }
+            | FixpointEvidence::Joint { .. } => Self::Descends,
             FixpointEvidence::Partial => Self::Productive,
         }
     }

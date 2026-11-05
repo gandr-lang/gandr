@@ -1430,6 +1430,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::BASE_STRING','constant','Base-ty
 INSERT INTO purpose VALUES('kernel-term','tags::BASE_U32','constant','Base-type atom: the `u32` width atom.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::BASE_U64','constant','Base-type atom: the `u64` width atom.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::ChildArity','enum','The number of subterm-table child references an entry carries after its inline payload.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::FIXPOINT_JOINT','constant','Fixpoint evidence: a joint claim at a lazy product, its component count and each component''s staged position following as varints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::FIXPOINT_PARTIAL','constant','Fixpoint evidence: no claim, a partial fixpoint.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::FIXPOINT_STAGED','constant','Fixpoint evidence: structural recursion on the parameter at a position, the position following as a varint.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::FIXPOINT_STRUCTURAL_DESCENT','constant','Fixpoint evidence: structural recursion on the first parameter, replayed as the stage typing at position zero.',NULL,'fits','sound',NULL);
@@ -1569,6 +1570,7 @@ INSERT INTO purpose VALUES('kernel-term','term::EvidenceWord','struct','One cano
 INSERT INTO purpose VALUES('kernel-term','term::FieldLabel','struct','An exact UTF-8 record label; ordering is lexical, without normalization.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::FieldPosition','struct','Position of a field within one constructor''s field list.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::FixpointEvidence','enum','What a fixpoint claims about its own termination; the claim participates in content identity and never in conversion.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','term::JointPositions','struct','The staged position of each component of a joint fixpoint at a lazy product, held inline in component order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::OccurrenceSite','enum','Where a data declaration''s occurrence walk found a refused self occurrence or a reference outside its block.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::ParameterPosition','struct','Position of a classifier within one declaration''s parameter telescope.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','term::PathEvidence','struct','Portable round-trip dialogues for closed universe-path translators.',NULL,'fits','sound',NULL);

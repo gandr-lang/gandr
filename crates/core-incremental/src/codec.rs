@@ -103,6 +103,7 @@ use gandr_kernel_term::FractionDigits;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::IntegerWidth;
+use gandr_kernel_term::JointPositions;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::NumericLiteral;
@@ -6409,11 +6410,12 @@ const CAPTURES: [Capture; 6] = [
 ];
 
 /// Write a fixpoint's termination evidence: a tag in stable wire order, a
-/// staged claim's position after it as a word.
+/// staged claim's position after it as a word, and a joint claim's count and
+/// each component's position after it as words.
 ///
 /// # Specification
-/// - ensures: `Partial` writes tag 0, `StructuralDescent` tag 1, and `Staged`
-///   tag 2 then its position.
+/// - ensures: `Partial` writes tag 0, `StructuralDescent` tag 1, `Staged` tag 2
+///   then its position, and `Joint` tag 3 then its count and positions.
 /// - fails: [`CodecError::Unrepresentable`] for a position past 64 bits.
 /// - panics: none.
 ///
@@ -6422,7 +6424,7 @@ const CAPTURES: [Capture; 6] = [
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each evidence round-trips, the staged one with its
-///   position.
+///   position and the joint one with its positions in order.
 /// - witness: `codec::tests::fixpoint_evidence_round_trips_with_its_staged_position`
 #[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
 fn write_evidence<Out>(
@@ -6441,6 +6443,19 @@ where
             writer.tag(Tag(2));
             writer.word(Word(position));
         },
+        FixpointEvidence::Joint { positions } => {
+            writer.tag(Tag(3));
+            writer.word(Word(
+                u64::try_from(positions.iter().count())
+                    .map_err(|_wide| CodecError::Unrepresentable)?,
+            ));
+            for position in positions.iter() {
+                writer.word(Word(
+                    u64::try_from(usize::from(position))
+                        .map_err(|_wide| CodecError::Unrepresentable)?,
+                ));
+            }
+        },
     }
     Ok(())
 }
@@ -6449,16 +6464,17 @@ where
 ///
 /// # Specification
 /// - ensures: tags 0 and 1 read the partial and structural evidence, tag 2 a
-///   staged claim at the position after it.
-/// - fails: [`CodecError::Corrupt`] for another tag, a short input, or a
-///   position past the platform's width.
+///   staged claim at the position after it, and tag 3 a joint claim at the
+///   count and positions after it.
+/// - fails: [`CodecError::Corrupt`] for another tag, a short input, a position
+///   past the platform's width, or a joint claim past its width.
 /// - panics: none.
 ///
 /// # Errors
 /// As `- fails:`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`write_evidence`], and a tag past 2 is corrupt.
+/// - hypothesis: L3 — as [`write_evidence`], and a tag past 3 is corrupt.
 /// - witness: `codec::tests::fixpoint_evidence_round_trips_with_its_staged_position`
 #[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_evidence(reader: &mut Reader<'_>) -> Result<FixpointEvidence, CodecError>
@@ -6473,6 +6489,23 @@ fn read_evidence(reader: &mut Reader<'_>) -> Result<FixpointEvidence, CodecError
             Ok(FixpointEvidence::Staged {
                 position: StagedPosition::from(position),
             })
+        },
+        3 => {
+            let count = usize::try_from(reader.word()?.0).map_err(|_wide| CodecError::Corrupt)?;
+            if count > JointPositions::CAPACITY {
+                return Err(CodecError::Corrupt);
+            }
+            let mut positions = [StagedPosition::default(); JointPositions::CAPACITY];
+            for slot in positions.iter_mut().take(count) {
+                let word = reader.word()?;
+                *slot = StagedPosition::from(
+                    usize::try_from(word.0).map_err(|_wide| CodecError::Corrupt)?,
+                );
+            }
+            let positions = positions.get(.. count).ok_or(CodecError::Corrupt)?;
+            JointPositions::new(positions)
+                .map(|positions| FixpointEvidence::Joint { positions })
+                .ok_or(CodecError::Corrupt)
         },
         _ => Err(CodecError::Corrupt),
     }
