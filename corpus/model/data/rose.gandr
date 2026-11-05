@@ -134,3 +134,32 @@ rec {
 /// The sapling's three nodes, each weighing two.
 @[ runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))") ]
 def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero));
+
+/// Two members that rebuild a tree and its forest, one block. Each member
+/// returns its own family, so the joint's goal differs from member to
+/// member, and a case over the sum computes it.
+///
+/// - see: #3880
+rec {
+  /// A copy of the tree, one node at a time.
+  @[ checks ]
+  def rec bumpTree(t : Rose) -> Rose {
+    match t
+      | Node(kids) => Node (bumpForest[<] kids)
+  }
+
+  /// A copy of the forest, one tree at a time.
+  @[ checks ]
+  def rec bumpForest(ts : Forest) -> Forest =
+    match ts
+      | Empty => Empty
+      | More(t, rest) => More (bumpTree[<] t) (bumpForest[<] rest)
+}
+
+/// The sapling's copy keeps its three nodes.
+@[ runs("Succ (Succ (Succ Zero))") ]
+def rebuilt_nodes : () -> Nat = treeSize (bumpTree sapling);
+
+/// The copy of a forest of a sapling and a leaf keeps its four nodes.
+@[ runs("Succ (Succ (Succ (Succ Zero)))") ]
+def rebuilt_forest : () -> Nat = forestSize (bumpForest (More sapling (More leaf Empty)));
