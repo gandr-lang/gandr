@@ -5650,6 +5650,9 @@ where
                 // ([`carried_stage`]).
                 Frame::ElementTransport(transport) => {
                     let path_type = produced.value_type()?;
+                    // A path a field holds may check at the decode of a call,
+                    // its family's answer: the walk reads the type it returns.
+                    let path_type = read_returned_decode(arena, judgement, path_type);
                     let Some(&Computation::PathTransport { motive, value, .. }) =
                         arena.computation(transport)
                     else {
@@ -5685,6 +5688,7 @@ where
                 // in the family's fibre over the path's source.
                 Frame::TelescopePath(transport) => {
                     let path_type = produced.value_type()?;
+                    let path_type = read_returned_decode(arena, judgement, path_type);
                     let Some(&Computation::TelescopeTransport { motive, start, .. }) =
                         arena.computation(transport)
                     else {
