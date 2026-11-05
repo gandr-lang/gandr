@@ -316,6 +316,35 @@ enum Mantissa
     Large(BigInt),
 }
 
+/// A dyadic's mantissa as the plan codec writes it: inline or on the
+/// carrier, never copied.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum MantissaView<'value>
+{
+    /// A mantissa that fits an `i64`.
+    Small(i64),
+    /// A mantissa outside the range of an `i64`.
+    Large(&'value BigInt),
+}
+
+/// A mantissa that fits an `i64`, as the plan codec reads it back.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct InlineMantissa(i64);
+
+impl From<i64> for InlineMantissa
+{
+    /// The mantissa `value`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: i64) -> Self
+    {
+        return Self(value);
+    }
+}
+
 impl Dyadic
 {
     /// The dyadic one.
@@ -644,6 +673,50 @@ impl Dyadic
             exponent: Scale::of(self.exponent),
             polarity: Polarity::Keep,
         };
+    }
+
+    /// The mantissa, borrowed in the form the value holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn mantissa_view(&self) -> MantissaView<'_>
+    {
+        return match self.mantissa {
+            Mantissa::Small(value) => MantissaView::Small(value),
+            Mantissa::Large(ref value) => MantissaView::Large(value),
+        };
+    }
+
+    /// The dyadic `mantissa · 2^exponent` from an inline mantissa, brought
+    /// to canonical form with no carrier allocation.
+    ///
+    /// # Specification
+    /// - ensures: as [`Dyadic::new`] of the same parts.
+    /// - fails: returns [`DyadicError::ExponentOutOfRange`] when removing the
+    ///   mantissa's trailing zeros moves the exponent past `i32::MAX`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`DyadicError::ExponentOutOfRange`]: the canonical exponent does not
+    ///   fit an `i32`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the plan round trip reads every generated inline
+    ///   constant back through it, and the codec refuses a padded mantissa.
+    /// - witness: `tests::plan::encoding_round_trips_generated_plans`
+    #[inline]
+    #[spec(ensures: |ref result| result.as_ref().map_or(true, |value| value.form() == Form::Canonical))]
+    pub(crate) fn from_inline(
+        mantissa: InlineMantissa,
+        exponent: Exponent,
+    ) -> Result<Self, DyadicError>
+    {
+        let raw = Unrounded {
+            mantissa: Wide::Small(i128::from(mantissa.0)),
+            exponent: Scale::of(exponent),
+        };
+        return raw.canonical();
     }
 }
 

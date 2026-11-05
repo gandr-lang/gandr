@@ -7,3 +7,5 @@ mod dyadic;
 mod interval;
 #[cfg(test)]
 mod oracle;
+#[cfg(test)]
+mod plan;

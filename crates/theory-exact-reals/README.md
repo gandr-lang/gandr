@@ -1,6 +1,6 @@
 # gandr-theory-exact-reals
 
-Canonical dyadics and explicitly oriented intervals: the finite arithmetic that exact real computation reads.
+Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the finite arithmetic and the plan language that exact real computation reads.
 
 <!-- toc -->
 
@@ -11,6 +11,7 @@ Canonical dyadics and explicitly oriented intervals: the finite arithmetic that 
 - [Examples](#examples)
 - [Rounding and its bound](#rounding-and-its-bound)
 - [Intervals](#intervals)
+- [Plans and their bytes](#plans-and-their-bytes)
 - [Measurement](#measurement)
 - [License](#license)
 
@@ -18,7 +19,7 @@ Canonical dyadics and explicitly oriented intervals: the finite arithmetic that 
 
 ## Synopsis
 
-**What.** `Dyadic` holds a number `m · 2^e` in one canonical form. `NumericInterval` holds two bounds, each a dyadic or an infinity with a closure, and an explicit orientation. Every dyadic operation rounds to a requested precision toward the floor or the ceiling and reports whether it lost bits. Every interval operation rounds outward. The crate is `no_std` and depends only on the `num-bigint` carrier and the specification facade.
+**What.** `Dyadic` holds a number `m · 2^e` in one canonical form. `NumericInterval` holds two bounds, each a dyadic or an infinity with a closure, and an explicit orientation. Every dyadic operation rounds to a requested precision toward the floor or the ceiling and reports whether it lost bits. Every interval operation rounds outward. `Plan` holds a computation over the reals as a finite DAG of real, open and domain nodes, and it has one canonical byte form. The crate is `no_std` and depends only on the `num-bigint` carrier and the specification facade.
 
 **Why.** An exact real is an infinite object, and a program holds only finite approximations of it. Floating point rounds each result without a record, so an enclosure built from it is not sound. A dyadic is exact, a sum or a product of dyadics is a dyadic, and directed rounding keeps an enclosure sound while it bounds the bits. The refinement machine of the exact-reals design computes with these values and emits certificates that a checker replays. An interval is an approximant and never evidence of truth. The crate does not depend on the kernel, and no real number enters kernel conversion.
 
@@ -26,7 +27,7 @@ Canonical dyadics and explicitly oriented intervals: the finite arithmetic that 
 
 ## References
 
-- `vault:01a178aa-a419-7ab1-82e7-40a4f95938c6` — lineage: the exact-reals design. Its domain is canonical dyadics with an inline path and oriented intervals as runtime approximants, and its firewall keeps all of it out of the kernel.
+- `vault:01a178aa-a419-7ab1-82e7-40a4f95938c6` — lineage: the exact-reals design. Its domain is canonical dyadics with an inline path and oriented intervals as runtime approximants. Its plan language is a scoped DAG that keeps sharing as edges, and its firewall keeps all of it out of the kernel.
 
 ## Provided features
 
@@ -38,6 +39,11 @@ Canonical dyadics and explicitly oriented intervals: the finite arithmetic that 
 - `NumericInterval`: `new`, `point`, `lower`, `upper`, `orientation`, `dual`, `contains`, and the outward-rounded `add`, `sub` and `mul`.
 - `Bound`, `Endpoint`, `Closure`, `Orientation` and `Containment`: the parts of an interval and the answer of a membership query.
 - `IntervalError`: each malformed interval by name, a dual operand, and a failed endpoint operation.
+- `Plan`: the canonical DAG; `root`, `node_count`, `node` and `nodes`; `encode` to `PlanBytes` and `decode` from `EncodedPlan`.
+- `PlanBuilder`: `new`, `with_capacity`, `real`, `open`, `domain`, `sort_of`, `node_count`, and `finish` to the canonical plan of a `Root`.
+- `Real`, `Open` and `Domain`: the node kinds of the three sorts, with `Cut` and `Quantifier`; `Node`, `Sort`, `Edge` and `Edges`.
+- `NodeId`, `RealId`, `OpenId`, `DomainId`, `DeBruijn`, `Power`, `Evidence`, `EvidenceSlot` and `NodeCount`: the nominal parts of a plan.
+- `PlanError` and `DecodeError`: each refused node, root and byte string by name.
 
 ## Expected features
 
@@ -91,9 +97,17 @@ A proper interval has its lower endpoint at or below its upper endpoint. A dual 
 
 The arithmetic takes proper operands and refuses a dual one as `DualOperand`. A sum adds the lower bounds and the upper bounds, and a difference crosses them. A product chooses its endpoint products by the signs of its operands: two products, or four when both operands straddle zero. The result closes an endpoint exactly when some pair of elements attains it and the rounding loses no bits. The product attains zero exactly when an operand contains zero, and zero times an infinity is zero at an endpoint, because every element of an interval is finite.
 
+## Plans and their bytes
+
+A plan is a finite DAG, and each node has one of three sorts. A real node is a bound variable, a dyadic constant, a sum, a difference, a product, a quotient with evidence that its divisor is not zero, a natural power, or a cut. An open node is top, bottom, a strict comparison, a finite meet or join, or a bounded existential or universal quantifier with its modality evidence. A domain node is an interval, a product of two domains, or the subdomain where an open proposition holds. A cut and the two quantifiers each bind one real variable, and a bound variable names its binder by a de Bruijn index. So two plans that differ only in the names of their variables are equal. An evidence reference names a certificate that a later unit's table holds.
+
+A `PlanBuilder` appends each node after the nodes that it names, so it holds a DAG by construction, and it refuses a child of the wrong sort or from another builder by name. `finish` walks the nodes that the root reaches, depth first in field order, with a stack of its own. It places each node after its children, and a node whose structure equals a placed node takes that node's position. So a plan holds each distinct subterm once, and the order of its nodes depends on its structure alone. Two builds of one structure give one plan, whatever their order, their sharing or their dead nodes.
+
+The bytes follow the tree's convention: a one-byte kind before each record, every integer little-endian at a fixed width, and a length as a `u64` before a byte payload. They hold the magic `GXRP`, the version, the node count and each node in the plan's order, its children as the positions of earlier nodes. A mantissa is its shortest two's complement. The reader refuses each malformed input by name: a wrong magic or version, no node, a truncated field, an unknown kind, a child that names no earlier node or a node of another sort, a malformed constant or interval, a domain at the root, and bytes after the last node. It then writes the plan that it read and refuses bytes that differ as `NotCanonical`. So it accepts exactly the canonical bytes of a plan, and it allocates no more than the bytes hold.
+
 ## Measurement
 
-`cargo bench -p gandr-theory-exact-reals` times each operation at operand widths of 63, 64, 256 and 4096 bits, and prints the median, the 99th percentile and the allocations per operation. The bench's module documentation lists the rows.
+`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits, and it times the canonical form, the bytes and the reading back of three plans. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
 
 ## License
 

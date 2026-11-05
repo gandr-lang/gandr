@@ -1,0 +1,1235 @@
+//! The scoped plan DAG: the plan language that every stage of exact real
+//! computation reads.
+//!
+//! A program over the reals cannot run as a loop over real numbers, because
+//! no machine holds a real number. It is held as a plan instead. A plan is a
+//! finite DAG of nodes, and each node has one of three [`Sort`]s. A
+//! [`Real`] node denotes a real number: a bound variable, a dyadic constant,
+//! an arithmetic operation or a cut. An [`Open`] node denotes an open
+//! proposition, a semidecision: the two constants, a strict comparison, a
+//! finite meet or join, or a bounded quantifier. A [`Domain`] node denotes a
+//! bounded set that a quantifier ranges over. Every later stage reads the
+//! plan: validation, approximation, the refinement machine and the
+//! certificate checker.
+//!
+//! # Items
+//!
+//! A binder holds no name. A cut and the two quantifiers each bind one real
+//! variable, and [`Real::Bound`] refers to it by its de Bruijn index: zero is
+//! the innermost binder, and a larger index walks outward. So two plans that
+//! differ only in the names of their variables are equal.
+//!
+//! A child is an edge, a [`NodeId`] into the same plan, never a copy. A
+//! [`PlanBuilder`] appends nodes, and each node refers only to nodes before
+//! it, so a builder holds a DAG by construction. [`PlanBuilder::finish`]
+//! brings the nodes that the root reaches to one canonical form. Two nodes
+//! of equal structure become one node, and the nodes stand in the order of a
+//! depth-first walk from the root that visits children in field order and
+//! places each node after its children. So a [`Plan`] holds each distinct
+//! subterm once, and two plans of equal structure are equal, whatever order
+//! and whatever sharing built them.
+//!
+//! A cut, a division and a quantifier name their evidence by an [`Evidence`]
+//! reference. The certificates that such a reference names, and the checks
+//! that the plan is well scoped and that its evidence matches its domains,
+//! are the work of later units. This module holds the data model alone.
+
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
+
+use crate::codec::Entry;
+use crate::dyadic::Dyadic;
+use crate::interval::NumericInterval;
+
+/// The position of a node in a plan or in a builder.
+///
+/// A position names a node only in the plan or the builder that gave it. A
+/// builder's positions do not name the nodes of the plan that it finishes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct NodeId(u32);
+
+impl TryFrom<usize> for NodeId
+{
+    type Error = PlanError;
+
+    /// The position `index`, when a position counts it.
+    ///
+    /// # Specification
+    /// - ensures: returns the position `index`.
+    /// - fails: returns [`PlanError::TooManyNodes`] when `index` exceeds
+    ///   `u32::MAX`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PlanError::TooManyNodes`]: the index exceeds `u32::MAX`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every builder and every decoded plan takes its
+    ///   positions through it.
+    /// - witness: `tests::plan::encoding_round_trips_generated_plans`
+    #[inline]
+    #[spec(ensures: |ref result| result.as_ref().map_or(true, |id| usize::try_from(id.0).ok() == Some(index)))]
+    fn try_from(index: usize) -> Result<Self, PlanError>
+    {
+        return u32::try_from(index)
+            .map(Self)
+            .map_err(|_wide| PlanError::TooManyNodes);
+    }
+}
+
+impl From<NodeId> for usize
+{
+    /// The position as an index into the nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(id: NodeId) -> Self
+    {
+        // A target narrower than 32 bits cannot hold a plan's nodes, so the
+        // saturated index then names no node.
+        return Self::try_from(id.0).unwrap_or(Self::MAX);
+    }
+}
+
+impl From<NodeId> for u32
+{
+    /// The position as the codec writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(id: NodeId) -> Self
+    {
+        return id.0;
+    }
+}
+
+impl From<u32> for NodeId
+{
+    /// The position that the codec reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: u32) -> Self
+    {
+        return Self(index);
+    }
+}
+
+/// A node of sort real.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RealId(NodeId);
+
+/// A node of sort open.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OpenId(NodeId);
+
+/// A node of sort domain.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DomainId(NodeId);
+
+impl RealId
+{
+    /// The real node at `node`, for the codec that reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn at(node: NodeId) -> Self
+    {
+        return Self(node);
+    }
+
+    /// The node's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn node(self) -> NodeId
+    {
+        return self.0;
+    }
+}
+
+impl OpenId
+{
+    /// The open node at `node`, for the codec that reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn at(node: NodeId) -> Self
+    {
+        return Self(node);
+    }
+
+    /// The node's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn node(self) -> NodeId
+    {
+        return self.0;
+    }
+}
+
+impl DomainId
+{
+    /// The domain node at `node`, for the codec that reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn at(node: NodeId) -> Self
+    {
+        return Self(node);
+    }
+
+    /// The node's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn node(self) -> NodeId
+    {
+        return self.0;
+    }
+}
+
+/// A de Bruijn index: zero names the innermost binder.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DeBruijn(u32);
+
+impl From<u32> for DeBruijn
+{
+    /// The index `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: u32) -> Self
+    {
+        return Self(index);
+    }
+}
+
+impl From<DeBruijn> for u32
+{
+    /// The index as a number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: DeBruijn) -> Self
+    {
+        return index.0;
+    }
+}
+
+/// A natural-number exponent of a power.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Power(u32);
+
+impl From<u32> for Power
+{
+    /// The exponent `power`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(power: u32) -> Self
+    {
+        return Self(power);
+    }
+}
+
+impl From<Power> for u32
+{
+    /// The exponent as a number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(power: Power) -> Self
+    {
+        return power.0;
+    }
+}
+
+/// A reference to a certificate that a later unit's certificate table holds:
+/// the laws of a cut, the proof that a divisor is not zero, or the evidence
+/// that a domain is overt or compact.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Evidence(u32);
+
+impl From<u32> for Evidence
+{
+    /// The reference `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: u32) -> Self
+    {
+        return Self(index);
+    }
+}
+
+impl From<Evidence> for u32
+{
+    /// The reference as a number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(evidence: Evidence) -> Self
+    {
+        return evidence.0;
+    }
+}
+
+/// Evidence that a node may carry and need not.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EvidenceSlot
+{
+    /// The plan states no evidence here.
+    Absent,
+    /// The plan states this evidence.
+    Given(Evidence),
+}
+
+/// A real number defined as a cut: the reals strictly below it and the reals
+/// strictly above it, each an open proposition about the variable that the
+/// cut binds.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Cut
+{
+    /// An interval that contains the real.
+    pub hull: NumericInterval,
+    /// The lower cut: holds of the bound variable exactly below the real.
+    pub lower: OpenId,
+    /// The upper cut: holds of the bound variable exactly above the real.
+    pub upper: OpenId,
+    /// The certificate of the cut's laws.
+    pub laws: Evidence,
+}
+
+/// A bounded quantifier: an open proposition about the variable that it
+/// binds, over a domain.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Quantifier
+{
+    /// The domain that the variable ranges over.
+    pub domain: DomainId,
+    /// The body, with the variable at de Bruijn index zero.
+    pub body: OpenId,
+    /// The evidence that the quantifier needs: overtness of the domain for an
+    /// existential, compactness for a universal.
+    pub evidence: Evidence,
+    /// The evidence of the other modality, which a negative answer needs.
+    pub dual: EvidenceSlot,
+}
+
+/// A node of sort real.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Real
+{
+    /// The variable of a binder.
+    Bound(DeBruijn),
+    /// A dyadic constant.
+    Constant(Dyadic),
+    /// The sum.
+    Add(RealId, RealId),
+    /// The difference of the first and the second.
+    Sub(RealId, RealId),
+    /// The product.
+    Mul(RealId, RealId),
+    /// The quotient, with evidence that the divisor is not zero.
+    Div
+    {
+        /// The dividend.
+        numerator: RealId,
+        /// The divisor.
+        denominator: RealId,
+        /// The certificate that the divisor is not zero.
+        nonzero: Evidence,
+    },
+    /// A natural power.
+    Power(RealId, Power),
+    /// A real defined by its cut, which binds one variable.
+    Cut(Cut),
+}
+
+/// A node of sort open: an open proposition, which a refinement can confirm
+/// and never refutes by a failed search.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Open
+{
+    /// The proposition that holds.
+    Top,
+    /// The proposition that never holds.
+    Bottom,
+    /// The first real lies strictly below the second.
+    Less(RealId, RealId),
+    /// Both hold: a finite meet.
+    Meet(OpenId, OpenId),
+    /// One holds: a finite join.
+    Join(OpenId, OpenId),
+    /// The body holds for some point of the domain.
+    Exists(Quantifier),
+    /// The body holds for every point of the domain.
+    Forall(Quantifier),
+}
+
+/// A node of sort domain: a bounded set that a quantifier ranges over.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Domain
+{
+    /// The points of an interval.
+    Interval
+    {
+        /// The interval.
+        hull: NumericInterval,
+        /// The evidence that the set is overt.
+        overt: EvidenceSlot,
+        /// The evidence that the set is compact.
+        compact: EvidenceSlot,
+    },
+    /// The product of two domains.
+    Product
+    {
+        /// The first factor.
+        left: DomainId,
+        /// The second factor.
+        right: DomainId,
+        /// The certificate of the product's modality.
+        evidence: Evidence,
+    },
+    /// The points of a domain where an open proposition holds.
+    Subdomain
+    {
+        /// The domain that the subdomain lies in.
+        parent: DomainId,
+        /// The proposition, with the point at de Bruijn index zero.
+        classifier: OpenId,
+        /// The certificate of the subdomain's modality.
+        evidence: Evidence,
+    },
+}
+
+/// The sort of a node.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Sort
+{
+    /// A real number.
+    Real,
+    /// An open proposition.
+    Open,
+    /// A bounded set.
+    Domain,
+}
+
+/// A node of a plan.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Node
+{
+    /// A node of sort real.
+    Real(Real),
+    /// A node of sort open.
+    Open(Open),
+    /// A node of sort domain.
+    Domain(Domain),
+}
+
+/// The root of a plan: a real to enclose, or an open proposition to decide.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Root
+{
+    /// A real number.
+    Real(RealId),
+    /// An open proposition.
+    Open(OpenId),
+}
+
+impl Root
+{
+    /// The root's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn node(self) -> NodeId
+    {
+        return match self {
+            Self::Real(id) => id.0,
+            Self::Open(id) => id.0,
+        };
+    }
+
+    /// The sort of the root.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn sort(self) -> Sort
+    {
+        return match self {
+            Self::Real(_) => Sort::Real,
+            Self::Open(_) => Sort::Open,
+        };
+    }
+}
+
+/// An edge of a node: the child's position and the sort its slot takes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Edge
+{
+    /// The child.
+    pub node: NodeId,
+    /// The sort that the slot takes.
+    pub sort: Sort,
+}
+
+/// The edges of one node, in field order.
+#[derive(Clone, Debug)]
+pub struct Edges
+{
+    /// The edges; the first `count` are the node's.
+    slots: [Edge; 3],
+    /// How many edges the node has.
+    count: EdgeCount,
+    /// The next edge to yield.
+    next: EdgeCount,
+}
+
+/// A count of edges, at most three.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+struct EdgeCount(usize);
+
+impl Edges
+{
+    /// The edges in `slots`, the first `count` of them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn of(
+        slots: [Edge; 3],
+        count: EdgeCount,
+    ) -> Self
+    {
+        return Self {
+            slots,
+            count,
+            next: EdgeCount(0),
+        };
+    }
+}
+
+impl Iterator for Edges
+{
+    type Item = Edge;
+
+    /// The next edge, in field order.
+    ///
+    /// # Specification
+    /// - ensures: yields the node's edges in field order, each once, then none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each node kind's edges in the sort and order its
+    ///   fields give, read by the builder's checks and the canonical walk.
+    /// - witness: `tests::plan::builder_refuses_a_foreign_or_missorted_child`
+    /// - witness: `tests::plan::canonical_form_ignores_order_sharing_and_dead_nodes`
+    #[inline]
+    #[spec(ensures: |ref result| result.is_none() || self.next <= self.count)]
+    fn next(&mut self) -> Option<Edge>
+    {
+        if self.next >= self.count {
+            return None;
+        }
+        let edge = self.slots.get(self.next.0).copied()?;
+        self.next = EdgeCount(self.next.0.saturating_add(1));
+        return Some(edge);
+    }
+}
+
+impl Node
+{
+    /// The sort of the node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn sort(&self) -> Sort
+    {
+        return match *self {
+            Self::Real(_) => Sort::Real,
+            Self::Open(_) => Sort::Open,
+            Self::Domain(_) => Sort::Domain,
+        };
+    }
+
+    /// The node's edges, in field order.
+    ///
+    /// # Specification
+    /// - ensures: one edge per child field, in declaration order, each with the
+    ///   sort that its field's type names.
+    /// - panics: none.
+    /// - executable: none — the clause restates the match.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Edges`].
+    /// - witness: `tests::plan::builder_refuses_a_foreign_or_missorted_child`
+    /// - witness: `tests::plan::canonical_form_ignores_order_sharing_and_dead_nodes`
+    #[inline]
+    #[must_use]
+    pub fn edges(&self) -> Edges
+    {
+        let real = |id: RealId| Edge {
+            node: id.0,
+            sort: Sort::Real,
+        };
+        let open = |id: OpenId| Edge {
+            node: id.0,
+            sort: Sort::Open,
+        };
+        let domain = |id: DomainId| Edge {
+            node: id.0,
+            sort: Sort::Domain,
+        };
+        let none = Edge {
+            node: NodeId(0),
+            sort: Sort::Real,
+        };
+        let (edges, count) = match *self {
+            Self::Real(Real::Bound(_) | Real::Constant(_))
+            | Self::Open(Open::Top | Open::Bottom)
+            | Self::Domain(Domain::Interval { .. }) => ([none, none, none], 0),
+            Self::Real(Real::Power(base, _)) => ([real(base), none, none], 1),
+            Self::Real(
+                Real::Add(left, right) | Real::Sub(left, right) | Real::Mul(left, right),
+            )
+            | Self::Open(Open::Less(left, right)) => ([real(left), real(right), none], 2),
+            Self::Real(Real::Div {
+                numerator,
+                denominator,
+                ..
+            }) => ([real(numerator), real(denominator), none], 2),
+            Self::Real(Real::Cut(ref cut)) => ([open(cut.lower), open(cut.upper), none], 2),
+            Self::Open(Open::Meet(left, right) | Open::Join(left, right)) => {
+                ([open(left), open(right), none], 2)
+            },
+            Self::Open(Open::Exists(quantifier) | Open::Forall(quantifier)) => {
+                ([domain(quantifier.domain), open(quantifier.body), none], 2)
+            },
+            Self::Domain(Domain::Product { left, right, .. }) => {
+                ([domain(left), domain(right), none], 2)
+            },
+            Self::Domain(Domain::Subdomain {
+                parent, classifier, ..
+            }) => ([domain(parent), open(classifier), none], 2),
+        };
+        return Edges::of(edges, EdgeCount(count));
+    }
+
+    /// The node with each child moved to the position that `place` gives it.
+    ///
+    /// # Specification
+    /// - ensures: the same node kind and payload, each child replaced by
+    ///   `place` of it, the children visited in field order.
+    /// - fails: returns the first error that `place` returns.
+    /// - panics: none.
+    /// - executable: none — the clause restates the match.
+    ///
+    /// # Errors
+    /// The first error that `place` returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every node kind passes through the canonical walk,
+    ///   and the round trip reads each back with its children in place.
+    /// - witness: `tests::plan::encoding_round_trips_generated_plans`
+    /// - witness: `tests::plan::canonical_form_ignores_order_sharing_and_dead_nodes`
+    fn moved<Place>(
+        self,
+        mut place: Place,
+    ) -> Result<Self, PlanError>
+    where
+        Place: FnMut(NodeId) -> Result<NodeId, PlanError>,
+    {
+        return Ok(match self {
+            Self::Real(node) => Self::Real(match node {
+                Real::Bound(_) | Real::Constant(_) => node,
+                Real::Add(left, right) => {
+                    Real::Add(RealId(place(left.0)?), RealId(place(right.0)?))
+                },
+                Real::Sub(left, right) => {
+                    Real::Sub(RealId(place(left.0)?), RealId(place(right.0)?))
+                },
+                Real::Mul(left, right) => {
+                    Real::Mul(RealId(place(left.0)?), RealId(place(right.0)?))
+                },
+                Real::Div {
+                    numerator,
+                    denominator,
+                    nonzero,
+                } => Real::Div {
+                    numerator: RealId(place(numerator.0)?),
+                    denominator: RealId(place(denominator.0)?),
+                    nonzero,
+                },
+                Real::Power(base, power) => Real::Power(RealId(place(base.0)?), power),
+                Real::Cut(cut) => {
+                    let lower = OpenId(place(cut.lower.0)?);
+                    let upper = OpenId(place(cut.upper.0)?);
+                    Real::Cut(Cut {
+                        hull: cut.hull,
+                        lower,
+                        upper,
+                        laws: cut.laws,
+                    })
+                },
+            }),
+            Self::Open(node) => Self::Open(match node {
+                Open::Top | Open::Bottom => node,
+                Open::Less(left, right) => {
+                    Open::Less(RealId(place(left.0)?), RealId(place(right.0)?))
+                },
+                Open::Meet(left, right) => {
+                    Open::Meet(OpenId(place(left.0)?), OpenId(place(right.0)?))
+                },
+                Open::Join(left, right) => {
+                    Open::Join(OpenId(place(left.0)?), OpenId(place(right.0)?))
+                },
+                Open::Exists(quantifier) => {
+                    let domain = DomainId(place(quantifier.domain.0)?);
+                    let body = OpenId(place(quantifier.body.0)?);
+                    Open::Exists(Quantifier {
+                        domain,
+                        body,
+                        ..quantifier
+                    })
+                },
+                Open::Forall(quantifier) => {
+                    let domain = DomainId(place(quantifier.domain.0)?);
+                    let body = OpenId(place(quantifier.body.0)?);
+                    Open::Forall(Quantifier {
+                        domain,
+                        body,
+                        ..quantifier
+                    })
+                },
+            }),
+            Self::Domain(node) => Self::Domain(match node {
+                Domain::Interval { .. } => node,
+                Domain::Product {
+                    left,
+                    right,
+                    evidence,
+                } => Domain::Product {
+                    left: DomainId(place(left.0)?),
+                    right: DomainId(place(right.0)?),
+                    evidence,
+                },
+                Domain::Subdomain {
+                    parent,
+                    classifier,
+                    evidence,
+                } => Domain::Subdomain {
+                    parent: DomainId(place(parent.0)?),
+                    classifier: OpenId(place(classifier.0)?),
+                    evidence,
+                },
+            }),
+        });
+    }
+}
+
+/// A count of nodes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct NodeCount(usize);
+
+impl From<usize> for NodeCount
+{
+    /// The count `count`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        return Self(count);
+    }
+}
+
+impl From<NodeCount> for usize
+{
+    /// The count as a number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: NodeCount) -> Self
+    {
+        return count.0;
+    }
+}
+
+/// A failed plan operation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PlanError
+{
+    /// A node names a position that holds no node.
+    UnknownNode,
+    /// A node names a node of another sort than its slot takes.
+    WrongSort,
+    /// The plan holds more nodes than a position counts.
+    TooManyNodes,
+}
+
+impl fmt::Display for PlanError
+{
+    /// Write the failure as one line.
+    ///
+    /// # Specification
+    /// - ensures: writes one fixed phrase per variant, no two alike.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every variant renders a distinct phrase.
+    /// - witness: `tests::plan::failures_render_distinct_phrases`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        return f.write_str(match *self {
+            Self::UnknownNode => "a node names a position that holds no node",
+            Self::WrongSort => "a node names a node of another sort than its slot takes",
+            Self::TooManyNodes => "the plan holds more nodes than a position counts",
+        });
+    }
+}
+
+impl core::error::Error for PlanError
+{
+}
+
+/// An arena that a plan is built in: each node is appended after the nodes
+/// that it names.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default)]
+pub struct PlanBuilder
+{
+    /// The nodes, each after its children.
+    nodes: Vec<Node>,
+}
+
+/// The state of a builder node in the canonical walk.
+#[derive(Clone, Copy, Debug)]
+enum Visit
+{
+    /// The walk has not finished the node.
+    Pending,
+    /// The walk placed the node, or a node of equal structure, here.
+    Placed(NodeId),
+}
+
+/// A node on the canonical walk's stack, with the next edge to follow.
+#[derive(Clone, Copy, Debug)]
+struct Frame
+{
+    /// The builder node.
+    node: NodeId,
+    /// How many of its edges the walk has followed.
+    followed: EdgeCount,
+}
+
+impl PlanBuilder
+{
+    /// An empty builder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        return Self { nodes: Vec::new() };
+    }
+
+    /// An empty builder with room for `capacity` nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_capacity(capacity: NodeCount) -> Self
+    {
+        return Self {
+            nodes: Vec::with_capacity(capacity.0),
+        };
+    }
+
+    /// How many nodes the builder holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn node_count(&self) -> NodeCount
+    {
+        return NodeCount(self.nodes.len());
+    }
+
+    /// The sort of the node at `id`.
+    ///
+    /// # Specification
+    /// - ensures: returns the sort of the node at `id`.
+    /// - fails: returns [`PlanError::UnknownNode`] when the builder holds no
+    ///   node there.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PlanError::UnknownNode`]: no node stands at `id`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a position past the last node and one of each sort.
+    /// - witness: `tests::plan::builder_refuses_a_foreign_or_missorted_child`
+    #[inline]
+    #[spec(ensures: |ref result| result.is_ok() == (usize::from(id) < self.nodes.len()))]
+    pub fn sort_of(
+        &self,
+        id: NodeId,
+    ) -> Result<Sort, PlanError>
+    {
+        return self
+            .nodes
+            .get(usize::from(id))
+            .map(Node::sort)
+            .ok_or(PlanError::UnknownNode);
+    }
+
+    /// Append a node of sort real.
+    ///
+    /// # Specification
+    /// - ensures: as [`PlanBuilder::push`].
+    /// - fails: as [`PlanBuilder::push`].
+    /// - panics: none.
+    /// - executable: none — [`PlanBuilder::push`] carries the clause.
+    ///
+    /// # Errors
+    /// As [`PlanBuilder::push`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`PlanBuilder::push`].
+    /// - witness: `tests::plan::builder_refuses_a_foreign_or_missorted_child`
+    #[inline]
+    pub fn real(
+        &mut self,
+        node: Real,
+    ) -> Result<RealId, PlanError>
+    {
+        return self.push(Node::Real(node)).map(RealId);
+    }
+
+    /// Append a node of sort open.
+    ///
+    /// # Specification
+    /// - ensures: as [`PlanBuilder::push`].
+    /// - fails: as [`PlanBuilder::push`].
+    /// - panics: none.
+    /// - executable: none — [`PlanBuilder::push`] carries the clause.
+    ///
+    /// # Errors
+    /// As [`PlanBuilder::push`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`PlanBuilder::push`].
+    /// - witness: `tests::plan::builder_refuses_a_foreign_or_missorted_child`
+    #[inline]
+    pub fn open(
+        &mut self,
+        node: Open,
+    ) -> Result<OpenId, PlanError>
+    {
+        return self.push(Node::Open(node)).map(OpenId);
+    }
+
+    /// Append a node of sort domain.
+    ///
+    /// # Specification
+    /// - ensures: as [`PlanBuilder::push`].
+    /// - fails: as [`PlanBuilder::push`].
+    /// - panics: none.
+    /// - executable: none — [`PlanBuilder::push`] carries the clause.
+    ///
+    /// # Errors
+    /// As [`PlanBuilder::push`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`PlanBuilder::push`].
+    /// - witness: `tests::plan::builder_refuses_a_foreign_or_missorted_child`
+    #[inline]
+    pub fn domain(
+        &mut self,
+        node: Domain,
+    ) -> Result<DomainId, PlanError>
+    {
+        return self.push(Node::Domain(node)).map(DomainId);
+    }
+
+    /// Append `node` after every node it names.
+    ///
+    /// # Specification
+    /// - ensures: appends the node and returns its position, the first position
+    ///   past the nodes before it.
+    /// - fails: refuses the node, the builder unchanged, when a child names no
+    ///   node of the builder ([`PlanError::UnknownNode`]), a node of another
+    ///   sort than its slot takes ([`PlanError::WrongSort`]), or when the
+    ///   builder already holds `u32::MAX + 1` nodes
+    ///   ([`PlanError::TooManyNodes`]).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PlanError::UnknownNode`]: a child names no node of the builder.
+    /// - [`PlanError::WrongSort`]: a child's node has another sort than its
+    ///   slot takes.
+    /// - [`PlanError::TooManyNodes`]: no position counts another node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child past the last node, a child of each wrong
+    ///   sort, and every node kind appended with children in range.
+    /// - witness: `tests::plan::builder_refuses_a_foreign_or_missorted_child`
+    /// - witness: `tests::plan::encoding_round_trips_generated_plans`
+    #[spec(
+        captures: before = self.nodes.len(),
+        ensures: |ref result| match *result {
+            Ok(id) => usize::from(id) == before && self.nodes.len() == before.saturating_add(1),
+            Err(_) => self.nodes.len() == before,
+        }
+    )]
+    pub(crate) fn push(
+        &mut self,
+        node: Node,
+    ) -> Result<NodeId, PlanError>
+    {
+        for edge in node.edges() {
+            if self.sort_of(edge.node)? != edge.sort {
+                return Err(PlanError::WrongSort);
+            }
+        }
+        let id = NodeId::try_from(self.nodes.len())?;
+        self.nodes.push(node);
+        return Ok(id);
+    }
+
+    /// The plan of the nodes that `root` reaches, in canonical form.
+    ///
+    /// The walk is depth first from the root. It follows each node's edges
+    /// in field order and places a node after its children. A node whose
+    /// structure equals a node already placed takes that node's position. So
+    /// the plan holds each distinct subterm once, the nodes that the root
+    /// does not reach are gone, and the order depends on the structure
+    /// alone. The walk keeps its own stack, so a deep plan uses no machine
+    /// stack.
+    ///
+    /// # Specification
+    /// - ensures: the plan's nodes are the distinct structures that the root
+    ///   reaches, each once, each after its children, in the order in which a
+    ///   depth-first walk from the root in field order first finishes each; the
+    ///   root stands last.
+    /// - fails: returns [`PlanError::UnknownNode`] or [`PlanError::WrongSort`]
+    ///   when `root` names no node of its sort.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk.
+    ///
+    /// # Errors
+    /// - [`PlanError::UnknownNode`]: `root` names no node.
+    /// - [`PlanError::WrongSort`]: `root` names a node of the other sort.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one DAG built in two orders, with and without shared
+    ///   children and with dead nodes, gives one plan; a chain of squares keeps
+    ///   one node per square; a foreign root is refused.
+    /// - witness: `tests::plan::canonical_form_ignores_order_sharing_and_dead_nodes`
+    /// - witness: `tests::plan::shared_subterms_serialize_once`
+    /// - witness: `tests::plan::builder_refuses_a_foreign_or_missorted_child`
+    #[inline]
+    pub fn finish(
+        self,
+        root: Root,
+    ) -> Result<Plan, PlanError>
+    {
+        if self.sort_of(root.node())? != root.sort() {
+            return Err(PlanError::WrongSort);
+        }
+        let Self { mut nodes } = self;
+        let mut visits = Vec::new();
+        visits.resize(nodes.len(), Visit::Pending);
+        let mut placed: Vec<Node> = Vec::with_capacity(nodes.len());
+        let mut by_content: BTreeMap<Entry, NodeId> = BTreeMap::new();
+        let mut entry = Entry::default();
+        let mut stack = Vec::from([Frame {
+            node: root.node(),
+            followed: EdgeCount(0),
+        }]);
+        while let Some(frame) = stack.last_mut() {
+            let node = nodes
+                .get(usize::from(frame.node))
+                .ok_or(PlanError::UnknownNode)?;
+            if let Some(edge) = node.edges().nth(frame.followed.0) {
+                frame.followed = EdgeCount(frame.followed.0.saturating_add(1));
+                if matches!(visits.get(usize::from(edge.node)), Some(Visit::Pending)) {
+                    stack.push(Frame {
+                        node: edge.node,
+                        followed: EdgeCount(0),
+                    });
+                }
+                continue;
+            }
+            // Every child is placed: place the node, or find its equal.
+            let id = frame.node;
+            let _finished = stack.pop();
+            let slot = nodes
+                .get_mut(usize::from(id))
+                .ok_or(PlanError::UnknownNode)?;
+            let taken = core::mem::replace(slot, Node::Open(Open::Top));
+            let moved = taken.moved(|child| {
+                return match visits.get(usize::from(child)) {
+                    Some(&Visit::Placed(position)) => Ok(position),
+                    Some(&Visit::Pending) | None => Err(PlanError::UnknownNode),
+                };
+            })?;
+            entry.clear();
+            entry.node(&moved);
+            let position = if let Some(&existing) = by_content.get(&entry) {
+                existing
+            }
+            else {
+                let fresh = NodeId::try_from(placed.len())?;
+                let _absent = by_content.insert(entry.clone(), fresh);
+                placed.push(moved);
+                fresh
+            };
+            let visit = visits
+                .get_mut(usize::from(id))
+                .ok_or(PlanError::UnknownNode)?;
+            *visit = Visit::Placed(position);
+        }
+        let last = NodeId::try_from(placed.len().saturating_sub(1))?;
+        let root = match root {
+            Root::Real(_) => Root::Real(RealId(last)),
+            Root::Open(_) => Root::Open(OpenId(last)),
+        };
+        return Ok(Plan {
+            nodes: placed,
+            root,
+        });
+    }
+}
+
+/// A plan in canonical form: the distinct nodes that its root reaches, each
+/// once, each after its children, the root last.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Plan
+{
+    /// The nodes, in canonical order.
+    nodes: Vec<Node>,
+    /// The root, the last node.
+    root: Root,
+}
+
+impl Plan
+{
+    /// The root.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn root(&self) -> Root
+    {
+        return self.root;
+    }
+
+    /// How many distinct nodes the plan holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn node_count(&self) -> NodeCount
+    {
+        return NodeCount(self.nodes.len());
+    }
+
+    /// The node at `id`.
+    ///
+    /// # Specification
+    /// - ensures: returns the node at `id`.
+    /// - fails: returns [`PlanError::UnknownNode`] when the plan holds no node
+    ///   there.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PlanError::UnknownNode`]: no node stands at `id`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the cut of the square root of two read node by node,
+    ///   and a position past its last node.
+    /// - witness: `tests::plan::the_square_root_of_two_is_a_small_cut`
+    #[inline]
+    #[spec(ensures: |ref result| result.is_ok() == (usize::from(id) < self.nodes.len()))]
+    pub fn node(
+        &self,
+        id: NodeId,
+    ) -> Result<&Node, PlanError>
+    {
+        return self
+            .nodes
+            .get(usize::from(id))
+            .ok_or(PlanError::UnknownNode);
+    }
+
+    /// The nodes with their positions, in canonical order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn nodes(&self) -> impl Iterator<Item = (NodeId, &Node)>
+    {
+        return self
+            .nodes
+            .iter()
+            .enumerate()
+            .map_while(|(index, node)| NodeId::try_from(index).ok().map(|id| (id, node)));
+    }
+}
