@@ -76,7 +76,7 @@ use quenchant_shape::shape::Maybe;
 /// - witness: `tests::coincide::every_run_through_a_described_operation_is_its_calls_normal_form`
 #[spec(ensures: |ref ret| ret.iter().all(|path|
         path.extension().is_some_and(|extension| extension == "gandr")))]
-fn sources() -> BTreeSet<PathBuf>
+pub fn sources() -> BTreeSet<PathBuf>
 {
     let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
     let mut directories = vec![

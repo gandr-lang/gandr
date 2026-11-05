@@ -89,11 +89,14 @@ tracing = { workspace = true, optional = true }
 
 # The corpus sweeps draw their samples through the sweep crate; the
 # critical-pair differential reads both overlap enumerators over the cells
-# and the presented terms.
+# and the presented terms. The weight probe weighs the oriented rules in the
+# max-plus semiring of the ordered-algebras crate, over exact dyadics.
 [dev-dependencies]
 gandr-theory-circuit-algebras.workspace = true
 gandr-theory-coherent-resolutions.workspace = true
+gandr-theory-exact-reals.workspace = true
 gandr-theory-levitation.workspace = true
+gandr-theory-ordered-algebras.workspace = true
 gandr-workflow-sweep.workspace = true
 
 # The default width counts the host's physical performance cores; Linux reads

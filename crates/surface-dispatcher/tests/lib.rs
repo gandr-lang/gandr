@@ -25,3 +25,5 @@ mod package;
 mod parity;
 #[cfg(test)]
 mod run;
+#[cfg(test)]
+mod weights;
