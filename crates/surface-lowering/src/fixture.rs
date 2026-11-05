@@ -270,13 +270,52 @@ pub fn imported<'source, Text>(
 where
     Text: AsRef<str> + ?Sized,
 {
-    let imports = text
-        .as_ref()
+    let pbg = grammar();
+    let tree = parsed(&pbg, SourceText::from(text.as_ref()));
+    importing(&pbg, &tree, arena)
+}
+
+/// `text`, which [`hosting`] made from a source the parser must repair,
+/// lowered as [`hosted`] lowers a clean one.
+///
+/// # Specification
+/// - requires: `text` is what [`hosting`] made, and the parser repairs it.
+/// - ensures: as [`hosted`], over the repaired tree.
+/// - fails: never on accepted fixtures.
+/// - panics: if the parser reads the text without a repair, or if the lowering
+///   refuses the unit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a host scope that a doubled `}` closes early reads its
+///   interface through here.
+/// - witness: `lower::capability::tests::a_doubled_closer_before_a_scope_s_clauses_is_refused_there_5302`
+#[spec(requires: text.as_ref().starts_with('\n') && text.as_ref().ends_with(HOSTING))]
+pub fn hosted_repaired<'source, Text>(
+    text: &'source Text,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+where
+    Text: AsRef<str> + ?Sized,
+{
+    let pbg = grammar();
+    let tree = repaired(&pbg, SourceText::from(text.as_ref()));
+    importing(&pbg, &tree, arena)
+}
+
+/// `tree` lowered as a unit of two sources, as [`imported`] states.
+///
+/// # Specification
+/// trivial.
+fn importing<'source>(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'source>,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+{
+    let imports = <&str>::from(tree.source())
         .lines()
         .filter(|line| line.starts_with("import "))
         .count();
-    let pbg = grammar();
-    let tree = parsed(&pbg, SourceText::from(text.as_ref()));
     let unit = Unit::new(Vec::from([
         UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
         UnitSource::new(
@@ -286,8 +325,8 @@ where
     ]))
     .expect("the importing source imports the source before it");
     lower_unit(
-        &pbg,
-        &tree,
+        pbg,
+        tree,
         &unit,
         arena,
         LoweringBudget::DEFAULT,
