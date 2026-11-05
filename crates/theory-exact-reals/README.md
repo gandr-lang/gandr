@@ -12,6 +12,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - [Rounding and its bound](#rounding-and-its-bound)
 - [Intervals](#intervals)
 - [Plans and their bytes](#plans-and-their-bytes)
+- [Validation](#validation)
 - [Measurement](#measurement)
 - [License](#license)
 
@@ -44,6 +45,8 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Real`, `Open` and `Domain`: the node kinds of the three sorts, with `Cut` and `Quantifier`; `Node`, `Sort`, `Edge` and `Edges`.
 - `NodeId`, `RealId`, `OpenId`, `DomainId`, `DeBruijn`, `Power`, `Evidence`, `EvidenceSlot` and `NodeCount`: the nominal parts of a plan.
 - `PlanError` and `DecodeError`: each refused node, root and byte string by name.
+- `validate` and `admit`: the total validation pass from bytes or from a plan, with its `Quotas`, its `EvidenceTable` of `Judgement`s, and a `ValidatedPlan` or a `Refusal` that names its `Site` and its `Check`.
+- `Scope`, `Height` and `ByteLength`: whether an edge enters a binder, and the nominal parts of the quotas.
 
 ## Expected features
 
@@ -105,9 +108,26 @@ A `PlanBuilder` appends each node after the nodes that it names, so it holds a D
 
 The bytes follow the tree's convention: a one-byte kind before each record, every integer little-endian at a fixed width, and a length as a `u64` before a byte payload. They hold the magic `GXRP`, the version, the node count and each node in the plan's order, its children as the positions of earlier nodes. A mantissa is its shortest two's complement. The reader refuses each malformed input by name: a wrong magic or version, no node, a truncated field, an unknown kind, a child that names no earlier node or a node of another sort, a malformed constant or interval, a domain at the root, and bytes after the last node. It then writes the plan that it read and refuses bytes that differ as `NotCanonical`. So it accepts exactly the canonical bytes of a plan, and it allocates no more than the bytes hold.
 
+## Validation
+
+A plan is untrusted input, so only a `ValidatedPlan` reaches the later stages. `validate` reads the bytes, and `admit` takes a plan in memory. Each pass yields a `ValidatedPlan` or a `Refusal`. A refusal names the node that fails, or the input as a whole, and the check that fails there. A refused plan never constructs a `ValidatedPlan`, and the pass never panics.
+
+| Check | What it refuses |
+| ----- | --------------- |
+| `ByteQuota`, `NodeQuota` | an input longer than the byte quota, or with more nodes than the node quota, before the reader reads a node |
+| `Decode` | bytes that are not the canonical bytes of a plan: a forward child, which includes a cycle, a child of the wrong sort, a malformed interval or constant |
+| `HeightQuota`, `BinderQuota` | a path from the root longer than the height quota, or under more binders than the binder quota |
+| `WidthQuota`, `PowerQuota` | a dyadic wider than the width quota, or a power above the power quota |
+| `EscapedBinder` | a bound variable whose index reaches past its binders on a path from the root |
+| `CutHull`, `DomainHull` | a dual or unbounded hull of a cut, a dual interval domain, or compact evidence on a hull that is not closed and bounded |
+| `UnknownEvidence`, `EvidenceKind` | a reference that the evidence table does not register, or registers for another judgement |
+| `DomainEvidence` | a quantifier whose evidence differs from the evidence its interval domain states |
+
+The plan is canonical, so each node stands after its children. A forward walk computes each node's height and binder nesting and checks its payload. A backward walk from the root carries the fewest binders over any path to each node, and a bound variable must stay below that count. The pass holds one mark of three counts per node. It is linear in the nodes and edges, with one search of the evidence table for each reference. A quota excess is a refusal, and the pass never cuts a plan short.
+
 ## Measurement
 
-`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits, and it times the canonical form, the bytes and the reading back of three plans. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
+`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits. It times the canonical form, the bytes, the reading back and the validation of three plans. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
 
 ## License
 

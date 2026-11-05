@@ -9,3 +9,5 @@ mod interval;
 mod oracle;
 #[cfg(test)]
 mod plan;
+#[cfg(test)]
+mod validate;

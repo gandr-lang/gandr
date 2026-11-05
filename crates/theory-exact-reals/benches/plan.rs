@@ -1,6 +1,6 @@
-//! The measurement of plans: the canonical form, the bytes and their reading
-//! back, for the cut of the square root of two and for plans of a thousand
-//! distinct nodes.
+//! The measurement of plans: the canonical form, the bytes, their reading
+//! back and their validation, for the cut of the square root of two and for
+//! plans of a thousand distinct nodes.
 //!
 //! | Row | What it times |
 //! | --- | ------------- |
@@ -8,13 +8,15 @@
 //! | `finish, unshared` | [`PlanBuilder::finish`] of a builder that holds every node of the plan's tree, each subterm again |
 //! | `encode` | [`Plan::encode`] |
 //! | `decode` | [`Plan::decode`] of the canonical bytes, with its check that they are canonical |
+//! | `admit` | [`admit`] of the plan under the default quotas |
+//! | `validate` | [`validate`] of the canonical bytes: the reading and the pass |
 //!
 //! The plan of a thousand nodes sums 500 distinct constants of 63 bits into
 //! a chain of 499 sums and compares the sum with zero. Its tree form builds
-//! each square of a chain of ten squares again, 2047 nodes for 11 distinct
-//! ones, so that row times the walk that finds equal nodes. `cargo bench`
-//! runs the full measurement and prints one table. Under any other runner
-//! the binary runs one short pass of every row and prints nothing.
+//! each square of a chain of ten squares of one again, 2047 nodes for 11
+//! distinct ones, so that row times the walk that finds equal nodes. `cargo
+//! bench` runs the full measurement and prints one table. Under any other
+//! runner the binary runs one short pass of every row and prints nothing.
 
 #![expect(
     clippy::expect_used,
@@ -32,14 +34,19 @@ use gandr_theory_exact_reals::DeBruijn;
 use gandr_theory_exact_reals::Dyadic;
 use gandr_theory_exact_reals::EncodedPlan;
 use gandr_theory_exact_reals::Evidence;
+use gandr_theory_exact_reals::EvidenceTable;
+use gandr_theory_exact_reals::Judgement;
 use gandr_theory_exact_reals::NumericInterval;
 use gandr_theory_exact_reals::Open;
 use gandr_theory_exact_reals::Orientation;
 use gandr_theory_exact_reals::Plan;
 use gandr_theory_exact_reals::PlanBuilder;
+use gandr_theory_exact_reals::Quotas;
 use gandr_theory_exact_reals::Real;
 use gandr_theory_exact_reals::RealId;
 use gandr_theory_exact_reals::Root;
+use gandr_theory_exact_reals::admit;
+use gandr_theory_exact_reals::validate;
 
 use crate::support::Count;
 use crate::support::Output;
@@ -113,21 +120,18 @@ fn thousand() -> (PlanBuilder, Root)
     return (builder, Root::Open(positive));
 }
 
-/// The builder of a chain of ten squares written as a tree: every operand
-/// built again.
+/// The builder of a chain of ten squares of one written as a tree: every
+/// operand built again.
 ///
 /// # Specification
 /// trivial.
 fn unshared() -> (PlanBuilder, Root)
 {
     let mut builder = PlanBuilder::new();
-    let mut frontier: Vec<RealId> = core::iter::repeat_with(|| {
-        builder
-            .real(Real::Bound(DeBruijn::from(0)))
-            .expect("a node")
-    })
-    .take(1024)
-    .collect();
+    let mut frontier: Vec<RealId> =
+        core::iter::repeat_with(|| builder.real(Real::Constant(Dyadic::ONE)).expect("a node"))
+            .take(1024)
+            .collect();
     while frontier.len() > 1 {
         frontier = frontier
             .chunks(2)
@@ -156,6 +160,11 @@ fn rows(
 {
     let plan = builder.clone().finish(root).expect("a plan");
     let bytes = plan.encode();
+    let quotas = Quotas::default();
+    let mut table = EvidenceTable::new();
+    table
+        .register(Evidence::from(0), Judgement::CutLaws)
+        .expect("a fresh table");
     let finish = measure(batch, samples, || {
         black_box(black_box(builder.clone()).finish(root)).expect("a plan");
     });
@@ -164,6 +173,17 @@ fn rows(
     });
     let decode = measure(batch, samples, || {
         black_box(Plan::decode(EncodedPlan::from(black_box(&bytes)))).expect("canonical bytes");
+    });
+    let admitted = measure(batch, samples, || {
+        black_box(admit(black_box(plan.clone()), &quotas, &table)).expect("a valid plan");
+    });
+    let validated = measure(batch, samples, || {
+        black_box(validate(
+            EncodedPlan::from(black_box(&bytes)),
+            &quotas,
+            &table,
+        ))
+        .expect("a valid plan");
     });
     if matches!(print, Output::Table) {
         let nodes = usize::from(plan.node_count());
@@ -179,6 +199,14 @@ fn rows(
         print_row(
             format_args!("{name} | {nodes} | {length} | decode"),
             &decode,
+        );
+        print_row(
+            format_args!("{name} | {nodes} | {length} | admit"),
+            &admitted,
+        );
+        print_row(
+            format_args!("{name} | {nodes} | {length} | validate"),
+            &validated,
         );
     }
 }

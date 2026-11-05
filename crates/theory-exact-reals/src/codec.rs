@@ -78,6 +78,7 @@ use crate::plan::Quantifier;
 use crate::plan::Real;
 use crate::plan::RealId;
 use crate::plan::Root;
+use crate::plan::Site;
 use crate::plan::Sort;
 
 /// The four bytes that open an encoded plan.
@@ -198,6 +199,19 @@ impl<'bytes> From<&'bytes [u8]> for EncodedPlan<'bytes>
     fn from(bytes: &'bytes [u8]) -> Self
     {
         return Self(bytes);
+    }
+}
+
+impl AsRef<[u8]> for EncodedPlan<'_>
+{
+    /// Borrow the bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        return self.0;
     }
 }
 
@@ -1106,40 +1120,119 @@ impl Plan
     #[inline]
     pub fn decode(bytes: EncodedPlan<'_>) -> Result<Self, DecodeError>
     {
-        let mut reader = Reader { rest: bytes.0 };
-        let Taken(magic) = reader.take(ByteCount(MAGIC.len()))?;
-        if magic != MAGIC.as_slice() {
-            return Err(DecodeError::Magic);
-        }
-        let Taken(version) = reader.take(ByteCount(2))?;
-        if version != VERSION.to_le_bytes().as_slice() {
-            return Err(DecodeError::Version);
-        }
-        let count = reader.count()?;
-        if count.0 == 0 {
-            return Err(DecodeError::Empty);
-        }
-        // Each node takes a byte or more, so the bytes left bound the
-        // storage that the count may ask for.
-        let mut builder =
-            PlanBuilder::with_capacity(NodeCount::from(count.0.min(reader.rest.len())));
-        for _ in 0 .. count.0 {
-            let node = reader.node(&builder)?;
-            let _position = builder.push(node)?;
-        }
-        if !reader.rest.is_empty() {
-            return Err(DecodeError::TrailingBytes);
-        }
-        let last = NodeId::try_from(usize::from(builder.node_count()).saturating_sub(1))?;
-        let root = match builder.sort_of(last)? {
-            Sort::Real => Root::Real(RealId::at(last)),
-            Sort::Open => Root::Open(OpenId::at(last)),
-            Sort::Domain => return Err(DecodeError::DomainRoot),
-        };
-        let plan = builder.finish(root)?;
-        if plan.encode().0 != bytes.0 {
-            return Err(DecodeError::NotCanonical);
-        }
-        return Ok(plan);
+        return read(bytes, NodeCount::from(usize::MAX)).map_err(Fault::error);
     }
+}
+
+/// A decoding failure and where it stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct Fault
+{
+    /// The node that the reader read when it failed, or the input as a
+    /// whole.
+    site: Site,
+    /// The failure.
+    error: DecodeError,
+}
+
+impl Fault
+{
+    /// Where the failure stands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn site(self) -> Site
+    {
+        return self.site;
+    }
+
+    /// The failure.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn error(self) -> DecodeError
+    {
+        return self.error;
+    }
+}
+
+/// The plan that canonical bytes hold, read only when they count at most
+/// `limit` nodes.
+///
+/// # Specification
+/// - ensures: as [`Plan::decode`].
+/// - fails: as [`Plan::decode`], and refuses a node count above `limit` as
+///   [`DecodeError::TooManyNodes`] before it reads a node. A failure inside a
+///   node stands at that node's position, and every other failure at the input.
+/// - panics: none.
+/// - executable: none — the clause restates the reading.
+///
+/// # Errors
+/// As [`Plan::decode`], each at its site.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`Plan::decode`]; L3 — a count one past the limit, and
+///   a fault in the last node, each at its site.
+/// - witness: `tests::plan::decoding_refuses_malformed_bytes_by_name`
+/// - witness: `tests::validate::each_fault_is_refused_by_name_at_its_node`
+pub(crate) fn read(
+    bytes: EncodedPlan<'_>,
+    limit: NodeCount,
+) -> Result<Plan, Fault>
+{
+    let input = |error: DecodeError| Fault {
+        site: Site::Input,
+        error,
+    };
+    let mut reader = Reader { rest: bytes.0 };
+    let Taken(magic) = reader.take(ByteCount(MAGIC.len())).map_err(input)?;
+    if magic != MAGIC.as_slice() {
+        return Err(input(DecodeError::Magic));
+    }
+    let Taken(version) = reader.take(ByteCount(2)).map_err(input)?;
+    if version != VERSION.to_le_bytes().as_slice() {
+        return Err(input(DecodeError::Version));
+    }
+    let count = reader.count().map_err(input)?;
+    if count.0 == 0 {
+        return Err(input(DecodeError::Empty));
+    }
+    if count.0 > usize::from(limit) {
+        return Err(input(DecodeError::TooManyNodes));
+    }
+    // Each node takes a byte or more, so the bytes left bound the storage
+    // that the count may ask for.
+    let mut builder = PlanBuilder::with_capacity(NodeCount::from(count.0.min(reader.rest.len())));
+    for _ in 0 .. count.0 {
+        let position = NodeId::try_from(usize::from(builder.node_count()))
+            .map_err(|error| input(DecodeError::from(error)))?;
+        let at = |error: DecodeError| Fault {
+            site: Site::Node(position),
+            error,
+        };
+        let node = reader.node(&builder).map_err(at)?;
+        let _position = builder
+            .push(node)
+            .map_err(|error| at(DecodeError::from(error)))?;
+    }
+    if !reader.rest.is_empty() {
+        return Err(input(DecodeError::TrailingBytes));
+    }
+    let last = NodeId::try_from(usize::from(builder.node_count()).saturating_sub(1))
+        .map_err(|error| input(DecodeError::from(error)))?;
+    let root = match builder.sort_of(last) {
+        Ok(Sort::Real) => Root::Real(RealId::at(last)),
+        Ok(Sort::Open) => Root::Open(OpenId::at(last)),
+        Ok(Sort::Domain) => return Err(input(DecodeError::DomainRoot)),
+        Err(error) => return Err(input(DecodeError::from(error))),
+    };
+    let plan = builder
+        .finish(root)
+        .map_err(|error| input(DecodeError::from(error)))?;
+    if plan.encode().0 != bytes.0 {
+        return Err(input(DecodeError::NotCanonical));
+    }
+    return Ok(plan);
 }
