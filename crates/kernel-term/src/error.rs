@@ -203,6 +203,10 @@ pub enum TagSite
     Seam,
     /// A presented rule's node, outside the constructor and variable alphabet.
     RuleNode,
+    /// A cover derivation's step, outside the var, split and compose alphabet.
+    CoverStep,
+    /// A cover split's cases, outside their alphabet.
+    CoverCases,
 }
 
 impl fmt::Display for TagSite
@@ -247,6 +251,8 @@ impl fmt::Display for TagSite
             Self::HigherLayer => "a higher-field layer kind",
             Self::Seam => "a composition seam",
             Self::RuleNode => "a presented rule's node",
+            Self::CoverStep => "a cover derivation's step",
+            Self::CoverCases => "a cover split's cases",
         })
     }
 }
@@ -597,6 +603,8 @@ mod tests
             TagSite::ConstraintRelation,
             TagSite::Seam,
             TagSite::RuleNode,
+            TagSite::CoverStep,
+            TagSite::CoverCases,
         ] {
             names.push(format!("{site}"));
             check_sink(&site);

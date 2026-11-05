@@ -328,6 +328,7 @@ pub use crate::tags::KIND_DATA_INDEXED;
 pub use crate::tags::KIND_DATA_PRESENTED;
 pub use crate::tags::KIND_DATA_WORDS;
 pub use crate::tags::KIND_DEF;
+pub use crate::tags::KIND_DEF_COVERED;
 pub use crate::tags::KIND_DEF_LAWFUL;
 pub use crate::tags::KIND_DEF_RELATING;
 pub use crate::tags::KIND_DEF_RULED;

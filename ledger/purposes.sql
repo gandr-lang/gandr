@@ -1454,6 +1454,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_INDEXED','constant','D
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_PRESENTED','constant','Declaration tag: a presented datatype, whose segment closes with the rules rewriting its constructor terms.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_WORDS','constant','Declaration tag: a type of words, a presented datatype whose segment closes with the free cells it is minted over.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF','constant','Declaration kind: a typed definition.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_COVERED','constant','Declaration tag: a typed definition whose segment closes with the cover derivation of each match in its body.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_LAWFUL','constant','Declaration tag: a typed definition whose segment closes with the laws its folds rest on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_RELATING','constant','Declaration tag: a typed definition whose segment closes with the path endpoints its type conversions relate.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_RULED','constant','Declaration tag: a typed definition whose segment closes with the rules of the operation it lowered from.',NULL,'fits','sound',NULL);

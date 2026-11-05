@@ -38,6 +38,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 
 use crate::CellIndex;
+use crate::ComputationId;
 use crate::ConstantIndex;
 use crate::ConstructorTag;
 use crate::FieldCount;
@@ -47,6 +48,32 @@ use crate::Literal;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StepId(u32);
+
+impl From<u32> for StepId
+{
+    /// The step minted `at`-th.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(at: u32) -> Self
+    {
+        Self(at)
+    }
+}
+
+impl From<StepId> for u32
+{
+    /// The place the step was minted at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(id: StepId) -> Self
+    {
+        id.0
+    }
+}
 
 /// How many branches a split holds.
 #[repr(transparent)]
@@ -522,6 +549,28 @@ impl Cover
         }
         Ok(())
     }
+}
+
+/// A match in a definition's body and the derivation that covers it: the
+/// root of the match's tree, and the steps the kernel replays against it.
+///
+/// # Specification
+/// - requires: nothing to construct this data; `root` names a computation of
+///   the arena the definition's body lives in.
+/// - ensures: holds the root and the derivation as given.
+/// - executable: none — data the kernel replays, never a typing fact.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a covered definition carries its derivations through the
+///   wire unchanged.
+/// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Covered
+{
+    /// The root of the match's tree.
+    pub root: ComputationId,
+    /// The derivation that covers it.
+    pub cover: Cover,
 }
 
 #[cfg(test)]

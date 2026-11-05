@@ -815,10 +815,11 @@ fn encode_minted_atom_table(
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Codata { .. } => tags::KIND_CODATA, DeclarationContent::Def { .. } if !marked.declaration().operation_rules().rules().is_empty() => tags::KIND_DEF_RULED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(ref interface), .. } if matches!(interface.law(), Maybe::Present(_)) => tags::KIND_ABSTRACT_LAWFUL, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Codata { .. } => tags::KIND_CODATA, DeclarationContent::Def { .. } if !marked.declaration().covers().is_empty() => tags::KIND_DEF_COVERED, DeclarationContent::Def { .. } if !marked.declaration().operation_rules().rules().is_empty() => tags::KIND_DEF_RULED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(ref interface), .. } if matches!(interface.law(), Maybe::Present(_)) => tags::KIND_ABSTRACT_LAWFUL, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.node(AnyNode::ValueType(marked.declaration().declared_id())).is_some()
             && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.node(AnyNode::Value(body)).is_some(), DeclarationContent::Codata { ref observations, .. } => observations.iter().all(|id| interner.node(AnyNode::CompType(*id)).is_some()), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.node(AnyNode::Value(interface.relation())).is_some() && interner.node(AnyNode::Value(interface.reflexivity())).is_some() && match interface.law() { Maybe::Present(law) => interner.node(AnyNode::Value(law)).is_some(), Maybe::Absent(_) => true }, DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
             && marked.declaration().related().iter().all(|related| interner.node(AnyNode::Value(related.left)).is_some() && interner.node(AnyNode::Value(related.right)).is_some())
+            && marked.declaration().covers().iter().all(|covered| interner.node(AnyNode::Computation(covered.root)).is_some())
             && interner.by_content.len() >= entry.1
             && u32::from(interner.next) == u32::from(entry.2).saturating_add(u32::try_from(interner.by_content.len().saturating_sub(entry.1)).unwrap_or(u32::MAX)) },
 )]
@@ -848,6 +849,9 @@ fn encode_declaration(
         },
         DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED,
         DeclarationContent::Codata { .. } => tags::KIND_CODATA,
+        DeclarationContent::Def { .. } if !declaration.covers().is_empty() => {
+            tags::KIND_DEF_COVERED
+        },
         DeclarationContent::Def { .. } if !declaration.operation_rules().rules().is_empty() => {
             tags::KIND_DEF_RULED
         },
@@ -872,6 +876,7 @@ fn encode_declaration(
     let mut data_roots = Vec::new();
     let mut index_roots = Vec::new();
     let mut related_roots = Vec::new();
+    let mut cover_roots = Vec::new();
     let mut interface_roots = None;
     let mut observation_roots = Vec::new();
     let (root_declared, root_body, root_sealed) = match *content {
@@ -937,6 +942,17 @@ fn encode_declaration(
                 let left = intern(arena, interner, &mut segment, AnyNode::Value(related.left));
                 let right = intern(arena, interner, &mut segment, AnyNode::Value(related.right));
                 related_roots.push((left, right));
+            }
+            // The covered roots after the related endpoints, so a definition
+            // covering none interns exactly what it did before the kind
+            // existed. A root lies in the body, so it adds no entry.
+            for covered in declaration.covers() {
+                cover_roots.push(intern(
+                    arena,
+                    interner,
+                    &mut segment,
+                    AnyNode::Computation(covered.root),
+                ));
             }
             (declared, Some(body), None)
         },
@@ -1066,7 +1082,8 @@ fn encode_declaration(
     // two sides.
     let laws = declaration.laws();
     let operation_rules = declaration.operation_rules().rules();
-    if !related_roots.is_empty() || !laws.is_empty() || !operation_rules.is_empty() {
+    let covered = !cover_roots.is_empty();
+    if !related_roots.is_empty() || !laws.is_empty() || !operation_rules.is_empty() || covered {
         out.put_uvarint(WireU64::from(WireUsize::from(related_roots.len())));
         for (&(left, right), related) in related_roots.iter().zip(declaration.related()) {
             out.put_uvarint(WireU64::from(u64::from(u32::from(left))));
@@ -1077,17 +1094,27 @@ fn encode_declaration(
             }
         }
     }
-    if !laws.is_empty() || !operation_rules.is_empty() {
+    if !laws.is_empty() || !operation_rules.is_empty() || covered {
         out.put_uvarint(WireU64::from(WireUsize::from(laws.len())));
         for &law in laws {
             out.put_uvarint(WireU64::from(WireUsize::from(usize::from(law))));
         }
     }
-    if !operation_rules.is_empty() {
+    if !operation_rules.is_empty() || covered {
         out.put_uvarint(WireU64::from(WireUsize::from(operation_rules.len())));
         for rule in operation_rules {
             encode_operation_side(out, rule.left());
             encode_operation_side(out, rule.right());
+        }
+    }
+    // The cover block closes a covered definition's segment: a cover count of
+    // at least one, since a definition covering none wrote another kind, then
+    // each cover's root and its steps.
+    if covered {
+        out.put_uvarint(WireU64::from(WireUsize::from(cover_roots.len())));
+        for (&root, covered) in cover_roots.iter().zip(declaration.covers()) {
+            out.put_uvarint(WireU64::from(u64::from(u32::from(root))));
+            encode_cover(out, &covered.cover);
         }
     }
     // The rule block closes a presented data declaration's segment: a rule
@@ -2030,6 +2057,112 @@ fn encode_level(
     for (variable, offset) in atoms {
         out.put_uvarint(WireU64::from(u64::from(u32::from(variable.index()))));
         out.put_uvarint(WireU64::from(u64::from(offset)));
+    }
+}
+
+/// Write a cover derivation: its step count, then each step in mint order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: writes the step count, then per step its tag and payload as
+///   [`tags::KIND_DEF_COVERED`] states them.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a covered definition's derivations round-trip through the
+///   wire unchanged.
+/// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
+#[spec(captures: entry = out.as_image().as_ref().len(), ensures: out.as_image().as_ref().len() > entry)]
+fn encode_cover(
+    out: &mut EncodedArtifact,
+    cover: &crate::cover::Cover,
+)
+{
+    out.put_uvarint(WireU64::from(WireUsize::from(cover.steps().count())));
+    for (_id, step) in cover.steps() {
+        match *step {
+            crate::cover::Step::Var(arm) => {
+                out.put_tag(tags::COVER_VAR);
+                out.put_uvarint(WireU64::from(WireUsize::from(arm)));
+            },
+            crate::cover::Step::Compose(inner) => {
+                out.put_tag(tags::COVER_COMPOSE);
+                out.put_uvarint(WireU64::from(u64::from(u32::from(inner))));
+            },
+            crate::cover::Step::Split {
+                ref cases,
+                ref branches,
+            } => {
+                out.put_tag(tags::COVER_SPLIT);
+                encode_cases(out, cases);
+                out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
+                for &branch in branches {
+                    out.put_uvarint(WireU64::from(u64::from(u32::from(branch))));
+                }
+            },
+        }
+    }
+}
+
+/// Write one split's cases: their tag, then their payload.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: writes the cases' tag and payload as [`tags::KIND_DEF_COVERED`]
+///   states them.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`encode_cover`].
+/// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
+#[spec(captures: entry = out.as_image().as_ref().len(), ensures: out.as_image().as_ref().len() > entry)]
+fn encode_cases(
+    out: &mut EncodedArtifact,
+    cases: &crate::cover::Cases,
+)
+{
+    use crate::cover::Cases;
+    match *cases {
+        Cases::Data {
+            family,
+            ref constructors,
+            ref loops,
+        } => {
+            out.put_tag(tags::COVER_DATA);
+            out.put_uvarint(WireU64::from(WireUsize::from(usize::from(family))));
+            out.put_uvarint(WireU64::from(WireUsize::from(constructors.len())));
+            for &(tag, fields) in constructors {
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(tag))));
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(fields))));
+            }
+            out.put_uvarint(WireU64::from(WireUsize::from(loops.len())));
+            for owed in loops {
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(owed.words()))));
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(owed.cell()))));
+            }
+        },
+        Cases::Boolean => out.put_tag(tags::COVER_BOOLEAN),
+        Cases::Integer(ref literal) => {
+            out.put_tag(tags::COVER_INTEGER);
+            encode_literal(out, literal);
+        },
+        Cases::Tuple(width) => {
+            out.put_tag(tags::COVER_TUPLE);
+            out.put_uvarint(WireU64::from(WireUsize::from(width)));
+        },
+        Cases::Record(width) => {
+            out.put_tag(tags::COVER_RECORD);
+            out.put_uvarint(WireU64::from(WireUsize::from(width)));
+        },
+        Cases::Sum(width) => {
+            out.put_tag(tags::COVER_SUM);
+            out.put_uvarint(WireU64::from(WireUsize::from(width)));
+        },
+        Cases::List => out.put_tag(tags::COVER_LIST),
+        Cases::Guard => out.put_tag(tags::COVER_GUARD),
+        Cases::Absurd => out.put_tag(tags::COVER_ABSURD),
     }
 }
 
@@ -3349,6 +3482,126 @@ mod tests
                 })
             ),
             "an unknown rule node tag is refused"
+        );
+    }
+
+    #[test]
+    fn a_covered_definition_closes_its_segment_with_its_derivations()
+    {
+        use crate::cover::Cases;
+        use crate::cover::Cover;
+        use crate::cover::Covered;
+        use crate::cover::Loop;
+        use crate::cover::Step;
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let unit_type = builder.arena().value_type_unit();
+        let unit = builder.arena().value_unit();
+        let returned = builder.arena().computation_return(unit);
+        let body = builder.arena().value_thunk(returned);
+        // One derivation of every step and every cases' form: a data split
+        // over a point and a loop, a composition under it, an integer test,
+        // and the widths of a tuple, a record and a sum.
+        let mut cover = Cover::new();
+        let point = cover.mint(Step::Var(0));
+        let looped = cover.mint(Step::Var(1));
+        let below = cover.mint(Step::Split {
+            cases: Cases::Integer(crate::Literal::Integer(crate::IntegerLiteral::new(
+                crate::Sign::NonNegative,
+                crate::Magnitude::from_decimal_text(alloc::string::String::from("7"))
+                    .expect("digits"),
+            ))),
+            branches: alloc::vec![point, looped],
+        });
+        let composed = cover.mint(Step::Compose(below));
+        for cases in [
+            Cases::Boolean,
+            Cases::Tuple(2),
+            Cases::Record(3),
+            Cases::Sum(4),
+            Cases::List,
+            Cases::Guard,
+            Cases::Absurd,
+        ] {
+            let _other = cover.mint(Step::Split {
+                cases,
+                branches: alloc::vec![point],
+            });
+        }
+        let _root = cover.mint(Step::Split {
+            cases: Cases::Data {
+                family: ConstantIndex::from(3_usize),
+                constructors: alloc::vec![(
+                    crate::term::ConstructorTag::from(0_usize),
+                    crate::presented::FieldCount::from(2_usize),
+                )],
+                loops: alloc::vec![Loop::new(
+                    ConstantIndex::from(4_usize),
+                    crate::CellIndex::from(0_usize),
+                )],
+            },
+            branches: alloc::vec![composed, looped],
+        });
+        let covers = alloc::vec![Covered {
+            root: returned,
+            cover: cover.clone(),
+        }];
+        let definition = builder
+            .def(LevelSignature::monomorphic(), unit_type, body)
+            .covered(covers.clone());
+        let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, definition)];
+        let bytes = super::encode(&arena, &declarations);
+        let image = bytes.as_image();
+        assert_eq!(
+            image.as_ref().get(9).copied(),
+            Some(u8::from(crate::KIND_DEF_COVERED)),
+            "the covered kind follows the header and the mark"
+        );
+        let decoded = crate::decode::decode(image).expect("the covered artifact decodes");
+        let declaration = decoded.declarations().first().expect("one definition");
+        assert_eq!(
+            declaration.declaration().covers().len(),
+            1,
+            "the one match's derivation"
+        );
+        assert_eq!(
+            declaration
+                .declaration()
+                .covers()
+                .first()
+                .map(|covered| &covered.cover),
+            Some(&cover),
+            "the derivation decodes step for step"
+        );
+        assert_eq!(
+            super::encode(decoded.arena(), decoded.declarations())
+                .as_image()
+                .as_ref(),
+            image.as_ref(),
+            "and re-encodes to the same bytes"
+        );
+        // The cover block ends the segment, so the first step's tag stands
+        // where the derivation's own bytes begin.
+        let mut alone = super::EncodedArtifact::new();
+        super::encode_cover(&mut alone, &cover);
+        let first_step = image
+            .as_ref()
+            .len()
+            .saturating_sub(alone.as_image().as_ref().len())
+            .saturating_add(1);
+        let mut unknown = image.as_ref().to_vec();
+        if let Some(tag) = unknown.get_mut(first_step) {
+            *tag = 9;
+        }
+        assert!(
+            matches!(
+                crate::decode::decode(ArtifactImage::from(unknown.as_slice())),
+                Err(crate::error::DecodeError::UnknownTag {
+                    site: crate::error::TagSite::CoverStep,
+                    ..
+                })
+            ),
+            "an unknown step tag is refused at its own site"
         );
     }
 

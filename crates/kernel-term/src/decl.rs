@@ -843,6 +843,9 @@ pub struct Declaration
     /// The stages a definition's signature quantifies over and where its
     /// declared type reads each; empty for every other declaration.
     stages: crate::stage_signature::StageSignature,
+    /// The matches of a definition's body, each with the derivation that
+    /// covers it; empty for every other declaration.
+    covers: Vec<crate::cover::Covered>,
 }
 
 impl Declaration
@@ -961,6 +964,18 @@ impl Declaration
     pub const fn stages(&self) -> &crate::stage_signature::StageSignature
     {
         &self.stages
+    }
+
+    /// The matches of the definition's body, each with the derivation that
+    /// covers it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn covers(&self) -> &[crate::cover::Covered]
+    {
+        &self.covers
     }
 
     /// This declaration under `name`, its levels, content and provenance
@@ -1175,6 +1190,46 @@ impl Declaration
     {
         match self.content {
             DeclarationContent::Def { .. } => Self { stages, ..self },
+            DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => self,
+        }
+    }
+
+    /// This definition carrying `covers` as its matches' derivations,
+    /// everything else unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the kernel replays each derivation against the
+    ///   tree its root names at admission, never taking it on trust.
+    /// - ensures: a definition comes back carrying exactly `covers`; any other
+    ///   declaration, which has no body to match in, comes back unchanged.
+    ///   Content, levels, provenance, name, related pairs, laws, rules and
+    ///   stages are untouched either way.
+    /// - provides: the one way a producer attaches its matches' derivations,
+    ///   after whichever finisher built the definition.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition keeps its derivations through the wire,
+    ///   and the kernel's admission replays them where it runs.
+    /// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
+    #[spec(
+        captures: entry = (matches!(self.content, DeclarationContent::Def { .. }), self.covers.len(), covers.len(), self.laws.len(), self.name.0.len()),
+        ensures: |ret| ret.covers.len() == if entry.0 { entry.2 } else { entry.1 }
+            && ret.laws.len() == entry.3 && ret.name.0.len() == entry.4,
+    )]
+    #[inline]
+    #[must_use]
+    pub fn covered(
+        self,
+        covers: Vec<crate::cover::Covered>,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Def { .. } => Self { covers, ..self },
             DeclarationContent::Data { .. }
             | DeclarationContent::Codata { .. }
             | DeclarationContent::Axiom { .. }
@@ -1686,6 +1741,7 @@ impl<'arena> DeclarationBuilder<'arena>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            covers: Vec::new(),
         }
     }
 
@@ -1743,6 +1799,7 @@ impl<'arena> DeclarationBuilder<'arena>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            covers: Vec::new(),
         }
     }
 
@@ -1797,6 +1854,7 @@ impl<'arena> DeclarationBuilder<'arena>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            covers: Vec::new(),
         }
     }
 
@@ -1859,6 +1917,7 @@ impl<'arena> DeclarationBuilder<'arena>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            covers: Vec::new(),
         }
     }
 }
@@ -1957,6 +2016,7 @@ impl DeclarationBuilder<'_>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            covers: Vec::new(),
         }
     }
 
@@ -1990,6 +2050,7 @@ impl DeclarationBuilder<'_>
             laws: Vec::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
+            covers: Vec::new(),
         }
     }
 }
