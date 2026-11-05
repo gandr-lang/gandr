@@ -85,7 +85,7 @@ read_prs() {
             removal: (.timelineItems.nodes[0].reason // "" | ascii_downcase),
             upstream: $upstream,
             marks: [.comments.nodes[].body | scan("<!-- landing:(pr-[a-z]+):([0-9a-f]{40}) -->") | "\(.[0]):\(.[1])"]}
-          | . + {waiting: ($unstarted and (.marks | index("pr-depth:\(.oid)")) != null)}' <<< "$pr"
+          | .oid as $oid | . + {waiting: ($unstarted and (.marks | index("pr-depth:\($oid)")) != null)}' <<< "$pr"
       done | jq -cs . | jq -c --arg trunk "$trunk" -f "$pr_stack_dir/depths.jq"
 }
 
