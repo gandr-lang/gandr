@@ -1,0 +1,40 @@
+//! A reflexivity that a field holds at a path type the family computes.
+//!
+//! The family of `Held` returns a path type whose left endpoint calls
+//! `twofold`. Both checkers must read the path's endpoints at the same values,
+//! or the kernel refuses the reflexivity that the checker accepts.
+//!
+//! The checker reads the field's type by its own evaluation, so it reads `Z`
+//! for `twofold Z` and records no dialogue for that endpoint. The kernel reads
+//! the decode by its own evaluator, and it reads the endpoints of the path
+//! type by that evaluator too.
+//!
+//! - see: #5364
+
+/// The counts.
+data Count : Type where
+  /// Zero.
+  | Z : Count
+  /// The successor of `n`.
+  | S : (n : Count) --> Count
+
+/// A value of the first type with a value of the type it picks.
+data Held(a : Type, b : a -> Type) : Type where
+  /// The two values.
+  | MkHeld : (x : a, y : b(x)) --> Held(a, b)
+
+/// Twice a count, by recursion.
+def rec twofold(n : Count) -> Count =
+  match n
+    | Z => Z
+    | S(m) => S (S (twofold[<] m))
+
+/// A reflexivity that a field holds, at the path type the family returns
+/// over a call that computes.
+def reflField : Held(
+  Unit,
+  fun (u) { return (type(Path[.A = Count](twofold Z, Z))) }
+) = MkHeld *{} (Path.here Z);
+
+/// The same reflexivity at its written type.
+def reflWritten : Path[.A = Count](twofold Z, Z) = Path.here Z;
