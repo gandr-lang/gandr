@@ -70,7 +70,8 @@ const EXIT: &str = "an exit keyword ends the computation its operand gives: the 
                         answers, and the enclosing body at its type";
 
 /// The label of the zero-width tile the melder writes between two
-/// expression operands, `f x` (#4853).
+/// expression operands, `f x` (#4853), and between two type operands, `Maybe
+/// A` (#5326).
 const JUXTAPOSED: &str = " ";
 
 /// Every kind of node the corpus writes, by sort and naming label, with
@@ -190,6 +191,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Pattern number", Standing::Owed(0)),
     ("Pattern true", Standing::Owed(0)),
     ("Pattern |", Standing::Owed(0)),
+    ("Type  ", Standing::Owed(0)),
     ("Type !", Standing::Owed(0)),
     ("Type &", Standing::Owed(0)),
     ("Type &{", Standing::Owed(0)),
@@ -988,7 +990,8 @@ fn gated(
                         && (def.label == "["
                             || def.label == ".#["
                             || (matches!(def.label, "(" | JUXTAPOSED)
-                                && def.sort == Sort::Expression));
+                                && def.sort == Sort::Expression)
+                            || (def.label == JUXTAPOSED && def.sort == Sort::Type));
                     let qualifying = melded && opener == Some(child) && def.label == ".";
                     (
                         child,
@@ -1045,14 +1048,19 @@ fn gated(
                 || FORMERS.contains(&text.trim()));
         // An application inside a spine, `f a` in `f a b`, is the head of the
         // application around it: the spine lowers as one call, which the
-        // outermost application answers for.
+        // outermost application answers for. A type's spine, `Vec A n`, lowers
+        // as one application of its family, so the family's name answers
+        // through it, as the head of the call form `Vec(A, n)` does (#5326).
         let head = parent.is_some_and(|(_, label, headed, ..)| {
             headed
                 && if melded {
                     matches!(label, "(" | JUXTAPOSED) && (qualified || def.label == JUXTAPOSED)
                 }
                 else {
-                    label == "[" || def.label == "constructor" || FORMERS.contains(&text)
+                    label == "["
+                        || def.label == "constructor"
+                        || FORMERS.contains(&text)
+                        || (label == JUXTAPOSED && def.label == "type_identifier")
                 }
         });
         // A model implicit's name, read inside the declaration whose

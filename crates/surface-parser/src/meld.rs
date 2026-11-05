@@ -1459,6 +1459,10 @@ const DOC_LINE: &str = "///";
 /// The opening of an inner documentation line, `//!`.
 const INNER_DOC_LINE: &str = "//!";
 
+/// The rule of a type at a mode variable, `m T`, which no type application
+/// takes as its argument (#5326).
+pub const MODED_TYPE: &str = "moded_type";
+
 /// The operator shape of a shifted tile, derived from its precedence bounds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OpShape
@@ -2005,16 +2009,17 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// The application tile to push before a tile of `mold` and `sort`, when
-    /// the tile opens an expression operand right after one: `f x`.
+    /// the tile opens an operand right after one of its sort: `f x` in an
+    /// expression, `Maybe A` in a type.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the grammar's application mold exactly when `mold` is no
-    ///   application, `sort` is the expression sort, `mold` starts an operand
-    ///   by itself, the slope's top is a complete expression operand whose
-    ///   source does not end in `}` or opens with a connective's opener `*{`,
-    ///   `+{`, `&{` or `#{`, a form is open, and the open form is no shell
-    ///   form. `None` otherwise.
+    /// - ensures: the grammar's application mold in `sort` exactly when `mold`
+    ///   is no application, the grammar has an application tile in `sort`,
+    ///   `mold` starts an operand by itself, the slope's top is a complete
+    ///   operand of `sort` whose source does not end in `}` or opens with a
+    ///   connective's opener `*{`, `+{`, `&{` or `#{`, a form is open, and the
+    ///   open form is no shell form. `None` otherwise.
     /// - panics: none.
     /// - economy: a few comparisons, three byte reads and one binary search of
     ///   the shell openers. No string is compared.
@@ -2023,17 +2028,19 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — `f x y` applies twice, a shell block's words stay
     ///   flat, `if c { a } else { b } x` stays two statements, a braced value
     ///   `*{}` or `+{.l = a}` takes the next argument, a call `f(x)` stays a
-    ///   call, and two stray words at the root stay strays.
+    ///   call, and two stray words at the root stay strays. `Vec A n` in a type
+    ///   applies twice, and `-F Maybe A` returns the application.
     /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
-    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application() && application != mold && sort == Sort::Expression))]
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application_in(sort) && application != mold))]
     fn juxtaposed(
         &self,
         mold: MoldId,
         sort: Sort,
     ) -> Option<MoldId>
     {
-        let application = self.pbg.application()?;
-        if mold == application || sort != Sort::Expression {
+        let application = self.pbg.application_in(sort)?;
+        if mold == application {
             return None;
         }
         if !matches!(
@@ -2044,7 +2051,7 @@ impl<'pbg> MeldState<'pbg>
         ) {
             return None;
         }
-        self.applies_next()
+        self.applies_next_in(sort)
     }
 
     /// The application tile an expression operand opening next would take:
@@ -2069,9 +2076,33 @@ impl<'pbg> MeldState<'pbg>
     #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application()))]
     pub fn applies_next(&self) -> Option<MoldId>
     {
-        let application = self.pbg.application()?;
+        self.applies_next_in(Sort::Expression)
+    }
+
+    /// The application tile an operand of `sort` opening next would take: the
+    /// slope's top is the head or an argument of a spine of that sort, `f x` or
+    /// `Vec A n` (#5326).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the application mold of `sort` exactly when the slope's top
+    ///   is a complete operand of `sort`, and the rest holds as
+    ///   [`Self::applies_next`] states. `None` otherwise.
+    /// - provides: the one test of whether a juxtaposition continues a spine.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::juxtaposed`].
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application_in(sort)))]
+    fn applies_next_in(
+        &self,
+        sort: Sort,
+    ) -> Option<MoldId>
+    {
+        let application = self.pbg.application_in(sort)?;
         let top = self.stack.last()?;
-        if top.role != Role::Operand || top.sort != Sort::Expression {
+        if top.role != Role::Operand || top.sort != sort {
             return None;
         }
         // A block-like statement ends at its brace, as Rust's does: `if c { a }
@@ -2862,6 +2893,7 @@ impl<'pbg> MeldState<'pbg>
                 }
                 else {
                     bool::from(self.sort_admits(mold, frontier.expected))
+                        || bool::from(self.juxtaposes_head(mold, frontier))
                 }
             },
             Kind::Operator(OpShape::Infix | OpShape::Postfix) => bool::from(frontier.head_operand),
@@ -2870,8 +2902,16 @@ impl<'pbg> MeldState<'pbg>
             // lowercase word's expression-atom and pattern-atom molds
             // no longer both survive at every position — the matching-sort one is
             // usually the lone admissible candidate, taken with no dry-run.
-            Kind::Operand => bool::from(self.sort_admits(mold, frontier.expected)),
-            Kind::Operator(OpShape::Prefix) => true,
+            // An operand of the head's own sort also stands, when that sort
+            // applies by juxtaposition: `-F Maybe A` inside an expression
+            // applies the type `Maybe` to the type `A` (#5326).
+            Kind::Operand => {
+                bool::from(self.sort_admits(mold, frontier.expected))
+                    || bool::from(self.juxtaposes_head(mold, frontier))
+            },
+            // A moded type, `m T`, opens on a prefix tile and binds at the
+            // arrow's band, so it is no argument of a type application.
+            Kind::Operator(OpShape::Prefix) => bool::from(self.prefix_admits(mold, frontier)),
         };
         MoldAdmissibility::from(admissible)
     }
@@ -2905,6 +2945,71 @@ impl<'pbg> MeldState<'pbg>
     {
         let sort = self.pbg.mold(mold).map_or(Sort::Item, |def| def.sort);
         SortAdmissibility::from(sort == expected || sort == Sort::Item)
+    }
+
+    /// Whether a fresh operand `mold` stands as the argument the head operand
+    /// applies by juxtaposition: the head is an operand, its sort has an
+    /// application tile, and `mold` is of that sort (#5326).
+    ///
+    /// # Specification
+    /// - ensures: admitted exactly when `frontier`'s head is an operand whose
+    ///   sort the grammar applies by juxtaposition and `mold` is of that sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `-F Maybe A` inside an expression reads `A` as a
+    ///   type, and `f x` keeps `x` an expression: dropping the head sort reads
+    ///   `A` as an expression constructor beside the type.
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[spec(ensures: |ret| bool::from(ret) == (bool::from(frontier.head_operand) && frontier.head_sort.is_some_and(|head| self.pbg.application_in(head).is_some() && self.pbg.mold(mold).is_ok_and(|def| def.sort == head))))]
+    fn juxtaposes_head(
+        &self,
+        mold: MoldId,
+        frontier: &Frontier,
+    ) -> SortAdmissibility
+    {
+        SortAdmissibility::from(
+            bool::from(frontier.head_operand)
+                && frontier.head_sort.is_some_and(|head| {
+                    self.pbg.application_in(head).is_some()
+                        && self.pbg.mold(mold).is_ok_and(|def| def.sort == head)
+                }),
+        )
+    }
+
+    /// Whether a prefix `mold` is admitted where it stands. A moded type, `m
+    /// T`, opens on a prefix tile and binds at the arrow's band, looser than an
+    /// application, so it is no argument of a type operand before it (#5326):
+    /// `Vec a n` applies `Vec` to `a` and `n`. Until #5330 settles the moded
+    /// type beside the application, a type variable at the head still opens
+    /// one, `self : m T`.
+    ///
+    /// # Specification
+    /// - ensures: refused exactly when `frontier`'s head is a type operand, the
+    ///   grammar applies a type by juxtaposition, and `mold` belongs to the
+    ///   rule `moded_type`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Vec a n` reads two arguments, and `self : m T` keeps
+    ///   its moded type: admitting the moded type as an argument reads `Vec (a
+    ///   n)`.
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[spec(ensures: |ret| bool::from(ret) != (bool::from(frontier.head_operand) && frontier.head_sort == Some(Sort::Type) && self.pbg.application_in(Sort::Type).is_some() && self.pbg.rule_of(mold).is_ok_and(|rule| rule.name().0 == MODED_TYPE)))]
+    fn prefix_admits(
+        &self,
+        mold: MoldId,
+        frontier: &Frontier,
+    ) -> MoldAdmissibility
+    {
+        let moded = bool::from(frontier.head_operand)
+            && frontier.head_sort == Some(Sort::Type)
+            && self.pbg.application_in(Sort::Type).is_some()
+            && self
+                .pbg
+                .rule_of(mold)
+                .is_ok_and(|rule| rule.name().0 == MODED_TYPE);
+        MoldAdmissibility::from(!moded)
     }
 
     /// Return whether `mold` extends the head operand rather than starting a

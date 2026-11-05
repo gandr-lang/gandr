@@ -1,0 +1,41 @@
+//! A type applies its family by juxtaposition, as a value call applies its
+//! function.
+//!
+//! The floor spells a value call by juxtaposition, and a type now takes the
+//! same spelling. `Couple Integer (Maybe Integer)` is the application
+//! `Couple(Integer, Maybe(Integer))`. The call form reads as before, and the
+//! two spellings convert.
+//!
+//! Each argument after the head is one operand, and parentheses group an
+//! argument that is an application. The application binds tighter than the
+//! returner and the arrow, so `-F Maybe A` returns `Maybe A`. A `(` after a
+//! space opens a group, and only a `(` directly after the head continues the
+//! call form. A lowercase head stays in the call form, as in
+//! `maybeRun(Integer)`. Its juxtaposed form `m T` is a type at a mode
+//! variable, which a later unit reads.
+//!
+//! - see: #5326 — a type reads a juxtaposed application beside its call form
+//! - see: #5330 — the juxtaposed type at a mode variable
+
+/// Optional values, `None` and `Some x`.
+import "./data-maybe.gandr";
+
+/// This type holds a value of each of two types. Its constructor has the
+/// name of the type.
+data Couple(a : Type, b : Type) : Type where
+  /// A value of each type, the first beside the second.
+  | Couple : (first : a, second : b) --> Couple a b
+
+/// An integer beside an optional integer, its type written by juxtaposition.
+def coupled() -> Couple Integer (Maybe Integer) =
+  Couple 1 (Some 2 : Maybe Integer)
+
+/// The same couple at its type in the call form: the two spellings convert.
+def recoupled() -> Couple(Integer, Maybe(Integer)) =
+  (Couple 1 (Some 2 : Maybe(Integer)) : Couple Integer (Maybe Integer))
+
+/// An optional computation's type, named once.
+def maybeRun : Type -> Type[-] = fun (A) { -F Maybe A };
+
+/// A present value against the named type at `Integer`.
+def presentOne() -> maybeRun(Integer) { Some 1 }
