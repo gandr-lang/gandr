@@ -5522,10 +5522,10 @@ mod tests
             molder.follow(call_close, &resolve("absent-label-for-witness")),
             Follow::Refuted
         );
-        // No type form goes on with `(` after a whole type: a type application
-        // is no head of another.
+        // `f(a)(b)` (#5213): a second list may apply a type call's result, so
+        // `(` stands after the first list's closer.
         let open = resolve("(");
-        assert_eq!(molder.follow(call_close, &open), Follow::Refuted);
+        assert_eq!(molder.follow(call_close, &open), Follow::Possible);
         // `?(P). S` (#1229): the unknown type is a whole type, and no type
         // form goes on with `(` after one, while `.` and `)` stand after a
         // type operand.

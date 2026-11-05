@@ -867,7 +867,6 @@ corpus/ledger/syntax/run-expression.gandr STE-3.6 ad3f5869b541c9f2
 corpus/ledger/syntax/run-expression.gandr STE-3.5 ad3f5869b541c9f2
 corpus/ledger/syntax/splice-expression.gandr STE-3.5 aea592cfcd16e9e6
 corpus/ledger/syntax/statement-block.gandr STE-9.3 4fbbe5f361fe2408
-corpus/ledger/syntax/type-application.gandr STE-3.2 5a9d60bbb383f82a
 corpus/ledger/syntax/typed-number.expression.gandr STE-8.1 6cbba91a4b569ce7
 corpus/ledger/syntax/variable-name.gandr STE-3.6 d5ff941dfad249fd
 corpus/ledger/syntax/variable-name.gandr STE-8.1 d5ff941dfad249fd

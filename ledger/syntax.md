@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xa03488d80145bae7`
+- Grammar fingerprint: `0x57d3bdf2f55a9c8c`
 - Rules: 171 — 170 committed, 1 internal
-- Molds: 3016
+- Molds: 3029
 - Attributes: 18
 
 ## Reading a form
@@ -181,9 +181,9 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`path_type`](../corpus/ledger/syntax/path-type.gandr) | `Path ⦅ ( EXPRESSION , EXPRESSION ⦅ , EXPRESSION ⦆? ) ‖ [ . TYPE ⦅ = ⦅ ⟨universe_type⟩ ] ( TYPE , TYPE ) ‖ TYPE ] ( EXPRESSION , EXPRESSION ) ⦆ ‖ ] ( EXPRESSION , EXPRESSION ) ⦆ ⦆` | `type.application` | `path_type` * | admitted | TypeBuiltin, Other, Operator, Number |
 | [`bridge_type`](../corpus/ledger/syntax/bridge-type.gandr) | `Bridge ⦅ ( EXPRESSION , EXPRESSION ⦅ , EXPRESSION ⦆? ) ‖ [ . TYPE ⦅ = ⦅ ⟨universe_type⟩ ] ( TYPE , TYPE ) ‖ TYPE ] ( EXPRESSION , EXPRESSION ) ⦆ ‖ ] ( EXPRESSION , EXPRESSION ) ⦆ ⦆` | `type.application` | `bridge_type` * | admitted | TypeBuiltin, Other, Operator, Number |
 | [`flow_type`](../corpus/ledger/syntax/flow-type.gandr) | `Flow [ . TYPE ⦅ = ⦅ ⟨universe_type⟩ ] ( TYPE , TYPE ) ‖ TYPE ] ( EXPRESSION , EXPRESSION ) ⦆ ‖ ] ( EXPRESSION , EXPRESSION ) ⦆` | `type.application` | `flow_type` * | admitted | Other, TypeBuiltin, Operator, Number |
-| [`type_application`](../corpus/ledger/syntax/type-application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? )` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
+| [`type_application`](../corpus/ledger/syntax/type-application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
 | [`type_application.juxtaposed`](../corpus/ledger/syntax/type-application.juxtaposed.gandr) | `TYPE   TYPE` | `type.juxtaposition` | `type_application` | admitted | Other |
-| [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ‹type_identifier› ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
+| [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ⦅ ‹type_identifier› ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ‹type_variable› ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
 | [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ < ⦆? ‹identifier› ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized-type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope-type.gandr) | `*{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |
@@ -401,9 +401,9 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `path_type` | type | 27 | `Path` | — | 0 |
 | `bridge_type` | type | 27 | `Bridge` | — | 0 |
 | `flow_type` | type | 23 | `Flow` | — | 0 |
-| `type_application` | type | 9 | `type_identifier` `type_variable` | `moded_type`, `type_identifier`, `type_variable` | 2 |
+| `type_application` | type | 13 | `type_identifier` `type_variable` | `moded_type`, `type_identifier`, `type_variable` | 4 |
 | `type_application.juxtaposed` | type | 1 | ` ` | — | 0 |
-| `type_path` | type | 8 | `.` | — | 2 |
+| `type_path` | type | 17 | `.` | — | 9 |
 | `staged_type` | type | 8 | `[` | — | 2 |
 | `parenthesized_type` | type | 6 | `(` | — | 4 |
 | `telescope_type` | type | 6 | `*{` | — | 4 |
@@ -448,14 +448,14 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
 | `identifier` | 407 | 60 | 3 |
-| `,` | 267 | 49 | 0 |
+| `,` | 273 | 49 | 0 |
 | `:` | 248 | 32 | 0 |
 | `type_identifier` | 203 | 33 | 2 |
+| `)` | 143 | 44 | 0 |
 | `=` | 141 | 36 | 0 |
-| `)` | 140 | 44 | 0 |
-| `(` | 136 | 43 | 5 |
+| `(` | 139 | 43 | 5 |
 | `;` | 127 | 26 | 1 |
-| `type_variable` | 92 | 15 | 3 |
+| `type_variable` | 93 | 15 | 3 |
 | `.` | 90 | 44 | 3 |
 | `]` | 76 | 40 | 0 |
 | `}` | 76 | 40 | 0 |

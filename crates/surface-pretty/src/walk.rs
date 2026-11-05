@@ -8886,7 +8886,8 @@ impl Walk<'_, '_>
     ///   and a loop ending a pass is written with its rest, as
     ///   [`Self::pass_end`] reads them, and a computation the end of a pass
     ///   cannot write is noted as the fixpoint's notation; a returner anywhere
-    ///   else is `pure v` and a run `run c`; a projection out of a forced
+    ///   else is `pure v` and a run `run c`; a force where a type is read is
+    ///   the call of no arguments `f()` (#5213); a projection out of a forced
     ///   variable naming a context binder is the observation `a.i`, the
     ///   binder's name its one piece; a decode of a positional projection,
     ///   which the type grammar writes no spelling of, is noted as the
@@ -9966,6 +9967,20 @@ impl Walk<'_, '_>
                     Production("pure_expression"),
                     Join::Prefix(Prefix::Pure),
                 )),
+            },
+            // A call of no arguments where a type is read writes its empty
+            // list, `empty()`: there `force empty` reads as no type, and the
+            // head reads as an expression the type encloses (#5213).
+            Former::Force(forced) if self.surface == Surface::Type => {
+                tasks.push(Task::Surface(self.surface));
+                tasks.push(Task::Join(Join::Apply(Arity(0_usize))));
+                tasks.push(Task::Visit {
+                    node: forced,
+                    admits: Admits::Value,
+                    depth,
+                });
+                tasks.push(Task::Surface(Surface::Enclosed));
+                return writes(Production("application_expression"), Ok(()));
             },
             Former::Force(_) => Some(writes(
                 Production("force_expression"),

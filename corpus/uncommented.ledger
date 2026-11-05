@@ -1838,7 +1838,6 @@ sketch/environments/merge.gandr:Model:f65eb6f0d94abb0a uncommented
 sketch/environments/merge.gandr:Model:fe70d6b343134fbd uncommented
 sketch/environments/tactics.gandr:module_declaration:6232f2e73c0e8b88 uncommented
 sketch/environments/tactics.gandr:module_declaration:a93c288035ae3d0e uncommented
-sketch/foreign/layouts.gandr:Realizes:a2cb366fe5bf8969 uncommented
 sketch/foreign/mlir.gandr:module_declaration:2d8db61181a80077 uncommented
 sketch/foreign/thir.gandr:manifest_sort:47b7ec98bdcdc228 uncommented
 sketch/foreign/thir.gandr:splice_expression:3992f34650760215 uncommented
