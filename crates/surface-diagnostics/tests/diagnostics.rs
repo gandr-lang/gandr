@@ -3220,8 +3220,6 @@ fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
 /// malformed form reporting its parse error alone.
 mod sweeps
 {
-    use alloc::collections::BTreeSet;
-
     use gandr_workflow_sweep::Nights;
     use gandr_workflow_sweep::Portion;
     use gandr_workflow_sweep::Sample;
@@ -3274,24 +3272,18 @@ mod sweeps
             .filter(|source| source.name.as_ref().starts_with("fixture/pathological/"))
             .collect();
         eprintln!("{}", sweep.rotation());
-        let visited: BTreeSet<_> = sweep
-            .visit_rotating(SAMPLE, NIGHTS, &candidates)
-            .into_iter()
-            .map(|source| source.path)
-            .collect();
+        let visited = sweep.visit_rotating(SAMPLE, NIGHTS, &candidates);
         assert!(
             visited.len() >= sweep.drawn(SAMPLE).0,
             "the sample is drawn: {}",
             visited.len()
         );
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../corpus")
-            .join("pathological")
-            .canonicalize()
-            .expect("the corpus is checked out beside this crate");
         let mut repaired = 0_usize;
         let mut severities = Vec::new();
-        let ControlFlow::Continue(_report) = Walk::new(vec![root]).visit(
+        // The walk composes the visited sources alone, each with its import
+        // closure, so the sweep's cost is linear in its sample (#5217).
+        let walk = Walk::new(visited.into_iter().map(|source| source.path).collect());
+        let ControlFlow::Continue(_report) = walk.visit(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 let Step::Source {
@@ -3300,9 +3292,6 @@ mod sweeps
                 else {
                     return ControlFlow::Continue(());
                 };
-                if !visited.contains(path) {
-                    return ControlFlow::Continue(());
-                }
                 let whole = <&str>::from(text)
                     .get(usize::from(base) ..)
                     .expect("an importer's own text starts at its base");
