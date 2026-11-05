@@ -3,7 +3,6 @@
 Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the finite arithmetic and the plan language that exact real computation reads.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
@@ -17,7 +16,6 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - [Certificates](#certificates)
 - [Measurement](#measurement)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -53,6 +51,7 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Certificate`, `Step`, `Side`, `StepId` and `FormatVersion`: a versioned certificate; `encode` to `CertificateBytes` and `decode` from `EncodedCertificate`.
 - `check`: the replay within `CheckerQuotas`, a `Checked` `Conclusion` or a `CertificateRefusal` that names its `StepSite` and its `CertificateCheck`.
 - `square_root`, `square_root_of_two`, `radicand` and `refine`: the registered cut schema, its recognition, and its refinement to a power of two with a certificate.
+- `Obligation`, `Outcome` and `Dovetail`: the refinement machine's obligations, their five outcomes, and the scheduler that runs them in bounded quanta within a budget. The `semidecision` and `dovetail` module documentation states each.
 
 ## Expected features
 
@@ -124,7 +123,7 @@ A `Certificate` is a list of steps, each a primitive rule over the nodes of a pl
 
 ## Measurement
 
-`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits. It times the canonical form, the bytes, the reading back, the validation and the dual approximation at 64 bits of three plans. It times the refinement, the check and the bytes of the square root of two at three widths. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
+`cargo bench -p gandr-theory-exact-reals` times each dyadic and interval operation at operand widths of 63, 64, 256 and 4096 bits. It times the canonical form, the bytes, the reading back, the validation and the dual approximation at 64 bits of three plans. It times the refinement, the check and the bytes of the square root of two at three widths. It times one turn of the scheduler at quanta of 1, 8 and 64 steps, and a run until a comparison settles beside one that never settles. It prints the median, the 99th percentile and the allocations per operation. Each bench's module documentation lists its rows.
 
 ## License
 

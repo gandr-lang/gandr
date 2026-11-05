@@ -267,6 +267,199 @@ fn finite(bound: &Bound) -> Result<Dyadic, CertificateCheck>
     };
 }
 
+/// An enclosure of a registered cut as halvings narrow it: the cut's radicand
+/// and the two ends, each a witness of its side.
+///
+/// # Specification
+/// - invariant: `lower` lies in the lower cut and `upper` in the upper cut of
+///   the square root of `radicand`, so `lower < upper`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct Refinement
+{
+    /// The radicand of the cut.
+    radicand: Dyadic,
+    /// A point of the lower cut, the lower end of the enclosure.
+    lower: Dyadic,
+    /// A point of the upper cut, the upper end of the enclosure.
+    upper: Dyadic,
+}
+
+impl Refinement
+{
+    /// The refinement of the registered cut at `cut`, from the ends of its
+    /// hull, and the step that states them.
+    ///
+    /// # Specification
+    /// - ensures: the step is [`Step::Witnesses`] with the ends of the cut's
+    ///   hull, which [`crate::certificate::check`] accepts as the first step of
+    ///   an enclosure.
+    /// - fails: refuses a node that is not a registered cut as [`radicand`]
+    ///   does, and a hull end that is not a witness of its side as
+    ///   [`CertificateCheck::NotLower`] or [`CertificateCheck::NotUpper`].
+    /// - panics: none.
+    /// - executable: none — the checker's replay is the clause.
+    ///
+    /// # Errors
+    /// - [`CertificateCheck::UnknownNode`], [`CertificateCheck::WrongNode`],
+    ///   [`CertificateCheck::ForgedCut`]: as [`radicand`].
+    /// - [`CertificateCheck::NotLower`], [`CertificateCheck::NotUpper`]: a hull
+    ///   end is not a witness.
+    /// - [`CertificateCheck::WidthQuota`]: a hull end is too wide to square.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`refine`], which starts each refinement here.
+    /// - witness: `tests::certificate::refinement_holds_for_generated_radicands`
+    pub(crate) fn start(
+        plan: &Plan,
+        cut: NodeId,
+    ) -> Result<(Self, Step), CertificateCheck>
+    {
+        let radicand = radicand(plan, cut)?;
+        let Ok(&Node::Real(Real::Cut(ref registered))) = plan.node(cut)
+        else {
+            return Err(CertificateCheck::WrongNode);
+        };
+        let (lower, upper) = (
+            finite(registered.hull.lower())?,
+            finite(registered.hull.upper())?,
+        );
+        if membership(&lower, &radicand)? != Membership::Lower {
+            return Err(CertificateCheck::NotLower);
+        }
+        if membership(&upper, &radicand)? != Membership::Upper {
+            return Err(CertificateCheck::NotUpper);
+        }
+        let step = Step::Witnesses {
+            cut,
+            lower: lower.clone(),
+            upper: upper.clone(),
+        };
+        return Ok((
+            Self {
+                radicand,
+                lower,
+                upper,
+            },
+            step,
+        ));
+    }
+
+    /// The lower end of the enclosure.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn lower(&self) -> &Dyadic
+    {
+        return &self.lower;
+    }
+
+    /// The upper end of the enclosure.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn upper(&self) -> &Dyadic
+    {
+        return &self.upper;
+    }
+
+    /// The width of the enclosure.
+    ///
+    /// # Specification
+    /// - ensures: `upper - lower`, computed exactly.
+    /// - fails: refuses a difference too wide to compute as
+    ///   [`CertificateCheck::WidthQuota`].
+    /// - panics: none.
+    /// - executable: none — the clause restates the subtraction.
+    ///
+    /// # Errors
+    /// - [`CertificateCheck::WidthQuota`]: the difference is too wide.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — each enclosure that generated obligations ask for
+    ///   meets its width, and its certificate replays to it.
+    /// - witness: `tests::dovetail::every_certificate_replays_to_its_evidence`
+    pub(crate) fn gap(&self) -> Result<Dyadic, CertificateCheck>
+    {
+        return exact(self.upper.sub(&self.lower, Precision::MAX, Rounding::Floor));
+    }
+
+    /// Halve the enclosure at its midpoint, and the step that states the
+    /// halving of the enclosure that the step `premise` concludes.
+    ///
+    /// # Specification
+    /// - requires: the step `premise` concludes the current enclosure.
+    /// - ensures: the step is [`Step::Split`] at the midpoint, on the side its
+    ///   cut holds of. A midpoint that is the root itself gives way to the
+    ///   midpoint of the lower half. The new end replaces the old end of its
+    ///   side, so the enclosure holds half its width or less.
+    /// - fails: refuses a midpoint wider than the quota as
+    ///   [`CertificateCheck::WidthQuota`].
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the cut that the step replays
+    ///   against.
+    /// - intension: two exact additions, two exact halvings and at most two
+    ///   exact squares.
+    ///
+    /// # Errors
+    /// - [`CertificateCheck::WidthQuota`]: a midpoint is too wide.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`refine`], which halves each refinement here.
+    /// - witness: `tests::certificate::refinement_holds_for_generated_radicands`
+    pub(crate) fn halve(
+        &mut self,
+        premise: StepId,
+        quotas: &CheckerQuotas,
+    ) -> Result<Step, CertificateCheck>
+    {
+        let middle = midpoint(&self.lower, &self.upper)?;
+        if middle.width() > quotas.width {
+            return Err(CertificateCheck::WidthQuota);
+        }
+        let (point, side) = match membership(&middle, &self.radicand)? {
+            Membership::Lower => (middle, Side::Lower),
+            Membership::Upper => (middle, Side::Upper),
+            Membership::Root => (midpoint(&self.lower, &middle)?, Side::Lower),
+        };
+        match side {
+            Side::Lower => self.lower = point.clone(),
+            Side::Upper => self.upper = point.clone(),
+        }
+        return Ok(Step::Split {
+            premise,
+            point,
+            side,
+        });
+    }
+}
+
+/// The exact value of `result`, or [`CertificateCheck::WidthQuota`] when the
+/// operation overflows.
+///
+/// # Specification
+/// trivial.
+fn exact(result: Result<Rounded, DyadicError>) -> Result<Dyadic, CertificateCheck>
+{
+    return result
+        .map_err(|_overflow| CertificateCheck::WidthQuota)
+        .map(Rounded::into_value);
+}
+
+/// The midpoint of `low` and `high`, computed exactly.
+///
+/// # Specification
+/// trivial.
+fn midpoint(
+    low: &Dyadic,
+    high: &Dyadic,
+) -> Result<Dyadic, CertificateCheck>
+{
+    let half = Dyadic::new(BigInt::from(1_u8), Exponent::from(-1_i32))
+        .map_err(|_overflow| CertificateCheck::WidthQuota)?;
+    let sum = exact(low.add(high, Precision::MAX, Rounding::Floor))?;
+    return exact(sum.mul(&half, Precision::MAX, Rounding::Floor));
+}
+
 /// The certificate of an enclosure of the registered cut at `cut` no wider
 /// than `2^width`.
 ///
@@ -310,68 +503,17 @@ pub fn refine(
     quotas: &CheckerQuotas,
 ) -> Result<Certificate, CertificateCheck>
 {
-    let plan = plan.plan();
-    let radicand = radicand(plan, cut)?;
-    let Ok(&Node::Real(Real::Cut(ref registered))) = plan.node(cut)
-    else {
-        return Err(CertificateCheck::WrongNode);
-    };
-    let (mut lower, mut upper) = (
-        finite(registered.hull.lower())?,
-        finite(registered.hull.upper())?,
-    );
-    if membership(&lower, &radicand)? != Membership::Lower {
-        return Err(CertificateCheck::NotLower);
-    }
-    if membership(&upper, &radicand)? != Membership::Upper {
-        return Err(CertificateCheck::NotUpper);
-    }
-    let exact = |result: Result<Rounded, DyadicError>| {
-        result
-            .map_err(|_overflow| CertificateCheck::WidthQuota)
-            .map(Rounded::into_value)
-    };
+    let (mut refinement, first) = Refinement::start(plan.plan(), cut)?;
     let target =
         Dyadic::new(BigInt::from(1_u8), width).map_err(|_overflow| CertificateCheck::WidthQuota)?;
-    let half = Dyadic::new(BigInt::from(1_u8), Exponent::from(-1_i32))
-        .map_err(|_overflow| CertificateCheck::WidthQuota)?;
-    let midpoint = |low: &Dyadic, high: &Dyadic| {
-        let sum = exact(low.add(high, Precision::MAX, Rounding::Floor))?;
-        return exact(sum.mul(&half, Precision::MAX, Rounding::Floor));
-    };
-    let mut steps = vec![Step::Witnesses {
-        cut,
-        lower: lower.clone(),
-        upper: upper.clone(),
-    }];
-    loop {
-        let gap = exact(upper.sub(&lower, Precision::MAX, Rounding::Floor))?;
-        if gap <= target {
-            break;
-        }
+    let mut steps = vec![first];
+    while refinement.gap()? > target {
         if steps.len() >= usize::from(quotas.steps) {
             return Err(CertificateCheck::StepQuota);
         }
         let premise = StepId::try_from(steps.len().saturating_sub(1))
             .map_err(|_wide| CertificateCheck::StepQuota)?;
-        let middle = midpoint(&lower, &upper)?;
-        if middle.width() > quotas.width {
-            return Err(CertificateCheck::WidthQuota);
-        }
-        let (point, side) = match membership(&middle, &radicand)? {
-            Membership::Lower => (middle, Side::Lower),
-            Membership::Upper => (middle, Side::Upper),
-            Membership::Root => (midpoint(&lower, &middle)?, Side::Lower),
-        };
-        match side {
-            Side::Lower => lower = point.clone(),
-            Side::Upper => upper = point.clone(),
-        }
-        steps.push(Step::Split {
-            premise,
-            point,
-            side,
-        });
+        steps.push(refinement.halve(premise, quotas)?);
     }
     return Ok(Certificate::new(FormatVersion::CURRENT, steps));
 }

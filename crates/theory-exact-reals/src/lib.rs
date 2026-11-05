@@ -11,18 +11,25 @@
 //! its operands. The crate does not depend on the gandr kernel, and no real
 //! number enters kernel conversion.
 //!
-//! A computation over the reals is held as a [`Plan`]: a finite DAG of real,
-//! open and domain nodes whose binders are de Bruijn indices. A plan holds
-//! each distinct subterm once, and it has one canonical byte form.
-//! [`approximate`] gives each node of a validated plan an enclosure or a pair
-//! of approximants, each sound on its own, and it never reports an undecided
-//! proposition as false. [`check`] replays a [`Certificate`] with no search,
-//! and [`refine`] narrows a registered cut with one certificate step for each
-//! halving.
-//!
 //! Every operation is total and never panics, and it refuses each malformed
 //! input by name. The work of one arithmetic operation is bounded by its
 //! operands' bit widths and the requested precision.
+//!
+//! # Items
+//!
+//! - [`Plan`] — a computation over the reals: a finite DAG of real, open and
+//!   domain nodes whose binders are de Bruijn indices. A plan holds each
+//!   distinct subterm once, and it has one canonical byte form.
+//! - [`approximate`] — an enclosure or a pair of approximants for each node of
+//!   a validated plan, each sound on its own. It never reports an undecided
+//!   proposition as false.
+//! - [`check`], [`Certificate`] — the replay of a certificate with no search.
+//! - [`refine`] — the narrowing of a registered cut, one certificate step for
+//!   each halving.
+//! - [`Obligation`], [`Dovetail`], [`Outcome`] — the refinement machine. An
+//!   obligation names a node and the evidence that it asks for. A dovetail runs
+//!   a set of them in bounded quanta, in a fixed order, within a budget. None
+//!   of the five outcomes reads as false.
 //!
 //! # References
 //!
@@ -38,10 +45,12 @@ extern crate alloc;
 pub mod approx;
 pub mod certificate;
 pub mod codec;
+pub mod dovetail;
 pub mod dyadic;
 pub mod interval;
 pub mod plan;
 pub mod schema;
+pub mod semidecision;
 pub mod validate;
 
 pub use crate::approx::Approximation;
@@ -67,6 +76,15 @@ pub use crate::codec::DecodeError;
 pub use crate::codec::EncodedCertificate;
 pub use crate::codec::EncodedPlan;
 pub use crate::codec::PlanBytes;
+pub use crate::dovetail::Budget;
+pub use crate::dovetail::Dovetail;
+pub use crate::dovetail::Position;
+pub use crate::dovetail::Quantum;
+pub use crate::dovetail::Report;
+pub use crate::dovetail::Rounds;
+pub use crate::dovetail::Steps;
+pub use crate::dovetail::Stop;
+pub use crate::dovetail::Work;
 pub use crate::dyadic::BitWidth;
 pub use crate::dyadic::Dyadic;
 pub use crate::dyadic::DyadicError;
@@ -111,6 +129,10 @@ pub use crate::schema::radicand;
 pub use crate::schema::refine;
 pub use crate::schema::square_root;
 pub use crate::schema::square_root_of_two;
+pub use crate::semidecision::Demand;
+pub use crate::semidecision::Obligation;
+pub use crate::semidecision::Outcome;
+pub use crate::semidecision::SuspendReason;
 pub use crate::validate::ByteLength;
 pub use crate::validate::Check;
 pub use crate::validate::Conflict;

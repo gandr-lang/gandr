@@ -21,8 +21,9 @@ path = "tests/lib.rs"
 
 # The measurements: `harness = false` benches, one timing dyadic and interval
 # operations at four operand widths, one timing a plan's canonical form, its
-# bytes and their reading back, and one timing the refinement and the replay
-# of certificates, each with percentiles and allocations.
+# bytes and their reading back, one timing the refinement and the replay of
+# certificates, and one timing a turn of the refinement machine, each with
+# percentiles and allocations.
 [[bench]]
 harness = false
 name = "arithmetic"
@@ -37,6 +38,11 @@ path = "benches/plan.rs"
 harness = false
 name = "certificate"
 path = "benches/certificate.rs"
+
+[[bench]]
+harness = false
+name = "dovetail"
+path = "benches/dovetail.rs"
 
 [dependencies]
 anodized.workspace = true
