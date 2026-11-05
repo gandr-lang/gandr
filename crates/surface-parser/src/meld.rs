@@ -2043,6 +2043,32 @@ impl<'pbg> MeldState<'pbg>
         ) {
             return None;
         }
+        self.applies_next()
+    }
+
+    /// The application tile an expression operand opening next would take:
+    /// the slope's top is the head or an argument of a spine, `f x`, and the
+    /// next operand is one more argument (#5197).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the grammar's application mold exactly when the slope's top
+    ///   is a complete expression operand whose source does not end in `}` or
+    ///   opens with a connective's opener `*{`, `+{`, `&{` or `#{`, a form is
+    ///   open, and the open form is no shell form. `None` otherwise.
+    /// - provides: the slot a completion reads after an operand and a space.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::juxtaposed`], and a completion after `f p
+    ///   ` offers a value slot.
+    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application()))]
+    pub fn applies_next(&self) -> Option<MoldId>
+    {
+        let application = self.pbg.application()?;
         let top = self.stack.last()?;
         if top.role != Role::Operand || top.sort != Sort::Expression {
             return None;

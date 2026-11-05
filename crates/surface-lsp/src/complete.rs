@@ -1242,6 +1242,47 @@ mod tests
         }
     }
 
+    /// #5197: the next argument of a spine stands after an operand and a
+    /// space. The melder reads an operand there as one more argument, so the
+    /// slot is a value slot and offers the names the slot after `return`
+    /// offers. A prefix there narrows the names to the ones it starts. After a
+    /// statement that ends at its brace, no application reads, and the slot
+    /// stays filled.
+    #[test]
+    fn a_spine_offers_its_next_argument_as_a_value_slot_5197()
+    {
+        use CompletionItemKind as Kind;
+
+        let head = "def f(p : Integer, q : Integer) -> -F Integer {\n  return ";
+        let at = |before: &str, after: &str| {
+            offered(SourceText::from(before), SourceText::from(after)).names
+        };
+        let value = at(head, "?\n}\n");
+        assert_eq!(
+            value.first().map(|&(ref name, _)| name.as_str()),
+            Some("q"),
+            "the slot after `return` offers the parameters first: {value:?}"
+        );
+        assert_eq!(
+            at(&format!("{head}f p "), "?\n}\n"),
+            value,
+            "the next argument of `f p`"
+        );
+        assert_eq!(
+            at(&format!("{head}f p q"), "\n}\n"),
+            named!([("q", Kind::VARIABLE)]),
+            "a prefix in the next argument"
+        );
+        assert_eq!(
+            at(
+                "def g(c : Bool) -> -F Integer {\n  if c { return 1 } else { return 2 } ",
+                "\n}\n"
+            ),
+            Vec::new(),
+            "a statement that ends at its brace takes no argument"
+        );
+    }
+
     /// The snippet table over the identity subject's base source: every
     /// keyword offered at the slot after its last declaration and at the
     /// computation `up` returns, each with the form it inserts.

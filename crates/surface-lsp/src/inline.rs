@@ -1938,7 +1938,10 @@ impl Labeled<'_>
     ///   text's end, from the top-level form the text ends molded alone, with
     ///   the layout the text ends in read at the cursor ([`at_cursor`]): a
     ///   block open at the cursor's column stays open, as a written `{` the
-    ///   text has not closed does, and one the cursor stands outside closes.
+    ///   text has not closed does, and one the cursor stands outside closes. A
+    ///   text that ends in an operand and a space, where the melder reads the
+    ///   next operand as one more argument of a spine, ends in a value slot
+    ///   (#5197).
     /// - fails: never.
     /// - panics: none.
     /// - intension: one molding of the form the text ends and one bounded walk
@@ -1947,9 +1950,12 @@ impl Labeled<'_>
     /// # Adequacy
     /// - hypothesis: L3 — the completion witnesses read a value, a computation,
     ///   a type, a pattern and an item slot, and a binding name's slot filled;
-    ///   a layout body and its braced spelling offer the same names.
+    ///   a layout body and its braced spelling offer the same names; the next
+    ///   argument of a spine offers a value slot, and a statement that ends at
+    ///   its brace takes none.
     /// - witness: `complete::tests::each_slot_offers_its_own_names`
     /// - witness: `complete::tests::a_layout_body_offers_as_its_braces_do_4853`
+    /// - witness: `complete::tests::a_spine_offers_its_next_argument_as_a_value_slot_5197`
     #[must_use]
     #[spec(ensures: |ret| lead(self.text, self.labeling.tokens()) == Lead::Code || ret == Slot::Filled)]
     pub fn slot(
@@ -1970,11 +1976,22 @@ impl Labeled<'_>
         let menu = state.continuations(ClosingLimit::from(CLOSINGS));
         let pending = parts(grammar, menu.pending());
         let closings = closing_materials(grammar, &menu, &pending);
-        slot_of(
+        let slot = slot_of(
             &menu,
             &pending,
             first_slotted(&closings).map(|(_, material)| material),
-        )
+        );
+        // After an operand and a space, the melder reads one more operand as
+        // the next argument of a spine, `f x y`.
+        if slot == Slot::Filled
+            && tokens
+                .last()
+                .is_some_and(|last| last.lexeme == Lexeme::Space)
+            && state.applies_next().is_some()
+        {
+            return Slot::Open(Category::Value);
+        }
+        slot
     }
 }
 
