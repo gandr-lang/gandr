@@ -244,6 +244,7 @@ use crate::closing::ClosingLimit;
 use crate::closing::LeadingSlot;
 use crate::closing::Step;
 use crate::closing::push_closing;
+use crate::label::Token;
 use crate::mold::TokenRun;
 use crate::oblig::Delta;
 use crate::oblig::Oblig;
@@ -1810,6 +1811,50 @@ impl<'pbg> MeldState<'pbg>
             live_marks: 0,
             low_water: usize::MAX,
         }
+    }
+
+    /// Make room for the molding of `tokens`: their source bytes in the
+    /// source buffer, and twice their count in the emission log.
+    ///
+    /// The molding emits one leaf for each token and one interior node for
+    /// each form, and a form holds at least two children, so a molding that
+    /// mints few tiles emits fewer than twice its tokens. Over the corpus and
+    /// the library, a molding emits at most 1.56 entries for each token, and
+    /// 1.20 on average. A fresh state's log and source then grow once, at the
+    /// start, and not by doubling as tiles are pushed (#5229). A state that
+    /// already holds a molding grows by the amortized rule, so runs molded one
+    /// after another into one state copy the log a logarithmic number of
+    /// times.
+    ///
+    /// # Specification
+    /// - requires: `tokens` are ascending and tile one span of the source.
+    /// - ensures: the source buffer can take the bytes `tokens` span, and the
+    ///   log can take twice as many entries as `tokens` holds, beyond what each
+    ///   holds now; nothing that the state holds changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the hotpath series measure the allocations of the
+    ///   molding with and without the reservation; every molding of the corpus
+    ///   commits the same tree as before.
+    /// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
+    #[spec(
+        captures: before = (self.source.len(), self.emit.len()),
+        ensures: |()| self.source.len() == before.0 && self.emit.len() == before.1
+            && self.emit.capacity() >= before.1.saturating_add(tokens.len().saturating_mul(2)),
+    )]
+    pub(crate) fn reserve_for(
+        &mut self,
+        tokens: &[Token],
+    )
+    {
+        let bytes = match (tokens.first(), tokens.last()) {
+            (Some(first), Some(last)) => last.end.saturating_sub(first.start),
+            _ => 0,
+        };
+        self.source
+            .reserve(usize::try_from(bytes).unwrap_or_default());
+        self.emit.reserve(tokens.len().saturating_mul(2));
     }
 
     /// Push one molded tile through the machine (Shift / Reduce / Degrout).

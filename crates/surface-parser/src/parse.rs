@@ -982,6 +982,8 @@ impl<'source> FormSplit<'source>
     ) -> Result<FormJoin<'source>, MeldError>
     {
         let mut whole = MeldState::new(molder.pbg());
+        // economy: the joined state takes the whole stream's room once (#5229).
+        whole.reserve_for(self.labeling.tokens());
         let mut seams = Vec::with_capacity(units.len());
         for unit in units {
             seams.push(molder.join_unit(&mut whole, unit, self.labeling.tokens(), self.source));

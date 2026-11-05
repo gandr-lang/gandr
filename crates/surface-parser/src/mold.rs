@@ -2317,6 +2317,9 @@ impl<'pbg> Molder<'pbg>
         let source = source_slice(src);
         let end = usize::from(run.end()).min(tokens.len());
         let mut index = usize::from(run.start());
+        // economy: the log and the source take the run's room once, so they do
+        // not grow by doubling as its tiles are pushed (#5229).
+        state.reserve_for(tokens.get(index .. end).unwrap_or_default());
         while index < end {
             let Some(&token) = tokens.get(index)
             else {
