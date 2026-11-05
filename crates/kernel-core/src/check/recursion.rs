@@ -935,6 +935,10 @@ pub(super) fn stage_field(
     }
 }
 
+/// The declaration's own constant, its self binder and the count of uniform
+/// parameters outside its fixpoint, or why the case stands under none.
+pub(super) type Owned = Maybe<(ConstantIndex, DeBruijnIndex, crate::rewrite::BinderDepth), Unowned>;
+
 /// A case branch's type with its recursive fields at the stage the case
 /// opened, and the definition's own constant read as its self binder.
 ///
@@ -942,13 +946,16 @@ pub(super) fn stage_field(
 /// - requires: `branch` is the Pi telescope over one binder per entry of
 ///   `fields` that `former::branch_type` built over the case's data type, a
 ///   family of `block` — its [`families`]; `own`, when present, is the
-///   declaration's position and its fixpoint's self binder as an index in the
-///   case's context.
+///   declaration's position, its fixpoint's self binder as an index in the
+///   case's context and the count of uniform parameters the lowering binds
+///   outside that fixpoint.
 /// - ensures: the same telescope with each field domain's occurrences of a
 ///   family of `block` the stage order places at `child` ([`stage_field`]) and,
-///   under `own`, every occurrence of the constant in a domain replaced by the
-///   self binder raised past the fields before it; each domain that named the
-///   constant pushed onto `reads` under `tag`, as read and before staging.
+///   under `own`, every occurrence of the constant in a domain, or of the
+///   constant applied to its uniform parameters when there are some, replaced
+///   by the self binder raised past the fields before it; each domain that
+///   named the constant pushed onto `reads` under `tag`, as read and before
+///   staging.
 /// - fails: [`KernelError::ArenaFault`] for a telescope shorter than `fields`.
 /// - panics: none.
 ///
@@ -970,10 +977,7 @@ pub(super) fn stage_branch(
     (block, tag): (super::occurrence::Block, ConstructorTag),
     branch: CompTypeId,
     (fields, child): (&[ValueTypeId], StageId),
-    (own, reads): (
-        Maybe<(ConstantIndex, DeBruijnIndex), Unowned>,
-        &mut Vec<Read>,
-    ),
+    (own, reads): (Owned, &mut Vec<Read>),
 ) -> Result<CompTypeId, KernelError>
 {
     let mut domains = Vec::with_capacity(fields.len());
@@ -988,7 +992,7 @@ pub(super) fn stage_branch(
     }
     for (index, domain) in domains.iter_mut().enumerate() {
         let depth = u32::try_from(index).map_err(|_overflow| KernelError::ConstructorArity)?;
-        if let Maybe::Present((constant, binder)) = own {
+        if let Maybe::Present((constant, binder, uniform)) = own {
             let (table, memo) = session.rewrite_parts();
             // The self binder stands outside the fields before this one.
             // reason: an index past the ceiling clamps, as a shift's does.
@@ -996,13 +1000,26 @@ pub(super) fn stage_branch(
                 quenchant_arith::arith::Int::from(u32::from(binder)),
                 quenchant_arith::arith::Int::from(depth),
             )));
-            let read = rewrite::abstract_constant_value_type(
-                arena,
-                table,
-                memo,
-                *domain,
-                (constant, raised),
-            );
+            // A decoder over uniform parameters names itself applied to them:
+            // that application is the self binder.
+            let read = if uniform == crate::rewrite::BinderDepth::NONE {
+                rewrite::abstract_constant_value_type(
+                    arena,
+                    table,
+                    memo,
+                    *domain,
+                    (constant, raised),
+                )
+            }
+            else {
+                rewrite::abstract_applied_value_type(
+                    arena,
+                    table,
+                    memo,
+                    *domain,
+                    (constant, raised, uniform),
+                )
+            };
             if read != *domain {
                 reads.push(Read {
                     tag,

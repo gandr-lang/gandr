@@ -1176,6 +1176,8 @@ const fn role_tag(role: crate::Builtin) -> WireTag
         crate::Builtin::IrArgs => tags::ROLE_IR_ARGS,
         crate::Builtin::IrDecode => tags::ROLE_IR_DECODE,
         crate::Builtin::IrPair => tags::ROLE_IR_PAIR,
+        crate::Builtin::IrFamily => tags::ROLE_IR_FAMILY,
+        crate::Builtin::IrDecoder => tags::ROLE_IR_DECODER,
     }
 }
 

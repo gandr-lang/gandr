@@ -315,6 +315,22 @@ impl Accessibility
             .copied()
             .unwrap_or(Variance::NotStrictlyPositive)
     }
+
+    /// What the holder of the family role is read as, which keeps no walk:
+    /// stratified, every parameter not strictly positive, the reading that
+    /// admits least. Its one field holds the fields of the canonical `E`,
+    /// which is strictly positive in the family by construction.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn exempted(parameters: usize) -> Self
+    {
+        Self {
+            stratification: Stratification::Stratified,
+            parameters: alloc::vec![Variance::NotStrictlyPositive; parameters],
+        }
+    }
 }
 
 /// The accessibility of the families admitted before a walk, which a nested

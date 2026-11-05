@@ -825,6 +825,10 @@ pub struct Judgement<'session>
     /// The structural fixpoint a definition's body thunks: its own, whose
     /// self binder its constant reads as in a case's field types.
     own: Maybe<ComputationId, recursion::Unowned>,
+    /// The count of the uniform parameters the lowering binds outside the own
+    /// fixpoint, when the definition holds the decoder role: that fixpoint
+    /// opens no stage.
+    decoding: Maybe<crate::rewrite::BinderDepth, recursion::Unowned>,
     /// The structural fixpoint whose result of its recursed-on parameter's
     /// type is read at that parameter's stage.
     following: Maybe<ComputationId, recursion::Unowned>,
@@ -948,6 +952,7 @@ impl<'session> Judgement<'session>
             block: Block::Outside,
             presentations: &crate::presented::FREE,
             own: Maybe::Absent(recursion::Unowned::Outside),
+            decoding: Maybe::Absent(recursion::Unowned::Outside),
             following: Maybe::Absent(recursion::Unowned::Outside),
             partial: Partiality::Refused,
             taking: crate::admitted::Taking::Deriving,
@@ -982,6 +987,24 @@ impl<'session> Judgement<'session>
     {
         Self {
             own: Maybe::Present(fixpoint),
+            ..self
+        }
+    }
+
+    /// The same judgement for the holder of the decoder role, whose own
+    /// fixpoint stands under `uniform` uniform parameters and opens no stage.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn decoding(
+        self,
+        uniform: crate::rewrite::BinderDepth,
+    ) -> Self
+    {
+        Self {
+            decoding: Maybe::Present(uniform),
             ..self
         }
     }
@@ -4741,6 +4764,16 @@ where
                         let position = evidence.descent();
                         let (own, inside) = match position {
                             None => (expected, expected),
+                            // The decoder role's own fixpoint opens no stage:
+                            // its admission compares its body with the
+                            // canonical decoder, which decodes the fields of a
+                            // strictly positive family by `F`.
+                            Some(_)
+                                if matches!(judgement.decoding, Maybe::Present(_))
+                                    && matches!(judgement.own, Maybe::Present(root) if root == id) =>
+                            {
+                                (expected, expected)
+                            },
                             Some(position) => {
                                 root = respect::fold_root(
                                     arena,
@@ -5157,6 +5190,12 @@ where
                                                 judgement.entries.len(),
                                             )),
                                             DeBruijnIndex::from(index),
+                                            match judgement.decoding {
+                                                Maybe::Present(uniform) => uniform,
+                                                Maybe::Absent(_) => {
+                                                    crate::rewrite::BinderDepth::NONE
+                                                },
+                                            },
                                         ))
                                     })
                             },
@@ -7064,6 +7103,10 @@ where
     // reads it through the block's signatures. Alone, the block is the
     // declaration's own; in a mutual block, the block in scope already holds
     // it.
+    // The holder of the family role keeps no walk: its role's admission
+    // compares it with the canonical family, whose one field is strictly
+    // positive by construction, and refuses the declaration otherwise.
+    let exempt = declaration.role() == Maybe::Present(gandr_kernel_term::Builtin::IrFamily);
     let (judgement, accessibility) = match *declaration.content() {
         DeclarationContent::Data {
             kind,
@@ -7087,22 +7130,32 @@ where
                         | DeclarationContent::AbstractType { .. } => None,
                     })
                     .collect::<Vec<_>>();
-                let accessibility = occurrence::occurrences(
-                    arena,
-                    (block, &definitions, judgement.entries),
-                    parameters,
-                    constructors,
-                )?;
+                let accessibility = if exempt {
+                    occurrence::Accessibility::unwalked()
+                }
+                else {
+                    occurrence::occurrences(
+                        arena,
+                        (block, &definitions, judgement.entries),
+                        parameters,
+                        constructors,
+                    )?
+                };
                 (judgement, accessibility)
             },
             Block::Outside | Block::Inside { .. } | Block::Codata { .. } => {
                 let position = ConstantIndex::from(usize::from(judgement.entries.len()));
-                let accessibility = occurrence::occurrences(
-                    arena,
-                    (occurrence::Block::lone(position), &[], judgement.entries),
-                    parameters,
-                    constructors,
-                )?;
+                let accessibility = if exempt {
+                    occurrence::Accessibility::unwalked()
+                }
+                else {
+                    occurrence::occurrences(
+                        arena,
+                        (occurrence::Block::lone(position), &[], judgement.entries),
+                        parameters,
+                        constructors,
+                    )?
+                };
                 (
                     judgement.within_block(position, former::Signature {
                         parameters,
@@ -7349,12 +7402,34 @@ where
             };
             // A block's definition whose body thunks a fixpoint is that
             // fixpoint: inside it, the definition's own constant — which only
-            // the block's families name — reads as the self binder.
-            let owning = match (ruled.block, arena.value(body)) {
-                (Block::Mutual { .. }, Some(&Value::Thunk(root)))
+            // the block's families name — reads as the self binder. The holder
+            // of the decoder role owns the fixpoint under its uniform
+            // parameters' lambdas, where its family names it applied to them.
+            let mut count = 0_u32;
+            let mut cursor = match arena.value(body) {
+                Some(&Value::Thunk(root)) => Maybe::Present(root),
+                _ => Maybe::Absent(recursion::Unowned::Outside),
+            };
+            let decoder =
+                declaration.role() == Maybe::Present(gandr_kernel_term::Builtin::IrDecoder);
+            while decoder
+                && let Maybe::Present(at) = cursor
+                && let Some(&Computation::Lambda(inner)) = arena.computation(at)
+            {
+                cursor = Maybe::Present(inner);
+                count = count.saturating_add(1);
+            }
+            let uniform = crate::rewrite::BinderDepth::from(count);
+            let owning = match (ruled.block, cursor) {
+                (Block::Mutual { .. }, Maybe::Present(root))
                     if matches!(arena.computation(root), Some(&Computation::Fixpoint { .. })) =>
                 {
-                    ruled.owning(root)
+                    if decoder {
+                        ruled.owning(root).decoding(uniform)
+                    }
+                    else {
+                        ruled.owning(root)
+                    }
                 },
                 (
                     Block::Outside

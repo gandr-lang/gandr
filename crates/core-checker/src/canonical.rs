@@ -361,6 +361,123 @@ pub fn pair(
     Ok(())
 }
 
+/// Compare the data declaration at `holder` with the canonical family that a
+/// signature defines.
+///
+/// # Specification
+/// - requires: `signature` is the signature of the data declaration at
+///   `holder`, its nodes in `arena`; `signed` holds the signature role and
+///   `fields` the role of `E`.
+/// - ensures: `Ok(())` exactly when the signature has the parameters `O : Type`
+///   and `S : Sig(O)`, no index and one constructor of one field, the decode of
+///   `E(O, S, ⌜IR(O, S)⌝, λ m. el(O, S, m))`, as syntax: `Sig` the holder at
+///   `signed`, `E` the holder at `fields`, `IR` the holder at its parameters
+///   and `el` the declaration right after it. The arena keeps the minted
+///   canonical code.
+/// - fails: the first [`Departure`] in the order parameters, indices,
+///   constructors, then the constructor's arity and its field.
+/// - panics: none.
+///
+/// # Errors
+/// - [`Departure::Parameters`]: another number of parameters, a first that is
+///   no value universe, or a second that is no signature over the first.
+/// - [`Departure::Indices`]: an index telescope.
+/// - [`Departure::Constructors`]: another number of constructors.
+/// - [`Departure::Arity`]: a constructor with another number of fields.
+/// - [`Departure::Field`]: a field that is no decode of the canonical `E`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the canonical family is admitted. A family whose field
+///   asks for `E` over another type, one with a second field, one with a third
+///   parameter and one over another signature type are each refused at their
+///   first departure.
+/// - witness: `canonical::tests::the_canonical_family_is_admitted_3575`
+/// - witness: `canonical::tests::a_family_is_refused_at_its_first_departure_3575`
+#[spec(ensures: |ret| ret.is_err()
+    || (signature.parameters().len() == 2
+        && signature.indices().is_empty()
+        && signature.constructors().iter().map(alloc::vec::Vec::len).eq([1_usize])))]
+pub fn family(
+    arena: &mut CoreArena,
+    holder: ConstantIndex,
+    (signed, fields): (ConstantIndex, ConstantIndex),
+    signature: &DataSignature,
+) -> Result<(), Departure>
+{
+    let [output, code] = *signature.parameters()
+    else {
+        return Err(Departure::Parameters);
+    };
+    let universe = matches!(
+        arena.value_type(output),
+        Some(&ValueType::Universe {
+            sort: Sort::Ground(GroundSort::Value),
+            ..
+        })
+    );
+    // `Sig(O)` under `O`.
+    let over = matches!(
+        arena.value_type(code),
+        Some(&ValueType::Data { declaration, ref arguments })
+            if declaration == signed
+                && matches!(**arguments, [argument] if matches!(
+                    arena.value(argument),
+                    Some(&Value::Variable { zone: Zone::Intuitionistic, index })
+                        if index == DeBruijnIndex::from(0_u32)
+                ))
+    );
+    if !universe || !over {
+        return Err(Departure::Parameters);
+    }
+    if !signature.indices().is_empty() {
+        return Err(Departure::Indices);
+    }
+    let [ref only] = *signature.constructors()
+    else {
+        return Err(Departure::Constructors);
+    };
+    let [field] = **only
+    else {
+        return Err(Departure::Arity(ConstructorTag::from(0_usize)));
+    };
+    let departs = Departure::Field {
+        tag: ConstructorTag::from(0_usize),
+        field: FieldPosition::from(0_usize),
+    };
+    let Some(&ValueType::Element { code: written, .. }) = arena.value_type(field)
+    else {
+        return Err(departs);
+    };
+    let var = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // `force head a₀ … aₙ`.
+    let call = |arena: &mut CoreArena, head: ValueId, arguments: &[ValueId]| {
+        let forced = arena.computation_force(head);
+        arguments.iter().fold(forced, |applied, &argument| {
+            arena.computation_application(applied, argument)
+        })
+    };
+    // Under `O` at 1 and `S` at 0: `⌜IR(O, S)⌝`.
+    let (o, s) = (var(arena, 1), var(arena, 0));
+    let own = arena.value_type_data(holder, alloc::vec![o, s]);
+    let quoted = arena.value_quote(own);
+    // `λ m. el(O, S, m)`, under `m` too.
+    let decoder = arena.value_constant(ConstantIndex::from(usize::from(holder).saturating_add(1)));
+    let passed = [var(arena, 2), var(arena, 1), var(arena, 0)];
+    let decoded = call(arena, decoder, &passed);
+    let lambda = arena.computation_lambda(decoded);
+    let decode = arena.value_thunk(lambda);
+    let asks = arena.value_constant(fields);
+    let (o, s) = (var(arena, 1), var(arena, 0));
+    let run = call(arena, asks, &[o, s, quoted, decode]);
+    let canonical = arena.value_returned(run);
+    if equal_certificate_syntax(arena, written, canonical) != CertificateEquality::Equal {
+        return Err(departs);
+    }
+    Ok(())
+}
+
 /// Compare `defined`, the judged body of the holder of `E` or `F` at
 /// `holder`, with the canonical body of its role by their answers at each
 /// constructor of the signature type.
@@ -405,7 +522,11 @@ pub fn answers(
     let pair = context.builtin_holder(Builtin::IrPair)?;
     let fields = match role {
         Builtin::IrDecode => Some(context.builtin_holder(Builtin::IrArgs)?),
-        Builtin::IrSignature | Builtin::IrPair | Builtin::IrArgs => None,
+        Builtin::IrSignature
+        | Builtin::IrPair
+        | Builtin::IrArgs
+        | Builtin::IrFamily
+        | Builtin::IrDecoder => None,
     };
     let arena = context.arena_mut();
     let body = arena.value_constant(holder);
@@ -593,6 +714,91 @@ pub fn answers(
         if equal_certificate_syntax(context.arena(), left, right) != CertificateEquality::Equal {
             return Err(departs);
         }
+    }
+    Ok(())
+}
+/// Compare `defined`, the judged body of the holder of the decoder role at
+/// `holder`, with the canonical decoder by its answer at the family's one
+/// constructor.
+///
+/// # Specification
+/// - requires: `defined` is a closed value in the context's arena, the thunk of
+///   the holder's curried function, and the table defines nothing at `holder`.
+/// - ensures: `Ok(())` exactly when the family's holder stands right before
+///   `holder` and, under rigid variables for `O`, `S` and the field `x`, the
+///   holder at `intro(x)` and `F(O, S, ⌜IR(O, S)⌝, λ n. el(O, S, n), x)` read
+///   to normal forms that agree as syntax, with `defined` the holder's body in
+///   a copy of the table. Every value of the family is `intro(x)` for some `x`,
+///   so the holder answers as the canonical decoder at every value. The arena
+///   keeps the minted terms, and the context's table is unchanged.
+/// - fails: [`Departure::Reads`] for a role the canonical form reads that no
+///   declaration holds, the family's role too when its holder stands elsewhere;
+///   [`Departure::Answer`] at the one constructor otherwise.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decoder read before the family has a holder is refused
+///   for the role it reads. In the corpus, `std.ir`'s `el` answers, and a
+///   decoder that calls itself on its own value is refused at `intro(x)`.
+/// - witness: `canonical::tests::a_decoder_is_refused_at_its_departing_answer_3575`
+pub fn decoder(
+    context: &mut CheckingContext<'_>,
+    (holder, defined): (ConstantIndex, ValueId),
+) -> Result<(), Departure>
+{
+    let family = context.builtin_holder(Builtin::IrFamily)?;
+    if usize::from(family).saturating_add(1) != usize::from(holder) {
+        return Err(Departure::Reads(Builtin::IrFamily));
+    }
+    let decode = context.builtin_holder(Builtin::IrDecode)?;
+    let arena = context.arena_mut();
+    let var = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // `force head a₀ … aₙ`.
+    let call = |arena: &mut CoreArena, head: ValueId, arguments: &[ValueId]| {
+        let forced = arena.computation_force(head);
+        arguments.iter().fold(forced, |applied, &argument| {
+            arena.computation_application(applied, argument)
+        })
+    };
+    let body = arena.value_constant(holder);
+    // Under `O` 2, `S` 1 and `x` 0: `el(O, S, intro(x))`.
+    let (o, s, x) = (var(arena, 2), var(arena, 1), var(arena, 0));
+    let own = arena.value_type_data(family, alloc::vec![o, s]);
+    let intro = arena.value_constructor(own, ConstructorTag::from(0_usize), alloc::vec![x]);
+    let (o, s) = (var(arena, 2), var(arena, 1));
+    let left = call(arena, body, &[o, s, intro]);
+    // `F(O, S, ⌜IR(O, S)⌝, λ n. el(O, S, n), x)`.
+    let (o, s) = (var(arena, 2), var(arena, 1));
+    let own = arena.value_type_data(family, alloc::vec![o, s]);
+    let quoted = arena.value_quote(own);
+    let passed = [var(arena, 3), var(arena, 2), var(arena, 0)];
+    let decoded = call(arena, body, &passed);
+    let lambda = arena.computation_lambda(decoded);
+    let decoder = arena.value_thunk(lambda);
+    let fields = arena.value_constant(decode);
+    let (o, s, x) = (var(arena, 2), var(arena, 1), var(arena, 0));
+    let right = call(arena, fields, &[o, s, quoted, decoder, x]);
+    // The holder unfolds to its judged body in a copy of the table, as the
+    // holders of `E` and `F` do.
+    let mut trial = context.definitions().clone();
+    trial.define(holder, defined);
+    let departs = Departure::Answer(ConstructorTag::from(0_usize));
+    let arena = context.arena_mut();
+    let mut read = |body: ComputationId| {
+        let suspended = (0_u32 .. 3_u32).fold(body, |inner, _| arena.computation_lambda(inner));
+        let claim = arena.value_thunk(suspended);
+        trial
+            .read_normal(arena, claim)
+            .map_err(|_undecided| departs)
+    };
+    let (left, right) = (read(left)?, read(right)?);
+    if equal_certificate_syntax(context.arena(), left, right) != CertificateEquality::Equal {
+        return Err(departs);
     }
     Ok(())
 }

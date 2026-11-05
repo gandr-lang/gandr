@@ -6723,14 +6723,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     },
                     Some(position) => {
                         self.root = self.fold_root(term, (expected, position), body)?;
-                        match crate::recursion::open_fixpoint(
-                            self.context,
-                            term,
-                            expected,
-                            position,
-                        )? {
-                            Maybe::Present(opened) => (opened.own, opened.inside),
-                            Maybe::Absent(_unknown) => (expected, expected),
+                        // The decoder role's own fixpoint opens no stage. Its
+                        // holder answers the canonical decoder, which decodes
+                        // the fields of a strictly positive family by `F`.
+                        if self.context.decoder_fixpoint(term) == Maybe::Present(()) {
+                            (expected, expected)
+                        }
+                        else {
+                            match crate::recursion::open_fixpoint(
+                                self.context,
+                                term,
+                                expected,
+                                position,
+                            )? {
+                                Maybe::Present(opened) => (opened.own, opened.inside),
+                                Maybe::Absent(_unknown) => (expected, expected),
+                            }
                         }
                     },
                 };

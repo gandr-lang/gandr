@@ -411,6 +411,11 @@ enum Rewrite
     /// Replace every occurrence of the constant by the intuitionistic
     /// variable counting past the depth to the index.
     Abstract(ConstantIndex, DeBruijnIndex),
+    /// Replace every application of the constant to the count of uniform
+    /// parameters, each the variable bound just outside the index in order, by
+    /// the force of the intuitionistic variable counting past the depth to the
+    /// index.
+    AbstractApplied(ConstantIndex, DeBruijnIndex, Binders),
     /// Raise every free index by the count, as a relocation does, and answer
     /// each run the engine's slots name by the variable of the bind its region
     /// mints for it.
@@ -475,6 +480,7 @@ impl Rewrite
             | Self::Elaborate
             | Self::Rename
             | Self::Abstract(..)
+            | Self::AbstractApplied(..)
             | Self::Splice(_)
             | Self::Relevel => self,
         }
@@ -872,6 +878,57 @@ impl<'arena> Engine<'arena>
                 self.arena
                     .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(raised)),
             );
+            let _previous = self.memo.insert((node, depth, rewrite), abstracted);
+            self.results.push(abstracted);
+            return;
+        }
+        // The constant applied to the uniform parameters: the innermost
+        // argument is the variable just outside the index, and each argument
+        // before it stands one binder further out.
+        let applies =
+            |arena: &CoreArena,
+             id: ComputationId,
+             (constant, index, uniform): (ConstantIndex, DeBruijnIndex, Binders)| {
+                let mut cursor = id;
+                for past in 1 ..= uniform.0 {
+                    let Some(&Computation::Application(head, argument)) = arena.computation(cursor)
+                    else {
+                        return false;
+                    };
+                    let wanted = u32::from(index)
+                        .checked_add(depth.0)
+                        .and_then(|outer| outer.checked_add(past));
+                    let read = matches!(
+                        arena.value(argument),
+                        Some(&Value::Variable { zone: Zone::Intuitionistic, index: found })
+                            if Some(u32::from(found)) == wanted
+                    );
+                    if !read {
+                        return false;
+                    }
+                    cursor = head;
+                }
+                matches!(
+                    arena.computation(cursor),
+                    Some(&Computation::Force(head))
+                        if arena.value(head) == Some(&Value::Constant(constant))
+                )
+            };
+        if let (Rewrite::AbstractApplied(constant, index, uniform), Node::Computation(id)) =
+            (rewrite, node)
+            && uniform != Binders::NONE
+            && applies(self.arena, id, (constant, index, uniform))
+        {
+            // reason: an index and a depth stay far below the u32 ceiling; a
+            // saturating step keeps the walk total.
+            let raised = u32::from(arith::saturating_add(
+                arith::Int::from(u32::from(index)),
+                arith::Int::from(depth.0),
+            ));
+            let own = self
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(raised));
+            let abstracted = Node::Computation(self.arena.computation_force(own));
             let _previous = self.memo.insert((node, depth, rewrite), abstracted);
             self.results.push(abstracted);
             return;
@@ -1621,6 +1678,7 @@ impl<'arena> Engine<'arena>
             | Rewrite::Environment
             | Rewrite::Rename
             | Rewrite::Abstract(..)
+            | Rewrite::AbstractApplied(..)
             | Rewrite::Relevel
             | Rewrite::Delinearise(_)
             | Rewrite::RaiseLinear(..) => Maybe::Absent(()),
@@ -1923,7 +1981,7 @@ impl<'arena> Engine<'arena>
                     Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                         if Some(u32::from(*actual)) == u32::from(index).checked_add(1)))
             },
-            | Rewrite::Fill(..) | Rewrite::Solve(..) | Rewrite::Wrap | Rewrite::Resumed | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel | Rewrite::RaiseLinear(..) => {
+            | Rewrite::Fill(..) | Rewrite::Solve(..) | Rewrite::Wrap | Rewrite::Resumed | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::AbstractApplied(..) | Rewrite::Relevel | Rewrite::RaiseLinear(..) => {
                 ret == Occurrence::Answered(id)
             },
             | Rewrite::Environment => u32::from(index) >= depth.0 || ret == Occurrence::Answered(id),
@@ -2019,6 +2077,7 @@ impl<'arena> Engine<'arena>
             | Rewrite::Elaborate
             | Rewrite::Rename
             | Rewrite::Abstract(..)
+            | Rewrite::AbstractApplied(..)
             | Rewrite::Relevel
             | Rewrite::RaiseLinear(..) => Occurrence::Answered(id),
             Rewrite::Environment => {
@@ -5266,6 +5325,51 @@ pub fn abstract_constant_value_type(
         Node::ValueType(subject),
         Binders::NONE,
         Rewrite::Abstract(constant, index),
+    ) {
+        Node::ValueType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
+/// Abstract a constant applied to its uniform parameters out of a value type.
+///
+/// Every application of `constant` in `subject` to the variables bound just
+/// outside `index`, in order, becomes the force of the variable `index`.
+///
+/// # Specification
+/// - requires: `subject` names a value type of `arena`; `index` is free in the
+///   context `subject` is read in, and the `uniform` binders just outside it
+///   are the constant's uniform parameters.
+/// - ensures: `subject` with every such application replaced by the force of
+///   the variable counting past the binders it stands under to `index`, every
+///   other node kept, and `subject` itself when it holds no such application or
+///   `uniform` is none.
+/// - provides: the identification a decoder over uniform parameters reads its
+///   family's fields by inside its own fixpoint: the lowering binds those
+///   parameters outside the fixpoint, so the constant applied to them is the
+///   self binder.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the constant applied to the two variables outside the
+///   index becomes the force of the index, under no binder and under one, and
+///   the constant applied to other variables is kept.
+/// - witness: `rewrite::tests::an_applied_abstraction_replaces_the_constant_at_its_uniform_parameters_3575`
+#[spec(ensures: |ret| ret == subject || arena.value_type(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn abstract_applied_value_type(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    (constant, index): (ConstantIndex, DeBruijnIndex),
+    uniform: Binders,
+) -> ValueTypeId
+{
+    match Engine::new(arena).run(
+        Node::ValueType(subject),
+        Binders::NONE,
+        Rewrite::AbstractApplied(constant, index, uniform),
     ) {
         Node::ValueType(id) => id,
         Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,

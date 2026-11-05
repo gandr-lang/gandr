@@ -362,6 +362,72 @@ fn a_pair_type_in_another_shape_holds_no_role_5255()
     );
 }
 
+/// A family whose next declaration holds no decoder role is refused and
+/// gives its role back.
+#[test]
+fn a_family_without_its_decoder_holds_no_role_3575()
+{
+    use gandr_kernel_term::Builtin;
+    use gandr_kernel_term::Departure;
+
+    let mut arena = CoreArena::new();
+    let zero = arena.value_literal(integer_literal());
+    let (signed, fields, holder) = (
+        ConstantIndex::from(0_usize),
+        ConstantIndex::from(1_usize),
+        ConstantIndex::from(2_usize),
+    );
+    let codes = alloc::sync::Arc::new(crate::fixture::canonical_signature(&mut arena, signed));
+    let [parameters, only] =
+        crate::fixture::family_parts(&mut arena, holder, (signed, fields), holder);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let own = alloc::sync::Arc::new(gandr_core_term::DataSignature::new(
+        parameters,
+        Vec::from([only]),
+        kind,
+    ));
+    let value = declaration(At(1), UNSIGNED, Maybe::Present(zero));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (constant, role, content) in [
+        (
+            signed,
+            Builtin::IrSignature,
+            crate::DeclarationContent::Data(codes),
+        ),
+        (fields, Builtin::IrArgs, value.content().clone()),
+        (
+            holder,
+            Builtin::IrFamily,
+            crate::DeclarationContent::Data(own),
+        ),
+    ] {
+        assert_eq!(
+            context.claim_builtin(constant, role, &content),
+            Ok(()),
+            "{role:?}"
+        );
+    }
+    let mut judged = [super::Judged {
+        constant: holder,
+        origin: OriginToken::from(2_usize),
+        verdict: Verdict::Data,
+    }];
+    super::undecoded(&mut context, &mut judged);
+    assert_eq!(
+        judged[0].verdict,
+        Verdict::Refused(CheckRefusal::BuiltinNotCanonical {
+            role: Builtin::IrFamily,
+            departure: Departure::Reads(Builtin::IrDecoder),
+        }),
+        "the declaration after the family holds no decoder role"
+    );
+    assert_eq!(
+        context.builtin_holder(Builtin::IrFamily),
+        Err(Departure::Reads(Builtin::IrFamily)),
+        "the refused family gave its role back"
+    );
+}
+
 /// #5254: the checker refuses the signature role on a datatype that departs
 /// from the canonical signature type, naming the first departure. The refused
 /// declaration holds no role, so a canonical datatype after it holds the role.

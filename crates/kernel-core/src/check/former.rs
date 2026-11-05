@@ -838,11 +838,12 @@ pub(super) enum Looped
 
 /// What a case scrutinises: its data classifier, the stage the case opened
 /// when it opened one, and the definition whose own constant reads as the
-/// fixpoint's self binder in the branches' field types.
+/// fixpoint's self binder in the branches' field types, with the count of the
+/// uniform parameters it is applied to there.
 pub(super) type Scrutinised = (
     ValueTypeId,
     Maybe<StageId, super::recursion::Unstaged>,
-    Maybe<(ConstantIndex, DeBruijnIndex), super::recursion::Unowned>,
+    Maybe<(ConstantIndex, DeBruijnIndex, crate::rewrite::BinderDepth), super::recursion::Unowned>,
 );
 
 /// Collect the constructor-specific branch obligations and instantiated result.

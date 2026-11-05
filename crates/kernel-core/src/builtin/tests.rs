@@ -111,13 +111,14 @@ fn admit_signature(
     environment.add_decl(declaration).map(|_admitted| ())
 }
 
-/// Admit the pair type at the next position, holding `irPair`, in `shape`.
+/// Admit the pair type at the next position, holding `role`, in `shape`.
 ///
 /// # Specification
 /// trivial.
 fn admit_pair(
     environment: &mut Environment,
     shape: Shape,
+    role: Builtin,
 ) -> Result<(), KernelError>
 {
     let mut staging = environment.stage();
@@ -153,16 +154,19 @@ fn admit_pair(
             (Vec::new(), vec![fields], Vec::new()),
             kind,
         )
-        .held(Builtin::IrPair);
+        .held(role);
     environment.add_decl(declaration).map(|_admitted| ())
 }
 
-/// Admit, holding `irArgs`, the definition `λ O c X t. return Integer`: a
+/// Admit, holding `role`, the definition `λ O c X t. return Integer`: a
 /// holder of `E` whose answer is `Integer` at every constructor.
 ///
 /// # Specification
 /// trivial.
-fn admit_integer_args(environment: &mut Environment) -> Result<(), KernelError>
+fn admit_integer(
+    environment: &mut Environment,
+    role: Builtin,
+) -> Result<(), KernelError>
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
@@ -180,7 +184,7 @@ fn admit_integer_args(environment: &mut Environment) -> Result<(), KernelError>
     let body = arena.value_thunk(curried);
     let declaration = staging
         .def(LevelSignature::monomorphic(), declared, body)
-        .held(Builtin::IrArgs);
+        .held(role);
     environment.add_decl(declaration).map(|_admitted| ())
 }
 
@@ -202,7 +206,7 @@ fn a_role_s_holder_is_admitted_in_its_canonical_form_5304()
         "a second holder is refused by the first's position"
     );
     assert_eq!(
-        admit_pair(&mut environment, Shape::Canonical),
+        admit_pair(&mut environment, Shape::Canonical, Builtin::IrPair),
         Ok(()),
         "the canonical pair type holds its role in the kernel"
     );
@@ -229,7 +233,7 @@ fn a_departing_holder_is_refused_at_its_departure_5304()
         "the refused datatype held no role"
     );
     assert_eq!(
-        admit_integer_args(&mut environment),
+        admit_integer(&mut environment, Builtin::IrArgs),
         Err(KernelError::BuiltinNotCanonical {
             role: Builtin::IrArgs,
             departure: Departure::Reads(Builtin::IrPair),
@@ -237,7 +241,7 @@ fn a_departing_holder_is_refused_at_its_departure_5304()
         "`E` reads the pair type, which no declaration holds yet"
     );
     assert_eq!(
-        admit_pair(&mut environment, Shape::Departing),
+        admit_pair(&mut environment, Shape::Departing, Builtin::IrPair),
         Err(KernelError::BuiltinNotCanonical {
             role: Builtin::IrPair,
             departure: Departure::Field {
@@ -247,13 +251,47 @@ fn a_departing_holder_is_refused_at_its_departure_5304()
         }),
         "a second field of the first type departs at the second field"
     );
-    assert_eq!(admit_pair(&mut environment, Shape::Canonical), Ok(()));
     assert_eq!(
-        admit_integer_args(&mut environment),
+        admit_pair(&mut environment, Shape::Canonical, Builtin::IrPair),
+        Ok(())
+    );
+    assert_eq!(
+        admit_integer(&mut environment, Builtin::IrArgs),
         Err(KernelError::BuiltinNotCanonical {
             role: Builtin::IrArgs,
             departure: Departure::Answer(ConstructorTag::from(0_usize)),
         }),
         "an answer of `Integer` at `ι` departs from the unit type there"
+    );
+}
+
+#[test]
+fn a_departing_family_and_decoder_are_refused_3575()
+{
+    let mut environment = Environment::new();
+    assert_eq!(
+        admit_integer(&mut environment, Builtin::IrDecoder),
+        Err(KernelError::BuiltinNotCanonical {
+            role: Builtin::IrDecoder,
+            departure: Departure::Reads(Builtin::IrFamily),
+        }),
+        "the decoder reads the family, which no declaration holds yet"
+    );
+    assert_eq!(
+        admit_pair(&mut environment, Shape::Canonical, Builtin::IrFamily),
+        Err(KernelError::BuiltinNotCanonical {
+            role: Builtin::IrFamily,
+            departure: Departure::Reads(Builtin::IrSignature),
+        }),
+        "the family reads the signature type, which no declaration holds yet"
+    );
+    assert_eq!(admit_signature(&mut environment, Shape::Canonical), Ok(()));
+    assert_eq!(
+        admit_pair(&mut environment, Shape::Canonical, Builtin::IrFamily),
+        Err(KernelError::BuiltinNotCanonical {
+            role: Builtin::IrFamily,
+            departure: Departure::Reads(Builtin::IrArgs),
+        }),
+        "the family reads `E`, which no declaration holds yet"
     );
 }

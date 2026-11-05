@@ -913,25 +913,25 @@ pub const KIND_DEF_RULED: WireTag = WireTag(0x0E);
 /// Declaration tag: a datatype holding a built-in role, whose segment closes
 /// with the role's tag.
 ///
-/// After the [`KIND_DATA`] fields comes one role tag: [`ROLE_IR_SIGNATURE`] or
-/// [`ROLE_IR_PAIR`]. The kernel validates the datatype against the role's
-/// canonical form at admission. A holder is indexed by nothing and presents no
-/// rules. A datatype holding no role writes one of the other datatype kinds,
-/// so every other artifact keeps its bytes, and a reader predating this kind
-/// refuses it as an unknown declaration kind rather than misreading it, which
-/// is why the format version holds.
+/// After the [`KIND_DATA`] fields comes one role tag: [`ROLE_IR_SIGNATURE`],
+/// [`ROLE_IR_PAIR`] or [`ROLE_IR_FAMILY`]. The kernel validates the datatype
+/// against the role's canonical form at admission. A holder is indexed by
+/// nothing and presents no rules. A datatype holding no role writes one of the
+/// other datatype kinds, so every other artifact keeps its bytes, and a reader
+/// predating this kind refuses it as an unknown declaration kind rather than
+/// misreading it, which is why the format version holds.
 pub const KIND_DATA_ROLED: WireTag = WireTag(0x10);
 /// Declaration tag: a typed definition holding a built-in role, whose segment
 /// closes with the role's tag.
 ///
 /// After the [`KIND_DEF`] fields come the pair, law and rule blocks of
 /// [`KIND_DEF_RULED`], each count possibly zero, then one role tag:
-/// [`ROLE_IR_ARGS`] or [`ROLE_IR_DECODE`]. The kernel validates the definition
-/// against the role's canonical body at admission. A definition holding no
-/// role writes one of the other definition kinds, so every other artifact
-/// keeps its bytes, and a reader predating this kind refuses it as an unknown
-/// declaration kind rather than misreading it, which is why the format
-/// version holds.
+/// [`ROLE_IR_ARGS`], [`ROLE_IR_DECODE`] or [`ROLE_IR_DECODER`]. The kernel
+/// validates the definition against the role's canonical body at admission. A
+/// definition holding no role writes one of the other definition kinds, so
+/// every other artifact keeps its bytes, and a reader predating this kind
+/// refuses it as an unknown declaration kind rather than misreading it, which
+/// is why the format version holds.
 pub const KIND_DEF_ROLED: WireTag = WireTag(0x11);
 /// Role tag: the type of inductive-recursive signatures.
 pub const ROLE_IR_SIGNATURE: WireTag = WireTag(0);
@@ -941,6 +941,10 @@ pub const ROLE_IR_ARGS: WireTag = WireTag(1);
 pub const ROLE_IR_DECODE: WireTag = WireTag(2);
 /// Role tag: the dependent pairs that `E` asks for.
 pub const ROLE_IR_PAIR: WireTag = WireTag(3);
+/// Role tag: the family that a signature defines.
+pub const ROLE_IR_FAMILY: WireTag = WireTag(4);
+/// Role tag: the decoder of that family.
+pub const ROLE_IR_DECODER: WireTag = WireTag(5);
 /// Rule node tag: a constructor of the declaration's own table.
 pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
 /// Rule node tag: a pattern variable.

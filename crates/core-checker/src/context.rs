@@ -478,6 +478,10 @@ pub struct CheckingContext<'arena>
         Maybe<ComputationId, own::Absent>,
         Maybe<(BinderDepth, ValueTypeId), own::Absent>,
     ),
+    /// The fixpoint under the uniform parameters' lambdas of the definition
+    /// under way, with the count of those parameters, when that definition
+    /// holds the decoder role: the one fixpoint that opens no stage.
+    decoding: Maybe<(ComputationId, gandr_core_term::Binders), own::Absent>,
     /// How the definition under way's own fixpoint reads its result: as
     /// declared, or at the stage of the parameter it recurses on.
     result_stage: crate::recursion::ResultStage,
@@ -702,6 +706,8 @@ pub struct Checkpoint
         Maybe<ComputationId, own::Absent>,
         Maybe<(BinderDepth, ValueTypeId), own::Absent>,
     ),
+    /// [`CheckingContext::decoding`].
+    decoding: Maybe<(ComputationId, gandr_core_term::Binders), own::Absent>,
     /// [`CheckingContext::result_stage`].
     result_stage: crate::recursion::ResultStage,
     /// [`CheckingContext::following`].
@@ -834,6 +840,7 @@ impl<'arena> CheckingContext<'arena>
                 Maybe::Absent(own::Absent::Unopened),
                 Maybe::Absent(own::Absent::Unopened),
             ),
+            decoding: Maybe::Absent(own::Absent::Unopened),
             result_stage: crate::recursion::ResultStage::Declared,
             following: BTreeMap::new(),
             worlds: crate::worlds::Worlds::default(),
@@ -915,6 +922,7 @@ impl<'arena> CheckingContext<'arena>
             ref stages,
             ref supplies,
             own,
+            decoding,
             result_stage,
             ref following,
             ref worlds,
@@ -974,6 +982,7 @@ impl<'arena> CheckingContext<'arena>
             stages: stages.clone(),
             supplies: supplies.clone(),
             own,
+            decoding,
             result_stage,
             following: following.clone(),
             worlds: worlds.clone(),
@@ -1054,6 +1063,7 @@ impl<'arena> CheckingContext<'arena>
             stages,
             supplies,
             own,
+            decoding,
             result_stage,
             following,
             worlds,
@@ -1115,6 +1125,7 @@ impl<'arena> CheckingContext<'arena>
             stages,
             supplies,
             own,
+            decoding,
             result_stage,
             following,
             worlds,
@@ -2384,16 +2395,16 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// # Specification
     /// - requires: `content` is the content of the declaration at `constant`.
     /// - ensures: the context answers `constant` for `role`; a second claim by
-    ///   the same declaration is admitted unchanged. The holders of `E` and `F`
-    ///   answer their canonical bodies once those are judged
-    ///   ([`crate::canonical::answers`]), so this claim reads only their
-    ///   judgement.
+    ///   the same declaration is admitted unchanged. The holders of `E`, `F`
+    ///   and the decoder answer their canonical bodies once those are judged
+    ///   ([`crate::canonical::answers`], [`crate::canonical::decoder`]), so
+    ///   this claim reads only their judgement.
     /// - fails: [`CheckRefusal::BuiltinMisplaced`] when the content is of
     ///   another judgement than [`gandr_kernel_term::Builtin::holder`],
     ///   [`CheckRefusal::BuiltinNotCanonical`] naming the first departure when
-    ///   the holder of the signature type or of the pair type departs from its
-    ///   canonical form, and [`CheckRefusal::BuiltinRepeated`] naming the
-    ///   holder when another declaration holds the role; the context is
+    ///   the holder of the signature type, the pair type or the family departs
+    ///   from its canonical form, and [`CheckRefusal::BuiltinRepeated`] naming
+    ///   the holder when another declaration holds the role; the context is
     ///   unchanged.
     /// - panics: none.
     ///
@@ -2404,11 +2415,12 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a role claimed by two declarations, a role on a
-    ///   declaration of the wrong judgement, and a signature type or a pair
-    ///   type in another shape are each refused by cause.
+    ///   declaration of the wrong judgement, and a signature type, a pair type
+    ///   or a family in another shape are each refused by cause.
     /// - witness: `module::tests::a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575`
     /// - witness: `module::tests::a_signature_type_in_another_shape_holds_no_role_5254`
     /// - witness: `module::tests::a_pair_type_in_another_shape_holds_no_role_5255`
+    /// - witness: `canonical::tests::a_family_is_refused_at_its_first_departure_3575`
     #[spec(
         captures: before = self.builtins.get(&role).copied(),
         ensures: |ret| match ret {
@@ -2420,7 +2432,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     refusal == CheckRefusal::BuiltinMisplaced(role)
                 }
                 else if let CheckRefusal::BuiltinNotCanonical { role: refused, .. } = refusal {
-                    refused == role && matches!(role, gandr_kernel_term::Builtin::IrSignature | gandr_kernel_term::Builtin::IrPair)
+                    refused == role && matches!(role, gandr_kernel_term::Builtin::IrSignature | gandr_kernel_term::Builtin::IrPair | gandr_kernel_term::Builtin::IrFamily)
                 }
                 else {
                     before.is_some_and(|holder| refusal == CheckRefusal::BuiltinRepeated { role, holder })
@@ -2455,7 +2467,20 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 gandr_kernel_term::Builtin::IrPair => {
                     crate::canonical::pair(self.arena(), signature)
                 },
-                gandr_kernel_term::Builtin::IrArgs | gandr_kernel_term::Builtin::IrDecode => Ok(()),
+                gandr_kernel_term::Builtin::IrFamily => self
+                    .builtin_holder(gandr_kernel_term::Builtin::IrSignature)
+                    .and_then(|signed| {
+                        let fields = self.builtin_holder(gandr_kernel_term::Builtin::IrArgs)?;
+                        crate::canonical::family(
+                            self.arena_mut(),
+                            constant,
+                            (signed, fields),
+                            signature,
+                        )
+                    }),
+                gandr_kernel_term::Builtin::IrArgs
+                | gandr_kernel_term::Builtin::IrDecode
+                | gandr_kernel_term::Builtin::IrDecoder => Ok(()),
             };
             canonical.map_err(|departure| CheckRefusal::BuiltinNotCanonical { role, departure })?;
         }
@@ -5147,7 +5172,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
 
     /// Take `body`, the definition under way's body, as its own fixpoint's
     /// when the definition is a mutual block's and its body thunks one, with
-    /// none open yet: only a block's families name its definitions.
+    /// none open yet: only a block's families name its definitions. When the
+    /// definition holds the decoder role, also take the fixpoint under its
+    /// uniform parameters' lambdas as the one that opens no stage.
     ///
     /// # Specification
     /// trivial.
@@ -5170,6 +5197,26 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             },
         };
         self.own = (root, Maybe::Absent(own::Absent::Unopened));
+        // The decoder role's holder takes the fixpoint under its uniform
+        // parameters' lambdas as its own: its family's field names it applied
+        // to those parameters, which a case reads as the self binder.
+        let holds = matches!(self.admitted, Maybe::Present(constant)
+            if self.builtins.get(&gandr_kernel_term::Builtin::IrDecoder) == Some(&constant));
+        self.decoding = Maybe::Absent(own::Absent::Unopened);
+        if let (true, Some(&Value::Thunk(mut cursor))) = (holds, self.arena.value(body)) {
+            let mut uniform = gandr_core_term::Binders::NONE;
+            while let Some(&Computation::Lambda(inner)) = self.arena.computation(cursor) {
+                cursor = inner;
+                uniform = uniform.deeper();
+            }
+            if matches!(
+                self.arena.computation(cursor),
+                Some(&Computation::Fixpoint { .. })
+            ) {
+                self.own.0 = Maybe::Present(cursor);
+                self.decoding = Maybe::Present((cursor, uniform));
+            }
+        }
     }
 
     /// Open `fixpoint`, whose self binder of type `binder` is about to be
@@ -5186,6 +5233,37 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     {
         if matches!(self.own.0, Maybe::Present(root) if root == fixpoint) {
             self.own.1 = Maybe::Present((self.depth(Zone::Intuitionistic), binder));
+        }
+    }
+
+    /// The decoder role's own fixpoint is `fixpoint`, when the declaration
+    /// under way holds that role and `fixpoint` stands under its uniform
+    /// parameters.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn decoder_fixpoint(
+        &self,
+        fixpoint: ComputationId,
+    ) -> Maybe<(), own::Absent>
+    {
+        match self.decoding {
+            Maybe::Present((root, _)) if root == fixpoint => Maybe::Present(()),
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(own::Absent::Unopened),
+        }
+    }
+
+    /// The count of the uniform parameters that the declaration under way
+    /// binds outside its own fixpoint: none but for the decoder role's holder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) const fn uniform(&self) -> gandr_core_term::Binders
+    {
+        match self.decoding {
+            Maybe::Present((_, uniform)) => uniform,
+            Maybe::Absent(_) => gandr_core_term::Binders::NONE,
         }
     }
 

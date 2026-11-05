@@ -12,6 +12,8 @@ use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::GroundSort;
 
 use super::answers;
+use super::decoder;
+use super::family;
 use super::pair;
 use super::signature;
 use crate::context::CheckBudget;
@@ -261,4 +263,148 @@ fn a_holder_of_e_is_refused_at_its_first_departing_answer_5255()
         Err(Departure::Answer(ConstructorTag::from(0_usize))),
         "an answer of `Integer` at `ι` departs from the unit type there"
     );
+}
+/// The positions of the signature type, `E` and the family in the family
+/// cases.
+const SIGNED: usize = 0;
+/// `E`'s position.
+const FIELDS: usize = 1;
+/// The family's position.
+const FAMILY: usize = 2;
+
+#[test]
+fn the_canonical_family_is_admitted_3575()
+{
+    let mut arena = CoreArena::new();
+    let (signed, fields, holder) = (
+        ConstantIndex::from(SIGNED),
+        ConstantIndex::from(FIELDS),
+        ConstantIndex::from(FAMILY),
+    );
+    let [parameters, only] =
+        crate::fixture::family_parts(&mut arena, holder, (signed, fields), holder);
+    let canonical = signed_by(&mut arena, parameters, Vec::from([only]));
+    assert_eq!(
+        family(&mut arena, holder, (signed, fields), &canonical),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_family_is_refused_at_its_first_departure_3575()
+{
+    let mut arena = CoreArena::new();
+    let (signed, fields, holder) = (
+        ConstantIndex::from(SIGNED),
+        ConstantIndex::from(FIELDS),
+        ConstantIndex::from(FAMILY),
+    );
+    let [parameters, only] =
+        crate::fixture::family_parts(&mut arena, holder, (signed, fields), holder);
+    let [_, foreign] = crate::fixture::family_parts(
+        &mut arena,
+        holder,
+        (signed, fields),
+        ConstantIndex::from(7_usize),
+    );
+    let elsewhere = signed_by(&mut arena, parameters.clone(), Vec::from([foreign]));
+    assert_eq!(
+        family(&mut arena, holder, (signed, fields), &elsewhere),
+        Err(at(
+            ConstructorTag::from(0_usize),
+            FieldPosition::from(0_usize)
+        )),
+        "a field asking for `E` over another family departs at that field"
+    );
+    let doubled = signed_by(
+        &mut arena,
+        parameters.clone(),
+        Vec::from([Vec::from([only[0], only[0]])]),
+    );
+    assert_eq!(
+        family(&mut arena, holder, (signed, fields), &doubled),
+        Err(Departure::Arity(ConstructorTag::from(0_usize))),
+        "a second field departs at the arity"
+    );
+    let mut wider = parameters.clone();
+    wider.push(parameters[0]);
+    let wider = signed_by(&mut arena, wider, Vec::from([only.clone()]));
+    assert_eq!(
+        family(&mut arena, holder, (signed, fields), &wider),
+        Err(Departure::Parameters),
+        "a third parameter departs at the telescope"
+    );
+    let other = ConstantIndex::from(9_usize);
+    let over = signed_by(&mut arena, parameters, Vec::from([only]));
+    assert_eq!(
+        family(&mut arena, holder, (other, fields), &over),
+        Err(Departure::Parameters),
+        "a family over another signature type departs at the telescope"
+    );
+}
+
+#[test]
+fn a_decoder_is_refused_at_its_departing_answer_3575()
+{
+    use gandr_kernel_term::Builtin;
+
+    let mut arena = CoreArena::new();
+    let (signed, fields, holder) = (
+        ConstantIndex::from(SIGNED),
+        ConstantIndex::from(FIELDS),
+        ConstantIndex::from(FAMILY),
+    );
+    let codes = alloc::sync::Arc::new(crate::fixture::canonical_signature(&mut arena, signed));
+    let [parameters, only] =
+        crate::fixture::family_parts(&mut arena, holder, (signed, fields), holder);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let own = alloc::sync::Arc::new(DataSignature::new(parameters, Vec::from([only]), kind));
+    // `λ O S m. return m`: the value itself, no decode.
+    let m = arena.value_variable(
+        gandr_core_term::Zone::Intuitionistic,
+        gandr_kernel_term::DeBruijnIndex::from(0_u32),
+    );
+    let returned = arena.computation_return(m);
+    let curried = (0_u32 .. 3_u32).fold(returned, |body, _| arena.computation_lambda(body));
+    let defined = arena.value_thunk(curried);
+    let decoding = ConstantIndex::from(FAMILY.saturating_add(1));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        decoder(&mut context, (decoding, defined)),
+        Err(Departure::Reads(Builtin::IrFamily)),
+        "the decoder reads the family, which no declaration holds yet"
+    );
+    assert_eq!(
+        context.claim_builtin(
+            signed,
+            Builtin::IrSignature,
+            &crate::DeclarationContent::Data(codes)
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        context.claim_builtin(
+            holder,
+            Builtin::IrFamily,
+            &crate::DeclarationContent::Data(own)
+        ),
+        Err(crate::CheckRefusal::BuiltinNotCanonical {
+            role: Builtin::IrFamily,
+            departure: Departure::Reads(Builtin::IrArgs),
+        }),
+        "the family reads `E`, which no declaration holds yet"
+    );
+}
+
+/// [`signed`] for the family cases.
+///
+/// # Specification
+/// trivial.
+fn signed_by(
+    arena: &mut CoreArena,
+    parameters: Vec<ValueTypeId>,
+    constructors: Vec<Vec<ValueTypeId>>,
+) -> DataSignature
+{
+    signed(arena, parameters, constructors)
 }

@@ -1,0 +1,35 @@
+error[BuiltinNotCanonical]: this declaration departs from the canonical form of the built-in role `irFamily` at the role `irDecoder` that its canonical form reads, which no earlier declaration holds
+   ╭▸ corpus/pathological/universe/ir-undecoded.gandr:54:3
+   │
+54 │ ┏   data IR(d : Type, c : Sig(d)) : Type where {
+55 │ ┃     /// The arguments over the family.
+56 │ ┃     | Intro : (x : args(d, c, IR(d, c), thunk { fun (m) { el d c m } })) --> IR(d, c)
+57 │ ┃   }
+   │ ┗━━━┛ a built-in role's holder in another form
+   │
+   ├ note: `IR` is refused with BuiltinNotCanonical, as its expectation states
+   ╰ help: write the holder in the canonical form of its role
+
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/universe/ir-undecoded.gandr:64:74
+   │
+62 │      def rec el(d : Type, c : Sig(d), m : IR(d, c)) -> d =
+   │      │          ┬         ┬           ─ checked against `IR(d, c) -> -F d`; while checking the body of this function; binds m : IR(d, c)
+   │      │          │         │
+   │      │          │         checked against `(c : Sig(d)) -> IR(d, c) -> -F d`; while checking the body of this function; binds c : Sig(d)
+   │ ┌────┘          checked against `(d : Type) -> (c : Sig(d)) -> IR(d, c) -> -F d`; while checking the body of this function; binds d : Type
+   │ │
+63 │ │┌     match m
+64 │ ││       | Intro(x) => decodeArgs d c (IR d c) (thunk { fun (n) { el[<] d c n } }) x
+   │ ││                     ┬────────────────────────┬───────┬─────────┬─────────┯──────│
+   │ └│─────────────────────│────────────────────────│───────│─────────│─────────│──────│
+   │  └─────────────────────│────────────────────────│───────│─────────│─────────│──────checked against `(d : Type, c : Sig(d), IR(d, c)) -> d`; while checking the body of this function; binds el : IR(d, c) -> d
+   │                        │                        │       │         │         │      checked against `-F d`; while checking the body of this function; binds x : args(d, c, IR(d, c), fun (a) { el(d, c, a) })
+   │                        │                        │       │         │         not below the stage its recursion wants
+   │                        │                        │       │         checked against `-F d`; while checking the argument of this application
+   │                        │                        │       checked against `IR(d, c) -> -F d`; while checking the body of this function; binds _ : IR(d, c)
+   │                        │                        checked against `IR(d, c) -> d`; while checking the body of this thunk
+   │                        checked against `-F d`; while checking the argument of this application
+   │
+   ├ note: `el` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

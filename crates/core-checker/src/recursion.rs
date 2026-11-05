@@ -778,12 +778,25 @@ pub fn stage_branch(
             let past = u32::from(index)
                 .checked_add(depth)
                 .ok_or(CheckRefusal::MachineInvariant)?;
-            let read = gandr_core_term::abstract_constant_value_type(
-                context.arena_mut(),
-                *domain,
-                constant,
-                DeBruijnIndex::from(past),
-            );
+            // A decoder over uniform parameters names itself applied to them:
+            // that application is the self binder.
+            let uniform = context.uniform();
+            let read = if uniform == gandr_core_term::Binders::NONE {
+                gandr_core_term::abstract_constant_value_type(
+                    context.arena_mut(),
+                    *domain,
+                    constant,
+                    DeBruijnIndex::from(past),
+                )
+            }
+            else {
+                gandr_core_term::abstract_applied_value_type(
+                    context.arena_mut(),
+                    *domain,
+                    (constant, DeBruijnIndex::from(past)),
+                    uniform,
+                )
+            };
             if read != *domain {
                 *domain = read;
                 identified = Identified::Read;

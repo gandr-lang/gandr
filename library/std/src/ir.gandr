@@ -1,58 +1,84 @@
-// `std.ir`: Dybjer and Setzer's codes for inductive-recursive definitions,
-// as data, with the arguments a code asks for and their decode.
+// `std.ir`: Dybjer and Setzer's signatures for inductive-recursive
+// definitions, as data, with the arguments a signature asks for, their
+// decode, and the family a signature defines with its decoder.
 //
-// A code describes a family and its decoder at once. A code asks for a value
-// of a type, for values of the family, or for a stop. The values of the
-// family come through their decodes. A stop names one decode.
+// A signature describes a family and its decoder at once. A signature asks
+// for a value of a type, for values of the family, or for a stop. The values
+// of the family come through their decodes. A stop names one decode.
 //
-// The codes are a large type: a field of a code holds a type. `args` gives
-// the type of the arguments a code asks for over a family `x`, which `t`
-// decodes. `decodeArgs` decodes those arguments. Each recurses on the code.
+// The signatures are a large type: a field of a signature holds a type.
+// `args` gives the type of the arguments a signature asks for over a family
+// `x`, which `t` decodes. `decodeArgs` decodes those arguments. Each recurses
+// on the signature. `IR(d, c)` is the family that the signature `c` defines.
+// Its one constructor holds the arguments `c` asks for over `IR(d, c)` itself.
+// `el` decodes a value of the family by `decodeArgs`.
 //
-// Each of the four holds a role by its `builtin` mark: `Sig` holds `irPair`,
-// `IR` holds `irSignature`, `args` holds `irArgs` and `decodeArgs` holds
-// `irDecode`. A role has one holder, and the checker refuses a second. The
-// checker compares each holder with the canonical form of its role, and
-// `args` and `decodeArgs` with the canonical bodies at each code.
+// Each of the six holds a role by its `builtin` mark: `DPair` holds `irPair`,
+// `Sig` holds `irSignature`, `args` holds `irArgs`, `decodeArgs` holds
+// `irDecode`, `IR` holds `irFamily` and `el` holds `irDecoder`. A role has one
+// holder, and the checker refuses a second. The checker and the kernel
+// compare each holder with the canonical form of its role. The family keeps
+// no occurrence check and the decoder no stage check, since the canonical
+// forms are strictly positive and structural by construction.
 //
-// - owes: #3575 — the core formers that read the four by role
+// - owes: #5160 — the eliminator of the family, with its computation rule
 // - cites: [Dybjer-1999-finite_axiomatization_inductiverecursive_definitions]
+// - cites: [Kovacs-2026-canonicity_indexed_inductiverecursive_types]
 //
 // [Dybjer-1999-finite_axiomatization_inductiverecursive_definitions]: https://doi.org/10.1007/3-540-48959-2_11 "Dybjer and Setzer, A finite axiomatization of inductive-recursive definitions"
+// [Kovacs-2026-canonicity_indexed_inductiverecursive_types]: https://doi.org/10.1145/3776685 "Kovács, Canonicity for indexed inductive-recursive types"
 
 /// The dependent pairs over a family of types, as data.
 @[ builtin(irPair) ]
-pub data Sig(a : Type, b : a -> Type) : Type where
+pub data DPair(a : Type, b : a -> Type) : Type where
   /// A value of the first type with a value of the type it picks.
-  | MkSig : (x : a, y : b(x)) --> Sig(a, b)
+  | MkDPair : (x : a, y : b(x)) --> DPair(a, b)
 
-/// The codes over a type of decodes `d`, a large type.
+/// The signatures over a type of decodes `d`, a large type.
 @[ builtin(irSignature) ]
-pub data IR(d : Type) : Type[+, 1] where
+pub data Sig(d : Type) : Type[+, 1] where
   /// No argument, the decode `e`.
-  | Iota : (e : d) --> IR(d)
-  /// A value of the type `a`, and the code the rest reads it by.
-  | SigmaC : (a : Type, f : a -> IR(d)) --> IR(d)
+  | Iota : (e : d) --> Sig(d)
+  /// A value of the type `a`, and the signature the rest reads it by.
+  | SigmaC : (a : Type, f : a -> Sig(d)) --> Sig(d)
   /// A function from `a` into the family. The rest reads it through its
   /// decodes.
-  | DeltaC : (a : Type, f : (a -> d) -> IR(d)) --> IR(d)
+  | DeltaC : (a : Type, f : (a -> d) -> Sig(d)) --> Sig(d)
 
-/// The arguments a code asks for over a family `x`. The function `t` decodes
-/// the family.
+/// The arguments a signature asks for over a family `x`. The function `t`
+/// decodes the family.
 @[ builtin(irArgs) ]
-pub def rec args(d : Type, c : IR(d), x : Type, t : x -> d) -> Type =
+pub def rec args(d : Type, c : Sig(d), x : Type, t : x -> d) -> Type =
   match c
     | Iota(e) => return Unit
-    | SigmaC(a, f) => return (Sig a (fun (y) { args[<] d (f y) x t }))
-    | DeltaC(a, f) => return (Sig (a -> x) (fun (h) { args[<] d (f (fun (z) { t (h z) })) x t }))
+    | SigmaC(a, f) => return (DPair a (fun (y) { args[<] d (f y) x t }))
+    | DeltaC(a, f) => return (DPair (a -> x) (fun (h) { args[<] d (f (fun (z) { t (h z) })) x t }))
 
-/// The decode of the arguments a code asks for. The code's case refines their
-/// type, since the marked call stages the code.
+/// The decode of the arguments a signature asks for. The signature's case
+/// refines their type, since the marked call stages the signature.
 @[ builtin(irDecode), form(explicit) ]
-pub def rec decodeArgs(d : Type, c : IR(d), x : Type, t : x -> d, v : args(d, c, x, t)) -> d =
+pub def rec decodeArgs(d : Type, c : Sig(d), x : Type, t : x -> d, v : args(d, c, x, t)) -> d =
   match c
     | Iota(e) => e
     | SigmaC(a, f) => match v
-      | MkSig(y, r) => decodeArgs[<] d (f y) x t r
+      | MkDPair(y, r) => decodeArgs[<] d (f y) x t r
     | DeltaC(a, f) => match v
-      | MkSig(h, r) => decodeArgs[<] d (f (fun (z) { t (h z) })) x t r
+      | MkDPair(h, r) => decodeArgs[<] d (f (fun (z) { t (h z) })) x t r
+
+/// The family that a signature defines, and its decoder, in one block.
+rec {
+  /// The family that the signature `c` defines. Its one constructor holds the
+  /// arguments `c` asks for over the family, which `el` decodes.
+  @[ builtin(irFamily), form(explicit) ]
+  pub data IR(d : Type, c : Sig(d)) : Type where {
+    /// The arguments over the family.
+    | Intro : (x : args(d, c, IR(d, c), thunk { fun (m) { el d c m } })) --> IR(d, c)
+  }
+
+  /// The decode of a value of the family: the decode of the arguments its
+  /// constructor holds.
+  @[ builtin(irDecoder) ]
+  pub def rec el(d : Type, c : Sig(d), m : IR(d, c)) -> d =
+    match m
+      | Intro(x) => decodeArgs d c (IR d c) (thunk { fun (n) { el[<] d c n } }) x
+}

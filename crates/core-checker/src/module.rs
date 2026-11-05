@@ -414,6 +414,59 @@ fn refuse_whole(
     }
 }
 
+/// Refuse the holder of the family role when the declaration right after it
+/// holds no decoder role: the canonical family's field names its decoder
+/// there.
+///
+/// # Specification
+/// - requires: `judged` holds one entry per declaration of the module, in
+///   order, and `context` the roles the run claimed.
+/// - ensures: when a declaration holds the family role, judged
+///   [`Verdict::Data`], and the next declaration holds no decoder role, that
+///   holder is judged [`Verdict::Refused`] with
+///   [`CheckRefusal::BuiltinNotCanonical`] reading the decoder role and gives
+///   its role back; every other entry and role unchanged.
+/// - provides: the cross-declaration half of the canonical family, which the
+///   claim of the family cannot read: its decoder is checked after it.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause compares the module's verdicts before and
+///   after; the witness reads them back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a canonical family whose next declaration holds no role
+///   is refused, with its block.
+/// - witness: `module::tests::a_family_without_its_decoder_holds_no_role_3575`
+fn undecoded(
+    context: &mut CheckingContext<'_>,
+    judged: &mut [Judged],
+)
+{
+    let Ok(family) = context.builtin_holder(gandr_kernel_term::Builtin::IrFamily)
+    else {
+        return;
+    };
+    let decoder = ConstantIndex::from(usize::from(family).saturating_add(1));
+    if context
+        .builtins()
+        .get(&gandr_kernel_term::Builtin::IrDecoder)
+        == Some(&decoder)
+    {
+        return;
+    }
+    for entry in judged.iter_mut() {
+        if entry.constant == family && entry.verdict == Verdict::Data {
+            entry.verdict = Verdict::Refused(CheckRefusal::BuiltinNotCanonical {
+                role: gandr_kernel_term::Builtin::IrFamily,
+                departure: gandr_kernel_term::Departure::Reads(
+                    gandr_kernel_term::Builtin::IrDecoder,
+                ),
+            });
+        }
+    }
+    context.release_builtin(gandr_kernel_term::Builtin::IrFamily, family);
+}
+
 /// The judgement's answer for one declaration.
 ///
 /// An accepted verdict carries the body it judged, so a consumer re-deriving
@@ -1801,23 +1854,34 @@ fn decide(
             settled @ (Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)),
         ) => settled,
     };
-    // The holders of `E` and `F` answer their canonical bodies, compared
-    // before the table takes the definition. A refused holder keeps no role.
+    // The holders of `E`, `F` and the decoder answer their canonical bodies,
+    // compared before the table takes the definition. A refused holder keeps
+    // no role.
     let (verdict, failure) = match (declaration.builtin(), verdict) {
         (
             Maybe::Present(
-                role @ (gandr_kernel_term::Builtin::IrArgs | gandr_kernel_term::Builtin::IrDecode),
+                role @ (gandr_kernel_term::Builtin::IrArgs
+                | gandr_kernel_term::Builtin::IrDecode
+                | gandr_kernel_term::Builtin::IrDecoder),
             ),
             Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. },
-        ) => match crate::canonical::answers(context, role, (constant, body)) {
-            Ok(()) => (verdict, failure),
-            Err(departure) => {
-                context.release_builtin(role, constant);
-                (
-                    Verdict::Refused(CheckRefusal::BuiltinNotCanonical { role, departure }),
-                    Maybe::Absent(kept::Absent::Unrun),
-                )
-            },
+        ) => {
+            let answered = if role == gandr_kernel_term::Builtin::IrDecoder {
+                crate::canonical::decoder(context, (constant, body))
+            }
+            else {
+                crate::canonical::answers(context, role, (constant, body))
+            };
+            match answered {
+                Ok(()) => (verdict, failure),
+                Err(departure) => {
+                    context.release_builtin(role, constant);
+                    (
+                        Verdict::Refused(CheckRefusal::BuiltinNotCanonical { role, departure }),
+                        Maybe::Absent(kept::Absent::Unrun),
+                    )
+                },
+            }
         },
         (
             Maybe::Present(_) | Maybe::Absent(_),
@@ -2889,6 +2953,7 @@ impl ModuleRun
         if let Maybe::Present(_) = open {
             context.close_mutual();
         }
+        undecoded(context, &mut judged);
         refuse_whole(&blocks, &mut judged, &mut failures);
         ModuleReport {
             judged,

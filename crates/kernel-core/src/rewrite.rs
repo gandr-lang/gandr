@@ -562,6 +562,19 @@ enum Rewrite
         /// The variable it reads as at the root.
         index: DeBruijnIndex,
     },
+    /// Replace every application of `constant` to its `uniform` parameters,
+    /// each the variable bound just outside `index` in order, by the force of
+    /// the variable `index` counted from the root, raised under every binder
+    /// crossed.
+    AbstractApplied
+    {
+        /// The constant replaced.
+        constant: ConstantIndex,
+        /// The variable its application reads as at the root.
+        index: DeBruijnIndex,
+        /// How many uniform parameters it is applied to.
+        uniform: BinderDepth,
+    },
     /// Raise every free index by one, as [`Rewrite::Shift`] does from no
     /// cutoff, except at the returned endpoint `endpoint` — that node, met at
     /// the root's depth or, when it reads no variable, under any binder — which
@@ -663,6 +676,7 @@ impl Rewrite
                 index,
             },
             Self::Instantiate { .. }
+            | Self::AbstractApplied { .. }
             | Self::Rotate { .. }
             | Self::Share { .. }
             | Self::Unload { .. } => {
@@ -1046,6 +1060,102 @@ where
         BinderDepth::NONE,
     )
     .value_type_or(subject)
+}
+/// The value type `subject` with every application of `constant` to its
+/// `uniform` parameters read as the force of the variable `index`: the
+/// variable at the root, raised by every binder the walk crosses to reach the
+/// application.
+///
+/// # Specification
+/// - requires: `table` is this session's; `memo` holds only entries this
+///   session recorded against this arena; `index` names a binder in scope at
+///   the root, and the `uniform` binders just outside it are the constant's
+///   uniform parameters.
+/// - ensures: the same type with each application of `constant` to those
+///   variables in order, under `d` binders, replaced by the force of
+///   `Value::Variable(index + d)`, clamped at the index ceiling, and every
+///   other node as it was; an unreadable type, one holding no such application,
+///   or none `uniform` answers itself.
+/// - provides: how a decoder over uniform parameters is identified with its
+///   fixpoint's self binder where its family names it applied to them.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the constant applied to the two variables outside the
+///   index, at the root and under one binder, and the constant applied to other
+///   variables, each asserted exactly.
+/// - witness: `rewrite::tests::an_applied_abstraction_replaces_the_constant_at_its_uniform_parameters_3575`
+#[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
+    arena.value_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+pub(crate) fn abstract_applied_value_type<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    subject: ValueTypeId,
+    (constant, index, uniform): (ConstantIndex, DeBruijnIndex, BinderDepth),
+) -> ValueTypeId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::AbstractApplied {
+            constant,
+            index,
+            uniform,
+        },
+        AnyNode::ValueType(subject),
+        BinderDepth::NONE,
+    )
+    .value_type_or(subject)
+}
+
+/// Whether the computation `id`, at `depth` binders below the root, applies
+/// `constant` to its `uniform` parameters: the innermost argument the variable
+/// just outside `index` there, and each argument before it one binder further
+/// out.
+///
+/// # Specification
+/// trivial.
+fn applies_uniformly(
+    arena: &TermArena,
+    id: ComputationId,
+    (constant, index, uniform): (ConstantIndex, DeBruijnIndex, BinderDepth),
+    depth: BinderDepth,
+) -> Maybe<(), keyed::Absent>
+{
+    let mut cursor = id;
+    for past in 1 ..= uniform.0 {
+        let Some(&Computation::Application(head, argument)) = arena.computation(cursor)
+        else {
+            return Maybe::Absent(keyed::Absent::Local);
+        };
+        let wanted = u32::from(index)
+            .checked_add(depth.0)
+            .and_then(|outer| outer.checked_add(past));
+        let read = matches!(
+            arena.value(argument),
+            Some(&Value::Variable(found)) if Some(u32::from(found)) == wanted
+        );
+        if !read {
+            return Maybe::Absent(keyed::Absent::Local);
+        }
+        cursor = head;
+    }
+    if matches!(
+        arena.computation(cursor),
+        Some(&Computation::Force(head)) if arena.value(head) == Some(&Value::Constant(constant))
+    ) {
+        Maybe::Present(())
+    }
+    else {
+        Maybe::Absent(keyed::Absent::Local)
+    }
 }
 
 /// The computation `subject` under one new binder, with every occurrence of
@@ -1628,6 +1738,30 @@ where
                 {
                     note_read(&mut reads, &mut reading, (node, depth));
                 }
+                // The decoder applied to its uniform parameters answers at
+                // once: the force of its self binder, raised under every
+                // binder crossed.
+                if let Rewrite::AbstractApplied {
+                    constant,
+                    index,
+                    uniform,
+                } = step
+                    && let AnyNode::Computation(id) = node
+                    && uniform != BinderDepth::NONE
+                    && applies_uniformly(arena, id, (constant, index, uniform), depth)
+                        == Maybe::Present(())
+                {
+                    // reason: an index past the ceiling clamps, as a shift's
+                    // does.
+                    let raised = u32::from(arith::saturating_add(
+                        arith::Int::from(u32::from(index)),
+                        arith::Int::from(depth.0),
+                    ));
+                    let own = arena.value_variable(DeBruijnIndex::from(raised));
+                    let forced = arena.computation_force(own);
+                    results.push(RewriteOutcome::Computation(forced));
+                    continue;
+                }
                 // A share's endpoint answers at once: the variable of the binder
                 // outside the root, raised under every binder crossed.
                 if let Rewrite::Share { endpoint, closed } = step
@@ -1921,7 +2055,7 @@ quenchant_shape::reason_enum! {
     },
     Rewrite::Unload { width, .. } => matches!(ret, Maybe::Absent(()))
         || index.0.checked_sub(depth.0).is_some_and(|past| past < width.0),
-    Rewrite::Shift { .. } | Rewrite::Abstract { .. } | Rewrite::Share { .. } | Rewrite::Rotate { .. } => matches!(ret, Maybe::Absent(())),
+    Rewrite::Shift { .. } | Rewrite::Abstract { .. } | Rewrite::AbstractApplied { .. } | Rewrite::Share { .. } | Rewrite::Rotate { .. } => matches!(ret, Maybe::Absent(())),
 })]
 #[inline]
 fn replaced(
@@ -1956,6 +2090,7 @@ fn replaced(
         },
         Rewrite::Shift { .. }
         | Rewrite::Abstract { .. }
+        | Rewrite::AbstractApplied { .. }
         | Rewrite::Share { .. }
         | Rewrite::Rotate { .. } => Maybe::Absent(()),
     }
@@ -1999,7 +2134,7 @@ fn replaced(
 /// [`Absent`]: carrying::Absent
 #[spec(ensures: |ret| match rewrite {
     Rewrite::Shift { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Shift)),
-    Rewrite::Abstract { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Abstraction)),
+    Rewrite::Abstract { .. } | Rewrite::AbstractApplied { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Abstraction)),
     Rewrite::Share { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Sharing)),
     Rewrite::Rotate { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Rotation)),
     Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. } => {
@@ -2030,7 +2165,9 @@ fn carried_occurrence(
     match rewrite {
         Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. } => {},
         Rewrite::Shift { .. } => return Maybe::Absent(carrying::Absent::Shift),
-        Rewrite::Abstract { .. } => return Maybe::Absent(carrying::Absent::Abstraction),
+        Rewrite::Abstract { .. } | Rewrite::AbstractApplied { .. } => {
+            return Maybe::Absent(carrying::Absent::Abstraction);
+        },
         Rewrite::Share { .. } => return Maybe::Absent(carrying::Absent::Sharing),
         Rewrite::Rotate { .. } => return Maybe::Absent(carrying::Absent::Rotation),
     }
@@ -2138,7 +2275,10 @@ fn reach(
         Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Unload { .. } => {
             depth.0
         },
-        Rewrite::Abstract { .. } | Rewrite::Share { .. } | Rewrite::Rotate { .. } => {
+        Rewrite::Abstract { .. }
+        | Rewrite::AbstractApplied { .. }
+        | Rewrite::Share { .. }
+        | Rewrite::Rotate { .. } => {
             return Reach::Within;
         },
     };
@@ -2914,7 +3054,7 @@ Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 
         Some(&Value::Variable(_)) => true,
         Some(&Value::Constant(found)) => match rewrite {
             Rewrite::Abstract { constant, .. } if constant == found => matches!(arena.value(ret), Some(&Value::Variable(_))),
-            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Rotate { .. } | Rewrite::Share { .. } | Rewrite::Unload { .. } => ret == id,
+            Rewrite::Abstract { .. } | Rewrite::AbstractApplied { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Rotate { .. } | Rewrite::Share { .. } | Rewrite::Unload { .. } => ret == id,
         },
         Some(node) => arena.value(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten)),
     },
@@ -3238,6 +3378,7 @@ fn close_value(
                 arena.value_variable(DeBruijnIndex::from(raised))
             },
             Rewrite::Abstract { .. }
+            | Rewrite::AbstractApplied { .. }
             | Rewrite::Shift { .. }
             | Rewrite::Substitute { .. }
             | Rewrite::Instantiate { .. }
@@ -3374,7 +3515,7 @@ fn close_value(
         || depth.0 == 0
         || matches!(replaced(arena, rewrite, BinderDepth::from(u32::from(index)), depth), Maybe::Absent(())),
     ensures: |ret| match rewrite {
-        Rewrite::Abstract { .. } => ret == id,
+        Rewrite::Abstract { .. } | Rewrite::AbstractApplied { .. } => ret == id,
         Rewrite::Shift { cutoff, amount } => {
             if u32::from(index) < cutoff.0.saturating_add(depth.0)
                 || u32::from(index).saturating_add(amount.0) == u32::from(index) {
@@ -3418,7 +3559,7 @@ fn rewrite_variable(
 {
     let index = BinderDepth::from(u32::from(index));
     match rewrite {
-        Rewrite::Abstract { .. } => id,
+        Rewrite::Abstract { .. } | Rewrite::AbstractApplied { .. } => id,
         Rewrite::Shift { cutoff, amount } => {
             shifted_variable(arena, id, (index, depth), (cutoff, amount))
         },

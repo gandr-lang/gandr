@@ -2323,7 +2323,7 @@ mod kernel_presented_readmission
         let declarations = decoded.declarations().to_vec();
         let arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
-            .expect("the four holders readmit: the kernel admits each in its canonical form");
+            .expect("the six holders readmit: the kernel admits each in its canonical form");
         let held = |role: Builtin| {
             declarations
                 .iter()
@@ -2332,6 +2332,12 @@ mod kernel_presented_readmission
         };
         let (pair, signature) = (held(Builtin::IrPair), held(Builtin::IrSignature));
         let (_args, _decode) = (held(Builtin::IrArgs), held(Builtin::IrDecode));
+        let (family, decoder) = (held(Builtin::IrFamily), held(Builtin::IrDecoder));
+        assert_eq!(
+            decoder,
+            family + 1,
+            "the decoder stands right after its family"
+        );
         // The signature type forged to hold the pair role meets the pair's
         // holder before it.
         let mut twin = declarations.clone();
@@ -2359,12 +2365,63 @@ mod kernel_presented_readmission
                 .clone()
                 .held(Builtin::IrSignature),
         );
-        let refusal =
-            Environment::replay(arena, &twin).expect_err("the pair type is no signature type");
+        let refusal = Environment::replay(arena.clone(), &twin)
+            .expect_err("the pair type is no signature type");
         assert_eq!(usize::from(refusal.position()), pair);
         assert_eq!(*refusal.error(), KernelError::BuiltinNotCanonical {
             role: Builtin::IrSignature,
             departure: gandr_kernel_term::Departure::Parameters,
+        });
+        // The decoder forged to call itself on its own value: `λ d c. fix el.
+        // λ m. el m`. The kernel types it, as the decoder's own fixpoint opens
+        // no stage, and refuses it at its answer, which never converts. The
+        // refusal names the block that the family leads.
+        let mut arena = arena;
+        let marked = &declarations[decoder];
+        let gandr_kernel_term::DeclarationContent::Def {
+            declared,
+            body: written,
+            ..
+        } = *marked.declaration().content()
+        else {
+            panic!("the decoder is a definition");
+        };
+        let Some(&gandr_kernel_term::Value::Thunk(outer)) = arena.value(written)
+        else {
+            panic!("the decoder's body is a thunk");
+        };
+        let mut cursor = outer;
+        while let Some(&gandr_kernel_term::Computation::Lambda(inner)) = arena.computation(cursor) {
+            cursor = inner;
+        }
+        let Some(&gandr_kernel_term::Computation::Fixpoint { evidence, .. }) =
+            arena.computation(cursor)
+        else {
+            panic!("the decoder's fixpoint stands under its uniform parameters");
+        };
+        let m = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
+        let own = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(1_u32));
+        let forced = arena.computation_force(own);
+        let looped = arena.computation_application(forced, m);
+        let lambda = arena.computation_lambda(looped);
+        let fixpoint = arena.computation_fixpoint(lambda, evidence);
+        let over = arena.computation_lambda(fixpoint);
+        let over = arena.computation_lambda(over);
+        let body = arena.value_thunk(over);
+        let looping = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, body)
+            .named(marked.declaration().name().clone())
+            .held(Builtin::IrDecoder);
+        let mut twin = declarations.clone();
+        twin[decoder] = MarkedDeclaration::new(marked.mark(), looping);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("a decoder that never answers at `intro(x)` is refused");
+        assert_eq!(usize::from(refusal.position()), family);
+        assert_eq!(*refusal.error(), KernelError::BuiltinNotCanonical {
+            role: Builtin::IrDecoder,
+            departure: gandr_kernel_term::Departure::Answer(
+                gandr_kernel_term::ConstructorTag::from(0_usize)
+            ),
         });
     }
 

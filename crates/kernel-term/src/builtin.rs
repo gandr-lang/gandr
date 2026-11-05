@@ -1,19 +1,21 @@
 //! The built-in roles a declaration takes: the declarations the core's own
 //! formers read by role, never by name.
 //!
-//! The family that an inductive-recursive signature defines, its constructor
-//! and its decoder are core formers over a signature value (Kovács 2026,
-//! § 2.2). The type of the signatures and the two functions by recursion on a
-//! signature are ordinary declarations: `E`, the fields that a signature asks
-//! for, and `F`, the decode of those fields. The dependent pairs that `E` asks
-//! for are an ordinary declaration too. A declaration that the source marks
-//! `@[ builtin(…) ]` takes one of these roles. The checker records the
-//! declaration that holds each role, for the formers to read (owed to #3575).
+//! The type of inductive-recursive signatures and the two functions by
+//! recursion on a signature are ordinary declarations (Kovács 2026, § 2.2):
+//! `E`, the fields that a signature asks for, and `F`, the decode of those
+//! fields. The dependent pairs that `E` asks for are an ordinary declaration
+//! too. The family that a signature defines and its decoder are ordinary
+//! declarations in one mutual block: the family's one constructor holds the
+//! fields of `E` over the family and its decoder, and the decoder decodes
+//! them by `F`. A declaration that the source marks `@[ builtin(…) ]` takes
+//! one of these roles, and both checkers and the kernel compare it with the
+//! canonical form of its role.
 //!
 //! The mark states a role and decides nothing else. A role that two
 //! declarations claim is refused, and so is a mark on a declaration of the
-//! wrong judgement: the signature type and the pair type are data
-//! declarations, and `E` and `F` are value declarations.
+//! wrong judgement: the signature type, the pair type and the family are
+//! data declarations, and `E`, `F` and the decoder are value declarations.
 //!
 //! # References
 //!
@@ -46,6 +48,13 @@ pub enum Builtin
     /// `F`: the decode of those fields, a value declaration by recursion on
     /// the signature.
     IrDecode,
+    /// The family that a signature defines, a data declaration over the output
+    /// type and the signature, with one constructor whose one field holds the
+    /// fields that `E` asks for over the family and its decoder.
+    IrFamily,
+    /// The decoder of that family, a value declaration that decodes the one
+    /// field of the family's constructor by `F`.
+    IrDecoder,
 }
 
 /// The word that an attribute names a built-in role by, as the source spells
@@ -121,14 +130,23 @@ impl Builtin
 {
     /// The words that an attribute names the roles by, in the order of
     /// [`Self::ALL`].
-    pub const WORDS: &'static [&'static str] = &["irSignature", "irPair", "irArgs", "irDecode"];
+    pub const WORDS: &'static [&'static str] = &[
+        "irSignature",
+        "irPair",
+        "irArgs",
+        "irDecode",
+        "irFamily",
+        "irDecoder",
+    ];
 
     /// Every role, in the order of [`Self::WORDS`].
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 6] = [
         Self::IrSignature,
         Self::IrPair,
         Self::IrArgs,
         Self::IrDecode,
+        Self::IrFamily,
+        Self::IrDecoder,
     ];
 
     /// The word that an attribute names this role by.
@@ -144,6 +162,8 @@ impl Builtin
             Self::IrPair => "irPair",
             Self::IrArgs => "irArgs",
             Self::IrDecode => "irDecode",
+            Self::IrFamily => "irFamily",
+            Self::IrDecoder => "irDecoder",
         })
     }
 
@@ -181,8 +201,8 @@ impl Builtin
     pub const fn holder(self) -> Holder
     {
         match self {
-            Self::IrSignature | Self::IrPair => Holder::Data,
-            Self::IrArgs | Self::IrDecode => Holder::Value,
+            Self::IrSignature | Self::IrPair | Self::IrFamily => Holder::Data,
+            Self::IrArgs | Self::IrDecode | Self::IrDecoder => Holder::Value,
         }
     }
 }

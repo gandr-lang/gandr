@@ -7361,6 +7361,8 @@ const fn role_count(role: gandr_kernel_term::Builtin) -> Count
         gandr_kernel_term::Builtin::IrArgs => 1,
         gandr_kernel_term::Builtin::IrDecode => 2,
         gandr_kernel_term::Builtin::IrPair => 3,
+        gandr_kernel_term::Builtin::IrFamily => 4,
+        gandr_kernel_term::Builtin::IrDecoder => 5,
     })
 }
 
@@ -7375,6 +7377,8 @@ const fn counted_role(count: Count) -> Result<gandr_kernel_term::Builtin, CodecE
         1 => Ok(gandr_kernel_term::Builtin::IrArgs),
         2 => Ok(gandr_kernel_term::Builtin::IrDecode),
         3 => Ok(gandr_kernel_term::Builtin::IrPair),
+        4 => Ok(gandr_kernel_term::Builtin::IrFamily),
+        5 => Ok(gandr_kernel_term::Builtin::IrDecoder),
         _ => Err(CodecError::Corrupt),
     }
 }

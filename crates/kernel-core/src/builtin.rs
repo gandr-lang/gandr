@@ -3,8 +3,9 @@
 //!
 //! The checker validates every holder (`gandr_core_checker::canonical`), and
 //! the kernel decides the same forms again over its own terms. It never takes
-//! a producer's mark on trust. A role has one holder: the signature type and
-//! the pair type are data declarations, and `E` and `F` are definitions.
+//! a producer's mark on trust. A role has one holder: the signature type, the
+//! pair type and the family are data declarations, and `E`, `F` and the
+//! decoder are definitions.
 //!
 //! |Role|The canonical form|
 //! |---|---|
@@ -12,6 +13,12 @@
 //! |`irPair`|the parameters `A : Type` and `B : A -> Type`, no index, and one constructor `(x : A, y : B(x))`|
 //! |`irArgs`|the answers of `E` at `ι`, `σ` and `δ`, decided by conversion|
 //! |`irDecode`|the answers of `F` at `ι`, `σ` and `δ`, decided by conversion|
+//! |`irFamily`|the parameters `O : Type` and `S : Sig(O)`, no index, and one constructor of one field, the decode of `E(O, S, ⌜IR(O, S)⌝, λ m. el(O, S, m))`, `el` the declaration after it|
+//! |`irDecoder`|the answer `F(O, S, ⌜IR(O, S)⌝, λ n. el(O, S, n), x)` at `intro(x)`, decided by conversion|
+//!
+//! The family keeps no occurrence walk, and the decoder's own fixpoint opens
+//! no stage (`check::check_declaration_with_memo`): their canonical forms are
+//! strictly positive and structural by construction.
 //!
 //! # References
 //!
@@ -116,13 +123,32 @@ pub fn admit(
         } => match role {
             Builtin::IrSignature => signature(arena, position, (parameters, indices, constructors)),
             Builtin::IrPair => pair(arena, (parameters, indices, constructors)),
-            Builtin::IrArgs | Builtin::IrDecode => Err(Departure::Constructors),
+            Builtin::IrFamily => family(
+                arena,
+                entries,
+                position,
+                (parameters, indices, constructors),
+            ),
+            Builtin::IrArgs | Builtin::IrDecode | Builtin::IrDecoder => {
+                Err(Departure::Constructors)
+            },
         },
-        DeclarationContent::Def { body, .. } => {
-            let watermark = arena.watermark();
-            let answered = answers(arena, entries, role, (position, body));
-            arena.truncate_to(watermark);
-            answered
+        DeclarationContent::Def { body, .. } => match role {
+            Builtin::IrArgs | Builtin::IrDecode => {
+                let watermark = arena.watermark();
+                let answered = answers(arena, entries, role, (position, body));
+                arena.truncate_to(watermark);
+                answered
+            },
+            Builtin::IrDecoder => {
+                let watermark = arena.watermark();
+                let answered = decoder(arena, entries, (position, body));
+                arena.truncate_to(watermark);
+                answered
+            },
+            Builtin::IrSignature | Builtin::IrPair | Builtin::IrFamily => {
+                Err(Departure::Constructors)
+            },
         },
         DeclarationContent::Codata { .. }
         | DeclarationContent::Axiom { .. }
@@ -443,7 +469,11 @@ fn answers(
     let pairs = held(Builtin::IrPair)?;
     let fields = match role {
         Builtin::IrDecode => Some(held(Builtin::IrArgs)?),
-        Builtin::IrSignature | Builtin::IrPair | Builtin::IrArgs => None,
+        Builtin::IrSignature
+        | Builtin::IrPair
+        | Builtin::IrArgs
+        | Builtin::IrFamily
+        | Builtin::IrDecoder => None,
     };
     let body = arena.value_constant(holder);
     let var = |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
@@ -618,6 +648,237 @@ fn answers(
         if verdict != KernelVerdict::Convertible {
             return Err(Departure::Answer(ConstructorTag::from(tag)));
         }
+    }
+    Ok(())
+}
+
+/// Compare the data declaration at `holder` with the canonical family that a
+/// signature defines.
+///
+/// # Specification
+/// - requires: the signature's nodes live in `arena`; the declaration takes the
+///   position `holder`, after the last entry.
+/// - ensures: `Ok(())` exactly when the signature has the parameters `O : Type`
+///   and `S : Sig(O)`, no index and one constructor of one field, the decode of
+///   `E(O, S, ⌜IR(O, S)⌝, λ m. el(O, S, m))`: `Sig` and `E` the holders of
+///   their roles, `IR` the holder at its parameters and `el` the declaration
+///   right after it.
+/// - fails: [`Departure::Reads`] for an unheld role the canonical form reads,
+///   then the first [`Departure`] in the order parameters, indices,
+///   constructors, then the constructor's arity and its field.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `std.ir`'s `IR` admits, and the family forged with a
+///   second field is refused at its arity.
+/// - witness: `kernel_export::kernel_presented_readmission::the_holders_of_std_ir_cross_with_their_roles_and_a_forged_one_is_refused_5304`
+/// - witness: `builtin::tests::a_departing_family_and_decoder_are_refused_3575`
+fn family(
+    arena: &TermArena,
+    entries: &Entries,
+    holder: ConstantIndex,
+    (parameters, indices, constructors): (&[ValueTypeId], &[ValueTypeId], &[Vec<ValueTypeId>]),
+) -> Result<(), Departure>
+{
+    let held = |wanted: Builtin| {
+        entries
+            .iter()
+            .position(|entry| entry.declaration().role() == Maybe::Present(wanted))
+            .map(ConstantIndex::from)
+            .ok_or(Departure::Reads(wanted))
+    };
+    let signed = held(Builtin::IrSignature)?;
+    let fields = held(Builtin::IrArgs)?;
+    let shapes = Shapes { arena };
+    let zero = DeBruijnIndex::from(0_u32);
+    let [output, code] = *parameters
+    else {
+        return Err(Departure::Parameters);
+    };
+    if !shapes.universe(output).0 || !shapes.family(code, (signed, zero)).0 {
+        return Err(Departure::Parameters);
+    }
+    if !indices.is_empty() {
+        return Err(Departure::Indices);
+    }
+    let [ref only] = *constructors
+    else {
+        return Err(Departure::Constructors);
+    };
+    let [field] = **only
+    else {
+        return Err(Departure::Arity(ConstructorTag::from(0_usize)));
+    };
+    let departs = Departure::Field {
+        tag: ConstructorTag::from(0_usize),
+        field: FieldPosition::from(0_usize),
+    };
+    let variable =
+        |value: ValueId, index: u32| shapes.variable(value, DeBruijnIndex::from(index)).0;
+    // The spine of `force head a₀ … aₙ`, innermost argument last.
+    let spine = |run: ComputationId| {
+        let mut arguments = Vec::new();
+        let mut cursor = run;
+        while let Some(&Computation::Application(head, argument)) = arena.computation(cursor) {
+            arguments.push(argument);
+            cursor = head;
+        }
+        arguments.reverse();
+        match arena.computation(cursor) {
+            Some(&Computation::Force(head)) => Maybe::Present((head, arguments)),
+            Some(_) | None => Maybe::Absent(Unshaped),
+        }
+    };
+    let constant = |value: ValueId, wanted: ConstantIndex| matches!(arena.value(value), Some(&Value::Constant(found)) if found == wanted);
+    // `E(O, S, ⌜IR(O, S)⌝, λ m. el(O, S, m))` under `O` 1 and `S` 0.
+    let canonical = (|| {
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(field)
+        else {
+            return Fits(false);
+        };
+        let Some(&Value::Returned(run)) = arena.value(code)
+        else {
+            return Fits(false);
+        };
+        let Maybe::Present((head, arguments)) = spine(run)
+        else {
+            return Fits(false);
+        };
+        let [outputs, signature, own, decode] = *arguments
+        else {
+            return Fits(false);
+        };
+        let own = matches!(
+            arena.value(own),
+            Some(&Value::Quote(quoted)) if matches!(
+                arena.value_type(quoted),
+                Some(&ValueType::Data { declaration, ref arguments })
+                    if declaration == holder
+                        && matches!(**arguments, [a, b] if variable(a, 1) && variable(b, 0))
+            )
+        );
+        let decoder = ConstantIndex::from(usize::from(holder).saturating_add(1));
+        let decodes = match arena.value(decode) {
+            Some(&Value::Thunk(lambda)) => match arena.computation(lambda) {
+                Some(&Computation::Lambda(body)) => match spine(body) {
+                    Maybe::Present((called, ref passed)) => {
+                        constant(called, decoder)
+                            && matches!(**passed, [a, b, m] if variable(a, 2) && variable(b, 1) && variable(m, 0))
+                    },
+                    Maybe::Absent(Unshaped) => false,
+                },
+                Some(_) | None => false,
+            },
+            Some(_) | None => false,
+        };
+        Fits(
+            constant(head, fields)
+                && variable(outputs, 1)
+                && variable(signature, 0)
+                && own
+                && decodes,
+        )
+    })();
+    if !canonical.0 {
+        return Err(departs);
+    }
+    Ok(())
+}
+
+/// Compare `defined`, the body of the holder of the decoder role at `holder`,
+/// with the canonical decoder by its answer at the family's one constructor.
+///
+/// # Specification
+/// - requires: `arena` holds `defined` and every entry's nodes; the holder
+///   takes the position `holder`, after the last entry.
+/// - ensures: `Ok(())` exactly when the family's holder stands right before
+///   `holder` and, under rigid variables for `O`, `S` and the field `x`, the
+///   holder at `intro(x)` converts with `F(O, S, ⌜IR(O, S)⌝, λ n. el(O, S, n),
+///   x)`, every definition and the holder unfolding. Every value of the family
+///   is `intro(x)` for some `x`, so the holder answers as the canonical decoder
+///   at every value.
+/// - fails: [`Departure::Reads`] for an unheld role the canonical form reads,
+///   the family's role too when its holder stands elsewhere, then
+///   [`Departure::Answer`] at the one constructor.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `std.ir`'s `el` admits, and a decoder that answers the
+///   field itself is refused at the constructor.
+/// - witness: `builtin::tests::a_departing_family_and_decoder_are_refused_3575`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(Departure::Reads(_) | Departure::Answer(_))))]
+fn decoder(
+    arena: &mut TermArena,
+    entries: &Entries,
+    (holder, defined): (ConstantIndex, ValueId),
+) -> Result<(), Departure>
+{
+    let held = |wanted: Builtin| {
+        entries
+            .iter()
+            .position(|entry| entry.declaration().role() == Maybe::Present(wanted))
+            .map(ConstantIndex::from)
+            .ok_or(Departure::Reads(wanted))
+    };
+    let family = held(Builtin::IrFamily)?;
+    if usize::from(family).saturating_add(1) != usize::from(holder) {
+        return Err(Departure::Reads(Builtin::IrFamily));
+    }
+    let decode = held(Builtin::IrDecode)?;
+    let var = |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+    // `force head a₀ … aₙ`.
+    let call = |arena: &mut TermArena, head: ValueId, arguments: &[ValueId]| {
+        let forced = arena.computation_force(head);
+        arguments.iter().fold(forced, |applied, &argument| {
+            arena.computation_application(applied, argument)
+        })
+    };
+    let body = arena.value_constant(holder);
+    // Under `O` 2, `S` 1 and `x` 0: `el(O, S, intro(x))`.
+    let (o, s, x) = (var(arena, 2), var(arena, 1), var(arena, 0));
+    let own = arena.value_type_data(family, alloc::vec![o, s]);
+    let intro = arena.value_constructor(own, ConstructorTag::from(0_usize), alloc::vec![x]);
+    let (o, s) = (var(arena, 2), var(arena, 1));
+    let left = call(arena, body, &[o, s, intro]);
+    // `F(O, S, ⌜IR(O, S)⌝, λ n. el(O, S, n), x)`.
+    let (o, s) = (var(arena, 2), var(arena, 1));
+    let own = arena.value_type_data(family, alloc::vec![o, s]);
+    let quoted = arena.value_quote(own);
+    let passed = [var(arena, 3), var(arena, 2), var(arena, 0)];
+    let decoded = call(arena, body, &passed);
+    let lambda = arena.computation_lambda(decoded);
+    let decoder = arena.value_thunk(lambda);
+    let fields = arena.value_constant(decode);
+    let (o, s, x) = (var(arena, 2), var(arena, 1), var(arena, 0));
+    let right = call(arena, fields, &[o, s, quoted, decoder, x]);
+    let mut bodies: Vec<Unfoldable> = entries
+        .iter()
+        .map(|entry| match *entry.content() {
+            DeclarationContent::Def { body, .. } => Unfoldable::Body(body),
+            DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
+            | DeclarationContent::Axiom { .. }
+            | DeclarationContent::AbstractType { .. } => Unfoldable::Opaque,
+        })
+        .collect();
+    bodies.push(Unfoldable::Body(defined));
+    let unfoldings = Unfoldings::new(bodies)
+        .presenting(crate::presented::Presentations::of(entries))
+        .identifying(entries);
+    let verdict = crate::replay::convert_unfolding(
+        arena,
+        &unfoldings,
+        ReplaySides::Computations(left, right),
+        ReplayBudget::DEFAULT,
+    );
+    if verdict != KernelVerdict::Convertible {
+        return Err(Departure::Answer(ConstructorTag::from(0_usize)));
     }
     Ok(())
 }

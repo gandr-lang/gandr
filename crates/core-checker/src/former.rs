@@ -280,16 +280,28 @@ pub fn form_signature_with_failure(
         )
     };
     let kind = signature.kind();
-    let accessibility = crate::occurrence::occurrences(
-        context.arena(),
-        (
-            &context.block_of(position),
-            context.block_definitions(),
-            context.accessibility(),
-        ),
-        signature,
-    )
-    .map_err(|refusal| bare(refusal, kind))?;
+    // The holder of the family role keeps no walk. Its claim compared it with
+    // the canonical family, whose one field is strictly positive by
+    // construction.
+    let accessibility = if context
+        .builtins()
+        .get(&gandr_kernel_term::Builtin::IrFamily)
+        == Some(&position)
+    {
+        crate::occurrence::Accessibility::exempted(signature.parameters().len())
+    }
+    else {
+        crate::occurrence::occurrences(
+            context.arena(),
+            (
+                &context.block_of(position),
+                context.block_definitions(),
+                context.accessibility(),
+            ),
+            signature,
+        )
+        .map_err(|refusal| bare(refusal, kind))?
+    };
     let depth = context.depth(Zone::Intuitionistic);
     context.open_block(position, Arc::clone(signature));
     let outcome = (|| {

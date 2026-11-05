@@ -172,6 +172,54 @@ pub fn canonical_pair(arena: &mut CoreArena) -> gandr_core_term::DataSignature
     gandr_core_term::DataSignature::new(parameters, Vec::from([fields]), kind)
 }
 
+/// The parts of the canonical family that a signature defines, built in
+/// `arena` for the family at `family` over the signature type at `signed` and
+/// `E` at `fields`: the parameter telescope `O : Type, S : Sig(O)`, then the
+/// field of its one constructor, the decode of `E(O, S, ⌜IR(O, S)⌝, λ m.
+/// el(O, S, m))` with `el` at the position after the family. `asked` stands in
+/// for `⌜IR(O, S)⌝` when a fixture departs there.
+///
+/// # Specification
+/// trivial.
+pub fn family_parts(
+    arena: &mut CoreArena,
+    family: ConstantIndex,
+    (signed, fields): (ConstantIndex, ConstantIndex),
+    asked: ConstantIndex,
+) -> [Vec<ValueTypeId>; 2]
+{
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let call = |arena: &mut CoreArena, head: ValueId, arguments: &[ValueId]| {
+        let forced = arena.computation_force(head);
+        arguments.iter().fold(forced, |applied, &argument| {
+            arena.computation_application(applied, argument)
+        })
+    };
+    let output = arena.value_type_universe(
+        gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        gandr_kernel_strata::Level::zero(),
+    );
+    let o = variable(arena, 0);
+    let over = arena.value_type_data(signed, Vec::from([o]));
+    // Under `O` at 1 and `S` at 0.
+    let pair = [variable(arena, 1), variable(arena, 0)];
+    let own = arena.value_type_data(asked, Vec::from(pair));
+    let quoted = arena.value_quote(own);
+    let decoder = arena.value_constant(ConstantIndex::from(usize::from(family).saturating_add(1)));
+    let passed = [variable(arena, 2), variable(arena, 1), variable(arena, 0)];
+    let decoded = call(arena, decoder, &passed);
+    let lambda = arena.computation_lambda(decoded);
+    let decode = arena.value_thunk(lambda);
+    let asks = arena.value_constant(fields);
+    let (o, s) = (variable(arena, 1), variable(arena, 0));
+    let run = call(arena, asks, &[o, s, quoted, decode]);
+    let code = arena.value_returned(run);
+    let field = arena.value_type_element(code, gandr_kernel_strata::Level::zero());
+    [Vec::from([output, over]), Vec::from([field])]
+}
+
 /// Whether two runs of the judgement over one term refused it alike. A rule
 /// that mints a type as it judges mints it again in the second run, so a
 /// shape mismatch's found type and its weak head are compared by their
