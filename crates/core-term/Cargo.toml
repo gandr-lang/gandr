@@ -40,5 +40,10 @@ num-bigint.workspace = true
 quenchant-arith.workspace = true
 quenchant-shape.workspace = true
 
+# The grades suite reads `HoldGrade` and `CapabilityGrade` as ordered
+# semirings through the law checker.
+[dev-dependencies]
+gandr-theory-ordered-algebras.workspace = true
+
 [lints]
 workspace = true

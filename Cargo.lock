@@ -1243,6 +1243,7 @@ dependencies = [
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-levitation",
+ "gandr-theory-ordered-algebras",
  "gandr-theory-sites",
  "libm",
  "num-bigint",
@@ -1968,6 +1969,15 @@ name = "gandr-theory-order-maintenance"
 version = "0.0.0"
 dependencies = [
  "proptest",
+ "quenchant-anodized",
+]
+
+[[package]]
+name = "gandr-theory-ordered-algebras"
+version = "0.0.0"
+dependencies = [
+ "gandr-theory-exact-reals",
+ "num-bigint",
  "quenchant-anodized",
 ]
 

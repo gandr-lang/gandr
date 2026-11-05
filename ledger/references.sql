@@ -408,6 +408,7 @@ INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surfa
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','surface-lowering','description','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-cell-complexes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-computads','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-corpus','refusal','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-diagnostics','advice','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-dispatcher','typed','background',NULL,NULL,NULL);
@@ -530,6 +531,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theor
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','ascent::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','stratum::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-stone-duality','','exemplar',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
