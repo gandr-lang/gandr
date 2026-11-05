@@ -21,7 +21,6 @@ import "../../model/desc/stlc.gandr";
 def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, b), g) =
   return fun (a) { return fun (x) { There d a b (r a x) } }
 
-
 /// The renaming of neutrals and normal forms. Each descends on its third
 /// parameter, whose type reads the two before it.
 rec {
