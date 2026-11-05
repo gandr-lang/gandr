@@ -3,7 +3,7 @@
 // § layouts-ribbit), so a layout that loses elements is refused at its round
 // trip, and `equiv` decides no round trip over a type that holds itself.
 
-// `Ints`, `Packed`, `pack` and `unpack`.
+// `Ints`, `Packed`, `packInts` and `unpack`.
 import "../../model/layouts/ribbit-list.gandr";
 
 /// A tag without its payloads, Ribbit's Example 3.15: it tells the empty list from the rest and keeps nothing else.
@@ -34,4 +34,4 @@ def restored(l : Ints) -> Path(listOf (tagsOf l), l) =
 
 /// `equiv` decides round trips over types that do not hold themselves, so the packed layout's is refused.
 @[ refuses("EquivUnsupported") ]
-def decided : Path[.A = Type](Ints, Packed) = equiv (pack) unpack;
+def decided : Path[.A = Type](Ints, Packed) = equiv packInts unpack;

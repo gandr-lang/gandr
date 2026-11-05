@@ -71,11 +71,11 @@ pub def rec tagged(l : Tagged) -> Path(tag (untag l), l) =
       (Path.here (TagCons x (tag (untag rest))))
 
 /// A list laid out packed, two elements per pointer and a lone last element inline.
-pub def rec pack(l : Ints) -> Packed =
+pub def rec packInts(l : Ints) -> Packed =
   match l
     | Nil => Empty
     | Cons(x, Nil) => One x
-    | Cons(x, Cons(y, rest)) => Many x y (pack[<] rest)
+    | Cons(x, Cons(y, rest)) => Many x y (packInts[<] rest)
 
 /// A packed list read back as the list.
 pub def rec unpack(p : Packed) -> Ints =
@@ -85,30 +85,32 @@ pub def rec unpack(p : Packed) -> Ints =
     | Many(x, y, rest) => Cons x (Cons y (unpack[<] rest))
 
 /// Reading a packed list back undoes packing it, two elements at a time.
-pub def rec unpacked(l : Ints) -> Path(unpack ((pack) l), l) =
+pub def rec unpacked(l : Ints) -> Path(unpack (packInts l), l) =
   match l
     | Nil => Path.here Nil
     | Cons(x, Nil) => Path.here (Cons x Nil)
     | Cons(x, Cons(y, rest)) => Path.walk
-      (fun (z) { type(Path[.A = Ints](Cons x (Cons y (unpack ((pack) rest))), Cons x (Cons y z))) })
+      (fun (z) {
+        type(Path[.A = Ints](Cons x (Cons y (unpack (packInts rest))), Cons x (Cons y z)))
+      })
       (unpacked[<] rest)
-      (Path.here (Cons x (Cons y (unpack ((pack) rest)))))
+      (Path.here (Cons x (Cons y (unpack (packInts rest)))))
 
 /// Packing a list undoes reading it back, two elements at a time.
-pub def rec packed(p : Packed) -> Path((pack) (unpack p), p) =
+pub def rec packed(p : Packed) -> Path(packInts (unpack p), p) =
   match p
     | Empty => Path.here Empty
     | One(x) => Path.here (One x)
     | Many(x, y, rest) => Path.walk
-      (fun (z) { type(Path[.A = Packed](Many x y ((pack) (unpack rest)), Many x y z)) })
+      (fun (z) { type(Path[.A = Packed](Many x y (packInts (unpack rest)), Many x y z)) })
       (packed[<] rest)
-      (Path.here (Many x y ((pack) (unpack rest))))
+      (Path.here (Many x y (packInts (unpack rest))))
 
 /// The tagged layout, admitted by its equivalence with the list.
 pub def taggedLayout : Ints ≃ Tagged = *{tag, *{*{untag, untagged}, *{untag, tagged}}};
 
 /// The packed layout, admitted by its equivalence with the list.
-pub def packedLayout : Ints ≃ Packed = *{pack, *{*{unpack, unpacked}, *{unpack, packed}}};
+pub def packedLayout : Ints ≃ Packed = *{packInts, *{*{unpack, unpacked}, *{unpack, packed}}};
 
 /// The list is its tagged layout, as types.
 pub def taggedPath : Path[.A = Type](Ints, Tagged) = ua taggedLayout;
