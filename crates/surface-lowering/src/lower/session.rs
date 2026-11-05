@@ -135,6 +135,7 @@ use super::Site;
 use super::Statement;
 use super::StatementBinding;
 use super::Stretch;
+use super::access::slot;
 use super::arity::Arranged;
 use super::arity::Key;
 use super::arity::arrange;
@@ -942,6 +943,8 @@ impl<'source> Lowerer<'_, 'source>
     /// The linear index of the endpoint `operand` names, the subject of an
     /// action read under `frame`: the slot [`Self::linear_binder`] finds, kept
     /// by [`Self::kept_slot`], each refusal named at the operand's own form.
+    /// A name a `let` binds to a value that is no fork and no receive is
+    /// refused at that value, where the source lost its endpoint.
     ///
     /// # Specification
     /// - requires: `operand` is the subject hole's operand of an action.
@@ -949,8 +952,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   `operand` spells, when that binder is linear, kept as the name's
     ///   resolution; the operand is left unread, since no value stands for it.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a name nothing binds;
-    ///   [`FragmentBoundary::Endpoint`] at the operand for any other form, an
-    ///   intuitionistic binder or a declaration; the name's own refusals.
+    ///   [`FragmentBoundary::Endpoint`] at the value a `let` with no stated
+    ///   type binds the name to, which starts before the operand, and at the
+    ///   operand for any other form, an intuitionistic binder or a declaration;
+    ///   the name's own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -958,12 +963,13 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the fork's ends resolve at their linear indices past
-    ///   intuitionistic binders between, and a parameter and a literal in the
-    ///   subject hole are refused.
+    ///   intuitionistic binders between, a parameter and a literal in the
+    ///   subject hole are refused, and a name a `let` binds to a misspelt fork
+    ///   is refused at the misspelt fork.
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::session::tests::an_action_on_no_endpoint_is_refused`
     #[spec(ensures: |ret| match ret {
-        | Err(LoweringRefusal::OutOfFragment { span, boundary, .. }) => boundary != FragmentBoundary::Endpoint || span == operand.span,
+        | Err(LoweringRefusal::OutOfFragment { span, boundary, .. }) => boundary != FragmentBoundary::Endpoint || span == operand.span || span.start() < operand.span.start(),
         | _ => true,
     })]
     fn endpoint(
@@ -982,6 +988,21 @@ impl<'source> Lowerer<'_, 'source>
             return Err(subject.out(FragmentBoundary::Endpoint));
         }
         let found = self.linear_binder(subject)?;
+        if found == Maybe::Absent(slot::Absent::Unlinear)
+            && let Maybe::Present(bound) =
+                self.scope
+                    .resolve(frame, self.name_at(operand), &mut self.fuel)?
+            && let Some(&(_, value)) = self.ran.get(&bound.binder)
+        {
+            let lost = Site {
+                at: value,
+                name: self
+                    .form_at(value)?
+                    .map_or(FormName::IDENTIFIER, |(name, _former)| name),
+                reading: subject.reading,
+            };
+            return Err(lost.out(FragmentBoundary::Endpoint));
+        }
         let (index, _binder) = self.kept_slot(subject, found, FragmentBoundary::Endpoint)?;
         Ok(index)
     }

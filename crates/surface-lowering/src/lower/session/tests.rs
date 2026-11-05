@@ -652,7 +652,8 @@ fn an_action_on_no_endpoint_is_refused()
          def parameter(n : Integer) -> -F Unit { close(n) }\n\
          def literal(n : Integer) -> -F Unit { send(3, n) }\n\
          def declared(n : Integer) -> -F Unit { select(other, go) }\n\
-         def unbound(n : Integer) -> -F Unit { close(missing) }\n",
+         def unbound(n : Integer) -> -F Unit { close(missing) }\n\
+         def misspelt() -> -F Unit { let desk = fokr (seat : end) { close(seat) }; close(desk) }\n",
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
@@ -688,6 +689,25 @@ fn an_action_on_no_endpoint_is_refused()
             name: SurfaceName::from("missing"),
         },
         "a name nothing binds is unresolved"
+    );
+    // A misspelt fork leaves `desk` an intuitionistic binder: the refusal
+    // marks the value the `let` binds, where the source lost its endpoint,
+    // and not the action on it (#4784).
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("misspelt")),
+            LoweringRefusal::OutOfFragment {
+                span,
+                boundary: FragmentBoundary::Endpoint,
+                ..
+            } if span == spelled_within(
+                source,
+                SourceText::from("let desk = fokr (seat : end) { close(seat) };"),
+                SourceText::from("fokr (seat : end) { close(seat) }")
+            )
+        ),
+        "the endpoint a misspelt fork leaves is refused at the misspelt fork: {:?}",
+        refusal_of(&module, SurfaceName::from("misspelt"))
     );
 }
 
