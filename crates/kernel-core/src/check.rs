@@ -322,6 +322,7 @@ use crate::replay::Unfoldings;
 use crate::replay::read_comp_decode;
 use crate::replay::read_decode;
 use crate::replay::read_endpoints;
+use crate::replay::read_identity_endpoints;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_value;
@@ -4145,6 +4146,17 @@ where
                         read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT)
                     else {
                         return Err(value_shape_mismatch(arena, shape, expected));
+                    };
+                    // A reflexivity reads the endpoints of the identity that
+                    // the code quotes. It reads them by the evaluator that read
+                    // the decode. The checker reads the whole decode by its own
+                    // evaluation. So it records no dialogue for an endpoint
+                    // that its evaluation runs (#5364).
+                    let decoded = if matches!(arena.value(id), Some(Value::Here { .. })) {
+                        read_identity_endpoints(arena, &unfoldings, decoded, ReplayBudget::DEFAULT)
+                    }
+                    else {
+                        decoded
                     };
                     goal = Goal::CheckValue(id, decoded);
                     continue 'expand;
@@ -9351,6 +9363,124 @@ mod tests
                 })
             ),
             "a fibre decoding to the integers refuses the empty tuple"
+        );
+    }
+
+    /// The non-negative integer literal of `magnitude`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn integer(
+        mint: &mut TermArena,
+        magnitude: &gandr_kernel_term::Magnitude,
+    ) -> ValueId
+    {
+        mint.value_literal(gandr_kernel_term::Literal::Integer(
+            gandr_kernel_term::IntegerLiteral::new(
+                gandr_kernel_term::Sign::NonNegative,
+                magnitude.clone(),
+            ),
+        ))
+    }
+
+    /// Admit `pick = thunk λ_. return answer` at `U (Unit → F Integer)`, then
+    /// `family = thunk λ_. return ⌜Path(Integer, ⟨force pick ()⟩, point)⌝` at
+    /// `U (Unit → F Type)`, then `here(point)` with no dialogue at
+    /// `El(⟨force family ()⟩)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_reflexivity_at_a_computed_identity(
+        answer: &gandr_kernel_term::Magnitude,
+        point: &gandr_kernel_term::Magnitude,
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let zero = level(LevelConstant::from(0));
+        let pick = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let number = mint.value_type_base(BaseType::Integer);
+            let returns_number = mint.comp_type_returner(number);
+            let arrow = mint.comp_type_arrow(unit, returns_number);
+            let declared = mint.value_type_thunk(arrow);
+            let answer = integer(mint, answer);
+            let returns_answer = mint.computation_return(answer);
+            let lambda = mint.computation_lambda(returns_answer);
+            let body = mint.value_thunk(lambda);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration)?.position()
+        };
+        let family = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let returns_code = mint.comp_type_returner(universe);
+            let arrow = mint.comp_type_arrow(unit, returns_code);
+            let declared = mint.value_type_thunk(arrow);
+            let number = mint.value_type_base(BaseType::Integer);
+            let picked = mint.value_constant(pick);
+            let forced = mint.computation_force(picked);
+            let argument = mint.value_unit();
+            let call = mint.computation_application(forced, argument);
+            let left = mint.value_returned(call);
+            let right = integer(mint, point);
+            let identity = mint.value_type_path(number, left, right);
+            let quoted = mint.value_quote(identity);
+            let returns_quote = mint.computation_return(quoted);
+            let lambda = mint.computation_lambda(returns_quote);
+            let body = mint.value_thunk(lambda);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration)?.position()
+        };
+        let reflexivity = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let family = mint.value_constant(family);
+            let forced = mint.computation_force(family);
+            let argument = mint.value_unit();
+            let call = mint.computation_application(forced, argument);
+            let code = mint.value_returned(call);
+            let declared = mint.value_type_element(code, zero);
+            let point = integer(mint, point);
+            let body = mint.value_here(point);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        environment.add_decl(reflexivity).map(|_admitted| ())
+    }
+
+    /// A reflexivity with no dialogue checks at a decode whose code returns
+    /// an identity's quote over an endpoint that calls a definition: the check
+    /// reads that endpoint by the evaluator that read the decode (#5364). A
+    /// point the call does not answer stays apart from the endpoint, so the
+    /// reading is the one that separates the two.
+    #[test]
+    fn a_reflexivity_reads_the_endpoints_of_a_decoded_identity_5364()
+    {
+        let seven =
+            gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("7"))
+                .expect("decimal digits");
+        let eight =
+            gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("8"))
+                .expect("decimal digits");
+        assert_eq!(
+            Ok(()),
+            admit_reflexivity_at_a_computed_identity(&seven, &seven),
+            "the endpoint reads to the point the call answers"
+        );
+        assert!(
+            matches!(
+                admit_reflexivity_at_a_computed_identity(&seven, &eight),
+                Err(KernelError::Identity(
+                    crate::element_identity::IdentityError::EndpointsDiffer {
+                        side: crate::element_identity::EndpointSide::Left,
+                        ..
+                    }
+                ))
+            ),
+            "an endpoint the call answers apart from the point is refused"
         );
     }
 
