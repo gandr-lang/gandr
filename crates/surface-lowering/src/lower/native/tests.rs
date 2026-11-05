@@ -3699,6 +3699,109 @@ fn a_match_without_an_answer_is_unannotated()
 }
 
 #[test]
+fn a_nested_match_records_its_cover_5103()
+{
+    use gandr_core_term::cover::ArmCount;
+    use gandr_core_term::cover::Cases;
+    use gandr_core_term::cover::Cover;
+    use gandr_core_term::cover::CoverRefusal;
+    use gandr_core_term::cover::Step;
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\ndata Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }\ndata List(a : Type) : Type where { | Nil : List(a) | Cons : (h : a, t : List(a)) --> List(a) }\ndef f(l : List(Maybe(Nat))) -> -F Integer { match l { | Nil => return 0 | Cons(None, t) => return 1 | Cons(Some(Zero), Nil) => return 2 | Cons(Some(Succ(n)), t) => return 3 | Cons(Some(Zero), Cons(m, t)) => return 4 } }\n",
+        ),
+        &mut arena,
+    );
+    let signatures: Vec<_> = ["Nat", "Maybe", "List"]
+        .into_iter()
+        .map(|name| {
+            let DeclarationOutcome::Data(index) = outcome_of(&module, SurfaceName::from(name))
+            else {
+                panic!("{name} lowers to its signature");
+            };
+            let Maybe::Present(signature) = module.data(index)
+            else {
+                panic!("{name}'s index names a signature");
+            };
+            Arc::clone(signature)
+        })
+        .collect();
+    let declared = |family| {
+        (0_usize .. signatures.len())
+            .find(|&at| ConstantIndex::from(at) == family)
+            .and_then(|at| signatures.get(at))
+            .map(|signature| &**signature)
+    };
+    let root = tail_of(&arena, body_named(&module, SurfaceName::from("f")));
+    let Maybe::Present(kept) = module.origins().case(root)
+    else {
+        panic!("the match keeps its arms");
+    };
+    let cover = &kept.cover;
+    assert_eq!(
+        cover.check(ArmCount::from(5_usize), declared),
+        Ok(()),
+        "{cover:?}"
+    );
+    let data_splits: Vec<(ConstantIndex, usize)> = cover
+        .steps()
+        .filter_map(|(_id, step)| match *step {
+            Step::Split {
+                cases:
+                    Cases::Data {
+                        family,
+                        ref constructors,
+                    },
+                ..
+            } => Some((family, constructors.len())),
+            Step::Split { .. } | Step::Var(_) | Step::Compose(_) => None,
+        })
+        .collect();
+    assert_eq!(
+        data_splits,
+        [
+            (ConstantIndex::from(2_usize), 2),
+            (ConstantIndex::from(0_usize), 2),
+            (ConstantIndex::from(1_usize), 2),
+            (ConstantIndex::from(2_usize), 2),
+        ],
+        "one split for each switch, inner first, each over its family's two constructors"
+    );
+    // Mint the same steps again in order, leaving `Some` out of `Maybe`'s split.
+    let mut dropped = Cover::new();
+    for (_id, step) in cover.steps() {
+        let step = match *step {
+            Step::Split {
+                cases:
+                    Cases::Data {
+                        family,
+                        ref constructors,
+                    },
+                ref branches,
+            } if family == ConstantIndex::from(1_usize) => Step::Split {
+                cases: Cases::Data {
+                    family,
+                    constructors: constructors.iter().take(1).copied().collect(),
+                },
+                branches: branches.iter().take(1).copied().collect(),
+            },
+            ref other @ (Step::Var(_) | Step::Split { .. } | Step::Compose(_)) => other.clone(),
+        };
+        dropped.mint(step);
+    }
+    assert!(
+        matches!(
+            dropped.check(ArmCount::from(5_usize), declared),
+            Err(CoverRefusal::ConstructorCount(_))
+        ),
+        "a derivation whose `Maybe` split leaves out `Some` is refused by name"
+    );
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
+}
+
+#[test]
 fn nested_constructor_patterns_compile_to_nested_cases()
 {
     let mut arena = CoreArena::new();

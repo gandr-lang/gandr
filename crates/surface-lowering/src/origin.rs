@@ -106,6 +106,7 @@ use gandr_core_term::FieldLabel;
 use gandr_core_term::Sources;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::cover::Cover;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::pattern::Patterns;
@@ -2929,6 +2930,11 @@ pub struct CaseOrigin
     /// The labels each record pattern binds, one per field in the order its
     /// fields stand in `patterns`.
     pub labelled: Vec<(PatternId, Vec<FieldLabel>)>,
+    /// The cover derivation `{arms} ◁ Ξ` the tree states, one step for each
+    /// tree node and one composition for each split under a branch. It is
+    /// empty when a leaf is stuck on a pattern hole or a data case names no
+    /// family, since then the tree states no cover.
+    pub cover: Cover,
 }
 
 #[cfg(test)]

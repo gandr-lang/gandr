@@ -210,6 +210,7 @@ mod classifier;
 pub mod compose;
 mod context;
 pub mod control;
+pub mod cover;
 mod definition;
 pub mod description;
 pub mod effect;

@@ -69,36 +69,7 @@ fn bind_and_close() {
 }
 ```
 
-Define two definitions and seal the second outside an inner scope:
-
-```rust
-use gandr_core_term::DefinitionChain;
-use gandr_core_term::DefinitionError;
-use gandr_core_term::DefinitionHeight;
-use gandr_core_term::DefinitionalEnvironment;
-use gandr_core_term::Transparency;
-use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::GlobalIndex;
-
-fn seal() -> Result<(), DefinitionError> {
-    let ground = ConstantIndex::from(0_usize);
-    let derived = ConstantIndex::from(1_usize);
-    let mut chain = DefinitionChain::new();
-    let leaf = chain.define(ground, GlobalIndex::from(0_u32), Transparency::Manifest, &[])?;
-    let above = chain.define(derived, GlobalIndex::from(1_u32), Transparency::Manifest, &[ground])?;
-    assert_eq!(DefinitionHeight::from(1_u32), leaf);
-    assert_eq!(DefinitionHeight::from(2_u32), above);
-
-    let mut environment = DefinitionalEnvironment::new();
-    let outside = environment.root();
-    let inside = environment.open_scope(outside)?;
-    environment.state(outside, derived, Transparency::Opaque)?;
-    environment.state(inside, derived, Transparency::Manifest)?;
-    assert_eq!(Transparency::Opaque, environment.transparency(outside, derived, Transparency::Manifest)?);
-    assert_eq!(Transparency::Manifest, environment.transparency(inside, derived, Transparency::Manifest)?);
-    Ok(())
-}
-```
+The definition chain's own example, two definitions sealed in and out of a scope, is on `DefinitionalEnvironment` in [`definition`](src/definition.rs).
 
 ## Where the detail lives
 
@@ -132,6 +103,8 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — exemplar: Condoluci, Accattoli and Sacerdoti Coen, "Sharing Equality is Linear", PPDP 2019, `doi:10.1145/3354166.3354174` — the blind check (Algorithm 1) that `syntax::shared` runs.
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAMs and the CAM `world` and `memory` place their forms in.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: a composite is a former holding its cells' fold.
+- `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — `cover`'s three rules.
+- `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design — a match's derivation beside its tree.
 
 ## License
 
