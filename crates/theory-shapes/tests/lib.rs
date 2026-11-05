@@ -10,6 +10,8 @@ mod boundary;
 #[cfg(test)]
 mod carriers;
 #[cfg(test)]
+mod cubes;
+#[cfg(test)]
 mod errors;
 #[cfg(test)]
 mod faces;
