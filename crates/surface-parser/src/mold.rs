@@ -1411,6 +1411,51 @@ fn next_labels<'src>(
     Some(labels)
 }
 
+/// The rule of a type's call form, `Vec(A, n)`, whose `(` only a `(` written
+/// straight after the head continues until #5330 retires it.
+const TYPE_CALL_FORM: &str = "type_application";
+
+/// Whether a space stands between a token and the next significant one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spacing
+{
+    /// A space stands between them, as between two juxtaposed operands.
+    Spaced,
+    /// The next significant token is written straight after, or none follows.
+    Glued,
+}
+
+/// Whether a space stands between the token at `index` and the significant
+/// token after it.
+///
+/// # Specification
+/// - requires: `index` indexes `tokens`.
+/// - ensures: [`Spacing::Spaced`] exactly when the token right after `index` is
+///   a space and a significant token follows it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Vec Integer (Succ Zero)` and `Vec(A, n)` tell the two
+///   apart: reading a glued `(` as spaced respells the call form as a group,
+///   and reading `Vec A` as glued keeps `Vec` the call form's head.
+/// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+#[spec(ensures: |ret| (ret == Spacing::Spaced) == (tokens.get(usize::from(index).saturating_add(1)).is_some_and(|token| token.lexeme == Lexeme::Space) && next_significant(tokens, index).is_some()))]
+fn spacing(
+    tokens: &[Token],
+    index: TokenIndex,
+) -> Spacing
+{
+    let space = tokens
+        .get(usize::from(index).saturating_add(1))
+        .is_some_and(|token| token.lexeme == Lexeme::Space);
+    if space && next_significant(tokens, index).is_some() {
+        Spacing::Spaced
+    }
+    else {
+        Spacing::Glued
+    }
+}
+
 /// How a token takes part in bracket nesting.
 ///
 /// # Specification
@@ -4390,13 +4435,100 @@ impl<'pbg> Molder<'pbg>
         else {
             return;
         };
-        if molds
-            .iter()
-            .all(|&mold| self.follow(mold, &labels) == Follow::Refuted)
-        {
+        let verdict = |mold: MoldId| match spacing(tokens, index) {
+            Spacing::Spaced => self.follow_spaced(mold, &labels),
+            Spacing::Glued => self.follow(mold, &labels),
+        };
+        if molds.iter().all(|&mold| verdict(mold) == Follow::Refuted) {
             return;
         }
-        molds.retain(|&mold| self.follow(mold, &labels) == Follow::Possible);
+        molds.retain(|&mold| verdict(mold) == Follow::Possible);
+    }
+
+    /// Whether a type's mold can stand before a token written after a space
+    /// (#5326). A mold that ends a whole type is followed by a token that
+    /// starts a type, since the melder applies the type to it. Until #5330
+    /// retires the call form, only a `(` written straight after a type name
+    /// continues the call form, so the call form's own `(` does not follow
+    /// the mold here.
+    ///
+    /// # Specification
+    /// - requires: `labels` are the labels of a token written after a space.
+    /// - ensures: for a mold of a type when the grammar has a type application
+    ///   tile, [`Follow::Possible`] exactly when a same-form successor that
+    ///   [`direct_successor`] admits, outside the call form `type_application`,
+    ///   is labelled with one of `labels`, or `mold`'s right bound is the root,
+    ///   it can end its form, and [`Molder::after_form`] admits `labels` or a
+    ///   label in `labels` names a tile that begins a type, or `mold`'s right
+    ///   bound is not the root and a label in `labels` names a tile that begins
+    ///   a form. For any other mold, [`Molder::follow`].
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the mold's
+    ///   successors and the fresh candidates of each label.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Vec Integer (Succ Zero)` applies `Vec` to two
+    ///   arguments, `Var (Extend g n) n` to two, `-F Maybe A` returns `Maybe
+    ///   A`, and `Vec(A, n)` keeps the call form: keeping the call form's `(`
+    ///   reads the group as a call of `Integer`, and refuting a whole type
+    ///   before a type reads `Maybe` as the call form's head.
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `labels` holds one token's candidate labels, at most `LABEL_CAPACITY`"
+        )
+    )]
+    fn follow_spaced(
+        &self,
+        mold: MoldId,
+        labels: &LabelIds,
+    ) -> Follow
+    {
+        let pbg = self.pbg;
+        let typed = pbg.mold(mold).is_ok_and(|own| own.sort == Sort::Type)
+            && pbg.application_in(Sort::Type).is_some();
+        if !typed {
+            return self.follow(mold, labels);
+        }
+        let ids = labels.as_slice();
+        let succeeded = pbg.mold_successors(mold).iter().any(|&(_, right)| {
+            direct_successor(pbg, mold, right) == Adjacency::Direct
+                && pbg
+                    .mold_label(right)
+                    .is_some_and(|label| ids.contains(&label))
+                && !(pbg.mold(right).is_ok_and(|next| next.label == "(")
+                    && pbg
+                        .rule_of(right)
+                        .is_ok_and(|rule| rule.name().0 == TYPE_CALL_FORM))
+        });
+        // A type variable at the head still opens a moded type, `m T`, until
+        // #5330 settles the two readings, so it takes no argument here.
+        let variable = pbg.mold(mold).is_ok_and(|own| own.label == "type_variable");
+        let starts_type = || {
+            ids.iter().any(|&label| {
+                pbg.label_fresh_candidates(label)
+                    .iter()
+                    .any(|&fresh| pbg.mold(fresh).is_ok_and(|start| start.sort == Sort::Type))
+            })
+        };
+        let continued = succeeded
+            || if matches!(pbg.bounds(mold), Ok((_, Bound::Root))) {
+                bool::from(pbg.mold_is_form_last(mold))
+                    && (self.after_form(mold, labels) == Follow::Possible
+                        || (!variable && starts_type()))
+            }
+            else {
+                ids.iter()
+                    .any(|&label| !pbg.label_fresh_candidates(label).is_empty())
+            };
+        if continued {
+            Follow::Possible
+        }
+        else {
+            Follow::Refuted
+        }
     }
 
     /// The one opener in `self.openers` that the token carrying `labels`

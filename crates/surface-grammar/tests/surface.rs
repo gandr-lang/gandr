@@ -60,6 +60,7 @@ const EXPECTED_PRECEDENCE_GROUPS: &[(&str, Assoc)] = &[
     ("type.equivalence", Assoc::Right),
     ("expression.pipe", Assoc::Left),
     ("expression.application", Assoc::Left),
+    ("type.juxtaposition", Assoc::Left),
 ];
 
 /// The built-in tighter-than edges, in the DAG's edge order.
@@ -76,6 +77,7 @@ const EXPECTED_PRECEDENCE_EDGES: &[(&str, &str)] = &[
     ("pattern.as", "pattern.or"),
     ("type.atom", "type.path"),
     ("type.path", "type.application"),
+    ("type.path", "type.juxtaposition"),
     ("type.application", "type.product"),
     ("type.product", "type.sum"),
     ("type.sum", "type.union"),
@@ -87,6 +89,7 @@ const EXPECTED_PRECEDENCE_EDGES: &[(&str, &str)] = &[
     ("type.equivalence", "type.arrow"),
     ("expression.pipe", "expression.pure"),
     ("expression.application", "expression.unary"),
+    ("type.juxtaposition", "type.application"),
 ];
 
 /// The group of `dag` named `name`.

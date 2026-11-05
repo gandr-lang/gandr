@@ -71,21 +71,22 @@ use gandr_theory_graphs::WalkChainLength;
 /// for the bare `Path(a, b)`, then by the floor's respelling: tokens cut at
 /// whitespace, `*{ }` products, the box arrow, juxtaposed calls and layout,
 /// with the call form, the value function type, `unit` and the arm commas
-/// gone (#4853).
-const BUILT_IN_FINGERPRINT: u64 = 0x96bf_64da_a117_d1f6;
+/// gone (#4853), then by a type applied by juxtaposition beside its call form
+/// (#5326).
+const BUILT_IN_FINGERPRINT: u64 = 0xa034_88d8_0145_bae7;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3015);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3016);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
-    (" ", 1),
+    (" ", 2),
     ("!", 2),
     ("!=", 1),
     ("\"", 12),

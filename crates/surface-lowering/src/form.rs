@@ -61,6 +61,7 @@ use gandr_surface_grammar::NamedKind;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
+use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::Sym;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -2380,8 +2381,8 @@ pub fn written_children<'tree>(
                         && read.repair == Maybe::Absent(repair::Absent::Unrepaired)
                 },
                 | NodeLabel::Meld(mold)
-                    if Some(mold) == pbg.application()
-                        && matches!(read.pieces.first(), Some(Piece::Operand(_)))
+                    if (Some(mold) == pbg.application() || Some(mold) == pbg.application_in(Sort::Type))
+                        && matches!(read.pieces.first(), Some(Piece::Operand(_) | Piece::Tile { .. }))
                         && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE) =>
                 {
                     read.repair == Maybe::Absent(repair::Absent::Unrepaired)
@@ -2538,19 +2539,23 @@ pub fn read_pieces<'source>(
 }
 
 /// The pieces of the call that the application spine at `position` spells:
-/// `f x y` reads as `f(x, y)`. Each application tile stands for the `(` or
-/// the `,` before its argument, and the outermost tile also stands for the
-/// `)`. An argument `()` is no argument, so `f ()` is the call `f()`.
-/// Parentheses around one argument only group it, so `f (g x)` reads as
-/// `f(g x)`. Every call reader thus reads a juxtaposed call as the call it
+/// `f x y` reads as `f(x, y)`, and a type's `Vec A n` reads as `Vec(A, n)`.
+/// Each application tile stands for the `(` or the `,` before its argument,
+/// and the outermost tile also stands for the `)`. An argument `()` is no
+/// argument, so `f ()` is the call `f()`. Parentheses around one argument
+/// only group it, so `f (g x)` reads as `f(g x)`. A type's head written as
+/// one type name or type variable is that tile, as the call form `Vec(A, n)`
+/// holds it. Every call reader thus reads a juxtaposed call as the call it
 /// spells.
 ///
 /// # Specification
 /// - requires: `read` holds no pieces.
-/// - ensures: when `position` is an application whose left operands down to its
-///   head are applications and whose every part is written, `read` holds the
-///   head, `(`, the arguments separated by `,`, and `)`, and the head is
-///   answered. `None` otherwise, with `read` empty.
+/// - ensures: when `position` is an application of either sort whose left
+///   operands down to its head are applications of that sort and whose every
+///   part is written, `read` holds the head, `(`, the arguments separated by
+///   `,`, and `)`, and the head is answered. The head is a tile piece when the
+///   application is a type's and its head is one type name or type variable,
+///   and an operand otherwise. `None` otherwise, with `read` empty.
 /// - panics: none.
 /// - economy: one walk down the spine, written into `read`'s buffer, with no
 ///   allocation beyond the buffer's growth.
@@ -2559,10 +2564,12 @@ pub fn read_pieces<'source>(
 /// - hypothesis: L3 — `f x y` lowers as `f(x, y)`, and a call inside an
 ///   argument as its own call. While the call form stands, a `(` after an
 ///   operand molds as a call, so `f ()` and a grouped argument reach the spine
-///   only after the call form leaves the grammar.
+///   only after the call form leaves the grammar. `Var (Extend g n) n` in a
+///   type lowers as `Var(Extend(g, n), n)`.
 /// - witness: `lower::tests::a_call_argument_and_an_inferring_call_lower_4853`
+/// - witness: `lower::tests::a_type_applies_its_family_by_juxtaposition_5326`
 #[spec(ensures: |ret| match ret {
-    Some(head) => read.pieces.first() == Some(&Piece::Operand(head)) && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE),
+    Some(head) => matches!(read.pieces.first(), Some(&Piece::Operand(at) | &Piece::Tile { at, .. }) if at == head) && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE),
     None => read.pieces.is_empty(),
 })]
 fn application_spine(
@@ -2572,14 +2579,25 @@ fn application_spine(
     read: &mut Pieces,
 ) -> Option<Placed>
 {
-    let application = pbg.application()?;
+    let application = match tree.node(position)?.label() {
+        NodeLabel::Meld(mold)
+            if Some(mold) == pbg.application() || Some(mold) == pbg.application_in(Sort::Type) =>
+        {
+            mold
+        },
+        NodeLabel::Meld(_)
+        | NodeLabel::Tile(_)
+        | NodeLabel::Wald
+        | NodeLabel::Grout { .. }
+        | NodeLabel::GhostClose { .. }
+        | NodeLabel::Space
+        | NodeLabel::Doc => return None,
+    };
+    let in_type = Some(application) == pbg.application_in(Sort::Type);
     let applied = |at: NodeIndex| {
         tree.node(at)
             .is_some_and(|node| node.label() == NodeLabel::Meld(application))
     };
-    if !applied(position) {
-        return None;
-    }
     let written = |at: NodeIndex| {
         tree.children(at)
             .filter_map(|child| tree.node(child).map(|node| (child, node)))
@@ -2637,7 +2655,38 @@ fn application_spine(
             break Placed::of(left, left_node);
         }
     };
-    read.pieces.push(Piece::Operand(head));
+    // A type's head written as one name is the tile the call form holds. A
+    // reserved type word at the head, `Integer`, reads as the name it spells,
+    // so its application is refused as a head no former answers.
+    let head_tile = tree.node(head.node).and_then(|node| match node.label() {
+        NodeLabel::Tile(mold) if in_type => match tile_name(pbg, node, mold) {
+            Ok(label) if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE => {
+                Some(label)
+            },
+            Ok(_) | Err(_) => tree
+                .fragment(head.node)
+                .filter(|text| {
+                    let text: &str = AsRef::<str>::as_ref(text);
+                    text.starts_with(|first: char| first.is_ascii_uppercase())
+                        && text
+                            .chars()
+                            .all(|letter| letter.is_ascii_alphanumeric() || letter == '_')
+                })
+                .map(|_| TileName::TYPE_IDENTIFIER),
+        },
+        NodeLabel::Tile(_)
+        | NodeLabel::Meld(_)
+        | NodeLabel::Wald
+        | NodeLabel::Grout { .. }
+        | NodeLabel::GhostClose { .. }
+        | NodeLabel::Space
+        | NodeLabel::Doc => None,
+    });
+    read.pieces
+        .push(head_tile.map_or(Piece::Operand(head), |label| Piece::Tile {
+            label,
+            at: head,
+        }));
     read.pieces.reverse();
     // The separator nearest the head opens the list.
     if let Some(&mut Piece::Tile { ref mut label, .. }) = read.pieces.get_mut(1) {

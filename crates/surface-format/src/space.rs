@@ -93,6 +93,10 @@ pub enum Context
     /// A token a rewrite wrote, outside the source: the spacing the rewrite
     /// wrote around it stands.
     Written,
+    /// The empty tile of a type's juxtaposition, `Maybe A` (#5326). The
+    /// layout never breaks a type's spine at it, since a signature's broken
+    /// spine would stand at the column of the body after it.
+    TypeGlue,
 }
 
 impl Context
@@ -138,6 +142,7 @@ impl Context
             "-" | "+" if rule == "universe_type" => Self::Prefix,
             "?" if rule == "receive_session_type" => Self::Prefix,
             "!" | "\\" | ".." | "~" => Self::Prefix,
+            "" if rule == "type_application.juxtaposed" => Self::TypeGlue,
             _ => Self::Plain,
         }
     }
@@ -192,7 +197,8 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Prefix
             | Context::Binding
             | Context::Signature
-            | Context::Plain => Padding::Pad,
+            | Context::Plain
+            | Context::TypeGlue => Padding::Pad,
         },
         "*{" => match open.context {
             Context::Signature => Padding::Pad,
@@ -201,7 +207,8 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Binding
             | Context::Telescope
             | Context::Plain
-            | Context::Written => Padding::Hug,
+            | Context::Written
+            | Context::TypeGlue => Padding::Hug,
         },
         _ => Padding::Hug,
     }
@@ -347,7 +354,8 @@ pub fn join(
             | Context::Telescope
             | Context::Signature
             | Context::Plain
-            | Context::Written => Join::Touch,
+            | Context::Written
+            | Context::TypeGlue => Join::Touch,
         };
     }
     if left.kind == Kind::Token && left.context == Context::Prefix {

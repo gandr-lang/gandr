@@ -344,6 +344,28 @@ fn a_juxtaposed_spine_breaks_one_operand_a_line_5202()
     }
 }
 
+/// #5326: a type's juxtaposition broke as an expression's spine does, so a
+/// signature's type stood broken at the column of the body after it, and the
+/// formatter refused the source as changed in meaning. Now a type's spine
+/// keeps its line, as the brackets around its operands do.
+#[test]
+fn a_type_s_spine_keeps_its_line_in_a_signature_5326()
+{
+    let grammar = grammar();
+    let source = "def coupled() -> Couple Integer (Maybe Integer) =\n  Couple 1 (Some 2 : Maybe \
+                  Integer)\n";
+    let laid = text(&grammar, source, NARROW);
+    assert_eq!(
+        laid, source,
+        "the type's spine and the body keep their lines"
+    );
+    assert_eq!(
+        text(&grammar, laid.as_str(), NARROW),
+        laid,
+        "and the layout formats once"
+    );
+}
+
 #[test]
 fn strings_shell_blocks_and_holes_are_copied_as_written()
 {

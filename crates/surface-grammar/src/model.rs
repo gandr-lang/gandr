@@ -1496,8 +1496,12 @@ pub struct Pbg
     molds: MoldTable,
     /// The tile automaton's tables, derived from the mold table.
     automaton: TileAutomaton,
-    /// The mold of juxtaposition's tile, `f x`, when the grammar has one.
+    /// The mold of juxtaposition's tile between two expressions, `f x`, when
+    /// the grammar has one.
     application: Option<MoldId>,
+    /// The mold of juxtaposition's tile between two types, `Maybe A`, when
+    /// the grammar has one.
+    type_application: Option<MoldId>,
     /// The molds that open a form whose operands stay flat side by side, a
     /// shell block's words. Ascending.
     flat: Vec<MoldId>,
@@ -1662,10 +1666,15 @@ impl Pbg
             .flat_map(|rule| rule.adaptations.iter().copied())
             .collect();
         let automaton = TileAutomaton::derive(&molds);
-        let application = molds
-            .candidates(TileLabel(crate::surface::APPLICATION))
-            .first()
-            .copied();
+        let application_in = |sort: Sort| {
+            molds
+                .candidates(TileLabel(crate::surface::APPLICATION))
+                .iter()
+                .copied()
+                .find(|&mold| molds.mold(mold).is_ok_and(|def| def.sort == sort))
+        };
+        let application = application_in(Sort::Expression);
+        let type_application = application_in(Sort::Type);
         let mut flat: Vec<MoldId> = crate::surface::FLAT_OPENERS
             .iter()
             .flat_map(|&label| molds.candidates(TileLabel(label)).iter().copied())
@@ -1680,6 +1689,7 @@ impl Pbg
             molds,
             automaton,
             application,
+            type_application,
             flat,
         }
     }
@@ -2009,25 +2019,57 @@ impl Pbg
         self.molds.candidates(label)
     }
 
-    /// The mold of juxtaposition's tile, `f x`, when the grammar has one.
+    /// The mold of juxtaposition's tile between two expressions, `f x`, when
+    /// the grammar has one.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the first mold the label [`crate::APPLICATION`] takes, and
-    ///   `None` when the grammar declares no such tile.
+    /// - ensures: the mold the label [`crate::APPLICATION`] takes in the
+    ///   expression sort, and `None` when the grammar declares no such tile.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the built-in inventory holds one mold for the
-    ///   application label, so a lost or doubled tile shows. The parser's suite
-    ///   witnesses where the melder pushes it.
+    ///   application label in each of two sorts, so a lost or doubled tile
+    ///   shows. The parser's suite witnesses where the melder pushes it.
     /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
-    #[spec(ensures: |ret| ret.is_none_or(|mold| self.molds.mold(mold).is_ok_and(|def| def.label == crate::APPLICATION)))]
+    #[spec(ensures: |ret| ret.is_none_or(|mold| self.molds.mold(mold).is_ok_and(|def| def.label == crate::APPLICATION && def.sort == Sort::Expression)))]
     #[inline]
     #[must_use]
     pub fn application(&self) -> Option<MoldId>
     {
         self.application
+    }
+
+    /// The mold of juxtaposition's tile in `sort`: `f x` between two
+    /// expressions, `Maybe A` between two types.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the mold the label [`crate::APPLICATION`] takes in `sort`,
+    ///   and `None` for a sort in which the grammar declares no such tile.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the built-in inventory holds one application mold in
+    ///   the expression sort and one in the type sort, so a lost or doubled
+    ///   tile shows.
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.is_none_or(|mold| self.molds.mold(mold).is_ok_and(|def| def.label == crate::APPLICATION && def.sort == sort)))]
+    #[inline]
+    #[must_use]
+    pub fn application_in(
+        &self,
+        sort: Sort,
+    ) -> Option<MoldId>
+    {
+        match sort {
+            Sort::Expression => self.application,
+            Sort::Type => self.type_application,
+            Sort::Item | Sort::Pattern | Sort::Instantiation | Sort::ModuleMember | Sort::Block => {
+                None
+            },
+        }
     }
 
     /// The molds that open a shell form, whose words stay flat side by side,

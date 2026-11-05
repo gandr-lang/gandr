@@ -251,6 +251,57 @@ fn juxtaposition_applies_outside_a_shell_form_4853() -> Result<(), Box<dyn Error
     Ok(())
 }
 
+/// #5326: a type operand right after a type operand applies it, `Vec A n`,
+/// through one zero-width tile per argument. The band binds tighter than the
+/// returner and the arrow, so `-F Maybe A` returns the application, and the
+/// call form `Vec(A, n)` keeps its reading. A form such as `+U A` is an
+/// argument as it stands. The returner `-F` is a prefix of a looser band, so
+/// it is an argument only in parentheses.
+#[test]
+fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        ("def x : Maybe A;", 1_usize),
+        ("def x : Vec A n;", 2),
+        ("def x : Var (Extend g n) n;", 4),
+        ("def x : Vec A (Succ n) -> -F B;", 3),
+        ("def opt : Type -> Type[-] = fun (A) { -F Maybe A };", 1),
+        ("def x : Maybe(A);", 0),
+        ("def x : Vec(A, n);", 0),
+        ("def x : Vec a n;", 2),
+        ("def x : Vec Integer plus(m, Zero);", 2),
+        ("def x : m T;", 0),
+        ("def x : (m n : Integer) -> Integer;", 0),
+        ("def x : Vec +U Integer;", 1),
+        ("def x : Vec (-F Integer);", 1),
+    ];
+    let grammar = built();
+    for (source, expected) in cases {
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let applied = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Tile(mold) => grammar
+                    .rule_of(mold)
+                    .is_ok_and(|rule| rule.name().0 == "type_application.juxtaposed"),
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Meld(_)
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => false,
+            })
+            .count();
+        assert_eq!(
+            applied, expected,
+            "`{source}`: the type applications it reads"
+        );
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+    }
+    Ok(())
+}
+
 /// Each ASCII token of the spelling table molds as its glyph's tile: a source
 /// written with it is the tree the glyph's source is, mold for mold (#782).
 #[test]

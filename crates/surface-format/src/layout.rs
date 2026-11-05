@@ -198,6 +198,9 @@ struct Placed<'source>
     branch: Option<Branch>,
     /// The element.
     element: Element<'source>,
+    /// The part the element's token plays, as the spacing table reads it:
+    /// [`space::Context::Plain`] for a group, a break and a comment.
+    context: space::Context,
 }
 
 /// Whether documentation starts or ends between an element and the one
@@ -272,13 +275,14 @@ struct Group<'source>
 ///   `;`, with a comment on the same line — stands on its own line indented by
 ///   two, and a blank line before an item is kept. A layout block, which the
 ///   column rule ends, always stands so under the token that opens it, its
-///   empty separators and close writing nothing. A juxtaposed spine that ends
-///   its run stands on one line when that fits. Otherwise its head stands first
-///   and each operand on a line of its own, two columns deeper. A spine the
-///   source broke before an operand stays so (#5202). Two elements on one line
-///   are as far apart as [`space::join`] decides, except inside a string the
-///   grammar reads as tiles and beside a token a rewrite wrote, where the
-///   source's spacing stands as one space or none.
+///   empty separators and close writing nothing. A juxtaposed expression spine
+///   that ends its run stands on one line when that fits. Otherwise its head
+///   stands first and each operand on a line of its own, two columns deeper. A
+///   spine the source broke before an operand stays so (#5202). A type's spine
+///   never breaks between its operands (#5326). Two elements on one line are as
+///   far apart as [`space::join`] decides, except inside a string the grammar
+///   reads as tiles and beside a token a rewrite wrote, where the source's
+///   spacing stands as one space or none.
 /// - provides: the layout of each top-level form [`crate::format`] joins.
 /// - fails: [`FormatError::Unbalanced`] when a bracket or a layout close ends a
 ///   group it does not open or a group is left open; a layout ceiling as
@@ -296,6 +300,7 @@ struct Group<'source>
 /// - witness: `tests::format::a_member_after_a_column_zero_comment_starts_a_statement_2950`
 /// - witness: `tests::format::the_printer_decides_every_inner_space`
 /// - witness: `tests::format::a_juxtaposed_spine_breaks_one_operand_a_line_5202`
+/// - witness: `tests::format::a_type_s_spine_keeps_its_line_in_a_signature_5326`
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 #[spec(ensures: |ret| ret.as_ref().is_err() || !leaves.is_empty())]
 pub fn lay_out(
@@ -405,6 +410,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                             edge,
                             branch: leaf.branch,
                             element: Element::Group(id),
+                            context: space::Context::Plain,
                         })?;
                         open.push(id);
                         before = Before::After(here);
@@ -423,6 +429,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                             edge,
                             branch: None,
                             element: Element::Break,
+                            context: space::Context::Plain,
                         })?;
                         before = Before::After(space::Token {
                             text: leaf.text,
@@ -478,6 +485,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                         edge,
                         branch: leaf.branch,
                         element: Element::Group(id),
+                        context: space::Context::Plain,
                     })?;
                     open.push(id);
                     before = Before::After(here);
@@ -562,6 +570,7 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                 | Material::Whitespace => None,
             },
             element,
+            context: leaf.context,
         })?;
         before = Before::After(here);
         gap = Gap::Adjacent;
@@ -1245,14 +1254,19 @@ enum Tile
     Other,
 }
 
-/// Whether `placed` is the empty tile an application writes between its
-/// head and an operand.
+/// Whether `placed` is the empty tile an expression's application writes
+/// between its head and an operand. A type's juxtaposition, `Maybe A`, is no
+/// such tile: its spine keeps its line, since a signature's spine broken
+/// before its operands would stand at the column of the body after it
+/// (#5326).
 ///
 /// # Specification
 /// trivial.
 fn tile(placed: &Placed<'_>) -> Tile
 {
-    if matches!(placed.element, Element::Text(text) if <&str>::from(text).is_empty()) {
+    if matches!(placed.element, Element::Text(text) if <&str>::from(text).is_empty())
+        && placed.context != space::Context::TypeGlue
+    {
         Tile::Juxtaposition
     }
     else {

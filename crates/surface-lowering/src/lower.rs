@@ -6903,7 +6903,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return;
         };
         self.own_children(position, slot);
-        let Some(application) = self.pbg.application()
+        // A juxtaposed spine of either sort spells one call, so its operands
+        // take the slot its outermost application takes.
+        let Some(application) = self
+            .tree
+            .node(position)
+            .and_then(|node| match node.label() {
+                NodeLabel::Meld(mold)
+                    if Some(mold) == self.pbg.application()
+                        || Some(mold)
+                            == self.pbg.application_in(gandr_surface_grammar::Sort::Type) =>
+                {
+                    Some(mold)
+                },
+                NodeLabel::Meld(_)
+                | NodeLabel::Tile(_)
+                | NodeLabel::Wald
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => None,
+            })
         else {
             return;
         };
@@ -26150,7 +26170,6 @@ mod tests
     #[test]
     fn the_bridge_tokens_are_compound_and_sum_is_unaffected()
     {
-        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
@@ -26183,12 +26202,13 @@ mod tests
         assert!(
             matches!(
                 lowered[2],
-                DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
-                    fault: FormFault::ExtraOperand,
+                DeclarationOutcome::Refused(LoweringRefusal::UnresolvedTypeHead {
+                    arity: HeadArity::Unary,
                     ..
                 })
             ),
-            "a sign glued to a word is part of the name, so `Integer +Unit` is no sum: {:?}",
+            "a sign glued to a word is part of the name, so `Integer +Unit` is no sum: \
+             `Integer` applies to the name, and no unary former is named `Integer`: {:?}",
             lowered[2]
         );
         assert_eq!(
@@ -26206,20 +26226,28 @@ mod tests
             ["* Integer Unit", "String"],
             "the product binds tighter than the sum and stays one summand"
         );
-        for source in [
-            "def x : Integer +U Integer ;",
-            "def x : Integer -F Integer ;",
-        ] {
-            assert_eq!(
-                refusal(SourceText::from(source)),
-                LoweringRefusal::MalformedForm {
-                    span: at(16_usize, 26_usize),
-                    form: FormName::DECLARATION,
-                    fault: FormFault::ExtraOperand,
-                },
-                "a bridge after an operand is no sum, and `{source}` is refused"
-            );
-        }
+        // A bridge after an operand is no sum (#5326). The thunk opens a form,
+        // so `Integer` applies to it, and no unary former is named `Integer`.
+        // The returner is a prefix of a looser band, so it is no argument, and
+        // the parser repairs the form.
+        assert_eq!(
+            refusal(SourceText::from("def x : Integer +U Integer ;")),
+            LoweringRefusal::UnresolvedTypeHead {
+                span: span(ByteOffset::from(8_usize), ByteOffset::from(15_usize)),
+                name: SurfaceName::from("Integer"),
+                arity: HeadArity::Unary,
+            },
+            "`Integer` applies to the thunk type and names no unary former"
+        );
+        let pbg = grammar();
+        let tree = repaired(&pbg, SourceText::from("def x : Integer -F Integer ;"));
+        assert!(
+            matches!(refusal_in(&pbg, &tree), LoweringRefusal::MalformedForm {
+                fault: FormFault::Repaired(_),
+                ..
+            }),
+            "the returner after an operand is no argument, and the parser repairs the form"
+        );
     }
 
     #[test]
@@ -28410,6 +28438,48 @@ def ended() -> -F [Partial] Unit {
         }
     }
 
+    /// #5326: a signature that applies a family by juxtaposition lowers to the
+    /// type its call form lowers to, and a returner inside an expression
+    /// applies its family the same way.
+    #[test]
+    fn a_type_applies_its_family_by_juxtaposition_5326()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "data Nat : Type where\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n\ndata Vec(a : \
+                 Type) : Nat -> Type where\n  | VNil : Vec(a, Zero)\n  | VCons : (n : Nat, head : \
+                 a, tail : Vec(a, n)) --> Vec(a, Succ(n))\n\ndef called(v : Vec(Integer, \
+                 Succ(Zero))) -> Vec(Integer, Succ(Zero)) { v }\n\ndef juxtaposed(v : Vec Integer \
+                 (Succ Zero)) -> Vec Integer (Succ Zero) { v }\n\ndata Maybe(a : Type) : Type \
+                 where\n  | Nothing : Maybe(a)\n  | Just : (x : a) --> Maybe(a)\n\ndef opt : Type -> \
+                 Type[-] = fun (A) { -F Maybe A };\n",
+            ),
+            &mut arena,
+        );
+        let outcome = |name: &str| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name().as_ref() == name)
+                .map(LoweredDeclaration::outcome)
+        };
+        let declared = |name: &str| match outcome(name) {
+            Some(DeclarationOutcome::Completed { declared_type, .. }) => declared_type,
+            other => panic!("`{name}` lowers its type and its body: {other:?}"),
+        };
+        assert_eq!(
+            gandr_core_term::equal_type_syntax(&arena, declared("juxtaposed"), declared("called")),
+            gandr_core_term::CertificateEquality::Equal,
+            "`Vec Integer (Succ Zero)` lowers as `Vec(Integer, Succ(Zero))`"
+        );
+        assert!(
+            matches!(outcome("opt"), Some(DeclarationOutcome::Completed { .. })),
+            "`-F Maybe A` inside an expression lowers: {:?}",
+            outcome("opt")
+        );
+    }
+
     #[test]
     fn a_product_binder_splits_as_the_tuple_binder_4853()
     {
@@ -28848,12 +28918,13 @@ def ended() -> -F [Partial] Unit {
 
         assert_eq!(
             refusal(SourceText::from("def a : Unit Integer ;")),
-            LoweringRefusal::MalformedForm {
-                span: at(13_usize, 20_usize),
-                form: FormName::DECLARATION,
-                fault: FormFault::ExtraOperand,
+            LoweringRefusal::UnresolvedTypeHead {
+                span: at(8_usize, 12_usize),
+                name: SurfaceName::from("Unit"),
+                arity: HeadArity::Unary,
             },
-            "juxtaposition is not application: the second head is an operand too many"
+            "a type a second type follows applies to it (#5326), and no unary former is \
+             named `Unit`"
         );
     }
 
@@ -30424,22 +30495,6 @@ def ended() -> -F [Partial] Unit {
             "a projection missing its field names no one tile, since a label or an index may \
              end it"
         );
-        let tree = repaired(
-            &pbg,
-            SourceText::from(
-                "data Color : Type where {\n  | Red : Color\n  | Green : Color\n  Blue : Color\n}\n",
-            ),
-        );
-        assert_eq!(
-            refusal_in(&pbg, &tree),
-            LoweringRefusal::MalformedForm {
-                span: at(59_usize, 59_usize),
-                form: FormName::from(NamedKind("data_declaration")),
-                fault: FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)),
-            },
-            "#2259: a member missing the bar before the next is pointed at its end, not past \
-             the next member's name: the block closes there"
-        );
     }
 
     /// #1829: a form the parser closed at its end is marked where its written
@@ -30449,36 +30504,22 @@ def ended() -> -F [Partial] Unit {
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
-        for (source, point, form, ending, why) in [
-            (
-                "def four : Path[.A = Integer 4](4, 4 ;\ndef four = Path.here(4) ;\n",
-                28_usize,
-                "path_type",
-                crate::form::Ending::Unnamed,
-                "a path type left open, whose supplied carrier writes a second operand, is marked \
-                 at the gap after the carrier, where a second operand stands in a hole that holds \
-                 one",
-            ),
-            (
-                "def either : Integer + String ;\ndef either = +{0 = 1} ;\n",
-                47_usize,
-                "labelled_sum_expression",
-                crate::form::Ending::Tile(crate::form::TileName::DOT),
-                "an injection missing its label's `.` is marked at the dot's gap, where an \
-                 operand follows a tile no hole follows, and names the dot",
-            ),
-        ] {
-            let tree = repaired(&pbg, SourceText::from(source));
-            assert_eq!(
-                refusal_in(&pbg, &tree),
-                LoweringRefusal::MalformedForm {
-                    span: at(point, point),
-                    form: FormName::from(NamedKind(form)),
-                    fault: FormFault::Repaired(Repair::Diverged(ending)),
-                },
-                "{why}"
-            );
-        }
+        let tree = repaired(
+            &pbg,
+            SourceText::from("def either : Integer + String ;\ndef either = +{0 = 1} ;\n"),
+        );
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::MalformedForm {
+                span: at(47_usize, 47_usize),
+                form: FormName::from(NamedKind("labelled_sum_expression")),
+                fault: FormFault::Repaired(Repair::Diverged(crate::form::Ending::Tile(
+                    crate::form::TileName::DOT
+                ))),
+            },
+            "an injection missing its label's `.` is marked at the dot's gap, where an operand \
+             follows a tile no hole follows, and names the dot"
+        );
         let tree = repaired(&pbg, SourceText::from("def x = ( 1 ;\n"));
         assert_eq!(
             refusal_in(&pbg, &tree),
@@ -30619,17 +30660,19 @@ def ended() -> -F [Partial] Unit {
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
 
-        let refused = refusal(SourceText::from("def f(x : Integer Integer) { return x }"));
+        // A type a second type follows applies to it (#5326), and a block-like
+        // form ends at its brace, so the operand after it stands apart.
+        let refused = refusal(SourceText::from("def f = if true { 1 } else { 2 } 3 ;"));
 
         assert_eq!(
             refused,
             LoweringRefusal::MalformedForm {
-                span: at(18_usize, 25_usize),
-                form: FormName::FUNCTION,
+                span: at(33_usize, 34_usize),
+                form: FormName::DECLARATION,
                 fault: FormFault::ExtraOperand,
             },
-            "a parameter's type is one form, and a second juxtaposed beside it is refused as \
-             the function's"
+            "a definition's value is one form, and a second operand beside it is refused as \
+             the definition's"
         );
         assert_eq!(
             refused.classify(),

@@ -162,12 +162,15 @@ pub struct Admission<'pbg>
     open: Option<MoldId>,
     /// The sets every candidate is admitted from by its kind and sort; an
     /// unselected set is empty.
-    sets: [MoldSet<'pbg>; 7],
+    sets: [MoldSet<'pbg>; 8],
     /// The mids and ends, which the open frontier admits by adjacency.
     continuations: MoldSet<'pbg>,
     /// Whether an item-sort `(` is refused: an operand head at an
     /// expression slot.
     refuses_item_paren: bool,
+    /// Whether a moded type is refused: a type operand head that a type
+    /// application would take it as an argument of (#5326).
+    refuses_moded: bool,
     /// The last word composed, with its index.
     cached: Option<(MoldWordIndex, MoldWord)>,
 }
@@ -180,9 +183,11 @@ impl<'pbg> Admission<'pbg>
     /// - requires: `frontier` is the state's admissibility frontier.
     /// - ensures: admits from the fills of the expected sort and of items and
     ///   the prefix operators; with an operand head, also from the operators
-    ///   that extend it and the absorbing starts of its sort and of items; with
-    ///   no open form, also from the first mids; refuses an item `(` after an
-    ///   operand head at an expression slot.
+    ///   that extend it and the absorbing starts of its sort and of items, and
+    ///   from the fills of its sort when the grammar applies that sort by
+    ///   juxtaposition; with no open form, also from the first mids; refuses an
+    ///   item `(` after an operand head at an expression slot, and a moded type
+    ///   after a type operand head.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -203,6 +208,9 @@ impl<'pbg> Admission<'pbg>
                 MoldSet::default()
             }
         };
+        let applied = frontier
+            .head_sort
+            .filter(|&sort| head_operand && pbg.application_in(sort).is_some());
         Self {
             pbg,
             molds: pbg.mold_count().0,
@@ -217,9 +225,11 @@ impl<'pbg> Admission<'pbg>
                 }),
                 selected(TileSet::Absorbs(Sort::Item), head_operand),
                 selected(TileSet::FirstMids, frontier.open.is_none()),
+                applied.map_or_else(MoldSet::default, |sort| pbg.tile_set(TileSet::Fills(sort))),
             ],
             continuations: pbg.tile_set(TileSet::Continuations),
             refuses_item_paren: head_operand && frontier.expected == Sort::Expression,
+            refuses_moded: applied == Some(Sort::Type),
             cached: None,
         }
     }
@@ -260,11 +270,13 @@ impl<'pbg> Admission<'pbg>
                     && bool::from(self.pbg.molds_adjacent(open, mold))
             });
         if admitted {
-            let refused = self.refuses_item_paren
+            let refused = self.pbg.mold(mold).is_ok_and(|def| {
+                self.refuses_item_paren && def.sort == Sort::Item && def.label == "("
+            }) || (self.refuses_moded
                 && self
                     .pbg
-                    .mold(mold)
-                    .is_ok_and(|def| def.sort == Sort::Item && def.label == "(");
+                    .rule_of(mold)
+                    .is_ok_and(|rule| rule.name().0 == crate::meld::MODED_TYPE));
             return MoldAdmissibility::from(!refused);
         }
         // An id past the table is in no set; push routes it to the unmolded
