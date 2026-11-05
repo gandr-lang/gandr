@@ -4711,9 +4711,12 @@ pr-ejected #$root: the required check \`$check\` failed at ${head::12} ($run). \
 # request: a minute that changes nothing answers 304 and costs no rate
 # limit. A comment the landing watcher or `cuts` marks is an event
 # (`events.jq`), and it pages the seat of the lane its branch names, or the
-# coordinator for a branch no seat's lane names.
+# coordinator for a branch no seat's lane names. An event of a dequeued or
+# red pull request ends the wait at once, so the next reading's cut of a red
+# bottom (`cuts`) runs within a minute of the queue's removal.
 events_etag=
 events_seen=null
+events_urgent=0
 poll_events() {
   local out body result number lane line
   out=$(gh api -i -H "If-None-Match: $events_etag" "repos/$repo/issues/comments?sort=created&direction=desc&per_page=50" 2> /dev/null) || :
@@ -4723,6 +4726,9 @@ poll_events() {
   body=$(awk 'body { print } /^$/ { body = 1 }' <<< "$out")
   result=$(jq -c --argjson seen "$events_seen" '{seen: $seen, comments: .}' <<< "$body" | jq -c -f "$stall_dir/events.jq") || return 0
   events_seen=$(jq -c .seen <<< "$result")
+  if jq -e '.events | any(.kind | IN("dequeued", "red"))' <<< "$result" > /dev/null; then
+    events_urgent=1
+  fi
   while IFS=$'\t' read -r number line; do
     echo "$line"
     lane=$(gh api "repos/$repo/pulls/$number" --jq '.head.ref | split("-")[0]' 2> /dev/null) || lane=
@@ -4733,14 +4739,17 @@ poll_events() {
     fi
   done < <(jq -r '.events[] | "\(.number)\t\(.line)"' <<< "$result")
 }
-# Wait `$1` seconds for the next reading, polling the events each minute.
+# Wait `$1` seconds for the next reading, polling the events each minute; an
+# urgent event ends the wait.
 listen() {
   local left=$1 step
+  events_urgent=0
   while (( left > 0 )); do
     step=$(( left < 60 ? left : 60 ))
     sleep "$step"
     left=$(( left - step ))
     poll_events
+    (( events_urgent == 0 )) || return 0
   done
 }
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)

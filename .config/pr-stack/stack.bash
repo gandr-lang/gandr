@@ -826,6 +826,99 @@ drop_scratch() {
   pr_stack_scratch=
 }
 
+# Move branch `$1` from head `$4` to the commits `$2..$3` of the local
+# clone, as commits GitHub signs (#5214). The trunk's rules refuse an
+# unsigned commit, a runner holds no signing key, and `update-branch`'s
+# rebase writes unsigned commits (#3355). Each commit is replayed through
+# `createCommitOnBranch`, with its message and its changed files, on a
+# scratch branch `restack/<branch>` made at `$2`'s commit. GitHub signs each one.
+# The mutation takes no file mode: a file a commit adds comes out `100644`.
+# So the branch moves only when the replay's tree is `$3`'s, and only while
+# it still holds `$4`. Prints the new head. Fails with the branch unmoved
+# and the scratch deleted otherwise, naming why on stderr.
+signed_replay() {
+  local branch=$1 onto=$2 tip=$3 expect=$4 scratch head commit status path request now
+  scratch=restack/$branch
+  head=$(git rev-parse "$onto^{commit}")
+  request=$(mktemp -d)
+  gh api --method POST "repos/$repo/git/refs" -f ref="refs/heads/$scratch" -f sha="$head" > /dev/null || {
+    echo "the scratch branch $scratch could not be made" >&2
+    rm -rf "$request"
+    return 1
+  }
+  for commit in $(git rev-list --reverse "$onto..$tip"); do
+    printf '[]' > "$request/additions"
+    printf '[]' > "$request/deletions"
+    while IFS= read -r -d '' status && IFS= read -r -d '' path; do
+      if [[ $status == D ]]; then
+        jq -c --arg path "$path" '. + [{path: $path}]' "$request/deletions" > "$request/next" && mv "$request/next" "$request/deletions"
+      else
+        git show "$commit:$path" | base64 -w0 > "$request/contents"
+        jq -c --arg path "$path" --rawfile contents "$request/contents" '. + [{path: $path, contents: $contents}]' "$request/additions" > "$request/next" \
+          && mv "$request/next" "$request/additions"
+      fi
+    done < <(git diff-tree --no-commit-id --no-renames -r -z --name-status "$commit^" "$commit")
+    jq -n --arg repo "$repo" --arg branch "$scratch" --arg head "$head" \
+      --arg headline "$(git log -1 --format=%s "$commit")" --arg body "$(git log -1 --format=%b "$commit")" \
+      --slurpfile additions "$request/additions" --slurpfile deletions "$request/deletions" \
+      '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+        variables: {input: {branch: {repositoryNameWithOwner: $repo, branchName: $branch}, expectedHeadOid: $head,
+          message: {headline: $headline, body: $body},
+          fileChanges: {additions: $additions[0], deletions: $deletions[0]}}}}' > "$request/body"
+    if ! head=$(gh api graphql --input "$request/body" --jq .data.createCommitOnBranch.commit.oid) || [[ -z $head ]]; then
+      echo "the signed replay of $(git log -1 --format='%h %s' "$commit") onto $scratch failed" >&2
+      gh api --method DELETE "repos/$repo/git/refs/heads/$scratch" > /dev/null 2>&1 || :
+      rm -rf "$request"
+      return 1
+    fi
+  done
+  rm -rf "$request"
+  if [[ $(gh api "repos/$repo/git/commits/$head" --jq .tree.sha) != $(git rev-parse "$tip^{tree}") ]]; then
+    echo "the signed replay of $branch gives another tree than the rebase: a file it adds keeps no mode" >&2
+    gh api --method DELETE "repos/$repo/git/refs/heads/$scratch" > /dev/null 2>&1 || :
+    return 1
+  fi
+  now=$(gh api "repos/$repo/git/ref/heads/$branch" --jq .object.sha) || now=
+  if [[ $now != "$expect" ]]; then
+    echo "$branch moved to ${now:-nothing} while it was replayed; nothing is pushed" >&2
+    gh api --method DELETE "repos/$repo/git/refs/heads/$scratch" > /dev/null 2>&1 || :
+    return 1
+  fi
+  if ! gh api --method PATCH "repos/$repo/git/refs/heads/$branch" -f sha="$head" -F force=true > /dev/null; then
+    echo "the move of $branch to its signed replay failed" >&2
+    gh api --method DELETE "repos/$repo/git/refs/heads/$scratch" > /dev/null 2>&1 || :
+    return 1
+  fi
+  gh api --method DELETE "repos/$repo/git/refs/heads/$scratch" > /dev/null 2>&1 || :
+  echo "$head"
+}
+
+# Rebase branch `$1`, at head `$2`, onto its base `$3` in a scratch worktree,
+# and move the branch there as signed commits (`signed_replay`). The rebase
+# drops a commit whose change the base already carries (#4463), where
+# GitHub's rebase replays it empty. Prints the new head, or nothing when the
+# head already stands on the base. Fails, naming why on stderr, at a
+# conflict or a refused replay.
+signed_restack() {
+  local branch=$1 oid=$2 base=$3 dir tip status=0
+  git fetch --quiet origin "$base" "$branch" || { echo "the fetch of $branch and $base failed" >&2; return 1; }
+  dir=$(mktemp -d)
+  git worktree add --quiet --detach "$dir" "$oid" || { rm -rf "$dir"; echo "the scratch worktree for $branch failed" >&2; return 1; }
+  if ! git -C "$dir" -c user.name=landing -c user.email=landing@users.noreply.github.com rebase --quiet "origin/$base" > /dev/null 2>&1; then
+    echo "the rebase of $branch onto $base conflicts: $(git -C "$dir" diff --name-only --diff-filter=U | tr '\n' ' ')" >&2
+    git -C "$dir" rebase --abort 2> /dev/null || :
+    status=1
+  else
+    tip=$(git -C "$dir" rev-parse HEAD)
+    if [[ $tip != "$oid" ]]; then
+      signed_replay "$branch" "origin/$base" "$tip" "$oid" || status=1
+    fi
+  fi
+  git worktree remove --force "$dir" 2> /dev/null || rm -rf "$dir"
+  git worktree prune
+  return "$status"
+}
+
 # Remove this clone's worktree of pull request `$1`'s branch once it merged,
 # in the foreground: `wt remove` deletes the branch as merged and refuses a
 # dirty or otherwise unsafe tree, whose refusal is printed and the tree kept.

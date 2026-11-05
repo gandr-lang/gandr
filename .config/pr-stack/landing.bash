@@ -142,14 +142,25 @@ while IFS= read -r action; do
       # A member queued since the reading is never moved, nor one above it (#2531).
       if [[ $(queued_of "$(server_stack "$number")") != '[]' ]]; then
         echo "#$number: a member of its stack is queued now; nothing is pushed"
-      elif gh api -X PUT "repos/$repo/pulls/$number/update-branch" -f update_method=rebase -f expected_head_sha="$oid" > /dev/null 2> "$err"; then
-        echo "#$number: GitHub rebases it onto its base"
-        tell "$number" "pr-restacked #$number" pr-restacked "$oid" \
-          "The merge queue removed this pull request with no red check in its stack; the landing watcher had GitHub rebase it onto its base. It lands once its checks are green."
+      elif moved=$(signed_restack "$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .head' <<< "$prs")" "$oid" \
+        "$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .base' <<< "$prs")" 2> "$err"); then
+        if [[ -n $moved ]]; then
+          echo "#$number: the watcher restacks it onto its base as signed commits"
+          tell "$number" "pr-restacked #$number" pr-restacked "$oid" \
+            "The merge queue removed this pull request with no red check in its stack. The landing watcher replayed its commits onto its base as commits GitHub signs. It lands once its checks are green."
+        else
+          # The head already stands on its base: what made the queue remove
+          # it was ahead of it in the queue, so it queues again unchanged.
+          echo "#$number: it already stands on its base; landing its stack's ready prefix again"
+          tell "$number" "pr-restacked #$number" pr-restacked "$oid" \
+            "The merge queue removed this pull request with no red check in its stack, and it already stands on its base. The landing watcher queues it again."
+          land_prefix "$number" || status=$?
+          if (( status != 0 && status != 3 )); then echo "::warning::#$number: the landing failed ($status)"; fi
+        fi
       elif [[ $(jq -r .told <<< "$action") != true ]]; then
-        echo "#$number: GitHub refused the rebase: $(< "$err")"
+        echo "#$number: the restack failed: $(< "$err")"
         tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
-          "The merge queue removed this pull request, and GitHub refused to rebase it onto its base: $(< "$err"). Rebase it, then \`pr:land $number\`."
+          "The merge queue removed this pull request, and the landing watcher could not restack it onto its base: $(< "$err"). Rebase it, then \`pr:land $number\`."
       fi
       ;;
     green)
@@ -159,7 +170,7 @@ while IFS= read -r action; do
     dequeued)
       if [[ $(jq -r '.upstream // [] | length' <<< "$action") != 0 ]]; then
         tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
-          "The merge queue removed this pull request, and its branch holds commits whose change its base already carries: $(jq -r '.upstream | map("`\(.)`") | join(", ")' <<< "$action"). GitHub's rebase would replay each as an empty commit without the trailers the push rule requires, so the watcher leaves it: \`pr:land $number\` restacks it onto \`$trunk\` and drops them."
+          "The merge queue removed this pull request, and its branch holds commits whose change its base already carries: $(jq -r '.upstream | map("`\(.)`") | join(", ")' <<< "$action"). \`pr:land $number\` restacks it onto \`$trunk\` and drops them."
       else
         tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
           "The merge queue removed this pull request at this head. Read the entry's run, then \`pr:land $number\`, which restacks it onto \`$trunk\`."
