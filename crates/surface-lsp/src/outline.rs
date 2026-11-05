@@ -863,8 +863,9 @@ pub struct Run
 ///   depth ends the run before it and opens the next, which leaves the bar out,
 ///   and that run ends before the next `oper`, `op` or `rule`, which writes no
 ///   bar; a brace a run writes nests, so a `shape`'s faces stay in its run. A
-///   tile reads as [`spelled`] gives it, so a zero-width `{`, `;` or `}` the
-///   layout pass writes cuts as a written one does. An empty stretch is no run.
+///   tile reads as [`Braces::spelled`] gives it, so a zero-width `{`, `;` or
+///   `}` the layout pass writes cuts as a written one does. An empty stretch is
+///   no run.
 /// - provides: the members a theory, a family or a codata declaration writes,
 ///   for its symbols and its hover.
 /// - fails: never.
