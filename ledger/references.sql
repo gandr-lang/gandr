@@ -500,6 +500,7 @@ INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','core-
 INSERT INTO reference VALUES('vault:01a183de-4ab1-7660-a88a-04b9e8d318e3','kernel-core','replay::environment','exemplar','1d1ac3fa78df454c4a15cbc9a2124dbe6e94186d','2026-10-28','09b037f2241cfe424dc51ce6595f10e36ed945af');
 INSERT INTO reference VALUES('vault:01a183de-4e71-7f03-aa71-7821123f3c40','core-sequent','closure','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6','core-checker','canonical','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6','kernel-core','builtin','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6','kernel-term','builtin','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','core-checker','fill','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a18572-6e13-7412-bc74-aa6a24d157c4','kernel-term','decode','background',NULL,NULL,NULL);

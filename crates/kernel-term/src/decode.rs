@@ -374,6 +374,8 @@ struct DeclMeta
     /// The free cells a type of words carries; absent for every other
     /// declaration.
     cells: Option<crate::presented::FreeCells>,
+    /// The built-in role a holder carries; none for every other declaration.
+    role: Maybe<crate::Builtin, crate::builtin_role::Absent>,
 }
 
 /// Where the decoder found an artifact's segments, as offsets into the image it
@@ -1720,10 +1722,12 @@ fn build_declarations(
                 DeclarationBuilder::new(&mut table.arena).axiom(meta.levels.clone(), declared)
             },
         };
-        declarations.push(MarkedDeclaration::new(
-            meta.mark,
-            declaration.named(core::mem::take(&mut meta.name)),
-        ));
+        let declaration = declaration.named(core::mem::take(&mut meta.name));
+        let declaration = match meta.role {
+            Maybe::Present(role) => declaration.held(role),
+            Maybe::Absent(_) => declaration,
+        };
+        declarations.push(MarkedDeclaration::new(meta.mark, declaration));
     }
     Ok(declarations)
 }
@@ -2403,6 +2407,7 @@ fn decode_declaration(
     let mut operation_rules = Vec::new();
     let mut stages = crate::stage_signature::StageSignature::default();
     let mut cells = None;
+    let mut role = Maybe::Absent(crate::builtin_role::Absent::Unmarked);
     let root_body = match kind {
         DeclKind::Data => {
             let count = usize::from(reader.read_usize()?);
@@ -2461,6 +2466,10 @@ fn decode_declaration(
                 }
                 cells = Some(crate::presented::FreeCells::new(sort, written));
             }
+            // A holder closes with its role.
+            if kind_tag == tags::KIND_DATA_ROLED {
+                role = Maybe::Present(decode_role(reader)?);
+            }
             None
         },
         DeclKind::Codata => {
@@ -2480,10 +2489,12 @@ fn decode_declaration(
             provenance = decode_definition_slots(reader)?;
             // A relating definition closes with its pairs, a lawful one with
             // its pairs and then its laws, and a ruled one with both blocks
-            // and then its rules. A count of none decodes, and the canonical
+            // and then its rules. A held one closes with the three blocks and
+            // then its role. A count of none decodes, and the canonical
             // re-encoding, which writes such a definition under a plainer
             // kind, refuses it.
-            let ruled = kind_tag == tags::KIND_DEF_RULED;
+            let held = kind_tag == tags::KIND_DEF_ROLED;
+            let ruled = kind_tag == tags::KIND_DEF_RULED || held;
             if kind_tag == tags::KIND_DEF_RELATING || kind_tag == tags::KIND_DEF_LAWFUL || ruled {
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
@@ -2506,6 +2517,9 @@ fn decode_declaration(
                     let right = decode_operation_side(reader)?;
                     operation_rules.push(crate::operation_rules::OperationRule::new(left, right));
                 }
+            }
+            if held {
+                role = Maybe::Present(decode_role(reader)?);
             }
             Some(body)
         },
@@ -2556,7 +2570,39 @@ fn decode_declaration(
         stages,
         rules,
         cells,
+        role,
     })
+}
+
+/// Decode a holder's built-in role from its tag.
+///
+/// # Specification
+/// - requires: nothing; the remaining bytes may be adversarial.
+/// - ensures: the role whose tag the next byte is.
+/// - fails: [`TagSite::Role`] for a tag outside the role alphabet, and the
+///   reader's truncation refusal.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each role round-trips through its tag, and a tag past the
+///   alphabet is refused at its site.
+/// - witness: `encode::tests::a_role_closes_a_holder_s_segment_5304`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(DecodeError::UnknownTag { site: TagSite::Role, .. } | DecodeError::Truncated)))]
+fn decode_role(reader: &mut ByteReader<'_>) -> Result<crate::Builtin, DecodeError>
+{
+    match reader.next_tag()? {
+        tags::ROLE_IR_SIGNATURE => Ok(crate::Builtin::IrSignature),
+        tags::ROLE_IR_ARGS => Ok(crate::Builtin::IrArgs),
+        tags::ROLE_IR_DECODE => Ok(crate::Builtin::IrDecode),
+        tags::ROLE_IR_PAIR => Ok(crate::Builtin::IrPair),
+        other => Err(DecodeError::UnknownTag {
+            site: TagSite::Role,
+            tag: other,
+        }),
+    }
 }
 
 /// Decode one side of a presented rule: a node count, then each node's tag
@@ -4054,7 +4100,7 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 17 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 | 16 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
@@ -4063,11 +4109,14 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
         tags::KIND_DATA
         | tags::KIND_DATA_PRESENTED
         | tags::KIND_DATA_WORDS
-        | tags::KIND_DATA_INDEXED => Ok(DeclKind::Data),
+        | tags::KIND_DATA_INDEXED
+        | tags::KIND_DATA_ROLED => Ok(DeclKind::Data),
         tags::KIND_CODATA => Ok(DeclKind::Codata),
-        tags::KIND_DEF | tags::KIND_DEF_RELATING | tags::KIND_DEF_LAWFUL | tags::KIND_DEF_RULED => {
-            Ok(DeclKind::Def)
-        },
+        tags::KIND_DEF
+        | tags::KIND_DEF_RELATING
+        | tags::KIND_DEF_LAWFUL
+        | tags::KIND_DEF_RULED
+        | tags::KIND_DEF_ROLED => Ok(DeclKind::Def),
         tags::KIND_AXIOM => Ok(DeclKind::Axiom),
         // The abstract-type kind is deliberately live here: it was reserved with
         // the other three and sealing made it real, so it is decoded rather than
@@ -4982,6 +5031,7 @@ mod tests
     use alloc::vec;
 
     use anodized::spec;
+    use quenchant_shape::shape::Maybe;
 
     use super::ByteReader;
     use crate::error::DecodeError;
@@ -5224,7 +5274,7 @@ mod tests
             assert_eq!(super::decode_sign(&mut reader), sign);
             assert_eq!(reader.position.0, 1);
             let kind = match byte {
-                0 | 7 | 9 | 14 => Ok(super::DeclKind::Def),
+                0 | 7 | 9 | 14 | 17 => Ok(super::DeclKind::Def),
                 1 => Ok(super::DeclKind::Axiom),
                 2 | 12 | 15 => Ok(super::DeclKind::AbstractType),
                 3 => Err(DecodeError::ReservedDeclarationKind {
@@ -5236,7 +5286,7 @@ mod tests
                 5 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::FunctorDef,
                 }),
-                6 | 8 | 10 | 11 => Ok(super::DeclKind::Data),
+                6 | 8 | 10 | 11 | 16 => Ok(super::DeclKind::Data),
                 13 => Ok(super::DeclKind::Codata),
                 _ => Err(unknown(super::TagSite::DeclarationKind)),
             };
@@ -5653,6 +5703,7 @@ mod tests
                     stages: crate::StageSignature::default(),
                     rules: vec![],
                     cells: None,
+                    role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
                 })
                 .collect();
             super::budget_report(&table, &metas, &mut alloc::vec::Vec::new())
@@ -5748,6 +5799,7 @@ mod tests
             stages: crate::StageSignature::default(),
             rules: vec![],
             cells: None,
+            role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
         };
         let metrics = super::budget_report(&table, &[meta], &mut alloc::vec::Vec::new());
         assert_eq!(u64::from(metrics.max_declaration_expanded_work()), 1);
@@ -6639,6 +6691,7 @@ mod tests
                 stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
+                role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -6661,6 +6714,7 @@ mod tests
                 stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
+                role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             },
             super::DeclMeta {
                 parameters: vec![],
@@ -6686,6 +6740,7 @@ mod tests
                 stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
+                role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             },
         ];
         let arena_before = table.arena.clone();

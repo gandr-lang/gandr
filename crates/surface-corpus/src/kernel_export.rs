@@ -2306,6 +2306,69 @@ mod kernel_presented_readmission
     }
 
     #[test]
+    fn the_holders_of_std_ir_cross_with_their_roles_and_a_forged_one_is_refused_5304()
+    {
+        use gandr_kernel_term::Builtin;
+        use quenchant_shape::shape::Maybe;
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../library/std/src/ir.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("`std.ir` lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("the four holders readmit: the kernel admits each in its canonical form");
+        let held = |role: Builtin| {
+            declarations
+                .iter()
+                .position(|marked| marked.declaration().role() == Maybe::Present(role))
+                .unwrap_or_else(|| panic!("a holder of {role:?} crossed with its role"))
+        };
+        let (pair, signature) = (held(Builtin::IrPair), held(Builtin::IrSignature));
+        let (_args, _decode) = (held(Builtin::IrArgs), held(Builtin::IrDecode));
+        // The signature type forged to hold the pair role meets the pair's
+        // holder before it.
+        let mut twin = declarations.clone();
+        twin[signature] = MarkedDeclaration::new(
+            declarations[signature].mark(),
+            declarations[signature]
+                .declaration()
+                .clone()
+                .held(Builtin::IrPair),
+        );
+        let refusal = Environment::replay(arena.clone(), &twin)
+            .expect_err("a second holder of the pair role is refused");
+        assert_eq!(usize::from(refusal.position()), signature);
+        assert_eq!(*refusal.error(), KernelError::BuiltinRepeated {
+            role: Builtin::IrPair,
+            holder: gandr_kernel_term::ConstantIndex::from(pair),
+        });
+        // The pair type forged to hold the signature role departs at its
+        // parameters.
+        let mut twin = declarations.clone();
+        twin[pair] = MarkedDeclaration::new(
+            declarations[pair].mark(),
+            declarations[pair]
+                .declaration()
+                .clone()
+                .held(Builtin::IrSignature),
+        );
+        let refusal =
+            Environment::replay(arena, &twin).expect_err("the pair type is no signature type");
+        assert_eq!(usize::from(refusal.position()), pair);
+        assert_eq!(*refusal.error(), KernelError::BuiltinNotCanonical {
+            role: Builtin::IrSignature,
+            departure: gandr_kernel_term::Departure::Parameters,
+        });
+    }
+
+    #[test]
     fn rules_the_body_does_not_compute_are_refused_by_the_kernel_322()
     {
         let pbg = built_in().expect("the built-in grammar builds");

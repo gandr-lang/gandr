@@ -859,6 +859,26 @@ pub enum KernelError
         /// The child type actually present.
         actual: ValueTypeWitness,
     },
+    /// A declaration claimed a built-in role that an earlier declaration
+    /// holds.
+    BuiltinRepeated
+    {
+        /// The role claimed.
+        role: gandr_kernel_term::Builtin,
+        /// The earlier declaration that holds it.
+        holder: ConstantIndex,
+    },
+    /// A declaration of another judgement than the role's holder claimed a
+    /// built-in role.
+    BuiltinMisplaced(gandr_kernel_term::Builtin),
+    /// A built-in role's holder departs from the role's canonical form.
+    BuiltinNotCanonical
+    {
+        /// The role claimed.
+        role: gandr_kernel_term::Builtin,
+        /// The first place where the holder departs.
+        departure: gandr_kernel_term::Departure,
+    },
 }
 
 impl From<LevelError> for KernelError
@@ -1070,6 +1090,15 @@ impl core::fmt::Display for KernelError
             },
             Self::StaticClassifierExpected { .. } => {
                 f.write_str("a static Pi stands over a type that classifies no codes")
+            },
+            Self::BuiltinRepeated { .. } => {
+                f.write_str("an earlier declaration holds the built-in role")
+            },
+            Self::BuiltinMisplaced(_) => {
+                f.write_str("the built-in role marks a declaration of another judgement")
+            },
+            Self::BuiltinNotCanonical { .. } => {
+                f.write_str("the built-in role's holder departs from the role's canonical form")
             },
         }
     }
@@ -1356,6 +1385,15 @@ mod tests
             KernelError::StagePresented,
             KernelError::StageNotCarried,
             KernelError::StageUnplaced,
+            KernelError::BuiltinRepeated {
+                role: gandr_kernel_term::Builtin::IrArgs,
+                holder: ConstantIndex::from(0_usize),
+            },
+            KernelError::BuiltinMisplaced(gandr_kernel_term::Builtin::IrSignature),
+            KernelError::BuiltinNotCanonical {
+                role: gandr_kernel_term::Builtin::IrPair,
+                departure: gandr_kernel_term::Departure::Constructors,
+            },
             KernelError::AbsentRecordField {
                 label: FieldLabel::from(String::from("a")),
             },

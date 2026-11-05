@@ -58,6 +58,7 @@ use gandr_kernel_strata::ConstraintRelation;
 use gandr_kernel_strata::Level;
 use quenchant_shape::shape::Maybe;
 
+use crate::Declaration;
 use crate::arena::AnyNode;
 use crate::arena::TermArena;
 use crate::base::BaseType;
@@ -769,10 +770,14 @@ fn encode_minted_atom_table(
 ///   possibly zero, then the law count and each law's position; a definition
 ///   carrying an operation's rules writes [`tags::KIND_DEF_RULED`] and closes
 ///   with the pair block and the law block, both counts possibly zero, then the
-///   rule count and each rule's two sides; a data declaration presenting rules
-///   writes [`tags::KIND_DATA_PRESENTED`] and closes with the rule count and
-///   each rule's two sides; a type of words writes [`tags::KIND_DATA_WORDS`]
-///   and closes with the rule block, its count possibly zero, then the sort's
+///   rule count and each rule's two sides; a definition holding a role writes
+///   [`tags::KIND_DEF_ROLED`] and closes with the three blocks, each count
+///   possibly zero, then the role's tag; a datatype holding a role and no
+///   indices, rules or cells writes [`tags::KIND_DATA_ROLED`] and closes with
+///   the role's tag; a data declaration presenting rules writes
+///   [`tags::KIND_DATA_PRESENTED`] and closes with the rule count and each
+///   rule's two sides; a type of words writes [`tags::KIND_DATA_WORDS`] and
+///   closes with the rule block, its count possibly zero, then the sort's
 ///   position, the cell count and each cell's two endpoints as rule sides; an
 ///   indexed data declaration writes [`tags::KIND_DATA_INDEXED`] and closes
 ///   with the index count, each index classifier's root and each constructor's
@@ -815,7 +820,7 @@ fn encode_minted_atom_table(
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => tags::KIND_DATA_INDEXED, DeclarationContent::Data { .. } if marked.declaration().presentation().cells().is_some() => tags::KIND_DATA_WORDS, DeclarationContent::Data { .. } if marked.declaration().presentation().rules().is_empty() => tags::KIND_DATA, DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED, DeclarationContent::Codata { .. } => tags::KIND_CODATA, DeclarationContent::Def { .. } if !marked.declaration().operation_rules().rules().is_empty() => tags::KIND_DEF_RULED, DeclarationContent::Def { .. } if !marked.declaration().laws().is_empty() => tags::KIND_DEF_LAWFUL, DeclarationContent::Def { .. } if marked.declaration().related().is_empty() => tags::KIND_DEF, DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { interface: Maybe::Present(ref interface), .. } if matches!(interface.law(), Maybe::Present(_)) => tags::KIND_ABSTRACT_LAWFUL, DeclarationContent::AbstractType { interface: Maybe::Present(_), .. } => tags::KIND_ABSTRACT_INTERFACED, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(kind_tag(marked.declaration())))
             && interner.node(AnyNode::ValueType(marked.declaration().declared_id())).is_some()
             && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.node(AnyNode::Value(body)).is_some(), DeclarationContent::Codata { ref observations, .. } => observations.iter().all(|id| interner.node(AnyNode::CompType(*id)).is_some()), DeclarationContent::AbstractType { interface: Maybe::Present(interface), .. } => interner.node(AnyNode::Value(interface.relation())).is_some() && interner.node(AnyNode::Value(interface.reflexivity())).is_some() && match interface.law() { Maybe::Present(law) => interner.node(AnyNode::Value(law)).is_some(), Maybe::Absent(_) => true }, DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true }
             && marked.declaration().related().iter().all(|related| interner.node(AnyNode::Value(related.left)).is_some() && interner.node(AnyNode::Value(related.right)).is_some())
@@ -836,35 +841,8 @@ fn encode_declaration(
     });
     let declaration = marked.declaration();
     let content = declaration.content();
-    out.put_tag(match *content {
-        DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => {
-            tags::KIND_DATA_INDEXED
-        },
-        DeclarationContent::Data { .. } if declaration.presentation().cells().is_some() => {
-            tags::KIND_DATA_WORDS
-        },
-        DeclarationContent::Data { .. } if declaration.presentation().rules().is_empty() => {
-            tags::KIND_DATA
-        },
-        DeclarationContent::Data { .. } => tags::KIND_DATA_PRESENTED,
-        DeclarationContent::Codata { .. } => tags::KIND_CODATA,
-        DeclarationContent::Def { .. } if !declaration.operation_rules().rules().is_empty() => {
-            tags::KIND_DEF_RULED
-        },
-        DeclarationContent::Def { .. } if !declaration.laws().is_empty() => tags::KIND_DEF_LAWFUL,
-        DeclarationContent::Def { .. } if declaration.related().is_empty() => tags::KIND_DEF,
-        DeclarationContent::Def { .. } => tags::KIND_DEF_RELATING,
-        DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
-        DeclarationContent::AbstractType {
-            interface: Maybe::Present(ref interface),
-            ..
-        } if matches!(interface.law(), Maybe::Present(_)) => tags::KIND_ABSTRACT_LAWFUL,
-        DeclarationContent::AbstractType {
-            interface: Maybe::Present(_),
-            ..
-        } => tags::KIND_ABSTRACT_INTERFACED,
-        DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE,
-    });
+    let kind = kind_tag(declaration);
+    out.put_tag(kind);
     encode_structured_name(out, declaration.name());
     encode_level_signature(out, declaration.levels());
 
@@ -1063,10 +1041,12 @@ fn encode_declaration(
     // whatever its count, and its laws after it: a count of at least one and
     // each law's position. A ruled definition writes both blocks whatever
     // their counts, then its rules: a count of at least one and each rule's
-    // two sides.
+    // two sides. A held definition writes all three blocks whatever their
+    // counts, then its role.
+    let held = kind == tags::KIND_DEF_ROLED;
     let laws = declaration.laws();
     let operation_rules = declaration.operation_rules().rules();
-    if !related_roots.is_empty() || !laws.is_empty() || !operation_rules.is_empty() {
+    if held || !related_roots.is_empty() || !laws.is_empty() || !operation_rules.is_empty() {
         out.put_uvarint(WireU64::from(WireUsize::from(related_roots.len())));
         for (&(left, right), related) in related_roots.iter().zip(declaration.related()) {
             out.put_uvarint(WireU64::from(u64::from(u32::from(left))));
@@ -1077,13 +1057,13 @@ fn encode_declaration(
             }
         }
     }
-    if !laws.is_empty() || !operation_rules.is_empty() {
+    if held || !laws.is_empty() || !operation_rules.is_empty() {
         out.put_uvarint(WireU64::from(WireUsize::from(laws.len())));
         for &law in laws {
             out.put_uvarint(WireU64::from(WireUsize::from(usize::from(law))));
         }
     }
-    if !operation_rules.is_empty() {
+    if held || !operation_rules.is_empty() {
         out.put_uvarint(WireU64::from(WireUsize::from(operation_rules.len())));
         for rule in operation_rules {
             encode_operation_side(out, rule.left());
@@ -1118,6 +1098,84 @@ fn encode_declaration(
             encode_rule_side(out, cell.source());
             encode_rule_side(out, cell.target());
         }
+    }
+    // A holder's segment closes with its role's tag.
+    if let Maybe::Present(role) = declaration.role()
+        && (kind == tags::KIND_DATA_ROLED || held)
+    {
+        out.put_tag(role_tag(role));
+    }
+}
+
+/// The kind tag that `declaration`'s segment opens with: the first kind, in
+/// this order, whose fields the declaration has.
+///
+/// # Specification
+/// - ensures: a definition holding a role is [`tags::KIND_DEF_ROLED`], whose
+///   segment writes the pair, law and rule blocks whatever their counts. A
+///   datatype holding a role and no indices, rules or cells is
+///   [`tags::KIND_DATA_ROLED`]. A datatype holder with them writes that richer
+///   kind and no role. No canonical datatype holder has them, and the checker
+///   refuses one that has them, so its role never crosses.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each kind's fixture writes its own tag, and a holder
+///   writes the role kind.
+/// - witness: `encode::tests::a_role_closes_a_holder_s_segment_5304`
+/// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
+#[inline]
+#[spec(ensures: |ret| (ret == tags::KIND_DEF_ROLED) == (matches!(declaration.role(), Maybe::Present(_)) && matches!(*declaration.content(), DeclarationContent::Def { .. })))]
+fn kind_tag(declaration: &Declaration) -> WireTag
+{
+    let held = matches!(declaration.role(), Maybe::Present(_));
+    match *declaration.content() {
+        DeclarationContent::Data { ref indices, .. } if !indices.is_empty() => {
+            tags::KIND_DATA_INDEXED
+        },
+        DeclarationContent::Data { .. } if declaration.presentation().cells().is_some() => {
+            tags::KIND_DATA_WORDS
+        },
+        DeclarationContent::Data { .. } if !declaration.presentation().rules().is_empty() => {
+            tags::KIND_DATA_PRESENTED
+        },
+        DeclarationContent::Data { .. } if held => tags::KIND_DATA_ROLED,
+        DeclarationContent::Data { .. } => tags::KIND_DATA,
+        DeclarationContent::Codata { .. } => tags::KIND_CODATA,
+        DeclarationContent::Def { .. } if held => tags::KIND_DEF_ROLED,
+        DeclarationContent::Def { .. } if !declaration.operation_rules().rules().is_empty() => {
+            tags::KIND_DEF_RULED
+        },
+        DeclarationContent::Def { .. } if !declaration.laws().is_empty() => tags::KIND_DEF_LAWFUL,
+        DeclarationContent::Def { .. } if !declaration.related().is_empty() => {
+            tags::KIND_DEF_RELATING
+        },
+        DeclarationContent::Def { .. } => tags::KIND_DEF,
+        DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
+        DeclarationContent::AbstractType {
+            interface: Maybe::Present(ref interface),
+            ..
+        } if matches!(interface.law(), Maybe::Present(_)) => tags::KIND_ABSTRACT_LAWFUL,
+        DeclarationContent::AbstractType {
+            interface: Maybe::Present(_),
+            ..
+        } => tags::KIND_ABSTRACT_INTERFACED,
+        DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE,
+    }
+}
+
+/// The tag that `role` is written as.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn role_tag(role: crate::Builtin) -> WireTag
+{
+    match role {
+        crate::Builtin::IrSignature => tags::ROLE_IR_SIGNATURE,
+        crate::Builtin::IrArgs => tags::ROLE_IR_ARGS,
+        crate::Builtin::IrDecode => tags::ROLE_IR_DECODE,
+        crate::Builtin::IrPair => tags::ROLE_IR_PAIR,
     }
 }
 
@@ -2331,6 +2389,8 @@ mod tests
     use alloc::string::String;
     use alloc::vec::Vec;
 
+    use quenchant_shape::shape::Maybe;
+
     use super::AnyNode;
     use super::ArtifactImage;
     use super::ArtifactText;
@@ -2347,6 +2407,7 @@ mod tests
     use crate::base::Sign;
     use crate::base::StringLiteral;
     use crate::decl::AdmissionMark;
+    use crate::decl::Declaration;
     use crate::decl::DeclarationBuilder;
     use crate::decl::LevelParamCount;
     use crate::decl::LevelSignature;
@@ -3748,6 +3809,103 @@ mod tests
                 site: crate::error::MalformedSite::TrailingBytes,
             })
         );
+    }
+
+    #[test]
+    fn a_role_closes_a_holder_s_segment_5304()
+    {
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let unit_type = builder.arena().value_type_unit();
+        let unit = builder.arena().value_unit();
+        let kind = builder
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let plain_def = builder.def(LevelSignature::monomorphic(), unit_type, unit);
+        let lawful_def = plain_def
+            .clone()
+            .lawful(alloc::vec![crate::ConstantIndex::from(0_usize)]);
+        let builder = DeclarationBuilder::new(&mut arena);
+        let plain_data = builder.indexed(
+            LevelSignature::monomorphic(),
+            alloc::vec![],
+            (alloc::vec![], alloc::vec![alloc::vec![]], alloc::vec![]),
+            kind,
+        );
+        let encoded = |declaration: &Declaration| {
+            let marked = [MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                declaration.clone(),
+            )];
+            super::encode(&arena, &marked).as_image().as_ref().to_vec()
+        };
+        // Each row: the plain declaration, its role, the role kind, the
+        // counts the holder writes after the plain segment, and the role tag.
+        for (plain, role, kind, counts, tag) in [
+            (
+                &plain_def,
+                crate::Builtin::IrArgs,
+                crate::tags::KIND_DEF_ROLED,
+                &[0_u8, 0_u8, 0_u8][..],
+                crate::tags::ROLE_IR_ARGS,
+            ),
+            (
+                &lawful_def,
+                crate::Builtin::IrDecode,
+                crate::tags::KIND_DEF_ROLED,
+                &[0_u8][..],
+                crate::tags::ROLE_IR_DECODE,
+            ),
+            (
+                &plain_data,
+                crate::Builtin::IrPair,
+                crate::tags::KIND_DATA_ROLED,
+                &[][..],
+                crate::tags::ROLE_IR_PAIR,
+            ),
+        ] {
+            let held = plain.clone().held(role);
+            let (unmarked, marked) = (encoded(plain), encoded(&held));
+            // The holder writes the role kind where the plain declaration
+            // writes its kind. A held definition writes each block the plain
+            // one leaves out as a count of none, and the segment closes with
+            // the role's tag.
+            let mut expected = unmarked.clone();
+            if let Some(byte) = expected.get_mut(9) {
+                *byte = u8::from(kind);
+            }
+            expected.extend_from_slice(counts);
+            expected.push(u8::from(tag));
+            assert_eq!(marked, expected, "{role:?} closes its holder's segment");
+            let decoded = crate::decode::decode(ArtifactImage::from(marked.as_slice()))
+                .expect("a holder decodes");
+            let declaration = decoded.declarations().first().expect("one holder");
+            assert_eq!(
+                declaration.declaration().role(),
+                Maybe::Present(role),
+                "the role decodes"
+            );
+            assert_eq!(
+                super::encode(decoded.arena(), decoded.declarations())
+                    .as_image()
+                    .as_ref(),
+                marked.as_slice(),
+                "and re-encodes to the same bytes"
+            );
+            // A role tag outside the alphabet refuses at its own site.
+            let mut unknown = marked.clone();
+            if let Some(byte) = unknown.last_mut() {
+                *byte = 9;
+            }
+            assert_eq!(
+                crate::decode::decode(ArtifactImage::from(unknown.as_slice())).map(|_| ()),
+                Err(crate::error::DecodeError::UnknownTag {
+                    site: crate::error::TagSite::Role,
+                    tag: crate::WireTag::from(9_u8),
+                }),
+                "an unknown role is refused"
+            );
+        }
     }
 
     #[test]
