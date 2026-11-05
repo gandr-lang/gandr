@@ -17,6 +17,7 @@ use std::net::UdpSocket;
 use std::path::Path;
 use std::path::PathBuf;
 use std::thread;
+use std::time::Instant;
 
 use anodized::spec;
 use gandr_runtime_net::Binding;
@@ -64,6 +65,15 @@ const LISTED: u16 = 300;
 /// answer: a host whose endpoint is slow to close, which the run's next
 /// migration to the seat must not reach.
 const LINGER: Duration = Duration::from_millis(100);
+
+/// The longest a host tries to bind a socket that another host just
+/// released. A quiet host binds at the first or the second try.
+const REBIND: Duration = Duration::from_secs(60);
+
+/// How long the late-release case holds a socket before it releases it.
+/// The time is longer than 100 tries 50 ms apart. A bind with a shorter
+/// retry window fails the case.
+const LATE: Duration = Duration::from_secs(7);
 
 /// A scratch source file, removed when dropped.
 #[repr(transparent)]
@@ -632,7 +642,9 @@ fn a_world_no_binding_names_is_refused_before_the_run()
 }
 
 /// A network bound at `socket` under `secret`, bound again while a host that
-/// just ended there still holds the socket.
+/// just ended there still holds the socket. A loaded host can release the
+/// socket late. So the bind tries again until [`REBIND`] has passed since the
+/// first try. Past that, the test fails with the fault of the last try.
 ///
 /// # Specification
 /// trivial.
@@ -642,10 +654,12 @@ fn bound(
 ) -> Net
 {
     let mut net = Net::new(Binding::new(secret.clone()).at(socket));
-    let mut attempts = 0_u32;
-    while net.endpoint().is_err() {
-        attempts = attempts.saturating_add(1);
-        assert!(attempts < 100, "the host binds its socket");
+    let started = Instant::now();
+    while let Err(fault) = net.endpoint() {
+        assert!(
+            started.elapsed() < REBIND,
+            "the host binds its socket within {REBIND:?}: {fault}"
+        );
         thread::sleep(Duration::from_millis(50));
     }
     net
@@ -799,5 +813,30 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
     assert!(
         matches!(*second, [whole, edit] if ChunkCount::from(0_usize) < edit && edit < whole),
         "the second host fetches the list whole, then fewer chunks for its edit: {second:?}"
+    );
+}
+
+/// A host binds a socket that another holder releases late. The holder keeps
+/// the socket for [`LATE`]. A loaded host can release a socket this late. The
+/// bind takes the socket when the holder releases it.
+#[test]
+fn a_host_binds_a_socket_released_late_4214()
+{
+    let held =
+        UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("a free loopback port");
+    let socket = held.local_addr().expect("the held socket has an address");
+    let holder = thread::spawn(move || {
+        thread::sleep(LATE);
+        drop(held);
+    });
+    let mut net = bound(&Secret::generate(), socket);
+    holder.join().expect("the holder releases the socket");
+    let endpoint = net
+        .endpoint()
+        .expect("the bound network keeps its endpoint");
+    assert!(
+        endpoint.sockets().contains(&socket),
+        "the host binds the released socket {socket}: {:?}",
+        endpoint.sockets()
     );
 }
