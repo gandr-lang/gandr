@@ -94,12 +94,15 @@ def rec substRenameSquare(
         Ap z (rename (subst x u) q)
       )) })
       (substRenameSquare[<] f r s u q h)
-      (Path.walk (fun (z) {
-        type(Path[.A = Term](
-          Ap (subst (rename f r) s) (subst (rename x r) s),
-          Ap (subst (rename f r) s) z
-        ))
-      }) (substRenameSquare[<] x r s u q h) (Path.here (Ap (subst (rename f r) s) (subst (rename x r) s))))
+      (Path.walk
+        (fun (z) {
+          type(Path[.A = Term](
+            Ap (subst (rename f r) s) (subst (rename x r) s),
+            Ap (subst (rename f r) s) z
+          ))
+        })
+        (substRenameSquare[<] x r s u q h)
+        (Path.here (Ap (subst (rename f r) s) (subst (rename x r) s))))
 
 /// Weakening then a lifted substitution agrees with the substitution then
 /// weakening, at every index.

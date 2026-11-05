@@ -26,26 +26,41 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 error[DialogueUnmatched]: this dialogue's message is not received as it was sent
    ╭▸ corpus/pathological/sessions/dialogue-web.gandr:35:39
    │
-35 │ def misheard : Dialogue(Ask.Asking) = dialogue (left (sent "yes")) (right (received "no")) (left closed) (right closed);
-   │                                       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a move the other endpoint does not match
+35 │   def misheard : Dialogue(Ask.Asking) = dialogue
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+36 │ ┃   (left (sent "yes"))
+37 │ ┃   (right (received "no"))
+38 │ ┃   (left closed)
+39 │ ┃   (right closed);
+   │ ┗━━━━━━━━━━━━━━━━┛ a move the other endpoint does not match
    │
    ├ note: `misheard` is refused with DialogueUnmatched, as its expectation states
    ╰ help: make each dialogue receipt match its sent value
 
 error[DialogueInverted]: this dialogue is logged out of its causal order
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:39:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:43:39
    │
-39 │ def foretold : Dialogue(Ask.Asking) = dialogue (right (received "yes")) (left (sent "yes")) (left closed) (right closed);
-   │                                       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a move logged before the move it follows
+43 │   def foretold : Dialogue(Ask.Asking) = dialogue
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+44 │ ┃   (right (received "yes"))
+45 │ ┃   (left (sent "yes"))
+46 │ ┃   (left closed)
+47 │ ┃   (right closed);
+   │ ┗━━━━━━━━━━━━━━━━┛ a move logged before the move it follows
    │
    ├ note: `foretold` is refused with DialogueInverted, as its expectation states
    ╰ help: log each send before its matching receipt
 
 error[RunNotAdmitted]: the protocol does not admit this run
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:43:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:51:39
    │
-43 │ def answered : Dialogue(Ask.Asking) = dialogue (left (received "yes")) (right (sent "yes")) (left closed) (right closed);
-   │                                       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a move in the other direction
+51 │   def answered : Dialogue(Ask.Asking) = dialogue
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+52 │ ┃   (left (received "yes"))
+53 │ ┃   (right (sent "yes"))
+54 │ ┃   (left closed)
+55 │ ┃   (right closed);
+   │ ┗━━━━━━━━━━━━━━━━┛ a move in the other direction
    │
    ├ note: `answered` is refused with RunNotAdmitted, as its expectation states
    ╰ help: change the run so that each move is one that the protocol admits at that point

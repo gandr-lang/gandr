@@ -97,7 +97,15 @@ def twiceWhiskeredThen(
     (Path.step (Path.step fm g) h)
     (Path.step (Path.step fm g) h)
     r
-    (whiskeredRight A x z w (Path.step fm g) (Path.step fm g) (whiskeredRight A x y z fm fm (Path.here fm) g) h)
+    (whiskeredRight
+      A
+      x
+      z
+      w
+      (Path.step fm g)
+      (Path.step fm g)
+      (whiskeredRight A x y z fm fm (Path.here fm) g)
+      h)
     k,
   k
 ) =
@@ -122,7 +130,15 @@ def twiceWhiskeredThenAssoc(
     (Path.step (Path.step fm g) h)
     (Path.step (Path.step fm g) h)
     (Path.step fm (Path.step g h))
-    (whiskeredRight A x z w (Path.step fm g) (Path.step fm g) (whiskeredRight A x y z fm fm (Path.here fm) g) h)
+    (whiskeredRight
+      A
+      x
+      z
+      w
+      (Path.step fm g)
+      (Path.step fm g)
+      (whiskeredRight A x y z fm fm (Path.here fm) g)
+      h)
     (associatedPaths A x y z w fm g h),
   associatedPaths A x y z w fm g h
 ) =

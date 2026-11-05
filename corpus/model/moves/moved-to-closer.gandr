@@ -15,7 +15,9 @@ import "./file-base.gandr";
 @[
   runs("*{}"),
   traces(decomposes owner (parallel (event left 0) (event right 0))),
-  traces(decomposes closer (series (event right 0) (parallel (series (event left 0) (event left 1)) (event right 1))))
+  traces(decomposes
+    closer
+    (series (event right 0) (parallel (series (event left 0) (event left 1)) (event right 1))))
 ]
 def movedToCloser() -> Unit =
   let file = fork (owner : File.Handle) { close(owner) };

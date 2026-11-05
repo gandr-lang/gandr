@@ -91,9 +91,12 @@ pub def rec substSquare(
         Ap z (subst (subst x u1) u2)
       )) })
       (substSquare[<] f s1 s2 u1 u2 h)
-      (Path.walk (fun (z) {
-        type(Path[.A = Term](
-          Ap (subst (subst f s1) s2) (subst (subst x s1) s2),
-          Ap (subst (subst f s1) s2) z
-        ))
-      }) (substSquare[<] x s1 s2 u1 u2 h) (Path.here (Ap (subst (subst f s1) s2) (subst (subst x s1) s2))))
+      (Path.walk
+        (fun (z) {
+          type(Path[.A = Term](
+            Ap (subst (subst f s1) s2) (subst (subst x s1) s2),
+            Ap (subst (subst f s1) s2) z
+          ))
+        })
+        (substSquare[<] x s1 s2 u1 u2 h)
+        (Path.here (Ap (subst (subst f s1) s2) (subst (subst x s1) s2))))

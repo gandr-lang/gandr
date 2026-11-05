@@ -100,7 +100,9 @@ def joined() -> List(Nat) =
 
 /// The same append, the `return`s elided.
 @[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) (Cons Zero Nil))") ]
-def joined_elided : () -> List(Nat) = append_nat_elided small (Cons three (Nil : List(Nat)) : List(Nat));
+def joined_elided : () -> List(Nat) = append_nat_elided
+  small
+  (Cons three (Nil : List(Nat)) : List(Nat));
 
 /// The same append, through the fold whose element type is implicit.
 @[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) (Cons Zero Nil))") ]

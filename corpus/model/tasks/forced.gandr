@@ -17,7 +17,13 @@ import "./task-base.gandr";
 /// A parent sends its task a request and reads the reply.
 @[
   runs("*{}"),
-  traces(decomposes task (series (event right 0) (event left 0) (event left 1) (parallel (event left 2) (series (event right 1) (event right 2)))))
+  traces(decomposes
+    task
+    (series
+      (event right 0)
+      (event left 0)
+      (event left 1)
+      (parallel (event left 2) (series (event right 1) (event right 2)))))
 ]
 def forced() -> Unit =
   let asked = fork (task : Task.Relay) {

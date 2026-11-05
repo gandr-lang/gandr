@@ -11,7 +11,9 @@
 /// only after its receipt.
 @[
   runs("*{}"),
-  traces(decomposes seat (series (event right 0) (parallel (series (event left 0) (event left 1)) (event right 1))))
+  traces(decomposes
+    seat
+    (series (event right 0) (parallel (series (event left 0) (event left 1)) (event right 1))))
 ]
 def receivesAnOrder() -> Unit =
   let desk = fork (seat : ?(+{go : Integer, stop : Unit}). end) {

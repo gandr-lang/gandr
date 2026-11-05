@@ -303,6 +303,47 @@ fn a_member_after_a_column_zero_comment_starts_a_statement_2950()
     }
 }
 
+/// #5202: before the fix, a juxtaposed spine that did not fit the page stood
+/// on one line past the page, or broke inside a bracket of an operand. Now a
+/// spine that does not fit stands as its head and then each operand on a line
+/// of its own, two columns deeper than the head. A spine that fits stays on
+/// one line, and a bracket in an operand stays whole on the operand's line.
+#[test]
+fn a_juxtaposed_spine_breaks_one_operand_a_line_5202()
+{
+    let grammar = grammar();
+    for (source, expected, why) in [
+        (
+            "def a = f x y;\n",
+            "def a = f x y;\n",
+            "a spine that fits stays on one line",
+        ),
+        (
+            "def spine = compose alpha beta gamma delta epsilon;\n",
+            "def spine = compose\n  alpha\n  beta\n  gamma\n  delta\n  epsilon;\n",
+            "a spine that does not fit breaks before each operand",
+        ),
+        (
+            "def nested = f (compose[4, 9] alpha beta) (gamma delta epsilon zeta);\n",
+            "def nested = f\n  (compose[4, 9] alpha beta)\n  (gamma delta epsilon zeta);\n",
+            "a bracket in an operand stays whole on the operand's line",
+        ),
+        (
+            "def go() -> -F Integer =\n  become apply alpha beta gamma delta epsilon\n",
+            "def go() -> -F Integer =\n  become apply\n    alpha\n    beta\n    gamma\n    delta\n    epsilon\n",
+            "in a layout block the operands stand deeper than the block's column",
+        ),
+    ] {
+        let laid = text(&grammar, source, NARROW);
+        assert_eq!(laid, expected, "{why}");
+        assert_eq!(
+            text(&grammar, laid.as_str(), NARROW),
+            laid,
+            "{why}, and formats once"
+        );
+    }
+}
+
 #[test]
 fn strings_shell_blocks_and_holes_are_copied_as_written()
 {

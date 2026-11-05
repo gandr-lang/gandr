@@ -1,7 +1,7 @@
 error[RunNotAdmitted]: the protocol does not admit this run
-   ╭▸ corpus/pathological/sessions/session-identity-unadmitted.gandr:27:85
+   ╭▸ corpus/pathological/sessions/session-identity-unadmitted.gandr:32:85
    │
-27 │ def retired() -> Run(Evolution.Kept) { Flow.ride (fun (X) { Run X }) Evolution.keep served }
+32 │ def retired() -> Run(Evolution.Kept) { Flow.ride (fun (X) { Run X }) Evolution.keep served }
    │ ┬──────────────────────────────────────┬────────────────────────────────────────────┯━━━━━──
    │ │                                      │                                            │
    │ │                                      │                                            a label the protocol does not admit here

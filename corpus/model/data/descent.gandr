@@ -83,7 +83,9 @@ def reversed : () -> List(Nat) = reverseOnto Nat (Cons two (Cons three Nil)) Nil
 
 /// One, zero and two summed with ten and twenty: the zero is skipped.
 @[ runs("Cons 11 (Cons 22 Nil)") ]
-def sumsSkippingZero : () -> List(Integer) = pairwise (Cons 1 (Cons 0 (Cons 2 Nil))) (Cons 10 (Cons 20 Nil));
+def sumsSkippingZero : () -> List(Integer) = pairwise
+  (Cons 1 (Cons 0 (Cons 2 Nil)))
+  (Cons 10 (Cons 20 Nil));
 
 /// A recursive definition that makes no recursive call: nothing to descend
 /// on, so it is a definition, and a type naming it unfolds at a constructor.

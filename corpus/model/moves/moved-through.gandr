@@ -12,7 +12,13 @@ import "./file-base.gandr";
 @[
   runs("*{}"),
   traces(decomposes owner (parallel (event left 0) (event right 0))),
-  traces(decomposes writer (series (event right 0) (event left 0) (event left 1) (parallel (event left 2) (series (event right 1) (event right 2)))))
+  traces(decomposes
+    writer
+    (series
+      (event right 0)
+      (event left 0)
+      (event left 1)
+      (parallel (event left 2) (series (event right 1) (event right 2)))))
 ]
 def movedThrough() -> Unit =
   let file = fork (owner : File.Handle) { close(owner) };

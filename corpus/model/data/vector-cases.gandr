@@ -63,4 +63,6 @@ def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec(a, n), ys : Vec(a, m)) -> V
 /// The length of the vector two long after itself, read off its index.
 @[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 def pairsRead() -> Nat =
-  vlength (plus (Succ (Succ Zero)) (Succ (Succ Zero))) (vappend Integer (Succ (Succ Zero)) (Succ (Succ Zero)) (pair ()) (pair ()))
+  vlength
+    (plus (Succ (Succ Zero)) (Succ (Succ Zero)))
+    (vappend Integer (Succ (Succ Zero)) (Succ (Succ Zero)) (pair ()) (pair ()))

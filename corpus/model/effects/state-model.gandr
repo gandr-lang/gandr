@@ -76,9 +76,12 @@ def passing : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = 
 /// The same model carried along negation of the counts: `get`'s continuation
 /// is a function of the state, so the state it is handed is negated back and
 /// the computation it answers negated forth.
-def negated : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = Path.walk (fun (x) {
-  type(Model(State.Eff) with sort S = x with sort C = (x -> Integer))
-}) countsNegated passing;
+def negated : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = Path.walk
+  (fun (x) {
+    type(Model(State.Eff) with sort S = x with sort C = (x -> Integer))
+  })
+  countsNegated
+  passing;
 
 /// Storing the second count and then reading the state twice, from the first
 /// count.

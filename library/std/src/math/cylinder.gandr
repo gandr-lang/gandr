@@ -57,7 +57,13 @@ pub def cylinderComposite2(
   Path.step xs (Path.step f2 g2)
 ) =
   Path.step
-    (Path.step (Path.step (Path.step (assoc A x y z z2 f g zs) (whiskerLeft A x y z2 f (Path.step g zs) (Path.step ys g2) b)) (Path.back (assoc A x y y2 z2 f ys g2))) (whiskerRight A x y2 z2 (Path.step f ys) (Path.step xs f2) a g2))
+    (Path.step
+      (Path.step
+        (Path.step
+          (assoc A x y z z2 f g zs)
+          (whiskerLeft A x y z2 f (Path.step g zs) (Path.step ys g2) b))
+        (Path.back (assoc A x y y2 z2 f ys g2)))
+      (whiskerRight A x y2 z2 (Path.step f ys) (Path.step xs f2) a g2))
     (assoc A x x2 y2 z2 xs f2 g2)
 
 /// A stack of two squares composes to a square: Catt's `cylstack(2)`, the composite of their transposes read back.
@@ -404,22 +410,27 @@ pub def cylinderSuspended3(
   Path.step (compose[4, 9] (chain 2 (1, 0)) (Path.step fa ga, ys)) c,
   Path.step a (compose[4, 9] (chain 2 (0, 1)) (xs, Path.step fa2 ga2))
 ) =
-  Path.step (Path.step (compose[4, 9] (chain 2 (1, 0)) (
-    interchangeRight A x y y2 f g h fa ga ys,
-    c
-  )) (cylinderFill2 (type(Path[.A = A](x, y2))) (Path.step f ys) (Path.step g ys) (compose[
-    4,
-    9
-  ] (chain 2 (1, 0)) (fa, ys)) (Path.step xs f2) (Path.step xs g2) (compose[4, 9] (chain 2 (0, 1)) (
-    xs,
-    fa2
-  )) a b m (Path.step h ys) (compose[4, 9] (chain 2 (1, 0)) (ga, ys)) (Path.step xs h2) (compose[
-    4,
-    9
-  ] (chain 2 (0, 1)) (xs, ga2)) c n)) (compose[4, 9] (chain 2 (0, 1)) (
-    a,
-    Path.back (interchangeLeft A x x2 y2 xs f2 g2 h2 fa2 ga2)
-  ))
+  Path.step
+    (Path.step
+      (compose[4, 9] (chain 2 (1, 0)) (interchangeRight A x y y2 f g h fa ga ys, c))
+      (cylinderFill2
+        (type(Path[.A = A](x, y2)))
+        (Path.step f ys)
+        (Path.step g ys)
+        (compose[4, 9] (chain 2 (1, 0)) (fa, ys))
+        (Path.step xs f2)
+        (Path.step xs g2)
+        (compose[4, 9] (chain 2 (0, 1)) (xs, fa2))
+        a
+        b
+        m
+        (Path.step h ys)
+        (compose[4, 9] (chain 2 (1, 0)) (ga, ys))
+        (Path.step xs h2)
+        (compose[4, 9] (chain 2 (0, 1)) (xs, ga2))
+        c
+        n))
+    (compose[4, 9] (chain 2 (0, 1)) (a, Path.back (interchangeLeft A x x2 y2 xs f2 g2 h2 fa2 ga2)))
 
 /// Two triangles from one apex compose to a triangle: Catt's `op{1,2} conecomp(2,1,2)`, the right whisker of one then the other.
 pub def coneOpposite2(

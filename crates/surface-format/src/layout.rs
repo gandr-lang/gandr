@@ -1,5 +1,6 @@
 //! One top-level form laid out: its brackets nested as groups, each group on
-//! one line when it fits and broken one item per line when it does not.
+//! one line when it fits and broken one item per line when it does not, and
+//! each juxtaposed spine on one line or broken one operand per line.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -271,8 +272,11 @@ struct Group<'source>
 ///   `;`, with a comment on the same line — stands on its own line indented by
 ///   two, and a blank line before an item is kept. A layout block, which the
 ///   column rule ends, always stands so under the token that opens it, its
-///   empty separators and close writing nothing. Two elements on one line are
-///   as far apart as [`space::join`] decides, except inside a string the
+///   empty separators and close writing nothing. A juxtaposed spine that ends
+///   its run stands on one line when that fits. Otherwise its head stands first
+///   and each operand on a line of its own, two columns deeper. A spine the
+///   source broke before an operand stays so (#5202). Two elements on one line
+///   are as far apart as [`space::join`] decides, except inside a string the
 ///   grammar reads as tiles and beside a token a rewrite wrote, where the
 ///   source's spacing stands as one space or none.
 /// - provides: the layout of each top-level form [`crate::format`] joins.
@@ -291,6 +295,7 @@ struct Group<'source>
 /// - witness: `tests::format::a_continuation_line_indents_under_its_statement`
 /// - witness: `tests::format::a_member_after_a_column_zero_comment_starts_a_statement_2950`
 /// - witness: `tests::format::the_printer_decides_every_inner_space`
+/// - witness: `tests::format::a_juxtaposed_spine_breaks_one_operand_a_line_5202`
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 #[spec(ensures: |ret| ret.as_ref().is_err() || !leaves.is_empty())]
 pub fn lay_out(
@@ -309,6 +314,7 @@ pub fn lay_out(
         flat: Flat::Fits(empty),
         best: empty,
         opens: Opens::Other,
+        ends: Ends::Closer,
     });
     for (index, group) in groups.iter().enumerate().rev() {
         let built = group_doc(&mut builder, group, &docs, blank)?;
@@ -717,6 +723,19 @@ struct Built
     best: DocId,
     /// What opened the group.
     opens: Opens,
+    /// What ends the group.
+    ends: Ends,
+}
+
+/// What ends a group: a closer, or the column rule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Ends
+{
+    /// A closing bracket, or the end of the form.
+    Closer,
+    /// The column rule: a layout block, whose first line sets the column it
+    /// reads, so a spine before it keeps its line (#5202).
+    Column,
 }
 
 /// What opened a group: an attribute block, whose member the next line
@@ -767,6 +786,10 @@ fn group_doc(
         },
         Frame::Bracketed { .. } | Frame::Form | Frame::Layout { .. } => Opens::Other,
     };
+    let ends = match group.frame {
+        Frame::Layout { .. } => Ends::Column,
+        Frame::Bracketed { .. } | Frame::Form => Ends::Closer,
+    };
     let (open, close, closing) = match group.frame {
         Frame::Bracketed {
             open,
@@ -780,6 +803,7 @@ fn group_doc(
                 flat: Flat::Breaks,
                 best,
                 opens,
+                ends,
             });
         },
         // The column rule ends the block, so its items stand one per line
@@ -792,6 +816,7 @@ fn group_doc(
                 flat: Flat::Breaks,
                 best,
                 opens,
+                ends,
             });
         },
     };
@@ -806,6 +831,7 @@ fn group_doc(
             flat: Flat::Fits(only),
             best: only,
             opens,
+            ends,
         });
     };
     let forced = first.gap.breaks() == Breaks::Yes
@@ -832,6 +858,7 @@ fn group_doc(
             flat: Flat::Breaks,
             best: broken,
             opens,
+            ends,
         });
     }
     let opening = join_doc(builder, first.join)?;
@@ -857,12 +884,18 @@ fn group_doc(
     if !listed {
         let content = run(builder, &group.placed, docs, Mode::Best)?;
         let best = builder.concat_all([open, opening, content, closing, close])?;
-        return Ok(Built { flat, best, opens });
+        return Ok(Built {
+            flat,
+            best,
+            opens,
+            ends,
+        });
     }
     Ok(Built {
         flat,
         best: builder.choice(inline, broken)?,
         opens,
+        ends,
     })
 }
 
@@ -1098,7 +1131,9 @@ fn items<'group, 'source>(
 /// The elements of `placed` on as few lines as their comments allow: two
 /// elements on one line are as far apart as the spacing table decides, and a
 /// line break follows a line comment and surrounds a comment the source wrote
-/// on its own line.
+/// on its own line. In [`Mode::Best`] each juxtaposed spine is a choice
+/// (#5202): on its line as written, or broken before each operand
+/// ([`spine_doc`]).
 ///
 /// # Specification
 /// trivial.
@@ -1109,29 +1144,262 @@ fn run(
     mode: Mode,
 ) -> Result<DocId, FormatError>
 {
+    let spines = match mode {
+        Mode::Best => spines(placed, docs),
+        Mode::Flat => Vec::new(),
+    };
+    let mut spines = spines.iter().peekable();
+    let mut parts: Vec<DocId> = Vec::with_capacity(placed.len().saturating_mul(2));
+    let mut previous: Option<Kind> = None;
+    let mut index = 0_usize;
+    while let Some(current) = placed.get(index) {
+        separate(builder, &mut parts, previous, current)?;
+        if let Some(spine) = spines.next_if(|spine| spine.start == index) {
+            parts.push(spine_doc(builder, placed, spine, docs)?);
+            previous = Some(Kind::Code);
+            index = spine.end;
+            continue;
+        }
+        parts.push(element_doc(builder, current.element, docs, mode)?);
+        previous = Some(current.element.kind());
+        index = index.saturating_add(1);
+    }
+    Ok(builder.concat_all(parts)?)
+}
+
+/// The elements of `placed` on one line as [`run`] lays them, with no choice
+/// at a spine, each group inside read in `mode`.
+///
+/// # Specification
+/// trivial.
+fn line_run(
+    builder: &mut DocBuilder<'_>,
+    placed: &[Placed<'_>],
+    docs: &[Built],
+    mode: Mode,
+) -> Result<DocId, FormatError>
+{
     let mut parts: Vec<DocId> = Vec::with_capacity(placed.len().saturating_mul(2));
     let mut previous: Option<Kind> = None;
     for current in placed {
-        let kind = current.element.kind();
-        match previous {
-            None => {},
-            Some(Kind::LineComment) => parts.push(builder.hard_line()),
-            Some(before) => {
-                let comment = kind != Kind::Code
-                    || before != Kind::Code
-                    || current.edge == Edge::Documentation;
-                if comment && current.gap.breaks() == Breaks::Yes {
-                    parts.push(builder.hard_line());
-                }
-                else {
-                    parts.push(join_doc(builder, current.join)?);
-                }
-            },
-        }
+        separate(builder, &mut parts, previous, current)?;
         parts.push(element_doc(builder, current.element, docs, mode)?);
-        previous = Some(kind);
+        previous = Some(current.element.kind());
     }
     Ok(builder.concat_all(parts)?)
+}
+
+/// Push onto `parts` what stands between the element before `current`, of
+/// kind `previous`, and `current`: nothing before the first element, a line
+/// break after a line comment and around a comment the source wrote on its
+/// own line, and the spacing table's join otherwise.
+///
+/// # Specification
+/// trivial.
+fn separate(
+    builder: &mut DocBuilder<'_>,
+    parts: &mut Vec<DocId>,
+    previous: Option<Kind>,
+    current: &Placed<'_>,
+) -> Result<(), FormatError>
+{
+    match previous {
+        None => {},
+        Some(Kind::LineComment) => parts.push(builder.hard_line()),
+        Some(before) => {
+            let comment = current.element.kind() != Kind::Code
+                || before != Kind::Code
+                || current.edge == Edge::Documentation;
+            if comment && current.gap.breaks() == Breaks::Yes {
+                parts.push(builder.hard_line());
+            }
+            else {
+                parts.push(join_doc(builder, current.join)?);
+            }
+        },
+    }
+    Ok(())
+}
+
+/// One juxtaposed spine of a run, `f x y`: the elements from `start` up to
+/// `end`, and the empty tile before each operand.
+#[derive(Debug)]
+struct Spine
+{
+    /// The position of its head's first element.
+    start: usize,
+    /// The position of each tile, in order.
+    tiles: Vec<usize>,
+    /// The position after its last operand's last element.
+    end: usize,
+}
+
+/// Whether an element is the empty tile an application writes between its
+/// head and an operand, `f x`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Tile
+{
+    /// It is: the only empty text a run holds.
+    Juxtaposition,
+    /// It is not.
+    Other,
+}
+
+/// Whether `placed` is the empty tile an application writes between its
+/// head and an operand.
+///
+/// # Specification
+/// trivial.
+fn tile(placed: &Placed<'_>) -> Tile
+{
+    if matches!(placed.element, Element::Text(text) if <&str>::from(text).is_empty()) {
+        Tile::Juxtaposition
+    }
+    else {
+        Tile::Other
+    }
+}
+
+/// The juxtaposed spines of `placed`, in order. A spine's head is the
+/// elements before its first tile that touch one another, and each operand is
+/// the elements after a tile that touch one another, up to the next tile. An
+/// element the spacing table sets apart ends the spine, as the `+` of
+/// `f x + g y` ends `f x`. A spine that holds a comment, a layout separator or
+/// an edge of documentation is no spine: it keeps its line. A spine that
+/// another element follows in the run keeps its line too, as `Left 5` in
+/// `(Left 5 : Either(Integer, String))`: its broken lines would carry that
+/// element on the last operand's line, and the brackets break first. A layout
+/// block ends an operand, as the arms after `match holds[<] g a` do: the
+/// block's first line sets the column it reads, so an operand line before it
+/// would read as the block's first item.
+///
+/// # Specification
+/// trivial.
+fn spines(
+    placed: &[Placed<'_>],
+    docs: &[Built],
+) -> Vec<Spine>
+{
+    let juxtaposes = |placed: &Placed<'_>| tile(placed) == Tile::Juxtaposition;
+    let mut spines = Vec::new();
+    let mut floor = 0_usize;
+    let mut index = 0_usize;
+    while let Some(current) = placed.get(index) {
+        if !juxtaposes(current) || index <= floor {
+            index = index.saturating_add(1);
+            continue;
+        }
+        let mut start = index.saturating_sub(1);
+        while start > floor
+            && placed
+                .get(start)
+                .is_some_and(|head| head.join == Join::Touch && !juxtaposes(head))
+        {
+            start = start.saturating_sub(1);
+        }
+        let mut tiles = Vec::new();
+        let mut end = index;
+        while placed.get(end).is_some_and(juxtaposes) {
+            tiles.push(end);
+            end = end.saturating_add(1);
+            let operand = end;
+            while placed.get(end).is_some_and(|element| {
+                !juxtaposes(element)
+                    && !matches!(element.element, Element::Break)
+                    && !matches!(element.element, Element::Group(GroupId(group))
+                        if docs.get(group).is_some_and(|built| built.ends == Ends::Column))
+                    && (end == operand || element.join == Join::Touch)
+            }) {
+                end = end.saturating_add(1);
+            }
+            if end == operand {
+                break;
+            }
+        }
+        let whole = placed.get(start .. end).unwrap_or_default();
+        let plain = whole.iter().enumerate().all(|(at, element)| {
+            element.element.kind() == Kind::Code
+                && !matches!(element.element, Element::Break)
+                && (at == 0 || element.edge == Edge::Within)
+        });
+        let operands = tiles.iter().all(|&tile| {
+            placed
+                .get(tile.saturating_add(1))
+                .is_some_and(|after| !juxtaposes(after))
+        });
+        let last = placed
+            .get(end ..)
+            .unwrap_or_default()
+            .iter()
+            .all(|after| matches!(after.element, Element::Break));
+        if plain && operands && !tiles.is_empty() && last {
+            spines.push(Spine { start, tiles, end });
+        }
+        floor = end;
+        index = end;
+    }
+    spines
+}
+
+/// The document of `spine`, a juxtaposed spine of `placed`: a choice between
+/// the spine on one line, which wins a tie, and its head followed by each
+/// operand on a line of its own, two columns deeper than the head. On its
+/// line every group the spine holds stands on one line too, so the layout's
+/// cost breaks the outermost spine that overflows the page first, and a
+/// bracket inside an operand stays whole on the operand's line when it fits.
+/// A group that cannot stand on one line, as a lambda's block, keeps its own
+/// lines inside the spine's line: a lambda that ends the spine hugs its last
+/// line. A spine the source broke before an operand stays broken, as a group
+/// the source broke after its opening bracket does, so the layout formats
+/// once: the broken spine's blocks break, and on the next pass its line would
+/// hug them.
+///
+/// # Specification
+/// trivial.
+fn spine_doc(
+    builder: &mut DocBuilder<'_>,
+    placed: &[Placed<'_>],
+    spine: &Spine,
+    docs: &[Built],
+) -> Result<DocId, FormatError>
+{
+    let whole = placed
+        .get(spine.start .. spine.end)
+        .ok_or(FormatError::Unbalanced)?;
+    let kept = line_run(builder, whole, docs, Mode::Flat)?;
+    let first = spine
+        .tiles
+        .first()
+        .copied()
+        .ok_or(FormatError::Unbalanced)?;
+    let head = placed
+        .get(spine.start .. first)
+        .ok_or(FormatError::Unbalanced)?;
+    let head = line_run(builder, head, docs, Mode::Flat)?;
+    let mut lines: Vec<DocId> = Vec::with_capacity(spine.tiles.len().saturating_mul(2));
+    for (at, &tile) in spine.tiles.iter().enumerate() {
+        let until = spine
+            .tiles
+            .get(at.saturating_add(1))
+            .copied()
+            .unwrap_or(spine.end);
+        let operand = placed
+            .get(tile.saturating_add(1) .. until)
+            .ok_or(FormatError::Unbalanced)?;
+        lines.push(builder.hard_line());
+        lines.push(line_run(builder, operand, docs, Mode::Best)?);
+    }
+    let operands = builder.concat_all(lines)?;
+    let operands = builder.nest(NestAmount::from(INDENT), operands)?;
+    let broken = builder.concat(head, operands)?;
+    if spine.tiles.iter().any(|&tile| {
+        placed
+            .get(tile)
+            .is_some_and(|tile| tile.gap.breaks() == Breaks::Yes)
+    }) {
+        return Ok(broken);
+    }
+    Ok(builder.choice(kept, broken)?)
 }
 
 /// The document of one element.
