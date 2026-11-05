@@ -16,6 +16,7 @@ digraph crates {
     "theory-decomposition-spaces";
     "theory-deep-inference";
     "theory-dynamic-graphs";
+    "theory-exact-reals";
     "theory-graphs";
     "theory-levitation";
     "theory-nominal-automata";
@@ -359,6 +360,7 @@ digraph crates {
   "core-checker" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "oracle"];
   "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "oracle"];
   "kernel-strata" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "oracle"];
+  "surface-dispatcher" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "oracle"];
   "core-checker" -> "core-incremental" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "sharing"];
   "core-incremental" -> "core-nbe" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "sharing"];
   "core-nbe" -> "core-term" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "sharing"];

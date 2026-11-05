@@ -50,6 +50,7 @@ members = [
   "crates/theory-decomposition-spaces",
   "crates/theory-deep-inference",
   "crates/theory-dynamic-graphs",
+  "crates/theory-exact-reals",
   "crates/theory-graphs",
   "crates/theory-levitation",
   "crates/theory-nominal-automata",
@@ -92,6 +93,7 @@ publish = false
 # consumers:
 # - core-checker (dev)
 # - surface-session (dev)
+# - theory-exact-reals (dev)
 [workspace.dependencies.allocation-counter]
 version = "0.8.1"
 default-features = false
@@ -167,6 +169,7 @@ default-features = false
 # - theory-decomposition-spaces
 # - theory-deep-inference
 # - theory-dynamic-graphs
+# - theory-exact-reals
 # - theory-graphs
 # - theory-levitation
 # - theory-nominal-automata
@@ -1168,7 +1171,8 @@ version = "8.2.1"
 default-features = false
 features = ["macos_fsevent"]
 
-# Exact, dynamically sized integers for native arithmetic.
+# Exact, dynamically sized integers for native arithmetic, and the mantissas
+# of dyadics wider than 64 bits.
 # features:
 # - std: num-traits' `std`, which proptest's `std` turns on in every test
 #   build. Without it a test build and the driver's build resolve num-traits
@@ -1177,6 +1181,7 @@ features = ["macos_fsevent"]
 #   one that does reverses this.
 # consumers:
 # - core-term
+# - theory-exact-reals
 [workspace.dependencies.num-bigint]
 version = "0.5.1"
 default-features = false
@@ -1267,6 +1272,7 @@ features = ["span-locations"]
 # - theory-coherent-resolutions (dev)
 # - theory-deep-inference (dev)
 # - theory-dynamic-graphs (dev)
+# - theory-exact-reals (dev)
 # - theory-graphs (dev)
 # - theory-levitation (dev)
 # - theory-order-maintenance (dev)

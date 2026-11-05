@@ -1923,6 +1923,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-exact-reals"
+version = "0.0.0"
+dependencies = [
+ "allocation-counter",
+ "num-bigint",
+ "proptest",
+ "quenchant-anodized",
+]
+
+[[package]]
 name = "gandr-theory-graphs"
 version = "0.0.0"
 dependencies = [
