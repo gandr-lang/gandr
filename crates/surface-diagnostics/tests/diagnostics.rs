@@ -42,6 +42,8 @@ use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::fix;
+use gandr_surface_diagnostics::obstructed;
+use gandr_surface_diagnostics::parting;
 use gandr_surface_diagnostics::report_identifier;
 use gandr_surface_diagnostics::report_span;
 use gandr_surface_diagnostics::tracking;
@@ -72,6 +74,9 @@ use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
+use gandr_surface_lowering::coincide::CoherenceFault;
+use gandr_surface_lowering::desc_cells::CellDiagnostic;
+use gandr_surface_lowering::desc_cells::CellFault;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Fidelity;
@@ -485,6 +490,7 @@ fn force_without_rules(kept: Kept) -> Diagnostic
         spellings: spellings.spelled(Spelling::Unicode),
         failure: failures.get(declaration.constant()),
         upstream: Maybe::Absent(upstream::Absent::Own),
+        obstruction: Maybe::Absent(obstructed::Absent::Unparted),
     })
 }
 
@@ -2612,6 +2618,144 @@ fn a_refusal_its_expectation_states_is_noted_as_stated()
         )),
         "a refusal its expectation states is not called another one"
     );
+}
+
+#[test]
+fn a_parting_pair_names_its_peak_and_both_normal_forms()
+{
+    // The corpus block's unit laws overlap at `add(Zero, Zero)`: the earlier
+    // rule rewrites it to `Zero` and the later one to `Succ(Zero)`. The
+    // refusal fills the obstruction shape, and its message reads the peak and
+    // both normal forms from it.
+    let text = SourceText::from(include_str!(
+        "../../../corpus/pathological/desc/rules-diverge.gandr"
+    ));
+    let step = unsettled(Path::new("rules-diverge.gandr"), SourceRoot::Fixture, text);
+    let held: Vec<Diagnostic> = entries(&step, Verb::Check(Goals::Gated))
+        .refusals(Refusals::Every)
+        .collect();
+    let [ref diagnostic] = *held.as_slice()
+    else {
+        panic!("the expected refusal prints once: {held:?}");
+    };
+    assert_eq!(
+        diagnostic.message.text,
+        "this rule and an earlier one rewrite `add(Zero, Zero)` to two different constructor \
+         terms, `Zero` and `Succ(Zero)`, so the block's rules are refused"
+    );
+    let ranges: Vec<String> = diagnostic
+        .annotations
+        .iter()
+        .map(|annotation| {
+            String::from(
+                text.fragment(annotation.locus.span)
+                    .expect("an annotation inside the text")
+                    .as_ref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        ranges,
+        ["rule : add m Zero ==> Succ m", "rule : add Zero n ==> n"],
+        "the annotations name the later rule, then the earlier one"
+    );
+}
+
+/// The cell diagnostics that lowering `text` records.
+///
+/// # Specification
+/// trivial.
+fn cell_diagnostics(text: SourceText<'_>) -> Vec<CellDiagnostic>
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let Lowered::Module { module, .. } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is a list of declarations");
+    };
+    module.cells().diagnostics.clone()
+}
+
+#[test]
+fn a_parting_pair_borrows_the_faults_rules_peak_and_normal_forms()
+{
+    for source in [
+        include_str!("../../../corpus/pathological/desc/rules-diverge.gandr"),
+        include_str!("../../../corpus/ledger/diagnostics/RulesUncompleted.gandr"),
+    ] {
+        let diagnostics = cell_diagnostics(SourceText::from(source));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("one cell diagnostic: {diagnostics:?}");
+        };
+        let CellFault::Coherence(
+            CoherenceFault::Diverges {
+                first,
+                ref peak,
+                ref left,
+                ref right,
+            }
+            | CoherenceFault::Uncompleted {
+                first,
+                ref peak,
+                ref left,
+                ref right,
+            },
+        ) = diagnostic.fault
+        else {
+            panic!("the pair parts: {:?}", diagnostic.fault);
+        };
+        let Maybe::Present(pair) = parting(diagnostic)
+        else {
+            panic!("the parting pair fills the shape");
+        };
+        assert_eq!(pair.cells.later, diagnostic.span, "the later rule");
+        assert_eq!(pair.cells.earlier, first, "the earlier rule");
+        assert!(
+            core::ptr::eq(core::ptr::from_ref(pair.cells.peak), &raw const **peak)
+                && core::ptr::eq(core::ptr::from_ref(pair.witness.earlier), &raw const **left)
+                && core::ptr::eq(core::ptr::from_ref(pair.witness.later), &raw const **right),
+            "the shape borrows the peak and the normal forms in order"
+        );
+    }
+}
+
+#[test]
+fn a_fault_with_no_second_normal_form_fills_no_shape()
+{
+    for (source, unparted) in [
+        (
+            include_str!("../../../corpus/ledger/diagnostics/RulesUnoriented.gandr"),
+            "an unoriented rule",
+        ),
+        (
+            include_str!("../../../corpus/ledger/diagnostics/RulesNeverComplete.gandr"),
+            "a completion that never ends",
+        ),
+    ] {
+        let diagnostics = cell_diagnostics(SourceText::from(source));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("{unparted}: one cell diagnostic: {diagnostics:?}");
+        };
+        assert!(
+            matches!(
+                diagnostic.fault,
+                CellFault::Coherence(
+                    CoherenceFault::Unoriented | CoherenceFault::NeverCompletes { .. }
+                )
+            ),
+            "{unparted}: {:?}",
+            diagnostic.fault
+        );
+        assert_eq!(
+            parting(diagnostic),
+            Maybe::Absent(obstructed::Absent::Unparted),
+            "{unparted} fills no shape"
+        );
+    }
 }
 
 #[test]

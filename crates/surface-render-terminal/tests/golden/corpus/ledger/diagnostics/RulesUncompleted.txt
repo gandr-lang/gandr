@@ -1,4 +1,4 @@
-error[RulesUncompleted]: this rule and an earlier one rewrite one term to two normal forms, and no rule the order can orient joins them, so the block's rules are refused
+error[RulesUncompleted]: this rule and an earlier one rewrite `outCellp(inCell(yq))` to two normal forms, `yq` and `zero`, and no rule the order can orient joins them, so the block's rules are refused
    ╭▸ corpus/ledger/diagnostics/RulesUncompleted.gandr:9:3
    │
  9 │   ext Cell = Val on left is zero;

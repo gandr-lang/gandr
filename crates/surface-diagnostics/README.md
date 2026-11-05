@@ -31,6 +31,7 @@ The diagnostics model: what a refusal, an unsettled declaration, a goal, a shado
 | `sentence`, `Label`, `Culprit` | The frame table, the labels a locus reads as, and the culprit a lowering refusal names. |
 | `Lint`, `Identifier`, `Fix` | A lint's finding, named by the lint rather than a refusal: the `explicit-exits` lint reports each inferred exit as a warning whose `fix` inserts the keyword, the edit that settles it; the `explicit-runs` lint reports each inferred run, its `fix` writing `run` before the computation, parenthesised where the computation begins a statement. |
 | `advice`, `help` | The help of a refusal: one imperative sentence that tells the reader what to do. A name with no help yet is `help::Absent::Unworded`. |
+| `Obstruction`, `PartingPair`, `parting` | What obstructs a refused global property: the cells it lives on and its witness, both borrowed from the analysis. A critical pair whose sides part fills it with the two rules, the peak and the two normal forms, and the refusal's message names the peak and both normal forms. |
 
 ## Expected features
 
@@ -126,6 +127,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Spelled types and kept failures | [`spelled`](src/spelled.rs) |
 | Verbosity | [`verbosity`](src/verbosity.rs) |
 | Lints, `explicit-exits` and `explicit-runs` among them | [`lint`](src/lint.rs) |
+| The obstruction shape and its parting-pair filling | [`obstruction`](src/obstruction.rs) |
 
 ## References
 
@@ -135,6 +137,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence design (§ The trust story) — that help names the importer or the source as the flow's supplier.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-zero-cost) — a missing member is one declaration to write.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's three refusals, each worded by what the stratum, the chain or a wire lacks.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — background: the presented-spaces plan (§ presented-spaces-frame, § presented-spaces-reorganisation) — every analysis's obstruction as a set of cells and a witness, in one shape.
 
 ## License
 
