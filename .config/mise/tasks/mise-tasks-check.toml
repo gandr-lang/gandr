@@ -121,8 +121,9 @@ fi
 # the next. The task reads the newest record of `gate:all` on the tree of
 # `origin/main` that holds a time, and `.config/gate-scope/budget.jq` holds
 # it to its budget in `.config/gate-scope/budget.json`. Past the budget it
-# files one issue through the `gate-time` template, or rewrites the open one
-# with the new observation: the time, the slowest tasks and the slowest tests.
+# files one issue through the `gate-time` template, or rewrites the one of its
+# title, reopened when closed (`.config/issues/keep.bash`), with the new
+# observation: the time, the slowest tasks and the slowest tests.
 # Within the budget it writes nothing. Without REPORT_FILE set it prints the
 # observation and writes nothing. `gate:all` on main's tree runs it with
 # REPORT_FILE set, and a report that fails never fails the gate.
@@ -133,6 +134,7 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
+source "$root/.config/issues/keep.bash"
 here=$root/.config/gate-scope
 records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate
 tree=$(git rev-parse 'origin/main^{tree}')
@@ -161,16 +163,12 @@ if [[ -z ${REPORT_FILE:-} ]]; then
   exit 0
 fi
 fields=$(jq -c .fields <<< "$verdict")
-number=$(gh issue list --state open --search "\"$title\" in:title" --json number,title --jq "[.[] | select(.title == \"$title\")] | first | .number // empty")
-if [[ -z $number ]]; then
-  mise run --quiet issue:file "$title" "$scratch/observation.md" kind:performance area:workflow --template gate-time --fields "$fields"
-  exit 0
-fi
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 jq -R -s -r -L "$root/.config/issues" --argjson fields "$fields" --rawfile observation "$scratch/observation.md" \
   'include "template"; render($fields; $observation)' "$root/.config/issues/templates/gate-time.md" > "$scratch/body.md"
 mise run --quiet body:check --title "$title" "$scratch/body.md" >&2
-gh issue edit "$number" --body-file "$scratch/body.md" > /dev/null
-echo "report:gate-time: updated #$number: main's gate is past its budget"
+issue_keep "$repo" "$title" "$(issue_found "$repo" "$title")" 1 "$scratch/body.md" \
+  mise run --quiet issue:file "$title" "$scratch/observation.md" kind:performance area:workflow --template gate-time --fields "$fields"
 {% endraw %}'''
 
 # Every corpus source and crate fixture stays in the gandr formatter's

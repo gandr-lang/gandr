@@ -54,6 +54,13 @@ site = [
   { file = ".config/issues/unsectioned.sh", scope = "-", api = "graphql", identity = "actions", calls = 4, points = 3, measured = "rule", hour = 30, trigger = "issues.yml: each issue opened or edited, and each label the reading reads (15 of 20 label events on 2026-11-04 were claims' and stalls', which start no run); the repository, then one label edit" },
   { file = ".config/issues/unsectioned.sh", scope = "-", api = "rest", identity = "actions", calls = 6, points = 2, measured = "rest", hour = 30, trigger = "issues.yml: the issue, its comments only while a flag, an exemption or a finding stands, and a body or comment write at most" },
 
+  # The one issue a report keeps by title: the nightly's reports (Actions)
+  # and the gate on main past its budget (a host).
+  { file = ".config/issues/keep.bash", scope = "issue_found", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 2, trigger = "nightly.yml: report:deps and report:prose, one search each a day" },
+  { file = ".config/issues/keep.bash", scope = "issue_found", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 1, trigger = "report:gate-time after a gate:all on main's tree past its budget, one search" },
+  { file = ".config/issues/keep.bash", scope = "issue_keep", api = "graphql", identity = "actions", calls = 4, points = 4, measured = "rule", hour = 2, trigger = "nightly.yml: report:deps and report:prose; a run makes two writes at most, a reopen and an edit or an edit and a close, each a lookup and a mutation" },
+  { file = ".config/issues/keep.bash", scope = "issue_keep", api = "graphql", identity = "write", calls = 4, points = 4, measured = "rule", hour = 1, trigger = "report:gate-time past its budget: a reopen and an edit at most, each a lookup and a mutation" },
+
   # The ledger check: a gate on a host and in CI.
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "check:ledger in a seat's gate: one aliased batch of the issues rows name" },
   { file = ".config/ledger/check.bash", scope = "read_chunk", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 24, trigger = "check:ledger in each pull request's CI run" },
@@ -66,8 +73,7 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "evidence:base", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "evidence:obligations, pr:open and pr:land: the open pulls, one page" },
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "evidence:obligations", api = "rest", identity = "read", calls = 3, points = 4, measured = "rest", hour = 16, trigger = "a seat's evidence run: each issue's labels, about two, and a head's checks" },
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "evidence:obligations", api = "rest", identity = "actions", calls = 3, points = 3, measured = "rest", hour = 24, trigger = "the obligations job of each pull request's CI run: each issue's labels, about two, and the head's checks; the event names the head" },
-  { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "report:gate-time", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 1, trigger = "gate:all on main's tree past its budget: the open issue of that title, one search; a gate on main runs at most once an hour on a host" },
-  { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "report:gate-time", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 1, trigger = "gate:all on main's tree past its budget, when its issue is open: the issue looked up, then its body written" },
+  { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "report:gate-time", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 1, trigger = "gate:all on main's tree past its budget: the repository's name; a gate on main runs at most once an hour on a host" },
 
   # The ci tasks (Actions).
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "branches:sweep", api = "graphql", identity = "read", calls = 4, points = 11, measured = "cost", hour = 1, trigger = "branches:sweep by hand: the repository twice, the open pulls, the open issues in 8 pages" },
@@ -127,14 +133,14 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "refactor:file", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 2, trigger = "refactor:file: the unit's issue" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:bootstrap-census", api = "graphql", identity = "actions", calls = 5, points = 5, measured = "rule", hour = 1, trigger = "census.yml: once a week" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:bootstrap-census", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 1, trigger = "census.yml: once a week" },
-  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:deps", api = "graphql", identity = "actions", calls = 6, points = 6, measured = "rule", hour = 1, trigger = "nightly.yml: once a day" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:deps", api = "graphql", identity = "actions", calls = 1, points = 3, measured = "rule", hour = 1, trigger = "nightly.yml: once a day, the report's issue created on its first finding; the repository and labels looked up, then the issue created" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:deps", api = "rest", identity = "actions", calls = 2, points = 40, measured = "rest", hour = 1, trigger = "nightly.yml: the focus epics' sub-issues, about 40 reads" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:design", api = "rest", identity = "actions", calls = 2, points = 2, measured = "rest", hour = 1, trigger = "nightly.yml: once a day" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:obligations", api = "graphql", identity = "actions", calls = 4, points = 6, measured = "rule", hour = 1, trigger = "nightly.yml: once a day" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:obligations", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 1, trigger = "nightly.yml: once a day" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:obligations/filed", api = "graphql", identity = "actions", calls = 1, points = 2, measured = "cost", hour = 1, trigger = "nightly.yml: once a day" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:obligations/render", api = "graphql", identity = "actions", calls = 1, points = 9, measured = "cost", hour = 1, trigger = "nightly.yml: a day's merged pulls, 3 pages at 3 points" },
-  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:prose", api = "graphql", identity = "actions", calls = 6, points = 6, measured = "rule", hour = 1, trigger = "nightly.yml: once a day" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:prose", api = "graphql", identity = "actions", calls = 1, points = 3, measured = "rule", hour = 1, trigger = "nightly.yml: once a day, the report's issue created on its first finding; the repository and labels looked up, then the issue created" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:prose", api = "rest", identity = "actions", calls = 2, points = 2, measured = "rest", hour = 1, trigger = "nightly.yml: once a day" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "stall:check", api = "graphql", identity = "read", calls = 2, points = 2, measured = "cost", hour = 4, trigger = "stall:check by the coordinator" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "stall:watch", api = "graphql", identity = "read", calls = 2, points = 2, measured = "cost", hour = 1, trigger = "stall:watch's start" },
