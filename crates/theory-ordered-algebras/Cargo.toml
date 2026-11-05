@@ -1,0 +1,33 @@
+[package]
+name = "gandr-theory-ordered-algebras"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "One law checker for the ordered semirings of gandr, with the max-plus semiring and the Lawvere quantale over exact dyadics"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "no-std", "ordered-semiring", "quantale"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. The exact-reals crate supplies the dyadics the
+# max-plus and Lawvere carriers hold.
+[dependencies]
+anodized.workspace = true
+gandr-theory-exact-reals.workspace = true
+
+# The suite builds dyadic halves from a big-integer mantissa.
+[dev-dependencies]
+num-bigint.workspace = true
+
+[lints]
+workspace = true

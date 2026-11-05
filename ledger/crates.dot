@@ -21,6 +21,7 @@ digraph crates {
     "theory-levitation";
     "theory-nominal-automata";
     "theory-order-maintenance";
+    "theory-ordered-algebras";
     "theory-path-orders";
     "theory-shapes";
     "theory-sites";
@@ -337,6 +338,7 @@ digraph crates {
   "theory-dynamic-graphs" -> "theory-order-maintenance";
   "theory-graphs" -> "theory-spec-combinators";
   "theory-levitation" -> "theory-path-orders";
+  "theory-ordered-algebras" -> "theory-exact-reals";
   "theory-shapes" -> "theory-nominal-automata";
   "theory-sites" -> "theory-circuit-algebras";
   "theory-virtual-doctrines" -> "theory-cell-complexes";
