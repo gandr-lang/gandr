@@ -219,6 +219,8 @@ fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
     let zero = arena.value_literal(integer_literal());
     let codes = gandr_core_term::DataSignature::new(Vec::new(), Vec::from([Vec::new()]), kind);
     let codes = alloc::sync::Arc::new(codes);
+    let canonical = crate::fixture::canonical_signature(&mut arena, ConstantIndex::from(0_usize));
+    let canonical = alloc::sync::Arc::new(canonical);
     let data = |at: usize| {
         Declaration::data(
             ConstantIndex::from(at),
@@ -228,8 +230,13 @@ fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
     };
     let value = |at: usize| declaration(At(at), UNSIGNED, Maybe::Present(zero));
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let signature = Declaration::data(
+        ConstantIndex::from(0_usize),
+        canonical,
+        OriginToken::from(0_usize),
+    );
     assert_eq!(
-        check_declaration(&mut context, &data(0).built_in(Builtin::IrSignature)),
+        check_declaration(&mut context, &signature.built_in(Builtin::IrSignature)),
         Verdict::Data,
         "a datatype holds the signature role"
     );
@@ -277,6 +284,59 @@ fn a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575()
         ],
         [FailureClass::MalformedSource; 2],
         "each refusal is the source's fault"
+    );
+}
+
+/// #5254: the checker refuses the signature role on a datatype that departs
+/// from the canonical signature type, naming the first departure. The refused
+/// declaration holds no role, so a canonical datatype after it holds the role.
+#[test]
+fn a_signature_type_in_another_shape_holds_no_role_5254()
+{
+    use gandr_kernel_term::Builtin;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::Departure;
+    use gandr_kernel_term::FieldPosition;
+
+    let mut arena = CoreArena::new();
+    let [parameters, iota, sigma, delta] =
+        crate::fixture::signature_parts(&mut arena, ConstantIndex::from(0_usize));
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let swapped =
+        gandr_core_term::DataSignature::new(parameters, Vec::from([iota, delta, sigma]), kind);
+    let canonical = crate::fixture::canonical_signature(&mut arena, ConstantIndex::from(1_usize));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let swapped = Declaration::data(
+        ConstantIndex::from(0_usize),
+        alloc::sync::Arc::new(swapped),
+        OriginToken::from(0_usize),
+    );
+    let refusal = CheckRefusal::BuiltinNotCanonical {
+        role: Builtin::IrSignature,
+        departure: Departure::Field {
+            tag: ConstructorTag::from(1_usize),
+            field: FieldPosition::from(1_usize),
+        },
+    };
+    assert_eq!(
+        check_declaration(&mut context, &swapped.built_in(Builtin::IrSignature)),
+        Verdict::Refused(refusal),
+        "σ and δ in the other order depart at σ's function"
+    );
+    assert_eq!(
+        refusal.classify(),
+        FailureClass::MalformedSource,
+        "the departure is the source's fault"
+    );
+    let canonical = Declaration::data(
+        ConstantIndex::from(1_usize),
+        alloc::sync::Arc::new(canonical),
+        OriginToken::from(1_usize),
+    );
+    assert_eq!(
+        check_declaration(&mut context, &canonical.built_in(Builtin::IrSignature)),
+        Verdict::Data,
+        "the refused datatype held no role, so the canonical one takes it"
     );
 }
 

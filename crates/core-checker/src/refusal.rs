@@ -786,6 +786,15 @@ pub enum CheckRefusal
     /// signature type is a data declaration, and `E` and `F` are value
     /// declarations.
     BuiltinMisplaced(gandr_kernel_term::Builtin),
+    /// A declaration takes a built-in role, and departs from the canonical
+    /// form of that role.
+    BuiltinNotCanonical
+    {
+        /// The role the declaration takes.
+        role: gandr_kernel_term::Builtin,
+        /// The first place where the declaration departs.
+        departure: gandr_kernel_term::Departure,
+    },
     /// A nominal application supplies the wrong number of parameters.
     DataArgumentArity(ValueTypeId),
     /// The constructor tag is not in the nominal declaration.
@@ -1587,15 +1596,16 @@ impl CheckRefusal
     ///   whose motive is not covariant, a run its session does not admit, a
     ///   function flow's boundary against its variance, a claim the machine
     ///   leaves undecided, a loop whose respect it leaves undecided and a
-    ///   built-in role that an earlier declaration holds or that the
-    ///   declaration's judgement does not fit are malformed source, since the
-    ///   author can state either another way; a case on an indexed family, a
-    ///   function extensionality or a universe equivalence or a `forward` the
-    ///   rule does not decide, a list round trip reading its tail, univalence
-    ///   at a stratum the checker does not certify and a ride the checker does
-    ///   not move are unimplemented, each naming the issue tracking it; an
-    ///   unbound index, an exhausted allowance, a dangling id, an admission out
-    ///   of order, a repeated sealing site and a machine invariant are engine
+    ///   built-in role that an earlier declaration holds, that the
+    ///   declaration's judgement does not fit or whose canonical form the
+    ///   declaration departs from are malformed source, since the author can
+    ///   state either another way; a case on an indexed family, a function
+    ///   extensionality or a universe equivalence or a `forward` the rule does
+    ///   not decide, a list round trip reading its tail, univalence at a
+    ///   stratum the checker does not certify and a ride the checker does not
+    ///   move are unimplemented, each naming the issue tracking it; an unbound
+    ///   index, an exhausted allowance, a dangling id, an admission out of
+    ///   order, a repeated sealing site and a machine invariant are engine
     ///   faults, which only the engine's own bounds and invariants produce;
     ///   nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
@@ -1637,7 +1647,7 @@ impl CheckRefusal
         | Self::TacticRefused { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::LiteralAmbiguous { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. } | Self::FootprintsOverlap { .. }
-        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::UnassertedLaw { .. } | Self::UndischargedLaw { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } | Self::BuiltinRepeated { .. } | Self::BuiltinMisplaced(_) => matches!(ret, FailureClass::MalformedSource),
+        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::UnassertedLaw { .. } | Self::UndischargedLaw { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } | Self::BuiltinRepeated { .. } | Self::BuiltinMisplaced(_) | Self::BuiltinNotCanonical { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -1733,6 +1743,7 @@ impl CheckRefusal
             | Self::Boundary { .. }
             | Self::BuiltinRepeated { .. }
             | Self::BuiltinMisplaced(_)
+            | Self::BuiltinNotCanonical { .. }
             | Self::Undecided { .. }
             | Self::LoopUndecided { .. } => FailureClass::MalformedSource,
             Self::OutOfFragment { former, .. } => former.judged(),
@@ -1990,6 +2001,7 @@ impl CheckRefusal
             | Self::Boundary { .. }
             | Self::BuiltinRepeated { .. }
             | Self::BuiltinMisplaced(_)
+            | Self::BuiltinNotCanonical { .. }
             | Self::ComposeUncertified { .. }
             | Self::ComposeNotAShape { .. }
             | Self::ComposeDoesNotFill { .. }

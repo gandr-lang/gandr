@@ -753,6 +753,8 @@ pub enum RefusalName
     BuiltinRepeated,
     /// The checker reports `BuiltinMisplaced`.
     BuiltinMisplaced,
+    /// The checker reports `BuiltinNotCanonical`.
+    BuiltinNotCanonical,
     /// The checker reports `DataArgumentArity`.
     DataArgumentArity,
     /// The checker reports `UnknownConstructor`.
@@ -1307,7 +1309,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 240_usize] = [
+    pub const VOCABULARY: [Self; 241_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1324,6 +1326,7 @@ impl RefusalName
         Self::SealSiteRepeated,
         Self::BuiltinRepeated,
         Self::BuiltinMisplaced,
+        Self::BuiltinNotCanonical,
         Self::DataArgumentArity,
         Self::UnknownConstructor,
         Self::ConstructorArity,
@@ -1719,6 +1722,7 @@ impl RefusalName
         | (Self::SealSiteRepeated, b"SealSiteRepeated")
         | (Self::BuiltinRepeated, b"BuiltinRepeated")
         | (Self::BuiltinMisplaced, b"BuiltinMisplaced")
+        | (Self::BuiltinNotCanonical, b"BuiltinNotCanonical")
         | (Self::DataArgumentArity, b"DataArgumentArity")
         | (Self::UnknownConstructor, b"UnknownConstructor")
         | (Self::ConstructorArity, b"ConstructorArity")
@@ -1864,6 +1868,7 @@ impl RefusalName
             Self::SealSiteRepeated => "SealSiteRepeated",
             Self::BuiltinRepeated => "BuiltinRepeated",
             Self::BuiltinMisplaced => "BuiltinMisplaced",
+            Self::BuiltinNotCanonical => "BuiltinNotCanonical",
             Self::DataArgumentArity => "DataArgumentArity",
             Self::UnknownConstructor => "UnknownConstructor",
             Self::ConstructorArity => "ConstructorArity",
@@ -2997,6 +3002,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::SealSiteRepeated(_), RefusalName::SealSiteRepeated)
         | (CheckRefusal::BuiltinRepeated { .. }, RefusalName::BuiltinRepeated)
         | (CheckRefusal::BuiltinMisplaced(_), RefusalName::BuiltinMisplaced)
+        | (CheckRefusal::BuiltinNotCanonical { .. }, RefusalName::BuiltinNotCanonical)
         | (CheckRefusal::DataArgumentArity(_), RefusalName::DataArgumentArity)
         | (CheckRefusal::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
         | (CheckRefusal::ConstructorArity(_), RefusalName::ConstructorArity)
@@ -3152,6 +3158,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::SealSiteRepeated(_) => RefusalName::SealSiteRepeated,
         CheckRefusal::BuiltinRepeated { .. } => RefusalName::BuiltinRepeated,
         CheckRefusal::BuiltinMisplaced(_) => RefusalName::BuiltinMisplaced,
+        CheckRefusal::BuiltinNotCanonical { .. } => RefusalName::BuiltinNotCanonical,
         CheckRefusal::DataArgumentArity(_) => RefusalName::DataArgumentArity,
         CheckRefusal::UnknownConstructor { .. } => RefusalName::UnknownConstructor,
         CheckRefusal::ConstructorArity(_) => RefusalName::ConstructorArity,

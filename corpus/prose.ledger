@@ -5457,7 +5457,6 @@ corpus/surface/unit-pattern.gandr STE-9.3 1e5a0fa8f008c9f8
 corpus/surface/unit-pattern.gandr STE-6.3 db3d18f53b80cf88
 corpus/surface/unit-pattern.gandr STE-6.4 7ffeb0f63edb2700
 corpus/surface/unit-pattern.gandr STE-6.5 db3d18f53b80cf88
-crates/core-checker/README.md STE-3.5 04902a2eec5a77c3
 crates/core-checker/README.md STE-3.5 9d5ce7701eb748cd
 crates/core-checker/README.md STE-9.3 9d5ce7701eb748cd
 crates/core-incremental/README.md STE-3.5 fbff64e61836eef2
