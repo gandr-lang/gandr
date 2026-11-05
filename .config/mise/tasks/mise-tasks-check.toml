@@ -2145,6 +2145,9 @@ done < <(jq -c '.[]' .config/claims/board.json)
 # answer (#5178): a held line before the pick leaves it, and held lines
 # alone give none.
 .config/claims/pick-cases.bash || exit 1
+# `input-cases.bash` builds the input `claim:next` gives `next.jq` (#5292):
+# each reading, longer than one argument can be, reaches jq whole.
+.config/claims/input-cases.bash || exit 1
 # `observed.bash` hands a transcript of any size to jq (#3871): for each case
 # in `.config/claims/hand-off.json` a scratch repository adds a transcript of
 # the case's size, stopped in a test the body names, and the script prints the
