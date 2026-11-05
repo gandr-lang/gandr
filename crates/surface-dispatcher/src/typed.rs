@@ -6481,12 +6481,12 @@ mod tests
             "a constructor in a pattern, its name in the family"
         );
         assert_eq!(
-            at("Zero) ;"),
+            at("Zero);"),
             named("Zero : Nat", "Zero"),
             "a constructor inside another's argument answers itself"
         );
         assert_eq!(
-            at("Nat ;"),
+            at("Nat;"),
             named("Nat : Type", "Nat"),
             "a written family, its declaration"
         );
@@ -6807,7 +6807,7 @@ mod tests
             nat,
             "a function's use, at the family its type names"
         );
-        assert_eq!(at("Nat ;"), nat, "a written family, at itself");
+        assert_eq!(at("Nat;"), nat, "a written family, at itself");
         assert_eq!(at("\ndef two : Nat"), Vec::new(), "no node, no family");
     }
 
@@ -6969,7 +6969,7 @@ mod tests
                     NameKind::Constructor
                 ),
                 (
-                    in_source(sibling, 0, "here : Point ;", "here"),
+                    in_source(sibling, 0, "here : Point;", "here"),
                     NameKind::Value
                 ),
                 (

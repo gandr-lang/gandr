@@ -5,5 +5,5 @@ def rec plus(n : Nat, m : Nat) -> -F Nat =
   match m
     | Zero => n
     | Succ(p) => Succ (plus[<] n p)
-def two : Nat ;
-def two = Succ (Succ Zero) ;
+def two : Nat;
+def two = Succ (Succ Zero);

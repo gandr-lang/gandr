@@ -2124,12 +2124,12 @@ mod tests
             "at the next argument, that argument"
         );
         assert_eq!(
-            called(CALLED, " } ;\ndata List"),
+            called(CALLED, " };\ndata List"),
             answer("plus", 1),
             "just past the last argument, the spine it ends"
         );
         assert_eq!(
-            called(CALLED, "} ;\ndata List"),
+            called(CALLED, "};\ndata List"),
             None,
             "past the spine, no call"
         );
@@ -2153,7 +2153,9 @@ mod tests
     #[test]
     fn each_head_reads_its_parameters()
     {
-        let text = include_str!("signature/fixtures/heads.gandr");
+        // `plus`'s head stays over two lines, so a label reads its layout
+        // collapsed.
+        let text = include_str!("signature/unformatted/heads.gandr");
         let grammar = grammar().expect("the grammar builds");
         let roles = roles().expect("the roles build");
         let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");

@@ -9,4 +9,4 @@ def rec plus(n : Nat, m : Nat) -> -F Nat =
     | Zero => n
     | Succ(p) => Succ (plus[<] n p)
 /// The answer.
-def answer = 42 ;
+def answer = 42;

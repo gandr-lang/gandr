@@ -6,9 +6,9 @@ data IR(d : Type) : Type[+, 1] where
 def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type =
   match c
     | Iota(e) => return Unit
-    | DeltaC(a, f) => return (Sig
-      (+U (a -> -F x))
-      (thunk { fun (h) { args[<] d (f (thunk { fun (z) { t (h z) } })) x t } }))
+    | DeltaC(a, f) => return (Sig (+U (a -> -F x)) (thunk {
+      fun (h) { args[<] d (f (thunk { fun (z) { t (h z) } })) x t }
+    }))
 def keep(d : Type, c : IR(d), x : Type, t : +U (x -> -F d), w : args(d, c, x, t)) -> Unit =
   return *{}
 def delta(

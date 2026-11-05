@@ -33,9 +33,11 @@ command = "rustfmt"
 options = ["--edition", "2024"]
 includes = ["*.rs"]
 
-# Every corpus source in the gandr formatter's layout (#492). It keeps each
-# token and comment as written, so a source spelled in the explicit form stays
-# explicit; `check:fmt` runs the same check in one process.
+# Every corpus source and crate fixture in the gandr formatter's layout
+# (#492). It keeps each token and comment as written, so a source spelled in
+# the explicit form stays explicit; `check:fmt` runs the same check in one
+# process. A source whose layout its test reads sits under a directory named
+# `unformatted`.
 [formatter.gandr]
 command = "cargo"
 options = [
@@ -56,8 +58,9 @@ includes = [
   "corpus/pathological/**/*.gandr",
   "corpus/pending/**/*.gandr",
   "corpus/surface/**/*.gandr",
-  "crates/surface-corpus/strict/**/*.gandr",
+  "crates/**/*.gandr",
 ]
+excludes = ["crates/**/unformatted/**"]
 
 # The mutating formatter takes the lower priority so `fmt` completes before
 # `check` when both cover the same markdown set.

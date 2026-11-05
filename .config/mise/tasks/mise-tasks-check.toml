@@ -173,8 +173,9 @@ gh issue edit "$number" --body-file "$scratch/body.md" > /dev/null
 echo "report:gate-time: updated #$number: main's gate is past its budget"
 {% endraw %}'''
 
-# Every corpus source stays in the gandr formatter's layout (#492): one
-# process over the corpus, every root under the fixture subtrees of `corpus/` and `crates/surface-corpus/strict`, and the library `library/std`, beside
+# Every corpus source and crate fixture stays in the gandr formatter's
+# layout (#492): one process over the fixture subtrees of `corpus/`, the
+# library `library/std` and every `.gandr` file under `crates/`, beside
 # rustfmt. The formatter keeps each token as written, so the explicit-form
 # sources keep their spelling.
 ["check:fmt"]
@@ -182,12 +183,22 @@ description = "rustfmt and the gandr formatter, unchanged"
 depends = ["check:corpus-format"]
 run = ".config/mise/scope cargo fmt --all --check"
 
-# The gandr formatter's check over the corpus. CI runs it in the plain lane,
-# whose state holds the driver, rather than in the format gate's treefmt pass,
-# which would build the driver from nothing on every run.
+# The gandr formatter's check over the corpus and the crate fixtures. A test
+# reads a fixture with `include_str!`, so the fixture is a source the gate
+# holds to the layout as it holds the corpus. A source whose layout its test
+# reads, as a formatter's input, sits under a directory named `unformatted`,
+# which the check leaves out. The file list is one argument vector, read from
+# the index, so an untracked scratch file is not checked. CI runs it in the
+# plain lane, whose state holds the driver, rather than in the format gate's
+# treefmt pass, which would build the driver from nothing on every run.
 ["check:corpus-format"]
-description = "Every corpus source in the gandr formatter's layout"
-run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict library/std"
+description = "Every corpus source and crate fixture in the gandr formatter's layout"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+mapfile -t fixtures < <(git ls-files -- 'crates/*.gandr' ':(exclude)crates/*/unformatted/*')
+exec .config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface library/std "${fixtures[@]}"
+'''
 
 # The standard library's documentation site, written as `gandr doc` writes a
 # package's (#4906, #4909): a source that cannot be read or judged, or a file
