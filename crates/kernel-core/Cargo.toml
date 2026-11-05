@@ -24,7 +24,11 @@ path = "tests/lib.rs"
 # trace in. The anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. BLAKE3 keys a recalled verdict by the
 # kernel's whole input, and Ed25519 signs and verifies the receipt that
-# attests it. Dev-dependencies are outside shipped trust.
+# attests it. The level context asks the potential maintenance of the
+# dynamic-graph crate for a model of a declaration's difference constraints,
+# over the graph crate's ids. That crate proposes and adds no trust: the
+# landmark poset validates the model before it admits. Dev-dependencies are
+# outside shipped trust.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -33,6 +37,8 @@ gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+gandr-theory-dynamic-graphs.workspace = true
+gandr-theory-graphs.workspace = true
 quenchant-arith.workspace = true
 quenchant-shape.workspace = true
 

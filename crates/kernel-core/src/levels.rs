@@ -10,18 +10,36 @@
 //! oracle answers with evidence in both directions. Trust concentrates in the
 //! oracle's validators, so this module decides nothing about levels; it only
 //! says which query to ask and refuses out-of-scope variables before asking.
+//!
+//! Admission asks the potential maintenance of `theory-dynamic-graphs` first.
+//! When every constraint is a difference constraint, one variable with an
+//! offset on each side, the maintenance proposes a model, and the poset
+//! validates it before it admits. A model the validator refuses, a positive
+//! cycle and a constraint outside that fragment go to the poset's
+//! loop-checking, which returns the replayable evidence. The maintenance is
+//! outside the trusted base: it proposes, and the poset's validator decides.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_strata::AdmissionOutcome;
+use gandr_kernel_strata::ConsistencyValue;
+use gandr_kernel_strata::ConsistencyWitness;
+use gandr_kernel_strata::ConstraintRelation;
 use gandr_kernel_strata::Entailment;
 use gandr_kernel_strata::LandmarkConstraint;
 use gandr_kernel_strata::LandmarkPoset;
 use gandr_kernel_strata::Level;
+use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_strata::LevelVar;
 use gandr_kernel_term::LevelParamCount;
+use gandr_theory_dynamic_graphs::ConstraintVerdict;
+use gandr_theory_dynamic_graphs::Offset;
+use gandr_theory_dynamic_graphs::PotentialMaintenance;
+use gandr_theory_graphs::EdgeId;
+use gandr_theory_graphs::NodeId;
+use quenchant_shape::shape::Maybe;
 
 use crate::error::KernelError;
 use crate::error::LevelOrderRefutation;
@@ -103,6 +121,13 @@ impl LevelContext
                 check_scope(params, variable)?;
             }
         }
+        let constraints = match proposed_model(&constraints) {
+            Proposal::Model(model) => match LandmarkPoset::admit_modelled(constraints, model) {
+                Ok(poset) => return Ok(Self { params, poset }),
+                Err(refusal) => refusal.into_constraints(),
+            },
+            Proposal::Refuted | Proposal::Outside => constraints,
+        };
         let outcome = LandmarkPoset::admit(constraints).map_err(KernelError::LevelOracleFault)?;
         match outcome {
             AdmissionOutcome::Admitted(poset) => Ok(Self { params, poset }),
@@ -268,6 +293,171 @@ fn universe_violation(
         upper.clone(),
         refutation,
     )))
+}
+
+/// What the potential maintenance makes of a constraint set.
+#[derive(Debug)]
+enum Proposal
+{
+    /// Every constraint is a difference constraint, and the maintenance
+    /// admits each one: the model is its standing valuation.
+    Model(ConsistencyWitness),
+    /// The maintenance refutes a constraint by a positive cycle.
+    Refuted,
+    /// A constraint is outside the difference fragment, or a value is past
+    /// the maintenance's range.
+    Outside,
+}
+
+/// What one constraint does to the potential maintenance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Insertion
+{
+    /// It is a difference constraint, and the maintenance admits its edges.
+    Admitted,
+    /// It is a difference constraint, and the maintenance refutes an edge by
+    /// a positive cycle.
+    Refuted,
+    /// It is not a difference constraint, or an offset is past the
+    /// maintenance's range.
+    Outside,
+}
+
+/// Insert the edges of a difference constraint into `maintenance`:
+/// `x + k ≤ y + j` is the edge from `x` to `y` with offset `k − j`, a
+/// maximum on the left gives one edge for each atom, and an equation of two
+/// atoms gives an edge each way.
+///
+/// # Specification
+/// trivial.
+fn insert_difference(
+    constraint: &LandmarkConstraint,
+    maintenance: &mut PotentialMaintenance,
+) -> Insertion
+{
+    let single = |level: &Level| {
+        let mut atoms = level.atoms();
+        match (
+            atoms.next(),
+            atoms.next(),
+            level.constant_part() == LevelConstant::ZERO,
+        ) {
+            (Some(atom), None, true) => Some(atom),
+            _ => None,
+        }
+    };
+    let edge = |lower: LevelVar, upper: LevelVar| {
+        EdgeId::new(
+            NodeId::from(u32::from(lower.index())),
+            NodeId::from(u32::from(upper.index())),
+        )
+    };
+    let offset = |from: u64, to: u64| {
+        i64::try_from(from)
+            .ok()
+            .zip(i64::try_from(to).ok())
+            .and_then(|(from, to)| from.checked_sub(to))
+            .map(Offset::from)
+    };
+    let mut insert = |edge: EdgeId, weight: Option<Offset>| {
+        let Some(weight) = weight
+        else {
+            return Insertion::Outside;
+        };
+        match maintenance.insert_constraint(edge, weight) {
+            Ok(ConstraintVerdict::Satisfied | ConstraintVerdict::SatisfiedAfterRaise) => {
+                Insertion::Admitted
+            },
+            Ok(ConstraintVerdict::Refuted(_)) => Insertion::Refuted,
+            Err(_) => Insertion::Outside,
+        }
+    };
+    let Some((upper, upper_offset)) = single(constraint.right())
+    else {
+        return Insertion::Outside;
+    };
+    let upper_offset = u64::from(upper_offset);
+    match constraint.relation() {
+        ConstraintRelation::Leq => {
+            if constraint.left().constant_part() != LevelConstant::ZERO {
+                return Insertion::Outside;
+            }
+            for (lower, lower_offset) in constraint.left().atoms() {
+                let inserted = insert(
+                    edge(lower, upper),
+                    offset(u64::from(lower_offset), upper_offset),
+                );
+                if inserted != Insertion::Admitted {
+                    return inserted;
+                }
+            }
+            Insertion::Admitted
+        },
+        ConstraintRelation::Eq => {
+            let Some((lower, lower_offset)) = single(constraint.left())
+            else {
+                return Insertion::Outside;
+            };
+            let lower_offset = u64::from(lower_offset);
+            match insert(edge(lower, upper), offset(lower_offset, upper_offset)) {
+                Insertion::Admitted => {
+                    insert(edge(upper, lower), offset(upper_offset, lower_offset))
+                },
+                other @ (Insertion::Refuted | Insertion::Outside) => other,
+            }
+        },
+    }
+}
+
+/// The potential maintenance's proposal for `constraints`.
+///
+/// # Specification
+/// - requires: nothing; the proposal is untrusted, and
+///   [`LandmarkPoset::admit_modelled`] validates a model before it admits.
+/// - ensures: [`Proposal::Model`] assigns every variable of the constraints its
+///   standing value when every constraint is a difference constraint and the
+///   maintenance admits each one; [`Proposal::Refuted`] when it refutes one;
+///   [`Proposal::Outside`] otherwise.
+/// - panics: none.
+/// - intension: one insertion per edge, each incremental in the cone it raises;
+///   no Horn saturation.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every set of up to three difference constraints over
+///   three variables, each offset 0 or 1, gets the verdict the poset's
+///   loop-checking gives.
+/// - witness: `tests::levels::admission_agrees_with_loop_checking_on_difference_constraints`
+#[spec(ensures: |ret| match ret {
+    Proposal::Model(ref model) => constraints
+        .iter()
+        .flat_map(constraint_variables)
+        .all(|variable| model.value_of(variable).is_some()),
+    Proposal::Refuted | Proposal::Outside => true,
+})]
+fn proposed_model(constraints: &[LandmarkConstraint]) -> Proposal
+{
+    let mut maintenance = PotentialMaintenance::new();
+    for constraint in constraints {
+        match insert_difference(constraint, &mut maintenance) {
+            Insertion::Admitted => {},
+            Insertion::Refuted => return Proposal::Refuted,
+            Insertion::Outside => return Proposal::Outside,
+        }
+    }
+    let mut values = alloc::collections::BTreeMap::new();
+    for variable in constraints.iter().flat_map(constraint_variables) {
+        let Maybe::Present(potential) =
+            maintenance.value(NodeId::from(u32::from(variable.index())))
+        else {
+            return Proposal::Outside;
+        };
+        let Ok(value) = u128::try_from(i64::from(potential))
+        else {
+            return Proposal::Outside;
+        };
+        let _previous = values.insert(variable, ConsistencyValue::from(value));
+    }
+    Proposal::Model(ConsistencyWitness::new(values))
 }
 
 /// The constraint's variables, left side before right, each in canonical order.
