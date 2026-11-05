@@ -2055,7 +2055,7 @@ impl<'pbg> MeldState<'pbg>
         let start = usize::try_from(top.start).ok()?;
         let braced_value = matches!(
             bytes.get(start .. start.saturating_add(2)),
-            Some(&[b'*' | b'+' | b'&' | b'#', b'{'])
+            Some(&[b'*' | b'+' | b'&', b'{'])
         );
         if bytes.get(last) == Some(&b'}') && !braced_value {
             return None;

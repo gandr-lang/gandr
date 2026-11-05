@@ -278,10 +278,9 @@ impl ClosingClass
     /// - requires: nothing.
     /// - ensures: `(` and `type(` are [`Paren`](Self::Paren), `[` and the
     ///   sequence and index openers `#[` and `.#[` are
-    ///   [`Bracket`](Self::Bracket), `{`, the connectives' openers `*{`, `+{`,
-    ///   `&{` and `#{`, and the sub-record openers `.*{` and `.#{` are
-    ///   [`Brace`](Self::Brace), and every other spelling, the closers
-    ///   included, is `None`.
+    ///   [`Bracket`](Self::Bracket), `{`, the connectives' openers `*{`, `+{`
+    ///   and `&{`, and the sub-record opener `.*{` are [`Brace`](Self::Brace),
+    ///   and every other spelling, the closers included, is `None`.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -290,13 +289,13 @@ impl ClosingClass
     /// - witness: `mold::tests::openers_and_closers_pair_by_family`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret == match spelling.0 { "(" | "type(" => Some(Self::Paren), "[" | "#[" | ".#[" => Some(Self::Bracket), "{" | "*{" | "+{" | "&{" | "#{" | ".*{" | ".#{" => Some(Self::Brace), _ => None })]
+    #[spec(ensures: |ret| ret == match spelling.0 { "(" | "type(" => Some(Self::Paren), "[" | "#[" | ".#[" => Some(Self::Bracket), "{" | "*{" | "+{" | "&{" | ".*{" => Some(Self::Brace), _ => None })]
     pub fn opening(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {
             "(" | "type(" => Some(Self::Paren),
             "[" | "#[" | ".#[" => Some(Self::Bracket),
-            "{" | "*{" | "+{" | "&{" | "#{" | ".*{" | ".#{" => Some(Self::Brace),
+            "{" | "*{" | "+{" | "&{" | ".*{" => Some(Self::Brace),
             _ => None,
         }
     }
@@ -346,8 +345,6 @@ mod tests
             ("#[", Some(ClosingClass::Bracket), None),
             (".#[", Some(ClosingClass::Bracket), None),
             ("{", Some(ClosingClass::Brace), None),
-            ("#{", Some(ClosingClass::Brace), None),
-            (".#{", Some(ClosingClass::Brace), None),
             ("*{", Some(ClosingClass::Brace), None),
             ("+{", Some(ClosingClass::Brace), None),
             ("&{", Some(ClosingClass::Brace), None),

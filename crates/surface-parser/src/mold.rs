@@ -4752,8 +4752,6 @@ mod tests
             (Lexeme::Punct, "~~>", &["~~>", "⇝"]),
             (Lexeme::Punct, "::", &["::", "∷"]),
             (Lexeme::Punct, "≃", &["≃"]),
-            (Lexeme::Punct, "#{", &["#{"]),
-            (Lexeme::Punct, ".#{", &[".#{"]),
             (Lexeme::Punct, "*{", &["*{"]),
             (Lexeme::LowerWord, "inf", &["inf", "ω"]),
             (Lexeme::Space, " ", &[]),
@@ -5829,7 +5827,7 @@ mod tests
     #[test]
     fn brackets_are_classified_by_lexeme_and_text()
     {
-        let source = SourceFragment::from("@[ f([x], #{ y }) ] ( \"]\" z *{}");
+        let source = SourceFragment::from("@[ f([x], +{ y }) ] ( \"]\" z *{}");
         let classes: Vec<(String, super::Bracket)> = label(source)
             .into_iter()
             .filter(|token| token.lexeme != Lexeme::Space)
@@ -5853,7 +5851,7 @@ mod tests
             ("x", neither),
             ("]", close),
             (",", neither),
-            ("#{", open),
+            ("+{", open),
             ("y", neither),
             ("}", close),
             (")", close),
