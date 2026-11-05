@@ -23,15 +23,77 @@
 //! - [`Report`] — what a run did, and each obligation's outcome.
 
 use alloc::vec::Vec;
+use core::fmt;
 use core::num::NonZeroU32;
 
 use anodized::spec;
 
+use crate::certificate::CertificateRefusal;
 use crate::certificate::CheckerQuotas;
+use crate::codec::CheckpointBytes;
+use crate::codec::DecodeError;
+use crate::codec::EncodedCheckpoint;
+use crate::codec::read_checkpoint;
+use crate::codec::write_checkpoint;
+use crate::plan::PlanError;
 use crate::semidecision::Obligation;
 use crate::semidecision::Outcome;
 use crate::semidecision::Progress;
 use crate::validate::ValidatedPlan;
+
+/// Why a checkpoint does not resume.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResumeError
+{
+    /// The bytes are malformed, or they are not canonical.
+    Decode(DecodeError),
+    /// The quantum is no steps.
+    Quantum,
+    /// The cursor names no live obligation.
+    Cursor,
+    /// An obligation names no node of the plan, or a node of another sort
+    /// than its demand takes.
+    Obligation(PlanError),
+    /// The steps of an obligation do not replay.
+    Replay(CertificateRefusal),
+    /// The steps replay, but the machine does not write them for a live
+    /// obligation: a chain of another node, a split of an enclosure that a
+    /// later step narrows, or a step that concludes.
+    Steps,
+}
+
+impl fmt::Display for ResumeError
+{
+    /// Write the refusal as one line.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        return match *self {
+            Self::Decode(ref error) => write!(f, "the checkpoint's bytes are refused: {error}"),
+            Self::Quantum => f.write_str("the checkpoint's quantum is no steps"),
+            Self::Cursor => f.write_str("the checkpoint's cursor names no live obligation"),
+            Self::Obligation(ref error) => {
+                write!(f, "an obligation of the checkpoint names no node of its sort: {error}")
+            },
+            Self::Replay(ref refusal) => {
+                write!(f, "the steps of an obligation of the checkpoint do not replay: {refusal}")
+            },
+            Self::Steps => f.write_str(
+                "the steps of an obligation of the checkpoint are not steps that the machine writes for a live obligation",
+            ),
+        };
+    }
+}
+
+impl core::error::Error for ResumeError
+{
+}
 
 /// The most steps that one turn does on one obligation.
 #[repr(transparent)]
@@ -61,6 +123,19 @@ impl From<Quantum> for u64
     fn from(quantum: Quantum) -> Self
     {
         return core::num::NonZeroU64::from(quantum.0).get();
+    }
+}
+
+impl From<Quantum> for NonZeroU32
+{
+    /// The steps of the quantum.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(quantum: Quantum) -> Self
+    {
+        return quantum.0;
     }
 }
 
@@ -115,6 +190,19 @@ impl From<usize> for Position
     fn from(index: usize) -> Self
     {
         return Self(index);
+    }
+}
+
+impl From<Position> for usize
+{
+    /// The index of the obligation in the order of turns.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: Position) -> Self
+    {
+        return position.0;
     }
 }
 
@@ -347,6 +435,128 @@ impl<'plan> Dovetail<'plan>
     {
         return self.entries.get(position.0).map(|entry| Steps(entry.spent));
     }
+
+    /// The checkpoint of the scheduler: its live obligations and the place of
+    /// the next turn, as canonical bytes.
+    ///
+    /// # Specification
+    /// - ensures: the bytes hold the quantum, the quotas, each live obligation
+    ///   in the order of its turns with the steps spent on it and the steps of
+    ///   its certificate so far, and the position among them of the live
+    ///   obligation of the next turn. A settled obligation is not in the bytes.
+    ///   [`Self::resume`] reads the bytes back to a scheduler that goes on as
+    ///   this one goes on.
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the scheduler that the bytes
+    ///   resume to.
+    /// - intension: one write of the live obligations' steps, in one
+    ///   allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a checkpoint at every turn of generated runs resumes
+    ///   to the certificates of the run that never stops. L3 — a checkpoint
+    ///   after one quantum of the refinement of the square root of two.
+    /// - witness: `tests::checkpoint::a_resumed_run_certifies_as_an_unbroken_one`
+    /// - witness: `tests::checkpoint::every_checkpoint_resumes_to_the_unbroken_run`
+    #[inline]
+    #[must_use]
+    pub fn checkpoint(&self) -> CheckpointBytes
+    {
+        let live = self
+            .entries
+            .iter()
+            .filter(|entry| entry.progress.settled().is_none());
+        // The next turn goes to the first live obligation at or after the
+        // cursor, and after the last one to the first.
+        let before = self.entries.get(.. self.cursor).map_or(0, |entries| {
+            entries
+                .iter()
+                .filter(|entry| entry.progress.settled().is_none())
+                .count()
+        });
+        let cursor = Position(if before >= self.live { 0 } else { before });
+        let held = live.map(|entry| {
+            let obligation = entry.progress.obligation();
+            (
+                obligation.node(),
+                obligation.demand(),
+                Steps(entry.spent),
+                entry.progress.steps(),
+            )
+        });
+        return write_checkpoint((self.quantum, &self.quotas, cursor), held);
+    }
+
+    /// The scheduler that the checkpoint `bytes` holds, over `plan`.
+    ///
+    /// # Specification
+    /// - ensures: each live obligation of the checkpoint names a node of `plan`
+    ///   of the sort that its demand takes, and the steps of its certificate
+    ///   replay in [`crate::certificate::check`]. The scheduler goes on as the
+    ///   scheduler that wrote the checkpoint goes on: a run gives the same
+    ///   certificates and the same reasons.
+    /// - fails: refuses each corruption by name: a malformed layout
+    ///   ([`ResumeError::Decode`]), a quantum of no steps
+    ///   ([`ResumeError::Quantum`]), a cursor past the obligations
+    ///   ([`ResumeError::Cursor`]), an obligation that names no node of `plan`
+    ///   or a node of another sort ([`ResumeError::Obligation`]), steps that do
+    ///   not replay ([`ResumeError::Replay`]), steps that the machine does not
+    ///   write for a live obligation ([`ResumeError::Steps`]), and bytes that
+    ///   differ from the canonical bytes of what they hold
+    ///   ([`ResumeError::Decode`] of [`DecodeError::NotCanonical`]).
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the runs of the resumed
+    ///   scheduler.
+    /// - intension: one read and one replay of the steps, linear in the bytes.
+    ///
+    /// # Errors
+    /// Each [`ResumeError`] above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every checkpoint of generated runs resumes to the
+    ///   unbroken run. L3 — each refusal on its smallest corruption.
+    /// - witness: `tests::checkpoint::a_resumed_run_certifies_as_an_unbroken_one`
+    /// - witness: `tests::checkpoint::every_checkpoint_resumes_to_the_unbroken_run`
+    /// - witness: `tests::checkpoint::a_corrupt_checkpoint_is_refused_by_name`
+    #[inline]
+    pub fn resume(
+        plan: &'plan ValidatedPlan,
+        bytes: EncodedCheckpoint<'_>,
+    ) -> Result<Self, ResumeError>
+    {
+        let (quantum, quotas, cursor, held) = read_checkpoint(bytes)
+            .map_err(ResumeError::Decode)?
+            .into_parts();
+        let quantum = quantum.ok_or(ResumeError::Quantum)?;
+        if cursor.0 >= held.len().max(1) {
+            return Err(ResumeError::Cursor);
+        }
+        let entries = held
+            .into_iter()
+            .map(|held| {
+                let (node, demand, spent, steps) = held.into_parts();
+                let obligation =
+                    Obligation::new(plan, node, demand).map_err(ResumeError::Obligation)?;
+                let progress = Progress::resume(plan, obligation, steps, &quotas)?;
+                return Ok(Entry {
+                    progress,
+                    spent: spent.0,
+                });
+            })
+            .collect::<Result<Vec<Entry>, ResumeError>>()?;
+        let resumed = Self {
+            plan,
+            quantum,
+            quotas,
+            live: entries.len(),
+            entries,
+            cursor: cursor.0,
+        };
+        if resumed.checkpoint().as_ref() != bytes.as_ref() {
+            return Err(ResumeError::Decode(DecodeError::NotCanonical));
+        }
+        return Ok(resumed);
+    }
 }
 
 /// What a run did, and the outcome of each obligation when it stopped.
@@ -383,6 +593,19 @@ impl<'run> Report<'run, '_>
     pub const fn work(&self) -> Work
     {
         return self.work;
+    }
+
+    /// The checkpoint of the scheduler after the run, as
+    /// [`Dovetail::checkpoint`] writes it. A cancelled run hands it to its
+    /// caller here.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn checkpoint(&self) -> CheckpointBytes
+    {
+        return self.dovetail.checkpoint();
     }
 
     /// The outcome of the obligation at `position`, or `None` past the

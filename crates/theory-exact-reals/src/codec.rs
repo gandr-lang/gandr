@@ -1,4 +1,5 @@
-//! The canonical serialization of a plan and of a certificate.
+//! The canonical serialization of a plan, of a certificate and of a
+//! checkpoint.
 //!
 //! A plan crosses a process boundary as bytes, and a later stage keys a
 //! cache and a certificate by them. So the bytes of a plan are canonical: two
@@ -9,7 +10,9 @@
 //! bytes that decode but differ from the canonical bytes of what they hold.
 //! The root is the last node, and its sort says whether the plan encloses a
 //! real or decides an open proposition. A [`Certificate`] has canonical bytes
-//! of the same convention, its steps in order.
+//! of the same convention, its steps in order. So does a checkpoint of the
+//! refinement machine: its live obligations with the steps of their
+//! certificates.
 //!
 //! # Boundaries
 //!
@@ -45,19 +48,27 @@
 //! | power | `0x07` | forall | `0x16` | | |
 //! | cut | `0x08` | | | | |
 //!
-//! A certificate's layout stands on [`Certificate::encode`].
+//! A certificate's layout stands on [`Certificate::encode`], and a
+//! checkpoint's on [`crate::dovetail::Dovetail::checkpoint`].
 
 use alloc::vec::Vec;
 use core::fmt;
+use core::num::NonZeroU32;
 
 use anodized::spec;
 use num_bigint::BigInt;
 
 use crate::certificate::Certificate;
+use crate::certificate::CheckerQuotas;
 use crate::certificate::FormatVersion;
 use crate::certificate::Side;
 use crate::certificate::Step;
+use crate::certificate::StepCount;
 use crate::certificate::StepId;
+use crate::dovetail::Position;
+use crate::dovetail::Quantum;
+use crate::dovetail::Steps;
+use crate::dyadic::BitWidth;
 use crate::dyadic::Dyadic;
 use crate::dyadic::DyadicError;
 use crate::dyadic::Exponent;
@@ -90,6 +101,7 @@ use crate::plan::RealId;
 use crate::plan::Root;
 use crate::plan::Site;
 use crate::plan::Sort;
+use crate::semidecision::Demand;
 
 /// The four bytes that open an encoded plan.
 const MAGIC: [u8; 4] = *b"GXRP";
@@ -1576,4 +1588,375 @@ impl Certificate
         }
         return Ok(certificate);
     }
+}
+
+/// The four bytes that open an encoded checkpoint.
+const CHECKPOINT_MAGIC: [u8; 4] = *b"GXRK";
+
+/// The kind byte of an obligation's demand in a checkpoint.
+mod demand_kind
+{
+    use super::Kind;
+
+    /// The open node holds.
+    pub(super) const HOLDS: Kind = Kind(0x40);
+    /// The open node fails.
+    pub(super) const FAILS: Kind = Kind(0x41);
+    /// An enclosure of a real node to a power of two.
+    pub(super) const ENCLOSES: Kind = Kind(0x42);
+}
+
+/// The canonical bytes of a checkpoint.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CheckpointBytes(Vec<u8>);
+
+impl AsRef<[u8]> for CheckpointBytes
+{
+    /// Borrow the bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        return &self.0;
+    }
+}
+
+impl From<CheckpointBytes> for Vec<u8>
+{
+    /// Take the bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: CheckpointBytes) -> Self
+    {
+        return bytes.0;
+    }
+}
+
+/// Bytes offered as a checkpoint, read by
+/// [`crate::dovetail::Dovetail::resume`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct EncodedCheckpoint<'bytes>(&'bytes [u8]);
+
+impl<'bytes> From<&'bytes [u8]> for EncodedCheckpoint<'bytes>
+{
+    /// Read a byte slice as an encoded checkpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: &'bytes [u8]) -> Self
+    {
+        return Self(bytes);
+    }
+}
+
+impl<'bytes> From<&'bytes CheckpointBytes> for EncodedCheckpoint<'bytes>
+{
+    /// Read a checkpoint's own bytes as an encoded checkpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: &'bytes CheckpointBytes) -> Self
+    {
+        return Self(&bytes.0);
+    }
+}
+
+impl AsRef<[u8]> for EncodedCheckpoint<'_>
+{
+    /// Borrow the bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        return self.0;
+    }
+}
+
+/// One live obligation as a checkpoint holds it: its node, its demand, the
+/// steps spent on it, and the steps of its certificate so far.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Held
+{
+    /// The node of the obligation.
+    node: NodeId,
+    /// The demand of the obligation.
+    demand: Demand,
+    /// The steps done on the obligation.
+    spent: Steps,
+    /// The steps of its certificate so far.
+    steps: Vec<Step>,
+}
+
+impl Held
+{
+    /// The node, the demand, the spent steps and the steps of the
+    /// certificate, taken out of the record.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn into_parts(self) -> (NodeId, Demand, Steps, Vec<Step>)
+    {
+        return (self.node, self.demand, self.spent, self.steps);
+    }
+}
+
+/// The fields of a checkpoint as its bytes state them, not yet judged
+/// against a plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Fields
+{
+    /// The most steps of one turn, or `None` for a quantum of no steps.
+    quantum: Option<Quantum>,
+    /// The bounds of each certificate.
+    quotas: CheckerQuotas,
+    /// The position of the next turn among the live obligations.
+    cursor: Position,
+    /// The live obligations, in the order of their turns.
+    held: Vec<Held>,
+}
+
+impl Fields
+{
+    /// The quantum, the quotas, the cursor and the live obligations, taken
+    /// out of the record.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn into_parts(self) -> (Option<Quantum>, CheckerQuotas, Position, Vec<Held>)
+    {
+        return (self.quantum, self.quotas, self.cursor, self.held);
+    }
+}
+
+/// A `u64` field of a checkpoint.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Wide(u64);
+
+impl Entry
+{
+    /// Write a `u64`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn wide(
+        &mut self,
+        value: Wide,
+    )
+    {
+        self.bytes.extend_from_slice(&value.0.to_le_bytes());
+    }
+
+    /// Write a demand: its kind, then the width of an enclosure as an `i32`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn demand(
+        &mut self,
+        demand: Demand,
+    )
+    {
+        match demand {
+            Demand::Holds => self.kind(demand_kind::HOLDS),
+            Demand::Fails => self.kind(demand_kind::FAILS),
+            Demand::Encloses { width } => {
+                self.kind(demand_kind::ENCLOSES);
+                self.bytes
+                    .extend_from_slice(&i32::from(width).to_le_bytes());
+            },
+        }
+    }
+}
+
+impl Reader<'_>
+{
+    /// Read a `u64`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn wide(&mut self) -> Result<Wide, DecodeError>
+    {
+        let (&wide, rest) = self
+            .rest
+            .split_first_chunk::<8>()
+            .ok_or(DecodeError::Truncated)?;
+        self.rest = rest;
+        return Ok(Wide(u64::from_le_bytes(wide)));
+    }
+
+    /// Read a demand.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn demand(&mut self) -> Result<Demand, DecodeError>
+    {
+        return match self.kind()? {
+            demand_kind::HOLDS => Ok(Demand::Holds),
+            demand_kind::FAILS => Ok(Demand::Fails),
+            demand_kind::ENCLOSES => {
+                let (&width, rest) = self
+                    .rest
+                    .split_first_chunk::<4>()
+                    .ok_or(DecodeError::Truncated)?;
+                self.rest = rest;
+                Ok(Demand::Encloses {
+                    width: Exponent::from(i32::from_le_bytes(width)),
+                })
+            },
+            _ => Err(DecodeError::UnknownKind),
+        };
+    }
+}
+
+/// The canonical bytes of a checkpoint with these fields.
+///
+/// The bytes open with the magic `GXRK` and the version as a `u16`. The
+/// quantum follows as a `u32`, then the step quota, the width quota, the
+/// cursor and the count of live obligations, each a `u64`. Each obligation
+/// is its node as a `u32`, its demand, the steps spent on it as a `u64`, and
+/// the count and the steps of its certificate as [`Certificate::encode`]
+/// writes them.
+///
+/// | Demand | Byte | Fields |
+/// | ------ | ---- | ------ |
+/// | holds | `0x40` | none |
+/// | fails | `0x41` | none |
+/// | encloses | `0x42` | the width as an `i32` |
+///
+/// # Specification
+/// - ensures: the magic, the version, then the fields in order;
+///   [`read_checkpoint`] reads them back to equal fields.
+/// - panics: none.
+/// - executable: none — the clause restates the layout.
+/// - intension: one allocation, sized for the steps.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every checkpoint of generated runs round trips.
+/// - witness: `tests::checkpoint::a_resumed_run_certifies_as_an_unbroken_one`
+pub(crate) fn write_checkpoint<'steps, Held>(
+    (quantum, quotas, cursor): (Quantum, &CheckerQuotas, Position),
+    held: Held,
+) -> CheckpointBytes
+where
+    Held: Iterator<Item = (NodeId, Demand, Steps, &'steps [Step])> + Clone,
+{
+    let (count, steps) =
+        held.clone()
+            .fold((0_usize, 0_usize), |(count, steps), (_, _, _, held)| {
+                (count.saturating_add(1), steps.saturating_add(held.len()))
+            });
+    // A split step takes about thirty bytes at the widths of stage A.
+    let mut entry = Entry {
+        bytes: Vec::with_capacity(
+            steps
+                .saturating_mul(32)
+                .saturating_add(count.saturating_mul(24))
+                .saturating_add(46),
+        ),
+    };
+    entry.bytes.extend_from_slice(&CHECKPOINT_MAGIC);
+    entry.bytes.extend_from_slice(&VERSION.to_le_bytes());
+    entry.word(Word(NonZeroU32::from(quantum).get()));
+    entry.count(ByteCount(usize::from(quotas.steps)));
+    entry.wide(Wide(u64::from(quotas.width)));
+    entry.count(ByteCount(usize::from(cursor)));
+    entry.count(ByteCount(count));
+    for (node, demand, spent, steps) in held {
+        entry.word(Word(u32::from(node)));
+        entry.demand(demand);
+        entry.wide(Wide(u64::from(spent)));
+        entry.count(ByteCount(steps.len()));
+        for step in steps {
+            entry.step(step);
+        }
+    }
+    return CheckpointBytes(entry.bytes);
+}
+
+/// The fields that the bytes of a checkpoint state.
+///
+/// The reader checks the layout alone. [`crate::dovetail::Dovetail::resume`]
+/// judges the fields against a plan, replays each certificate's steps, and
+/// refuses bytes that differ from the canonical bytes of what they hold.
+///
+/// # Specification
+/// - ensures: returns the fields that [`write_checkpoint`] writes as `bytes`.
+/// - fails: refuses bytes that do not open with the magic
+///   ([`DecodeError::Magic`]) or the current version
+///   ([`DecodeError::Version`]), end inside a field
+///   ([`DecodeError::Truncated`]), carry a kind that its place does not admit
+///   ([`DecodeError::UnknownKind`]), hold a malformed point
+///   ([`DecodeError::Dyadic`]), or carry bytes past the last obligation
+///   ([`DecodeError::TrailingBytes`]).
+/// - panics: none.
+/// - executable: none — the clause restates the reading.
+/// - intension: linear in the bytes. The reader allocates no more than the
+///   bytes hold.
+///
+/// # Errors
+/// Each [`DecodeError`] above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each refusal on its smallest trigger.
+/// - witness: `tests::checkpoint::a_corrupt_checkpoint_is_refused_by_name`
+pub(crate) fn read_checkpoint(bytes: EncodedCheckpoint<'_>) -> Result<Fields, DecodeError>
+{
+    let mut reader = Reader { rest: bytes.0 };
+    let Taken(magic) = reader.take(ByteCount(CHECKPOINT_MAGIC.len()))?;
+    if magic != CHECKPOINT_MAGIC.as_slice() {
+        return Err(DecodeError::Magic);
+    }
+    let Taken(version) = reader.take(ByteCount(2))?;
+    if version != VERSION.to_le_bytes().as_slice() {
+        return Err(DecodeError::Version);
+    }
+    let quantum = NonZeroU32::new(reader.word()?.0).map(Quantum::from);
+    let quotas = CheckerQuotas {
+        steps: StepCount::from(reader.count()?.0),
+        width: BitWidth::from(reader.wide()?.0),
+    };
+    let cursor = Position::from(reader.count()?.0);
+    let count = reader.count()?.0;
+    // Each obligation takes a byte or more, so the bytes left bound the
+    // storage that the count may ask for.
+    let mut held = Vec::with_capacity(count.min(reader.rest.len()));
+    for _ in 0 .. count {
+        let node = NodeId::from(reader.word()?.0);
+        let demand = reader.demand()?;
+        let spent = Steps::from(reader.wide()?.0);
+        let length = reader.count()?.0;
+        let mut steps = Vec::with_capacity(length.min(reader.rest.len()));
+        for _ in 0 .. length {
+            steps.push(reader.step()?);
+        }
+        held.push(Held {
+            node,
+            demand,
+            spent,
+            steps,
+        });
+    }
+    if !reader.rest.is_empty() {
+        return Err(DecodeError::TrailingBytes);
+    }
+    return Ok(Fields {
+        quantum,
+        quotas,
+        cursor,
+        held,
+    });
 }

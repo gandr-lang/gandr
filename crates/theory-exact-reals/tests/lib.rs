@@ -6,6 +6,8 @@ mod approx;
 #[cfg(test)]
 mod certificate;
 #[cfg(test)]
+mod checkpoint;
+#[cfg(test)]
 mod dovetail;
 #[cfg(test)]
 mod dyadic;

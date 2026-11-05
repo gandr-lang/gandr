@@ -348,6 +348,15 @@ impl Certificate
     {
         return StepCount(self.steps.len());
     }
+
+    /// The steps, taken out of the certificate.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn into_steps(self) -> Vec<Step>
+    {
+        return self.steps;
+    }
 }
 
 /// The bounds of a replay.
