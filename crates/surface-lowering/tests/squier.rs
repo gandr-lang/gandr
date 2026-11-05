@@ -389,7 +389,7 @@ fn symbols(term: &FreeTerm) -> Option<BTreeMap<String, Coefficient>>
 ///
 /// # Specification
 /// trivial.
-fn spelled(term: &Term) -> Option<FreeTerm>
+pub fn spelled(term: &Term) -> Option<FreeTerm>
 {
     match term.read() {
         Maybe::Present(free) => Some(free),
@@ -608,7 +608,7 @@ where
 /// The place of a rule in a block's small complex.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RuleIndex(usize);
+pub struct RuleIndex(pub usize);
 
 /// Whether a graph has a cycle.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -933,47 +933,48 @@ fn unary(cells: &DeclarationCells) -> Option<UnaryBlock>
     })
 }
 
-/// The small complex of each reading of `cells` that holds rules, or none for
-/// a reading the small complex cannot read.
+/// One reading's rules, read through the cells its pairs fire.
+#[derive(Debug, Default)]
+pub struct Presentation
+{
+    /// The rules, each left side then right side.
+    pub rules: Vec<(FreeTerm, FreeTerm)>,
+    /// The rule that each cell fires.
+    pub index: BTreeMap<CellId, RuleIndex>,
+    /// The frame cells. Each moves a command and keeps the term, so it fires
+    /// no rule.
+    pub structural: BTreeSet<CellId>,
+}
+
+/// The rules of each reading of `cells` that holds rules, or none for a
+/// reading whose rules do not all spell free terms.
 ///
 /// # Specification
 /// trivial.
-pub fn small_complexes(cells: &DeclarationCells) -> Vec<(Reading, Option<Small>)>
+pub fn readings(
+    cells: &DeclarationCells,
+    certificates: &Certificates,
+) -> Vec<(Reading, Option<Presentation>)>
 {
-    let Some(certificates) = certified(cells)
-    else {
-        return Vec::new();
-    };
     let mut out = Vec::new();
     if let Maybe::Present(ref presented) = cells.presented {
-        let mut rules = Vec::new();
-        let mut index = BTreeMap::new();
+        let mut read = Presentation::default();
         let mut readable = true;
         for (place, (id, cell)) in presented.store.iter().enumerate() {
             match (spelled(cell.lhs()), spelled(cell.rhs())) {
-                (Some(left), Some(right)) => rules.push((left, right)),
+                (Some(left), Some(right)) => read.rules.push((left, right)),
                 _ => readable = false,
             }
-            let _previous = index.insert(id, RuleIndex(place));
+            let _previous = read.index.insert(id, RuleIndex(place));
         }
-        out.push((
-            Reading::Terms,
-            if readable {
-                small(&rules, (&index, &BTreeSet::new()), &certificates.terms)
-            }
-            else {
-                None
-            },
-        ));
+        out.push((Reading::Terms, readable.then_some(read)));
     }
     if !cells.faces.is_empty() {
         // The pairs' paths fire cells of the rewriting store, which keeps the
         // admitted faces' cells in a store of its own, so each of its cells
         // is read through the equal cell of the declaration's store.
         let rewriting = cells.rewriting();
-        let mut rules = Vec::new();
-        let mut index = BTreeMap::new();
-        let mut structural = BTreeSet::new();
+        let mut read = Presentation::default();
         let eta: BTreeSet<CellId> = match cells.eta {
             EtaElaboration::Minted(ref minted) => minted.iter().copied().collect(),
             EtaElaboration::Declined(_) => BTreeSet::new(),
@@ -993,32 +994,55 @@ pub fn small_complexes(cells: &DeclarationCells) -> Vec<(Reading, Option<Small>)
                 .and_then(|stored| faces.get(&stored))
                 .and_then(|&face| cells.oriented.get(face));
             if let Some(rule) = face {
-                let _previous = index.insert(id, RuleIndex(rules.len()));
-                rules.push((rule.lhs.clone(), rule.rhs.clone()));
+                let _previous = read.index.insert(id, RuleIndex(read.rules.len()));
+                read.rules.push((rule.lhs.clone(), rule.rhs.clone()));
             }
             else if stored.is_some_and(|stored| !eta.contains(&stored)) {
                 // A frame cell: it moves a command and keeps the term.
-                let _new = structural.insert(id);
+                let _new = read.structural.insert(id);
             }
         }
         for derived in &certificates.derived_commands {
-            let _was_structural = structural.remove(&derived.cell);
-            let _previous = index.insert(derived.cell, RuleIndex(rules.len()));
-            rules.push(derived.rule.clone());
+            let _was_structural = read.structural.remove(&derived.cell);
+            let _previous = read.index.insert(derived.cell, RuleIndex(read.rules.len()));
+            read.rules.push(derived.rule.clone());
         }
-        out.push((
-            Reading::Commands,
-            small(&rules, (&index, &structural), &certificates.commands),
-        ));
+        out.push((Reading::Commands, Some(read)));
     }
     out
+}
+
+/// The small complex of each reading of `cells` that holds rules, or none for
+/// a reading the small complex cannot read.
+///
+/// # Specification
+/// trivial.
+pub fn small_complexes(cells: &DeclarationCells) -> Vec<(Reading, Option<Small>)>
+{
+    let Some(certificates) = certified(cells)
+    else {
+        return Vec::new();
+    };
+    readings(cells, &certificates)
+        .into_iter()
+        .map(|(reading, rules)| {
+            let complex = rules.and_then(|read| {
+                let cells = (&read.index, &read.structural);
+                match reading {
+                    Reading::Terms => small(&read.rules, cells, &certificates.terms),
+                    Reading::Commands => small(&read.rules, cells, &certificates.commands),
+                }
+            });
+            (reading, complex)
+        })
+        .collect()
 }
 
 /// Every corpus source, by path, in path order.
 ///
 /// # Specification
 /// trivial.
-fn corpus() -> Vec<PathBuf>
+pub fn corpus() -> Vec<PathBuf>
 {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
     let mut pending = vec![root];

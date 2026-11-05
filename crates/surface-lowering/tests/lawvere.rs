@@ -52,31 +52,31 @@ use crate::squier::small_complexes;
 /// The place of an operation in a block's signature.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Operation(u8);
+pub struct Operation(pub u8);
 
 /// The place of a variable in a context.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Variable(u8);
+pub struct Variable(pub u8);
 
 /// A count: of variables, of arguments, of the nodes of a term, of cells.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Count(usize);
+pub struct Count(pub usize);
 
 /// A coefficient of a chain.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Coefficient(i64);
+pub struct Coefficient(pub i64);
 
 /// A term's place in its table. Equal places are equal terms.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct TermId(u32);
+pub struct TermId(u32);
 
 /// The outermost symbol of a term.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum Head
+pub enum Head
 {
     /// A variable of the context.
     Var(Variable),
@@ -86,18 +86,18 @@ enum Head
 
 /// One node of a term: its symbol and the places of its arguments.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct Node
+pub struct Node
 {
     /// The symbol.
-    head: Head,
+    pub head: Head,
     /// The arguments, each interned before the node.
-    children: Vec<TermId>,
+    pub children: Vec<TermId>,
 }
 
 /// The interned terms of one theory: each distinct term once, each after its
 /// arguments.
 #[derive(Debug, Default)]
-struct Table
+pub struct Table
 {
     /// The nodes, by place.
     nodes: Vec<Node>,
@@ -113,7 +113,7 @@ impl Table
     ///
     /// # Specification
     /// trivial.
-    fn intern(
+    pub fn intern(
         &mut self,
         node: Node,
     ) -> TermId
@@ -137,7 +137,7 @@ impl Table
     ///
     /// # Specification
     /// trivial.
-    fn var(
+    pub fn var(
         &mut self,
         variable: Variable,
     ) -> TermId
@@ -152,7 +152,7 @@ impl Table
     ///
     /// # Specification
     /// trivial.
-    fn op(
+    pub fn op(
         &mut self,
         operation: Operation,
         children: Vec<TermId>,
@@ -168,7 +168,7 @@ impl Table
     ///
     /// # Specification
     /// trivial.
-    fn node(
+    pub fn node(
         &self,
         place: TermId,
     ) -> &Node
@@ -180,7 +180,7 @@ impl Table
     ///
     /// # Specification
     /// trivial.
-    fn size(
+    pub fn size(
         &self,
         place: TermId,
     ) -> Count
@@ -214,7 +214,7 @@ impl Table
     ///
     /// # Specification
     /// trivial.
-    fn substituted(
+    pub fn substituted(
         &mut self,
         place: TermId,
         values: &[TermId],
@@ -277,15 +277,15 @@ enum Agreement
 
 /// The Lawvere theory a convergent first-order block presents.
 #[derive(Debug)]
-struct Theory
+pub struct Theory
 {
     /// The arity of each operation.
-    arities: Vec<Count>,
+    pub arities: Vec<Count>,
     /// The rules, each left side then right side, their variables numbered by
     /// their first occurrence on the left.
-    rules: Vec<(TermId, TermId)>,
+    pub rules: Vec<(TermId, TermId)>,
     /// The terms.
-    table: Table,
+    pub table: Table,
     /// The normal forms found so far.
     normal: HashMap<TermId, TermId>,
 }
@@ -381,7 +381,7 @@ impl Theory
     ///
     /// # Specification
     /// trivial.
-    fn normal_form(
+    pub fn normal_form(
         &mut self,
         root: TermId,
     ) -> Option<TermId>
@@ -543,22 +543,22 @@ fn compositions(
 
 /// A morphism of the theory: a tuple of normal forms in `source` variables.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Arrow
+pub struct Arrow
 {
     /// The variables of the context.
-    source: Count,
+    pub source: Count,
     /// The terms, one for each variable of the tuple before.
-    terms: Vec<TermId>,
+    pub terms: Vec<TermId>,
 }
 
 /// A cell of the bar complex: a composable list of arrows, the first one term.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Cell(Vec<Arrow>);
+pub struct Cell(pub Vec<Arrow>);
 
 /// Whether a cell counts zero.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Degeneracy
+pub enum Degeneracy
 {
     /// The first term is a variable, or a later arrow is an identity.
     Degenerate,
@@ -572,7 +572,7 @@ impl Cell
     ///
     /// # Specification
     /// trivial.
-    fn degeneracy(
+    pub fn degeneracy(
         &self,
         table: &Table,
     ) -> Degeneracy
@@ -617,7 +617,7 @@ impl Cell
 }
 
 /// A chain of the bar complex: cells with nonzero coefficients.
-type Chain = BTreeMap<Cell, Coefficient>;
+pub type Chain = BTreeMap<Cell, Coefficient>;
 
 /// Add `coefficient` times `cell` to `chain`, a degenerate cell counting zero.
 ///
@@ -641,7 +641,7 @@ fn accumulate(
 ///
 /// # Specification
 /// trivial.
-fn boundary(
+pub fn boundary(
     theory: &mut Theory,
     cell: &Cell,
 ) -> Option<Chain>
@@ -730,21 +730,21 @@ const fn sign(index: Count) -> Coefficient
 /// The bound of a truncation: the variables of each arrow's context and the
 /// total size of a cell's terms.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Bound
+pub struct Bound
 {
     /// The most variables in a context.
-    variables: Count,
+    pub variables: Count,
     /// The largest total size of a cell's terms.
-    weight: Count,
+    pub weight: Count,
 }
 
 /// The cells of the largest subcomplex inside a bound, by degree, with the
 /// boundary of each.
 #[derive(Debug, Default)]
-struct Truncation
+pub struct Truncation
 {
     /// The cells of each degree, in order.
-    cells: Vec<Vec<Cell>>,
+    pub cells: Vec<Vec<Cell>>,
     /// The boundary of each cell.
     boundaries: HashMap<Cell, Chain>,
 }
@@ -758,7 +758,7 @@ const TOP: usize = 3;
 ///
 /// # Specification
 /// trivial.
-fn truncation(
+pub fn truncation(
     theory: &mut Theory,
     bound: Bound,
 ) -> Option<Truncation>
@@ -1165,7 +1165,7 @@ enum Walk<'term>
 ///
 /// # Specification
 /// trivial.
-fn presented(rules: &[(FreeTerm, FreeTerm)]) -> Option<(Theory, Vec<String>)>
+pub fn presented(rules: &[(FreeTerm, FreeTerm)]) -> Option<(Theory, Vec<String>)>
 {
     let mut arities: BTreeMap<String, Count> = BTreeMap::new();
     let mut pending: Vec<TermView<'_>> = Vec::new();
@@ -1191,77 +1191,10 @@ fn presented(rules: &[(FreeTerm, FreeTerm)]) -> Option<(Theory, Vec<String>)>
     let mut table = Table::default();
     let mut out = Vec::with_capacity(rules.len());
     let mut variables: BTreeMap<String, Variable> = BTreeMap::new();
-    let mut walk: Vec<Walk<'_>> = Vec::new();
-    let mut arguments: Vec<TermNode<'_>> = Vec::new();
-    let mut built: Vec<TermId> = Vec::new();
     for &(ref left, ref right) in rules {
         variables.clear();
-        let mut sides = [None, None];
-        for (slot, (term, side)) in sides
-            .iter_mut()
-            .zip([(left, Side::Left), (right, Side::Right)])
-        {
-            walk.clear();
-            built.clear();
-            let mut view = Some(term.view());
-            loop {
-                let step = match view.take() {
-                    Some(view) => Some(view),
-                    None => match walk.pop() {
-                        None => break,
-                        Some(Walk::Enter(node)) => Some(node.view()),
-                        Some(Walk::Leave(operation, arity)) => {
-                            let start = built.len().checked_sub(arity.0)?;
-                            let children = built.split_off(start);
-                            built.push(table.op(operation, children));
-                            None
-                        },
-                    },
-                };
-                let Some(step) = step
-                else {
-                    continue;
-                };
-                match step {
-                    TermView::Var(name) => {
-                        let name = String::from(name.as_ref());
-                        let next = Variable(u8::try_from(variables.len()).ok()?);
-                        let variable = match (variables.get(&name), side) {
-                            (Some(&held), _) => held,
-                            (None, Side::Left) => {
-                                let _new = variables.insert(name, next);
-                                next
-                            },
-                            (None, Side::Right) => return None,
-                        };
-                        built.push(table.var(variable));
-                    },
-                    TermView::Ctor { name, args } | TermView::Op { name, args } => {
-                        let place = names
-                            .binary_search_by(|held| held.as_str().cmp(name.as_ref()))
-                            .ok()?;
-                        let operation = Operation(u8::try_from(place).ok()?);
-                        walk.push(Walk::Leave(operation, Count(args.len())));
-                        arguments.clear();
-                        arguments.extend(args);
-                        while let Some(argument) = arguments.pop() {
-                            walk.push(Walk::Enter(argument));
-                        }
-                    },
-                    TermView::Results { .. }
-                    | TermView::Inst { .. }
-                    | TermView::Abs { .. }
-                    | TermView::Atom(_)
-                    | TermView::Lam { .. }
-                    | TermView::Bound(_) => return None,
-                }
-            }
-            *slot = built.pop();
-        }
-        let [Some(left), Some(right)] = sides
-        else {
-            return None;
-        };
+        let left = read(left, (&names, &mut table), (&mut variables, Side::Left))?;
+        let right = read(right, (&names, &mut table), (&mut variables, Side::Right))?;
         out.push((left, right));
     }
     Some((
@@ -1270,9 +1203,81 @@ fn presented(rules: &[(FreeTerm, FreeTerm)]) -> Option<(Theory, Vec<String>)>
     ))
 }
 
+/// The term `term` read into `table`, each operation by its place in `names`.
+/// A variable new on the left side takes the next place in `variables`. None
+/// when the term binds, names an operation that `names` lacks, or holds on the
+/// right side a variable that `variables` lacks.
+///
+/// # Specification
+/// trivial.
+pub fn read(
+    term: &FreeTerm,
+    (names, table): (&[String], &mut Table),
+    (variables, side): (&mut BTreeMap<String, Variable>, Side),
+) -> Option<TermId>
+{
+    let mut walk: Vec<Walk<'_>> = Vec::new();
+    let mut arguments: Vec<TermNode<'_>> = Vec::new();
+    let mut built: Vec<TermId> = Vec::new();
+    let mut view = Some(term.view());
+    loop {
+        let step = match view.take() {
+            Some(view) => Some(view),
+            None => match walk.pop() {
+                None => break,
+                Some(Walk::Enter(node)) => Some(node.view()),
+                Some(Walk::Leave(operation, arity)) => {
+                    let start = built.len().checked_sub(arity.0)?;
+                    let children = built.split_off(start);
+                    built.push(table.op(operation, children));
+                    None
+                },
+            },
+        };
+        let Some(step) = step
+        else {
+            continue;
+        };
+        match step {
+            TermView::Var(name) => {
+                let name = String::from(name.as_ref());
+                let next = Variable(u8::try_from(variables.len()).ok()?);
+                let variable = match (variables.get(&name), side) {
+                    (Some(&held), _) => held,
+                    (None, Side::Left) => {
+                        let _new = variables.insert(name, next);
+                        next
+                    },
+                    (None, Side::Right) => return None,
+                };
+                built.push(table.var(variable));
+            },
+            TermView::Ctor { name, args } | TermView::Op { name, args } => {
+                let place = names
+                    .binary_search_by(|held| held.as_str().cmp(name.as_ref()))
+                    .ok()?;
+                let operation = Operation(u8::try_from(place).ok()?);
+                walk.push(Walk::Leave(operation, Count(args.len())));
+                arguments.clear();
+                arguments.extend(args);
+                while let Some(argument) = arguments.pop() {
+                    walk.push(Walk::Enter(argument));
+                }
+            },
+            TermView::Results { .. }
+            | TermView::Inst { .. }
+            | TermView::Abs { .. }
+            | TermView::Atom(_)
+            | TermView::Lam { .. }
+            | TermView::Bound(_) => return None,
+        }
+    }
+    built.pop()
+}
+
 /// The side of a rule a term stands on.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Side
+pub enum Side
 {
     /// The left side, which names the variables.
     Left,
