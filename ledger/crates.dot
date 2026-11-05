@@ -194,6 +194,7 @@ digraph crates {
   "surface-diagnostics" -> "surface-lowering";
   "surface-diagnostics" -> "surface-pretty";
   "surface-diagnostics" -> "surface-syntax";
+  "surface-diagnostics" -> "theory-sites";
   "surface-dispatcher" -> "core-checker";
   "surface-dispatcher" -> "core-fork";
   "surface-dispatcher" -> "core-incremental";

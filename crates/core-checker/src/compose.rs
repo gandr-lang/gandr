@@ -467,9 +467,11 @@ pub enum CellReading
 /// - ensures: every column of two 2-cells or more fills its chain at its
 ///   [`Seam::Column`], its 2-cells' endpoints the 1-cells; then the columns
 ///   fill `outer` at [`Seam::Outer`], each column's endpoints its 2-cells'
-///   carrier's, or its 1-cell's own.
+///   carrier's, or its 1-cell's own. A cell in a column of 2-cells whose
+///   carrier is no path type colours no leg of the column's chain, so the
+///   column's seam refuses its vertex by its profile.
 /// - fails: as [`fill`] at each seam, the columns first; a machine invariant
-///   for cells of another count, or a 2-cell whose carrier is no path type.
+///   for cells of another count.
 /// - panics: none.
 ///
 /// # Errors
@@ -478,8 +480,11 @@ pub enum CellReading
 /// # Adequacy
 /// - hypothesis: L3 — the horizontal composite's two 2-cells fill it, and a
 ///   second column starting where the first does not end is refused at the
-///   outer seam, a column's 2-cells that do not meet at the column's.
+///   outer seam, a column's 2-cells that do not meet at the column's, and a
+///   1-cell in a column of one 2-cell, or of two, at that column's by the
+///   profile of its vertex.
 /// - witness: `compose::tests::a_level_two_shape_is_read_at_level_two`
+/// - witness: `compose::tests::a_one_cell_in_a_column_of_two_cells_is_refused_at_its_column_4476`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ComposeDoesNotFill { at: site, .. }) => site == at,
     | Ok(()) | Err(_) => true,
@@ -510,11 +515,34 @@ pub fn fill_columns(
             columns.push(ends(first));
             continue;
         }
-        if usize::from(height) > 1 {
+        // A 2-cell's carrier is a path type, whose endpoints are the 1-cells
+        // the column's chain colours its legs by. A cell of another carrier is
+        // no 2-cell. It colours no leg, so the column's fill refuses its
+        // vertex by its profile.
+        let mut flat = None;
+        for (index, &reading) in held.iter().enumerate() {
+            if let CellReading::Known { carrier, .. } = reading
+                && !matches!(
+                    value_type_view(context.arena(), carrier)?,
+                    ValueTypeView::Path { .. }
+                )
+            {
+                flat = Some(index);
+                break;
+            }
+        }
+        if usize::from(height) > 1 || flat.is_some() {
             let chain = Shape::chain(usize::from(height).into())
                 .map_err(|_refused| CheckRefusal::MachineInvariant)?;
             vertical.clear();
-            vertical.extend(held.iter().map(|&reading| ends(reading)));
+            vertical.extend(held.iter().enumerate().map(|(index, &reading)| {
+                if flat == Some(index) {
+                    Boundary::new(Vec::new(), Vec::new())
+                }
+                else {
+                    ends(reading)
+                }
+            }));
             let column =
                 Column::try_from(position).map_err(|_wide| CheckRefusal::MachineInvariant)?;
             let seam = Seam::Column(column);

@@ -891,7 +891,10 @@ struct Folded
 /// filler generator lifts by: the 2-cell so far right-whiskered by the next
 /// column's source, then the fold of the targets so far left-whiskering the
 /// next column's 2-cell. A whisker by an empty column, or of one, is left out,
-/// since transport along `here` returns its base.
+/// since transport along `here` returns its base. A column of 2-cells whose
+/// first cell's carrier is no path type folds as an empty column of that
+/// cell, so its composite still stands for the checker to refuse at that
+/// column.
 ///
 /// # Specification
 /// - requires: `cells` are the composite's cells in column order, each beside
@@ -899,14 +902,15 @@ struct Folded
 /// - ensures: a [`Value::Compose`] holding the cells in order and the fold as
 ///   its realisation, beside `Path[.A = Path[.A = A](x₀, xₘ)](s, t)`, `s` and
 ///   `t` the `then` folds of the columns' sources and targets.
-/// - fails: none for a pasting that is no level-two shape, cells of another
-///   count than it reads, or a 2-cell whose carrier is no path type.
+/// - fails: none for a pasting that is no level-two shape, or cells of another
+///   count than it reads.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the whisker `[2](1, 0)` realises as the right whisker
 ///   alone, the horizontal composite `[2](1, 1)` as the right whisker then the
-///   left, and a chain pasting or a cell short realises none.
+///   left, a 1-cell in a column of 2-cells still realises, and a chain pasting
+///   or a cell short realises none.
 /// - witness: `compose::tests::a_level_two_composite_folds_its_columns_by_whiskers`
 #[spec(ensures: |ret| ret.is_none_or(|(node, _)| matches!(arena.value(node), Some(&Value::Compose { composite: held, .. }) if held == composite)))]
 #[inline]
@@ -927,39 +931,53 @@ pub fn compose_columns(
         rest = tail;
         let (&(first, first_ends), _) = column.split_first()?;
         let &(_, last_ends) = column.last()?;
-        let (carrier, from, to, source, target, cell) = if height == 0 {
-            (
+        // A column of 2-cells whose first cell's carrier is no path type
+        // folds as an empty column of that cell. Its realisation does not
+        // type, and the checker refuses the column before it reads it.
+        let path = if height == 0 {
+            None
+        }
+        else if let Some(&crate::syntax::ValueType::Path {
+            carrier,
+            left,
+            right,
+        }) = arena.value_type(first_ends.carrier)
+        {
+            Some((carrier, left, right))
+        }
+        else {
+            None
+        };
+        let (carrier, from, to, source, target, cell) = match path {
+            Some((carrier, left, right)) => {
+                let mut sofar = first;
+                for &(next, _) in column.get(1 ..)? {
+                    let composite = crate::identity::then(
+                        arena,
+                        first_ends.carrier,
+                        first_ends.left,
+                        sofar,
+                        next,
+                    );
+                    sofar = arena.value_returned(composite);
+                }
+                (
+                    carrier,
+                    left,
+                    right,
+                    first_ends.left,
+                    last_ends.right,
+                    Some(sofar),
+                )
+            },
+            None => (
                 first_ends.carrier,
                 first_ends.left,
                 first_ends.right,
                 first,
                 first,
                 None,
-            )
-        }
-        else {
-            let Some(&crate::syntax::ValueType::Path {
-                carrier,
-                left,
-                right,
-            }) = arena.value_type(first_ends.carrier)
-            else {
-                return None;
-            };
-            let mut sofar = first;
-            for &(next, _) in column.get(1 ..)? {
-                let composite =
-                    crate::identity::then(arena, first_ends.carrier, first_ends.left, sofar, next);
-                sofar = arena.value_returned(composite);
-            }
-            (
-                carrier,
-                left,
-                right,
-                first_ends.left,
-                last_ends.right,
-                Some(sofar),
-            )
+            ),
         };
         let column = Folded {
             carrier,

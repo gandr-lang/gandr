@@ -21,10 +21,12 @@ path = "tests/lib.rs"
 # declaration report and refusal names, the lowering's refusals and origin
 # table, the checker's refusals, failures and the failure classes beneath
 # them, the kernel's occurrence sites and descent rules those refusals carry,
-# and the source text spans are measured against. The pretty printer spells
-# the types a failure names while the arena is at hand. The JSON image derives
-# through serde and encodes through serde_json. The pinned anodized facade
-# supplies core-only specification helpers; logic/BigInt stays disabled.
+# and the source text spans are measured against. A composite's fill defect is
+# the sites' own refusal, and the univalence refusals carry the sites' degree,
+# shape and element indices. The pretty printer spells the types a failure
+# names while the arena is at hand. The JSON image derives through serde and
+# encodes through serde_json. The pinned anodized facade supplies core-only
+# specification helpers; logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
 gandr-core-checker.workspace = true
@@ -34,13 +36,13 @@ gandr-surface-corpus.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
+gandr-theory-sites.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 # The suite builds diagnostics from real compositions: the dispatcher's walk
 # over the built-in grammar, and a document parsed after its import closure.
-# The univalence refusals carry the sites' degree, shape and element indices.
 # The malformed-form sweep draws its sample through the sweep crate. The level
 # solver's refusal fills the obstruction shape from the potential maintenance
 # and the cycle witness of the graph crate.
@@ -50,7 +52,6 @@ gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
 gandr-theory-dynamic-graphs.workspace = true
 gandr-theory-graphs.workspace = true
-gandr-theory-sites.workspace = true
 gandr-workflow-sweep.workspace = true
 
 [lints]

@@ -1532,6 +1532,12 @@ impl fmt::Display for Checked
                 ),
             },
             | CheckRefusal::ComposeDoesNotFill { seam: gandr_core_term::compose::Seam::Outer, defect, .. } => write!(f, "the cells do not fill the chain: {defect}"),
+            | CheckRefusal::ComposeDoesNotFill { seam: gandr_core_term::compose::Seam::Column(before), defect: gandr_theory_sites::Unfilled::Profile { vertex, .. }, .. } => write!(
+                f,
+                "cell {} of column {} is a 1-cell, and a column of 2-cells holds only 2-cells",
+                usize::from(vertex).saturating_add(1),
+                usize::from(before).saturating_add(1)
+            ),
             | CheckRefusal::ComposeDoesNotFill { seam: gandr_core_term::compose::Seam::Column(before), defect, .. } => write!(
                 f,
                 "the 2-cells of column {} do not fill its chain: {defect}",

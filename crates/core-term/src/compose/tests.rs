@@ -398,6 +398,16 @@ fn a_level_two_composite_folds_its_columns_by_whiskers()
         "the horizontal composite realises as the right whisker then the left"
     );
 
+    let (flat, _) = compose_columns(&mut arena, columns(&[one, one]), &[
+        (alpha, two_cell(first, low, high)),
+        (onward, two_cell(integer, middle, end)),
+    ])
+    .expect("a 1-cell in a column of 2-cells still realises");
+    assert!(
+        matches!(arena.value(flat), Some(Value::Compose { cells, .. }) if **cells == [alpha, onward]),
+        "the composite holds both cells for the checker to refuse at the second column"
+    );
+
     assert_eq!(
         compose_columns(&mut arena, chain(CellCount::from(2_usize)), &[
             (alpha, two_cell(first, low, high)),
