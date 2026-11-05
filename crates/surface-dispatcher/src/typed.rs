@@ -4700,11 +4700,8 @@ impl TypeTable
                         else if spelled.wildcards() == Wildcards::Written {
                             Some(RoundTrip::Wildcard)
                         }
-                        else if let Some(open) = kind_only(&self.arena, node) {
-                            Some(open)
-                        }
                         else {
-                            None
+                            kind_only(&self.arena, node)
                         },
                         spelled: spelled.to_string(),
                         under: None,

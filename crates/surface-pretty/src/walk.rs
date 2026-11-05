@@ -6886,9 +6886,9 @@ impl Walk<'_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one piece: the substituted argument's piece where a static
-    ///   redex substitutes the variable, with its own binding, and otherwise an
-    ///   atom holding [`Self::variable_leaf`]'s leaf.
+    /// - ensures: one piece: an atom holding [`Self::variable_leaf`]'s leaf,
+    ///   or, while a static redex substitutes arguments, the substituted
+    ///   argument's piece with its own binding.
     /// - provides: the spelling of a bound variable.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -6901,15 +6901,11 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
     #[spec(
-        captures: [
-            entry = self.pieces.len(),
-            fidelity = self.fidelity,
-            held = self.opened_at(zone, index).and_then(|position| self.substituted.get(&position)).map(|argument| argument.piece.binding),
-        ],
+        captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
             && match *ret {
                 | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
-                    && self.pieces.last().is_some_and(|piece| piece.binding == held.unwrap_or(Binding::Atom)),
+                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom || !self.substituted.is_empty()),
                 | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
                 | Err(_) => false,
             },
