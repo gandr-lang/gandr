@@ -3315,6 +3315,7 @@ INSERT INTO purpose VALUES('surface-syntax','error::SyntaxError','enum','Every w
 INSERT INTO purpose VALUES('surface-syntax','key::FormRank','struct','A node''s position among the significant nodes of its top-level form, in preorder, the form''s own root first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','key::NodeKey','struct','The identity of one significant node across trees, runs and processes: the digest of the top-level form holding it and its rank inside that form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','label::CarriesText','struct','Whether a node''s own source text contributes to its content digest.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','label::CloseReach','struct','How many bytes before a minted close the first place that its closer parses at stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','label::LabelTag','struct','The pinned tag a node label contributes to a content digest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','label::NodeLabel','enum','What one node of a molded tree is.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','label::Significance','struct','Whether a parent''s content digest folds a node''s digest.',NULL,'fits','sound',NULL);

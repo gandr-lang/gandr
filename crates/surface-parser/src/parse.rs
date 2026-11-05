@@ -1204,6 +1204,7 @@ mod tests
     {
         use gandr_surface_syntax::ByteOffset;
         use gandr_surface_syntax::ByteSpan;
+        use gandr_surface_syntax::CloseReach;
         use gandr_surface_syntax::ClosingClass;
         use gandr_surface_syntax::GrammarFingerprint;
         use gandr_surface_syntax::GroutShape;
@@ -1219,6 +1220,7 @@ mod tests
                 NodeLabel::GhostClose {
                     sort: GroutSort::from(0_u16),
                     class: ClosingClass::Brace,
+                    reach: CloseReach::NONE,
                 },
                 empty,
                 &[],
@@ -1242,6 +1244,7 @@ mod tests
                 NodeLabel::GhostClose {
                     sort: GroutSort::from(0_u16),
                     class: ClosingClass::Paren,
+                    reach: CloseReach::NONE,
                 },
                 empty,
                 &[],

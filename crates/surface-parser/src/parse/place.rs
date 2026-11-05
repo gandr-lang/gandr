@@ -57,6 +57,7 @@ use gandr_surface_grammar::StepSym;
 use gandr_surface_grammar::TileLabel;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::CloseReach;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::DelimSpelling;
 use gandr_surface_syntax::GroutShape;
@@ -262,9 +263,10 @@ impl Target
 ///   next; either copy reads the tiles before it with the source's molds, each
 ///   of its top-level forms a declaration, the repair's form under no more
 ///   forms than in the source. The tree is the source's with the tile minted,
-///   empty, at the first such place in that order — past a run of the same tile
-///   written there — a minted close for a bracket and an empty postfix grout
-///   otherwise, and the obligations are that repair and the copy's others,
+///   empty — past a run of the same tile written there — a minted close for a
+///   bracket at the last such place in the source, reaching back to the first
+///   such place, and an empty postfix grout otherwise at the first such place
+///   in that order, and the obligations are that repair and the copy's others,
 ///   shifted back over the tile; otherwise `parsed`. A declaration's keyword
 ///   left out at the head of a top-level form is placed first ([`headed`]), and
 ///   the search above runs over that parse.
@@ -273,16 +275,16 @@ impl Target
 /// - executable: none — the clause restates the search.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a parameter list's `)` left out is minted after the
-///   parameter's type; one left out of a rule's application is minted after its
-///   nested application, never inside it, its misreading's other repairs gone;
-///   one left out after a nested `)` is minted after it; a block's `}` left out
-///   at the end, which this does not read, stays where the melder minted it; a
-///   member's `;` left out is minted at the end of its line, an arm's `=>`
-///   after its pattern and never inside it, a binder's `:` after its name and
-///   never after its type, an `else` after the first block; and a definition's
-///   last `;` left out at the end of the source is never minted inside its
-///   body.
+/// - hypothesis: L3 — a parameter list's `)` left out before a return type is
+///   minted after the type it makes, reaching back to the parameter's type; one
+///   left out of a rule's application is minted after its nested application,
+///   never inside it, its misreading's other repairs gone; one left out after a
+///   nested `)` is minted after it; a block's `}` left out at the end, which
+///   this does not read, stays where the melder minted it; a member's `;` left
+///   out is minted at the end of its line, an arm's `=>` after its pattern and
+///   never inside it, a binder's `:` after its name and never after its type,
+///   an `else` after the first block; and a definition's last `;` left out at
+///   the end of the source is never minted inside its body.
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
@@ -864,7 +866,7 @@ fn settled<'source>(
         pbg,
         SourceText::from(text.get(usize::from(top.start()) .. usize::from(top.end()))?),
     );
-    let (place, closer) = adjacent
+    let tried = adjacent
         .iter()
         .map(|&closer| (target.end, closer))
         .chain(
@@ -872,31 +874,51 @@ fn settled<'source>(
                 .iter()
                 .flat_map(|&place| target.closers.iter().map(move |&closer| (place, closer))),
         )
-        .take(target.class.map_or(COPIES, |_| PLACES.saturating_add(1)))
-        .find(|&(place, closer)| {
-            let spelled = cut_in(source, place, closer);
-            let pad = spelled.find(<&str>::from(closer)).unwrap_or(0_usize);
-            let tile = shifted(place).and_then(|at| {
-                let at = usize::from(at).checked_add(pad)?;
-                Some((
-                    ByteOffset::from(at),
-                    ByteOffset::from(at.checked_add(<&str>::from(closer).len())?),
-                ))
-            });
-            written(source, top, place, SourceText::from(spelled.as_str())).is_some_and(|copy| {
-                let copy = SourceText::from(copy.as_str());
-                shared.copy(copy).is_some_and(|copied| {
-                    tile.is_some_and(|(at, end)| bool::from(tiled(&copied, at, end)))
-                        && (target.class.is_some()
-                            || (bool::from(declared(pbg, &copied))
-                                && enclosing(&copied, repair_start, repair_end) <= target.depth
-                                && tile.is_some_and(|(at, _end)| {
-                                    kept(tree, top.start(), place)
-                                        == kept(&copied, ByteOffset::from(0_usize), at)
-                                })))
-                })
+        .take(target.class.map_or(COPIES, |_| PLACES.saturating_add(1)));
+    let mut accepts = |&(place, closer): &(ByteOffset, SourceText<'static>)| {
+        let spelled = cut_in(source, place, closer);
+        let pad = spelled.find(<&str>::from(closer)).unwrap_or(0_usize);
+        let tile = shifted(place).and_then(|at| {
+            let at = usize::from(at).checked_add(pad)?;
+            Some((
+                ByteOffset::from(at),
+                ByteOffset::from(at.checked_add(<&str>::from(closer).len())?),
+            ))
+        });
+        written(source, top, place, SourceText::from(spelled.as_str())).is_some_and(|copy| {
+            let copy = SourceText::from(copy.as_str());
+            shared.copy(copy).is_some_and(|copied| {
+                tile.is_some_and(|(at, end)| bool::from(tiled(&copied, at, end)))
+                    && (target.class.is_some()
+                        || (bool::from(declared(pbg, &copied))
+                            && enclosing(&copied, repair_start, repair_end) <= target.depth
+                            && tile.is_some_and(|(at, _end)| {
+                                kept(tree, top.start(), place)
+                                    == kept(&copied, ByteOffset::from(0_usize), at)
+                            })))
             })
-        })?;
+        })
+    };
+    // A bracket's closer is owed at every place that parses. It is minted at
+    // the last of them in the source, and it reaches back to the first.
+    let (place, closer, first) = if target.class.is_some() {
+        let mut first: Option<ByteOffset> = None;
+        let mut last: Option<(ByteOffset, SourceText<'static>)> = None;
+        for candidate in tried {
+            if accepts(&candidate) {
+                first = Some(first.map_or(candidate.0, |at| at.min(candidate.0)));
+                if last.is_none_or(|(at, _)| at < candidate.0) {
+                    last = Some(candidate);
+                }
+            }
+        }
+        let (place, closer) = last?;
+        (place, closer, first)
+    }
+    else {
+        let (place, closer) = tried.into_iter().find(|candidate| accepts(candidate))?;
+        (place, closer, None)
+    };
     let place = past(source, place, closer);
     let spelled = cut_in(source, place, closer);
     let spelled = SourceText::from(spelled.as_str());
@@ -910,6 +932,10 @@ fn settled<'source>(
         |class| NodeLabel::GhostClose {
             sort: target.sort,
             class,
+            reach: CloseReach::from(first.map_or(0_u32, |first| {
+                u32::try_from(usize::from(place).saturating_sub(usize::from(first)))
+                    .unwrap_or(u32::MAX)
+            })),
         },
     );
     let splice = Splice::new(place, spelled, leaf)?;
@@ -1252,8 +1278,10 @@ mod tests
     use crate::parse;
     use crate::testing::reconstruct;
 
-    /// #2242, #5199: a closer the source left out is minted where the rest of
-    /// its form parses, not after everything the form could still take.
+    /// #2242, #5199, #3812: a closer the source left out is minted where the
+    /// rest of its form parses, not after everything the form could still
+    /// take. Where more than one place parses, it is minted at the last of
+    /// them and reaches back to the first.
     #[test]
     fn a_closer_left_out_is_minted_where_the_rest_parses_2242()
     {
@@ -1268,17 +1296,20 @@ mod tests
                      Int\n  rule : S (P x <=> x;\n}\n";
         let head = "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n";
         let open = "def once(n : Integer) -> -F Integer {\n  return n\n";
-        for (source, at, class, why) in [
+        for (source, at, first, class, why) in [
             (
                 once,
-                after(once, "n : Integer"),
+                after(once, "-> -F Integer"),
+                Some(after(once, "n : Integer")),
                 ClosingClass::Paren,
-                "the parameter list's `)` is minted after the parameter's type, where the \
-                 definition's return type and block then parse",
+                "the parameter list's `)` parses after the parameter's type and after the \
+                 function type the return type makes of it: it is minted at the last and \
+                 reaches back to the first",
             ),
             (
                 glued,
                 after(glued, "S (P x"),
+                None,
                 ClosingClass::Paren,
                 "a rule's `)` left out is minted after its juxtaposed application, not between \
                  the nested operation's name and its argument, and its misreading's other \
@@ -1286,14 +1317,17 @@ mod tests
             ),
             (
                 head,
-                after(head, "List(Integer)"),
+                after(head, "-> -F Integer"),
+                Some(after(head, "List(Integer)")),
                 ClosingClass::Paren,
-                "a `)` left out after a nested `)` is minted after the written one: the copy \
-                 is the same text either way",
+                "a `)` left out after a nested `)` parses after the written one and after the \
+                 function type the return type makes: it is minted at the last and reaches back \
+                 to the first",
             ),
             (
                 open,
                 after(open, "return n"),
+                None,
                 ClosingClass::Brace,
                 "a block's `}` left out at the end, which the layout places, stays where the \
                  melder minted it",
@@ -1305,7 +1339,9 @@ mod tests
                 .positions()
                 .filter_map(|position| tree.node(position))
                 .filter_map(|node| match node.label() {
-                    NodeLabel::GhostClose { class, .. } => Some((class, node.span())),
+                    NodeLabel::GhostClose { class, reach, .. } => {
+                        Some((class, node.span(), u32::from(reach)))
+                    },
                     NodeLabel::Wald
                     | NodeLabel::Meld(_)
                     | NodeLabel::Tile(_)
@@ -1315,12 +1351,19 @@ mod tests
                 })
                 .collect();
             assert_eq!(minted.len(), 1, "{why}: {minted:?}");
-            let (minted_class, span) = minted.first().copied().unwrap();
+            let (minted_class, span, reach) = minted.first().copied().unwrap();
             assert_eq!(
                 (minted_class, span.start(), span.end()),
                 (class, ByteOffset::from(at), ByteOffset::from(at)),
                 "{why}"
             );
+            if let Some(first) = first {
+                assert_eq!(
+                    usize::try_from(reach).ok(),
+                    at.checked_sub(first),
+                    "{why}: the close reaches back to the first place"
+                );
+            }
             assert_eq!(
                 reconstruct(tree),
                 source,

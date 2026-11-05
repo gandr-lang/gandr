@@ -30,6 +30,7 @@ use gandr_surface_parser::MoldVerdicts;
 use gandr_surface_parser::Molder;
 use gandr_surface_parser::label;
 use gandr_surface_parser::parse;
+use gandr_surface_syntax::CloseReach;
 use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
@@ -240,6 +241,11 @@ fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
             let name = match node {
                 NodeLabel::Tile(mold) => format!("tile {}", spelled(mold)),
                 NodeLabel::Meld(mold) => format!("meld {}", spelled(mold)),
+                // A close minted at its one place is spelled as before closes
+                // reached back, so its tree's fingerprint stays where it was.
+                NodeLabel::GhostClose { sort, class, reach } if reach == CloseReach::NONE => {
+                    format!("GhostClose {{ sort: {sort:?}, class: {class:?} }}")
+                },
                 other @ (NodeLabel::Wald
                 | NodeLabel::Grout { .. }
                 | NodeLabel::GhostClose { .. }

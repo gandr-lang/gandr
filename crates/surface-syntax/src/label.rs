@@ -127,6 +127,68 @@ impl From<Significance> for bool
     }
 }
 
+/// How many bytes before a minted close the first place that its closer
+/// parses at stands.
+///
+/// A bracket's closer that the source leaves out can often stand at more than
+/// one place. The parser mints the close at the last of these places and
+/// records here how far back the first one is. A consumer then marks every
+/// place the closer is owed at, and not one end of them. A close minted at the
+/// one place it parses at reaches back zero bytes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CloseReach(u32);
+
+impl CloseReach
+{
+    /// The reach of a close minted at the one place it parses at.
+    pub const NONE: Self = Self(0);
+
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        if self.0 == other.0 {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+}
+
+impl From<u32> for CloseReach
+{
+    /// Reads a byte count as a reach.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: u32) -> Self
+    {
+        Self(bytes)
+    }
+}
+
+impl From<CloseReach> for u32
+{
+    /// Reads the byte count back out.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(reach: CloseReach) -> Self
+    {
+        reach.0
+    }
+}
+
 /// What one node of a molded tree is.
 ///
 /// The vocabulary is the parser's material, closed: the tree records what was
@@ -166,6 +228,8 @@ pub enum NodeLabel
         sort: GroutSort,
         /// The family of the closer it stands in for.
         class: ClosingClass,
+        /// How far back the first place the closer parses at stands.
+        reach: CloseReach,
     },
     /// Layout: whitespace, a comment, or a shebang line.
     Space,
@@ -205,8 +269,20 @@ impl NodeLabel
                             | (GroutShape::Infix, GroutShape::Infix)
                     )
             },
-            (Self::GhostClose { sort: a, class: ca }, Self::GhostClose { sort: b, class: cb }) => {
+            (
+                Self::GhostClose {
+                    sort: a,
+                    class: ca,
+                    reach: ra,
+                },
+                Self::GhostClose {
+                    sort: b,
+                    class: cb,
+                    reach: rb,
+                },
+            ) => {
                 matches!(a.const_eq(b), crate::ConstEquality::Equal)
+                    && matches!(ra.const_eq(rb), crate::ConstEquality::Equal)
                     && matches!(
                         (ca, cb),
                         (ClosingClass::Paren, ClosingClass::Paren)
@@ -320,6 +396,7 @@ impl NodeLabel
 mod tests
 {
     use super::CarriesText;
+    use super::CloseReach;
     use super::LabelTag;
     use super::NodeLabel;
     use super::Significance;
@@ -345,6 +422,7 @@ mod tests
             NodeLabel::GhostClose {
                 sort: GroutSort::from(1_u16),
                 class: ClosingClass::Brace,
+                reach: CloseReach::NONE,
             },
             NodeLabel::Space,
             NodeLabel::Doc,
@@ -433,10 +511,17 @@ mod tests
             NodeLabel::GhostClose {
                 sort: GroutSort::from(2_u16),
                 class: ClosingClass::Brace,
+                reach: CloseReach::NONE,
             },
             NodeLabel::GhostClose {
                 sort: GroutSort::from(1_u16),
                 class: ClosingClass::Paren,
+                reach: CloseReach::NONE,
+            },
+            NodeLabel::GhostClose {
+                sort: GroutSort::from(1_u16),
+                class: ClosingClass::Brace,
+                reach: CloseReach::from(4_u32),
             },
         ]);
         for &left in &labels {

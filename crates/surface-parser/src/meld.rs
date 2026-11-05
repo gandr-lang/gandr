@@ -221,6 +221,7 @@ use gandr_surface_grammar::StepSym;
 use gandr_surface_grammar::TileKind;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::CloseReach;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::GroutShape;
@@ -4904,6 +4905,7 @@ impl<'pbg> MeldState<'pbg>
             |class| NodeLabel::GhostClose {
                 sort: sort.grout_sort(),
                 class,
+                reach: CloseReach::NONE,
             },
         );
         let ghost = self.emit_token(label, ghost_span);
@@ -8462,7 +8464,7 @@ fn write_emit_op(
 ///   typed errors. Wrong payload order, over-consumption or acceptance of
 ///   unknown tags changes these observations.
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
-#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0 && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| (1 ..= 7).contains(&tag) || *error == CheckpointError::BadTag { tag }), |label| before.1 == Some(u8::from(label.tag())) && reader.pos == before.0.saturating_add(match *label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 })))]
+#[spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0 && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| (1 ..= 7).contains(&tag) || *error == CheckpointError::BadTag { tag }), |label| before.1 == Some(u8::from(label.tag())) && reader.pos == before.0.saturating_add(match *label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } => 4, NodeLabel::GhostClose { .. } => 8 })))]
 fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -8485,8 +8487,10 @@ fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
         0x05 => {
             let wire_sort = reader.u16()?;
             let sort = GroutSort::from(u16::from(wire_sort));
+            let wire_reach = reader.u32()?;
+            let reach = CloseReach::from(u32::from(wire_reach));
             let class = read_class(reader)?;
-            Ok(NodeLabel::GhostClose { sort, class })
+            Ok(NodeLabel::GhostClose { sort, class, reach })
         },
         0x06 => Ok(NodeLabel::Space),
         0x07 => Ok(NodeLabel::Doc),
@@ -8498,7 +8502,8 @@ fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 ///
 /// # Specification
 /// - ensures: appends the pinned label tag and its little-endian payload;
-///   payload-free labels occupy one byte, molds five, and grout or ghosts four.
+///   payload-free labels occupy one byte, molds five, grout four and minted
+///   closes eight: the sort, the reach, then the class.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -8507,7 +8512,7 @@ fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 ///   Swapping a tag, losing payload bytes or writing an extra payload changes
 ///   the wire form and cursor.
 /// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
-#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&u8::from(label.tag())) && writer.bytes.len() == before.saturating_add(match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }))]
+#[spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&u8::from(label.tag())) && writer.bytes.len() == before.saturating_add(match label { NodeLabel::Wald | NodeLabel::Space | NodeLabel::Doc => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } => 4, NodeLabel::GhostClose { .. } => 8 }))]
 fn write_label(
     writer: &mut Writer,
     label: NodeLabel,
@@ -8523,8 +8528,9 @@ fn write_label(
             writer.u16(WireU16::from(u16::from(sort)));
             write_shape(writer, shape);
         },
-        NodeLabel::GhostClose { sort, class } => {
+        NodeLabel::GhostClose { sort, class, reach } => {
             writer.u16(WireU16::from(u16::from(sort)));
+            writer.u32(WireU32::from(u32::from(reach)));
             write_class(writer, class);
         },
     }
@@ -9025,6 +9031,7 @@ mod tests
     use gandr_surface_grammar::TileLabel;
     use gandr_surface_grammar::built_in;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::CloseReach;
     use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::GroutShape;
     use gandr_surface_syntax::GroutSort;
@@ -9203,8 +9210,9 @@ mod tests
                 NodeLabel::GhostClose {
                     sort: GroutSort::from(0xabcd),
                     class: ClosingClass::Brace,
+                    reach: CloseReach::from(0x0102_0304),
                 },
-                &[5, 0xcd, 0xab, 2],
+                &[5, 0xcd, 0xab, 0x04, 0x03, 0x02, 0x01, 2],
             ),
         ];
         for &(label, golden) in labels {
@@ -9244,18 +9252,19 @@ mod tests
                 );
                 assert_eq!(reader.pos, 1);
             }
-            for (outer, limit) in [(4, 4), (5, 3)] {
+            let shaped = [4, 0x34, 0x12, tag];
+            let closed = [5, 0x34, 0x12, 0, 0, 0, 0, tag];
+            for (bytes, limit) in [(shaped.as_slice(), 4), (closed.as_slice(), 3)] {
                 if tag >= limit {
-                    let bytes = [outer, 0x34, 0x12, tag];
                     let mut reader = super::Reader {
-                        bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                        bytes: CheckpointBytesRef::from(bytes),
                         pos: 0,
                     };
                     assert_eq!(
                         super::read_label(&mut reader),
                         Err(CheckpointError::BadTag { tag })
                     );
-                    assert_eq!(reader.pos, 4);
+                    assert_eq!(reader.pos, bytes.len());
                 }
             }
         }
@@ -10528,11 +10537,11 @@ mod tests
     ///
     /// A label carrying a class round-trips canonically. A stream truncated
     /// inside its payload is refused rather than half-read — the class is the
-    /// last field written, so a stream that stops after the sort is exactly the
-    /// dangerous case. And a class byte the reader does not know is refused
-    /// rather than defaulted: guessing a class would pair a ghost against a
-    /// closer that never answered it, which is the one error worse than not
-    /// pairing at all.
+    /// last field written, so a stream that stops after the sort and the
+    /// reach is exactly the dangerous case. And a class byte the reader does
+    /// not know is refused rather than defaulted: guessing a class would pair
+    /// a ghost against a closer that never answered it, which is the one error
+    /// worse than not pairing at all.
     #[test]
     fn minted_close_round_trips_and_refuses_unknown_class() -> Result<(), Box<dyn Error>>
     {
@@ -10544,6 +10553,7 @@ mod tests
             let ghost = NodeLabel::GhostClose {
                 sort: GroutSort::from(7),
                 class,
+                reach: CloseReach::from(5_u32),
             };
             let mut writer = super::Writer { bytes: Vec::new() };
             super::write_label(&mut writer, ghost);
@@ -10578,6 +10588,7 @@ mod tests
         super::write_label(&mut writer, NodeLabel::GhostClose {
             sort: GroutSort::from(7),
             class: ClosingClass::Paren,
+            reach: CloseReach::NONE,
         });
         let mut encoded = writer.bytes;
         if let Some(last) = encoded.last_mut() {

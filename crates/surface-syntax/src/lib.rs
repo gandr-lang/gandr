@@ -100,6 +100,7 @@ pub use crate::error::SyntaxError;
 pub use crate::key::FormRank;
 pub use crate::key::NodeKey;
 pub use crate::label::CarriesText;
+pub use crate::label::CloseReach;
 pub use crate::label::LabelTag;
 pub use crate::label::NodeLabel;
 pub use crate::label::Significance;
