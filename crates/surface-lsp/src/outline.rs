@@ -960,7 +960,7 @@ pub fn runs(
 /// The label numbers of `{`, `;` and `}`, which a layout block's zero-width
 /// opener, separator and closer carry as a written brace and `;` do.
 #[repr(transparent)]
-struct Braces([Option<LabelId>; 3]);
+pub struct Braces([Option<LabelId>; 3]);
 
 impl Braces
 {
@@ -968,7 +968,7 @@ impl Braces
     ///
     /// # Specification
     /// trivial.
-    fn of(grammar: &Pbg) -> Self
+    pub fn of(grammar: &Pbg) -> Self
     {
         Self(BRACES.map(|brace| grammar.label_id(LabelText(brace))))
     }
@@ -986,9 +986,11 @@ impl Braces
     /// - executable: none — a clause would restate the look-up of the label.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`runs`].
+    /// - hypothesis: L3 — as [`runs`], and a layout body's relabeled `=` ends
+    ///   its declaration's head as a written `{` does (#5196).
     /// - witness: `outline::tests::a_layout_block_holds_its_members_4853`
-    fn spelled<'tree>(
+    /// - witness: `hover::tests::a_refused_declaration_hovers_what_the_lowering_kept_1201`
+    pub fn spelled<'tree>(
         &self,
         grammar: &Pbg,
         tree: &SyntaxTree<'tree>,

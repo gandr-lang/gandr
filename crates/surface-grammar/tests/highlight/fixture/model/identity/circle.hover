@@ -27,7 +27,7 @@
 34:53-34:53 ) ⇒ Path[.A = Circle](Base, Base) : Type @34:25-34:54
 34:54-34:55 ]( ⇒ Type @34:15-37:2
 35:3-35:11 Path.back ⇒ Path.back loop : -F Path[.A = Circle](Base, Base) @35:3-35:17
-35:13-35:16 loop ⇒ Path[.A = Circle](Base, Base) @35:13-35:17
+35:13-35:16 loop ⇒ loop : Path[.A = Circle](Base, Base) @35:13-35:17
 35:17-35:17 , ⇒ Type @34:15-37:2
 36:3-36:6 back ⇒ back loop : Path[.A = Circle](Base, Base) @36:3-36:12
 36:8-36:11 loop ⇒ loop : Path[.A = Circle](Base, Base) @36:8-36:12
@@ -57,10 +57,10 @@
 41:55-41:55 ) ⇒ Path[.A = Circle](Base, Base) : Type @41:27-41:56
 41:56-41:57 ]( ⇒ Type @41:17-44:2
 42:3-42:11 Path.step ⇒ Path.step loop (Path.back loop) : -F Path[.A = Circle](Base, Base) @42:3-42:34
-42:13-42:16 loop ⇒ Path[.A = Circle](Base, Base) @42:13-42:17
+42:13-42:16 loop ⇒ loop : Path[.A = Circle](Base, Base) @42:13-42:17
 42:18-42:18 ( ⇒ Path.step loop (Path.back loop) : -F Path[.A = Circle](Base, Base) @42:3-42:34
 42:19-42:27 Path.back ⇒ Path.back loop : -F Path[.A = Circle](Base, Base) @42:19-42:33
-42:29-42:32 loop ⇒ Path[.A = Circle](Base, Base) @42:29-42:33
+42:29-42:32 loop ⇒ loop : Path[.A = Circle](Base, Base) @42:29-42:33
 42:33-42:33 ) ⇒ Path.step loop (Path.back loop) : -F Path[.A = Circle](Base, Base) @42:3-42:34
 42:34-42:34 , ⇒ Type @41:17-44:2
 43:3-43:11 Path.here ⇒ Path.here Base : Path[.A = Circle](Base, Base) @43:3-43:17
@@ -97,10 +97,10 @@
 51:30-51:30 ) ⇒ Path.here (Path.here Base) : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base) @51:5-51:31
 51:31-51:31 ; ⇒ around_once : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base)⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @48:1-51:32
 55:1-55:32 @[ refuses("RuleNotRespe… ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎Path.here(Base)` is the empty word, which it would read as 1. @55:1-56:1
-56:1-56:3 def ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎Path.here(Base)` is the empty word, which it would read as 1. @56:1-60:26
+56:1-56:3 def ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎Path.here(Base)` is the empty word, which it would read as 1. @56:1-56:56
 56:5-56:9 tell( ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎Path.here(Base)` is the empty word, which it would read as 1. @56:5-56:9
 56:10-56:10 p ⇒ p : Path[.A = Circle](Base, Base) @56:10-56:11
-56:12-56:12 : ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎Path.here(Base)` is the empty word, which it would read as 1. @56:1-60:26
+56:12-56:12 : ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎Path.here(Base)` is the empty word, which it would read as 1. @56:1-56:56
 56:14-56:22 Path[.A = ⇒ Path[.A = Circle](Base, Base) : Type @56:14-56:43
 56:24-56:29 Circle ⇒ Circle : Type @56:24-56:30
 56:30-56:31 ]( ⇒ Path[.A = Circle](Base, Base) : Type @56:14-56:43
@@ -108,7 +108,7 @@
 56:36-56:36 , ⇒ Path[.A = Circle](Base, Base) : Type @56:14-56:43
 56:38-56:41 Base ⇒ Base : Circle @56:38-56:42
 56:42-56:42 ) ⇒ Path[.A = Circle](Base, Base) : Type @56:14-56:43
-56:43-56:46 ) -> ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎Path.here(Base)` is the empty word, which it would read as 1. @56:1-60:26
+56:43-56:46 ) -> ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎Path.here(Base)` is the empty word, which it would read as 1. @56:1-56:56
 56:48-56:54 Integer ⇒ Integer : Type @56:48-56:55
 56:56-56:56 = ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎Path.here(Base)` is the empty word, which it would read as 1. @56:1-60:26
 57:3-57:7 match ⇒ ?⏎⏎checked against⏎⏎-F Integer @57:3-60:26
@@ -148,8 +148,8 @@
 65:9-65:12 wind ⇒ wind : Path[.A = Circle](Base, Base) -> Int @65:9-65:13
 65:14-65:14 ( ⇒ -F Int @65:9-65:35
 65:15-65:23 Path.step ⇒ Path.step loop loop : -F Path[.A = Circle](Base, Base) @65:15-65:34
-65:25-65:28 loop ⇒ Path[.A = Circle](Base, Base) @65:25-65:29
-65:30-65:33 loop ⇒ Path[.A = Circle](Base, Base) @65:30-65:34
+65:25-65:28 loop ⇒ loop : Path[.A = Circle](Base, Base) @65:25-65:29
+65:30-65:33 loop ⇒ loop : Path[.A = Circle](Base, Base) @65:30-65:34
 65:34-65:34 ) ⇒ -F Int @65:9-65:35
 65:35-65:35 ) ⇒ -F Path[.A = Circle](Base, Base) @65:3-65:36
 65:36-65:36 , ⇒ Type @64:13-67:2
@@ -183,8 +183,8 @@
 70:51-70:51 ) ⇒ Path[.A = Circle](Base, Base) : Type @70:23-70:52
 70:52-70:53 ]( ⇒ Type @70:13-73:2
 71:3-71:11 Path.step ⇒ Path.step loop loop : -F Path[.A = Circle](Base, Base) @71:3-71:22
-71:13-71:16 loop ⇒ Path[.A = Circle](Base, Base) @71:13-71:17
-71:18-71:21 loop ⇒ Path[.A = Circle](Base, Base) @71:18-71:22
+71:13-71:16 loop ⇒ loop : Path[.A = Circle](Base, Base) @71:13-71:17
+71:18-71:21 loop ⇒ loop : Path[.A = Circle](Base, Base) @71:18-71:22
 71:22-71:22 , ⇒ Type @70:13-73:2
 72:3-72:6 loop ⇒ loop : Path[.A = Circle](Base, Base) @72:3-72:7
 72:8-72:8 ∷ ⇒ Path[.A = Circle](Base, Base) @72:3-72:31
@@ -216,7 +216,7 @@
 77:38-77:38 ( ⇒ -F Path[.A = Circle](Base, Base) @77:33-77:47
 77:39-77:41 S ( ⇒ S (S Z) : Int @77:39-77:46
 77:42-77:42 S ⇒ S Z : Int @77:42-77:45
-77:44-77:44 Z ⇒ Int @77:44-77:45
+77:44-77:44 Z ⇒ Z : Int @77:44-77:45
 77:45-77:45 ) ⇒ S (S Z) : Int @77:39-77:46
 77:46-77:46 ) ⇒ -F Path[.A = Circle](Base, Base) @77:33-77:47
 77:47-77:47 ) ⇒ -F Int @77:27-77:48
@@ -307,9 +307,9 @@
 92:48-92:48 ) ⇒ Path[.A = Circle](Base, Base) : Type @92:20-92:49
 92:49-92:50 )) ⇒ -F *{a : Path[.A = Circle](Base, Base) -> Int, b : *{b : Int ->⏎  Path[.A = Circle](Base, Base), c : (c : Path[.A = Circle](Base, Base)) ->⏎  Path[.A = Path[.A = Circle](Base, Base)](b (a c), c)} * *{b : Int ->⏎  Path[.A = Circle](Base, Base), c : (c : Int) -> Path[.A = Int](a (b c), c)}} @92:3-92:66
 92:52-92:54 Int ⇒ Int : Type @92:52-92:55
-92:56-92:65 windingIso ⇒ Path[.A = Circle](Base, Base) ≅ Int⏎⏎checked against⏎⏎*{a : Path[.A = Circle](Base, Base) -> Int, b : *{b : Int ->⏎  Path[.A = Circle](Base, Base), c : ((c : Path[.A = Circle](Base, Base)) ->⏎  Path[.A = Path[.A = Circle](Base, Base)](b (a c), c)) * ((c : Int) ->⏎  Path[.A = Int](a (b c), c))}} @92:56-92:66
+92:56-92:65 windingIso ⇒ windingIso : Path[.A = Circle](Base, Base) ≅ Int⏎⏎checked against⏎⏎*{a : Path[.A = Circle](Base, Base) -> Int, b : *{b : Int ->⏎  Path[.A = Circle](Base, Base), c : ((c : Path[.A = Circle](Base, Base)) ->⏎  Path[.A = Path[.A = Circle](Base, Base)](b (a c), c)) * ((c : Int) ->⏎  Path[.A = Int](a (b c), c))}} @92:56-92:66
 93:1-93:1 ) ⇒ Type @90:20-93:2
 93:3-93:3 = ⇒ windingByIso : Path[.A = Path[.A = Circle](Base, Base) ≃ Int](winding, isoToEquiv⏎  type(Path[.A = Circle](Base, Base)) Int windingIso)⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @90:1-93:23
 93:5-93:13 Path.here ⇒ Path.here winding : Path[.A = Path[.A = Circle](Base, Base) ≃ Int](winding, isoToEquiv⏎  type(Path[.A = Circle](Base, Base)) Int windingIso) @93:5-93:22
-93:15-93:21 winding ⇒ Path[.A = Circle](Base, Base) ≃ Int @93:15-93:22
+93:15-93:21 winding ⇒ winding : Path[.A = Circle](Base, Base) ≃ Int @93:15-93:22
 93:22-93:22 ; ⇒ windingByIso : Path[.A = Path[.A = Circle](Base, Base) ≃ Int](winding, isoToEquiv⏎  type(Path[.A = Circle](Base, Base)) Int windingIso)⏎⏎The equivalence is `isoToEquiv` at the quasi-inverse, by conversion. @90:1-93:23

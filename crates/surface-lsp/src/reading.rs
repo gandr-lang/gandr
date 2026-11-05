@@ -50,6 +50,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::fragment::comments_coloured;
 use crate::goto::ranged;
+use crate::outline::Braces;
 use crate::outline::Declarer;
 use crate::outline::Skeleton;
 use crate::outline::declarations;
@@ -218,11 +219,14 @@ fn tiles(
 
 /// The head of the form at `at` declaring `symbol`: from the form's own start
 /// to the first `where` or brace among its own tiles, or to the symbol's end
-/// when the form has neither.
+/// when the form has neither. A tile reads as [`Braces::spelled`] gives it, so
+/// a layout body's `=`, which the layout pass relabels as the block's `{`,
+/// ends the head as a written `{` does (#5196).
 ///
 /// # Specification
 /// trivial.
 fn head(
+    (grammar, braces): (&Pbg, &Braces),
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
     at: NodeIndex,
@@ -231,15 +235,18 @@ fn head(
 {
     let brace = tree.children(at).find_map(|child| {
         let node = tree.node(child)?;
-        let NodeLabel::Tile(_) = node.label()
+        let NodeLabel::Tile(mold) = node.label()
         else {
             return None;
         };
-        matches!(tree.fragment(child).map(<&str>::from), Some("where" | "{"))
-            .then(|| {
-                Position::of_byte(index, RenderOffset::from(usize::from(node.span().start()))).ok()
-            })
-            .flatten()
+        matches!(
+            braces.spelled(grammar, tree, child, mold).map(<&str>::from),
+            Some("where" | "{")
+        )
+        .then(|| {
+            Position::of_byte(index, RenderOffset::from(usize::from(node.span().start()))).ok()
+        })
+        .flatten()
     });
     let start = tree
         .node(at)
@@ -379,6 +386,7 @@ impl Reading
     {
         let index = LineIndex::new(<&str>::from(tree.source()).into());
         let declared = declarations(grammar, roles, tree, &index);
+        let braces = Braces::of(grammar);
         let members: Vec<(NodeIndex, ByteSpan)> = declared
             .iter()
             .filter_map(|&(declarer, _)| match declarer {
@@ -393,7 +401,7 @@ impl Reading
                 .map(|(declarer, symbol)| match declarer {
                     Declarer::Form(at) | Declarer::Root(at) => Declaration {
                         key: tree.key(at),
-                        head: head(tree, &index, at, &symbol),
+                        head: head((grammar, &braces), tree, &index, at, &symbol),
                         members: match symbol.kind {
                             SymbolKind::INTERFACE | SymbolKind::ENUM | SymbolKind::STRUCT => {
                                 runs(grammar, tree, at)

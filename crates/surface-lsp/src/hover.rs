@@ -1877,13 +1877,15 @@ fn lines(
 ///   term whose first highlighter span starts it in a constructor's role, or a
 ///   type's where a type's argument writes it — each when it is one line of the
 ///   source and in the colours the document gives it, then ` : ` and the
-///   entry's type; any other term's type alone; for a term checked against a
-///   type spelled otherwise, a second block of that type after a line saying
-///   so; for a model standing where a model of a theory its own includes is
-///   asked or a model whose sorts are manifest standing where a model of its
-///   theory is asked, a block of the reduct or the forgetting map the checker
-///   applies there, applied to the term as the explicit form writes it — its
-///   text when it is one line, else `…` — after a line saying so.
+///   entry's type; any other term's type alone. A zero-width highlighter span,
+///   which juxtaposition and the layout pass write, colours no byte, so the
+///   term's first span is the first after it that holds a byte (#5196). For a
+///   term checked against a type spelled otherwise, a second block of that type
+///   after a line saying so; for a model standing where a model of a theory its
+///   own includes is asked or a model whose sorts are manifest standing where a
+///   model of its theory is asked, a block of the reduct or the forgetting map
+///   the checker applies there, applied to the term as the explicit form writes
+///   it — its text when it is one line, else `…` — after a line saying so.
 /// - provides: the node half of [`hover`].
 /// - fails: never.
 /// - panics: none.
@@ -1896,6 +1898,7 @@ fn lines(
 /// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
 /// - witness: `hover::tests::a_model_hovers_the_reduct_the_checker_applies_2031`
 /// - witness: `hover::tests::a_manifest_model_hovers_the_forgetting_map_the_checker_applies_2130`
+/// - witness: `hover::tests::a_described_member_hovers_its_own_type`
 #[spec(ensures: |ret| ret.starts_with(markup.opener().0))]
 fn typed(
     quoted: &Quoted<'_>,
@@ -1910,7 +1913,10 @@ fn typed(
         .partition_point(|span| usize::from(span.range.start()) < start);
     let first = quoted
         .spans
-        .get(at)
+        .get(at ..)
+        .unwrap_or_default()
+        .iter()
+        .find(|span| span.range.start() < span.range.end())
         .filter(|span| usize::from(span.range.start()) == start);
     let named = || {
         first.is_some_and(|span| {
@@ -2973,7 +2979,7 @@ mod tests
     {
         let data = include_str!("hover/fixtures/natdiv.gandr");
         let theory = include_str!("hover/fixtures/cat.gandr");
-        let rows: [Row<'_>; 13] = [
+        let rows: [Row<'_>; 14] = [
             (
                 "a data family's name",
                 data,
@@ -3011,6 +3017,14 @@ mod tests
                 Ok(fenced(SourceText::from(
                     "divmod : +U (NatDiv -> NatDiv -> -F *{NatDiv, NatDiv})",
                 ))),
+            ),
+            // #5196: a spine's pattern variable answers its binder, as the
+            // call form's does.
+            (
+                "a rule's pattern variable",
+                data,
+                (4, 16),
+                Ok(fenced(SourceText::from("m : NatDiv"))),
             ),
             (
                 "a rule's arrow",
@@ -3187,8 +3201,9 @@ mod tests
     /// lowering kept — a constructor's use the line declaring it, a keyword
     /// its rule, and a parameter's use inside the refused call its binder
     /// (#1265) — followed by the declaration's hover with its refusal; a tile
-    /// of a source refused as a whole answers its rule and that refusal. None
-    /// names a tracking issue.
+    /// of a source refused as a whole answers its rule and that refusal. The
+    /// refused body is a layout block after `=`, which keeps its names as a
+    /// braced body does (#5196). None names a tracking issue.
     #[test]
     fn a_refused_declaration_hovers_what_the_lowering_kept_1201()
     {
@@ -3213,7 +3228,7 @@ mod tests
                 "a parameter's use inside the refused call",
                 (4, 14),
                 format!(
-                    "```gandr\ndef bad(x : Nat) -> -F Nat {{\n```\n\nA binder, written at line \
+                    "```gandr\ndef bad(x : Nat) -> -F Nat =\n```\n\nA binder, written at line \
                      4.\n\n{refused}"
                 ),
             ),
@@ -3233,6 +3248,30 @@ mod tests
                  cannot stand where a declaration is expected"
             )),
             "a tile of a source refused whole answers its rule and the refusal"
+        );
+    }
+
+    /// #5196: a hover answers alike in two spellings of one source. A tile of
+    /// a refused layout body answers as the same tile of the braced body, and
+    /// a rule's pattern variable in a spine answers as in the call form.
+    #[test]
+    fn a_layout_body_and_a_spine_hover_as_their_braced_and_call_forms_5196()
+    {
+        let layout = include_str!("hover/fixtures/refused-call.gandr");
+        let braced = layout
+            .replace("-F Nat =\n", "-F Nat {\n")
+            .replace("Succ x x\n", "Succ x x\n}\n");
+        for (tile, (line, character)) in [("a constructor's use", (4, 9)), ("a keyword", (4, 2))] {
+            let at = |text: &str| shown(SourceText::from(text), (line.into(), character.into()));
+            assert_eq!(at(layout), at(&braced), "{tile}");
+        }
+        let spine = include_str!("hover/fixtures/natdiv.gandr");
+        let call = spine.replace("divmod m Zero", "divmod(m, Zero)");
+        let variable = |text: &str| shown(SourceText::from(text), (4.into(), 16.into()));
+        assert_eq!(
+            variable(spine),
+            variable(&call),
+            "a rule's pattern variable"
         );
     }
 
