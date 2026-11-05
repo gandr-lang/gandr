@@ -3299,11 +3299,11 @@ fn a_binder_only_a_dropped_argument_names_is_unnamed_736()
     }
 }
 
-/// #4853: a box whose first domain classifies codes keeps its thunk. The
+/// #4853: a box whose domain and codomain classify codes keeps its thunk. The
 /// alias `Type -> Type` reads as the static Pi, so a thunk over an arrow from
-/// `Type` prints whole, `+U (Type -> -F Type)`. A dependent arrow whose binder
-/// nothing names prints so too: the printer leaves its binder out, and the
-/// bare `Type -> Type` reads as the static Pi again.
+/// `Type` to `Type` prints whole, `+U (Type -> -F Type)`. A dependent arrow
+/// whose binder nothing names prints so too: the printer leaves its binder
+/// out, and the bare `Type -> Type` reads as the static Pi again.
 #[test]
 fn a_box_over_a_type_keeps_its_thunk_4853()
 {
@@ -3334,6 +3334,32 @@ fn a_box_over_a_type_keeps_its_thunk_4853()
             "{reason} keeps its thunk"
         );
     }
+}
+
+/// #5203: a box from a universe to a value type prints as the alias. The
+/// lowering reads `Type -> Integer` as the box, since its codomain classifies
+/// no codes, so the thunk over `Type -> -F Integer` takes the sugar.
+#[test]
+fn a_box_from_a_type_to_a_value_type_prints_as_the_alias_5203()
+{
+    let mut core = CoreArena::new();
+    let universe = small_universe(&mut core);
+    let integer = core.value_type_base(BaseType::Integer);
+    let returns_integer = core.comp_type_returner(integer);
+    let arrow = core.comp_type_arrow(universe, returns_integer);
+    let boxed = core.value_type_thunk(arrow);
+    let source = CoreSource::new(&core, &[]);
+    let presented = presented_in(
+        &source,
+        Root::Type(CoreNode::ValueType(boxed)),
+        wide(),
+        Form::Sugared,
+    );
+    assert_eq!(
+        (presented.as_ref(), presented.fidelity()),
+        ("Type -> Integer", Fidelity::Faithful),
+        "a thunk over an arrow from `Type` to `Integer` takes the alias"
+    );
 }
 
 /// #839: a quoted type that holds a part no expression reads — a sum or a

@@ -52,6 +52,7 @@
 //! Witness that every dispatched kind is pinned:
 //! `tests::every_dispatched_kind_is_pinned`.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -1711,7 +1712,7 @@ pub fn shape_of<'source>(
 pub struct Kinded(pub bool);
 
 /// Whether a written type is the box, a function value's type: the value
-/// function `=>`, or an arrow `->` whose domain classifies no codes.
+/// function `=>`, or an arrow `->` that classifies no codes.
 ///
 /// # Specification
 /// trivial.
@@ -1720,14 +1721,17 @@ pub struct Kinded(pub bool);
 pub struct Boxed(pub bool);
 
 /// Whether the type written at `at` classifies codes, by its syntax: a
-/// universe, the row kind, or an arrow whose domain classifies codes,
-/// through parentheses. `scratch` is a reused reading buffer.
+/// universe, the row kind, or an arrow whose domain and codomain both
+/// classify codes, through parentheses. `scratch` is a reused reading buffer.
+/// `known` keeps each node's answer across calls, so the arrows of a chain
+/// read the chain once between them.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: each answer in `known` is this function's answer at its node
+///   over `tree`.
 /// - ensures: kinded for `Type`, `Type[-]`, `Row`, `Type -> Type` and `(Type ->
 ///   Type)`. Not kinded for any other type, a name an alias gives a kind
-///   included.
+///   included. `known` holds the answer at `at` and at each node read under it.
 /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
 /// - panics: none.
 /// - executable: none — the answer is read off the syntax tree, which a
@@ -1737,69 +1741,97 @@ pub struct Boxed(pub bool);
 /// [`LoweringRefusal::UnknownMold`].
 ///
 /// # Termination
-/// Each round descends to an operand of the finite tree.
+/// Each round reads one node of the finite tree. A form is read twice, once
+/// to open its operands and once to join their answers, and a node that
+/// `known` holds is read no more.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a kind arrow over universes stays the static Pi and an
-///   arrow between value types is the box.
+/// - hypothesis: L3 — a kind arrow over universes stays the static Pi, an arrow
+///   between value types is the box, and an arrow from a universe to a value
+///   type is the box.
 /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
 /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+/// - witness: `lower::tests::an_arrow_from_a_universe_to_a_value_type_is_the_box_5203`
 pub fn classifies_codes<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
     at: Placed,
     scratch: &mut Pieces,
+    known: &mut BTreeMap<NodeIndex, Kinded>,
 ) -> Result<Kinded, LoweringRefusal<'source>>
 {
-    let mut at = at;
-    loop {
-        let Some(node) = tree.node(at.node)
+    /// Whether a form waits for its operands' answers.
+    #[derive(Clone, Copy)]
+    enum Visit
+    {
+        /// Its operands are not yet read.
+        Open,
+        /// Each operand's answer stands in `known`.
+        Join,
+    }
+    // A form waits in `pending` under its operands until each has its answer.
+    let mut pending: Vec<(Placed, Visit)> = alloc::vec![(at, Visit::Open)];
+    while let Some((place, visit)) = pending.pop() {
+        if known.contains_key(&place.node) {
+            continue;
+        }
+        let Some(node) = tree.node(place.node)
         else {
-            return Ok(Kinded(false));
+            let _fresh = known.insert(place.node, Kinded(false));
+            continue;
         };
-        match shape_of(pbg, node)? {
+        let answer = match shape_of(pbg, node)? {
             Shape::Form {
                 former: Former::Universe,
                 ..
-            } => return Ok(Kinded(true)),
+            } => Kinded(true),
             Shape::Form {
                 former: Former::TypeHead,
                 ..
-            } => {
-                let named = tree
-                    .fragment(at.node)
-                    .is_some_and(|text| SurfaceName::from(text).as_ref() == "Row");
-                return Ok(Kinded(named));
-            },
+            } => Kinded(
+                tree.fragment(place.node)
+                    .is_some_and(|text| SurfaceName::from(text).as_ref() == "Row"),
+            ),
             Shape::Form {
                 former: Former::ParenthesizedType | Former::ArrowType,
                 ..
             } => {
-                read_pieces(pbg, tree, at.node, scratch)?;
-                let Some(first) = scratch.pieces.iter().find_map(|piece| match *piece {
+                read_pieces(pbg, tree, place.node, scratch)?;
+                let operands = scratch.pieces.iter().filter_map(|piece| match *piece {
                     Piece::Operand(operand) => Some(operand),
                     Piece::Tile { .. } => None,
-                })
-                else {
-                    return Ok(Kinded(false));
-                };
-                at = first;
+                });
+                match visit {
+                    Visit::Open => {
+                        pending.push((place, Visit::Join));
+                        pending.extend(operands.map(|operand| (operand, Visit::Open)));
+                        continue;
+                    },
+                    Visit::Join => {
+                        let mut read = operands.peekable();
+                        Kinded(
+                            read.peek().is_some()
+                                && read
+                                    .all(|operand| known.get(&operand.node) == Some(&Kinded(true))),
+                        )
+                    },
+                }
             },
-            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
-                return Ok(Kinded(false));
-            },
-        }
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => Kinded(false),
+        };
+        let _fresh = known.insert(place.node, answer);
     }
+    Ok(known.get(&at.node).copied().unwrap_or(Kinded(false)))
 }
 
-/// Whether the type written at `at` is the box, by its syntax: the arrow
-/// `A -> B` whose domain classifies no codes, as [`classifies_codes`] reads
-/// it. `scratch` is a reused reading buffer.
+/// Whether the type written at `at` is the box, by its syntax: an arrow
+/// `A -> B` that classifies no codes, as [`classifies_codes`] reads it.
+/// `scratch` is a reused reading buffer.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: boxed for `A -> B` whose domain is not kinded; not boxed for a
-///   kind arrow such as `Type -> Type`, and for any other type.
+/// - ensures: boxed for `A -> B` whose domain or codomain is not kinded; not
+///   boxed for a kind arrow such as `Type -> Type`, and for any other type.
 /// - provides: the box test of every reading that reads a function value's
 ///   written type off its syntax, whichever arrow writes it.
 /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
@@ -1813,8 +1845,10 @@ pub fn classifies_codes<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — a lambda passed for a box parameter, an implicit box
 ///   applied in a body, a family a box states and a clause definition over a
-///   box, each written with `->`, lower and check.
+///   box, each written with `->`, lower and check. An arrow from a universe to
+///   a value type is the box.
 /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
+/// - witness: `lower::tests::an_arrow_from_a_universe_to_a_value_type_is_the_box_5203`
 #[inline]
 pub fn writes_box<'source>(
     pbg: &Pbg,
@@ -1831,17 +1865,16 @@ pub fn writes_box<'source>(
         Shape::Form {
             former: Former::ArrowType,
             ..
-        } => {
-            read_pieces(pbg, tree, at, scratch)?;
-            let Some(domain) = scratch.pieces.iter().find_map(|piece| match *piece {
-                Piece::Operand(operand) => Some(operand),
-                Piece::Tile { .. } => None,
-            })
-            else {
-                return Ok(Boxed(false));
-            };
-            Ok(Boxed(!classifies_codes(pbg, tree, domain, scratch)?.0))
-        },
+        } => Ok(Boxed(
+            !classifies_codes(
+                pbg,
+                tree,
+                Placed::of(at, node),
+                scratch,
+                &mut BTreeMap::new(),
+            )?
+            .0,
+        )),
         Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => Ok(Boxed(false)),
     }
 }

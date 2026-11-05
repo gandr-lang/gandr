@@ -1939,34 +1939,35 @@ where
 enum Classifies
 {
     /// It classifies codes: a universe, the row kind, or a static arrow whose
-    /// domain does.
+    /// domain and codomain do.
     Codes,
     /// It classifies values.
     Values,
 }
 
 /// Whether the type at `node` classifies codes as the lowering reads it off
-/// its spelling: a universe, the row kind, or a static arrow whose domain
-/// does. A box written over such a domain, `Type -> B`, reads back as the
-/// static Pi, so the box keeps its thunk there.
+/// its spelling: a universe, the row kind, or a static arrow whose domain and
+/// codomain do. A box written between such types, `Type -> Type`, reads back
+/// as the static Pi, so the box keeps its thunk there.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: [`Classifies::Codes`] for a universe, the row kind and a static
-///   Pi whose domain classifies codes, read down at most [`DEPTH_LIMIT`]
-///   domains; [`Classifies::Values`] for any other node.
+///   Pi whose domain and codomain classify codes, read at most [`DEPTH_LIMIT`]
+///   nodes; [`Classifies::Values`] for any other node.
 /// - fails: never.
 /// - panics: none.
-/// - executable: none — a clause would restate the walk down the domains.
+/// - executable: none — a clause would restate the walk down the operands.
 ///
 /// # Termination
-/// Each round descends to a domain, and the loop stops at [`DEPTH_LIMIT`]
-/// rounds.
+/// Each round reads one node, and the loop stops at [`DEPTH_LIMIT`] rounds.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the thunk of an arrow over a universe reads back equal,
-///   where the alias `Type -> Type` read back as the static Pi.
+/// - hypothesis: L3 — the thunk of an arrow between universes reads back equal,
+///   where the alias `Type -> Type` read back as the static Pi, and the thunk
+///   of an arrow from a universe to a value type prints as the alias.
 /// - witness: `tests::goldens::a_box_over_a_type_keeps_its_thunk_4853`
+/// - witness: `tests::goldens::a_box_from_a_type_to_a_value_type_prints_as_the_alias_5203`
 fn classifies_codes<S>(
     source: &S,
     node: S::Node,
@@ -1974,19 +1975,32 @@ fn classifies_codes<S>(
 where
     S: Source + ?Sized,
 {
-    let mut at = node;
+    // A static Pi's codomain waits in `pending`. The vector allocates only for
+    // a static Pi.
+    let mut pending = Vec::new();
+    let mut next = Some(node);
     for _ in 0_u32 .. DEPTH_LIMIT.0 {
+        let Some(at) = next.take().or_else(|| pending.pop())
+        else {
+            return Classifies::Codes;
+        };
         let read = source.read(at);
         if matches!(read, Former::Universe { .. } | Former::RowType) {
-            return Classifies::Codes;
+            continue;
         }
-        let Former::StaticPi { domain, .. } = read
+        let Former::StaticPi { domain, codomain } = read
         else {
             return Classifies::Values;
         };
-        at = domain;
+        pending.push(codomain);
+        next = Some(domain);
     }
-    Classifies::Values
+    if next.is_none() && pending.is_empty() {
+        Classifies::Codes
+    }
+    else {
+        Classifies::Values
+    }
 }
 
 /// `written`, a constructor's name, juxtaposed where an expression reads it,
@@ -3124,9 +3138,9 @@ enum Join
     Returns(Arity),
     /// The box over this many domains and then its codomain: `() -> C`,
     /// `A -> C`, `(A, B) -> C`, a codomain that is an arrow in parentheses;
-    /// where an occurrence named a dependent arrow's binder, or the first
-    /// dependent domain classifies codes, the thunk over the arrows it stands
-    /// for.
+    /// where an occurrence named a dependent arrow's binder, or the bare
+    /// spelling reads as the static Pi because every domain and the codomain
+    /// classify codes, the thunk over the arrows it stands for.
     ValueFunction(Arity, Dependent, Classifies),
     /// An arrow over its domain and codomain.
     Arrow,
@@ -5068,8 +5082,9 @@ struct Link<Node>
 struct Dependent(u64);
 
 /// A value-function alias as [`Walk::alias`] found it: its arrows, outermost
-/// first, which of them are dependent, its codomain, and whether its first
-/// domain classifies codes.
+/// first, which of them are dependent, its codomain, and whether its bare
+/// spelling reads as the static Pi, every domain and the codomain classifying
+/// codes.
 type AliasChain<Node> = (Vec<Link<Node>>, Dependent, Codomain<Node>, Classifies);
 
 /// How a static redex's reduct is spelled.
@@ -7567,10 +7582,11 @@ impl Walk<'_, '_>
     ///   the arrows after it, so the join decides between the alias and the
     ///   thunk (#736). None when a link is anything else — an effectful
     ///   returner, an arrow under a redex, a dependent arrow past the
-    ///   sixty-fourth link, a missing or misplaced node — when the first link
-    ///   is no dependent arrow and its domain classifies codes, which the
-    ///   lowering reads written as `A -> B` as the static Pi, or the walk's
-    ///   remaining visits run out first. Every link read is one visit spent.
+    ///   sixty-fourth link, a missing or misplaced node — when every link is no
+    ///   dependent arrow, every domain classifies codes and so does the
+    ///   codomain, which the lowering reads written as `A -> B` as the static
+    ///   Pi, or the walk's remaining visits run out first. Every link read is
+    ///   one visit spent.
     /// - provides: the shape `+U (A1 -> … -> An -> -F C)` the alias `(A1, …,
     ///   An) => C` stands for, which the lowering reads back to the same type.
     /// - fails: never.
@@ -7637,11 +7653,25 @@ impl Walk<'_, '_>
                     link = codomain;
                 },
                 Former::Returner(result) => {
-                    let first = links.first().map_or(Classifies::Values, |first| {
-                        classifies_codes(source, first.domain)
-                    });
+                    // The bare spelling `(A1, …, An) -> C` reads as the static
+                    // Pi when every domain and the codomain classify codes. A
+                    // reduct's spelling is not read here, so it counts as one
+                    // that classifies codes, and the box keeps its thunk. A
+                    // chain with no arrow reads no operand.
+                    let first = if !links.is_empty()
+                        && (entered.is_some()
+                            || classifies_codes(source, result) == Classifies::Codes)
+                        && links
+                            .iter()
+                            .all(|link| classifies_codes(source, link.domain) == Classifies::Codes)
+                    {
+                        Classifies::Codes
+                    }
+                    else {
+                        Classifies::Values
+                    };
                     let kinded = first == Classifies::Codes
-                        && links.first().is_some_and(|first| first.opener.is_none());
+                        && links.iter().all(|link| link.opener.is_none());
                     if kinded {
                         return None;
                     }
@@ -7856,12 +7886,12 @@ impl Walk<'_, '_>
     /// - requires: `domains` are the chain's arrows' domains, outermost first,
     ///   `dependent` marks the dependent ones, and their binders, closed, sat
     ///   from the open count up, one per dependent arrow in order; `first`
-    ///   tells whether the first domain classifies codes.
+    ///   tells whether the bare spelling reads as the static Pi.
     /// - ensures: the domains between parentheses, separated by commas, each
     ///   written as the walk writes its arrow alone: a dependent domain as `a :
     ///   A`, named by its binder, where an occurrence named it, the walk
-    ///   approximated, or it is the first and classifies codes; bare otherwise;
-    ///   then `->` and the codomain.
+    ///   approximated, or it is the first and the bare spelling reads as the
+    ///   static Pi; bare otherwise; then `->` and the codomain.
     /// - provides: the alias join's dependent spelling, which decides only once
     ///   every occurrence was met.
     /// - fails: the builder's refusal.
@@ -7903,8 +7933,9 @@ impl Walk<'_, '_>
             else {
                 binders = binders.saturating_sub(1_usize);
                 let position = OpenBinders(open.saturating_add(binders));
-                // A bare domain that classifies codes, `(Type) -> B`, reads
-                // as the static Pi. The first such binder keeps its name.
+                // A bare spelling whose domains and codomain classify codes,
+                // `(Type) -> Type`, reads as the static Pi. The first binder
+                // keeps its name there.
                 (self.fidelity != Fidelity::Faithful
                     || self.occurring.contains(&position)
                     || (at == 0_usize && first == Classifies::Codes))
@@ -12742,8 +12773,8 @@ impl Walk<'_, '_>
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner { .. } | Join::Returns(_) | Join::Lambda | Join::TypedLambda | Join::StaticLambda { .. } | Join::Thunk => Binding::Prefix,
-                    // The join writes a box over a domain that classifies
-                    // codes as its thunk where it names no binder.
+                    // The join writes a box whose bare spelling reads as the
+                    // static Pi as its thunk where it names no binder.
                     Join::ValueFunction(_, _, Classifies::Codes) if piece.binding == Binding::Prefix => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
@@ -12941,10 +12972,10 @@ impl Walk<'_, '_>
                     self.dependent_alias(&domains, dependent, first, codomain)?
                 }
                 else if first == Classifies::Codes {
-                    // The box `Type -> B` reads as the static Pi. A binder
+                    // The box `Type -> Type` reads as the static Pi. A binder
                     // that nothing names reads back as the plain arrow. The
-                    // join writes the box over a domain that classifies codes
-                    // as its thunk, `+U (Type -> -F B)`.
+                    // join writes a box whose domains and codomain classify
+                    // codes as its thunk, `+U (Type -> -F Type)`.
                     let returned = self.bare_up_to(codomain, Binding::Atom)?;
                     let returner = self.leaf(Glyphs("-F "))?;
                     let mut chain = self.builder.concat(returner, returned)?;
