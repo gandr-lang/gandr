@@ -534,8 +534,8 @@ enum Task
         tag: gandr_kernel_term::ConstructorTag,
         /// Its field count.
         arity: ProducerArity,
-        /// The declaration of its family, when the IL carries one.
-        family: Option<gandr_kernel_term::ConstantIndex>,
+        /// The declaration of the family that declares the constructor.
+        family: gandr_kernel_term::ConstantIndex,
     },
     /// Pop one computation and build its thunk.
     Thunk,
@@ -909,11 +909,8 @@ impl Unfocusing<'_>
                     .checked_sub(usize::from(arity))
                     .ok_or(UnfocusRefusal::DecodeInvariant)?;
                 let fields: Vec<ValueId> = self.values.drain(start ..).collect();
-                let datatype = match family {
-                    Some(declaration) => self.core.value_type_data(declaration, Vec::new()),
-                    None => self.core.value_type_unknown(),
-                };
-                let constructed = self.core.value_constructor(datatype, tag, fields);
+                let datatype = self.core.value_type_data(family, Vec::new());
+                let constructed = self.core.value_constructor(family, datatype, tag, fields);
                 self.values.push(constructed);
                 Ok(())
             },

@@ -2074,11 +2074,13 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     {
         match *value {
             Value::Constructor {
+                family,
                 datatype,
                 tag,
                 ref fields,
             } => {
                 record.put_tag(gandr_kernel_term::NODE_V_CONSTRUCTOR);
+                record.put_count(ComponentCount(usize::from(family)));
                 record.put_count(ComponentCount(usize::from(tag)));
                 record.put_count(ComponentCount(fields.len()));
                 record.put_content(self.content_of(AnyNode::ValueType(datatype)));

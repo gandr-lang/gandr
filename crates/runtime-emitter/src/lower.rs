@@ -2129,10 +2129,7 @@ impl Lowering<'_>
                 Kind::Data,
                 Tag::try_from(usize::from(tag)).map_err(width)?,
                 Arity::try_from(usize::from(arity)).map_err(width)?,
-                match family {
-                    Some(constant) => Family::try_from(usize::from(constant)).map_err(width)?,
-                    None => Family::UNNAMED,
-                },
+                Family::try_from(usize::from(family)).map_err(width)?,
             )),
             ConstructorTag::Record(_)
             | ConstructorTag::ListNil
@@ -5794,12 +5791,15 @@ mod tests
         let one = core.value_unit();
         let two = core.value_unit();
         let datatype = core.value_type_data(0_usize.into(), Vec::new());
-        let built = core.value_constructor(datatype, 0_usize.into(), vec![one, two]);
+        let built =
+            core.value_constructor(0_usize.into(), datatype, 0_usize.into(), vec![one, two]);
         let bound = core.computation_return(built);
         let scrutinee = core.value_variable(Zone::Intuitionistic, 0_u32.into());
         let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
         let second = core.value_variable(Zone::Intuitionistic, 0_u32.into());
-        let rebuilt = core.value_constructor(datatype, 0_usize.into(), vec![second, first]);
+        let rebuilt = core.value_constructor(0_usize.into(), datatype, 0_usize.into(), vec![
+            second, first,
+        ]);
         let answered = core.computation_return(rebuilt);
         let inner = core.computation_lambda(answered);
         let branch = core.computation_lambda(inner);
@@ -6008,12 +6008,15 @@ mod tests
         let one = core.value_unit();
         let two = core.value_unit();
         let datatype = core.value_type_data(0_usize.into(), Vec::new());
-        let built = core.value_constructor(datatype, 0_usize.into(), vec![one, two]);
+        let built =
+            core.value_constructor(0_usize.into(), datatype, 0_usize.into(), vec![one, two]);
         let bound = core.computation_return(built);
         let scrutinee = core.value_variable(Zone::Intuitionistic, 0_u32.into());
         let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
         let second = core.value_variable(Zone::Intuitionistic, 0_u32.into());
-        let rebuilt = core.value_constructor(datatype, 0_usize.into(), vec![second, first]);
+        let rebuilt = core.value_constructor(0_usize.into(), datatype, 0_usize.into(), vec![
+            second, first,
+        ]);
         let answered = core.computation_return(rebuilt);
         let inner = core.computation_lambda(answered);
         let rebuilding = core.computation_lambda(inner);

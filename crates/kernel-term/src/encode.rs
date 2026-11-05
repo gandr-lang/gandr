@@ -1750,9 +1750,13 @@ fn encode_entry(
             },
             Some(value) => match *value {
                 Value::Constructor {
-                    tag, ref fields, ..
+                    family,
+                    tag,
+                    ref fields,
+                    ..
                 } => {
                     out.put_tag(tags::NODE_V_CONSTRUCTOR);
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(family))));
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(tag))));
                     out.put_uvarint(WireU64::from(WireUsize::from(fields.len())));
                 },
@@ -3152,7 +3156,7 @@ mod tests
         // representation as entries, then its kind root, its representation
         // root and that extent.
         let expected = [
-            b'G', b'K', b'X', b'1', 8, 0, 1, 0, 3, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00, 0x00, 0, 1,
+            b'G', b'K', b'X', b'1', 9, 0, 1, 0, 3, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00, 0x00, 0, 1,
             2, 1, 0, 2, 1, b'a', 2, 0xc3, 0xa9, 0, 0, 2, 0x17, 0, 0x1c, 2, 0, 3, 0, 0, 0, 0, 0, 1,
             0, 0, 0, 0, 2,
         ];
@@ -3203,7 +3207,7 @@ mod tests
         // and the four empty slots; then one pair, its two roots and its two
         // decision words.
         let expected = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 7, 0, 0, 0, 3, 0x03, 0, 0x0D, 0, 0x0D, 1, 1, 0,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 7, 0, 0, 0, 3, 0x03, 0, 0x0D, 0, 0x0D, 1, 1, 0,
             1, 0, 0, 0, 0, 1, 1, 2, 2, 0x0B, 0x0E,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -3229,7 +3233,7 @@ mod tests
         // A relating kind closing with no pair decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 7, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 7, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
             0, 0,
         ];
         assert_eq!(
@@ -3278,7 +3282,7 @@ mod tests
         // and the unit as entries, the declared and body roots and the four
         // empty slots; then no related pair, and the two laws in written order.
         let expected = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
             0, 0, 2, 5, 2,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -3296,7 +3300,7 @@ mod tests
         // A lawful kind closing with no law decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
             0, 0, 0,
         ];
         assert_eq!(
@@ -3358,7 +3362,7 @@ mod tests
         // slot: two binders, the second below the first, and two marks, each
         // its binder, its depth and its path; then the three other slots.
         let expected = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 2, 0, 1,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 2, 0, 1,
             2, 0, 1, 2, 0, 1, 1, 0, 1, 1, 0, 0, 0,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -3431,7 +3435,7 @@ mod tests
         // arity 1 and variable 0, and its right side, constructor 1 of the
         // declaration at 3 and a results tuple of 4.
         let expected = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
             0, 0, 0, 0, 1, 2, 2, 0, 1, 1, 0, 2, 0, 3, 1, 3, 4,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -3458,7 +3462,7 @@ mod tests
         // A ruled kind closing with no rule decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
             0, 0, 0, 0, 0,
         ];
         assert_eq!(
@@ -3728,7 +3732,7 @@ mod tests
         // parameter, three constructors of arity zero, one and one; then two
         // rules, each two sides of a node count and tagged nodes.
         let expected = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
             0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -3749,7 +3753,7 @@ mod tests
         // A presented kind closing with no rule decodes to a free type, whose
         // canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
             0, 1, 1, 1, 1, 0,
         ];
         assert_eq!(
@@ -3819,7 +3823,7 @@ mod tests
         // circle writes them; then the sort's position, one cell, and its two
         // endpoints, each the one constructor `base`.
         let expected = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
             0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1,
             0, 0, 1, 0, 0,
         ];
@@ -3844,7 +3848,7 @@ mod tests
         // Words whose rules were dropped still decode, to be refused by the
         // kernel against the mint, and keep their canonical bytes.
         let dropped = [
-            b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
+            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
             0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0,
         ];
         let decoded = crate::decode::decode(ArtifactImage::from(dropped.as_slice()))

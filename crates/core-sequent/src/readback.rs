@@ -625,11 +625,8 @@ impl<'run> Reading<'run>
                         .iter()
                         .map(|&field| self.lookup(field))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let datatype = match family {
-                        Some(declaration) => self.core.value_type_data(declaration, Vec::new()),
-                        None => self.core.value_type_unknown(),
-                    };
-                    Ok(self.core.value_constructor(datatype, tag, fields))
+                    let datatype = self.core.value_type_data(family, Vec::new());
+                    Ok(self.core.value_constructor(family, datatype, tag, fields))
                 },
                 (&ConstructorTag::Recorded(ref shape), fields)
                     if fields.len() == usize::from(tag.producer_arity()) =>

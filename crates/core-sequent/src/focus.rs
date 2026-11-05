@@ -1020,9 +1020,8 @@ enum Task
         tag: gandr_kernel_term::ConstructorTag,
         /// Its field count.
         arity: ProducerArity,
-        /// The declaration of its family, when the core's classifier names
-        /// one.
-        family: Option<gandr_kernel_term::ConstantIndex>,
+        /// The declaration of the family that declares the constructor.
+        family: gandr_kernel_term::ConstantIndex,
     },
     /// Pop one command and mint the thunk suspending it.
     Thunk,
@@ -2110,19 +2109,15 @@ impl<'run> Focusing<'run>
                 return Ok(());
             },
             Value::Constructor {
-                datatype,
+                family,
                 tag,
                 ref fields,
+                ..
             } => {
                 self.tasks.push(Task::Native {
                     tag,
                     arity: ProducerArity::from(fields.len()),
-                    family: match self.core.value_type(datatype) {
-                        Some(&gandr_core_term::ValueType::Data { declaration, .. }) => {
-                            Some(declaration)
-                        },
-                        Some(_) | None => None,
-                    },
+                    family,
                 });
                 for &field in fields.iter().rev() {
                     self.tasks.push(Task::Value(field));

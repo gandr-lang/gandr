@@ -244,6 +244,9 @@ pub enum Value
     /// A datatype constructor with an explicit instantiated classifier.
     Constructor
     {
+        /// Position of the data family that declares the constructor, the
+        /// name its tag counts in.
+        family: crate::ConstantIndex,
         /// The nominal datatype application.
         datatype: ValueTypeId,
         /// Position in the declaration's constructor table.

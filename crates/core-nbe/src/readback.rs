@@ -786,10 +786,13 @@ enum Task
     /// Assemble a dependent split over the value term, the motive and the body
     /// binding this many components.
     DependentSplit(gandr_core_term::ComponentCount),
-    /// Assemble a constructor, including its normalized nominal classifier.
+    /// Assemble a constructor of its family, including its normalized nominal
+    /// classifier.
     Constructor
     {
-        /// Constructor position in the declaration.
+        /// The data family that declares the constructor.
+        family: gandr_kernel_term::ConstantIndex,
+        /// The constructor's tag within its family.
         tag: gandr_core_term::ConstructorTag,
         /// The field span supplies the operand count.
         fields: crate::FieldSpan,
@@ -2380,7 +2383,7 @@ fn run(
             && entry_value_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
-        | Task::Constructor { tag, fields } => domain.fields(fields).is_ok_and(|fields|
+        | Task::Constructor { tag, fields, .. } => domain.fields(fields).is_ok_and(|fields|
             entry_values.checked_sub(fields.len()).and_then(|n| n.checked_add(1)) == Some(machine.values.len()))
             && entry_value_types.checked_sub(1) == Some(machine.value_types.len())
             && machine.values.last().is_some_and(|&id| matches!(core.value(id), Some(Value::Constructor { tag: actual, .. }) if *actual == tag)),
@@ -2503,7 +2506,11 @@ fn step(
             Ok(())
         },
         Task::Comp { comp, binders } => step_comp(core, domain, machine, comp, binders),
-        Task::Constructor { tag, fields } => {
+        Task::Constructor {
+            family,
+            tag,
+            fields,
+        } => {
             let count = domain.fields(fields).map_err(ReadbackFault::Domain)?.len();
             let start = machine
                 .values
@@ -2514,7 +2521,7 @@ fn step(
             let fields = machine.values.drain(start ..).collect();
             machine
                 .values
-                .push(core.value_constructor(datatype, tag, fields));
+                .push(core.value_constructor(family, datatype, tag, fields));
             Ok(())
         },
         Task::Record(source) => {
@@ -3987,6 +3994,7 @@ fn step_value(
     machine.tasks.push(Task::Remember { value, binders });
     match node {
         DomainValue::Constructor {
+            family,
             datatype,
             tag,
             fields,
@@ -4000,7 +4008,11 @@ fn step_value(
                 return Err(ReadbackFault::MachineInvariant);
             };
             let frame = machine.hold_frame(closure.environment().clone());
-            machine.tasks.push(Task::Constructor { tag, fields });
+            machine.tasks.push(Task::Constructor {
+                family,
+                tag,
+                fields,
+            });
             for &value in domain
                 .fields(fields)
                 .map_err(ReadbackFault::Domain)?

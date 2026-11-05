@@ -3044,6 +3044,7 @@ fn decode_entry(
             }
         },
         tags::NODE_V_CONSTRUCTOR => {
+            let constructor_family = ConstantIndex::from(usize::from(reader.read_usize()?));
             let tag = crate::ConstructorTag::from(usize::from(reader.read_usize()?));
             let count = usize::from(reader.read_usize()?);
             let datatype = read_value_type(reader, table, this, &mut children)?;
@@ -3052,7 +3053,12 @@ fn decode_entry(
                 fields.push(read_value(reader, table, this, &mut children)?);
             }
             (
-                DecodedNode::Value(table.arena.value_constructor(datatype, tag, fields)),
+                DecodedNode::Value(table.arena.value_constructor(
+                    constructor_family,
+                    datatype,
+                    tag,
+                    fields,
+                )),
                 Family::Value,
             )
         },
@@ -5256,12 +5262,12 @@ mod tests
             })
         );
         assert_eq!(foreign.position.0, 4);
-        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 8, 0x0800, u16::MAX] {
+        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0x0900, u16::MAX] {
             let mut image = magic.to_vec();
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 8 {
+            let expected = if version == 9 {
                 Ok(())
             }
             else {
@@ -6063,7 +6069,7 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
@@ -6258,7 +6264,7 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![b'G', b'K', b'X', b'1', 8, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
+            let mut bytes = vec![b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes

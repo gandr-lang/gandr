@@ -142,12 +142,8 @@ const INJECTION: u8 = 0x14_u8;
 /// offset, then its field.
 const LIFT: u8 = 0x15_u8;
 
-/// A datatype's constructor naming no family: its ordinal and its arity, then
-/// its fields.
-const DATA: u8 = 0x16_u8;
-
-/// A datatype's constructor of a named family: its ordinal, its arity and its
-/// family's declaration index, then its fields.
+/// A datatype's constructor: its ordinal, its arity and its family's
+/// declaration index, then its fields.
 const FAMILY_DATA: u8 = 0x17_u8;
 
 /// A thunk: its body's command index and its capture count, then its
@@ -368,8 +364,8 @@ enum Crossed<'store>
         tag: gandr_kernel_term::ConstructorTag,
         /// The fields it carries.
         arity: ProducerArity,
-        /// Its family's declaration, when the core named one.
-        family: Option<ConstantIndex>,
+        /// Its family's declaration.
+        family: ConstantIndex,
     },
 }
 
@@ -481,15 +477,10 @@ impl<'store> Crossed<'store>
                 })
             },
             Self::Data { tag, arity, family } => {
-                sink.open(ConstructorTag::from(match family {
-                    None => DATA,
-                    Some(_) => FAMILY_DATA,
-                }))?;
+                sink.open(ConstructorTag::from(FAMILY_DATA))?;
                 sink.word(count_word(Count(usize::from(tag)))?)?;
                 sink.word(count_word(Count(usize::from(arity)))?)?;
-                family.map_or(Ok(()), |family| {
-                    sink.word(count_word(Count(usize::from(family)))?)
-                })
+                sink.word(count_word(Count(usize::from(family)))?)
             },
         }
     }
@@ -1015,15 +1006,10 @@ impl Opened
             CONS => Crossed::Cons,
             INJECTION => Crossed::Injection(Summand::from(opened.count(reader)?.0)),
             LIFT => Crossed::Lift(Cow::Owned(opened.level(reader)?)),
-            DATA | FAMILY_DATA => {
+            FAMILY_DATA => {
                 let tag = gandr_kernel_term::ConstructorTag::from(opened.count(reader)?.0);
                 let arity = ProducerArity::from(opened.count(reader)?.0);
-                let family = if u8::from(opened.tag) == FAMILY_DATA {
-                    Some(ConstantIndex::from(opened.count(reader)?.0))
-                }
-                else {
-                    None
-                };
+                let family = ConstantIndex::from(opened.count(reader)?.0);
                 Crossed::Data { tag, arity, family }
             },
             THUNK => {
