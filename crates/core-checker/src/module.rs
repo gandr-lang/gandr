@@ -2342,17 +2342,18 @@ fn solved_type(
 ///
 /// # Specification
 /// trivial.
-fn rounds<Subject>(
+pub fn rounds<Subject, Step>(
     subject: Subject,
     solutions: &Solutions,
-    mut step: impl FnMut(
+    mut step: Step,
+) -> Subject
+where
+    Subject: Copy + Eq,
+    Step: FnMut(
         Subject,
         gandr_core_term::hole::HoleId,
         (ValueId, gandr_core_term::Binders),
     ) -> Subject,
-) -> Subject
-where
-    Subject: Copy + Eq,
 {
     let mut subject = subject;
     // With no cycle among the solutions, one round per solution reaches the

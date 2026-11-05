@@ -1,0 +1,46 @@
+//! The body reads the carrier that a parameter's path type omits.
+//!
+//! A parameter can write `Path(y, z)` and omit its carrier. The endpoints fix
+//! the carrier where the signature forms. A composite in the body reads the
+//! carrier from the type of its first path. So the body holds the hole that the
+//! signature solves.
+//!
+//! The checker fills each hole that the signature solves in the declared type
+//! and in the body. The body then reads the carrier that the signature fixes.
+//! A composite over the parameter meets the same composite in the type.
+//!
+//! - see: #5272
+//! - see: `carrier-by-name.gandr` — a carrier supplied by name, and one omitted at a type
+
+/// A composite whose first path omits its carrier, at its own reflexivity.
+def stepOmittedAtHere(
+  A : Type,
+  y : A,
+  z : A,
+  w : A,
+  g : Path(y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = A](y, w)](Path.step g h, Path.step g h) =
+  Path.here (Path.step g h)
+
+/// A composite whose first path omits its carrier.
+def stepOmittedFirst(
+  A : Type,
+  y : A,
+  z : A,
+  w : A,
+  g : Path(y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = A](y, w) =
+  Path.step g h
+
+/// The composite through `stepOmittedFirst`, read as the composite that names its carrier.
+def stepOmittedThrough(
+  A : Type,
+  y : A,
+  z : A,
+  w : A,
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = A](y, w)](stepOmittedFirst A y z w g h, Path.step g h) =
+  Path.here (stepOmittedFirst A y z w g h)

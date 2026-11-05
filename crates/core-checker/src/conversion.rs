@@ -1603,22 +1603,20 @@ pub fn indices_agree(
 ///
 /// # Specification
 /// - requires: both terms stand under the binders the conversion is under.
-/// - ensures: [`Agreement::Convertible`] with the trace recorded for the pair
-///   on `context` when the machine relates `left` to `right` with returned
-///   endpoints held at the definitions they call and the binders whose calls
-///   return ([`crate::divergence::returning`]) read as returning;
-///   [`Agreement::Convertible`], recording nothing, when its traced reading
-///   waits for a fill ([`CheckingContext::awaits_fill`]); otherwise
-///   [`Agreement::Convertible`] exactly when its untraced conversion relates
-///   them, and [`Agreement::Apart`] when it does not.
+/// - ensures: [`Agreement::Convertible`] when the written pair agrees
+///   ([`agree`]); otherwise, when reading each hole that the running judgement
+///   bound through its solution ([`CheckingContext::read_solved`]) changes a
+///   side, [`Agreement::Convertible`] when the pair so read agrees; otherwise
+///   the written pair's verdict or refusal.
 /// - provides: the dialogue a definition carries for the kernel, whose forced
-///   reading does not unfold a definition under a binder. The traced reading is
-///   tried first and only ever adds a derivation: where it does not relate, the
-///   verdict and every refusal are the untraced conversion's, so nothing the
-///   conversion accepted is refused.
-/// - fails: the untraced conversion's refusal, where the traced reading does
-///   not relate, and [`crate::divergence::returning`]'s, where a binder's type
-///   does not read.
+///   reading does not unfold a definition under a binder. The pair so read is
+///   the pair the run over the filled body meets. A hole that the signature's
+///   formation solves stands in a body node that reads a binder's type, and the
+///   machine reads no solution. The read only ever adds an acceptance: every
+///   verdict and refusal short of one is the written pair's.
+/// - fails: as [`agree`] on the written pair, and
+///   [`crate::divergence::returning`]'s refusal, where a binder's type does not
+///   read.
 /// - panics: none.
 /// - executable: none — both verdicts are the machine's own readings; a
 ///   predicate restating them would run the two readings again.
@@ -1631,10 +1629,12 @@ pub fn indices_agree(
 ///   definition's body keeps the pair and its derivation, which the kernel
 ///   replays; an ascription whose endpoints are the same syntax keeps none; one
 ///   whose endpoints call a definition over an omitted model converts once the
-///   model is resolved.
+///   model is resolved; a composite whose first path omits its carrier converts
+///   at the carrier its signature solves.
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 /// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
 /// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+/// - witness: `kernel_export::kernel_presented_readmission::a_body_reads_the_carrier_its_signature_solves_5272`
 fn endpoints_agree(
     context: &mut CheckingContext<'_>,
     left: ValueId,
@@ -1642,9 +1642,64 @@ fn endpoints_agree(
 ) -> Result<Agreement, CheckRefusal>
 {
     let returning = crate::divergence::returning(context)?;
+    let written = agree(context, (left, right), &returning);
+    if matches!(written, Ok(Agreement::Convertible)) {
+        return written;
+    }
+    // A hole the running judgement bound is read through its solution, as the
+    // run over the filled body reads it: the machine reads none.
+    let solved = (context.read_solved(left), context.read_solved(right));
+    if solved == (left, right) {
+        return written;
+    }
+    match agree(context, solved, &returning) {
+        Ok(Agreement::Convertible) => Ok(Agreement::Convertible),
+        Ok(
+            Agreement::Apart
+            | Agreement::Amplified
+            | Agreement::Escaped
+            | Agreement::NotBelow { .. },
+        )
+        | Err(_) => written,
+    }
+}
+
+/// Whether the machine relates two terms that a type conversion met. The
+/// derivation is kept where the machine's traced reading relates them.
+///
+/// # Specification
+/// - requires: both terms stand under the binders the conversion is under.
+/// - ensures: [`Agreement::Convertible`] with the trace recorded for the pair
+///   on `context` when the machine relates `left` to `right` with returned
+///   endpoints held at the definitions they call and the binders in `returning`
+///   read as returning; [`Agreement::Convertible`], recording nothing, when its
+///   traced reading waits for a fill ([`CheckingContext::awaits_fill`]);
+///   otherwise [`Agreement::Convertible`] exactly when its untraced conversion
+///   relates them, and [`Agreement::Apart`] when it does not.
+/// - provides: the traced reading is tried first and only ever adds a
+///   derivation: where it does not relate, the verdict and every refusal are
+///   the untraced conversion's, so nothing the conversion accepted is refused.
+/// - fails: the untraced conversion's refusal, where the traced reading does
+///   not relate.
+/// - panics: none.
+/// - executable: none — both verdicts are the machine's own readings.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`endpoints_agree`].
+/// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
+/// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
+fn agree(
+    context: &mut CheckingContext<'_>,
+    (left, right): (ValueId, ValueId),
+    returning: &[gandr_kernel_term::DeBruijnIndex],
+) -> Result<Agreement, CheckRefusal>
+{
     match context
         .definitions()
-        .relation(context.arena(), left, right, &returning)
+        .relation(context.arena(), left, right, returning)
     {
         Ok((gandr_core_nbe::MachineVerdict::Convertible, decisions)) => {
             context.record_relation(left, right, decisions);
