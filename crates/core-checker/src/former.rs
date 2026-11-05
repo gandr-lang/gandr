@@ -958,8 +958,10 @@ pub fn field_type(
 /// # Adequacy
 /// - hypothesis: L3 — a field whose domain is the code an earlier field holds
 ///   checks at the decode of that code, and a field naming no earlier field at
-///   its parameters alone.
+///   its parameters alone. A field whose type reads an earlier field written as
+///   a lambda checks at the type that reads the lambda's thunk.
 /// - witness: `former::tests::a_dependent_field_checks_at_the_value_of_the_field_it_names`
+/// - witness: `former::tests::a_field_that_reads_a_lambda_field_reads_its_thunk_5374`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().value_type(id).is_some()) == ret.is_ok())]
 pub fn field_at(
     context: &mut CheckingContext<'_>,
@@ -981,12 +983,19 @@ pub fn field_at(
             _ => return Err(CheckRefusal::MachineInvariant),
         };
         // A field written as a call stands in a type as the value it returns,
-        // the form the elaboration keeps it in.
-        let value = if let Some(&Value::Nested(call)) = context.arena().value(value) {
-            context.arena_mut().value_returned(call)
-        }
-        else {
-            value
+        // the form the elaboration keeps it in. A lambda returns no value, so
+        // a type reads it as the thunk it stands for (#5374).
+        let value = match context.arena().value(value) {
+            Some(&Value::Nested(lambda))
+                if matches!(
+                    context.arena().computation(lambda),
+                    Some(&gandr_core_term::Computation::Lambda(_))
+                ) =>
+            {
+                context.arena_mut().value_thunk(lambda)
+            },
+            Some(&Value::Nested(call)) => context.arena_mut().value_returned(call),
+            _ => value,
         };
         let depth =
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);

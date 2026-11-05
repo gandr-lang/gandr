@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 
 use gandr_core_term::CompType;
+use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::BaseType;
 
@@ -245,6 +246,79 @@ fn a_dependent_field_checks_at_the_value_of_the_field_it_names()
         ),
         Ok(integer),
         "the second checks at the decode of the code the first gives"
+    );
+}
+
+/// #5374: a field whose type reads an earlier field written as a lambda reads
+/// that lambda as its thunk. `Box { put : (f : U(Unit -> F Type), x :
+/// El(⟨force f ()⟩)) }` at `put(λ_. return ⌜Integer⌝, _)`: the second field
+/// checks at the decode of the call of the thunk. A lambda returns no value,
+/// so the call of its returned form has no reading.
+#[test]
+fn a_field_that_reads_a_lambda_field_reads_its_thunk_5374()
+{
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let one = Level::zero().succ().expect("the successor of zero");
+    let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one);
+    let unit_type = arena.value_type_unit();
+    let returns_kind = arena.comp_type_returner(kind);
+    let arrow = arena.comp_type_arrow(unit_type, returns_kind);
+    let function = arena.value_type_thunk(arrow);
+    let near = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(near);
+    let unit = arena.value_unit();
+    let called = arena.computation_application(forced, unit);
+    let code = arena.value_returned(called);
+    let element = arena.value_type_element(code, Level::zero());
+    let boxed = ConstantIndex::from(0_usize);
+    let boxes = Arc::new(DataSignature::new(
+        vec![],
+        vec![vec![function, element]],
+        large,
+    ));
+    let datatype = arena.value_type_data(boxed, vec![]);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let quoted = arena.value_quote(integer);
+    let answered = arena.computation_return(quoted);
+    let lambda = arena.computation_lambda(answered);
+    let written = arena.value_nested(lambda);
+    let put = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![
+        written, quoted,
+    ]);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    context.adopt_data(boxed, boxes).expect("the box forms");
+    let field = field_at(
+        &mut context,
+        (datatype, put),
+        element,
+        FieldPosition::from(1_usize),
+    )
+    .expect("the second field's type forms");
+    let arena = context.arena();
+    let Some(&ValueType::Element { code, .. }) = arena.value_type(field)
+    else {
+        panic!(
+            "the second field checks at a decode: {:?}",
+            arena.value_type(field)
+        );
+    };
+    let Some(&Value::Returned(call)) = arena.value(code)
+    else {
+        panic!("the decode reads a returned call: {:?}", arena.value(code));
+    };
+    let Some(&Computation::Application(head, _)) = arena.computation(call)
+    else {
+        panic!("the call applies the field: {:?}", arena.computation(call));
+    };
+    let Some(&Computation::Force(held)) = arena.computation(head)
+    else {
+        panic!("the call forces the field: {:?}", arena.computation(head));
+    };
+    assert_eq!(
+        arena.value(held),
+        Some(&Value::Thunk(lambda)),
+        "the lambda stands in the type as its thunk"
     );
 }
 
