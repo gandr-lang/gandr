@@ -43,7 +43,7 @@ use crate::carriers::points;
 /// their masks: the bit at a mask is set when the set holds that mask.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct Family(u64);
+pub struct Family(u64);
 
 impl Family
 {
@@ -51,7 +51,7 @@ impl Family
     ///
     /// # Specification
     /// trivial.
-    fn single(mask: Mask) -> Self
+    pub fn single(mask: Mask) -> Self
     {
         let shift = u32::try_from(mask.0).expect("a small mask");
         Self(
@@ -110,7 +110,7 @@ impl Family
     ///
     /// # Specification
     /// trivial.
-    fn members(self) -> impl Iterator<Item = Mask>
+    pub fn members(self) -> impl Iterator<Item = Mask>
     {
         (0 .. 64_usize)
             .map(Mask)
@@ -135,7 +135,7 @@ impl Family
 ///
 /// # Specification
 /// trivial.
-fn whole(carrier: PointCount) -> Mask
+pub fn whole(carrier: PointCount) -> Mask
 {
     let width = u32::try_from(usize::from(carrier)).expect("a small carrier");
     Mask(
@@ -150,7 +150,7 @@ fn whole(carrier: PointCount) -> Mask
 ///
 /// # Specification
 /// trivial.
-fn included(
+pub fn included(
     lower: Mask,
     upper: Mask,
 ) -> Membership
@@ -276,7 +276,7 @@ fn least_faces(
 
 /// The answer of the crate's entailment.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Verdict
+pub enum Verdict
 {
     /// The premise entails the conclusion.
     Holds,
@@ -290,7 +290,7 @@ enum Verdict
 ///
 /// # Specification
 /// trivial.
-fn entails(
+pub fn entails(
     carrier: PointCount,
     premise: Mask,
     conclusion: Family,
@@ -436,14 +436,14 @@ fn compare(
 }
 
 /// A shape that the corpus states, with the comparison its faces give.
-struct CorpusShape
+pub struct CorpusShape
 {
     /// The shape's name, with the corpus source that states it.
-    named: &'static str,
+    pub named: &'static str,
     /// The carrier, one point per name.
-    carrier: PointCount,
+    pub carrier: PointCount,
     /// The named faces, as masks over the points in name order.
-    faces: Family,
+    pub faces: Family,
     /// The face poset against the spectrum.
     against: Comparison,
 }
@@ -454,7 +454,7 @@ struct CorpusShape
 ///
 /// # Specification
 /// trivial.
-fn corpus() -> Vec<CorpusShape>
+pub fn corpus() -> Vec<CorpusShape>
 {
     let shape = |named: &'static str,
                  names: &[&str],
