@@ -498,7 +498,20 @@ impl Root
     }
 }
 
-/// An edge of a node: the child's position and the sort its slot takes.
+/// Whether a child stands in its parent's scope or under one more binder.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Scope
+{
+    /// The child sees the variables its parent sees.
+    Same,
+    /// The child sees one more variable, at de Bruijn index zero: the lower
+    /// and upper cut of a cut, the body of a quantifier, the classifier of a
+    /// subdomain.
+    Inner,
+}
+
+/// An edge of a node: the child's position, the sort its slot takes, and
+/// the scope it stands in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Edge
 {
@@ -506,6 +519,8 @@ pub struct Edge
     pub node: NodeId,
     /// The sort that the slot takes.
     pub sort: Sort,
+    /// The scope that the child stands in.
+    pub scope: Scope,
 }
 
 /// The edges of one node, in field order.
@@ -609,18 +624,22 @@ impl Node
         let real = |id: RealId| Edge {
             node: id.0,
             sort: Sort::Real,
+            scope: Scope::Same,
         };
-        let open = |id: OpenId| Edge {
+        let open = |id: OpenId, scope: Scope| Edge {
             node: id.0,
             sort: Sort::Open,
+            scope,
         };
         let domain = |id: DomainId| Edge {
             node: id.0,
             sort: Sort::Domain,
+            scope: Scope::Same,
         };
         let none = Edge {
             node: NodeId(0),
             sort: Sort::Real,
+            scope: Scope::Same,
         };
         let (edges, count) = match *self {
             Self::Real(Real::Bound(_) | Real::Constant(_))
@@ -636,19 +655,31 @@ impl Node
                 denominator,
                 ..
             }) => ([real(numerator), real(denominator), none], 2),
-            Self::Real(Real::Cut(ref cut)) => ([open(cut.lower), open(cut.upper), none], 2),
+            Self::Real(Real::Cut(ref cut)) => (
+                [
+                    open(cut.lower, Scope::Inner),
+                    open(cut.upper, Scope::Inner),
+                    none,
+                ],
+                2,
+            ),
             Self::Open(Open::Meet(left, right) | Open::Join(left, right)) => {
-                ([open(left), open(right), none], 2)
+                ([open(left, Scope::Same), open(right, Scope::Same), none], 2)
             },
-            Self::Open(Open::Exists(quantifier) | Open::Forall(quantifier)) => {
-                ([domain(quantifier.domain), open(quantifier.body), none], 2)
-            },
+            Self::Open(Open::Exists(quantifier) | Open::Forall(quantifier)) => (
+                [
+                    domain(quantifier.domain),
+                    open(quantifier.body, Scope::Inner),
+                    none,
+                ],
+                2,
+            ),
             Self::Domain(Domain::Product { left, right, .. }) => {
                 ([domain(left), domain(right), none], 2)
             },
             Self::Domain(Domain::Subdomain {
                 parent, classifier, ..
-            }) => ([domain(parent), open(classifier), none], 2),
+            }) => ([domain(parent), open(classifier, Scope::Inner), none], 2),
         };
         return Edges::of(edges, EdgeCount(count));
     }
@@ -794,6 +825,17 @@ impl From<NodeCount> for usize
     {
         return count.0;
     }
+}
+
+/// Where a refusal points: the input as a whole, or one node of it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Site
+{
+    /// The input as a whole: its header, its length, its root or its
+    /// canonical form.
+    Input,
+    /// The node at this position.
+    Node(NodeId),
 }
 
 /// A failed plan operation.
