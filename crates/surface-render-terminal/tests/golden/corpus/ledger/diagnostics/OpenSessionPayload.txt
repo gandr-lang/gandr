@@ -1,8 +1,11 @@
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-  ╭▸ corpus/ledger/diagnostics/OpenSessionPayload.gandr:5:22
+error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
+  ╭▸ corpus/ledger/diagnostics/OpenSessionPayload.gandr:5:87
   │
-5 │ def open_payload = ((Path.walk (fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) })) (Path.here (String))) (Path.here…
-  │                      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+5 │ …ad = Path.walk (fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) }) (Path.here String) (Path.here (type(?String. end))) ;
+  │       ┬──────────────────────────────────────────────────────────────────┯━━━━━━──────────────────────────────────────────────────────────
+  │       │                                                                  │
+  │       │                                                                  a session payload open over a binder
+  │       checked against `Path[.A = Type](?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
   │
-  ├ note: `open_payload` is expected to be refused with OpenSessionPayload, and this refusal is not that one
-  ╰ help: give the form its declared number of operands
+  ├ note: `open_payload` is refused with OpenSessionPayload, as its expectation states
+  ╰ help: bind the session payload inside the run's protocol

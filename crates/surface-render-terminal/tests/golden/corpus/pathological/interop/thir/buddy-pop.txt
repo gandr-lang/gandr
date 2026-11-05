@@ -1,5 +1,5 @@
-error[Undecided]: the checker could not decide what this code unfolds to
-   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:25:1
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:46:27
    │
 25 │ ┌  def popShared(
 26 │ │    blocks : Vals,
@@ -25,21 +25,18 @@ error[Undecided]: the checker could not decide what this code unfolds to
 44 │ │┌   *{
 45 │ ││     SomeV (IntV b),
 46 │ ││     *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
-   │ ││                           ┬─────────────────────────────────────┬──────────────
-   │ ││                           │                                     │
-   │ ││                           │                                     checked; while comparing the type this synthesises with the one it is checked against
-   │ ││                           checked; while checking the argument of this application
+   │ ││                           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
 47 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked; while checking the body of this thunk
    │      checked; while judging the value this returns
    │
-   ├ note: `popShared` is expected to be refused with TypeMismatch, and this refusal is not that one
-   ╰ help: write code whose unfolding the checker can decide
+   ├ note: `popShared` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
 
-error[Undecided]: the checker could not decide what this code unfolds to
-   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:51:1
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/interop/thir/buddy-pop.gandr:72:27
    │
 51 │ ┌  def popListedAsEmpty(
 52 │ │    blocks : Vals,
@@ -65,15 +62,12 @@ error[Undecided]: the checker could not decide what this code unfolds to
 70 │ │┌   *{
 71 │ ││     SomeV (IntV b),
 72 │ ││     *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
-   │ ││                           ┬─────────────────────────────────────┬──────────────
-   │ ││                           │                                     │
-   │ ││                           │                                     checked; while comparing the type this synthesises with the one it is checked against
-   │ ││                           checked; while checking the argument of this application
+   │ ││                           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ its type does not convert
 73 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked; while checking the body of this thunk
    │      checked; while judging the value this returns
    │
-   ├ note: `popListedAsEmpty` is expected to be refused with TypeMismatch, and this refusal is not that one
-   ╰ help: write code whose unfolding the checker can decide
+   ├ note: `popListedAsEmpty` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

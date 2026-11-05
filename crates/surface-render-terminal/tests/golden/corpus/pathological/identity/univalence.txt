@@ -17,42 +17,76 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ├ note: `collapsedPath` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/pathological/identity/univalence.gandr:35:4
+error[LevelMismatch]: this code lives in a larger universe than the one expected
+   ╭▸ corpus/pathological/identity/univalence.gandr:34:1
    │
-35 │   (Path.walk (fun (X) { X })) (ua e) x
-   │    ━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+34 │   def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type =
+   │   │                 ┬                ─ checked against `Type -> -F Type`; while checking the body of this function; binds x : Type
+   │   │                 │
+   │ ┌─┘                 checked against `(Type ≃ Type) -> Type -> -F Type`; while checking the body of this function; binds e : Type ≃ Type
+   │ │
+35 │ │   Path.walk (fun (X) { X }) (ua e) x
+   │ │   ┬──────────────────────────┬─────│
+   │ └───│──────────────────────────│─────┤
+   │     │                          │     checked against `(Type ≃ Type, Type) -> Type`; while checking the body of this thunk
+   │     │                          synthesised; while checking the next premise of this
+   │     checked against `-F Type`; while synthesising the path this element transport follows
    │
-   ├ note: `alongTypeSelf` is expected to be refused with LevelMismatch, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: while comparing the type this synthesises with the one it is checked against
+   ├ note: `alongTypeSelf` is refused with LevelMismatch, as its expectation states
+   ╰ help: lower the code to the expected universe
 
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/pathological/identity/univalence.gandr:52:4
+error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
+   ╭▸ corpus/pathological/identity/univalence.gandr:52:30
    │
-52 │   (Path.walk (fun (X) { X })) (ua (*{t, *{*{g, s}, *{h, r}}})) x
-   │    ━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+42 │ ┌ def alongLiteral(
+43 │ │   a : Type,
+   │ │   ─ checked; while checking the body of this function; binds a : Type
+44 │ │   b : Type,
+   │ │   ─ checked; while checking the body of this function; binds b : Type
+45 │ │   t : a -> b,
+   │ │   ─ checked; while checking the body of this function; binds t : a -> b
+46 │ │   g : b -> a,
+   │ │   ─ checked; while checking the body of this function; binds g : b -> a
+47 │ │   s : (x : a) -> Path[.A = a](g (t x), x),
+   │ │   ─ checked; while checking the body of this function; binds s : (x : a) -> Path[.A = a](g (t x), x)
+48 │ │   h : b -> a,
+   │ │   ─ checked against `(c : b -> a) -> ((d : b) -> Path[.A = b](t (c d), d)) -> a -> -F b`; while checking the body of this function; binds h : b -> a
+49 │ │   r : (y : b) -> Path[.A = b](t (h y), y),
+   │ │   ─ checked against `((c : b) -> Path[.A = b](t (h c), c)) -> a -> -F b`; while checking the body of this function; binds r : (c : b) -> Path[.A = b](t (h c), c)
+50 │ │   x : a
+   │ │   ─ checked against `a -> -F b`; while checking the body of this function; binds x : a
+51 │ │ ) -> b =
+52 │ │   Path.walk (fun (X) { X }) (ua (*{t, *{*{g, s}, *{h, r}}})) x
+   │ │   ┬──────────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──│
+   │ └───│──────────────────────────│───────────────────────────────┤
+   │     │                          │                               checked; while checking the body of this thunk
+   │     │                          its type is not of the required shape
+   │     checked against `-F b`; while synthesising the path this element transport follows
    │
-   ├ note: `alongLiteral` is expected to be refused with ShapeMismatch, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `alongLiteral` is refused with ShapeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the type has the required shape
 
-error[UnknownConstant]: this names a declaration whose type is not known
-   ╭▸ corpus/pathological/identity/univalence.gandr:59:7
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/identity/univalence.gandr:62:3
    │
 58 │   def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)](
-   │ ┌───────────────────────┬────────────┘
-   │ │                       │
-   │ │                       formed; while forming this type under its binder; binds a : Type
+   │   │                     ─ checked against `(a : Type) -> -F Path[.A = Path[.A = Type](a, a)](ua (idtoequiv a a (Path.here a)), Path.here a)`; while checking the body of this function; binds a : Type
+   │ ┌─┘
+   │ │
 59 │ │   ua (idtoequiv a a (Path.here a)),
-   │ │   ┬───┯━━━━━━━━───────────────────
-   │ │   │   │
-   │ │   │   no declaration with a type
-   │ │   │   checked; while synthesising the function this applies
-   │ │   checked against `Path[.A = Type](a, a)`; while checking the record of this univalence and the codes it relates
+   │ │   ──────────────────────────────── an endpoint the point does not convert to
 60 │ │   Path.here a
+   │ │   ─────────── an endpoint the point does not convert to
 61 │ │ ) =
-   │ └─┘ formed; while checking the remaining parts of this
+62 │ │   Path.here (Path.here a)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│─────────────────────┤
+   │     │                     checked against `(a : Type) -> Path[.A = Path[.A = Type](a, a)](ua (idtoequiv a a (Path.here a)), Path.here a)`; while checking the body of this thunk
+   │     not both endpoints of the path
    │
-   ╰ note: `uaEtaByConversion` is expected to be refused with EndpointMismatch, and this refusal is not that one
+   ├ note: `uaEtaByConversion` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/identity/univalence.gandr:71:5

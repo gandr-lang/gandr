@@ -1,18 +1,8 @@
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-  ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Size.gandr:7:21
+error[BoundaryUnrealised.Size]: a type a member of the block declares differs in size from its row's
+  ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Size.gandr:9:4
   │
-7 │ def addRow : Row = (Row ((Arg (Plain U32)) (Arg (Plain U32) NoCode))) (Plain U32);
-  │                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+9 │ @[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
+  │    ━━━━━━━━━━━━━━━━ a row the block's members do not realise
   │
-  ├ note: `addRow` is expected to check, and this refusal leaves it unsettled
-  ╰ help: give the form its declared number of operands
-
-note[UnknownConstant]: this names a declaration whose type is not known
-   ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Size.gandr:9:13
-   │
- 9 │ @[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
-   │             ━━━━━━ no declaration with a type
-10 │ extern "rust" from "counted" as Counted {
-   │                                 ─────── checked against `() -> std.boundary.Admission`; while checking the next premise of this
-   │
-   ╰ note: `Counted` is expected to be refused with BoundaryUnrealised.Size, and this refusal is not that one; it rests on `addRow`, which is refused
+  ├ note: `Counted` is refused with BoundaryUnrealised.Size, as its expectation states
+  ╰ help: make each member type have the size its boundary row states

@@ -723,13 +723,13 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
         .join(", ");
     let text = format!(
         "import std.list (List);\n\npub world operator;\npub world seat;\npub world gate;\n\ndef rec size(xs : \
-         List(Integer)) -> Integer {{\n  match xs {{\n    #[] => 0,\n    #[x, ..rest] => 1 + \
-         size[<](rest)\n  }}\n}}\n\n@[ entry((operator, seat, seat, gate, seat, seat)) ]\ndef \
+         List(Integer)) -> Integer {{\n  match xs {{\n    | #[] => 0\n    | #[x, ..rest] => 1 + \
+         size[<] rest\n  }}\n}}\n\n@[ entry((operator, seat, seat, gate, seat, seat)) ]\ndef \
          main() -> Integer {{\n  let listed : List(Integer) at seat = migrate [seat] {{ (hold \
          #[{listed}]) }};\n  let xs at seat = listed;\n  let edited : List(Integer) at seat = migrate \
-         [seat] {{ (hold cons(0, xs)) }};\n  let ys at seat = edited;\n  let opened = migrate [gate] \
-         {{ pure 0 }};\n  let before = migrate [seat] {{ size(xs) }};\n  let after = migrate \
-         [seat] {{ size(ys) }};\n  pure (after - before + 41 + opened)\n}}\n"
+         [seat] {{ (hold cons 0 xs) }};\n  let ys at seat = edited;\n  let opened = migrate [gate] \
+         {{ pure 0 }};\n  let before = migrate [seat] {{ size xs }};\n  let after = migrate \
+         [seat] {{ size ys }};\n  pure (after - before + 41 + opened)\n}}\n"
     );
     let file = Scratch::write(Path::new("descent"), SourceText::from(text.as_str()));
     let alone = exited(&mut Script::new(file.0.clone()));

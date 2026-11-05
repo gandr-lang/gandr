@@ -172,9 +172,12 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
 fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result<(), Box<dyn Error>>
 {
     let cases = [
-        ("def f = g ((y : A, z : P(y)) -> B);", "parenthesized_type"),
-        ("def f = g (*{A, B} -> C);", "parenthesized_type"),
-        ("def f = g (((A)) -> C);", "parenthesized_type"),
+        (
+            "def f = g type((y : A, z : P(y)) -> B);",
+            "parenthesized_type",
+        ),
+        ("def f = g type((A, B) -> C);", "parenthesized_type"),
+        ("def f = g type(((A)) -> C);", "parenthesized_type"),
         ("def f = g (x : A) y;", "parenthesized_expression"),
         ("def f = g (x, y) z;", "parenthesized_expression"),
         ("def f = g () z;", "parenthesized_expression"),
@@ -206,16 +209,13 @@ fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result
 }
 
 /// #4853: an expression operand right after an expression operand applies
-/// it, `f x`, through one zero-width tile per argument. A call `f(x)` stays
-/// a call, a shell block's words stay flat, and a block-like statement ends
-/// at its brace.
+/// it, `f x`, through one zero-width tile per argument. A shell block's words
+/// stay flat, and a block-like statement ends at its brace.
 #[test]
 fn juxtaposition_applies_outside_a_shell_form_4853() -> Result<(), Box<dyn Error>>
 {
     let cases = [
         ("def f = g x y;", 2_usize),
-        ("def f = g x y;", 1),
-        ("def f = g x;", 0),
         ("def f = g x.y;", 1),
         ("def f = - g x;", 1),
         ("def f = g x + h y;", 2),

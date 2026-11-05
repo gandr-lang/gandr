@@ -1,18 +1,8 @@
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-  ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Arity.gandr:7:21
+error[BoundaryUnrealised.Arity]: a member of the block takes a different number of arguments than its row
+  ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Arity.gandr:9:4
   │
-7 │ def addRow : Row = (Row ((Arg (Plain U32)) (Arg (Plain U32) NoCode))) (Plain U32);
-  │                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+9 │ @[ boundary(addRow), refuses("BoundaryUnrealised.Arity") ]
+  │    ━━━━━━━━━━━━━━━━ a row the block's members do not realise
   │
-  ├ note: `addRow` is expected to check, and this refusal leaves it unsettled
-  ╰ help: give the form its declared number of operands
-
-note[UnknownConstant]: this names a declaration whose type is not known
-   ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Arity.gandr:9:13
-   │
- 9 │ @[ boundary(addRow), refuses("BoundaryUnrealised.Arity") ]
-   │             ━━━━━━ no declaration with a type
-10 │ extern "rust" from "short" as Short {
-   │                               ───── checked against `() -> std.boundary.Admission`; while checking the next premise of this
-   │
-   ╰ note: `Short` is expected to be refused with BoundaryUnrealised.Arity, and this refusal is not that one; it rests on `addRow`, which is refused
+  ├ note: `Short` is refused with BoundaryUnrealised.Arity, as its expectation states
+  ╰ help: give each member the number of arguments its boundary row states

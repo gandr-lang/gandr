@@ -1,27 +1,8 @@
-error[OutOfFragment.Arity]: the call expression cannot take 2 operands
-  ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Align.gandr:7:26
-  │
-7 │ def optU32 : Code = Sum (Variant ("Some" (Field "0" U32 Done)) (Variant "None" Done NoVariant));
-  │                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
-  │
-  ├ note: `optU32` is expected to check, and this refusal leaves it unsettled
-  ╰ help: give the form its declared number of operands
-
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Align.gandr:10:26
-   │
-10 │ def optionalRow : Row = (Row ((Arg (Plain U32)) (Arg optU32 NoCode))) (Plain U32);
-   │                          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
-   │
-   ├ note: `optionalRow` is expected to check, and this refusal leaves it unsettled
-   ╰ help: give the form its declared number of operands
-
-note[UnknownConstant]: this names a declaration whose type is not known
-   ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Align.gandr:12:13
+error[BoundaryUnrealised.Align]: a type a member of the block declares differs in alignment from its row's
+   ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Align.gandr:12:4
    │
 12 │ @[ boundary(optionalRow), refuses("BoundaryUnrealised.Align") ]
-   │             ━━━━━━━━━━━ no declaration with a type
-13 │ extern "rust" from "aligned" as Aligned {
-   │                                 ─────── checked against `() -> std.boundary.Admission`; while checking the next premise of this
+   │    ━━━━━━━━━━━━━━━━━━━━━ a row the block's members do not realise
    │
-   ╰ note: `Aligned` is expected to be refused with BoundaryUnrealised.Align, and this refusal is not that one; it rests on `optionalRow`, which is refused
+   ├ note: `Aligned` is refused with BoundaryUnrealised.Align, as its expectation states
+   ╰ help: make each member type align with its boundary row

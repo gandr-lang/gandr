@@ -1,8 +1,14 @@
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/pathological/effects/tree-rows.gandr:12:55
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/effects/tree-rows.gandr:12:64
    │
-12 │ def leaking : Prog(Either(StateOp, Void), Integer) = (Op (Left (Raise 4))) (fun (_r) { (Done 0 : Prog(Either(StateOp, Void), Integer))…
-   │                                                       ━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+12 │ …g(Either(StateOp, Void), Integer) = Op (Left (Raise 4)) (fun (_r) { (Done 0 : Prog(Either(StateOp, Void), Integer)) });
+   │           ┬──────                    ┬───┬─────┯━━━━━━─────────────────────────────────────────────────────────────────
+   │           │                          │   │     │
+   │           │                          │   │     its type does not convert: expected `StateOp`, found `ExnOp`
+   │           │                          │   │     the type it synthesises
+   │           │                          │   checked against `Either(StateOp, Void)`; while finishing the type of this
+   │           │                          checked against `Prog(Either(StateOp, Void), Integer)`; while checking the next premise of this
+   │           the type it is checked against
    │
-   ├ note: `leaking` is expected to be refused with TypeMismatch, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `leaking` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

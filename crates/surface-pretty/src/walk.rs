@@ -9823,6 +9823,24 @@ impl Walk<'_, '_>
                 self.note(Unspelled::Notation(notation));
                 None
             },
+            // A decode of a code a call builds, inside an expression, is
+            // written juxtaposed, `-F (Maybe a)`, which the type grammar reads
+            // only once #5200 lands: until then the printer's notation.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a juxtaposed application in a type has no type syntax until #5200: \
+                              written in the printer's notation"
+                )
+            )]
+            Former::Element(code)
+                if self.surface == Surface::Expression
+                    && matches!(source.read(code), Former::Application(..)) =>
+            {
+                self.note(Unspelled::Notation(Notation::TypeApplication));
+                None
+            },
             // A computation where a value is read stands bare, its run left
             // to the checker, and so does the computation a returned value
             // stands for; its piece, as a decode's and a quote's, is the

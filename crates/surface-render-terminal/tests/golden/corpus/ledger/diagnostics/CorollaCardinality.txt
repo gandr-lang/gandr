@@ -1,8 +1,8 @@
-error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+error[CorollaCardinality]: the two descriptions have different numbers of generators at a corolla
    ╭▸ corpus/ledger/diagnostics/CorollaCardinality.gandr:26:14
    │
-26 │ def uneven = ua[1, 4] Semi (Rig (*{.mul = widen})) (*{.plus = narrow}) ;
-   │              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+26 │ def uneven = ua[1, 4] Semi Rig (*{.mul = widen}) (*{.plus = narrow}) ;
+   │              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ species of different sizes at a corolla
    │
-   ├ note: `uneven` is expected to be refused with CorollaCardinality, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `uneven` is refused with CorollaCardinality, as its expectation states
+   ╰ help: give both descriptions the same number of generators at each corolla

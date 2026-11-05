@@ -19,7 +19,7 @@ error[UnresolvedTypeHead]: no type named `Prefix` is written applied to one argu
 error[UnresolvedTypeHead]: no type named `Dialogue` is written applied to one argument
    ╭▸ corpus/pathological/sessions/bare-session-formers.gandr:27:14
    │
-27 │ def talked : Dialogue(Ask.Asking) = (((dialogue (left (sent "yes"))) (right (received "yes"))) (left closed)) (right closed);
+27 │ def talked : Dialogue(Ask.Asking) = dialogue (left (sent "yes")) (right (received "yes")) (left closed) (right closed);
    │              ━━━━━━━━ no type head of this name and arity
    │
    ├ note: `talked` is refused with UnresolvedTypeHead, as its expectation states

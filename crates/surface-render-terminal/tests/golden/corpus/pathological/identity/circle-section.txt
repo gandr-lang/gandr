@@ -34,11 +34,11 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
 67 │ │┏   match p
 68 │ │┃     | here => Path.here (Path.here Base)
 69 │ │┃     | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
-70 │ │┃     | back(loop) ∷ q => Path.here (back (loop) ∷ q)
-   │ │┃                                                   ╿
-   │ └┃───────────────────────────────────────────────────│
-   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](p, p)`; while checking the body of this function; binds rewound : (a : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](a, a)
-   │                                                      a case its datatype's rules do not admit
+70 │ │┃     | back(loop) ∷ q => Path.here (back loop ∷ q)
+   │ │┃                                                 ╿
+   │ └┃─────────────────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](p, p)`; while checking the body of this function; binds rewound : (a : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](a, a)
+   │                                                    a case its datatype's rules do not admit
    │
    ├ note: `rewound` is refused with RuleNotRespected, as its expectation states
    ╰ help: give the arms equal results on the terms that each of the datatype's rules identifies

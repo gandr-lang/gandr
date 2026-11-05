@@ -1,8 +1,11 @@
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-  ╭▸ corpus/ledger/diagnostics/SessionCodeExpected.gandr:4:19
+error[SessionCodeExpected]: a session identity relates two session types
+  ╭▸ corpus/ledger/diagnostics/SessionCodeExpected.gandr:4:27
   │
-4 │ def notSession = (Flow.sim (Integer)) (Integer) ;
-  │                   ━━━━━━━━━━━━━━━━━━ the wrong number of operands
+4 │ def notSession = Flow.sim Integer Integer ;
+  │                  ┬────────┯━━━━━━────────
+  │                  │        │
+  │                  │        not a session code
+  │                  checked against `Flow[.A = Type](Integer, Integer)`; while relating the two protocols of this session statement
   │
-  ├ note: `notSession` is expected to be refused with SessionCodeExpected, and this refusal is not that one
-  ╰ help: give the form its declared number of operands
+  ├ note: `notSession` is refused with SessionCodeExpected, as its expectation states
+  ╰ help: give the session identity two session types

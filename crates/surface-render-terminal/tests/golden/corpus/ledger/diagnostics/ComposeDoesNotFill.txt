@@ -1,35 +1,44 @@
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-  ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:4:4
+error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along the chain
+  ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:8:3
   │
-4 │   (compose[3, 5] (chain 2)) (*{p, q})
-  │    ━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+7 │   def apart(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(x, z)) -> Path(x, z) =
+  │   │         ┬         ┬      ┬      ┬      ┬               ─ checked against `Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds q : Path[.A = A](x, z)
+  │   │         │         │      │      │      │
+  │   │         │         │      │      │      checked against `Path[.A = A](x, y) -> Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds p : Path[.A = A](x, y)
+  │   │         │         │      │      checked against `(a : A) -> Path[.A = A](x, y) -> Path[.A = A](x, a) -> -F Path[.A = A](x, a)`; while checking the body of this function; binds z : A
+  │   │         │         │      checked against `(a : A) -> (b : A) -> Path[.A = A](x, a) -> Path[.A = A](x, b) -> -F Path[.A = A](x, b)`; while checking the body of this function; binds y : A
+  │   │         │         checked against `(a : A) -> (b : A) -> (c : A) -> Path[.A = A](a, b) -> Path[.A = A](a, c) -> -F Path[.A = A](a, c)`; while checking the body of this function; binds x : A
+  │ ┌─┘         checked; while checking the body of this function; binds A : Type
+  │ │
+8 │ │   compose[3, 5] (chain 2) (p, q)
+  │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+  │ └───│────────────────────────────┤
+  │     │                            checked against `(a : Type, b : a, c : a, d : a, Path[.A = a](b, c), Path[.A = a](b, d)) -> Path[.A = a](b, d)`; while checking the body of this thunk
+  │     cells that do not fill the chain
   │
-  ├ note: `meeting` is expected to check, and this refusal leaves it unsettled
-  ╰ help: give the form its declared number of operands
+  ├ note: `apart` is refused with ComposeDoesNotFill, as its expectation states
+  ╰ help: start each cell at the point where the cell before it ends
 
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-  ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:8:4
-  │
-8 │   (compose[3, 5] (chain 2)) (*{p, q})
-  │    ━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
-  │
-  ├ note: `apart` is expected to be refused with ComposeDoesNotFill, and this refusal is not that one
-  ╰ help: give the form its declared number of operands
-
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:12:4
+error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end to end
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:16:3
    │
-12 │   (compose[4, 9] (chain 1 2)) (*{a, b})
-   │    ━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+15 │   def columnApart(A : Type, x : A, y : A, f : Path(x, y), g : Path(x, y), h : Path(x, y), k : Path(x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Pa…
+   │   │               ┬         ┬      ┬      ┬               ┬               ┬               ┬               ┬                                        ─ checked against `Path[.A = Path[.A = A](x, y)](h, k) -> -F Path[.A = Path[.A = A](x, y)](f, k)`; while checking the body of this function; binds b : Path[.A = Path[.A = A](x, y)](h, k)
+   │   │               │         │      │      │               │               │               │               │
+   │   │               │         │      │      │               │               │               │               checked; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+   │   │               │         │      │      │               │               │               checked; while checking the body of this function; binds k : Path[.A = A](x, y)
+   │   │               │         │      │      │               │               checked; while checking the body of this function; binds h : Path[.A = A](x, y)
+   │   │               │         │      │      │               checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+   │   │               │         │      │      checked; while checking the body of this function; binds f : Path[.A = A](x, y)
+   │   │               │         │      checked; while checking the body of this function; binds y : A
+   │   │               │         checked; while checking the body of this function; binds x : A
+   │ ┌─┘               checked; while checking the body of this function; binds A : Type
+   │ │
+16 │ │   compose[4, 9] (chain 1 2) (a, b)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│──────────────────────────────┤
+   │     │                              checked; while checking the body of this thunk
+   │     2-cells that do not fill their column
    │
-   ├ note: `stacked` is expected to check, and this refusal leaves it unsettled
-   ╰ help: give the form its declared number of operands
-
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:16:4
-   │
-16 │   (compose[4, 9] (chain 1 2)) (*{a, b})
-   │    ━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
-   │
-   ├ note: `columnApart` is expected to be refused with ComposeDoesNotFill, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `columnApart` is refused with ComposeDoesNotFill, as its expectation states
+   ╰ help: start each 2-cell of a column at the 1-cell where the 2-cell before it ends

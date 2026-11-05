@@ -1,8 +1,8 @@
-error[UnresolvedName]: `right` is not defined
-   ╭▸ corpus/ledger/diagnostics/DialogueInverted.gandr:13:91
+error[DialogueInverted]: this dialogue is logged out of its causal order
+   ╭▸ corpus/ledger/diagnostics/DialogueInverted.gandr:13:16
    │
-13 │ def foretold = (((dialogue (right (received "yes"))) (left (sent "yes"))) (left closed)) (right closed) ;
-   │                                                                                           ━━━━━ not found in this scope
+13 │ def foretold = dialogue (right (received "yes")) (left (sent "yes")) (left closed) (right closed) ;
+   │                ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a move logged before the move it follows
    │
-   ├ note: `foretold` is expected to be refused with DialogueInverted, and this refusal is not that one
-   ╰ help: define `right`, or import the module that exports it
+   ├ note: `foretold` is refused with DialogueInverted, as its expectation states
+   ╰ help: log each send before its matching receipt

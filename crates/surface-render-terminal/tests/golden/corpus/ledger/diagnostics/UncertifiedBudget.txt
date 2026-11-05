@@ -1,25 +1,12 @@
-error[OutOfFragment.Arity]: the call expression cannot take 3 operands
-   ╭▸ corpus/ledger/diagnostics/UncertifiedBudget.gandr:18:14
-   │
-18 │   def raised = ua[
-   │ ┏━━━━━━━━━━━━━━┛
-19 │ ┃   2,
-20 │ ┃   4
-21 │ ┃ ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
-   │
-   ├ note: `raised` is expected to check, and this refusal leaves it unsettled
-   ╰ help: give the form its declared number of operands
-
-error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+error[UncertifiedBudget]: `ua` enumerates catalogues within its budget of shape classes
    ╭▸ corpus/ledger/diagnostics/UncertifiedBudget.gandr:24:15
    │
 24 │   def crowded = ua[
    │ ┏━━━━━━━━━━━━━━━┛
 25 │ ┃   1,
 26 │ ┃   8
-27 │ ┃ ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
+27 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a catalogue past the stratum budget
    │
-   ├ note: `crowded` is expected to be refused with UncertifiedBudget, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `crowded` is refused with UncertifiedBudget, as its expectation states
+   ╰ note: tracked by #312 <https://github.com/gandr-lang/gandr/issues/312>

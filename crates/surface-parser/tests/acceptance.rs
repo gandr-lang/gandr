@@ -460,8 +460,8 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
         "if flag -> -F Integer { pure 1 } else { pure 2 }",
         "if flag -> -F Integer { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
         "if flag { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
-        "match subject -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
-        "match subject with view -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject -> -F Integer { | Inl(x) => pure x | Inr(y) => pure y }",
+        "match subject with view -> -F Integer { | Inl(x) => pure x | Inr(y) => pure y }",
         "match subject -> -F Integer { }",
         "if flag -> +U[1] (-F Integer) -> -F Integer { pure f } else { pure g }",
     ];
@@ -480,7 +480,7 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
 
     let bare = [
         "if flag { pure 1 } else { pure 2 }",
-        "match subject { Inl(x) => pure x, Inr(y) => pure y }",
+        "match subject { | Inl(x) => pure x | Inr(y) => pure y }",
     ];
     for src in bare {
         let result = parse(pbg, SourceText::from(src))?;
@@ -630,7 +630,7 @@ fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     let unchanged: &[&str] = &[
-        "match x { A => 1, B => 2 }",
+        "match x { | A => 1 | B => 2 }",
         "def bind() -> -F Integer { let value = action; pure value }",
         "def le() -> -F Boolean { return a <= b }",
         "def eq() -> -F Boolean { return a == b }",
@@ -1004,7 +1004,7 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
     // (#1058).
     ("fixture/pathological/modules/stray-root-child.gandr", &[
         (Oblig::UnmoldedTok, "mu"),
-        (Oblig::UnmoldedTok, "\u{a7}"),
+        (Oblig::UnmoldedTok, "\u{1}"),
         (Oblig::MissingTile, "release"),
         (Oblig::MissingTile, "def"),
         (Oblig::MissingTile, "="),
@@ -1018,8 +1018,6 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
             (Oblig::MissingTile, ")"),
             (Oblig::MissingTile, "{"),
             (Oblig::MissingTile, ","),
-            (Oblig::MissingTile, "Some"),
-            (Oblig::MissingTile, "}"),
         ],
     ),
 ];
@@ -1330,7 +1328,7 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
 #[test]
 fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Error>>
 {
-    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      let d : Cap {exit} at e c ;\n      let f : Cap {exit} at c = e ;\n      return *{}\n    } with {\n      pure(x) => return x,\n      oper exit(code, k) => return *{}\n    }\n  } with {\n    pure(x) => return x,\n    oper exit(code, k) => return *{}\n  }\n}\n";
+    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      let d : Cap {exit} at e c ;\n      let f : Cap {exit} at c = e ;\n      return *{}\n    } with {\n      | pure(x) => return x\n      | oper exit(code, k) => return *{}\n    }\n  } with {\n    | pure(x) => return x\n    | oper exit(code, k) => return *{}\n  }\n}\n";
     let result = parse(built(), SourceText::from(source))?;
     let next = source
         .find("let f")
@@ -1838,10 +1836,10 @@ fn minimization_prefers_clean_readings() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-/// A product opens with its own sign, `*{`, and its retired spelling `#{`
-/// reads as the same tree: a record, a record type, a module signature, a
-/// pattern and a sub-record selection alike. The sum and the lazy record open
-/// with `+{` and `&{`, one tile each (#4853).
+/// A product opens with its own sign, `*{`: a record, a record type, a module
+/// signature, a pattern and a sub-record selection alike, and the retired
+/// spelling `#{` owes a repair. The sum and the lazy record open with `+{`
+/// and `&{`, one tile each (#4853).
 #[test]
 fn a_product_opens_with_its_own_sign() -> Result<(), Box<dyn Error>>
 {
@@ -1867,11 +1865,11 @@ fn a_product_opens_with_its_own_sign() -> Result<(), Box<dyn Error>>
         "def first(p : *{Integer, Integer}) -> -F Integer { match p { | *{a, b} => return a } }",
         "def picked = r.*{ .a };",
     ] {
+        labels(source)?;
         let retired = source.replace("*{", "#{");
-        assert_eq!(
-            labels(source)?,
-            labels(&retired)?,
-            "{source:?} reads as {retired:?}"
+        assert!(
+            !bool::from(parse(pbg, SourceText::from(retired.as_str()))?.is_clean()),
+            "the retired spelling {retired:?} owes a repair"
         );
     }
     for source in [

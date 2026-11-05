@@ -5278,8 +5278,8 @@ mod tests
 
     /// The rule of `def f(x, y) …`.
     const DEF: RuleName = RuleName("def_value");
-    /// The rule of `f(x, y)`.
-    const CALL: RuleName = RuleName("call_expression");
+    /// The rule of `Vec(a, n)`, the call form a type application keeps.
+    const CALL: RuleName = RuleName("type_application");
     /// The comma tile.
     const COMMA: TileLabel = TileLabel(",");
     /// The uppercase-name label a reserved word falls back to.
@@ -5358,14 +5358,12 @@ mod tests
         );
         assert_eq!(molder.follow(parameter_comma, &close), Follow::Refuted);
         assert_eq!(molder.follow(parameter_comma, &nothing), Follow::Refuted);
-        // `f(x, y)`: an argument fills the hole after the comma, and an
+        // `Vec(a, n)`: an argument fills the hole after the comma, and an
         // argument begins with a form's first tile, which a closer never is.
         let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
         assert_eq!(molder.follow(argument_comma, &identifier), Follow::Possible);
         assert_eq!(molder.follow(argument_comma, &close), Follow::Refuted);
-        // `f(x)`: the closer ends its form, so it may end the stream, and
-        // whatever a hole of its sort precedes may follow it: a call of the
-        // call.
+        // `Vec(a)`: the closer ends its form, so it may end the stream.
         let call_close = mold_in(&pbg, CALL, TileLabel(")"), RightSide::Closed, &[])?;
         assert!(bool::from(pbg.mold_is_form_last(call_close)));
         assert_eq!(molder.follow(call_close, &nothing), Follow::Possible);
@@ -5375,8 +5373,10 @@ mod tests
             molder.follow(call_close, &resolve("absent-label-for-witness")),
             Follow::Refuted
         );
+        // No type form goes on with `(` after a whole type: a type application
+        // is no head of another.
         let open = resolve("(");
-        assert_eq!(molder.follow(call_close, &open), Follow::Possible);
+        assert_eq!(molder.follow(call_close, &open), Follow::Refuted);
         // `?(P). S` (#1229): the unknown type is a whole type, and no type
         // form goes on with `(` after one, while `.` and `)` stand after a
         // type operand.
@@ -5426,8 +5426,8 @@ mod tests
             RightSide::Closed,
             &[TileLabel("identifier")],
         )?;
-        // A call's argument comma opens another argument; its trailing comma
-        // is followed by the closer.
+        // A type application's argument comma opens another argument; its
+        // trailing comma is followed by the closer.
         let argument_comma = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
         let trailing_comma = mold_in(&pbg, CALL, COMMA, RightSide::Closed, &[TileLabel(")")])?;
         let cases: [(&str, &[MoldId], &[MoldId]); 7] = [
@@ -5712,18 +5712,20 @@ mod tests
     #[test]
     fn a_window_reads_the_token_after_a_tied_separator() -> Result<(), Box<dyn Error>>
     {
-        // A call's separator ties the comma that opens another argument with
-        // the trailing one its closer follows. Read alone, the lesser mold
-        // wins and the closer after it becomes a repair; inside a window the
-        // next token is known, and only the trailing comma can precede it.
+        // A type application's separator ties the comma that opens another
+        // argument with the trailing one its closer follows. Read alone, the
+        // lesser mold wins and the closer after it becomes a repair; inside a
+        // window the next token is known, and only the trailing comma can
+        // precede it.
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        let source = SourceText::from("def x = f a ;");
-        let tokens = label(SourceFragment::from("def x = f a ;"));
+        let written = "def x : Pair(Integer, ) ;";
+        let source = SourceText::from(written);
+        let tokens = label(SourceFragment::from(written));
         let comma = tokens
             .iter()
             .position(|token| {
-                AsRef::<str>::as_ref(&token.text(&SourceFragment::from("def x = f a ;"))) == ","
+                AsRef::<str>::as_ref(&token.text(&SourceFragment::from(written))) == ","
             })
             .ok_or("the source spells a comma")?;
         let mut state = MeldState::new(&pbg);
@@ -5740,7 +5742,7 @@ mod tests
         let ahead = Ahead::Stream {
             tokens: &tokens,
             index: TokenIndex::from(comma),
-            source: &SourceFragment::from("def x = f a ;"),
+            source: &SourceFragment::from(written),
         };
         let windowed = molder.choose(&mut state, TokenText::from(","), ahead);
         assert_eq!(

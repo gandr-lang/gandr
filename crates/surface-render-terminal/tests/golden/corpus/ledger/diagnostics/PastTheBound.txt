@@ -1,25 +1,12 @@
-error[OutOfFragment.Arity]: the call expression cannot take 3 operands
-   ╭▸ corpus/ledger/diagnostics/PastTheBound.gandr:18:14
-   │
-18 │   def raised = ua[
-   │ ┏━━━━━━━━━━━━━━┛
-19 │ ┃   2,
-20 │ ┃   4
-21 │ ┃ ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
-   │
-   ├ note: `raised` is expected to check, and this refusal leaves it unsettled
-   ╰ help: give the form its declared number of operands
-
-error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+error[PastTheBound]: a generator stands at a corolla past the `ua` catalogue bound
    ╭▸ corpus/ledger/diagnostics/PastTheBound.gandr:24:13
    │
 24 │   def short = ua[
    │ ┏━━━━━━━━━━━━━┛
 25 │ ┃   1,
 26 │ ┃   3
-27 │ ┃ ] Magma (Magma (*{.mul = exchange, .one = keep})) (*{.mul = exchange, .one = keep}) ;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
+27 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a generator past the catalogue's bound
    │
-   ├ note: `short` is expected to be refused with PastTheBound, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `short` is refused with PastTheBound, as its expectation states
+   ╰ help: use a corolla within the `ua` catalogue bound

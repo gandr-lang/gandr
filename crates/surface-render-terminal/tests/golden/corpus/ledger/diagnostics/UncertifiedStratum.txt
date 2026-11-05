@@ -1,12 +1,3 @@
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/ledger/diagnostics/UncertifiedStratum.gandr:29:13
-   │
-29 │ def both = (cons (+{.0 = *{}})) (cons (+{.1 = *{}}) nil) ;
-   │             ━━━━━━━━━━━━━━━━━━ the wrong number of operands
-   │
-   ├ note: `both` is expected to run to cons +{.0 = *{}} (cons +{.1 = *{}} nil), and this refusal leaves it unsettled
-   ╰ help: give the form its declared number of operands
-
 error[UncertifiedStratum]: `equiv` needs each list cell's round trip to return the cell, its tail unread
    ╭▸ corpus/ledger/diagnostics/UncertifiedStratum.gandr:50:17
    │

@@ -1,34 +1,4 @@
-error[MalformedForm]: this word reads as a name, and this parenthesized expression then holds an operand it does not take
-   ╭▸ corpus/pathological/sessions/seat-prefix-evolution.gandr:24:94
-   │
-24 │ def reported : Prefix(Evolution.SeatEnd) = ((recorded (received "task")) (selected report)) (sent "progress");
-   │                                                                                              ━━━━ a keyword misspelt
-   │
-   ├ note: `reported` is expected to check, and this refusal leaves it unsettled
-   ╰ help: write the keyword `send` in place of this word
-
-error[UnresolvedName]: `offered` is not defined
-   ╭▸ corpus/pathological/sessions/seat-prefix-evolution.gandr:27:113
-   │
-27 │ def retired : Prefix(Evolution.SeatEnd) = (((recorded (received "task")) (selected report)) (sent "progress")) (offered retire);
-   │                                                                                                                 ━━━━━━━ not found in this scope
-   │
-   ├ note: `retired` is expected to check, and this refusal leaves it unsettled
-   ╰ help: define `offered`, or import the module that exports it
-
-note[UnknownConstant]: this names a declaration whose type is not known
-   ╭▸ corpus/pathological/sessions/seat-prefix-evolution.gandr:30:88
-   │
-30 │ def kept() -> Prefix(Evolution.Kept) { Flow.ride (fun (X) { Prefix X }) Evolution.keep reported }
-   │ ┬──────────────────────────────────────┬───────────────────────────────────────────────┯━━━━━━━──
-   │ │                                      │                                               │
-   │ │                                      │                                               no declaration with a type
-   │ │                                      checked against `-F Prefix(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the value this ride moves against the flow's source
-   │ checked against `() -> Prefix(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the body of this thunk
-   │
-   ╰ note: `kept` is expected to check, and the refusal of `reported` leaves it unsettled
-
-note[UnknownConstant]: this names a declaration whose type is not known
+error[RunNotAdmitted]: the protocol does not admit this run
    ╭▸ corpus/pathological/sessions/seat-prefix-evolution.gandr:35:51
    │
 34 │ ┌ def dropped() -> Prefix(Evolution.Kept) =
@@ -36,10 +6,11 @@ note[UnknownConstant]: this names a declaration whose type is not known
    │ │   ┬───────────────────────────────────────────────┯━━━━━│
    │ └───│───────────────────────────────────────────────│─────┤
    │     │                                               │     checked against `() -> Prefix(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the body of this thunk
-   │     │                                               no declaration with a type
+   │     │                                               a label the protocol does not admit here
    │     checked against `-F Prefix(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the value this ride moves against the flow's source
    │
-   ╰ note: `dropped` is expected to be refused with RunNotAdmitted, and this refusal is not that one; it rests on `retired`, which is refused
+   ├ note: `dropped` is refused with RunNotAdmitted, as its expectation states
+   ╰ help: change the run so that each move is one that the protocol admits at that point
 
 error[RunNotAdmitted]: the protocol does not admit this run
    ╭▸ corpus/pathological/sessions/seat-prefix-evolution.gandr:40:51

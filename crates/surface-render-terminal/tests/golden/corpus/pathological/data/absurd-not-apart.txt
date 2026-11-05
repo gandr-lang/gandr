@@ -35,16 +35,16 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
    ╭▸ corpus/pathological/data/absurd-not-apart.gandr:34:3
    │
 30 │   def cancelled(e : Path[.A = Path[.A = Circle](Base, Base)](
-   │   │             ─ checked; while checking the body of this function; binds e : Path[.A = Path[.A = Circle](Base, Base)](loop ∷ back (loop) ∷ Path.here (Base), Path.here (Base))
+   │   │             ─ checked; while checking the body of this function; binds e : Path[.A = Path[.A = Circle](Base, Base)](loop ∷ back loop ∷ Path.here Base, Path.here Base)
    │ ┌─┘
    │ │
-31 │ │   loop ∷ back (loop) ∷ Path.here Base,
+31 │ │   loop ∷ back loop ∷ Path.here Base,
 32 │ │   Path.here Base
 33 │ │ )) -> Empty =
 34 │ │   match e {}
    │ │   ┯━━━━━━━━│
    │ └───│────────┤
-   │     │        checked; while checking the body of this thunk
+   │     │        checked against `Path[.A = Path[.A = Circle](Base, Base)](loop ∷ back loop ∷ Path.here Base, Path.here Base) -> Empty`; while checking the body of this thunk
    │     a path whose endpoints are not apart
    │
    ├ note: `cancelled` is refused with NotApart, as its expectation states

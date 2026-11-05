@@ -9,13 +9,13 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │ │
 15 │ │   walk (Succ (walk b c1)) c2,
    │ │   ────────────────────────── an endpoint the point does not convert to
-16 │ │   Succ ((walk (walk b c1)) (succ (succ c2)))
-   │ │   ────────────────────────────────────────── an endpoint the point does not convert to
+16 │ │   Succ (walk (walk b c1) (succ (succ c2)))
+   │ │   ──────────────────────────────────────── an endpoint the point does not convert to
 17 │ │ ) =
-18 │ │   Path.here (Succ ((walk (walk b c1)) (succ (succ c2))))
-   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
-   │ └───│────────────────────────────────────────────────────┤
-   │     │                                                    checked; while checking the body of this thunk
+18 │ │   Path.here (Succ (walk (walk b c1) (succ (succ c2))))
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│──────────────────────────────────────────────────┤
+   │     │                                                  checked; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `walkTwiceOvershot` is refused with EndpointMismatch, as its expectation states
@@ -32,13 +32,13 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │ │
 23 │ │   walk (Succ (walk b c1)) c2,
    │ │   ────────────────────────── an endpoint the point does not convert to
-24 │ │   Succ ((walk (walk b (succ c1))) (succ c2))
-   │ │   ────────────────────────────────────────── an endpoint the point does not convert to
+24 │ │   Succ (walk (walk b (succ c1)) (succ c2))
+   │ │   ──────────────────────────────────────── an endpoint the point does not convert to
 25 │ │ ) =
-26 │ │   Path.here (Succ ((walk (walk b (succ c1))) (succ c2)))
-   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
-   │ └───│────────────────────────────────────────────────────┤
-   │     │                                                    checked; while checking the body of this thunk
+26 │ │   Path.here (Succ (walk (walk b (succ c1)) (succ c2)))
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│──────────────────────────────────────────────────┤
+   │     │                                                  checked; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `walkTwiceInner` is refused with EndpointMismatch, as its expectation states

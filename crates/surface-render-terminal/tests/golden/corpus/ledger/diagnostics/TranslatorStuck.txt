@@ -1,12 +1,11 @@
-error[OutOfFragment.Arity]: the call expression cannot take 3 operands
+error[TranslatorStuck]: a `ua` translator returns no element of its target code
    ╭▸ corpus/ledger/diagnostics/TranslatorStuck.gandr:16:18
    │
 16 │   def postulated = ua[
    │ ┏━━━━━━━━━━━━━━━━━━┛
 17 │ ┃   1,
 18 │ ┃   4
-19 │ ┃ ] Magma (Magma (*{.mul = opaque, .one = keep})) (*{.mul = opaque, .one = keep}) ;
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the wrong number of operands
+19 │ ┃ ] Magma Magma (*{.mul = opaque, .one = keep}) (*{.mul = opaque, .one = keep}) ;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a translator that returns no element
    │
-   ├ note: `postulated` is expected to be refused with TranslatorStuck, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ╰ note: `postulated` is refused with TranslatorStuck, as its expectation states

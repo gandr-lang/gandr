@@ -8,10 +8,10 @@ error[UnresolvedName]: `here` is not defined
   ╰ help: define `here`, or import the module that exports it
 
 error[UnresolvedName]: `transport` is not defined
-   ╭▸ corpus/pathological/identity/bare-operations.gandr:11:32
+   ╭▸ corpus/pathological/identity/bare-operations.gandr:11:31
    │
-11 │ def bareTransport : Integer = (transport (fun (X) { X })) (Path.here (Integer)) 2;
-   │                                ━━━━━━━━━ not found in this scope
+11 │ def bareTransport : Integer = transport (fun (X) { X }) (Path.here Integer) 2;
+   │                               ━━━━━━━━━ not found in this scope
    │
    ├ note: `bareTransport` is refused with UnresolvedName, as its expectation states
    ╰ help: define `transport`, or import the module that exports it

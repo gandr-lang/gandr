@@ -1,8 +1,19 @@
-error[OutOfFragment.Arity]: the call expression cannot take 4 operands
-   ╭▸ corpus/ledger/diagnostics/NotOver.gandr:23:3
+error[NotOver]: `Path.walk` needs its identity over the path to start from the start transported along the path
+   ╭▸ corpus/ledger/diagnostics/NotOver.gandr:23:87
    │
-23 │   Path.walk (+U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Nat)) (q (Path.here a)) (Path.here (Path.here a)) v
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+22 │   def astray(a : Nat, b : Nat, q : Path(a, b), v : Nat) -> -F Nat =
+   │   │          ┬        ┬        ┬               ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds v : Nat
+   │   │          │        │        │
+   │   │          │        │        checked against `Path[.A = Nat](a, b) -> Nat -> -F Nat`; while checking the body of this function; binds q : Path[.A = Nat](a, b)
+   │   │          │        checked against `(b : Nat) -> Path[.A = Nat](a, b) -> Nat -> -F Nat`; while checking the body of this function; binds b : Nat
+   │ ┌─┘          checked against `(a : Nat) -> (b : Nat) -> Path[.A = Nat](a, b) -> Nat -> -F Nat`; while checking the body of this function; binds a : Nat
+   │ │
+23 │ │   Path.walk (+U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Nat)) q (Path.here a) (Path.here (Path.here a)) v
+   │ │   ┬───────────────────────────────────────────────────────────────────────────────────┯━━━━━━━━━━━━━━━━━━━━━━──│
+   │ └───│───────────────────────────────────────────────────────────────────────────────────│────────────────────────┤
+   │     │                                                                                   │                        checked against `(a : Nat, b : Nat, Path[.A = Nat](a, b), Nat) -> Nat`; while checking the body of this thunk
+   │     │                                                                                   an identity not over the path: expected `Path[.A = Path[.A = Nat](a, b)](Path.step (Path.here a) q, Path.here a)`, found `Path[.A = Path[.A = Nat](a, a)](Path.here a, Path.here a)`
+   │     checked against `-F Nat`; while synthesising the identity over the path this transport follows
    │
-   ├ note: `astray` is expected to be refused with NotOver, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `astray` is refused with NotOver, as its expectation states
+   ╰ help: start `Path.walk` with an identity over the path

@@ -7,24 +7,14 @@ error[OutOfFragment.extern_block]: the extern block is not supported yet
    ├ note: `extern` is refused with OutOfFragment.extern_block, as its expectation states
    ╰ note: tracked by #327 <https://github.com/gandr-lang/gandr/issues/327>
 
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:32:21
-   │
-32 │ def addRow : Row = (Row ((Arg (Plain U32)) (Arg (Plain U32) NoCode))) (Plain U32);
-   │                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
-   │
-   ├ note: `addRow` is expected to check, and this refusal leaves it unsettled
-   ╰ help: give the form its declared number of operands
-
-note[UnknownConstant]: this names a declaration whose type is not known
-   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:36:13
+error[BoundaryUnrealised.Size]: a type a member of the block declares differs in size from its row's
+   ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:36:4
    │
 36 │ @[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
-   │             ━━━━━━ no declaration with a type
-37 │ extern "rust" from "counted" as Counted {
-   │                                 ─────── checked against `() -> std.boundary.Admission`; while checking the next premise of this
+   │    ━━━━━━━━━━━━━━━━ a row the block's members do not realise
    │
-   ╰ note: `Counted` is expected to be refused with BoundaryUnrealised.Size, and this refusal is not that one; it rests on `addRow`, which is refused
+   ├ note: `Counted` is refused with BoundaryUnrealised.Size, as its expectation states
+   ╰ help: make each member type have the size its boundary row states
 
 error[UnresolvedName]: `sub` is not defined
    ╭▸ corpus/pathological/interop/boundary/extern-form.gandr:48:48

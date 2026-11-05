@@ -1,17 +1,21 @@
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/ledger/diagnostics/GeneratorFamilyUnsupported.gandr:16:5
+error[GeneratorFamilyUnsupported]: `fill` lifts its generator along paths only
+   ╭▸ corpus/ledger/diagnostics/GeneratorFamilyUnsupported.gandr:21:3
    │
-16 │   ((fill[1, 3] (chain 1)) (selfLoop A x y)) fa
-   │     ━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+20 │   def alongFlow(A : Type, x : A, y : A, fm : Path(x, y), fp : Path(x, y), fa : Flow[.A = Path(x, y)](fm, fp)) -> Path[.A = Path[.A = A…
+   │   │             ┬         ┬      ┬      ┬─               ┬─               ── checked against `Flow[.A = Path[.A = A](x, y)](fm, fp) -> -F Path[.A = Path[.A = A](x, y)](fm, fp)`; while checking the body of this function; binds fa : Flow[.A = Path[.A = A](x, y)](fm, fp)
+   │   │             │         │      │      │                │
+   │   │             │         │      │      │                checked; while checking the body of this function; binds fp : Path[.A = A](x, y)
+   │   │             │         │      │      checked; while checking the body of this function; binds fm : Path[.A = A](x, y)
+   │   │             │         │      checked; while checking the body of this function; binds y : A
+   │   │             │         checked; while checking the body of this function; binds x : A
+   │ ┌─┘             checked; while checking the body of this function; binds A : Type
+   │ │
+21 │ │   fill[1, 3] (chain 1) (selfLoop A x y) fa
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┬│
+   │ └───│─────────────────────────────────────│┤
+   │     │                                     │checked; while checking the body of this thunk
+   │     │                                     a cell of a family with no filler yet
+   │     a fill along a family with no filler yet
    │
-   ├ note: `alongPath` is expected to check, and this refusal leaves it unsettled
-   ╰ help: give the form its declared number of operands
-
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/ledger/diagnostics/GeneratorFamilyUnsupported.gandr:21:5
-   │
-21 │   ((fill[1, 3] (chain 1)) (selfLoop A x y)) fa
-   │     ━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
-   │
-   ├ note: `alongFlow` is expected to be refused with GeneratorFamilyUnsupported, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `alongFlow` is refused with GeneratorFamilyUnsupported, as its expectation states
+   ╰ note: tracked by #4093 <https://github.com/gandr-lang/gandr/issues/4093>

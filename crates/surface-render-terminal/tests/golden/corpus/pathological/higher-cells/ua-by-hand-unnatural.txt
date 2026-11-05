@@ -1,17 +1,8 @@
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/pathological/higher-cells/ua-by-hand-unnatural.gandr:23:54
+error[NotNatural]: the `ua` translators do not commute with the symmetries of a corolla
+   ╭▸ corpus/pathological/higher-cells/ua-by-hand-unnatural.gandr:28:17
    │
-23 │   def crossed_by_hand : Path[.A = Type](Tel, Tel) = (Path.product (Path.here (Unit))) (equiv cross cross);
-   │                                                      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+28 │   def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});
+   │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ translators that break the corolla's symmetry
    │
-   ├ note: `crossed_by_hand` is expected to check, and this refusal leaves it unsettled
-   ╰ help: give the form its declared number of operands
-
-error[OutOfFragment.Arity]: the call expression cannot take 3 operands
-   ╭▸ corpus/pathological/higher-cells/ua-by-hand-unnatural.gandr:26:17
-   │
-26 │   def crossed = ua[1, 4] Rig (Rig (*{.plus = cross})) (*{.plus = cross});
-   │                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
-   │
-   ├ note: `crossed` is expected to be refused with NotNatural, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `crossed` is refused with NotNatural, as its expectation states
+   ╰ help: make each `ua` translator commute with every corolla symmetry

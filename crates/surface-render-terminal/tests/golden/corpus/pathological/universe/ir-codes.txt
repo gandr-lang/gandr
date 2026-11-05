@@ -10,8 +10,8 @@ error[IndexOccurrence]: the datatype occurs inside a term in its field 0 of cons
    ├ note: `Mu` is refused with IndexOccurrence, as its expectation states
    ╰ help: remove the datatype from the field's index
 
-error[ShapeMismatch]: expected a thunk type `+U C`
-   ╭▸ corpus/pathological/universe/ir-codes.gandr:48:40
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/universe/ir-codes.gandr:48:77
    │
 46 │      def rec decodeMu(d : Type, c : IR(d), m : Mu(d, c)) -> d =
    │      │                ┬         ┬          ─ checked against `Mu(d, c) -> -F d`; while checking the body of this function; binds m : Mu(d, c)
@@ -20,15 +20,16 @@ error[ShapeMismatch]: expected a thunk type `+U C`
    │ ┌────┘                checked against `(d : Type) -> (c : IR(d)) -> Mu(d, c) -> -F d`; while checking the body of this function; binds d : Type
    │ │
 47 │ │┌     match m
-48 │ ││       | In(v) => decodeArgs d (c (Mu d c)) (thunk { fun (n) { decodeMu[<] d c n } }) v
-   │ ││                  ┬─────────────┬───────┯─────────────────────────────────────────────│
-   │ └│──────────────────│─────────────│───────│─────────────────────────────────────────────│
-   │  └──────────────────│─────────────│───────│─────────────────────────────────────────────checked against `(d : Type, c : IR(d), Mu(d, c)) -> d`; while checking the body of this function; binds decodeMu : Mu(d, c) -> d
-   │                     │             │       │                                             checked against `-F d`; while checking the body of this function; binds v : args(d, c, Mu(d, c), fun (a) { decodeMu(d, c, a) })
-   │                     │             │       its type is not of the required shape: found `IR(d)`
-   │                     │             checked against `IR(d)`; while synthesising the function this applies
-   │                     │             synthesised; while forcing this
+48 │ ││       | In(v) => decodeArgs d c (Mu d c) (thunk { fun (n) { decodeMu[<] d c n } }) v
+   │ ││                  ┬────────────────────────┬───────┬─────────┬───────────────┯──────│
+   │ └│──────────────────│────────────────────────│───────│─────────│───────────────│──────│
+   │  └──────────────────│────────────────────────│───────│─────────│───────────────│──────checked against `(d : Type, c : IR(d), Mu(d, c)) -> d`; while checking the body of this function; binds decodeMu : Mu(d, c) -> d
+   │                     │                        │       │         │               │      checked against `-F d`; while checking the body of this function; binds v : args(d, c, Mu(d, c), fun (a) { decodeMu(d, c, a) })
+   │                     │                        │       │         │               not below the stage its recursion wants
+   │                     │                        │       │         checked against `-F d`; while checking the argument of this application
+   │                     │                        │       checked against `Mu(d, c) -> -F d`; while checking the body of this function; binds _ : Mu(d, c)
+   │                     │                        checked against `Mu(d, c) -> d`; while checking the body of this thunk
    │                     checked against `-F d`; while checking the argument of this application
    │
-   ├ note: `decodeMu` is expected to be refused with StageNotBelow, and this refusal is not that one
-   ╰ help: change the term or the type it is checked against, so that the type has the required shape
+   ├ note: `decodeMu` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself

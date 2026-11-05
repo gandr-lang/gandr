@@ -8,10 +8,10 @@ error[OutOfFragment.WrongSort]: a wildcard cannot stand where a computation is e
    ╰ help: write a computation in this position
 
 error[ImplicitUnsolved]: no equation determines the term this `_` stands for
-   ╭▸ corpus/pathological/holes/wildcard.gandr:13:41
+   ╭▸ corpus/pathological/holes/wildcard.gandr:13:39
    │
-13 │ def loose() -> Integer { idAt (Integer) _ }
-   │                                         ━ an implicit left unsolved
+13 │ def loose() -> Integer { idAt Integer _ }
+   │                                       ━ an implicit left unsolved
    │
    ├ note: `loose` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: write the term in place of the `_`

@@ -145,14 +145,23 @@ error[StagesDisagree]: the call's arguments stand at stages that no single stage
     ├ note: `disagreeing` is refused with StagesDisagree, as its expectation states
     ╰ help: change the call's arguments so that they stand at one stage
 
-error[UnresolvedName]: `<j` is not defined
-    ╭▸ corpus/pathological/data/sized-higher-order.gandr:108:47
+error[StagesDisagree]: the call's arguments stand at stages that no single stage of the callee's stage parameter fits
+    ╭▸ corpus/pathological/data/sized-higher-order.gandr:109:3
     │
-108 │ def suppliedApart[j : Size, k : Size](f : Nat[<j] -> Nat, x : Nat[<j]) -> Nat =
-    │                                               ━━ not found in this scope
+108 │   def suppliedApart[j : Size, k : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
+    │   │                                     ┬                    ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds x : Nat
+    │   │                                     │
+    │ ┌─┘                                     checked against `(Nat -> Nat) -> Nat -> -F Nat`; while checking the body of this function; binds f : Nat -> Nat
+    │ │
+109 │ │   applyAt[.i = k] f x
+    │ │   ┯━━━━━━───────────│
+    │ └───│─────────────────┤
+    │     │                 checked against `(Nat -> Nat, Nat) -> Nat`; while checking the body of this thunk
+    │     a stage the call's earlier arguments exclude
+    │     checked against `-F Nat`; while synthesising the function this applies
     │
-    ├ note: `suppliedApart` is expected to be refused with StagesDisagree, and this refusal is not that one
-    ╰ help: define `<j`, or import the module that exports it
+    ├ note: `suppliedApart` is refused with StagesDisagree, as its expectation states
+    ╰ help: change the call's arguments so that they stand at one stage
 
 error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
     ╭▸ corpus/pathological/data/sized-higher-order.gandr:115:11

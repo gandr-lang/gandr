@@ -1,8 +1,8 @@
 error[OutOfFragment.Unannotated]: the call expression needs a type annotation
    ╭▸ corpus/pathological/desc/stlc.gandr:24:37
    │
-24 │   return fun (a) { return fun (x) { There d a b ((r a) x) } }
-   │                                     ━━━━━━━━━━━━━━━━━━━━━ needs a stated type
+24 │   return fun (a) { return fun (x) { There d a b (r a x) } }
+   │                                     ━━━━━━━━━━━━━━━━━━━ needs a stated type
    │
    ├ note: `wk` is refused with OutOfFragment.Unannotated, as its expectation states
    ╰ help: write a type annotation for the form
@@ -25,11 +25,11 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 33 │ │┌   match x
 34 │ ││     | Here(_h, c) => Here d c
    │ ││                      ━━━━━━━━ its type does not convert: expected `Var(Extend(d, a), c)`, found `Var(Extend(d, c), c)`
-35 │ ││     | There(_h, c, _e, y) => There d c a ((r c) y)
-   │ ││                                                  │
-   │ └│──────────────────────────────────────────────────│
-   │  └──────────────────────────────────────────────────checked; while checking the body of this thunk
-   │                                                     checked against `-F Var(Extend(d, a), b)`; while checking the body of this function; binds _h : Ctx, c : ObjTy, _ : Path[.A = Ctx](Extend _h c, Extend g a), _ : Path[.A = ObjTy](c, b)
+35 │ ││     | There(_h, c, _e, y) => There d c a (r c y)
+   │ ││                                                │
+   │ └│────────────────────────────────────────────────│
+   │  └────────────────────────────────────────────────checked; while checking the body of this thunk
+   │                                                   checked against `-F Var(Extend(d, a), b)`; while checking the body of this function; binds _h : Ctx, c : ObjTy, _ : Path[.A = Ctx](Extend _h c, Extend g a), _ : Path[.A = ObjTy](c, b)
    │
    ├ note: `liftAt` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -10,11 +10,14 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ├ note: `quoted_receive` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
-error[OutOfFragment.Arity]: the call expression cannot take 1 operands
-   ╭▸ corpus/pathological/sessions/type-quote.gandr:16:68
+error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
+   ╭▸ corpus/pathological/sessions/type-quote.gandr:16:133
    │
-16 │ …g. end) = ((Path.walk (fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) })) (Path.here (String))) (Path.here (type(…
-   │              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
+16 │ …d) = Path.walk (fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) }) (Path.here String) (Path.here (type(?String. end)));
+   │       ┬──────────────────────────────────────────────────────────────────┯━━━━━━──────────────────────────────────────────────────────────
+   │       │                                                                  │
+   │       │                                                                  a session payload open over a binder
+   │       checked against `Path[.A = Type](?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
    │
-   ├ note: `open_payload` is expected to be refused with OpenSessionPayload, and this refusal is not that one
-   ╰ help: give the form its declared number of operands
+   ├ note: `open_payload` is refused with OpenSessionPayload, as its expectation states
+   ╰ help: bind the session payload inside the run's protocol

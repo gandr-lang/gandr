@@ -1,46 +1,168 @@
-10:1-10:3 def ⇒ moved_end⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A reflexive transport at a path-type motive returns a path. @10:1-13:29
-10:5-10:13 moved_end ⇒ moved_end⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A reflexive transport at a path-type motive returns a path. @10:5-10:14
-10:15-13:28 : Path[.A = Path[.A = In… ⇒ moved_end⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A reflexive transport at a path-type motive returns a path. @10:1-13:29
-17:1-17:63 @[ runs("(thunk { fun (a… ⇒ moved_end_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @17:1-18:1
-18:1-18:3 def ⇒ moved_end_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:1-19:89
-18:5-18:18 moved_end_run( ⇒ moved_end_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:5-18:18
-18:19-19:88 ) -> Path(2, 2) =⏎  ((Pa… ⇒ moved_end_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:1-19:89
-22:1-22:28 @[ refuses("TypeMismatch… ⇒ unit_end⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A transported unit is no path between integers. @22:1-23:1
-23:1-23:3 def ⇒ unit_end⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A transported unit is no path between integers. @23:1-26:29
-23:5-23:12 unit_end ⇒ unit_end⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A transported unit is no path between integers. @23:5-23:13
-23:14-26:28 : Path[.A = Path[.A = In… ⇒ unit_end⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎A transported unit is no path between integers. @23:1-26:29
-30:1-30:3 def ⇒ along_returned⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:1-38:14
-30:5-30:19 along_returned( ⇒ along_returned⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:5-30:19
-31:3-38:13 a : Type,⏎  x : a⏎) -> P… ⇒ along_returned⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:1-38:14
-42:1-42:3 def ⇒ along_here⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @42:1-42:93
-42:5-42:14 along_here ⇒ along_here⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @42:5-42:15
-42:16-42:92 : Path((Path.walk (fun (… ⇒ along_here⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @42:1-42:93
-45:1-45:14 @[ runs("2") ] ⇒ along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @45:1-46:1
-46:1-46:3 def ⇒ along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:1-46:33
-46:5-46:19 along_here_run( ⇒ along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:5-46:19
-46:20-46:31 ) -> Integer ⇒ along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:1-46:33
-46:33-46:33 { ⇒ {⏎⏎A tile of `def_value`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:33-46:34
-46:35-46:35 ( ⇒ (⏎⏎A tile of `parenthesized_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:35-46:36
-46:36-46:39 Path ⇒ Path⏎⏎A tile of `constructor.expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:36-46:40
-46:40-46:40 . ⇒ .⏎⏎A tile of `projection_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:40-46:41
-46:41-46:44 walk ⇒ walk⏎⏎A tile of `projection_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:41-46:45
-46:46-46:46 ( ⇒ (⏎⏎A tile of `parenthesized_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:46-46:47
-46:47-46:49 fun ⇒ fun⏎⏎A tile of `lambda_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:47-46:50
-46:51-46:51 ( ⇒ (⏎⏎A tile of `lambda_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:51-46:52
-46:52-46:52 X ⇒ X⏎⏎A tile of `lambda_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:52-46:53
-46:53-46:53 ) ⇒ )⏎⏎A tile of `lambda_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:53-46:54
-46:55-46:55 { ⇒ {⏎⏎A tile of `statement_block`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:55-46:56
-46:57-46:57 X ⇒ X⏎⏎A tile of `constructor.expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:57-46:58
-46:59-46:59 } ⇒ }⏎⏎A tile of `statement_block`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:59-46:60
-46:60-46:60 ) ⇒ )⏎⏎A tile of `parenthesized_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:60-46:61
-46:61-46:61 ) ⇒ )⏎⏎A tile of `parenthesized_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:61-46:62
-46:63-46:63 ( ⇒ (⏎⏎A tile of `parenthesized_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:63-46:64
-46:64-46:67 Path ⇒ Path⏎⏎A tile of `constructor.expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:64-46:68
-46:68-46:68 . ⇒ .⏎⏎A tile of `projection_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:68-46:69
-46:69-46:72 here ⇒ here⏎⏎A tile of `projection_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:69-46:73
-46:74-46:74 ( ⇒ (⏎⏎A tile of `parenthesized_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:74-46:75
-46:75-46:81 Integer ⇒ Integer⏎⏎A tile of `constructor.expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:75-46:82
-46:82-46:82 ) ⇒ )⏎⏎A tile of `parenthesized_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:82-46:83
-46:83-46:83 ) ⇒ )⏎⏎A tile of `parenthesized_expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:83-46:84
-46:85-46:85 2 ⇒ 2⏎⏎A tile of `number.expression`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:85-46:86
-46:87-46:87 } ⇒ }⏎⏎A tile of `def_value`.⏎⏎along_here_run⏎⏎refused: `call_expression`, read as a computation, does not take 1 operands⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:87-46:88
+10:1-10:3 def ⇒ moved_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) {⏎  type(Path[.A = Integer](a, a)) }) (Path.here 2) (Path.here 2), Path.here 2)⏎⏎A reflexive transport at a path-type motive returns a path. @10:1-13:29
+10:5-10:13 moved_end ⇒ moved_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) {⏎  type(Path[.A = Integer](a, a)) }) (Path.here 2) (Path.here 2), Path.here 2)⏎⏎A reflexive transport at a path-type motive returns a path. @10:5-10:14
+10:15-10:15 : ⇒ moved_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) {⏎  type(Path[.A = Integer](a, a)) }) (Path.here 2) (Path.here 2), Path.here 2)⏎⏎A reflexive transport at a path-type motive returns a path. @10:1-13:29
+10:17-10:25 Path[.A = ⇒ Type @10:17-13:2
+10:27-10:35 Path[.A = ⇒ Path[.A = Integer](2, 2) : Type @10:27-10:51
+10:37-10:43 Integer ⇒ Integer : Type @10:37-10:44
+10:44-10:45 ]( ⇒ Path[.A = Integer](2, 2) : Type @10:27-10:51
+10:46-10:46 2 ⇒ Integer @10:46-10:47
+10:47-10:47 , ⇒ Path[.A = Integer](2, 2) : Type @10:27-10:51
+10:49-10:49 2 ⇒ Integer @10:49-10:50
+10:50-10:50 ) ⇒ Path[.A = Integer](2, 2) : Type @10:27-10:51
+10:51-10:52 ]( ⇒ Type @10:17-13:2
+11:3-11:13 Path.walk ( ⇒ Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2) : -F Path[.A = Integer](2, 2) @11:3-11:85
+11:14-11:28 fun (x) { type( ⇒ fun (x) { type(Path[.A = Integer](x, x)) } : Type @11:14-11:56
+11:29-11:37 Path[.A = ⇒ Path[.A = Integer](x, x) : Type @11:29-11:53
+11:39-11:45 Integer ⇒ Integer : Type @11:39-11:46
+11:46-11:47 ]( ⇒ Path[.A = Integer](x, x) : Type @11:29-11:53
+11:48-11:48 x ⇒ x : Integer @11:48-11:49
+11:49-11:49 , ⇒ Path[.A = Integer](x, x) : Type @11:29-11:53
+11:51-11:51 x ⇒ x : Integer @11:51-11:52
+11:52-11:52 ) ⇒ Path[.A = Integer](x, x) : Type @11:29-11:53
+11:53-11:55 ) } ⇒ fun (x) { type(Path[.A = Integer](x, x)) } : Type @11:14-11:56
+11:56-11:58 ) ( ⇒ Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2) : -F Path[.A = Integer](2, 2) @11:3-11:85
+11:59-11:67 Path.here ⇒ Path.here 2 : Path[.A = Integer](2, 2) @11:59-11:70
+11:69-11:69 2 ⇒ Integer @11:69-11:70
+11:70-11:72 ) ( ⇒ Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2) : -F Path[.A = Integer](2, 2) @11:3-11:85
+11:73-11:81 Path.here ⇒ Path.here 2 : Path[.A = Integer](2, 2) @11:73-11:84
+11:83-11:83 2 ⇒ Integer @11:83-11:84
+11:84-11:84 ) ⇒ Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2) : -F Path[.A = Integer](2, 2) @11:3-11:85
+11:85-11:85 , ⇒ Type @10:17-13:2
+12:3-12:11 Path.here ⇒ Path.here 2 : Path[.A = Integer](2, 2) @12:3-12:14
+12:13-12:13 2 ⇒ Integer @12:13-12:14
+13:1-13:1 ) ⇒ Type @10:17-13:2
+13:3-13:3 = ⇒ moved_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) {⏎  type(Path[.A = Integer](a, a)) }) (Path.here 2) (Path.here 2), Path.here 2)⏎⏎A reflexive transport at a path-type motive returns a path. @10:1-13:29
+13:5-13:15 Path.here ( ⇒ Path.here (Path.here 2) : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) {⏎  type(Path[.A = Integer](a, a)) }) (Path.here 2) (Path.here 2), Path.here 2) @13:5-13:28
+13:16-13:24 Path.here ⇒ Path.here 2 : Path[.A = Integer](2, 2) @13:16-13:27
+13:26-13:26 2 ⇒ Integer @13:26-13:27
+13:27-13:27 ) ⇒ Path.here (Path.here 2) : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) {⏎  type(Path[.A = Integer](a, a)) }) (Path.here 2) (Path.here 2), Path.here 2) @13:5-13:28
+13:28-13:28 ; ⇒ moved_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) {⏎  type(Path[.A = Integer](a, a)) }) (Path.here 2) (Path.here 2), Path.here 2)⏎⏎A reflexive transport at a path-type motive returns a path. @10:1-13:29
+17:1-17:64 @[ runs("*{thunk { fun (… ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @17:1-18:1
+18:1-18:3 def ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:1-19:85
+18:5-18:18 moved_end_run( ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:5-18:18
+18:19-18:22 ) -> ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:1-19:85
+18:24-18:28 Path( ⇒ Path(2, 2) : Type @18:24-18:34
+18:29-18:29 2 ⇒ Integer @18:29-18:30
+18:30-18:30 , ⇒ Path(2, 2) : Type @18:24-18:34
+18:32-18:32 2 ⇒ Integer @18:32-18:33
+18:33-18:33 ) ⇒ Path(2, 2) : Type @18:24-18:34
+18:35-18:35 = ⇒ moved_end_run : () -> Path[.A = Integer](2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:1-19:85
+19:3-19:13 Path.walk ( ⇒ Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2) : -F Path[.A = Integer](2, 2) @19:3-19:85
+19:14-19:28 fun (x) { type( ⇒ fun (x) { type(Path[.A = Integer](x, x)) } : Type @19:14-19:56
+19:29-19:37 Path[.A = ⇒ Path[.A = Integer](x, x) : Type @19:29-19:53
+19:39-19:45 Integer ⇒ Integer : Type @19:39-19:46
+19:46-19:47 ]( ⇒ Path[.A = Integer](x, x) : Type @19:29-19:53
+19:48-19:48 x ⇒ x : Integer @19:48-19:49
+19:49-19:49 , ⇒ Path[.A = Integer](x, x) : Type @19:29-19:53
+19:51-19:51 x ⇒ x : Integer @19:51-19:52
+19:52-19:52 ) ⇒ Path[.A = Integer](x, x) : Type @19:29-19:53
+19:53-19:55 ) } ⇒ fun (x) { type(Path[.A = Integer](x, x)) } : Type @19:14-19:56
+19:56-19:58 ) ( ⇒ Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2) : -F Path[.A = Integer](2, 2) @19:3-19:85
+19:59-19:67 Path.here ⇒ Path.here 2 : Path[.A = Integer](2, 2) @19:59-19:70
+19:69-19:69 2 ⇒ Integer @19:69-19:70
+19:70-19:72 ) ( ⇒ Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2) : -F Path[.A = Integer](2, 2) @19:3-19:85
+19:73-19:81 Path.here ⇒ Path.here 2 : Path[.A = Integer](2, 2) @19:73-19:84
+19:83-19:83 2 ⇒ Integer @19:83-19:84
+19:84-19:84 ) ⇒ Path.walk (fun (x) { type(Path[.A = Integer](x, x)) }) (Path.here 2) (Path.here 2) : -F Path[.A = Integer](2, 2) @19:3-19:85
+22:1-22:28 @[ refuses("TypeMismatch… ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @22:1-23:1
+23:1-23:3 def ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @23:1-26:29
+23:5-23:12 unit_end ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @23:5-23:13
+23:14-23:14 : ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @23:1-26:29
+23:16-23:24 Path[.A = ⇒ Type @23:16-26:2
+23:26-23:34 Path[.A = ⇒ Path[.A = Integer](2, 2) : Type @23:26-23:50
+23:36-23:42 Integer ⇒ Integer : Type @23:36-23:43
+23:43-23:44 ]( ⇒ Path[.A = Integer](2, 2) : Type @23:26-23:50
+23:45-23:45 2 ⇒ Integer @23:45-23:46
+23:46-23:46 , ⇒ Path[.A = Integer](2, 2) : Type @23:26-23:50
+23:48-23:48 2 ⇒ Integer @23:48-23:49
+23:49-23:49 ) ⇒ Path[.A = Integer](2, 2) : Type @23:26-23:50
+23:50-23:51 ]( ⇒ Type @23:16-26:2
+24:3-24:13 Path.walk ( ⇒ Path.walk (fun (x) { Unit }) (Path.here 2) (*{}) : -F Unit @24:3-24:51
+24:14-24:22 fun (x) { ⇒ fun (x) { Unit } : Type @24:14-24:30
+24:24-24:27 Unit ⇒ Unit : Type @24:24-24:28
+24:29-24:29 } ⇒ fun (x) { Unit } : Type @24:14-24:30
+24:30-24:32 ) ( ⇒ Path.walk (fun (x) { Unit }) (Path.here 2) (*{}) : -F Unit @24:3-24:51
+24:33-24:41 Path.here ⇒ Path.here 2 : Path[.A = Integer](2, 2) @24:33-24:44
+24:43-24:43 2 ⇒ Integer @24:43-24:44
+24:44-24:46 ) ( ⇒ Path.walk (fun (x) { Unit }) (Path.here 2) (*{}) : -F Unit @24:3-24:51
+24:47-24:49 *{} ⇒ Unit @24:47-24:50
+24:50-24:50 ) ⇒ Path.walk (fun (x) { Unit }) (Path.here 2) (*{}) : -F Unit @24:3-24:51
+24:51-26:1 ,⏎  Path.here 2⏎) ⇒ Type @23:16-26:2
+26:3-26:28 = Path.here (Path.here 2… ⇒ unit_end : Path[.A = Path[.A = Integer](2, 2)](Path.walk (fun (a) { Unit }) (Path.here 2)⏎  *{}, Path.here 2)⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @23:1-26:29
+30:1-30:3 def ⇒ along_returned : (a : Type, b : a) -> Path[.A = a](Path.walk (fun (c) { c })⏎  (Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here⏎  a)) b, b)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:1-38:14
+30:5-30:19 along_returned( ⇒ along_returned : (a : Type, b : a) -> Path[.A = a](Path.walk (fun (c) { c })⏎  (Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here⏎  a)) b, b)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:5-30:19
+31:3-31:3 a ⇒ a : Type @31:3-31:4
+31:5-31:5 : ⇒ along_returned : (a : Type, b : a) -> Path[.A = a](Path.walk (fun (c) { c })⏎  (Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here⏎  a)) b, b)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:1-38:14
+31:7-31:10 Type ⇒ Type : Type[+, 1] @31:7-31:11
+31:11-31:11 , ⇒ along_returned : (a : Type, b : a) -> Path[.A = a](Path.walk (fun (c) { c })⏎  (Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here⏎  a)) b, b)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:1-38:14
+32:3-32:3 x ⇒ x : a @32:3-32:4
+32:5-32:5 : ⇒ along_returned : (a : Type, b : a) -> Path[.A = a](Path.walk (fun (c) { c })⏎  (Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here⏎  a)) b, b)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:1-38:14
+32:7-32:7 a ⇒ a : Type @32:7-32:8
+33:1-33:4 ) -> ⇒ along_returned : (a : Type, b : a) -> Path[.A = a](Path.walk (fun (c) { c })⏎  (Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here⏎  a)) b, b)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:1-38:14
+33:6-33:10 Path( ⇒ Type @33:6-37:2
+34:3-34:13 Path.walk ( ⇒ -F a @34:3-35:6
+34:14-34:22 fun (X) { ⇒ fun (X) { X } : Type @34:14-34:27
+34:24-34:24 X ⇒ X : Type @34:24-34:25
+34:26-34:26 } ⇒ fun (X) { X } : Type @34:14-34:27
+34:27-34:29 ) ( ⇒ -F a @34:3-35:6
+34:30-34:40 Path.walk ( ⇒ Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here a) : -F Path[.A = Type](a, a) @34:30-34:109
+34:41-34:55 fun (c) { type( ⇒ fun (c) { type(Path[.A = Type](c, a)) } : Type[+, 1] @34:41-34:80
+34:56-34:71 Path[.A = Type]( ⇒ Path[.A = Type](c, a) : Type[+, 1] @34:56-34:77
+34:72-34:72 c ⇒ c : Type @34:72-34:73
+34:73-34:73 , ⇒ Path[.A = Type](c, a) : Type[+, 1] @34:56-34:77
+34:75-34:75 a ⇒ a : Type @34:75-34:76
+34:76-34:76 ) ⇒ Path[.A = Type](c, a) : Type[+, 1] @34:56-34:77
+34:77-34:79 ) } ⇒ fun (c) { type(Path[.A = Type](c, a)) } : Type[+, 1] @34:41-34:80
+34:80-34:82 ) ( ⇒ Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here a) : -F Path[.A = Type](a, a) @34:30-34:109
+34:83-34:91 Path.here ⇒ Path.here a : Path[.A = Type](a, a) @34:83-34:94
+34:93-34:93 a ⇒ a : Type @34:93-34:94
+34:94-34:96 ) ( ⇒ Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here a) : -F Path[.A = Type](a, a) @34:30-34:109
+34:97-34:105 Path.here ⇒ Path.here a : Path[.A = Type](a, a) @34:97-34:108
+34:107-34:107 a ⇒ a : Type @34:107-34:108
+34:108-34:108 ) ⇒ Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here a) : -F Path[.A = Type](a, a) @34:30-34:109
+34:109-34:109 ) ⇒ -F a @34:3-35:6
+35:5-35:5 x ⇒ a @35:5-35:6
+35:6-35:6 , ⇒ Type @33:6-37:2
+36:3-36:3 x ⇒ x : a @36:3-36:4
+37:1-37:1 ) ⇒ Type @33:6-37:2
+37:3-37:3 = ⇒ along_returned : (a : Type, b : a) -> Path[.A = a](Path.walk (fun (c) { c })⏎  (Path.walk (fun (c) { type(Path[.A = Type](c, a)) }) (Path.here a) (Path.here⏎  a)) b, b)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `Path.here(a)` first. @30:1-38:14
+38:3-38:11 Path.here ⇒ Path.here x : Path[.A = a](Path.walk (fun (b) { b }) (Path.walk (fun (b) {⏎  type(Path[.A = Type](b, a)) }) (Path.here a) (Path.here a)) x, x) @38:3-38:14
+38:13-38:13 x ⇒ a @38:13-38:14
+42:1-42:3 def ⇒ along_here : Path[.A = Integer](Path.walk (fun (a) { a }) (Path.here Integer) 2, 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @42:1-42:89
+42:5-42:14 along_here ⇒ along_here : Path[.A = Integer](Path.walk (fun (a) { a }) (Path.here Integer) 2, 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @42:5-42:15
+42:16-42:16 : ⇒ along_here : Path[.A = Integer](Path.walk (fun (a) { a }) (Path.here Integer) 2, 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @42:1-42:89
+42:18-42:22 Path( ⇒ Path(Path.walk (fun (X) { X }) (Path.here Integer) 2, 2) : Type @42:18-42:74
+42:23-42:33 Path.walk ( ⇒ Path.walk (fun (X) { X }) (Path.here Integer) 2 : -F Integer @42:23-42:70
+42:34-42:42 fun (X) { ⇒ fun (X) { X } : Type @42:34-42:47
+42:44-42:44 X ⇒ X : Type @42:44-42:45
+42:46-42:46 } ⇒ fun (X) { X } : Type @42:34-42:47
+42:47-42:49 ) ( ⇒ Path.walk (fun (X) { X }) (Path.here Integer) 2 : -F Integer @42:23-42:70
+42:50-42:58 Path.here ⇒ Path.here Integer : Path[.A = Type](Integer, Integer) @42:50-42:67
+42:60-42:66 Integer ⇒ Integer : Type @42:60-42:67
+42:67-42:67 ) ⇒ Path.walk (fun (X) { X }) (Path.here Integer) 2 : -F Integer @42:23-42:70
+42:69-42:69 2 ⇒ Integer @42:69-42:70
+42:70-42:70 , ⇒ Path(Path.walk (fun (X) { X }) (Path.here Integer) 2, 2) : Type @42:18-42:74
+42:72-42:72 2 ⇒ Integer @42:72-42:73
+42:73-42:73 ) ⇒ Path(Path.walk (fun (X) { X }) (Path.here Integer) 2, 2) : Type @42:18-42:74
+42:75-42:75 = ⇒ along_here : Path[.A = Integer](Path.walk (fun (a) { a }) (Path.here Integer) 2, 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @42:1-42:89
+42:77-42:85 Path.here ⇒ Path.here 2 : Path[.A = Integer](Path.walk (fun (a) { a }) (Path.here Integer) 2, 2) @42:77-42:88
+42:87-42:87 2 ⇒ Integer @42:87-42:88
+42:88-42:88 ; ⇒ along_here : Path[.A = Integer](Path.walk (fun (a) { a }) (Path.here Integer) 2, 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @42:1-42:89
+45:1-45:14 @[ runs("2") ] ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @45:1-46:1
+46:1-46:3 def ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:1-46:33
+46:5-46:19 along_here_run( ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:5-46:19
+46:20-46:23 ) -> ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:1-46:33
+46:25-46:31 Integer ⇒ Integer : Type @46:25-46:32
+46:33-46:33 { ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:1-46:84
+46:35-46:45 Path.walk ( ⇒ Path.walk (fun (X) { X }) (Path.here Integer) 2 : -F Integer @46:35-46:82
+46:46-46:50 fun ( ⇒ fun (X) { X } : Type @46:46-46:59
+46:51-46:51 X ⇒ X : Type @46:51-46:52
+46:52-46:54 ) { ⇒ fun (X) { X } : Type @46:46-46:59
+46:56-46:56 X ⇒ X : Type @46:56-46:57
+46:58-46:58 } ⇒ fun (X) { X } : Type @46:46-46:59
+46:59-46:61 ) ( ⇒ Path.walk (fun (X) { X }) (Path.here Integer) 2 : -F Integer @46:35-46:82
+46:62-46:70 Path.here ⇒ Path.here Integer : Path[.A = Type](Integer, Integer) @46:62-46:79
+46:72-46:78 Integer ⇒ Integer : Type @46:72-46:79
+46:79-46:79 ) ⇒ Path.walk (fun (X) { X }) (Path.here Integer) 2 : -F Integer @46:35-46:82
+46:81-46:81 2 ⇒ Integer @46:81-46:82
+46:83-46:83 } ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:1-46:84

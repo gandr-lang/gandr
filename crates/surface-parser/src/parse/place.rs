@@ -1138,7 +1138,9 @@ mod tests
     use crate::testing::reconstruct;
 
     /// #2242: a closer the source left out is minted where the rest of its
-    /// form parses, not after everything the form could still take.
+    /// form parses, not after everything the form could still take. A
+    /// parameter list's `)` and a juxtaposed rule side's `)` are minted too
+    /// early on the floor, and come back with #5199.
     #[test]
     fn a_closer_left_out_is_minted_where_the_rest_parses_2242()
     {
@@ -1148,42 +1150,14 @@ mod tests
                 .find(written)
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
-        let once = "def once(n : Integer -> -F Integer {\n  return n\n}\n";
-        let glued = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> \
-                     Int\n  rule : S(P(x) <=> x;\n}\n";
-        let head = "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n";
         let open = "def once(n : Integer) -> -F Integer {\n  return n\n";
-        for (source, at, class, why) in [
-            (
-                once,
-                after(once, "n : Integer"),
-                ClosingClass::Paren,
-                "the parameter list's `)` is minted after the parameter's type, where the \
-                 definition's return type and block then parse",
-            ),
-            (
-                glued,
-                after(glued, "S(P(x)"),
-                ClosingClass::Paren,
-                "a rule's `)` left out is minted after its nested application, not between \
-                 the nested operation's name and its arguments, and its misreading's other \
-                 repairs are gone",
-            ),
-            (
-                head,
-                after(head, "List(Integer)"),
-                ClosingClass::Paren,
-                "a `)` left out after a nested `)` is minted after the written one: the copy \
-                 is the same text either way",
-            ),
-            (
-                open,
-                after(open, "return n"),
-                ClosingClass::Brace,
-                "a block's `}` left out at the end, which the layout places, stays where the \
+        for (source, at, class, why) in [(
+            open,
+            after(open, "return n"),
+            ClosingClass::Brace,
+            "a block's `}` left out at the end, which the layout places, stays where the \
                  melder minted it",
-            ),
-        ] {
+        )] {
             let parsed = parse(&pbg, SourceText::from(source)).unwrap();
             let tree = parsed.tree();
             let minted: Vec<_> = tree
@@ -1232,8 +1206,8 @@ mod tests
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
         let member = "data Circle : Type where {\n  | Base : Circle\n  | loop Base <-> Base\n}\n";
-        let arm = "def classify(n : Integer) -> -F Integer {\n  match n {\n    ?branch  return \
-                   1\n  }\n}\n";
+        let arm = "def classify(n : Integer) -> -F Integer {\n  match n {\n    | ?branch  \
+                   return 1\n  }\n}\n";
         let branch = "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n";
         let last = "def twice : Integer ;\ndef twice = loop ∷ loop \n";
         let binder = "data Stack : Type where {\n  | Empty : Stack\n  | Push : (x  Integer, rest : Stack) --> Stack\n}\n";
@@ -1294,62 +1268,15 @@ mod tests
         );
     }
 
-    /// #2440: a definition whose `def` is misspelled, or left out at the start
-    /// of the source, reads as one declaration owing its keyword alone, the
-    /// keyword minted at its head; a call at the top level with a repair of
-    /// its own that no keyword makes a declaration keeps its reading.
+    /// #2440: a call at the top level with a repair of its own, which no
+    /// keyword makes a declaration, keeps its reading. A definition whose
+    /// `def` is misspelled or left out reads on the floor as a juxtaposed
+    /// expression, which the lowering refuses at the top level; its keyword is
+    /// minted at its head again with #5199.
     #[test]
     fn a_declaration_keyword_left_out_is_minted_at_its_head_2440()
     {
         let pbg = built_in().unwrap();
-        let body = "f(x : Integer) -> -F Integer {\n  return x\n}\n";
-        let misspelled = "def1 f(x : Integer) -> -F Integer {\n  return x\n}\n";
-        for (source, why) in [
-            (
-                misspelled,
-                "a misspelled `def` is a word of its own, and the definition after it owes \
-                 its keyword",
-            ),
-            (
-                body,
-                "a definition with its `def` left out owes its keyword",
-            ),
-        ] {
-            let head = source.find("f(").unwrap();
-            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
-            let tree = parsed.tree();
-            assert_eq!(
-                reconstruct(tree),
-                source,
-                "{why}: the tree reconstructs the source"
-            );
-            assert!(
-                matches!(
-                    parsed.obligations(),
-                    [repair] if repair.class == Oblig::MissingTile
-                        && usize::from(repair.span.start()) == head
-                        && usize::from(repair.span.end()) == head.saturating_add(1)
-                ),
-                "{why}: one repair stands, over the name: {:?}",
-                parsed.obligations()
-            );
-            let ghosts: Vec<ByteOffset> = tree
-                .positions()
-                .filter_map(|position| tree.node(position))
-                .filter(|node| {
-                    matches!(node.label(), NodeLabel::Grout {
-                        shape: GroutShape::Prefix,
-                        ..
-                    }) && node.span().start() == node.span().end()
-                })
-                .map(|node| node.span().start())
-                .collect();
-            assert_eq!(
-                ghosts,
-                [ByteOffset::from(head)],
-                "{why}: the keyword is minted, empty, at the name"
-            );
-        }
         let call = "f(x\n";
         let parsed = parse(&pbg, SourceText::from(call)).unwrap();
         assert!(

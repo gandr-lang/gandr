@@ -5,12 +5,12 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │   │              ┬                              ┬──────────  ─ an endpoint the point does not convert to
    │   │              │                              │
    │   │              │                              an endpoint the point does not convert to
-   │ ┌─┘              checked against `(a : Integer * Integer) -> -F Path[.A = Integer * Integer]((a.1, a.0), a)`; while checking the body of this function; binds e : Integer * Integer
+   │ ┌─┘              checked against `(a : Integer * Integer) -> -F Path[.A = Integer * Integer](*{a.1, a.0}, a)`; while checking the body of this function; binds e : Integer * Integer
    │ │
 11 │ │   Path.here e
    │ │   ┯━━━━━━━━━│
    │ └───│─────────┤
-   │     │         checked against `(a : Integer * Integer) -> Path[.A = Integer * Integer]((a.1, a.0), a)`; while checking the body of this thunk
+   │     │         checked against `(a : Integer * Integer) -> Path[.A = Integer * Integer](*{a.1, a.0}, a)`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `etaSwapped` is refused with EndpointMismatch, as its expectation states
@@ -20,9 +20,9 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╭▸ corpus/pathological/data/eta.gandr:19:3
    │
 15 │   def etaOther(e : Integer * Integer, d : Integer * Integer) -> Path(
-   │   │            ┬                      ─ checked against `(a : Integer * Integer) -> -F Path[.A = Integer * Integer]((e.0, e.1), a)`; while checking the body of this function; binds d : Integer * Integer
+   │   │            ┬                      ─ checked against `(a : Integer * Integer) -> -F Path[.A = Integer * Integer](*{e.0, e.1}, a)`; while checking the body of this function; binds d : Integer * Integer
    │   │            │
-   │ ┌─┘            checked against `(a : Integer * Integer) -> (b : Integer * Integer) -> -F Path[.A = Integer * Integer]((a.0, a.1), b)`; while checking the body of this function; binds e : Integer * Integer
+   │ ┌─┘            checked; while checking the body of this function; binds e : Integer * Integer
    │ │
 16 │ │   *{e.0, e.1},
    │ │   ─────────── an endpoint the point does not convert to
@@ -32,7 +32,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 19 │ │   Path.here e
    │ │   ┯━━━━━━━━━│
    │ └───│─────────┤
-   │     │         checked against `(a : Integer * Integer, b : Integer * Integer) -> Path[.A = Integer * Integer]((a.0, a.1), b)`; while checking the body of this thunk
+   │     │         checked against `(a : Integer * Integer, b : Integer * Integer) -> Path[.A = Integer * Integer](*{a.0, a.1}, b)`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `etaOther` is refused with EndpointMismatch, as its expectation states

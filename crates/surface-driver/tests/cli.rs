@@ -564,7 +564,7 @@ fn a_stated_web_the_run_does_not_produce_is_unsettled_3338()
     let spoke_first = "series (event left 0) (event right 0) (event right 1) (parallel (series \
                        (event left 1) (event left 2)) (event right 2))";
     let text = format!(
-        "@[ runs(\"unit\"), traces(decomposes task ({asked_first})) ]\ndef swapped() -> Unit \
+        "@[ runs(\"*{{}}\"), traces(decomposes task ({asked_first})) ]\ndef swapped() -> Unit \
          {{\n  let asked = fork (task : !String. ?String. end) {{\n    send(task, \"notes\");\n    \
          let answer = recv(task);\n    close(task)\n  }};\n  let told = recv(asked);\n  \
          send(asked, told);\n  close(asked)\n}}\n"
@@ -576,7 +576,7 @@ fn a_stated_web_the_run_does_not_produce_is_unsettled_3338()
     let diagnostic = printed(&output);
     assert!(
         diagnostic.contains(&format!(
-            "states runs to unit tracing task to {asked_first}; produced runs to unit tracing \
+            "states runs to *{{}} tracing task to {asked_first}; produced runs to *{{}} tracing \
              task to {spoke_first}"
         )),
         "{diagnostic}"
@@ -761,9 +761,9 @@ fn a_second_check_replays_the_strata_the_first_kept_4034()
         Text::from(
             "pub theory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
              oper one : () --> (z : M);\n}\n\npub def exchange(b : Bool) -> Bool {\n  match b {\n    \
-             true => +{.1 = *{}},\n    false => +{.0 = *{}}\n  }\n}\n\npub def keep(e : +{Unit}) \
-             -> +{Unit} {\n  e\n}\n\ndef six = ua[6, 6](Magma, Magma, *{.mul = exchange, .one = \
-             keep}, *{.mul = exchange, .one = keep});\n",
+             | true => +{.1 = *{}}\n    | false => +{.0 = *{}}\n  }\n}\n\npub def keep(e : +{Unit}) \
+             -> +{Unit} {\n  e\n}\n\ndef six = ua[6, 6] Magma Magma (*{.mul = exchange, .one = \
+             keep}) (*{.mul = exchange, .one = keep});\n",
         ),
     );
     let home = scratch.0.join("configuration");
@@ -828,7 +828,7 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
         "{findings}"
     );
     assert!(findings.contains("{ return n }"), "{findings}");
-    assert!(findings.contains("{ become kept(n) }"), "{findings}");
+    assert!(findings.contains("{ become kept n }"), "{findings}");
 
     let json = ran(gandr(&[
         lint[0],
@@ -1065,7 +1065,7 @@ fn the_runs_lint_reaches_a_pure_run_unless_its_effects_option_narrows_it()
         1_usize,
         "{findings}"
     );
-    assert!(findings.contains("{ id(run id(n)) }"), "{findings}");
+    assert!(findings.contains("{ id (run id n) }"), "{findings}");
     let effects = ran(gandr(&[
         check,
         lint,
@@ -1309,12 +1309,12 @@ fn cells_reports_each_hole_s_count()
         format!(
             "{shown}:17:1: cell 0 frame, strictly linear: v 1, beta 1\n\
              {shown}:17:1: cell 1 frame, strictly linear: v 1, beta 1\n\
-             {shown}:24:23: cell 2 rule, strictly linear: $ret 1\n\
-             {shown}:25:29: cell 3 rule, strictly linear: l 1, r 1, $ret 1\n\
-             {shown}:26:21: cell 4 rule, strictly linear: $ret 1\n\
-             {shown}:27:27: cell 5 rule, erasing: l 1, r 0, $ret 1\n\
-             {shown}:28:19: cell 6 rule, duplicating 2: t 2, $ret 1\n\
-             {shown}:29:20: cell 7 rule, duplicating 3: t 3, $ret 1\n"
+             {shown}:24:22: cell 2 rule, strictly linear: $ret 1\n\
+             {shown}:25:28: cell 3 rule, strictly linear: l 1, r 1, $ret 1\n\
+             {shown}:26:20: cell 4 rule, strictly linear: $ret 1\n\
+             {shown}:27:26: cell 5 rule, erasing: l 1, r 0, $ret 1\n\
+             {shown}:28:18: cell 6 rule, duplicating 2: t 2, $ret 1\n\
+             {shown}:29:19: cell 7 rule, duplicating 3: t 3, $ret 1\n"
         )
     );
 

@@ -8,10 +8,10 @@ error[ImplicitUnsolved]: the implicit `r` this call to `log` omits is determined
    ╰ help: supply the implicit `r` by name, as `log[.r = …](…)`
 
 error[ImplicitUnsolved]: the solver cannot determine the implicit `r` this call to `log` omits: its row is compared with another open row, each holding an interface the other lacks
-   ╭▸ corpus/pathological/control/row-variable.gandr:31:37
+   ╭▸ corpus/pathological/control/row-variable.gandr:31:36
    │
-31 │   ignored (thunk { (either (thunk { log "one" })) (thunk { stall "other" }) })
-   │                                     ━━━━━━━━━ an implicit left unsolved
+31 │   ignored (thunk { either (thunk { log "one" }) (thunk { stall "other" }) })
+   │                                    ━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `undecided` is refused with ImplicitUnsolved, as its expectation states
    ╰ help: supply the implicit `r` by name, as `log[.r = …](…)`

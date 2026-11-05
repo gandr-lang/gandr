@@ -1295,12 +1295,13 @@ mod tests
                 ": <Type@:> )",
             ]),
             // A parameter list's parenthesis faces only tiles, so its pair is
-            // never filled; the `,` repeat is never walked twice.
+            // never filled; a definition closes with a `=` body as with a
+            // block.
             ("def f(x : Integer", LeadingSlot::Occupied, 4, vec![
                 ") { <Expression@{> }",
                 ", ) { <Expression@{> }",
+                ") = <Expression@=> ;",
                 ") -> <Type@->> { <Expression@{> }",
-                ", identifier ) { <Expression@{> }",
             ]),
             (
                 "def f(x : Integer) -> -F Integer {",
@@ -1313,13 +1314,14 @@ mod tests
                 ],
             ),
             // The molder reads `match x {` as the empty match, whose closer
-            // faces only its opener, so that pair stays empty; the arm is a
-            // closing of the arm block's reading of the same `{`.
+            // faces only its opener, so that pair stays empty; the arm, which
+            // opens with its bar, is a closing of the arm block's reading of
+            // the same `{`.
             (
                 "def f(x : Nat) -> -F Nat { match x {",
                 LeadingSlot::Empty,
                 2,
-                vec!["}", "<Pattern@{> => <Expression@=>> }"],
+                vec!["}", "arm_bar <Pattern@arm_bar> => <Expression@=>> }"],
             ),
             ("def g : Type ->", LeadingSlot::Empty, 1, vec!["<Type@:> ;"]),
             ("def g : Type -> A", LeadingSlot::Occupied, 1, vec![";"]),

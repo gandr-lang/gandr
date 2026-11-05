@@ -1627,12 +1627,34 @@ impl<'source> Respelling<'_, 'source>
             };
             // The reduct is an application, `T.S (m)`, and the forgetting
             // map an `at` form, `forget[…](m) at Model(T)`: where a tighter
-            // band stands, each is parenthesised whole.
+            // band stands, each is parenthesised whole. As the printer
+            // juxtaposes a call, the reduct's operand is parenthesised only
+            // when it is more than one name or literal, `T.S m`.
             let wrapped = match crossed {
                 Some(Applied::Reduct(_)) => Band::admitted(rule, place) < Band::Application,
                 Some(Applied::Forget(_)) => Band::admitted(rule, place) < Band::Loose,
                 None => false,
             };
+            let rewritten = match part.role {
+                Role::Operand(Child::Node(at)) => self
+                    .spelled
+                    .get(&at)
+                    .is_some_and(|spelled| spelled.rewritten == Changed::Yes),
+                Role::Operand(_) | Role::Own(_) | Role::Comment => false,
+            };
+            let mut written_leaves = part
+                .leaves
+                .iter()
+                .filter(|leaf| leaf.material != Material::Whitespace);
+            let bare = !rewritten
+                && matches!(part.role, Role::Operand(_))
+                && matches!(
+                    (written_leaves.next(), written_leaves.next()),
+                    (Some(leaf), None) if leaf.material == Material::Token
+                        && AsRef::<str>::as_ref(&leaf.text)
+                            .chars()
+                            .all(|character| character.is_alphanumeric() || character == '_')
+                );
             match crossed {
                 Some(Applied::Reduct(name)) => {
                     if wrapped {
@@ -1645,7 +1667,9 @@ impl<'source> Respelling<'_, 'source>
                         out.fragment(SourceFragment::from(segment.as_str()));
                     }
                     out.gap(Spelling(" "));
-                    out.token(OPEN_PAREN);
+                    if !bare {
+                        out.token(OPEN_PAREN);
+                    }
                 },
                 Some(Applied::Forget(forget)) => {
                     if wrapped {
@@ -1715,7 +1739,9 @@ impl<'source> Respelling<'_, 'source>
             }
             match crossed {
                 Some(Applied::Reduct(_)) => {
-                    out.token(CLOSE_PAREN);
+                    if !bare {
+                        out.token(CLOSE_PAREN);
+                    }
                     if wrapped {
                         out.token(CLOSE_PAREN);
                     }

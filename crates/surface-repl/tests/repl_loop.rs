@@ -390,13 +390,13 @@ fn an_expression_is_read_as_a_probe()
 {
     let mut repl = repl();
     let integer = base(BaseType::Integer);
-    assert_eq!(lines(&mut repl, "(1, 2)"), [
+    assert_eq!(lines(&mut repl, "*{1, 2}"), [
         (OutKind::Type, format!("it : {integer} * {integer}")),
-        (OutKind::Value, "(1, 2)".to_owned())
+        (OutKind::Value, "*{1, 2}".to_owned())
     ]);
     assert_eq!(lines(&mut repl, "it"), [
         (OutKind::Type, format!("it1 : {integer} * {integer}")),
-        (OutKind::Value, "(1, 2)".to_owned())
+        (OutKind::Value, "*{1, 2}".to_owned())
     ]);
 }
 
@@ -806,7 +806,7 @@ fn a_dependent_function_names_its_type_with_its_binder()
     assert_eq!(
         lines(&mut repl, "def id(a : Type, x : a) -> -F a { return x }"),
         [
-            (OutKind::Type, "id : (a : Type, a) => a".to_owned()),
+            (OutKind::Type, "id : (a : Type, a) -> a".to_owned()),
             (OutKind::Value, "fun (a) { fun (b) { b } }".to_owned())
         ]
     );
@@ -988,12 +988,12 @@ fn a_value_is_written_in_the_spelling_asked_782()
     for (spelling, word, relation) in [
         (
             Spelling::Unicode,
-            "loop ∷ Path.here(Base)",
+            "loop ∷ Path.here Base",
             "Integer ≃ String",
         ),
         (
             Spelling::Ascii,
-            "loop :: Path.here(Base)",
+            "loop :: Path.here Base",
             "Integer <~> String",
         ),
     ] {
@@ -1038,7 +1038,7 @@ fn piped_value_prints_a_transcript()
             format!("greeting : {string}"),
             r#"= "hello, gandr""#.to_owned(),
             format!("nothing : {unit}"),
-            "= unit".to_owned(),
+            "= *{}".to_owned(),
             format!("copy : {integer}"),
             "= 42".to_owned(),
             format!("echo : {integer}"),
@@ -1452,8 +1452,8 @@ fn multiline_and_interrupted_buffers_preserve_accepted_declarations()
     assert_eq!(offer(&mut repl, "\u{2003}\r\n"), LoopEvent::Continue);
     assert_eq!(repl.prompt(), Prompt::Fresh);
     assert_eq!(offer(&mut repl, "def pasted = (\r\n"), LoopEvent::Continue);
-    let pasted = block(&mut repl, "kept) ;");
-    assert_eq!(pasted.source, "def pasted = (\r\n\nkept) ;");
+    let pasted = block(&mut repl, "  kept) ;");
+    assert_eq!(pasted.source, "def pasted = (\r\n\n  kept) ;");
     assert_eq!(pasted.lines, [
         (
             OutKind::Type,

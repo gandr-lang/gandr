@@ -44,10 +44,10 @@ error[UnresolvedName]: `z` is not defined
    ╰ help: define `z`, or import the module that exports it
 
 error[UnguardedCorecursion]: `fibs[>](…)` must be the whole arm of a copattern block, so each observation yields before `fibs` runs again
-   ╭▸ corpus/pathological/codata/streams.gandr:77:52
+   ╭▸ corpus/pathological/codata/streams.gandr:77:50
    │
-77 │     .tail => (sums (thunk { fibs[>] n })) (thunk { fibs[>] n })
-   │                                                    ━━━━━━━ not the whole arm of a copattern
+77 │     .tail => sums (thunk { fibs[>] n }) (thunk { fibs[>] n })
+   │                                                  ━━━━━━━ not the whole arm of a copattern
    │
    ├ note: `fibs` is refused with UnguardedCorecursion, as its expectation states
    ╰ help: write the productive self-call as a copattern arm's whole body

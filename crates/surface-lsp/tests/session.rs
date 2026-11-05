@@ -1429,7 +1429,7 @@ fn a_completion_offers_what_a_sibling_declares_806()
 }
 
 /// A sibling's declaration answers signature help in its importer with the
-/// head and documentation the sibling writes.
+/// head and documentation the sibling writes, at an operand of its spine.
 #[test]
 fn signature_help_reads_a_sibling_s_head()
 {
@@ -1453,7 +1453,7 @@ fn signature_help_reads_a_sibling_s_head()
                 .to_owned(),
     }));
     messages.push(json!({"jsonrpc": "2.0", "id": "signature", "method": "textDocument/signatureHelp", "params": {
-        "textDocument": {"uri": address}, "position": {"line": 2_i32, "character": 25_i32},
+        "textDocument": {"uri": address}, "position": {"line": 2_i32, "character": 23_i32},
     }}));
     messages.extend(closing());
     let (served, written) = session(&messages);
@@ -1468,8 +1468,8 @@ fn signature_help_reads_a_sibling_s_head()
             "label": "pick(a : Integer, b : Integer) -> -F Integer",
             "documentation": {"kind": "markdown", "value": "Picks the first."},
             "parameters": [{"label": "a : Integer"}, {"label": "b : Integer"}],
-        }], "activeSignature": 0_i32, "activeParameter": 1_i32}),
-        "the second argument of the sibling's `pick`: {answer}"
+        }], "activeSignature": 0_i32, "activeParameter": 0_i32}),
+        "the first argument of the sibling's `pick`: {answer}"
     );
 }
 

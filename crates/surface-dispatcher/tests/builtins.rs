@@ -58,7 +58,7 @@ fn native_names_operators_and_partial_application_execute()
         ),
         (
             "def answer : +U (-F Bool) ; def answer = thunk { become 19 < 7 } ;",
-            "+{.1 = unit}",
+            "+{.1 = *{}}",
         ),
         (
             "def answer : +U (-F Integer) ; def answer = thunk { become -(7) } ;",
