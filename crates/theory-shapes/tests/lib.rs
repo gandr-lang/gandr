@@ -15,3 +15,5 @@ mod errors;
 mod faces;
 #[cfg(test)]
 mod finite;
+#[cfg(test)]
+mod spectrum;
