@@ -3,4 +3,4 @@
 # meet, then its units, the lane's areas first (`.config/claims/next.jq`). A
 # deferred sub-epic's units wait until it is no longer deferred (#4063). An
 # empty list sets no focus. The owner sets it and clears it.
-epics = [5267, 5273, 5278, 5214, 491, 4481, 4905, 391, 5101, 4299, 2917, 3592, 4881]
+epics = [5267, 5278, 5327, 5334, 5214, 491, 4481, 4905, 391, 5101, 4299, 2917, 3592, 4881]
