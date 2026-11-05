@@ -381,6 +381,13 @@ struct Ordinal(u32);
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct OpenBinders(usize);
 
+/// Which binder [`Walk::bind`] opened, counted in the order the walk opens
+/// them. Each pass of one walk opens the same binders in the same order, so
+/// one count names one binder in every pass.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+struct Opening(u32);
+
 /// A binder's position in the context the root stands under, counted from
 /// the outermost.
 #[repr(transparent)]
@@ -6202,6 +6209,154 @@ enum Wrapped
     Yes,
 }
 
+/// What the walk knows of the binders [`Walk::bind`] opens, so that a binder
+/// the spelling leaves out holds off no name inside its scope.
+///
+/// The walk names a binder when it opens it. It decides whether to write the
+/// binder of a dependent arrow or of a dependent pair only at the join, once it
+/// met every occurrence (#736). A binder that the join leaves out has a name
+/// all the same, and each name that opens inside its scope passes over that
+/// name. The lowering reads the spelling back with no binder there, so a
+/// reprint names the binders inside one name earlier (#5402). So a pass that
+/// leaves out a binder whose name another name passed over gives that binder
+/// to the next pass, and the next pass reserves no name for it.
+#[derive(Debug, Default)]
+struct Openings
+{
+    /// How many binders the pass opened.
+    count: Opening,
+    /// The binder [`Walk::bind`] opened at each position.
+    open: BTreeMap<OpenBinders, Opened>,
+    /// The binders an earlier pass left out after a name inside their scope
+    /// passed over theirs. Their names hold off no name.
+    unreserved: BTreeSet<Opening>,
+    /// The binders this pass left out after a name inside their scope passed
+    /// over theirs.
+    left_out: BTreeSet<Opening>,
+}
+
+/// A binder [`Walk::bind`] opened.
+#[derive(Clone, Copy, Debug)]
+struct Opened
+{
+    /// Which binder it is.
+    opening: Opening,
+    /// Whether a name inside its scope passed over its name.
+    passed: bool,
+}
+
+impl Openings
+{
+    /// The openings of a pass that reserves no name for the binders
+    /// `unreserved`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(unreserved: BTreeSet<Opening>) -> Self
+    {
+        Self {
+            unreserved,
+            ..Self::default()
+        }
+    }
+
+    /// Note the binder that [`Walk::bind`] opens at `position` now.
+    ///
+    /// # Specification
+    /// trivial.
+    fn open(
+        &mut self,
+        position: OpenBinders,
+    )
+    {
+        let opened = Opened {
+            opening: self.count,
+            passed: false,
+        };
+        let _earlier = self.open.insert(position, opened);
+        self.count = Opening(self.count.0.saturating_add(1_u32));
+    }
+
+    /// Forget the binder at `position`: a binder that [`Walk::bind`] does not
+    /// open takes the position.
+    ///
+    /// # Specification
+    /// trivial.
+    fn close(
+        &mut self,
+        position: OpenBinders,
+    )
+    {
+        let _closed = self.open.remove(&position);
+    }
+
+    /// Note that a name inside the scope of the binder at `position` passed
+    /// over that binder's name.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pass_over(
+        &mut self,
+        position: OpenBinders,
+    )
+    {
+        if let Some(opened) = self.open.get_mut(&position) {
+            opened.passed = true;
+        }
+    }
+
+    /// Note that the spelling leaves out the binder at `position`. When a
+    /// name inside its scope passed over its name, the next pass reserves no
+    /// name for it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn leave_out(
+        &mut self,
+        position: OpenBinders,
+    )
+    {
+        if let Some(opened) = self.open.get(&position)
+            && opened.passed
+        {
+            let _fresh = self.left_out.insert(opened.opening);
+        }
+    }
+}
+
+/// The position below `end` whose binder holds `name` and holds it off a name
+/// inside its scope, when there is one. Each binder holds its name so, except
+/// one that an earlier pass left out.
+///
+/// # Specification
+/// trivial.
+fn holder(
+    names: &[Option<BinderName>],
+    openings: &Openings,
+    end: OpenBinders,
+    name: Name<'_>,
+) -> Option<OpenBinders>
+{
+    let text: &str = name.as_ref();
+    let unreserved = |position: &OpenBinders| {
+        openings
+            .open
+            .get(position)
+            .is_some_and(|opened| openings.unreserved.contains(&opened.opening))
+    };
+    names
+        .get(.. end.0)
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .map(|(at, held)| (OpenBinders(at), held))
+        .find(|&(ref position, held)| {
+            held.as_ref().is_some_and(|held| held.0 == text)
+                && (openings.unreserved.is_empty() || !unreserved(position))
+        })
+        .map(|(position, _)| position)
+}
+
 /// The walk's state: the builder it writes into, the finished pieces, the
 /// open binders and what it has had to approximate.
 struct Walk<'walk, 'names>
@@ -6228,6 +6383,9 @@ struct Walk<'walk, 'names>
     /// a dependent arrow whose binder no occurrence names is spelled as the
     /// plain arrow.
     occurring: BTreeSet<OpenBinders>,
+    /// The binders [`Walk::bind`] opened, and the ones whose names hold off no
+    /// name.
+    openings: Openings,
     /// The positions of the binders a loop's spelling leaves unwritten: an
     /// occurrence of one names nothing the text binds.
     hidden: BTreeSet<OpenBinders>,
@@ -7484,6 +7642,7 @@ impl Walk<'_, '_>
                 .substituted
                 .insert(OpenBinders(position), Substituted { piece, occurring });
             let _named = self.occurring.remove(&OpenBinders(position));
+            self.openings.close(OpenBinders(position));
             if self.names.len() <= position {
                 self.names.resize(position.saturating_add(1_usize), None);
             }
@@ -7936,10 +8095,13 @@ impl Walk<'_, '_>
                 // A bare spelling whose domains and codomain classify codes,
                 // `(Type) -> Type`, reads as the static Pi. The first binder
                 // keeps its name there.
-                (self.fidelity != Fidelity::Faithful
+                let spelled = self.fidelity != Fidelity::Faithful
                     || self.occurring.contains(&position)
-                    || (at == 0_usize && first == Classifies::Codes))
-                    .then_some(OpenBinders(binders))
+                    || (at == 0_usize && first == Classifies::Codes);
+                if !spelled {
+                    self.openings.leave_out(position);
+                }
+                spelled.then_some(OpenBinders(binders))
             };
             let doc = if let Some(offset) = named {
                 let binder = self.binder(offset)?;
@@ -11037,7 +11199,10 @@ impl Walk<'_, '_>
     /// The generated name ([`Binders::name_at`]) of the binder `offset` past
     /// the innermost open binder: the first no binder below it holds, past
     /// one more for each binder between it and the last named one, which
-    /// takes the earlier ones in order; none once the names ran out.
+    /// takes the earlier ones in order; none once the names ran out. A binder
+    /// an earlier pass left out holds no name ([`holder`]), and
+    /// each binder whose name the choice passes over is noted
+    /// ([`Openings::pass_over`]).
     ///
     /// # Specification
     /// trivial.
@@ -11047,18 +11212,25 @@ impl Walk<'_, '_>
     ) -> Option<BinderName>
     {
         let position = self.opened.len().saturating_add(offset.0);
-        let outer = self
-            .names
-            .get(.. position.min(self.names.len()))
-            .unwrap_or_default();
-        let unnamed = position.saturating_sub(self.names.len());
-        (0_usize ..)
-            .map_while(|at| match self.binders.name_at(OpenBinders(at)) {
-                Maybe::Present(name) => Some(name.clone()),
-                Maybe::Absent(_) => None,
-            })
-            .filter(|name| !outer.iter().flatten().any(|held| held.0 == name.0))
-            .nth(unnamed)
+        let end = position.min(self.names.len());
+        let mut unnamed = position.saturating_sub(self.names.len());
+        for at in 0_usize .. {
+            let Maybe::Present(name) = self.binders.name_at(OpenBinders(at))
+            else {
+                return None;
+            };
+            let candidate = Name::from(name.0.as_str());
+            if let Some(held) = holder(&self.names, &self.openings, OpenBinders(end), candidate) {
+                self.openings.pass_over(held);
+            }
+            else if let Some(left) = unnamed.checked_sub(1_usize) {
+                unnamed = left;
+            }
+            else {
+                return Some(name.clone());
+            }
+        }
+        None
     }
 
     /// A label `written` a link of a dependent record writes, whose join is
@@ -11151,10 +11323,13 @@ impl Walk<'_, '_>
     ///   name `opener`'s source writes ([`Source::written_binder`]) when it is
     ///   a name the walk's spelling writes, the term mentions nowhere else and
     ///   no open binder holds, else the first generated name
-    ///   ([`Binders::name_at`]) no open binder holds, else none. With no
-    ///   written names, the binder at position `p` takes the `p`-th generated
-    ///   name, as it always did. A binder whose type is a dependent record
-    ///   keeps its fields' labels ([`record_labels`]) at its position.
+    ///   ([`Binders::name_at`]) no open binder holds, else none. A binder an
+    ///   earlier pass left out holds no name ([`holder`]). With no written
+    ///   names and no binder left out, the binder at position `p` takes the
+    ///   `p`-th generated name, as it always did. Each open binder whose name
+    ///   the choice passes over is noted ([`Openings::pass_over`]). A binder
+    ///   whose type is a dependent record keeps its fields' labels
+    ///   ([`record_labels`]) at its position.
     /// - provides: the name each occurrence of the binder and its former's join
     ///   read, and the labels a selection off it is written by.
     /// - fails: never.
@@ -11182,21 +11357,27 @@ impl Walk<'_, '_>
     {
         let position = self.opened.len();
         self.names.truncate(position);
-        let outer = self.names.as_slice();
-        let taken = |name: &str| outer.iter().flatten().any(|held| held.0 == name);
         let written = opener
             .and_then(|node| source.written_binder(node))
-            .filter(|&name| {
+            .and_then(|name| {
                 let text: &str = name.as_ref();
-                unwritable(name, self.spelling).is_none()
-                    && !self.binders.mentioned.contains(text)
-                    && !taken(text)
-            })
-            .map(|name| BinderName(String::from(name.as_ref())));
+                if unwritable(name, self.spelling).is_some()
+                    || self.binders.mentioned.contains(text)
+                {
+                    return None;
+                }
+                if let Some(held) = holder(&self.names, &self.openings, OpenBinders(position), name)
+                {
+                    self.openings.pass_over(held);
+                    return None;
+                }
+                Some(BinderName(String::from(text)))
+            });
         let name = written.or_else(|| self.fresh(OpenBinders(0)));
         self.names.resize(position, None);
         self.names.push(name);
         let _named = self.occurring.remove(&OpenBinders(position));
+        self.openings.open(OpenBinders(position));
         if let Some(labels) = opener.and_then(|node| record_labels(source, node)) {
             let _fresh = self.records.insert(OpenBinders(position), labels);
         }
@@ -11248,6 +11429,7 @@ impl Walk<'_, '_>
             self.names.resize(position, None);
             self.names.push(Some(name));
             let _named = self.occurring.remove(&OpenBinders(position));
+            self.openings.close(OpenBinders(position));
             self.opened.push(Zone::Linear);
         }
         else {
@@ -11316,6 +11498,7 @@ impl Walk<'_, '_>
         self.names.resize(position, None);
         self.names.push(name);
         let _named = self.occurring.remove(&OpenBinders(position));
+        self.openings.close(OpenBinders(position));
         self.opened.push(zone);
     }
 
@@ -12968,7 +13151,13 @@ impl Walk<'_, '_>
                     .ok_or(PresentationError::Unbalanced)?;
                 let named = (open .. open.saturating_add(binders))
                     .any(|position| self.occurring.contains(&OpenBinders(position)));
-                if binders > 0_usize && (named || self.fidelity != Fidelity::Faithful) {
+                let spelled = binders > 0_usize && (named || self.fidelity != Fidelity::Faithful);
+                if !spelled {
+                    for position in open .. open.saturating_add(binders) {
+                        self.openings.leave_out(OpenBinders(position));
+                    }
+                }
+                if spelled {
                     self.dependent_alias(&domains, dependent, first, codomain)?
                 }
                 else if first == Classifies::Codes {
@@ -13028,6 +13217,7 @@ impl Walk<'_, '_>
                 if self.fidelity == Fidelity::Faithful
                     && !self.occurring.contains(&OpenBinders(self.opened.len())) =>
             {
+                self.openings.leave_out(OpenBinders(self.opened.len()));
                 let codomain = self.pop()?;
                 let domain = self.pop()?;
                 let domain = self.bare_up_to(domain, Binding::Lazy)?;
@@ -13059,6 +13249,7 @@ impl Walk<'_, '_>
                 if self.fidelity == Fidelity::Faithful
                     && !self.occurring.contains(&OpenBinders(self.opened.len())) =>
             {
+                self.openings.leave_out(OpenBinders(self.opened.len()));
                 let _link = self.links.pop();
                 let second = self.pop()?;
                 let first = self.pop()?;
@@ -13386,31 +13577,44 @@ impl Walk<'_, '_>
 /// # Specification
 /// - requires: `builder` is the builder the document is rendered from.
 /// - ensures: the root's document and whether every node was spelled in full;
-///   [`Walked::OverBudget`] when either pass exhausts its scheduled-visit
-///   budget. A scan refusal builds nothing; a walk refusal may leave partial
-///   documents in the builder when the source changes after the scan. A
-///   computation's document is one group, so its statements break together.
+///   [`Walked::OverBudget`] when the scan or a pass exhausts its
+///   scheduled-visit budget. A scan refusal builds nothing; a walk refusal may
+///   leave partial documents in the builder when the source changes after the
+///   scan. A computation's document is one group, so its statements break
+///   together. A binder the spelling leaves out moves no name inside its scope:
+///   the document names each binder as it names it where no binder is left out
+///   ([`Openings`]).
 /// - provides: the document [`crate::present_type`], [`crate::present_value`],
 ///   [`crate::present_definition`] and [`crate::present_computation`] lay out.
 /// - fails: the builder's refusal, or bookkeeping the walk's scheduling
 ///   excludes.
 /// - panics: none.
-/// - intension: one scan and one walk, each on an explicit stack, never
-///   recursion; linear in the nodes reached.
+/// - intension: one scan and one pass, each on an explicit stack, never
+///   recursion; linear in the nodes reached. One pass more for each pass that
+///   leaves out a binder whose name a name inside its scope passed over, and
+///   each of those reserves no name for more binders than the pass before.
 ///
 /// # Errors
 /// Returns [`PresentationError::Build`] when the builder refuses and
 /// [`PresentationError::Unbalanced`] when the walk ends with other than one
 /// finished piece.
 ///
+/// # Termination
+/// A pass that ends with [`Passed::Again`] hands on at least one binder more
+/// than it was given. A pass opens at most one binder for each visit of its
+/// budget, so the passes end.
+///
 /// # Adequacy
 /// - hypothesis: L3 — the finite golden fixtures expose wrong constructors,
 ///   breaks and depth cutoffs. A scanned leaf that becomes a cycle exposes a
-///   missing second-pass budget through the read count and approximation. Other
+///   missing second-pass budget through the read count and approximation. A
+///   dependent arrow and a dependent pair whose binder nothing names, over a
+///   lambda, expose a binder left out that still holds its name. Other
 ///   mutations of a source during presentation are not enumerated.
 /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
 /// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
 /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::a_binder_the_print_leaves_out_moves_no_name_5402`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
 #[spec(ensures: |ref ret| match *ret {
     | Ok(Walked::Built { doc, .. }) => doc != Doc::EMPTY,
@@ -13431,18 +13635,92 @@ where
     else {
         return Ok(Walked::OverBudget);
     };
-    let context = source.context();
-    mentioned.extend(context.iter().flatten().copied());
+    mentioned.extend(source.context().iter().flatten().copied());
     mentioned.extend(source.regions().iter().flatten().copied());
     mentioned.extend(source.region_binders().iter().flatten().copied());
+    let mut binders = Binders::new(mentioned);
+    let mut unreserved = BTreeSet::new();
+    loop {
+        let openings = Openings::new(unreserved);
+        match pass(
+            source,
+            root,
+            (admits, bodies),
+            style,
+            &mut *builder,
+            (binders, openings),
+        )? {
+            Passed::Done(walked) => return Ok(walked),
+            Passed::Again(named, more) => {
+                binders = named;
+                unreserved = more;
+            },
+        }
+    }
+}
+
+/// How one pass of [`walk`] ends.
+enum Passed<'names>
+{
+    /// The walk's result.
+    Done(Walked),
+    /// The pass left out a binder whose name a name inside its scope passed
+    /// over: the names generated so far, and the binders the next pass
+    /// reserves no name for.
+    Again(Binders<'names>, BTreeSet<Opening>),
+}
+
+/// One pass of [`walk`] over the node `root` of `source`, naming binders from
+/// `binders` and reserving no name for the binders `openings` holds
+/// unreserved.
+///
+/// # Specification
+/// - requires: `binders` avoid every name the term mentions, as [`walk`] reads
+///   them.
+/// - ensures: [`Passed::Done`] with the root's document, as [`walk`] states it,
+///   when the pass leaves out no binder whose name a name inside its scope
+///   passed over; [`Passed::Again`] with the given binders and those it left so
+///   otherwise.
+/// - provides: each pass [`walk`] makes.
+/// - fails: as [`walk`].
+/// - panics: none.
+/// - intension: one walk on an explicit stack, never recursion; linear in the
+///   nodes reached.
+///
+/// # Errors
+/// As [`walk`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`walk`].
+/// - witness: `tests::goldens::a_binder_the_print_leaves_out_moves_no_name_5402`
+/// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+#[spec(ensures: |ref ret| match *ret {
+    | Ok(Passed::Done(Walked::Built { doc, .. })) => doc != Doc::EMPTY,
+    | Ok(Passed::Done(Walked::OverBudget) | Passed::Again(..))
+    | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => true,
+    | Err(PresentationError::Render(_)) => false,
+})]
+fn pass<'names, S>(
+    source: &'names S,
+    root: S::Node,
+    (admits, bodies): (Admits, Bodies),
+    style: Style,
+    builder: &mut dyn Compose,
+    (binders, openings): (Binders<'names>, Openings),
+) -> Result<Passed<'names>, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    let context = source.context();
     let mut walk = Walk {
         builder,
         pieces: Vec::new(),
-        binders: Binders::new(mentioned),
+        binders,
         names: Vec::new(),
         opened: Vec::new(),
         scopes: Vec::new(),
         occurring: BTreeSet::new(),
+        openings,
         hidden: BTreeSet::new(),
         loops: Vec::new(),
         subjects: 0_usize,
@@ -13514,7 +13792,7 @@ where
             } => {
                 let Some(left) = walk.remaining.checked_sub(1_u32)
                 else {
-                    return Ok(Walked::OverBudget);
+                    return Ok(Passed::Done(Walked::OverBudget));
                 };
                 walk.remaining = left;
                 // The explicit form writes the forgetting map or the reduct the
@@ -13590,7 +13868,7 @@ where
             Task::Returned { node, depth } => {
                 let Some(left) = walk.remaining.checked_sub(1_u32)
                 else {
-                    return Ok(Walked::OverBudget);
+                    return Ok(Passed::Done(Walked::OverBudget));
                 };
                 walk.remaining = left;
                 Walk::returned(source, node, depth, &mut tasks);
@@ -13679,6 +13957,15 @@ where
     if !walk.pieces.is_empty() {
         return Err(PresentationError::Unbalanced);
     }
+    if !walk.openings.left_out.is_empty() {
+        let Openings {
+            mut unreserved,
+            mut left_out,
+            ..
+        } = walk.openings;
+        unreserved.append(&mut left_out);
+        return Ok(Passed::Again(walk.binders, unreserved));
+    }
     // A body's statements break together: on one line when the whole body
     // fits, one statement per line otherwise.
     let doc = match admits {
@@ -13691,12 +13978,12 @@ where
         | Admits::Stated
         | Admits::Operand => root.doc,
     };
-    Ok(Walked::Built {
+    Ok(Passed::Done(Walked::Built {
         doc,
         fidelity: walk.fidelity,
         unspelled: walk.unspelled,
         wildcards: walk.wildcards,
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -13919,6 +14206,7 @@ mod tests
             opened: super::Vec::new(),
             scopes: super::Vec::new(),
             occurring: super::BTreeSet::new(),
+            openings: super::Openings::default(),
             hidden: super::BTreeSet::new(),
             loops: super::Vec::new(),
             subjects: 0_usize,
@@ -14016,6 +14304,7 @@ mod tests
             opened: super::Vec::new(),
             scopes: super::Vec::new(),
             occurring: super::BTreeSet::new(),
+            openings: super::Openings::default(),
             hidden: super::BTreeSet::new(),
             loops: super::Vec::new(),
             subjects: 0_usize,

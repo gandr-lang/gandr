@@ -3336,6 +3336,58 @@ fn a_box_over_a_type_keeps_its_thunk_4853()
     }
 }
 
+/// #5402: a binder the print leaves out moves no name inside its scope. A
+/// dependent arrow and a dependent pair whose binder nothing names print as
+/// the plain arrow and the product, and the lowering reads those back with no
+/// binder. So a lambda inside the codomain takes the name it takes under the
+/// plain arrow and the product, and the reprint keeps it.
+#[test]
+fn a_binder_the_print_leaves_out_moves_no_name_5402()
+{
+    let names = [Name::from("Picked")];
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let unit_code = core.value_quote(unit);
+    let returns_code = core.computation_return(unit_code);
+    let family = core.computation_lambda(returns_code);
+    let family = core.value_thunk(family);
+    let picked = core.value_type_data(ConstantIndex::from(0_usize), vec![unit_code, family]);
+    let returns_picked = core.comp_type_returner(picked);
+    let plain = core.comp_type_arrow(unit, returns_picked);
+    let unnamed = core.comp_type_pi(unit, returns_picked);
+    let plain_thunk = core.value_type_thunk(plain);
+    let unnamed_thunk = core.value_type_thunk(unnamed);
+    let product = core.value_type_product(&[unit, picked]);
+    let pair = core.value_type_sigma(unit, picked);
+    let source = CoreSource::new(&core, &names);
+    for (written, left_out, spelling) in [
+        (
+            CoreNode::CompType(plain),
+            CoreNode::CompType(unnamed),
+            "Unit -> -F Picked(Unit, thunk { fun (a) { pure Unit } })",
+        ),
+        (
+            CoreNode::ValueType(plain_thunk),
+            CoreNode::ValueType(unnamed_thunk),
+            "Unit -> Picked(Unit, thunk { fun (a) { pure Unit } })",
+        ),
+        (
+            CoreNode::ValueType(product),
+            CoreNode::ValueType(pair),
+            "Unit * Picked(Unit, thunk { fun (a) { pure Unit } })",
+        ),
+    ] {
+        for root in [written, left_out] {
+            let presented = presented_in(&source, Root::Type(root), wide(), Form::Sugared);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (spelling, Fidelity::Faithful),
+                "a binder nothing names takes no name from the lambda inside its scope"
+            );
+        }
+    }
+}
+
 /// #5203: a box from a universe to a value type prints as the alias. The
 /// lowering reads `Type -> Integer` as the box, since its codomain classifies
 /// no codes, so the thunk over `Type -> -F Integer` takes the sugar.

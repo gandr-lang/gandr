@@ -21,6 +21,9 @@ data Picked(a : Type, b : a -> Type) : Type where
 
 /// A walk along the path that a pair's second field holds, its type computed
 /// by the family the pair's type names.
+///
+/// - see: #5402 — the type of the pattern `MkPicked(u, q)` prints the
+///   lambda's binder as its reprint names it
 def walkSecond(
   i : Type,
   o : i -> Type,
