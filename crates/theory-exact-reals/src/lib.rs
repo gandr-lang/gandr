@@ -14,13 +14,14 @@
 //! A computation over the reals is held as a [`Plan`]: a finite DAG of real,
 //! open and domain nodes whose binders are de Bruijn indices. A plan holds
 //! each distinct subterm once, and it has one canonical byte form.
-//! [`approximate`] encloses each real node of a validated plan, and it gives
-//! each open node a positive and a negative approximant. Each approximant is
-//! sound on its own, and the crate never reports an undecided proposition as
-//! false.
+//! [`approximate`] gives each node of a validated plan an enclosure or a pair
+//! of approximants, each sound on its own, and it never reports an undecided
+//! proposition as false. [`check`] replays a [`Certificate`] with no search,
+//! and [`refine`] narrows a registered cut with one certificate step for each
+//! halving.
 //!
-//! Every operation is total. Each malformed input is refused by name, and no
-//! operation panics. The work of one arithmetic operation is bounded by its
+//! Every operation is total and never panics, and it refuses each malformed
+//! input by name. The work of one arithmetic operation is bounded by its
 //! operands' bit widths and the requested precision.
 //!
 //! # References
@@ -35,10 +36,12 @@
 extern crate alloc;
 
 pub mod approx;
+pub mod certificate;
 pub mod codec;
 pub mod dyadic;
 pub mod interval;
 pub mod plan;
+pub mod schema;
 pub mod validate;
 
 pub use crate::approx::Approximation;
@@ -46,7 +49,22 @@ pub use crate::approx::BilateralApprox;
 pub use crate::approx::NegativeApprox;
 pub use crate::approx::PositiveApprox;
 pub use crate::approx::approximate;
+pub use crate::certificate::Certificate;
+pub use crate::certificate::CertificateCheck;
+pub use crate::certificate::CertificateRefusal;
+pub use crate::certificate::Checked;
+pub use crate::certificate::CheckerQuotas;
+pub use crate::certificate::Conclusion;
+pub use crate::certificate::FormatVersion;
+pub use crate::certificate::Side;
+pub use crate::certificate::Step;
+pub use crate::certificate::StepCount;
+pub use crate::certificate::StepId;
+pub use crate::certificate::StepSite;
+pub use crate::certificate::check;
+pub use crate::codec::CertificateBytes;
 pub use crate::codec::DecodeError;
+pub use crate::codec::EncodedCertificate;
 pub use crate::codec::EncodedPlan;
 pub use crate::codec::PlanBytes;
 pub use crate::dyadic::BitWidth;
@@ -89,6 +107,10 @@ pub use crate::plan::Root;
 pub use crate::plan::Scope;
 pub use crate::plan::Site;
 pub use crate::plan::Sort;
+pub use crate::schema::radicand;
+pub use crate::schema::refine;
+pub use crate::schema::square_root;
+pub use crate::schema::square_root_of_two;
 pub use crate::validate::ByteLength;
 pub use crate::validate::Check;
 pub use crate::validate::Conflict;

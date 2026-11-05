@@ -1,4 +1,4 @@
-//! The canonical serialization of a plan.
+//! The canonical serialization of a plan and of a certificate.
 //!
 //! A plan crosses a process boundary as bytes, and a later stage keys a
 //! cache and a certificate by them. So the bytes of a plan are canonical: two
@@ -8,7 +8,8 @@
 //! before it. The reader refuses each malformed input by name, and it refuses
 //! bytes that decode but differ from the canonical bytes of what they hold.
 //! The root is the last node, and its sort says whether the plan encloses a
-//! real or decides an open proposition.
+//! real or decides an open proposition. A [`Certificate`] has canonical bytes
+//! of the same convention, its steps in order.
 //!
 //! # Boundaries
 //!
@@ -43,6 +44,8 @@
 //! | quotient | `0x06` | exists | `0x15` | | |
 //! | power | `0x07` | forall | `0x16` | | |
 //! | cut | `0x08` | | | | |
+//!
+//! A certificate's layout stands on [`Certificate::encode`].
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -50,6 +53,11 @@ use core::fmt;
 use anodized::spec;
 use num_bigint::BigInt;
 
+use crate::certificate::Certificate;
+use crate::certificate::FormatVersion;
+use crate::certificate::Side;
+use crate::certificate::Step;
+use crate::certificate::StepId;
 use crate::dyadic::Dyadic;
 use crate::dyadic::DyadicError;
 use crate::dyadic::Exponent;
@@ -88,6 +96,26 @@ const MAGIC: [u8; 4] = *b"GXRP";
 
 /// The layout version that this build writes and reads.
 const VERSION: u16 = 1;
+
+/// The four bytes that open an encoded certificate.
+const CERTIFICATE_MAGIC: [u8; 4] = *b"GXRC";
+
+/// The kind byte of each certificate step.
+mod step_kind
+{
+    use super::Kind;
+
+    /// A witnesses step.
+    pub(super) const WITNESSES: Kind = Kind(0x30);
+    /// A split step.
+    pub(super) const SPLIT: Kind = Kind(0x31);
+    /// A constant step.
+    pub(super) const CONSTANT: Kind = Kind(0x32);
+    /// A below step.
+    pub(super) const BELOW: Kind = Kind(0x33);
+    /// A not-below step.
+    pub(super) const NOT_BELOW: Kind = Kind(0x34);
+}
 
 /// A one-byte kind: of a node, or of an interval's orientation, endpoint or
 /// closure, or of an evidence slot.
@@ -234,7 +262,7 @@ impl<'bytes> From<&'bytes PlanBytes> for EncodedPlan<'bytes>
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DecodeError
 {
-    /// The bytes do not open with the plan magic.
+    /// The bytes do not open with the magic of their layout.
     Magic,
     /// The bytes name a layout version that this build does not read.
     Version,
@@ -246,11 +274,11 @@ pub enum DecodeError
     ForwardReference,
     /// A node names a node of another sort than its slot takes.
     WrongSort,
-    /// The bytes hold no node.
+    /// The bytes hold no node, or no step.
     Empty,
     /// The last node, the root, is a domain.
     DomainRoot,
-    /// Bytes follow the last node.
+    /// Bytes follow the last node, or the last step.
     TrailingBytes,
     /// The count of nodes exceeds what a position counts.
     TooManyNodes,
@@ -259,7 +287,7 @@ pub enum DecodeError
     /// An interval is malformed.
     Interval(IntervalError),
     /// The bytes decode, but they differ from the canonical bytes of the plan
-    /// that they hold.
+    /// or the certificate that they hold.
     NotCanonical,
 }
 
@@ -304,7 +332,7 @@ impl fmt::Display for DecodeError
     ) -> fmt::Result
     {
         return match *self {
-            Self::Magic => f.write_str("the bytes do not open with the plan magic"),
+            Self::Magic => f.write_str("the bytes do not open with the magic of their layout"),
             Self::Version => {
                 f.write_str("the bytes name a layout version this build does not read")
             },
@@ -316,14 +344,14 @@ impl fmt::Display for DecodeError
             Self::WrongSort => {
                 f.write_str("a node names a node of another sort than its slot takes")
             },
-            Self::Empty => f.write_str("the bytes hold no node"),
+            Self::Empty => f.write_str("the bytes hold no node or no step"),
             Self::DomainRoot => f.write_str("the root is a domain"),
-            Self::TrailingBytes => f.write_str("bytes follow the last node"),
+            Self::TrailingBytes => f.write_str("bytes follow the last record"),
             Self::TooManyNodes => f.write_str("the count of nodes exceeds what a position counts"),
             Self::Dyadic(error) => write!(f, "a constant is malformed: {error}"),
             Self::Interval(error) => write!(f, "an interval is malformed: {error}"),
             Self::NotCanonical => {
-                f.write_str("the bytes are not the canonical bytes of their plan")
+                f.write_str("the bytes are not the canonical bytes of what they hold")
             },
         };
     }
@@ -1237,4 +1265,315 @@ pub(crate) fn read(
         return Err(input(DecodeError::NotCanonical));
     }
     return Ok(plan);
+}
+
+/// The canonical bytes of a certificate.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CertificateBytes(Vec<u8>);
+
+impl AsRef<[u8]> for CertificateBytes
+{
+    /// Borrow the bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        return &self.0;
+    }
+}
+
+impl From<CertificateBytes> for Vec<u8>
+{
+    /// Take the bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: CertificateBytes) -> Self
+    {
+        return bytes.0;
+    }
+}
+
+/// Bytes that claim to be an encoded certificate, not yet read.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct EncodedCertificate<'bytes>(&'bytes [u8]);
+
+impl<'bytes> From<&'bytes [u8]> for EncodedCertificate<'bytes>
+{
+    /// Read a byte slice as an encoded certificate.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: &'bytes [u8]) -> Self
+    {
+        return Self(bytes);
+    }
+}
+
+impl<'bytes> From<&'bytes CertificateBytes> for EncodedCertificate<'bytes>
+{
+    /// Read a certificate's own bytes as an encoded certificate.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: &'bytes CertificateBytes) -> Self
+    {
+        return Self(&bytes.0);
+    }
+}
+
+impl Entry
+{
+    /// Write a premise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn premise(
+        &mut self,
+        id: StepId,
+    )
+    {
+        self.word(Word(u32::from(id)));
+    }
+
+    /// Write one certificate step: its kind, then its fields.
+    ///
+    /// # Specification
+    /// - ensures: writes the step's kind byte and its fields in declaration
+    ///   order, each by the layout of the module.
+    /// - panics: none.
+    /// - executable: none — the clause restates the layout.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every step kind of the generated and the hand-made
+    ///   certificates reads back equal.
+    /// - witness: `tests::certificate::certificates_round_trip_through_their_canonical_bytes`
+    fn step(
+        &mut self,
+        step: &Step,
+    )
+    {
+        match *step {
+            Step::Witnesses {
+                cut,
+                ref lower,
+                ref upper,
+            } => {
+                self.kind(step_kind::WITNESSES);
+                self.child(cut);
+                self.dyadic(lower);
+                self.dyadic(upper);
+            },
+            Step::Split {
+                premise,
+                ref point,
+                side,
+            } => {
+                self.kind(step_kind::SPLIT);
+                self.premise(premise);
+                self.dyadic(point);
+                self.kind(match side {
+                    Side::Lower => FIRST,
+                    Side::Upper => SECOND,
+                });
+            },
+            Step::Constant { real } => {
+                self.kind(step_kind::CONSTANT);
+                self.child(real);
+            },
+            Step::Below { less, left, right } => {
+                self.kind(step_kind::BELOW);
+                self.child(less);
+                self.premise(left);
+                self.premise(right);
+            },
+            Step::NotBelow { less, left, right } => {
+                self.kind(step_kind::NOT_BELOW);
+                self.child(less);
+                self.premise(left);
+                self.premise(right);
+            },
+        }
+    }
+}
+
+impl Reader<'_>
+{
+    /// Read one certificate step.
+    ///
+    /// # Specification
+    /// - ensures: reads the kind byte and the fields that the layout gives for
+    ///   it.
+    /// - fails: returns [`DecodeError::Truncated`] when the bytes end inside
+    ///   the step, [`DecodeError::UnknownKind`] for a kind or a side that the
+    ///   layout does not name, and [`DecodeError::Dyadic`] for a malformed
+    ///   point.
+    /// - panics: none.
+    /// - executable: none — the clause restates the layout.
+    ///
+    /// # Errors
+    /// Each [`DecodeError`] above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every step kind reads back; L3 — an unknown kind, an
+    ///   unknown side and a truncated step.
+    /// - witness: `tests::certificate::certificates_round_trip_through_their_canonical_bytes`
+    /// - witness: `tests::certificate::malformed_certificate_bytes_are_refused_by_name`
+    fn step(&mut self) -> Result<Step, DecodeError>
+    {
+        let node = |reader: &mut Self| reader.word().map(|word| NodeId::from(word.0));
+        let premise = |reader: &mut Self| reader.word().map(|word| StepId::from(word.0));
+        return match self.kind()? {
+            step_kind::WITNESSES => Ok(Step::Witnesses {
+                cut: node(self)?,
+                lower: self.dyadic()?,
+                upper: self.dyadic()?,
+            }),
+            step_kind::SPLIT => {
+                let premise = premise(self)?;
+                let point = self.dyadic()?;
+                let side = match self.kind()? {
+                    FIRST => Side::Lower,
+                    SECOND => Side::Upper,
+                    _ => return Err(DecodeError::UnknownKind),
+                };
+                Ok(Step::Split {
+                    premise,
+                    point,
+                    side,
+                })
+            },
+            step_kind::CONSTANT => Ok(Step::Constant { real: node(self)? }),
+            step_kind::BELOW => Ok(Step::Below {
+                less: node(self)?,
+                left: premise(self)?,
+                right: premise(self)?,
+            }),
+            step_kind::NOT_BELOW => Ok(Step::NotBelow {
+                less: node(self)?,
+                left: premise(self)?,
+                right: premise(self)?,
+            }),
+            _ => Err(DecodeError::UnknownKind),
+        };
+    }
+}
+
+impl Certificate
+{
+    /// The certificate's canonical bytes.
+    ///
+    /// The bytes open with the magic `GXRC`, the format as a `u16` and the step
+    /// count as a `u64`. Each step is its kind, then its fields: a node or a
+    /// premise as a `u32`, a dyadic as the plan layout writes it, and a side as
+    /// `0x00` for the lower cut or `0x01` for the upper cut.
+    ///
+    /// | Step | Byte | Fields |
+    /// | ---- | ---- | ------ |
+    /// | witnesses | `0x30` | the cut, the lower point, the upper point |
+    /// | split | `0x31` | the premise, the point, the side |
+    /// | constant | `0x32` | the constant node |
+    /// | below | `0x33` | the comparison, the first premise, the second premise |
+    /// | not below | `0x34` | the comparison, the first premise, the second premise |
+    ///
+    /// # Specification
+    /// - ensures: the magic, the format, the step count, then each step's kind
+    ///   and fields in order; [`Certificate::decode`] reads them back to an
+    ///   equal certificate.
+    /// - panics: none.
+    /// - executable: none — the clause restates the layout.
+    /// - intension: one allocation, sized for the steps.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the refinements of generated radicands and every
+    ///   hand-made certificate round trip.
+    /// - witness: `tests::certificate::certificates_round_trip_through_their_canonical_bytes`
+    /// - witness: `tests::certificate::refinement_holds_for_generated_radicands`
+    #[must_use]
+    #[inline]
+    pub fn encode(&self) -> CertificateBytes
+    {
+        // A split step takes about thirty bytes at the widths of stage A.
+        let mut entry = Entry {
+            bytes: Vec::with_capacity(self.steps().len().saturating_mul(32).saturating_add(14)),
+        };
+        entry.bytes.extend_from_slice(&CERTIFICATE_MAGIC);
+        entry
+            .bytes
+            .extend_from_slice(&u16::from(self.format()).to_le_bytes());
+        entry.count(ByteCount(self.steps().len()));
+        for step in self.steps() {
+            entry.step(step);
+        }
+        return CertificateBytes(entry.bytes);
+    }
+
+    /// The certificate that canonical bytes hold.
+    ///
+    /// The reader checks the layout alone. The replay of
+    /// [`crate::certificate::check`] judges what the steps claim.
+    ///
+    /// # Specification
+    /// - ensures: returns the certificate whose canonical bytes `bytes` are.
+    /// - fails: refuses bytes that do not open with the magic
+    ///   ([`DecodeError::Magic`]) or the current format
+    ///   ([`DecodeError::Version`]), hold no step ([`DecodeError::Empty`]), end
+    ///   inside a field ([`DecodeError::Truncated`]), carry a kind that its
+    ///   place does not admit ([`DecodeError::UnknownKind`]), hold a malformed
+    ///   point ([`DecodeError::Dyadic`]), carry bytes past the last step
+    ///   ([`DecodeError::TrailingBytes`]), or differ from the canonical bytes
+    ///   of what they hold ([`DecodeError::NotCanonical`]).
+    /// - panics: none.
+    /// - executable: none — the clause restates the reading.
+    /// - intension: linear in the bytes. The reader allocates no more than the
+    ///   bytes hold.
+    ///
+    /// # Errors
+    /// Each [`DecodeError`] above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — refinements round trip, and one-byte edits of their
+    ///   bytes either refuse or read a certificate whose bytes they are; L3 —
+    ///   each refusal on its smallest trigger.
+    /// - witness: `tests::certificate::certificates_round_trip_through_their_canonical_bytes`
+    /// - witness: `tests::certificate::malformed_certificate_bytes_are_refused_by_name`
+    #[inline]
+    pub fn decode(bytes: EncodedCertificate<'_>) -> Result<Self, DecodeError>
+    {
+        let mut reader = Reader { rest: bytes.0 };
+        let Taken(magic) = reader.take(ByteCount(CERTIFICATE_MAGIC.len()))?;
+        if magic != CERTIFICATE_MAGIC.as_slice() {
+            return Err(DecodeError::Magic);
+        }
+        let Taken(format) = reader.take(ByteCount(2))?;
+        if format != u16::from(FormatVersion::CURRENT).to_le_bytes().as_slice() {
+            return Err(DecodeError::Version);
+        }
+        let count = reader.count()?;
+        if count.0 == 0 {
+            return Err(DecodeError::Empty);
+        }
+        // Each step takes a byte or more, so the bytes left bound the storage
+        // that the count may ask for.
+        let mut steps = Vec::with_capacity(count.0.min(reader.rest.len()));
+        for _ in 0 .. count.0 {
+            steps.push(reader.step()?);
+        }
+        if !reader.rest.is_empty() {
+            return Err(DecodeError::TrailingBytes);
+        }
+        let certificate = Self::new(FormatVersion::CURRENT, steps);
+        if certificate.encode().0 != bytes.0 {
+            return Err(DecodeError::NotCanonical);
+        }
+        return Ok(certificate);
+    }
 }
