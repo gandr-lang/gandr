@@ -2002,6 +2002,7 @@ dependencies = [
 name = "gandr-theory-shapes"
 version = "0.0.0"
 dependencies = [
+ "gandr-theory-graded-posets",
  "gandr-theory-nominal-automata",
  "gandr-theory-stone-duality",
  "quenchant-anodized",
