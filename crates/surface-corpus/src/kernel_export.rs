@@ -2619,6 +2619,40 @@ mod kernel_presented_readmission
         Environment::replay(decoded.arena().clone(), &declarations)
             .expect("the kernel readmits `go` at its generalised motive");
     }
+
+    /// #5337: a case on a value of a family with a parameter, whose goal
+    /// keeps the value, meets the goal at each arm's constructor; the
+    /// checker checks each such definition, and the kernel readmits them.
+    #[test]
+    fn a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/data/motive-parameterised.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the cases lower");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        for name in ["unitAt", "sameAt", "walk", "walkOf"] {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            let marked = declarations
+                .iter()
+                .find(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            assert_eq!(
+                marked.mark(),
+                gandr_kernel_term::AdmissionMark::Checked,
+                "the checker checks `{name}` at each arm's constructor"
+            );
+        }
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits each case at its refined motive");
+    }
 }
 
 /// A step case at a variable readmits by the kernel's own reading of the bind

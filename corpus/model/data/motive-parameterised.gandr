@@ -1,0 +1,70 @@
+// A case on a value of a family with a parameter. The goal of the case reads
+// the value.
+//
+// The lowering names no classifier for the constructors of a family with
+// parameters. So it keeps the scrutinee in the goal as written. A goal that
+// reads the scrutinee must still meet each arm at the arm's constructor.
+//
+// The checker reads the scrutinee's type at the case. It reads the kept
+// scrutinee as the case's own binder in the motive, and as each arm's
+// constructor over the arm's fields. The checker also generalises a later
+// binder whose type reads the scrutinee. A recursion on such a scrutinee
+// recurses on a field of the constructor.
+//
+// - see: #5337
+// - see: #616 — the lowering keeps the scrutinee of a family with parameters
+// - see: #5324 — the generalisation over a later binder that the motive reads
+
+/// Two codes over a type.
+data CodeAt(d : Type) : Type where
+  /// The first code.
+  | AAt : CodeAt(d)
+  /// The second code.
+  | BAt : CodeAt(d)
+
+/// A family over the codes at a type.
+def famAt(d : Type, c : CodeAt(d)) -> Type =
+  match c
+    | AAt => return Unit
+    | BAt => return Unit
+
+/// The goal reads the code, and each arm answers the unit.
+def unitAt(d : Type, c : CodeAt(d)) -> famAt(d, c) =
+  match c
+    | AAt => *{}
+    | BAt => *{}
+
+/// Each arm returns `v` at its own code.
+def sameAt(d : Type, c : CodeAt(d), v : famAt(d, c)) -> famAt(d, c) =
+  match c
+    | AAt => v
+    | BAt => v
+
+/// The sequences over a type.
+data Seq(a : Type) : Type where
+  /// The empty sequence.
+  | Nil : Seq(a)
+  /// A head before the rest.
+  | Cons : (h : a, t : Seq(a)) --> Seq(a)
+
+/// A family by recursion on a sequence.
+def rec units(a : Type, s : Seq(a)) -> Type =
+  match s
+    | Nil => return Unit
+    | Cons(h, t) => units[<] a t
+
+/// A walk down a sequence. Its goal reads the sequence.
+def rec walk(a : Type, s : Seq(a)) -> units(a, s) =
+  match s
+    | Nil => *{}
+    | Cons(h, t) => walk[<] a t
+
+/// The sequences over a type, as a definition computes them.
+def seqOf(a : Type) -> Type = return Seq (a)
+
+/// The scrutinee's type unfolds to the sequences, so the checker reads its
+/// head form at the case.
+def rec walkOf(a : Type, s : seqOf(a)) -> units(a, s) =
+  match s
+    | Nil => *{}
+    | Cons(h, t) => walkOf[<] a t
