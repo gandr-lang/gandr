@@ -106,4 +106,6 @@ INSERT INTO site VALUES('sharing','surface-parser','meld','implements','incremen
 INSERT INTO site VALUES('sharing','surface-session','session','consumes','incremental-memo','Each revision offered to the incremental checker, which adopts every checkpoint that still answers and persists the set.');
 INSERT INTO site VALUES('sharing','theory-cell-complexes','sequent','consumes','cell-holes','A cell''s per-hole contractum use: how many times a step writes the subterm its left side matched at each hole, the size of that hole''s coverage.');
 INSERT INTO site VALUES('sharing','theory-deep-inference','template','implements','superposition','Guarded templates: one certificate for a family firing the same cells at the same positions, an arm per distinct member subterm, each arm''s inheritance check memoized.');
+INSERT INTO site VALUES('sharing','theory-exact-reals','codec','consumes','subterm-table','The plan reader''s re-encode-compare: plan bytes accepted only when the canonical walk writes them again, so a duplicate node, a dead node or another order is refused.');
+INSERT INTO site VALUES('sharing','theory-exact-reals','plan','implements','subterm-table','The canonical walk: a plan''s nodes interned bottom-up by their entry bytes, two structurally equal subterms one node and a shared subterm one edge.');
 COMMIT;

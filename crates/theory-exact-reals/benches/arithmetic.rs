@@ -28,12 +28,13 @@
     reason = "a measurement binary: a failed setup ends the run, and the figures are its output"
 )]
 
+mod support;
+
 use core::hint::black_box;
 use core::ops::Add as _;
 use core::ops::Neg as _;
 use core::ops::Rem as _;
 use core::ops::Shl as _;
-use std::time::Instant;
 
 use gandr_theory_exact_reals::BitWidth;
 use gandr_theory_exact_reals::Bound;
@@ -45,26 +46,14 @@ use gandr_theory_exact_reals::Precision;
 use gandr_theory_exact_reals::Rounding;
 use num_bigint::BigInt;
 
+use crate::support::Count;
+use crate::support::Figures;
+use crate::support::Output;
+use crate::support::measure;
+use crate::support::print_row;
+
 /// The operand widths the full run measures.
 const WIDTHS: [u64; 4] = [63, 64, 256, 4096];
-
-/// A count of operations or samples.
-#[repr(transparent)]
-#[derive(Clone, Copy)]
-struct Count(usize);
-
-/// One row's figures: nanoseconds per operation at the median and at the
-/// 99th percentile, and allocations per operation in hundredths.
-struct Figures
-{
-    /// The median of the per-operation sample means, in nanoseconds.
-    median: u128,
-    /// The 99th percentile of the per-operation sample means, in
-    /// nanoseconds.
-    tail: u128,
-    /// Allocations per operation, in hundredths.
-    allocations: u128,
-}
 
 /// A deterministic stream of draws, so every build of the bench measures the
 /// same operands.
@@ -105,60 +94,6 @@ impl Draws
         let odd = low.rem(&half).shl(1_u8).add(1_u8);
         return if width == 1 { top } else { top.add(odd) };
     }
-}
-
-/// Time `operation` and count its allocations.
-///
-/// # Specification
-/// trivial.
-fn measure<Operation>(
-    batch: Count,
-    samples: Count,
-    mut operation: Operation,
-) -> Figures
-where
-    Operation: FnMut(),
-{
-    for _ in 0 .. batch.0 {
-        operation();
-    }
-    let mut means = Vec::with_capacity(samples.0);
-    for _ in 0 .. samples.0 {
-        let start = Instant::now();
-        for _ in 0 .. batch.0 {
-            operation();
-        }
-        let total = start.elapsed().as_nanos();
-        means.push(
-            total
-                .checked_div(u128::try_from(batch.0).expect("a batch fits"))
-                .expect("a nonempty batch"),
-        );
-    }
-    means.sort_unstable();
-    let percentile = |hundredths: usize| {
-        let index = means
-            .len()
-            .saturating_sub(1)
-            .saturating_mul(hundredths)
-            .checked_div(100)
-            .expect("a nonzero divisor");
-        means.get(index).copied().unwrap_or_default()
-    };
-    let counted = allocation_counter::measure(|| {
-        for _ in 0 .. batch.0 {
-            operation();
-        }
-    });
-    let allocations = u128::from(counted.count_total)
-        .saturating_mul(100)
-        .checked_div(u128::try_from(batch.0).expect("a batch fits"))
-        .expect("a nonempty batch");
-    return Figures {
-        median: percentile(50),
-        tail: percentile(99),
-        allocations,
-    };
 }
 
 /// The closed proper interval between two dyadics in either order.
@@ -263,32 +198,9 @@ fn rows(
     ];
     if matches!(print, Output::Table) {
         for (name, figures) in table {
-            let whole = figures
-                .allocations
-                .checked_div(100)
-                .expect("a nonzero divisor");
-            let fraction = figures
-                .allocations
-                .checked_rem(100)
-                .expect("a nonzero divisor");
-            println!(
-                "| {} | {name} | {} | {} | {whole}.{fraction:02} |",
-                u64::from(width),
-                figures.median,
-                figures.tail
-            );
+            print_row(format_args!("{} | {name}", u64::from(width)), &figures);
         }
     }
-}
-
-/// Whether the run prints its figures.
-#[derive(Clone, Copy)]
-enum Output
-{
-    /// The full measurement prints its table.
-    Table,
-    /// The short pass prints nothing.
-    Silent,
 }
 
 /// Run the measurement, or the short pass outside `cargo bench`.
@@ -297,7 +209,8 @@ enum Output
 /// trivial.
 fn main()
 {
-    if std::env::args().any(|argument| argument == "--bench") {
+    let output = Output::of_run();
+    if matches!(output, Output::Table) {
         println!("| Width | Operation | p50 ns | p99 ns | Allocations |");
         println!("| ----- | --------- | ------ | ------ | ----------- |");
         for width in WIDTHS {
@@ -307,12 +220,12 @@ fn main()
             else {
                 Count(1000)
             };
-            rows(BitWidth::from(width), Count(256), samples, Output::Table);
+            rows(BitWidth::from(width), Count(256), samples, output);
         }
     }
     else {
         for width in WIDTHS {
-            rows(BitWidth::from(width), Count(2), Count(2), Output::Silent);
+            rows(BitWidth::from(width), Count(2), Count(2), output);
         }
     }
 }

@@ -381,4 +381,5 @@ digraph crates {
   "surface-parser" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "sharing"];
   "surface-session" -> "theory-cell-complexes" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "sharing"];
   "theory-cell-complexes" -> "theory-deep-inference" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "sharing"];
+  "theory-deep-inference" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "sharing"];
 }
