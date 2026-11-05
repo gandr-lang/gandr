@@ -1932,6 +1932,7 @@ fi
 claims=$root/.config/claims
 source "$claims/deps.bash"
 source "$claims/input.bash"
+source "$claims/mark.bash"
 # REST throughout: the GraphQL limit, shared by every seat's watches, runs out
 # within the hour, and a seat must still claim its next item.
 repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
@@ -2026,24 +2027,17 @@ while :; do
     continue
   fi
   [[ ${usage_dry_run:-false} == false ]] || break
-  gh api -X POST "repos/$repo/issues/$number/labels" -f 'labels[]=status:claimed' > /dev/null
   gh api "repos/$repo/issues/$number" --jq '{body}' \
     | jq -c --arg lane "$lane" '{lane: $lane, step: "write", body}' \
-    | jq -c -L "$claims" -f "$claims/claimed.jq" \
-    | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
-  gh api "repos/$repo/issues/$number" --jq '{labels: [.labels[].name], body}' > "$board/read.json"
-  jq -c --arg lane "$lane" '{lane: $lane, step: "check", body}' "$board/read.json" \
-    | jq -c -L "$claims" -f "$claims/claimed.jq" > "$board/check.json"
-  if [[ $(jq .kept "$board/check.json") == true ]]; then
+    | jq -c -L "$claims" -f "$claims/claimed.jq" > "$board/marked.json"
+  claim_mark "$repo" "$number" "$lane" "$board/read.json" < "$board/marked.json"
+  if [[ $claim_kept == true ]]; then
     claimed=true
     break
   fi
-  # Another lane's claim stands before this one: it keeps the issue. This run
-  # takes its own marker off, when its write left one, and the order passes
-  # over the issue on the reading.
-  if [[ $(jq '.body != null' "$board/check.json") == true ]]; then
-    jq -c '{body}' "$board/check.json" | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
-  fi
+  # Another lane's claim stands before this one: it keeps the issue.
+  # `claim_mark` took this run's marker off, when its write left one, and the
+  # order passes over the issue on the reading.
   echo "claim:next: #$number holds another lane's earlier claim; taking the next pick" >&2
   jq --arg n "$number" --slurpfile read "$board/read.json" '.[$n] = $read[0]' "$board/reread.json" > "$board/next.json"
   mv "$board/next.json" "$board/reread.json"
@@ -2131,6 +2125,8 @@ fi
 # other lane's (`.config/claims/claimed.jq`), as `claim:next` does for its
 # pick, and reads the body once more: when another lane's marker stands first,
 # that lane keeps the issue, and the run takes its own marker off and exits 1.
+# Both tasks write the claim through `claim_mark` (`.config/claims/mark.bash`,
+# #5175).
 # The lane is `--lane`, else the lane of the branch it runs on,
 # `<lane>-<n>-…` (`.config/claims/taken.jq`). It refuses a closed issue and an
 # issue another lane claims, and does nothing for an issue the lane holds.
@@ -2172,11 +2168,11 @@ case $(jq -r .verdict <<< "$decision") in
     exit 0
     ;;
 esac
-gh api -X POST "repos/$repo/issues/$number/labels" -f 'labels[]=status:claimed' > /dev/null
-jq -c '{body}' <<< "$decision" | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
-check=$(read_issue | jq -c --arg lane "$lane" '{lane: $lane, step: "check", body}' | jq -c -L "$claims" -f "$claims/claimed.jq")
-if [[ $(jq .kept <<< "$check") != true ]]; then
-  jq -c 'select(.body != null) | {body}' <<< "$check" | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
+source "$claims/mark.bash"
+reread=$(mktemp)
+trap 'rm -f "$reread"' EXIT
+claim_mark "$repo" "$number" "$lane" "$reread" <<< "$(jq -c '{body}' <<< "$decision")"
+if [[ $claim_kept != true ]]; then
   echo "claim:take: another lane claimed #$number first, and keeps it" >&2
   exit 1
 fi
