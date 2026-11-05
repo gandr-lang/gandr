@@ -1,0 +1,37 @@
+[package]
+name = "gandr-theory-exact-reals"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Canonical dyadics and oriented intervals with outward-rounded arithmetic"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["dyadic", "exact-reals", "gandr", "interval"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own module, so a witness path
+# reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The measurement: a `harness = false` bench timing dyadic and interval
+# operations at three operand widths, with their percentiles and allocations.
+[[bench]]
+harness = false
+name = "arithmetic"
+path = "benches/arithmetic.rs"
+
+[dependencies]
+anodized.workspace = true
+num-bigint.workspace = true
+
+[dev-dependencies]
+allocation-counter.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true
