@@ -2882,6 +2882,7 @@ root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
 source "$claims/deps.bash"
 source "$root/.config/issues/labels.bash"
+source "$root/.config/issues/keep.bash"
 source "$root/.config/ledger/owing.bash"
 repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 write=${REPORT_FILE:-}
@@ -2898,8 +2899,7 @@ gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
 deps_open_graph "$repo" > "$scratch/graph.json"
 jq -n -c --slurpfile open "$scratch/open.json" --slurpfile graph "$scratch/graph.json" '{open: $open[0], graph: $graph[0]}' \
   | jq -c -f "$claims/reads.jq" > "$scratch/issues.jsonl"
-gh issue list --repo "$repo" --state all --label collector --search "\"$title\" in:title" --json number,title,state,body \
-  | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/filed.json"
+issue_found "$repo" "$title" > "$scratch/filed.json"
 labels_defaults > "$scratch/defaults.json"
 sqlite3 -bail "$scratch/features.db" < "$root/ledger/features.sql"
 (cd "$root" && ledger_owing "$scratch/features.db") \
@@ -2910,29 +2910,14 @@ jq -n --slurpfile open "$scratch/open.json" --slurpfile issues "$scratch/issues.
   | jq -c -L "$claims" -L "$root/.config/issues" -f "$claims/report.jq" > "$scratch/report.json"
 jq -r .body "$scratch/report.json" > "$scratch/body.md"
 count=$(jq .count "$scratch/report.json")
-number=$(jq -r '.number // empty' "$scratch/filed.json")
-state=$(jq -r '.state // empty' "$scratch/filed.json")
 if [[ -z $write ]]; then
   cat "$scratch/body.md"
   echo "report:deps: $count finding(s); REPORT_FILE unset, nothing written" >&2
   exit 0
 fi
-if (( count == 0 )); then
-  if [[ $state == OPEN ]]; then
-    gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
-    gh issue close "$number" --repo "$repo" --reason completed > /dev/null
-    echo "closed #$number: no findings"
-  else
-    echo "report:deps: no findings"
-  fi
-elif [[ -z $number ]]; then
+issue_keep "$repo" "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body.md" \
   gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
-    --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
-else
-  [[ $state == OPEN ]] || gh issue reopen "$number" --repo "$repo" > /dev/null
-  gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
-  echo "updated #$number: $count finding(s)"
-fi
+  --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
 {% endraw %}'''
 
 # The nightly prose report (#3591): `report:prose` reads every open issue
@@ -2952,6 +2937,7 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
+source "$root/.config/issues/keep.bash"
 repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 write=${REPORT_FILE:-}
 title='report: prose'
@@ -2988,31 +2974,15 @@ count=$(awk 'END { print NR }' "$scratch/rows.tsv")
   awk -F'\t' '{ printf "| #%s | %s | %s |\n", $1, $2, $3 }' "$scratch/rows.tsv"
   printf '\nRun `mise run body:prose <file>` on a body for each sentence and its fix.\n\nfrom: %s\n' "${GITHUB_RUN_URL:-a run by hand}"
 } > "$scratch/body.md"
-gh issue list --repo "$repo" --state all --label collector --search "\"$title\" in:title" --json number,title,state \
-  | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/filed.json"
-number=$(jq -r '.number // empty' "$scratch/filed.json")
-state=$(jq -r '.state // empty' "$scratch/filed.json")
+issue_found "$repo" "$title" > "$scratch/filed.json"
 if [[ -z $write ]]; then
   cat "$scratch/body.md"
   echo "report:prose: $count bodies with a finding; REPORT_FILE unset, nothing written" >&2
   exit 0
 fi
-if ((count == 0)); then
-  if [[ $state == OPEN ]]; then
-    gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
-    gh issue close "$number" --repo "$repo" --reason completed > /dev/null
-    echo "closed #$number: no findings"
-  else
-    echo "report:prose: no findings"
-  fi
-elif [[ -z $number ]]; then
+issue_keep "$repo" "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body.md" \
   gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
-    --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
-else
-  [[ $state == OPEN ]] || gh issue reopen "$number" --repo "$repo" > /dev/null
-  gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
-  echo "updated #$number: $count bodies with a finding"
-fi
+  --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
 {% endraw %}'''
 
 # The threads outside the pool (#3610): every site that states
