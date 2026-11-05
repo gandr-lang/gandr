@@ -118,6 +118,60 @@ pub fn canonical_signature(
     gandr_core_term::DataSignature::new(parameters, Vec::from([iota, sigma, delta]), kind)
 }
 
+/// The parts of the canonical pair type that `E` asks for, built in `arena`:
+/// the parameter telescope `A : Type, B : A -> Type`, then the fields `x : A`
+/// and `y : B(x)` of its one constructor.
+///
+/// # Specification
+/// trivial.
+pub fn pair_parts(arena: &mut CoreArena) -> [Vec<ValueTypeId>; 2]
+{
+    let universe = |arena: &mut CoreArena| {
+        arena.value_type_universe(
+            gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            gandr_kernel_strata::Level::zero(),
+        )
+    };
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let element = |arena: &mut CoreArena, index: u32| {
+        let code = variable(arena, index);
+        arena.value_type_element(code, gandr_kernel_strata::Level::zero())
+    };
+    let first = universe(arena);
+    // B : A -> Type, A at 0.
+    let domain = element(arena, 0);
+    let codes = universe(arena);
+    let codomain = arena.comp_type_returner(codes);
+    let family = arena.comp_type_arrow(domain, codomain);
+    let family = arena.value_type_thunk(family);
+    // x : A, A at 1 under B.
+    let x = element(arena, 1);
+    // y : B(x), B at 1 and x at 0.
+    let read = variable(arena, 1);
+    let forced = arena.computation_force(read);
+    let at = variable(arena, 0);
+    let applied = arena.computation_application(forced, at);
+    let returned = arena.value_returned(applied);
+    let y = arena.value_type_element(returned, gandr_kernel_strata::Level::zero());
+    [Vec::from([first, family]), Vec::from([x, y])]
+}
+
+/// The canonical pair type that `E` asks for.
+///
+/// # Specification
+/// trivial.
+pub fn canonical_pair(arena: &mut CoreArena) -> gandr_core_term::DataSignature
+{
+    let [parameters, fields] = pair_parts(arena);
+    let kind = arena.value_type_universe(
+        gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        gandr_kernel_strata::Level::zero(),
+    );
+    gandr_core_term::DataSignature::new(parameters, Vec::from([fields]), kind)
+}
+
 /// Whether two runs of the judgement over one term refused it alike. A rule
 /// that mints a type as it judges mints it again in the second run, so a
 /// shape mismatch's found type and its weak head are compared by their

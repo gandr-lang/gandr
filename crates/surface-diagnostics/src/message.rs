@@ -990,6 +990,14 @@ fn checked(
                     usize::from(field),
                     usize::from(tag)
                 ),
+                gandr_kernel_term::Departure::Reads(read) => write!(
+                    f,
+                    "the role `{}` that its canonical form reads, which no earlier declaration holds",
+                    read.word()
+                ),
+                gandr_kernel_term::Departure::Answer(tag) => {
+                    write!(f, "its answer at constructor {} of the signature type", usize::from(tag))
+                },
             }
         },
         CheckRefusal::DataArgumentArity(_) => {

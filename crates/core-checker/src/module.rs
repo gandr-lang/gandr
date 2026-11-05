@@ -1786,6 +1786,34 @@ fn decide(
             settled @ (Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)),
         ) => settled,
     };
+    // The holders of `E` and `F` answer their canonical bodies, compared
+    // before the table takes the definition. A refused holder keeps no role.
+    let (verdict, failure) = match (declaration.builtin(), verdict) {
+        (
+            Maybe::Present(
+                role @ (gandr_kernel_term::Builtin::IrArgs | gandr_kernel_term::Builtin::IrDecode),
+            ),
+            Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. },
+        ) => match crate::canonical::answers(context, role, (constant, body)) {
+            Ok(()) => (verdict, failure),
+            Err(departure) => {
+                context.release_builtin(role, constant);
+                (
+                    Verdict::Refused(CheckRefusal::BuiltinNotCanonical { role, departure }),
+                    Maybe::Absent(kept::Absent::Unrun),
+                )
+            },
+        },
+        (
+            Maybe::Present(_) | Maybe::Absent(_),
+            Verdict::Data
+            | Verdict::Checked { .. }
+            | Verdict::Synthesised { .. }
+            | Verdict::Owed(_)
+            | Verdict::Suspended(_)
+            | Verdict::Refused(_),
+        ) => (verdict, failure),
+    };
     let filled = match (written, entered) {
         (Direction::Check(written), Direction::Check(entered)) if written != entered => {
             Maybe::Present(entered.id())

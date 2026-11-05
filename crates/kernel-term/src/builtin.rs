@@ -5,20 +5,22 @@
 //! and its decoder are core formers over a signature value (Kovács 2026,
 //! § 2.2). The type of the signatures and the two functions by recursion on a
 //! signature are ordinary declarations: `E`, the fields that a signature asks
-//! for, and `F`, the decode of those fields. A declaration that the source
-//! marks `@[ builtin(…) ]` takes one of these roles. The checker records the
+//! for, and `F`, the decode of those fields. The dependent pairs that `E` asks
+//! for are an ordinary declaration too. A declaration that the source marks
+//! `@[ builtin(…) ]` takes one of these roles. The checker records the
 //! declaration that holds each role, for the formers to read (owed to #3575).
 //!
 //! The mark states a role and decides nothing else. A role that two
 //! declarations claim is refused, and so is a mark on a declaration of the
-//! wrong judgement: the signature type is a data declaration, and `E` and `F`
-//! are value declarations.
+//! wrong judgement: the signature type and the pair type are data
+//! declarations, and `E` and `F` are value declarations.
 //!
 //! # References
 //!
 //! - cites: [doi:10.1145/3776685] — the signatures, `E` and `F` (§ 2.2)
 //! - `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: the signatures, `E`
-//!   and `F` of § 2.2 give the three roles and the judgement of each holder.
+//!   and `F` of § 2.2 give the roles and the judgement of each holder. The
+//!   dependent pairs of `E`'s `σ` and `δ` cases give the pair role.
 //!
 //! [doi:10.1145/3776685]: https://doi.org/10.1145/3776685 "Kovács, Canonicity for indexed inductive-recursive types"
 
@@ -35,6 +37,9 @@ pub enum Builtin
     /// The type of inductive-recursive signatures over an output type, a data
     /// declaration whose constructors are `ι`, `σ` and `δ`.
     IrSignature,
+    /// The dependent pairs that `E` asks for, a data declaration over a type
+    /// and a family of types, with one constructor of two fields.
+    IrPair,
     /// `E`: the fields that a signature asks for over a family and its
     /// decoder, a value declaration by recursion on the signature.
     IrArgs,
@@ -106,16 +111,25 @@ pub enum Departure
         /// The field.
         field: crate::FieldPosition,
     },
+    /// A role that the canonical form reads, which no declaration holds yet.
+    Reads(Builtin),
+    /// The holder's answer at one constructor of the signature type.
+    Answer(crate::ConstructorTag),
 }
 
 impl Builtin
 {
     /// The words that an attribute names the roles by, in the order of
     /// [`Self::ALL`].
-    pub const WORDS: &'static [&'static str] = &["irSignature", "irArgs", "irDecode"];
+    pub const WORDS: &'static [&'static str] = &["irSignature", "irPair", "irArgs", "irDecode"];
 
     /// Every role, in the order of [`Self::WORDS`].
-    pub const ALL: [Self; 3] = [Self::IrSignature, Self::IrArgs, Self::IrDecode];
+    pub const ALL: [Self; 4] = [
+        Self::IrSignature,
+        Self::IrPair,
+        Self::IrArgs,
+        Self::IrDecode,
+    ];
 
     /// The word that an attribute names this role by.
     ///
@@ -127,6 +141,7 @@ impl Builtin
     {
         RoleWord(match self {
             Self::IrSignature => "irSignature",
+            Self::IrPair => "irPair",
             Self::IrArgs => "irArgs",
             Self::IrDecode => "irDecode",
         })
@@ -166,7 +181,7 @@ impl Builtin
     pub const fn holder(self) -> Holder
     {
         match self {
-            Self::IrSignature => Holder::Data,
+            Self::IrSignature | Self::IrPair => Holder::Data,
             Self::IrArgs | Self::IrDecode => Holder::Value,
         }
     }
