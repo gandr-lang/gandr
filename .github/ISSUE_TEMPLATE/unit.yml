@@ -114,6 +114,7 @@ body:
         | `oracle` | |
         | `sharing` | |
         | `nominal` | |
+        | `measure` | |
     validations:
       required: true
   - type: textarea

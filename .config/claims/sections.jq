@@ -151,11 +151,17 @@ def selected:
    ((section("Readings") // [] | lead) | items | first(match("`([^`]+)`"; "g").captures[0].string | select(IN(axes[]))))]
   | unique;
 
-# The concern ids of `ledger/concerns.sql` (#2795): the tasks that read the
-# ledger pass them as `--argjson concerns`; without the argument, the ids as
-# of the landing of `nominal` (#4181), which the `check:claims` cases are
-# written against.
-def concerns: $ARGS.named.concerns // ["fork", "nominal", "oracle", "sharing"];
+# The concerns of `ledger/concerns.sql` (#2795), each `{id, issue}`: the tasks
+# that read the ledger pass its rows as `--argjson concerns`; without the
+# argument, the ids as of the landing of `nominal` (#4181), which the
+# `check:claims` cases are written against. An id given alone carries no
+# issue (#5308).
+def concern_rows:
+  ($ARGS.named.concerns // ["fork", "nominal", "oracle", "sharing"])
+  | map(if type == "string" then {id: ., issue: null} else {id, issue} end);
+
+# The concern ids, in the order the rows give them.
+def concerns: concern_rows | map(.id);
 
 # The marks of an issue's `## Concerns` table: per row naming a concern,
 # {concern, mark}, the mark `yes` or `no` from a cell reading it alone or

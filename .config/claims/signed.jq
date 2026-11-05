@@ -27,7 +27,7 @@ def has($label): .labels | index($label) != null;
 | select((has("kind:epic") or has("collector")) | not)
 | .number as $n
 | .labels as $labels
-| [.body // "" | findings($labels)] as $owed
+| [.body // "" | findings($labels; $n)] as $owed
 | if ($owed | length) > 0 then
     "#\($n) still lacks what a unit issue carries: write each on the issue, pass `unit:check \($n)`, page the coordinator `sections #\($n): <the shape's first line>` for `shape:signed`, then run `pr:open` again:\n"
     + ($owed | map("  - \(.)") | join("\n"))

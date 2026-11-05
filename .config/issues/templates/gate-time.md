@@ -39,6 +39,7 @@ Read the record's `time` of the gate on main (`.config/gate-scope/passed.bash`).
 | `oracle` | no |
 | `sharing` | no |
 | `nominal` | no |
+| `measure` | no |
 
 ## Engineering
 

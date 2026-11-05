@@ -2372,8 +2372,8 @@ cases labels .config/issues/filed.jq "$labelled"
 cases templates .config/issues/rendered.jq .config/issues/templates.json
 .config/cases/run.bash form .config/issues/form.json --program .config/issues/form.jq --mode c || failed=1
 .config/cases/run.bash unsectioned .config/issues/unsectioned.json --program .config/issues/unsectioned.jq --mode c || failed=1
-concerns=$(sqlite3 -json :memory: '.read ledger/concerns.sql' 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
-read_concerns=$(jq -R -s -c -f .config/issues/concerns.jq ledger/concerns.sql | jq -c sort)
+concerns=$(sqlite3 -json :memory: '.read ledger/concerns.sql' 'SELECT id, issue FROM concern ORDER BY id;' | jq -c .)
+read_concerns=$(jq -R -s -c -f .config/issues/concerns.jq ledger/concerns.sql | jq -c 'sort_by(.id)')
 if [[ $read_concerns != "$concerns" ]]; then
   printf 'issues concerns.jq reads %s from ledger/concerns.sql, sqlite %s\n' "$read_concerns" "$concerns" >&2
   failed=1

@@ -39,6 +39,7 @@ Time the parts of `{{job}}` in its last run's log. Split them into shares by cos
 | `oracle` | no |
 | `sharing` | no |
 | `nominal` | no |
+| `measure` | no |
 
 ## Engineering
 

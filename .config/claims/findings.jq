@@ -1,9 +1,10 @@
 # What a unit issue lacks before work may start on it (#2532): `findings`
 # gives one line per missing or malformed section of the body it is applied
-# to, or nothing; its argument is the issue's labels, read by the sections
-# only some kinds of unit carry. `unit:check` prints them (`unit.jq`);
-# `claim:next` prints them as the pick's sections due (`next.jq`, #3134), and
-# `pr:open` refuses a landing on an issue that has any (`signed.jq`).
+# to, or nothing; its arguments are the issue's labels, read by the sections
+# only some kinds of unit carry, and its number, read by `## Concerns`.
+# `unit:check` prints them (`unit.jq`); `claim:next` prints them as the
+# pick's sections due (`next.jq`, #3134), and `pr:open` refuses a landing on
+# an issue that has any (`signed.jq`).
 #
 # A unit issue carries, each with content (`units.md` § units-issue):
 #
@@ -20,7 +21,11 @@
 #   gives this unit>` or `no — <why it does not reach it>`, a reason on both
 #   (#2955); a refused row quotes the axis's question;
 # - `## Concerns`: a table marking each concern of `ledger/concerns.sql`
-#   `yes` or `no` (#2795);
+#   `yes` or `no` (#2795). A concern that the ledger gains after the issue
+#   asks no row of it (#5308): the issue's number is at or below the
+#   concern's issue, or the coordinator signed the issue. A body read with no
+#   number, as a template is, owes a row for every concern. A row the issue
+#   writes is judged whatever its concern's age;
 # - `## Ledger` and `## Not in this slice`;
 # - `## After`: `none`, or one `- #n — <what it waits for>` per issue the
 #   unit waits on (#2902). The section is the record; `unit:check` sets each
@@ -137,7 +142,17 @@ def window($labels):
     | "`## Sources` row `\($row.line)` cites `\(.)` from \($year), before the citation window opens in \($cutoff): read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from \($cutoff) on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`"
     end;
 
-def findings($labels):
+# Whether an issue owes a `## Concerns` row for a concern of the ledger
+# (#5308). The sign-off checked every row the ledger held then, so an issue
+# the coordinator signed owes no row it lacks. An issue numbered at or below
+# the concern's issue was filed before the concern, and owes no row for it.
+# So a unit that passed before a concern lands stays passing. A body read
+# with no number owes every row.
+def owes_row($row; $labels; $number):
+  ($labels | index("shape:signed")) == null
+  and ($number == null or $row.issue == null or $number > ($row.issue | ltrimstr("#") | tonumber));
+
+def findings($labels; $number):
   . as $body
   | need("Sources"),
     ((section("Sources") // []) as $lines
@@ -173,8 +188,9 @@ def findings($labels):
      end),
     (if section("Concerns") == null then "`## Concerns` is missing"
      else [concern_marks] as $marks
-     | (concerns[] | . as $concern
-         | if ([$marks[] | select(.concern == $concern)] | length) == 0 then "`## Concerns` has no row for `\($concern)`"
+     | (concern_rows[] | . as $row | .id as $concern
+         | if ([$marks[] | select(.concern == $concern)] | length) == 0 then
+             (if owes_row($row; $labels; $number) then "`## Concerns` has no row for `\($concern)`" else empty end)
            elif ([$marks[] | select(.concern == $concern and .mark != null)] | length) == 0 then "`## Concerns` marks `\($concern)` neither `yes` nor `no`"
            else empty
            end)

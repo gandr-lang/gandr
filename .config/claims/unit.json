@@ -283,5 +283,80 @@
       "labels": ["kind:feature", "area:workflow", "shape:signed"]
     },
     "output": ""
+  },
+  {
+    "name": "#5308: an issue filed after a concern's issue owes the concern's row",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "concerns": [
+        { "id": "fork", "issue": "#1250" },
+        { "id": "measure", "issue": "#5308" },
+        { "id": "nominal", "issue": "#4181" },
+        { "id": "oracle", "issue": "#313" },
+        { "id": "sharing", "issue": "#2291" }
+      ],
+      "number": 5400
+    },
+    "output": "`## Concerns` has no row for `measure`"
+  },
+  {
+    "name": "#5308: an issue filed before a concern's issue owes no row for it, so it stays passing",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "concerns": [
+        { "id": "fork", "issue": "#1250" },
+        { "id": "measure", "issue": "#5308" },
+        { "id": "nominal", "issue": "#4181" },
+        { "id": "oracle", "issue": "#313" },
+        { "id": "sharing", "issue": "#2291" }
+      ],
+      "number": 5300
+    },
+    "output": ""
+  },
+  {
+    "name": "#5308: an issue the coordinator signed owes no row it lacks, so it stays claimable",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "concerns": [
+        { "id": "fork", "issue": "#1250" },
+        { "id": "measure", "issue": "#5308" },
+        { "id": "nominal", "issue": "#4181" },
+        { "id": "oracle", "issue": "#313" },
+        { "id": "sharing", "issue": "#2291" }
+      ],
+      "number": 5400,
+      "labels": ["kind:feature", "area:workflow", "shape:signed"]
+    },
+    "output": ""
+  },
+  {
+    "name": "#5308: a body read with no number, as a template is, owes every row",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "concerns": [
+        { "id": "fork", "issue": "#1250" },
+        { "id": "measure", "issue": "#5308" },
+        { "id": "nominal", "issue": "#4181" },
+        { "id": "oracle", "issue": "#313" },
+        { "id": "sharing", "issue": "#2291" }
+      ]
+    },
+    "output": "`## Concerns` has no row for `measure`"
+  },
+  {
+    "name": "#5308: a row the issue writes is judged, whatever its concern's age",
+    "input": "The brief.\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-issue | primary | the sections |\n| `docs/agents/units.md`, `docs/agents/tracker.md` | secondary | the vault's 21-day listing |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — a memo hit is replayed, never trusted |\n| `sharing` | no |\n| `nominal` | no |\n| `measure` | touched |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\n#2533.\n\n## After\n\nnone\n",
+    "args": {
+      "concerns": [
+        { "id": "fork", "issue": "#1250" },
+        { "id": "measure", "issue": "#5308" },
+        { "id": "nominal", "issue": "#4181" },
+        { "id": "oracle", "issue": "#313" },
+        { "id": "sharing", "issue": "#2291" }
+      ],
+      "number": 5300
+    },
+    "output": "`## Concerns` marks `measure` neither `yes` nor `no`"
   }
 ]

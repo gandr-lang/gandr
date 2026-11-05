@@ -41,6 +41,7 @@ Bisect the series' hotpath reports over `main`, from the last passing report to 
 | `oracle` | no |
 | `sharing` | {{sharing}} |
 | `nominal` | no |
+| `measure` | no |
 
 ## Engineering
 
