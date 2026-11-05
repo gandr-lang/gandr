@@ -862,7 +862,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
     } else if matches!(refusal, CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
             | CheckRefusal::NotADataType(_) | CheckRefusal::NotAnAbstractType(_)
             | CheckRefusal::SealSiteRepeated(_)
-            | CheckRefusal::BuiltinRepeated { .. } | CheckRefusal::BuiltinMisplaced(_)
+            | CheckRefusal::BuiltinRepeated { .. } | CheckRefusal::BuiltinMisplaced(_) | CheckRefusal::BuiltinNotCanonical { .. }
             | CheckRefusal::NegativeOccurrence(_) | CheckRefusal::NestedOccurrence(_)
             | CheckRefusal::IndexOccurrence(_) | CheckRefusal::NonUniformOccurrence(_)
             | CheckRefusal::CrossBlockReference { .. }
@@ -1089,6 +1089,7 @@ fn checked(
         | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::BuiltinRepeated { .. }
         | CheckRefusal::BuiltinMisplaced(_)
+        | CheckRefusal::BuiltinNotCanonical { .. }
         | CheckRefusal::NegativeOccurrence(_)
         | CheckRefusal::NestedOccurrence(_)
         | CheckRefusal::IndexOccurrence(_)
@@ -1423,6 +1424,7 @@ impl fmt::Display for Checked
             CheckRefusal::SealSiteRepeated(site) => write!(f,"{site} was sealed twice"),
             CheckRefusal::BuiltinRepeated { role, holder } => write!(f,"declaration {} holds the built-in role `{}`",usize::from(holder),role.word()),
             CheckRefusal::BuiltinMisplaced(role) => write!(f,"the built-in role `{}` does not fit this declaration's judgement",role.word()),
+            CheckRefusal::BuiltinNotCanonical { role, .. } => write!(f,"this declaration departs from the canonical form of the built-in role `{}`",role.word()),
             CheckRefusal::DataArgumentArity(_) => f.write_str("the datatype application has the wrong parameter count"),
             CheckRefusal::UnknownConstructor {tag,..} => write!(f,"constructor tag {} is absent from the datatype",usize::from(tag)),
             CheckRefusal::ConstructorArity(_) => f.write_str("the constructor has the wrong field count"),
@@ -3439,6 +3441,10 @@ mod tests
                 holder: 2_usize.into(),
             },
             CheckRefusal::BuiltinMisplaced(gandr_kernel_term::Builtin::IrDecode),
+            CheckRefusal::BuiltinNotCanonical {
+                role: gandr_kernel_term::Builtin::IrSignature,
+                departure: gandr_kernel_term::Departure::Constructors,
+            },
             CheckRefusal::NegativeOccurrence(OccurrenceSite::Field {
                 tag: ConstructorTag::from(3_usize),
                 field: FieldPosition::from(5_usize),
@@ -3840,6 +3846,7 @@ mod tests
                         | CheckRefusal::SealSiteRepeated(_)
                         | CheckRefusal::BuiltinRepeated { .. }
                         | CheckRefusal::BuiltinMisplaced(_)
+                        | CheckRefusal::BuiltinNotCanonical { .. }
                         | CheckRefusal::NegativeOccurrence(_)
                         | CheckRefusal::NestedOccurrence(_)
                         | CheckRefusal::IndexOccurrence(_)
@@ -4040,6 +4047,10 @@ mod tests
                 holder: 2_usize.into(),
             },
             CheckRefusal::BuiltinMisplaced(gandr_kernel_term::Builtin::IrDecode),
+            CheckRefusal::BuiltinNotCanonical {
+                role: gandr_kernel_term::Builtin::IrSignature,
+                departure: gandr_kernel_term::Departure::Constructors,
+            },
             CheckRefusal::NegativeOccurrence(OccurrenceSite::Field {
                 tag: ConstructorTag::from(3_usize),
                 field: FieldPosition::from(5_usize),

@@ -971,6 +971,27 @@ fn checked(
             "the built-in role `{}` marks a definition, and this declaration is no definition",
             role.word()
         ),
+        CheckRefusal::BuiltinNotCanonical { role, departure } => {
+            write!(
+                f,
+                "this declaration departs from the canonical form of the built-in role `{}` at ",
+                role.word()
+            )?;
+            match departure {
+                gandr_kernel_term::Departure::Parameters => f.write_str("its parameters"),
+                gandr_kernel_term::Departure::Indices => f.write_str("its indices"),
+                gandr_kernel_term::Departure::Constructors => f.write_str("its constructors"),
+                gandr_kernel_term::Departure::Arity(tag) => {
+                    write!(f, "the fields of constructor {}", usize::from(tag))
+                },
+                gandr_kernel_term::Departure::Field { tag, field } => write!(
+                    f,
+                    "field {} of constructor {}",
+                    usize::from(field),
+                    usize::from(tag)
+                ),
+            }
+        },
         CheckRefusal::DataArgumentArity(_) => {
             f.write_str("the datatype is given the wrong number of arguments")
         },
@@ -2188,6 +2209,13 @@ pub mod tests
             },
             CheckRefusal::BuiltinMisplaced(gandr_kernel_term::Builtin::IrSignature),
             CheckRefusal::BuiltinMisplaced(gandr_kernel_term::Builtin::IrDecode),
+            CheckRefusal::BuiltinNotCanonical {
+                role: gandr_kernel_term::Builtin::IrSignature,
+                departure: gandr_kernel_term::Departure::Field {
+                    tag: ConstructorTag::from(1_usize),
+                    field: gandr_kernel_term::FieldPosition::from(1_usize),
+                },
+            },
             CheckRefusal::DataArgumentArity(value_type),
             CheckRefusal::UnknownConstructor {
                 at: value,

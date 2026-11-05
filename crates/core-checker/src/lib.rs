@@ -346,6 +346,11 @@
 //!
 //! # Example
 //!
+//! The example judges `def answer : Integer = 0 ; def owed : Integer ; def
+//! copy = answer ;`. Each declaration takes its verdict, the ledger owes the
+//! hole, and the kernel readmits all three, the artifact resting on the hole
+//! alone.
+//!
 //! ```
 //! use gandr_core_checker::CheckBudget;
 //! use gandr_core_checker::CheckingContext;
@@ -552,6 +557,7 @@ extern crate std;
 
 pub mod access;
 pub mod bridge;
+mod canonical;
 mod capability;
 pub mod codata;
 mod code;

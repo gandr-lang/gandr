@@ -1,0 +1,6 @@
+/// `BuiltinNotCanonical`: a signature type holds its role with `σ` and `δ` in the other order.
+@[ refuses("BuiltinNotCanonical"), builtin(irSignature) ]
+data Swapped(d : Type) : Type[+, 1] where
+  | Stop : (e : d) --> Swapped(d)
+  | Read : (a : Type, f : (a -> d) -> Swapped(d)) --> Swapped(d)
+  | Ask : (a : Type, f : a -> Swapped(d)) --> Swapped(d)

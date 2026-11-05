@@ -43,6 +43,81 @@ use crate::refusal::TypeNode;
 use crate::retire::Demand;
 use crate::retire::Retirement;
 
+/// The parts of the canonical signature type of an inductive-recursive
+/// definition, built in `arena` for the family at `family`: the parameter
+/// telescope, then the fields of `ι`, `σ` and `δ`.
+///
+/// # Specification
+/// trivial.
+pub fn signature_parts(
+    arena: &mut CoreArena,
+    family: ConstantIndex,
+) -> [Vec<ValueTypeId>; 4]
+{
+    let universe = |arena: &mut CoreArena| {
+        arena.value_type_universe(
+            gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            gandr_kernel_strata::Level::zero(),
+        )
+    };
+    let element = |arena: &mut CoreArena, index: u32| {
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        arena.value_type_element(code, gandr_kernel_strata::Level::zero())
+    };
+    let sig = |arena: &mut CoreArena, index: u32| {
+        let output = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        let applied = arena.value_type_data(family, Vec::from([output]));
+        arena.comp_type_returner(applied)
+    };
+    let parameter = universe(arena);
+    // ι(e : O): O one binder out.
+    let stop = element(arena, 0);
+    // σ(A : Type, f : A -> Sig(O)): A at 0, O at 1.
+    let shape = universe(arena);
+    let domain = element(arena, 0);
+    let codomain = sig(arena, 1);
+    let picked = arena.comp_type_arrow(domain, codomain);
+    let picked = arena.value_type_thunk(picked);
+    // δ(A : Type, f : (A -> O) -> Sig(O)).
+    let inductive = universe(arena);
+    let inner = element(arena, 0);
+    let output = element(arena, 1);
+    let output = arena.comp_type_returner(output);
+    let decode = arena.comp_type_arrow(inner, output);
+    let decode = arena.value_type_thunk(decode);
+    let codomain = sig(arena, 1);
+    let decoded = arena.comp_type_arrow(decode, codomain);
+    let decoded = arena.value_type_thunk(decoded);
+    [
+        Vec::from([parameter]),
+        Vec::from([stop]),
+        Vec::from([shape, picked]),
+        Vec::from([inductive, decoded]),
+    ]
+}
+
+/// The canonical signature type of an inductive-recursive definition, for the
+/// family at `family`.
+///
+/// # Specification
+/// trivial.
+pub fn canonical_signature(
+    arena: &mut CoreArena,
+    family: ConstantIndex,
+) -> gandr_core_term::DataSignature
+{
+    let [parameters, iota, sigma, delta] = signature_parts(arena, family);
+    // A field holds a type, so the family lives one universe above it.
+    let one = gandr_kernel_strata::Level::zero()
+        .succ()
+        .expect("one is a level");
+    let kind = arena.value_type_universe(
+        gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        one,
+    );
+    gandr_core_term::DataSignature::new(parameters, Vec::from([iota, sigma, delta]), kind)
+}
+
 /// Whether two runs of the judgement over one term refused it alike. A rule
 /// that mints a type as it judges mints it again in the second run, so a
 /// shape mismatch's found type and its weak head are compared by their

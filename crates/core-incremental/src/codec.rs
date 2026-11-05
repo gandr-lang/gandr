@@ -7369,6 +7369,49 @@ field!(
 );
 
 field!(
+    gandr_kernel_term::Departure,
+    |departure, writer| {
+        match *departure {
+            gandr_kernel_term::Departure::Parameters => writer.count(Count(0)),
+            gandr_kernel_term::Departure::Indices => writer.count(Count(1)),
+            gandr_kernel_term::Departure::Constructors => writer.count(Count(2)),
+            gandr_kernel_term::Departure::Arity(tag) => {
+                writer.count(Count(3))?;
+                writer.count(Count(usize::from(tag)))
+            },
+            gandr_kernel_term::Departure::Field { tag, field } => {
+                writer.count(Count(4))?;
+                writer.count(Count(usize::from(tag)))?;
+                writer.count(Count(usize::from(field)))
+            },
+        }
+    },
+    |reader| {
+        let kind = reader.count()?;
+        match kind.0 {
+            0 => Ok(gandr_kernel_term::Departure::Parameters),
+            1 => Ok(gandr_kernel_term::Departure::Indices),
+            2 => Ok(gandr_kernel_term::Departure::Constructors),
+            3 => {
+                let tag = reader.count()?;
+                Ok(gandr_kernel_term::Departure::Arity(
+                    gandr_kernel_term::ConstructorTag::from(tag.0),
+                ))
+            },
+            4 => {
+                let tag = reader.count()?;
+                let field = reader.count()?;
+                Ok(gandr_kernel_term::Departure::Field {
+                    tag: gandr_kernel_term::ConstructorTag::from(tag.0),
+                    field: gandr_kernel_term::FieldPosition::from(field.0),
+                })
+            },
+            _ => Err(CodecError::Corrupt),
+        }
+    }
+);
+
+field!(
     gandr_core_term::tactic::Tactic,
     |tactic, writer| {
         writer.tag(Tag(u8::from(*tactic)));
@@ -8368,6 +8411,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::SealSiteRepeated(_)
             | Refusal::BuiltinRepeated { .. }
             | Refusal::BuiltinMisplaced(_)
+            | Refusal::BuiltinNotCanonical { .. }
             | Refusal::UnenclosedRun { .. }
             | Refusal::ImplicitUnsolved { .. }
             | Refusal::ModelUnanswered { .. }

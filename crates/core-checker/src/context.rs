@@ -2378,27 +2378,32 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// Give the declaration at `constant` the built-in `role`, when the
-    /// declaration's `content` is of the judgement that holds the role and no
-    /// earlier declaration holds it.
+    /// declaration's `content` is of the judgement that holds the role, answers
+    /// the role's canonical form and no earlier declaration holds the role.
     ///
     /// # Specification
     /// - requires: `content` is the content of the declaration at `constant`.
     /// - ensures: the context answers `constant` for `role`; a second claim by
     ///   the same declaration is admitted unchanged.
     /// - fails: [`CheckRefusal::BuiltinMisplaced`] when the content is of
-    ///   another judgement than [`gandr_kernel_term::Builtin::holder`], and
-    ///   [`CheckRefusal::BuiltinRepeated`] naming the holder when another
+    ///   another judgement than [`gandr_kernel_term::Builtin::holder`],
+    ///   [`CheckRefusal::BuiltinNotCanonical`] naming the first departure when
+    ///   the signature type's holder departs from the canonical signature type,
+    ///   and [`CheckRefusal::BuiltinRepeated`] naming the holder when another
     ///   declaration holds the role; the context is unchanged.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`CheckRefusal::BuiltinMisplaced`] and
-    /// [`CheckRefusal::BuiltinRepeated`].
+    /// [`CheckRefusal::BuiltinMisplaced`],
+    /// [`CheckRefusal::BuiltinNotCanonical`]
+    /// and [`CheckRefusal::BuiltinRepeated`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a role claimed by two declarations, and a role on a
-    ///   declaration of the wrong judgement, are each refused by cause.
+    /// - hypothesis: L3 — a role claimed by two declarations, a role on a
+    ///   declaration of the wrong judgement and a signature type in another
+    ///   shape are each refused by cause.
     /// - witness: `module::tests::a_builtin_role_is_held_once_by_a_declaration_of_its_judgement_3575`
+    /// - witness: `module::tests::a_signature_type_in_another_shape_holds_no_role_5254`
     #[spec(
         captures: before = self.builtins.get(&role).copied(),
         ensures: |ret| match ret {
@@ -2406,11 +2411,14 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 && before.is_none_or(|holder| holder == constant)
                 && self.builtins.get(&role) == Some(&constant),
             | Err(refusal) => self.builtins.get(&role).copied() == before
-                && if matches!((role.holder(), content), (gandr_kernel_term::Holder::Data, crate::DeclarationContent::Data(_)) | (gandr_kernel_term::Holder::Value, crate::DeclarationContent::Value { .. })) {
-                    before.is_some_and(|holder| refusal == CheckRefusal::BuiltinRepeated { role, holder })
+                && if !matches!((role.holder(), content), (gandr_kernel_term::Holder::Data, crate::DeclarationContent::Data(_)) | (gandr_kernel_term::Holder::Value, crate::DeclarationContent::Value { .. })) {
+                    refusal == CheckRefusal::BuiltinMisplaced(role)
+                }
+                else if let CheckRefusal::BuiltinNotCanonical { role: refused, .. } = refusal {
+                    refused == role && role == gandr_kernel_term::Builtin::IrSignature
                 }
                 else {
-                    refusal == CheckRefusal::BuiltinMisplaced(role)
+                    before.is_some_and(|holder| refusal == CheckRefusal::BuiltinRepeated { role, holder })
                 },
         },
     )]
@@ -2433,6 +2441,14 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         );
         if !fits {
             return Err(CheckRefusal::BuiltinMisplaced(role));
+        }
+        if let (
+            gandr_kernel_term::Builtin::IrSignature,
+            &crate::DeclarationContent::Data(ref signature),
+        ) = (role, content)
+        {
+            let canonical = crate::canonical::signature(self.arena(), constant, signature);
+            canonical.map_err(|departure| CheckRefusal::BuiltinNotCanonical { role, departure })?;
         }
         match self.builtins.entry(role) {
             alloc::collections::btree_map::Entry::Occupied(held) if *held.get() != constant => {

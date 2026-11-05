@@ -366,6 +366,7 @@ fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::SealSiteRepeated(_) => "a component sealed twice",
         CheckRefusal::BuiltinRepeated { .. } => "a built-in role marked twice",
         CheckRefusal::BuiltinMisplaced(_) => "a built-in role on the wrong declaration",
+        CheckRefusal::BuiltinNotCanonical { .. } => "a built-in role's holder in another form",
         CheckRefusal::DataArgumentArity(_) => "the wrong number of parameters",
         CheckRefusal::UnknownConstructor { .. } => "no constructor of the datatype",
         CheckRefusal::ConstructorArity(_) => "the wrong number of fields",
