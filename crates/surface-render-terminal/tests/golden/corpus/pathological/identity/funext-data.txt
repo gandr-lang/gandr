@@ -10,11 +10,8 @@ error[PointwiseDistinct]: `Path.funext` needs both functions to agree at every i
 error[FunextUnsupported]: `Path.funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
    ╭▸ corpus/pathological/identity/funext-data.gandr:29:54
    │
-29 │   def restepped : Path(Renumber.step, Renumber.step) = Path.funext
-   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-30 │ ┃   Renumber.step
-31 │ ┃   Renumber.step;
-   │ ┗━━━━━━━━━━━━━━━┛ functions past the first-order boundary: found `Nat -> Nat`
+29 │ def restepped : Path(Renumber.step, Renumber.step) = Path.funext Renumber.step Renumber.step;
+   │                                                      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ functions past the first-order boundary: found `Nat -> Nat`
    │
    ├ note: `restepped` is refused with FunextUnsupported, as its expectation states
    ╰ note: tracked by #1315 <https://github.com/gandr-lang/gandr/issues/1315>

@@ -1,8 +1,8 @@
 error[MalformedForm]: a keyword or symbol of this forget model expression is out of place
-   ╭▸ corpus/pathological/identity/model-counter-manifest-explicit.gandr:33:12
+   ╭▸ corpus/pathological/identity/model-counter-manifest-explicit.gandr:33:10
    │
-33 │       sort C = Unit + (Unit + Unit)
-   │            ━ out of place
+33 │     sort C = Unit + (Unit + Unit)
+   │          ━ out of place
    │
    ├ note: `twiceWritten` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the forget model expression

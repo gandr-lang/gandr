@@ -11,13 +11,14 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
-   ╭▸ corpus/pathological/sessions/type-quote.gandr:16:133
+   ╭▸ corpus/pathological/sessions/type-quote.gandr:17:49
    │
-16 │ …d) = Path.walk (fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) }) (Path.here String) (Path.here (type(?String. end)));
-   │       ┬──────────────────────────────────────────────────────────────────┯━━━━━━──────────────────────────────────────────────────────────
-   │       │                                                                  │
-   │       │                                                                  a session payload open over a binder
-   │       checked against `Path[.A = Type](?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
+16 │   def open_payload : Path[.A = Type](?String. end, ?String. end) = Path.walk (fun (X) {
+   │ ┌──────────────────────────────────────────────────────────────────┘
+17 │ │   type(Path[.A = Type](type(?String. end), type(?X. end)))
+   │ │                                                 ━━━━━━━ a session payload open over a binder
+18 │ │ }) (Path.here String) (Path.here (type(?String. end)));
+   │ └──────────────────────────────────────────────────────┘ checked against `Path[.A = Type](?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
    │
    ├ note: `open_payload` is refused with OpenSessionPayload, as its expectation states
    ╰ help: bind the session payload inside the run's protocol

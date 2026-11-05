@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 093bd10bf4f6f96c23ef746c902fc54d486f62e90e34387c92f07481c8c5822c # shrinks to seed = "", script = [Type("def")]
+cc 5d2481909885d02b1ee3ab968783050284e8ce394027dbc5cae5c3c466712d86 # shrinks to seed = "def f(x : Integer) -> -F Integer {\n  return x\n}\n", script = [Move(0), Type("return"), Move(938), Delete, Type("😀"), Move(784), Enter, Move(143)]
