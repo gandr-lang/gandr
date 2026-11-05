@@ -53,6 +53,48 @@ flowchart BT
 ```
 <!-- crate-map:end -->
 
+## Presented spaces
+
+gandr reads every object it checks as a presented space: a finite set of cells, each cell with a boundary of lower cells and data on it. Five operations act on a presented space, and each operation emits evidence.
+
+| Operation | What it does | Crates that hold it today |
+| --------- | ------------ | ------------------------- |
+| present | writes the cells and their faces | `theory-computads`, `theory-circuit-algebras`, `theory-sites`, `theory-shapes` |
+| glue | checks each piece alone, checks agreement where pieces overlap, and assembles the pieces once | `kernel-core`, `core-incremental`, `storage-store` |
+| collapse | keeps the critical cells and the pairing of the cells that cancel | none by name: `theory-coherent-resolutions` keeps critical pairs, and `core-nbe` keeps normal forms |
+| measure | gives each cell a value in an algebra and propagates the value | `theory-ordered-algebras`, `theory-dynamic-graphs`, `core-term` |
+| replay | checks the evidence that the other four operations emit | `kernel-core` |
+
+Gluing and collapse claim identity: two names denote one object. Only replay claims validity.
+
+Two crate families present a space. The cell family presents a space by its cells and faces. The algebra family presents a space by its algebra of observations, and it holds the exact quantities. Finite Stone duality makes the two presentations of a finite space equivalent.
+
+| Family | Presents a space by | Crates |
+| ------ | ------------------- | ------ |
+| cell | its cells and their faces | none yet |
+| algebra | its algebra of observations | `theory-stone-duality`, `theory-ordered-algebras`, `theory-exact-reals` |
+
+Each crate above has one place in the frame.
+
+| Crate | Place |
+| ----- | ----- |
+| `core-incremental` | glue: the checkpoints of incremental checking |
+| `core-nbe` | collapse: normal forms |
+| `core-term` | measure: grades on types |
+| `kernel-core` | glue by its descent skeleton, and replay |
+| `storage-store` | glue with identity on overlaps |
+| `theory-circuit-algebras` | present: circuit wirings |
+| `theory-coherent-resolutions` | collapse: critical pairs |
+| `theory-computads` | present: descriptions elaborated into cells |
+| `theory-dynamic-graphs` | measure: the tropical potentials of universe levels |
+| `theory-exact-reals` | the algebra family's exact reals |
+| `theory-ordered-algebras` | the algebra family's measure: ordered semirings and their law checks |
+| `theory-shapes` | present: finite shapes and their face formulas |
+| `theory-sites` | present: the site of shapes |
+| `theory-stone-duality` | the algebra family's present: a finite space by its lattice of observations |
+
+The tables name only crates that this workspace holds, never a planned crate.
+
 ## The features ledger
 
 | Column | Holds |
