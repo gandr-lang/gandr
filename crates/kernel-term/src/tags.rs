@@ -913,6 +913,50 @@ pub const KIND_DATA_INDEXED: WireTag = WireTag(0x0B);
 /// reader predating this kind refuses it as an unknown declaration kind rather
 /// than misreading it, which is why the format version holds.
 pub const KIND_DEF_RULED: WireTag = WireTag(0x0E);
+/// Declaration tag: a typed definition whose segment closes with the cover
+/// derivations of the matches in its body.
+///
+/// After the [`KIND_DEF`] fields come the related block, the law block and the
+/// rule block as [`KIND_DEF_RULED`] writes them, all three counts here
+/// possibly zero, then a cover count, at least one. Each cover is the root of
+/// its match's tree, a computation root, then a step count and that many
+/// steps in mint order: [`COVER_VAR`] and an arm; [`COVER_COMPOSE`] and the
+/// inner step; or [`COVER_SPLIT`], the cases and a branch count and each
+/// branch's step. The cases are [`COVER_DATA`], a family's position, a
+/// constructor count and per constructor its tag and field count, then a loop
+/// count and per loop its words' position and its cell; or one of
+/// [`COVER_BOOLEAN`], [`COVER_INTEGER`] and a literal, [`COVER_TUPLE`] and
+/// [`COVER_RECORD`] and [`COVER_SUM`] each with a width, [`COVER_LIST`],
+/// [`COVER_GUARD`] and [`COVER_ABSURD`]. The kernel replays each derivation
+/// against its tree at admission. A definition with no match writes one of
+/// the other definition kinds, so every other artifact keeps its bytes, and a
+/// reader predating this kind refuses it as an unknown declaration kind
+/// rather than misreading it, which is why the format version holds.
+pub const KIND_DEF_COVERED: WireTag = WireTag(0x10);
+/// Cover step tag: a `var`, naming an arm.
+pub const COVER_VAR: WireTag = WireTag(0);
+/// Cover step tag: a `split`, over its cases and its branches.
+pub const COVER_SPLIT: WireTag = WireTag(1);
+/// Cover step tag: a `compose`, over its inner step.
+pub const COVER_COMPOSE: WireTag = WireTag(2);
+/// Cover cases tag: a data family's constructors and owed loops.
+pub const COVER_DATA: WireTag = WireTag(0);
+/// Cover cases tag: a boolean.
+pub const COVER_BOOLEAN: WireTag = WireTag(1);
+/// Cover cases tag: an integer compared with a literal.
+pub const COVER_INTEGER: WireTag = WireTag(2);
+/// Cover cases tag: a tuple of a width.
+pub const COVER_TUPLE: WireTag = WireTag(3);
+/// Cover cases tag: a record of a width.
+pub const COVER_RECORD: WireTag = WireTag(4);
+/// Cover cases tag: a sum of a width.
+pub const COVER_SUM: WireTag = WireTag(5);
+/// Cover cases tag: a native list.
+pub const COVER_LIST: WireTag = WireTag(6);
+/// Cover cases tag: a guard.
+pub const COVER_GUARD: WireTag = WireTag(7);
+/// Cover cases tag: a branch no row admits.
+pub const COVER_ABSURD: WireTag = WireTag(8);
 /// Rule node tag: a constructor of the declaration's own table.
 pub const RULE_CONSTRUCTOR: WireTag = WireTag(0);
 /// Rule node tag: a pattern variable.

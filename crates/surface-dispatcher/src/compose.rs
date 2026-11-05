@@ -2114,7 +2114,7 @@ fn judge_closure<'held>(
 ) -> Option<ClosureJudgement<'held>>
 {
     let (mut module, mut arena) = closure.alone()?;
-    let declarations = adapt(&module);
+    let declarations = adapt(&module, &arena);
     let entry = grant.entry(&declared_worlds(&module));
     let opening = Opening::Fresh(grant.grants(&mut arena), entry.clone());
     let mut run = ModuleRun::new();
@@ -2938,7 +2938,7 @@ fn judge_members<'source, Poll>(
 where
     Poll: Retirement,
 {
-    let declarations = adapt(&module);
+    let declarations = adapt(&module, &arena);
     let entry = grant.entry(&declared_worlds(&module));
     let holes = pattern_holes(&module);
     let after = match checking {
@@ -4322,7 +4322,7 @@ impl gandr_surface_format::Elaborate for Elaborating
         module: &LoweredModule<'_>,
     ) -> gandr_surface_format::Elaboration
     {
-        let declarations = adapt(module);
+        let declarations = adapt(module, arena);
         let mut context =
             checking_context(arena, Opening::UNBOUNDED, module, &pattern_holes(module));
         let report = check_module(&mut context, &declarations);
@@ -4347,19 +4347,20 @@ impl gandr_surface_format::Elaborate for Elaborating
 /// refuse, in admission order.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: `module` was lowered into `arena`.
 /// - ensures: one [`Declaration`] per unrefused declaration, in admission
 ///   order, at the same position and with the lowering's origin as its token: a
 ///   completed declaration carries its declared type and its body, an
 ///   uncompleted one its declared type and a hole — a law the module admits the
 ///   hole the host asserts — a bodiless definition its body and the reason that
 ///   it is unsigned, each of the three the laws its `respects` attribute names
-///   and the entry its `entry` attribute names; a data declaration carries its
-///   native signature and a codata declaration its decoded one, each shared
-///   with the lowered module, a sealed abstract type its kind, representation,
-///   extent, site, mobility and the interface its type member's `identity`
-///   attribute names, and a world declaration nothing but its position. A
-///   refused declaration is not offered.
+///   and the entry its `entry` attribute names, and a body the derivation of
+///   each match it holds; a data declaration carries its native signature and a
+///   codata declaration its decoded one, each shared with the lowered module, a
+///   sealed abstract type its kind, representation, extent, site, mobility and
+///   the interface its type member's `identity` attribute names, and a world
+///   declaration nothing but its position. A refused declaration is not
+///   offered.
 /// - provides: the one place that names both the lowering's module and the
 ///   checker's declaration input.
 /// - fails: never.
@@ -4403,7 +4404,10 @@ impl gandr_surface_format::Elaborate for Elaborating
             }
     })) && expected.next().is_none()
 })]
-pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
+pub fn adapt(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+) -> Vec<Declaration>
 {
     let mut declarations = Vec::with_capacity(module.declarations().iter().len());
     for lowered in module.declarations() {
@@ -4483,6 +4487,10 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
         .supplied(module.supplies(lowered).to_vec())
         .resolving(module.models(lowered).to_vec())
         .obliged(module.handler_laws(lowered).to_vec());
+        let declaration = match defined {
+            Maybe::Present(body) => declaration.covering(module.covers(arena, body)),
+            Maybe::Absent(_) => declaration,
+        };
         let declaration = marked(declaration);
         declarations.push(match Entry::declared(module.worlds(lowered)) {
             Maybe::Present(entry) => declaration.entered(entry),
@@ -4596,7 +4604,7 @@ pub fn item_program(
         .filter(|lowered| !matches!(lowered.outcome(), DeclarationOutcome::Refused(_)))
         .map(|lowered| gandr_core_incremental::ItemKey::from(lowered.name().as_ref()));
     let items = keys
-        .zip(adapt(module))
+        .zip(adapt(module, &arena))
         .map(|(key, declaration)| gandr_core_incremental::Item::new(key, declaration))
         .collect();
     let mut program = gandr_core_incremental::Program::new(arena, items)?;
@@ -5752,9 +5760,10 @@ module M : *{ x : Integer, z : Integer } where { def x = 1; }"#,
             Recognition::default(),
         )
         .expect("the module lowers");
+        let declarations = adapt(&module, &arena);
         let verdicts = check_module(
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-            &adapt(&module),
+            &declarations,
         );
         let admission = readmitted(
             &mut arena,
@@ -6231,9 +6240,10 @@ def delivered() -> -F Unit {
             Recognition::default(),
         )
         .expect("the module lowers");
+        let declarations = adapt(&module, &arena);
         let verdicts = check_module(
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-            &adapt(&module),
+            &declarations,
         );
         assert!(
             verdicts
@@ -6296,9 +6306,10 @@ def delivered() -> -F Unit {
             };
             // The order the composition ran before: readmit, then settle.
             let (mut module, mut arena) = lower(&mut lowerings);
+            let declarations = adapt(&module, &arena);
             let verdicts = check_module(
                 &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-                &adapt(&module),
+                &declarations,
             );
             let readmission = readmitted(
                 &mut arena,
@@ -7111,9 +7122,10 @@ def delivered() -> -F Unit {
         else {
             panic!("the module is read");
         };
+        let declarations = adapt(&module, &arena);
         let verdicts = check_module(
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-            &adapt(&module),
+            &declarations,
         );
         let spelled = constant_names(&module, module.unit().last());
         let names: Vec<Name<'_>> = spelled
@@ -7194,9 +7206,10 @@ def delivered() -> -F Unit {
         else {
             panic!("the module is read");
         };
+        let declarations = adapt(&module, &arena);
         let verdicts = check_module(
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-            &adapt(&module),
+            &declarations,
         );
         let constant = |wanted: &str| {
             module

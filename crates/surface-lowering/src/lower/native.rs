@@ -375,10 +375,6 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::cover::Cases;
-use gandr_core_term::cover::Cover;
-use gandr_core_term::cover::Step;
-use gandr_core_term::cover::StepId;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::TermId;
 use gandr_core_term::pattern::Pattern;
@@ -388,6 +384,7 @@ use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
 use gandr_core_term::staged::Part;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
@@ -398,6 +395,11 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::Summand;
+use gandr_kernel_term::cover::Cases;
+use gandr_kernel_term::cover::Cover;
+use gandr_kernel_term::cover::Loop;
+use gandr_kernel_term::cover::Step;
+use gandr_kernel_term::cover::StepId;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
@@ -5277,8 +5279,10 @@ impl<'source> Lowerer<'_, 'source>
             &patterns,
             (rows, Depth::default(), BTreeSet::new(), stated),
         )?;
-        kept.cover = covered(&tests);
         let loops = self.loop_arms(site, &tests, looped)?;
+        kept.cover = self
+            .owed_loops(&loops, ArmAt(arms.len()))
+            .map_or_else(Cover::new, |owed| covered(&tests, &owed));
         let eliminates = tests.iter().any(|test| {
             matches!(
                 *test,
@@ -5502,7 +5506,7 @@ impl<'source> Lowerer<'_, 'source>
             equations: 0,
             branches: Vec::new(),
         };
-        let cover = covered(core::slice::from_ref(&empty));
+        let cover = covered(core::slice::from_ref(&empty), &[]);
         self.cases.push(CaseForm {
             scrutinee: scrutinee.node,
             roots: Roots::Scrutinee,
@@ -6387,6 +6391,42 @@ impl<'source> Lowerer<'_, 'source>
                     |structure| structure.container,
                 );
         }
+    }
+
+    /// Each of `loops`' arms as the loop its case owes and the arm's place
+    /// after the match's `first` constructor arms.
+    ///
+    /// # Specification
+    /// - requires: `loops` is what [`Self::loop_arms`] ordered.
+    /// - ensures: one pair for each arm, in order: the arm's words by their
+    ///   declaration's constant, its generator as the cell, and `first` plus
+    ///   its place; nothing when an arm's words name no slot.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's loop arm names the circle's words and
+    ///   cell 0, after the point's arm.
+    /// - witness: `lower::native::tests::a_match_over_the_circle_covers_its_loop_5104`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|owed| owed.len() == loops.len()))]
+    fn owed_loops(
+        &self,
+        loops: &[LoopArm],
+        first: ArmAt,
+    ) -> Option<Vec<(Loop, ArmAt)>>
+    {
+        loops
+            .iter()
+            .enumerate()
+            .map(|(place, arm)| {
+                let words = self.collected.words.get(arm.words)?;
+                let constant = self.collected.slots.get(usize::from(words.slot))?.constant;
+                Some((
+                    Loop::new(constant, CellIndex::from(arm.generator)),
+                    ArmAt(first.0.saturating_add(place)),
+                ))
+            })
+            .collect()
     }
 
     /// The loop arms `written` of the match at `site`, in the order the loop
@@ -12613,14 +12653,18 @@ fn refinings(tests: &[Test]) -> Refinings
     refinings
 }
 
-/// The cover derivation `tests` states, its root minted last.
+/// The cover derivation `tests` states, its root minted last, its root's data
+/// split followed by `looped`'s branches.
 ///
 /// # Specification
-/// - requires: `tests` is a compiled tree, every child after its parent.
+/// - requires: `tests` is a compiled tree, every child after its parent;
+///   `looped` holds each loop the root's case owes with its arm, in the order
+///   the case's loop branches follow its constructors'.
 /// - ensures: one step for each node: a `var` for a leaf, a split for each
 ///   other node with one branch for each child in the node's order, and one
 ///   composition for each child that is no leaf; a data split lists the
-///   eliminated family's constructors by tag with each branch's field count.
+///   eliminated family's constructors by tag with each branch's field count,
+///   and the root's lists `looped`'s loops, each branch a `var` naming its arm.
 ///   The derivation is empty when a leaf is stuck on a hole, a data case names
 ///   no family or a node is still pending.
 /// - fails: never.
@@ -12631,10 +12675,15 @@ fn refinings(tests: &[Test]) -> Refinings
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a nested match over `List(Maybe(Nat))` records a
-///   derivation the signature admits, with one data split for each switch.
+///   derivation the signature admits, with one data split for each switch, and
+///   a match over the circle lists its loop after its point.
 /// - witness: `lower::native::tests::a_nested_match_records_its_cover_5103`
-#[spec(ensures: |ret| ret.steps().count() <= tests.len().saturating_mul(2))]
-fn covered(tests: &[Test]) -> Cover
+/// - witness: `lower::native::tests::a_match_over_the_circle_covers_its_loop_5104`
+#[spec(ensures: |ret| ret.steps().count() <= tests.len().saturating_mul(2).saturating_add(looped.len()))]
+fn covered(
+    tests: &[Test],
+    looped: &[(Loop, ArmAt)],
+) -> Cover
 {
     let mut cover = Cover::new();
     let mut steps: Vec<Option<StepId>> = alloc::vec![None; tests.len()];
@@ -12655,21 +12704,26 @@ fn covered(tests: &[Test]) -> Cover
                 eliminated: Maybe::Present(family),
                 ref branches,
                 ..
-            } => cover_split(
-                &mut cover,
-                (&steps, tests),
-                Cases::Data {
-                    family,
-                    constructors: branches
-                        .iter()
-                        .enumerate()
-                        .map(|(tag, &(arity, _at))| {
-                            (ConstructorTag::from(tag), FieldCount::from(arity))
-                        })
-                        .collect(),
-                },
-                branches.iter().map(|&(_arity, at)| at),
-            ),
+            } => {
+                let owed = if position == 0 { looped } else { &[] };
+                cover_split(
+                    &mut cover,
+                    (&steps, tests),
+                    Cases::Data {
+                        family,
+                        constructors: branches
+                            .iter()
+                            .enumerate()
+                            .map(|(tag, &(arity, _at))| {
+                                (ConstructorTag::from(tag), FieldCount::from(arity))
+                            })
+                            .collect(),
+                        loops: owed.iter().map(|&(owed, _arm)| owed).collect(),
+                    },
+                    branches.iter().map(|&(_arity, at)| at),
+                )
+                .map(|split| with_loop_arms(&mut cover, split, owed))
+            },
             Test::Boolean { yes, no, .. } => cover_split(
                 &mut cover,
                 (&steps, tests),
@@ -12765,6 +12819,41 @@ where
         });
     }
     Some(Step::Split { cases, branches })
+}
+
+/// `split` with one `var` branch for each of `owed`'s loop arms after its
+/// own branches, each minted before the split.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a split's branches followed by one fresh `var` for each loop arm,
+///   in order; any other step unchanged.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`covered`].
+/// - witness: `lower::native::tests::a_match_over_the_circle_covers_its_loop_5104`
+#[spec(captures: count = split.parts().len(), ensures: |ret| ret.parts().len() >= count)]
+fn with_loop_arms(
+    cover: &mut Cover,
+    split: Step,
+    owed: &[(Loop, ArmAt)],
+) -> Step
+{
+    match split {
+        Step::Split {
+            cases,
+            mut branches,
+        } => {
+            branches.extend(
+                owed.iter()
+                    .map(|&(_loop, arm)| cover.mint(Step::Var(arm.0))),
+            );
+            Step::Split { cases, branches }
+        },
+        other @ (Step::Var(_) | Step::Compose(_)) => other,
+    }
 }
 
 /// Whether the motive [`tracked_motives`] read for each data switch over a

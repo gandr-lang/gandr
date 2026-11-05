@@ -365,6 +365,9 @@ struct DeclMeta
     /// The rules of the operation a ruled definition lowered from; empty for
     /// every other declaration.
     operation_rules: Vec<crate::operation_rules::OperationRule>,
+    /// The root and the derivation of each match a covered definition
+    /// carries; empty for every other declaration.
+    covers: Vec<(GlobalIndex, crate::cover::Cover)>,
     /// The stages a definition's signature quantifies over; empty for every
     /// other declaration.
     stages: crate::stage_signature::StageSignature,
@@ -1464,6 +1467,170 @@ fn comp_type_id_at(
     }
 }
 
+/// The computation at `global`, the root of a covered definition's match.
+///
+/// # Specification
+/// - requires: nothing; `global` may name no entry.
+/// - ensures: returns the computation id at that index, and `None` both when
+///   the index names no entry and when the entry there is of another family.
+/// - provides: the family-checked root resolution for a covered definition's
+///   matches.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a covered definition's roots round-trip.
+/// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
+#[spec(
+    ensures: |ret| ret == match nodes.get(global.offset().0) { Some(&DecodedNode::Computation(id)) => Some(id), _ => None },
+)]
+#[inline]
+fn computation_id_at(
+    nodes: &[DecodedNode],
+    global: GlobalIndex,
+) -> Option<crate::ComputationId>
+{
+    match nodes.get(global.offset().0) {
+        Some(&DecodedNode::Computation(id)) => Some(id),
+        _ => None,
+    }
+}
+
+/// Decode a cover derivation: its step count, then each step in mint order,
+/// allocating only as bytes are consumed.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the derivation the bytes write, each step as
+///   [`tags::KIND_DEF_COVERED`] states it. A step naming a later one decodes,
+///   and the kernel refuses it at admission.
+/// - fails: [`TagSite::CoverStep`] or [`TagSite::CoverCases`] for a tag outside
+///   its alphabet, [`MalformedSite::IndexRange`] for a step id past `u32`, and
+///   the reader's truncation or varint refusals.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a covered definition's derivations round-trip.
+/// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
+#[spec(captures: before = reader.position.0, ensures: |ret| ret.as_ref().map_or(true, |cover| cover.steps().count() < reader.position.0.saturating_sub(before).saturating_add(1)))]
+fn decode_cover(reader: &mut ByteReader<'_>) -> Result<crate::cover::Cover, DecodeError>
+{
+    use crate::cover::Step;
+    let count = usize::from(reader.read_usize()?);
+    let mut cover = crate::cover::Cover::new();
+    for _ in 0 .. count {
+        let step = match reader.next_tag()? {
+            tags::COVER_VAR => Step::Var(usize::from(reader.read_usize()?)),
+            tags::COVER_COMPOSE => Step::Compose(decode_step_id(reader)?),
+            tags::COVER_SPLIT => {
+                let cases = decode_cases(reader)?;
+                let width = usize::from(reader.read_usize()?);
+                let mut branches = Vec::new();
+                for _ in 0 .. width {
+                    branches.push(decode_step_id(reader)?);
+                }
+                Step::Split { cases, branches }
+            },
+            other => {
+                return Err(DecodeError::UnknownTag {
+                    site: TagSite::CoverStep,
+                    tag: other,
+                });
+            },
+        };
+        let _id = cover.mint(step);
+    }
+    Ok(cover)
+}
+
+/// Decode a step id, refused past `u32`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the step id the bytes write.
+/// - fails: [`MalformedSite::IndexRange`] past `u32`, and the reader's
+///   truncation or varint refusals.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decode_cover`].
+/// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
+#[spec(captures: before = reader.position.0, ensures: |ret| ret.is_err() || reader.position.0 > before)]
+fn decode_step_id(reader: &mut ByteReader<'_>) -> Result<crate::cover::StepId, DecodeError>
+{
+    let at = u32::try_from(usize::from(reader.read_usize()?)).map_err(|_overflow| {
+        DecodeError::Malformed {
+            site: MalformedSite::IndexRange,
+        }
+    })?;
+    Ok(crate::cover::StepId::from(at))
+}
+
+/// Decode one split's cases: their tag, then their payload.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the cases the bytes write, as [`tags::KIND_DEF_COVERED`] states
+///   them.
+/// - fails: [`TagSite::CoverCases`] for a tag outside the alphabet, and the
+///   literal's and the reader's own refusals.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decode_cover`].
+/// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
+#[spec(captures: before = reader.position.0, ensures: |ret| ret.is_err() || reader.position.0 > before)]
+fn decode_cases(reader: &mut ByteReader<'_>) -> Result<crate::cover::Cases, DecodeError>
+{
+    use crate::cover::Cases;
+    Ok(match reader.next_tag()? {
+        tags::COVER_DATA => {
+            let family = ConstantIndex::from(usize::from(reader.read_usize()?));
+            let count = usize::from(reader.read_usize()?);
+            let mut constructors = Vec::new();
+            for _ in 0 .. count {
+                let tag = crate::ConstructorTag::from(usize::from(reader.read_usize()?));
+                let fields = crate::FieldCount::from(usize::from(reader.read_usize()?));
+                constructors.push((tag, fields));
+            }
+            let count = usize::from(reader.read_usize()?);
+            let mut loops = Vec::new();
+            for _ in 0 .. count {
+                let words = ConstantIndex::from(usize::from(reader.read_usize()?));
+                let cell = crate::CellIndex::from(usize::from(reader.read_usize()?));
+                loops.push(crate::cover::Loop::new(words, cell));
+            }
+            Cases::Data {
+                family,
+                constructors,
+                loops,
+            }
+        },
+        tags::COVER_BOOLEAN => Cases::Boolean,
+        tags::COVER_INTEGER => Cases::Integer(decode_literal(reader)?),
+        tags::COVER_TUPLE => Cases::Tuple(usize::from(reader.read_usize()?)),
+        tags::COVER_RECORD => Cases::Record(usize::from(reader.read_usize()?)),
+        tags::COVER_SUM => Cases::Sum(usize::from(reader.read_usize()?)),
+        tags::COVER_LIST => Cases::List,
+        tags::COVER_GUARD => Cases::Guard,
+        tags::COVER_ABSURD => Cases::Absurd,
+        other => {
+            return Err(DecodeError::UnknownTag {
+                site: TagSite::CoverCases,
+                tag: other,
+            });
+        },
+    })
+}
+
 /// Resolve each declaration's roots to arena ids and build the sequence, the
 /// first at admission position `first` of an artifact of `end` declarations.
 ///
@@ -1670,6 +1837,14 @@ fn build_declarations(
                         dialogue,
                     });
                 }
+                let mut covers = Vec::with_capacity(meta.covers.len());
+                for (root, cover) in core::mem::take(&mut meta.covers) {
+                    let root =
+                        computation_id_at(&table.nodes, root).ok_or(DecodeError::Malformed {
+                            site: MalformedSite::Polarity,
+                        })?;
+                    covers.push(crate::cover::Covered { root, cover });
+                }
                 DeclarationBuilder::new(&mut table.arena)
                     .sealed_def(meta.levels.clone(), declared, body, meta.provenance.clone())
                     .relating(related)
@@ -1678,6 +1853,7 @@ fn build_declarations(
                         core::mem::take(&mut meta.operation_rules),
                     ))
                     .staged(core::mem::take(&mut meta.stages))
+                    .covered(covers)
             },
             DeclKind::AbstractType => {
                 let (root, extent) = meta.sealed.ok_or(DecodeError::Malformed {
@@ -2401,6 +2577,7 @@ fn decode_declaration(
     let mut laws = Vec::new();
     let mut rules = Vec::new();
     let mut operation_rules = Vec::new();
+    let mut covers = Vec::new();
     let mut stages = crate::stage_signature::StageSignature::default();
     let mut cells = None;
     let root_body = match kind {
@@ -2483,7 +2660,9 @@ fn decode_declaration(
             // and then its rules. A count of none decodes, and the canonical
             // re-encoding, which writes such a definition under a plainer
             // kind, refuses it.
-            let ruled = kind_tag == tags::KIND_DEF_RULED;
+            // A covered one closes with all three blocks and then its covers.
+            let covered = kind_tag == tags::KIND_DEF_COVERED;
+            let ruled = kind_tag == tags::KIND_DEF_RULED || covered;
             if kind_tag == tags::KIND_DEF_RELATING || kind_tag == tags::KIND_DEF_LAWFUL || ruled {
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
@@ -2505,6 +2684,13 @@ fn decode_declaration(
                     let left = decode_operation_side(reader)?;
                     let right = decode_operation_side(reader)?;
                     operation_rules.push(crate::operation_rules::OperationRule::new(left, right));
+                }
+            }
+            if covered {
+                let count = usize::from(reader.read_usize()?);
+                for _ in 0 .. count {
+                    let root = decode_root(reader, table, Family::Computation)?;
+                    covers.push((root, decode_cover(reader)?));
                 }
             }
             Some(body)
@@ -2553,6 +2739,7 @@ fn decode_declaration(
         related,
         laws,
         operation_rules,
+        covers,
         stages,
         rules,
         cells,
@@ -4035,9 +4222,9 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///
 /// # Specification
 /// - requires: `kind` is the byte read at a declaration-kind position.
-/// - ensures: returns the live kind for a definition, plain, relating, lawful
-///   or ruled, an axiom, a sealed abstract type, plain, interfaced or lawful,
-///   or a data signature.
+/// - ensures: returns the live kind for a definition, plain, relating, lawful,
+///   ruled or covered, an axiom, a sealed abstract type, plain, interfaced or
+///   lawful, or a data signature.
 /// - provides: the one place a kind byte is interpreted, keeping a reserved
 ///   kind's refusal distinct from an unknown byte's, so a reader learns whether
 ///   the kind is unimplemented or unassigned.
@@ -4054,7 +4241,7 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 | 7 | 9 | 14 | 16 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 | 12 | 15 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 | 8 | 10 | 11 => ret.as_ref() == Ok(&DeclKind::Data), 13 => ret.as_ref() == Ok(&DeclKind::Codata), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
@@ -4065,9 +4252,11 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
         | tags::KIND_DATA_WORDS
         | tags::KIND_DATA_INDEXED => Ok(DeclKind::Data),
         tags::KIND_CODATA => Ok(DeclKind::Codata),
-        tags::KIND_DEF | tags::KIND_DEF_RELATING | tags::KIND_DEF_LAWFUL | tags::KIND_DEF_RULED => {
-            Ok(DeclKind::Def)
-        },
+        tags::KIND_DEF
+        | tags::KIND_DEF_RELATING
+        | tags::KIND_DEF_LAWFUL
+        | tags::KIND_DEF_RULED
+        | tags::KIND_DEF_COVERED => Ok(DeclKind::Def),
         tags::KIND_AXIOM => Ok(DeclKind::Axiom),
         // The abstract-type kind is deliberately live here: it was reserved with
         // the other three and sealing made it real, so it is decoded rather than
@@ -5256,7 +5445,7 @@ mod tests
             assert_eq!(super::decode_sign(&mut reader), sign);
             assert_eq!(reader.position.0, 1);
             let kind = match byte {
-                0 | 7 | 9 | 14 => Ok(super::DeclKind::Def),
+                0 | 7 | 9 | 14 | 16 => Ok(super::DeclKind::Def),
                 1 => Ok(super::DeclKind::Axiom),
                 2 | 12 | 15 => Ok(super::DeclKind::AbstractType),
                 3 => Err(DecodeError::ReservedDeclarationKind {
@@ -5726,6 +5915,7 @@ mod tests
                     related: vec![],
                     laws: vec![],
                     operation_rules: vec![],
+                    covers: vec![],
                     stages: crate::StageSignature::default(),
                     rules: vec![],
                     cells: None,
@@ -5821,6 +6011,7 @@ mod tests
             )],
             laws: vec![],
             operation_rules: vec![],
+            covers: vec![],
             stages: crate::StageSignature::default(),
             rules: vec![],
             cells: None,
@@ -6712,6 +6903,7 @@ mod tests
                 )],
                 laws: vec![],
                 operation_rules: vec![],
+                covers: vec![],
                 stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
@@ -6734,6 +6926,7 @@ mod tests
                 related: vec![],
                 laws: vec![],
                 operation_rules: vec![],
+                covers: vec![],
                 stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,
@@ -6759,6 +6952,7 @@ mod tests
                 related: vec![],
                 laws: vec![],
                 operation_rules: vec![],
+                covers: vec![],
                 stages: crate::StageSignature::default(),
                 rules: vec![],
                 cells: None,

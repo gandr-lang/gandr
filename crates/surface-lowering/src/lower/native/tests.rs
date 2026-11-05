@@ -3750,11 +3750,12 @@ fn a_match_without_an_answer_is_unannotated()
 #[test]
 fn a_nested_match_records_its_cover_5103()
 {
-    use gandr_core_term::cover::ArmCount;
-    use gandr_core_term::cover::Cases;
-    use gandr_core_term::cover::Cover;
-    use gandr_core_term::cover::CoverRefusal;
-    use gandr_core_term::cover::Step;
+    use gandr_kernel_term::FieldCount;
+    use gandr_kernel_term::cover::ArmCount;
+    use gandr_kernel_term::cover::Cases;
+    use gandr_kernel_term::cover::Cover;
+    use gandr_kernel_term::cover::CoverRefusal;
+    use gandr_kernel_term::cover::Step;
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
@@ -3780,7 +3781,12 @@ fn a_nested_match_records_its_cover_5103()
         (0_usize .. signatures.len())
             .find(|&at| ConstantIndex::from(at) == family)
             .and_then(|at| signatures.get(at))
-            .map(|signature| &**signature)
+            .map(|signature| {
+                signature
+                    .constructors()
+                    .iter()
+                    .map(|fields| FieldCount::from(fields.len()))
+            })
     };
     let root = tail_of(&arena, body_named(&module, SurfaceName::from("f")));
     let Maybe::Present(kept) = module.origins().case(root)
@@ -3801,6 +3807,7 @@ fn a_nested_match_records_its_cover_5103()
                     Cases::Data {
                         family,
                         ref constructors,
+                        ..
                     },
                 ..
             } => Some((family, constructors.len())),
@@ -3826,12 +3833,14 @@ fn a_nested_match_records_its_cover_5103()
                     Cases::Data {
                         family,
                         ref constructors,
+                        ref loops,
                     },
                 ref branches,
             } if family == ConstantIndex::from(1_usize) => Step::Split {
                 cases: Cases::Data {
                     family,
                     constructors: constructors.iter().take(1).copied().collect(),
+                    loops: loops.clone(),
                 },
                 branches: branches.iter().take(1).copied().collect(),
             },
@@ -3848,6 +3857,57 @@ fn a_nested_match_records_its_cover_5103()
     );
     let report = judged(&module, &mut arena);
     assert_accepted(&report);
+}
+
+#[test]
+fn a_match_over_the_circle_covers_its_loop_5104()
+{
+    use gandr_kernel_term::CellIndex;
+    use gandr_kernel_term::cover::Cases;
+    use gandr_kernel_term::cover::Loop;
+    use gandr_kernel_term::cover::Step;
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef invLooper(x : Circle) -> -F Circle {\n  match x {\n    | Base => Base\n    | loop => Path.back loop\n  }\n}\n",
+        ),
+        &mut arena,
+    );
+    let root = tail_of(&arena, body_named(&module, SurfaceName::from("invLooper")));
+    let Maybe::Present(kept) = module.origins().case(root)
+    else {
+        panic!("the match keeps its arms");
+    };
+    let Some((
+        _root,
+        &Step::Split {
+            cases:
+                Cases::Data {
+                    ref constructors,
+                    ref loops,
+                    ..
+                },
+            ref branches,
+        },
+    )) = kept.cover.steps().last()
+    else {
+        panic!("the root is a data split: {:?}", kept.cover);
+    };
+    assert_eq!(constructors.len(), 1, "the point `Base`");
+    assert_eq!(
+        loops.iter().map(|owed| owed.cell()).collect::<Vec<_>>(),
+        [CellIndex::from(0_usize)],
+        "the one loop the case owes, after the point"
+    );
+    assert_eq!(branches.len(), 2, "the point's branch, then the loop's");
+    assert_eq!(
+        branches
+            .get(1)
+            .and_then(|&loop_arm| kept.cover.step(loop_arm)),
+        Some(&Step::Var(1)),
+        "the loop's branch runs the loop's arm, after the one constructor arm"
+    );
+    let _same: Option<&Loop> = loops.first();
 }
 
 #[test]

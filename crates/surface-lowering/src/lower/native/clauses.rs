@@ -516,7 +516,7 @@ impl<'source> Lowerer<'_, 'source>
             arms: Vec::new(),
             spans: Vec::new(),
             labelled: Vec::new(),
-            cover: super::covered(&tests),
+            cover: super::covered(&tests, &[]),
         };
         Self::keep(&patterns, &roots, &mut kept);
         // The first column the tree switches on is the one a recursive

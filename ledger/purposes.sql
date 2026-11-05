@@ -698,13 +698,6 @@ INSERT INTO purpose VALUES('core-term','context::LinearZone','struct','A snapsho
 INSERT INTO purpose VALUES('core-term','control::ControlFormer','enum','The runtime control formers outside the pure certificate language: reify, perform, handle, resume, abandon, reset and shift.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','control::EffectClause','struct','One operation clause, with the payload and the resumption bound in that order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','control::StackFrame','enum','One observation in a first-class stack literal: an apply, a bind or a projection.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','cover::ArmCount','struct','How many arms a match holds, the bound every var step of its cover derivation stays below.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','cover::BranchCount','struct','How many branches a split of a cover derivation holds, as its cases fix it.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','cover::Cases','enum','The cases one split of a cover derivation lists: a data family''s constructors with their field counts, a boolean, an integer literal, a tuple, a record, a sum, a list, a guard, or none.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','cover::Cover','struct','A match''s cover derivation, each part minted before the step holding it, that a check reads against the data signatures and the arm count.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','cover::CoverRefusal','enum','Why a cover derivation is refused, naming the first step that breaks a rule.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','cover::Step','enum','One step of a cover derivation: a var naming an arm, a split over one column''s cases, or a composition under a branch.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','cover::StepId','struct','The id of a step in a Cover.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','definition::DefinitionChain','struct','The definition chain: every definition''s body and height, in admission order, owning no term node and borrowing no arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','definition::DefinitionEntry','struct','One definition of the chain: its admission position, its body as a canonical subterm-table entry index, its computed height and its declared stance.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','definition::DefinitionError','enum','Why a chain or environment operation was refused: an already-defined, out-of-order or forward-referencing position, or an unknown scope.',NULL,'fits','sound',NULL);
@@ -1315,6 +1308,15 @@ INSERT INTO purpose VALUES('kernel-term','builtin::Builtin','enum','A built-in r
 INSERT INTO purpose VALUES('kernel-term','builtin::Departure','enum','The first place where a holder of a built-in role departs from its canonical form: its parameters, its indices, its constructor table, one constructor''s arity or one field.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','builtin::Holder','enum','The judgement of the declaration that holds a built-in role: a data declaration or a value declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','builtin::RoleWord','struct','The word an attribute names a built-in role by, as the source spells it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::ArmCount','struct','How many arms a match holds, the bound every var step of its cover derivation stays below.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::BranchCount','struct','How many branches a split of a cover derivation holds, as its cases fix it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::Cases','enum','The cases one split of a cover derivation lists: a data family''s constructors with their field counts and the loops its case owes, a boolean, an integer literal, a tuple, a record, a sum, a list, a guard, or none.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::Cover','struct','A match''s cover derivation, each part minted before the step holding it, that a check reads against the field counts and the arm count, and that the kernel replays against the admitted environment.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::CoverRefusal','enum','Why a cover derivation is refused, naming the first step that breaks a rule.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::Covered','struct','A match in a definition''s body and the derivation that covers it, which the kernel replays at admission.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::Loop','struct','One loop a case over a presented sort owes: its type of words and its cell.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::Step','enum','One step of a cover derivation: a var naming an arm, a split over one column''s cases, or a composition under a branch.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','cover::StepId','struct','The id of a step in a Cover.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::AdmissionMark','enum','The producer’s claimed admission mode, not evidence of successful checking.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::AtomInterface','struct','A sealed atom''s element interface: the relation two of its elements bear, that relation''s reflexivity and, optionally, the law that makes the pair an identity system.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::Declaration','struct','A declaration: a level interface, its content roots, its sealing provenance, and its structured name.',NULL,'fits','sound',NULL);
@@ -1453,6 +1455,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_INDEXED','constant','D
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_PRESENTED','constant','Declaration tag: a presented datatype, whose segment closes with the rules rewriting its constructor terms.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DATA_WORDS','constant','Declaration tag: a type of words, a presented datatype whose segment closes with the free cells it is minted over.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF','constant','Declaration kind: a typed definition.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_COVERED','constant','Declaration tag: a typed definition whose segment closes with the cover derivation of each match in its body.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_LAWFUL','constant','Declaration tag: a typed definition whose segment closes with the laws its folds rest on.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_RELATING','constant','Declaration tag: a typed definition whose segment closes with the path endpoints its type conversions relate.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::KIND_DEF_RULED','constant','Declaration tag: a typed definition whose segment closes with the rules of the operation it lowered from.',NULL,'fits','sound',NULL);

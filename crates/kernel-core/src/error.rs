@@ -565,6 +565,10 @@ pub enum KernelError
     /// branches bind another number of index equations than its family has
     /// indices.
     NonExhaustiveDataCase,
+    /// A match's cover derivation does not replay against its tree: a step
+    /// breaks a rule of the derivation, names a family or loops the admitted
+    /// environment does not hold, or meets a node that is not its own.
+    CoverDisagrees(gandr_kernel_term::cover::CoverRefusal),
     /// A data declaration's own family stands under a function's domain where
     /// no stage reaches it: at other arguments, inside a term, or through a
     /// parameter that is not strictly positive.
@@ -953,6 +957,9 @@ impl core::fmt::Display for KernelError
             Self::NonExhaustiveDataCase => {
                 f.write_str("a data case did not cover exactly its constructor table")
             },
+            Self::CoverDisagrees(_) => {
+                f.write_str("a match's cover derivation did not replay against its tree")
+            },
             Self::NegativeOccurrence(_) => f.write_str(
                 "a data declaration's family stood under a function's domain where no stage \
                      reaches it",
@@ -1335,6 +1342,7 @@ mod tests
             KernelError::ConstructorIndex { tag },
             KernelError::IndexedSignature,
             KernelError::NonExhaustiveDataCase,
+            KernelError::CoverDisagrees(gandr_kernel_term::cover::CoverRefusal::Empty),
             KernelError::NegativeOccurrence(site),
             KernelError::NestedOccurrence(site),
             KernelError::IndexOccurrence(site),

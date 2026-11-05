@@ -545,6 +545,9 @@ pub struct ModuleReport
     /// The rules of the operation each ruled declaration lowered from, by
     /// position.
     operation_rules: BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The matches of each declaration's body with their derivations, by
+    /// position.
+    covers: BTreeMap<ConstantIndex, Vec<(ComputationId, gandr_kernel_term::cover::Cover)>>,
     /// The stage signature of each definition quantified over stages, by
     /// position.
     stage_signatures: BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
@@ -856,6 +859,20 @@ impl ModuleReport
     ) -> &BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>
     {
         &self.operation_rules
+    }
+
+    /// The matches of each declaration's body with their derivations, by
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn covers(
+        &self
+    ) -> &BTreeMap<ConstantIndex, Vec<(ComputationId, gandr_kernel_term::cover::Cover)>>
+    {
+        &self.covers
     }
 
     /// The stage signature of each definition quantified over stages, by
@@ -1415,6 +1432,7 @@ fn decide(
     }
     context.keep_laws(constant, declaration.laws().to_vec());
     context.keep_operation_rules(constant, declaration.operation_rules().clone());
+    context.keep_covers(constant, declaration.covers().to_vec());
     let outer = (run == Run::Typed).then(|| context.start_typings());
     let finish = |context: &mut CheckingContext<'_>, outer: Option<Option<Kept>>| {
         outer.map(|outer| context.finish_typings(outer))
@@ -2891,6 +2909,7 @@ impl ModuleRun
             restatements: context.restatements().clone(),
             laws: context.laws().clone(),
             operation_rules: context.operation_rules().clone(),
+            covers: context.covers().clone(),
             stage_signatures: context.stage_signatures().clone(),
             natives: context.natives().clone(),
             definitions: context.definitions().definitions().collect(),
@@ -3076,6 +3095,12 @@ pub fn absorb(
             .operation_rules()
             .iter()
             .map(|(&at, rules)| (at, rules.clone())),
+    );
+    report.covers.extend(
+        context
+            .covers()
+            .iter()
+            .map(|(&at, covers)| (at, covers.clone())),
     );
     report.stage_signatures.extend(
         context

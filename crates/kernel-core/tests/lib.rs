@@ -14,6 +14,8 @@ mod codata;
 #[cfg(test)]
 mod conversion;
 #[cfg(test)]
+mod cover;
+#[cfg(test)]
 mod flow_readmission;
 #[cfg(test)]
 mod levels;

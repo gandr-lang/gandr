@@ -2,42 +2,38 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::ConstructorTag;
-use gandr_kernel_term::FieldCount;
-
 use super::ArmCount;
 use super::BranchCount;
 use super::Cases;
 use super::Cover;
 use super::CoverRefusal;
+use super::Loop;
 use super::Step;
 use super::StepId;
-use crate::CoreArena;
-use crate::syntax::DataSignature;
+use crate::CellIndex;
+use crate::ConstantIndex;
+use crate::ConstructorTag;
+use crate::FieldCount;
 
-/// `Nat`, `Maybe` and `List` at constants 0, 1 and 2.
+/// The field counts of `Nat`'s, `Maybe`'s and `List`'s constructors, at
+/// constants 0, 1 and 2.
 ///
 /// # Specification
 /// trivial.
-fn signatures(arena: &mut CoreArena) -> BTreeMap<ConstantIndex, DataSignature>
+fn signatures() -> BTreeMap<ConstantIndex, Vec<FieldCount>>
 {
-    let universe = arena.value_type_data(ConstantIndex::from(9_usize), vec![]);
-    let nat = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
-    let element = arena.value_type_data(ConstantIndex::from(8_usize), vec![]);
-    let list = arena.value_type_data(ConstantIndex::from(2_usize), vec![]);
     BTreeMap::from([
         (
             ConstantIndex::from(0_usize),
-            DataSignature::new(vec![], vec![vec![], vec![nat]], universe),
+            [0_usize, 1].map(FieldCount::from).to_vec(),
         ),
         (
             ConstantIndex::from(1_usize),
-            DataSignature::new(vec![universe], vec![vec![], vec![element]], universe),
+            [0_usize, 1].map(FieldCount::from).to_vec(),
         ),
         (
             ConstantIndex::from(2_usize),
-            DataSignature::new(vec![universe], vec![vec![], vec![element, list]], universe),
+            [0_usize, 2].map(FieldCount::from).to_vec(),
         ),
     ])
 }
@@ -60,6 +56,7 @@ fn data(
                 .enumerate()
                 .map(|(tag, &count)| (ConstructorTag::from(tag), count))
                 .collect(),
+            loops: Vec::new(),
         },
         branches,
     }
@@ -132,8 +129,22 @@ fn each_split_holds_one_branch_per_case()
             (ConstructorTag::from(1_usize), FieldCount::from(1_usize)),
             (ConstructorTag::from(2_usize), FieldCount::from(2_usize)),
         ],
+        loops: Vec::new(),
+    };
+    let circle = Cases::Data {
+        family: ConstantIndex::from(0_usize),
+        constructors: vec![(ConstructorTag::from(0_usize), FieldCount::from(0_usize))],
+        loops: vec![Loop::new(
+            ConstantIndex::from(1_usize),
+            CellIndex::from(0_usize),
+        )],
     };
     assert_eq!(three.width(), BranchCount::from(3_usize));
+    assert_eq!(
+        circle.width(),
+        BranchCount::from(2_usize),
+        "a case over the circle owes its point's branch and its loop's"
+    );
     assert_eq!(Cases::Sum(4).width(), BranchCount::from(4_usize));
     assert_eq!(Cases::Absurd.width(), BranchCount::from(0_usize));
     assert_eq!(
@@ -146,11 +157,12 @@ fn each_split_holds_one_branch_per_case()
 #[test]
 fn a_nested_match_s_derivation_is_admitted()
 {
-    let mut arena = CoreArena::new();
-    let signatures = signatures(&mut arena);
+    let signatures = signatures();
     let cover = nested(&[0_usize, 1].map(FieldCount::from));
     assert_eq!(
-        cover.check(ArmCount::from(5_usize), |family| signatures.get(&family)),
+        cover.check(ArmCount::from(5_usize), |family| signatures
+            .get(&family)
+            .map(|fields| fields.iter().copied())),
         Ok(())
     );
 }
@@ -158,12 +170,13 @@ fn a_nested_match_s_derivation_is_admitted()
 #[test]
 fn a_split_that_drops_a_constructor_is_refused()
 {
-    let mut arena = CoreArena::new();
-    let signatures = signatures(&mut arena);
+    let signatures = signatures();
     let dropped = nested(&[FieldCount::from(0_usize)]);
     assert!(
         matches!(
-            dropped.check(ArmCount::from(5_usize), |family| signatures.get(&family)),
+            dropped.check(ArmCount::from(5_usize), |family| signatures
+                .get(&family)
+                .map(|fields| fields.iter().copied())),
             Err(CoverRefusal::ConstructorCount(_))
         ),
         "`Maybe`'s split without `Some` is refused by name"
@@ -173,9 +186,8 @@ fn a_split_that_drops_a_constructor_is_refused()
 #[test]
 fn each_broken_rule_is_refused_by_its_own_name()
 {
-    let mut arena = CoreArena::new();
-    let signatures = signatures(&mut arena);
-    let declared = |family| signatures.get(&family);
+    let signatures = signatures();
+    let declared = |family| signatures.get(&family).map(|fields| fields.iter().copied());
     let mut swapped = Cover::new();
     let zero = swapped.mint(Step::Var(0));
     let succ = swapped.mint(Step::Var(1));
@@ -186,6 +198,7 @@ fn each_broken_rule_is_refused_by_its_own_name()
                 (ConstructorTag::from(1_usize), FieldCount::from(1_usize)),
                 (ConstructorTag::from(0_usize), FieldCount::from(0_usize)),
             ],
+            loops: Vec::new(),
         },
         branches: vec![succ, zero],
     });
@@ -246,8 +259,7 @@ fn a_derivation_grows_linearly_with_its_tree()
         }
         cover
     };
-    let mut arena = CoreArena::new();
-    let signatures = signatures(&mut arena);
+    let signatures = signatures();
     for levels in [16_usize, 32_usize] {
         let cover = chain(levels);
         assert_eq!(
@@ -255,7 +267,9 @@ fn a_derivation_grows_linearly_with_its_tree()
             levels.saturating_mul(3).saturating_add(1)
         );
         assert_eq!(
-            cover.check(ArmCount::from(2_usize), |family| signatures.get(&family)),
+            cover.check(ArmCount::from(2_usize), |family| signatures
+                .get(&family)
+                .map(|fields| fields.iter().copied())),
             Ok(())
         );
     }

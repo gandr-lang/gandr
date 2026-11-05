@@ -47,39 +47,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 ## Examples
 
-Stage a declaration, admit it, watch an ill-typed one refused, and audit what the admitted one rests on.
-
-```rust
-use gandr_kernel_core::Environment;
-use gandr_kernel_core::KernelError;
-use gandr_kernel_term::BaseType;
-use gandr_kernel_term::LevelSignature;
-
-fn example() -> Result<(), KernelError> {
-    let mut environment = Environment::new();
-
-    let unit = {
-        let mut staging = environment.stage();
-        let declared = staging.arena().value_type_unit();
-        let body = staging.arena().value_unit();
-        staging.def(LevelSignature::monomorphic(), declared, body)
-    };
-    let admitted = environment.add_decl(unit)?;
-
-    let ill_typed = {
-        let mut staging = environment.stage();
-        let declared = staging.arena().value_type_base(BaseType::Integer);
-        let body = staging.arena().value_unit();
-        staging.def(LevelSignature::monomorphic(), declared, body)
-    };
-    assert!(environment.add_decl(ill_typed).is_err());
-
-    let report = environment.audit(admitted);
-    assert!(report.axioms().is_empty());
-    assert!(report.unchecked_admissions().is_empty());
-    Ok(())
-}
-```
+The rustdoc of `Environment` in [`env`](src/env.rs) holds the admission example. The example stages a declaration, admits it, refuses a second one and audits the environment.
 
 `tests/acceptance.rs` carries the memo measurements and the poisoned-entry cases; `tests/adversarial_depth.rs` the depth totality; `tests/sealed_export.rs` a sealed module's export replayed and its rewritten copies refused. Run them with the unit tests, then the enforcing twin:
 
@@ -112,6 +80,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | Session codes and certificates | [`src/session.rs`](src/session.rs) |
 | The stage universe and residual readmission | [`src/stage.rs`](src/stage.rs) |
 | Guarded admission of equation families | [`src/admission.rs`](src/admission.rs) |
+| The replay of a match's cover derivation against its tree | [`src/check/cover.rs`](src/check/cover.rs) |
 
 ## References
 
@@ -123,6 +92,8 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a stratum receipt.
 - `Courant-2026-lazy_concurrent_convertibility_checker` — lineage: § 4.2's weak-head machine with environments, which the replay runs.
 - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the replay's alias keeps.
+- `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — § 5's `var`, `split` and `compose`, which the replay walks.
+- `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design (§ coverage-evidence-form) — the derivation that the kernel replays step by step.
 
 ## License
 

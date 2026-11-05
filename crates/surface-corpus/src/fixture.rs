@@ -147,7 +147,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
         Recognition::default(),
     )
     .expect("the lowering reads the module");
-    let declarations = declarations(&module);
+    let declarations = declarations(&module, &arena);
     let verdicts = check_module(
         &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
         &declarations,
@@ -164,12 +164,13 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
 /// refuse, in admission order, its origin carried through.
 ///
 /// # Specification
-/// - requires: `module` is a lowered fixture module.
+/// - requires: `module` is a lowered fixture module, lowered into `arena`.
 /// - ensures: only non-refused declarations are returned, in admission order,
 ///   preserving each constant, origin, declared type and body or its absence
-///   reason, the laws its `respects` attribute names, a data declaration's
-///   native signature, shared with `module`, and a sealed abstract type's kind,
-///   representation, extent and site.
+///   reason, the laws its `respects` attribute names, the derivation of each
+///   match a body holds, a data declaration's native signature, shared with
+///   `module`, and a sealed abstract type's kind, representation, extent and
+///   site.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -236,7 +237,10 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
             })
 },
 )]
-pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
+pub fn declarations(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+) -> Vec<Declaration>
 {
     module
         .declarations()
@@ -317,6 +321,10 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
             .supplied(module.supplies(lowered).to_vec())
             .resolving(module.models(lowered).to_vec())
             .obliged(module.handler_laws(lowered).to_vec());
+            let declaration = match defined {
+                Maybe::Present(body) => declaration.covering(module.covers(arena, body)),
+                Maybe::Absent(_) => declaration,
+            };
             Some(match Entry::declared(module.worlds(lowered)) {
                 Maybe::Present(entry) => declaration.entered(entry),
                 Maybe::Absent(_) => declaration,

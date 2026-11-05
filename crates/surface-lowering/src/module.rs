@@ -14076,6 +14076,134 @@ impl<'source> LoweredModule<'source>
         &self.origins
     }
 
+    /// The matches `body` holds, each by the root of its tree with the cover
+    /// derivation the lowering recorded beside it: what the checker's
+    /// declaration carries for the kernel to replay.
+    ///
+    /// # Specification
+    /// - requires: `body` lives in `arena`, the arena this module lowered into.
+    /// - ensures: one pair for each match whose root `body` reaches through its
+    ///   values and computations and whose derivation holds a step, in
+    ///   ascending root order, each root once.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each node is visited once: a seen set guards the walk.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition's match crosses with its derivation and
+    ///   the kernel replays it; a body holding no match carries none.
+    /// - witness: `tests::modules::a_definitions_matches_carry_their_derivations_5104`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first().map(|first| first.0) < pair.get(1).map(|second| second.0)))]
+    #[inline]
+    #[must_use]
+    pub fn covers(
+        &self,
+        arena: &CoreArena,
+        body: ValueId,
+    ) -> Vec<(
+        gandr_core_term::ComputationId,
+        gandr_kernel_term::cover::Cover,
+    )>
+    {
+        /// The values and computations a walk has still to read, and those it
+        /// has read.
+        #[derive(Default)]
+        struct Reach
+        {
+            /// The nodes still to read.
+            pending: Vec<Result<ValueId, gandr_core_term::ComputationId>>,
+            /// The values read.
+            values: BTreeSet<ValueId>,
+            /// The computations read.
+            computations: BTreeSet<gandr_core_term::ComputationId>,
+        }
+        impl gandr_core_term::children::Visit for Reach
+        {
+            /// Queue a value not read yet.
+            ///
+            /// # Specification
+            /// trivial.
+            fn value(
+                &mut self,
+                child: ValueId,
+                _crossing: gandr_core_term::support::Crossing,
+            )
+            {
+                if self.values.insert(child) {
+                    self.pending.push(Ok(child));
+                }
+            }
+
+            /// Queue a computation not read yet.
+            ///
+            /// # Specification
+            /// trivial.
+            fn computation(
+                &mut self,
+                child: gandr_core_term::ComputationId,
+                _crossing: gandr_core_term::support::Crossing,
+            )
+            {
+                if self.computations.insert(child) {
+                    self.pending.push(Err(child));
+                }
+            }
+
+            /// A type holds no match the kernel replays.
+            ///
+            /// # Specification
+            /// trivial.
+            fn value_type(
+                &mut self,
+                _child: ValueTypeId,
+                _crossing: gandr_core_term::support::Crossing,
+            )
+            {
+            }
+
+            /// A type holds no match the kernel replays.
+            ///
+            /// # Specification
+            /// trivial.
+            fn comp_type(
+                &mut self,
+                _child: gandr_core_term::CompTypeId,
+                _crossing: gandr_core_term::support::Crossing,
+            )
+            {
+            }
+        }
+        let mut reach = Reach::default();
+        let _first = reach.values.insert(body);
+        reach.pending.push(Ok(body));
+        while let Some(next) = reach.pending.pop() {
+            match next {
+                Ok(value) => {
+                    if let Some(node) = arena.value(value) {
+                        gandr_core_term::children::of_value(node, &mut reach);
+                    }
+                },
+                Err(computation) => {
+                    if let Some(node) = arena.computation(computation) {
+                        gandr_core_term::children::of_computation(node, &mut reach);
+                    }
+                },
+            }
+        }
+        reach
+            .computations
+            .iter()
+            .filter_map(|&root| match self.origins.case(root) {
+                Maybe::Present(case) if case.cover.steps().next().is_some() => {
+                    Some((root, case.cover.clone()))
+                },
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            })
+            .collect()
+    }
+
     /// Every minted core node's origin, for a judgement that records where
     /// the nodes it minted stand.
     ///

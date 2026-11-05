@@ -355,6 +355,42 @@ impl StagedDeclaration
         }
     }
 
+    /// This staged definition carrying `covers` as its matches' derivations,
+    /// its content start and content unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — admission replays each derivation against the tree
+    ///   its root names.
+    /// - ensures: the declaration as [`Declaration::covered`] leaves it, at the
+    ///   same content start: a definition carries exactly `covers`, any other
+    ///   declaration is unchanged.
+    /// - provides: how a producer attaches its matches' derivations before
+    ///   offering the definition.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match's derivation crosses and the kernel replays
+    ///   it.
+    /// - witness: `tests::cover::every_broken_derivation_is_refused_by_its_rule_5104`
+    #[spec(
+        captures: entry = (self.content_start, matches!(self.declaration.content(), DeclarationContent::Def { .. }), self.declaration.covers().len(), covers.len()),
+        ensures: |ret| ret.content_start == entry.0
+            && ret.declaration.covers().len() == if entry.1 { entry.3 } else { entry.2 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn covered(
+        self,
+        covers: Vec<gandr_kernel_term::cover::Covered>,
+    ) -> Self
+    {
+        Self {
+            declaration: self.declaration.covered(covers),
+            ..self
+        }
+    }
+
     /// This staged data declaration carrying `presentation` as the rules
     /// rewriting its constructor terms, its content start and content
     /// unchanged.
@@ -1298,6 +1334,44 @@ impl Clone for Names
 
 /// The append-only kernel environment: one arena, and the admitted
 /// declarations in admission order.
+///
+/// # Examples
+///
+/// Stage a declaration, admit it, watch an ill-typed one refused, and audit
+/// what the admitted one rests on:
+///
+/// ```rust
+/// use gandr_kernel_core::Environment;
+/// use gandr_kernel_core::KernelError;
+/// use gandr_kernel_term::BaseType;
+/// use gandr_kernel_term::LevelSignature;
+///
+/// fn example() -> Result<(), KernelError>
+/// {
+///     let mut environment = Environment::new();
+///
+///     let unit = {
+///         let mut staging = environment.stage();
+///         let declared = staging.arena().value_type_unit();
+///         let body = staging.arena().value_unit();
+///         staging.def(LevelSignature::monomorphic(), declared, body)
+///     };
+///     let admitted = environment.add_decl(unit)?;
+///
+///     let ill_typed = {
+///         let mut staging = environment.stage();
+///         let declared = staging.arena().value_type_base(BaseType::Integer);
+///         let body = staging.arena().value_unit();
+///         staging.def(LevelSignature::monomorphic(), declared, body)
+///     };
+///     assert!(environment.add_decl(ill_typed).is_err());
+///
+///     let report = environment.audit(admitted);
+///     assert!(report.axioms().is_empty());
+///     assert!(report.unchecked_admissions().is_empty());
+///     Ok(())
+/// }
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct Environment
 {
