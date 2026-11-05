@@ -3635,6 +3635,28 @@ if [[ -n "$unblocks" ]]; then
   gh pr merge "${url##*/}" -R "$repo" --merge --auto
   echo "#${url##*/} opens on $trunk to unblock #$unblocks and queues on its own; once it merges, \`pr:land\` from the red stack restacks it onto main"
 fi
+# Two `pr:open`s that read the same top at once open on one base, and the
+# stack goes on from one of them only (`beside.jq`). The later one moves
+# onto the top read again, as `restack_moved` moves onto a top that moved
+# (#3849). One that cannot move is held, naming the pull request beside it.
+if [[ -z "$unblocks" && -z "$stacked_past" ]]; then
+  number=${url##*/}
+  beside=$(landable_prs | jq -c --argjson n "$number" --arg base "$base" -f "$(git rev-parse --show-toplevel)/.config/pr-stack/beside.jq")
+  if [[ "$beside" != null ]]; then
+    if restack_moved "$own" "$top" "$measured" && [[ "$stacked_top" != "$top" ]]; then
+      top=$stacked_top
+      base=$(jq -r .head <<< "$top")
+      top_number=$(jq -r .number <<< "$top")
+      "$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || exit 2
+      git push --quiet --force-with-lease origin HEAD
+      gh pr edit "$number" -R "$repo" --base "$base" > /dev/null
+      echo "#$number opened beside #$beside on one base; it moves onto #$top_number"
+    else
+      mise run --quiet pr:hold "$number" "opened beside #$beside on one base: rebase it onto the top, then \`pr:release $number\`"
+      exit 0
+    fi
+  fi
+fi
 # A stack of one means its top merged after the obligations' check and before
 # this reading: GitHub moves the pull request to the trunk, and `gh stack
 # link` takes no chain of one, so nothing is linked (#3817). The next landing

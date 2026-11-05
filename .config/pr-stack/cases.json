@@ -3968,5 +3968,49 @@
       }
     ],
     "output": "false"
+  },
+  {
+    "name": "#5340 stands beside #5339: both opened at once on #5325's branch",
+    "program": "beside.jq",
+    "args": { "n": 5340, "base": "workflow-5325-recovery" },
+    "input": [
+      { "number": 5325, "base": "main", "bot": false },
+      { "number": 5339, "base": "workflow-5325-recovery", "bot": false },
+      { "number": 5340, "base": "workflow-5325-recovery", "bot": false }
+    ],
+    "output": 5339
+  },
+  {
+    "name": "the earlier of two pull requests on one base stands beside none; the later one moves",
+    "program": "beside.jq",
+    "args": { "n": 5339, "base": "workflow-5325-recovery" },
+    "input": [
+      { "number": 5325, "base": "main", "bot": false },
+      { "number": 5339, "base": "workflow-5325-recovery", "bot": false },
+      { "number": 5340, "base": "workflow-5325-recovery", "bot": false }
+    ],
+    "output": null
+  },
+  {
+    "name": "of three opened at once on one base, the newest moves onto the one opened just before it",
+    "program": "beside.jq",
+    "args": { "n": 5342, "base": "floor-1-a" },
+    "input": [
+      { "number": 5339, "base": "floor-1-a", "bot": false },
+      { "number": 5341, "base": "floor-1-a", "bot": false },
+      { "number": 5342, "base": "floor-1-a", "bot": false },
+      { "number": 5343, "base": "triage-2-b", "bot": false }
+    ],
+    "output": 5341
+  },
+  {
+    "name": "an app's pull request on the same base stands beside none: it lands on its own",
+    "program": "beside.jq",
+    "args": { "n": 5340, "base": "main" },
+    "input": [
+      { "number": 5338, "base": "main", "bot": true },
+      { "number": 5340, "base": "main", "bot": false }
+    ],
+    "output": null
   }
 ]
