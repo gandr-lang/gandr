@@ -703,6 +703,31 @@ impl ConsistencyWitness
             .iter()
             .map(|(&variable, &value)| (variable, value))
     }
+
+    /// The certificate that assigns each variable of `values` its value.
+    ///
+    /// # Specification
+    /// - requires: nothing; a caller proposes the values from a model it found
+    ///   elsewhere, and [`LandmarkPoset::admit_modelled`] validates them before
+    ///   a poset carries them.
+    /// - ensures: [`ConsistencyWitness::value_of`] answers each value of
+    ///   `values` and nothing else.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a proposed model admits only when it validates, and
+    ///   its certificate answers the proposed values.
+    /// - witness: `poset::tests::a_proposed_model_admits_only_when_it_validates`
+    #[spec(
+        captures: [proposed = values.clone()],
+        ensures: |ret| proposed.iter().all(|(&variable, &value)| ret.value_of(variable) == Some(value)),
+    )]
+    #[inline]
+    #[must_use]
+    pub fn new(values: BTreeMap<LevelVar, ConsistencyValue>) -> Self
+    {
+        Self { values }
+    }
 }
 
 /// The negative admission evidence.
@@ -909,6 +934,45 @@ pub enum AdmissionOutcome
     Loop(LoopWitness),
 }
 
+/// A proposed model that the consistency validator refuses, with the declared
+/// constraints handed back for loop-checking.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelRefusal
+{
+    /// The declared constraints, in declaration order.
+    constraints: Vec<LandmarkConstraint>,
+    /// The first failure the validator reports.
+    error: PosetEvidenceError,
+}
+
+impl ModelRefusal
+{
+    /// The first failure the validator reports.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn error(&self) -> PosetEvidenceError
+    {
+        self.error
+    }
+
+    /// The declared constraints, handed back in declaration order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_constraints(self) -> Vec<LandmarkConstraint>
+    {
+        self.constraints
+    }
+}
+
 /// An admitted landmark poset.
 ///
 /// It carries the declared constraints, their compiled clause system — fixed at
@@ -1058,6 +1122,62 @@ impl LandmarkPoset
         };
         let witness = extract_loop_witness(&system, &members, shift, maxgain)?;
         Ok(AdmissionOutcome::Loop(witness))
+    }
+
+    /// Admits a declared constraint set under a model that a caller proposes.
+    /// The model, restricted in place to the declared variables, is validated
+    /// against the constraints and kept as the consistency certificate. No
+    /// Horn saturation runs.
+    ///
+    /// # Specification
+    /// - requires: nothing; `model` is untrusted input.
+    /// - ensures: `Ok(poset)` exactly when the model, restricted to the
+    ///   declared variables, passes [`validate_consistency`]; the poset then
+    ///   carries the constraints, their variables and the clauses
+    ///   [`LandmarkPoset::admit`] compiles. A refusal hands the constraints
+    ///   back unchanged, so the caller can admit them by loop-checking.
+    /// - provides: admission at the cost of one evaluation of each constraint,
+    ///   when a solver outside the trusted base finds the model. The model's
+    ///   map becomes the certificate, so no second map is built.
+    /// - fails: [`ModelRefusal`] with the first [`PosetEvidenceError`] the
+    ///   validator reports.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model that satisfies the constraints admits with
+    ///   the compiled clauses and the restricted certificate, and a model that
+    ///   violates one constraint is refused by that constraint's index with the
+    ///   constraints handed back.
+    /// - witness: `poset::tests::a_proposed_model_admits_only_when_it_validates`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |poset|
+        validate_consistency(poset.constraints(), poset.consistency()).is_ok()))]
+    #[inline]
+    pub fn admit_modelled(
+        constraints: Vec<LandmarkConstraint>,
+        model: ConsistencyWitness,
+    ) -> Result<Self, ModelRefusal>
+    {
+        let variables: BTreeSet<LevelVar> = constraints
+            .iter()
+            .flat_map(LandmarkConstraint::variables)
+            .collect();
+        let mut consistency = model;
+        consistency
+            .values
+            .retain(|variable, _value| variables.contains(variable));
+        if let Err(error) = validate_consistency(&constraints, &consistency) {
+            return Err(ModelRefusal { constraints, error });
+        }
+        let clauses = compile(&constraints);
+        Ok(Self {
+            constraints,
+            variables,
+            clauses,
+            consistency,
+        })
     }
 
     /// The declared constraints, in declaration order.
@@ -2217,6 +2337,46 @@ mod tests
             }),
             validate_consistency(&constraints, &violating),
             "x+1 <= y fails when both are assigned 0"
+        );
+    }
+
+    #[test]
+    fn a_proposed_model_admits_only_when_it_validates()
+    {
+        let constraints = vec![
+            LandmarkConstraint::leq(
+                var_plus(x(), LevelOffset::from(1_u64)),
+                var_plus(y(), LevelOffset::from(0_u64)),
+            )
+            .expect("variable-only sides are well formed"),
+        ];
+        let value = |level: u128| ConsistencyValue::from(level);
+        let satisfying = ConsistencyWitness::new(BTreeMap::from([
+            (x(), value(0)),
+            (y(), value(1)),
+            (var2(), value(7)),
+        ]));
+        let poset = LandmarkPoset::admit_modelled(constraints.clone(), satisfying)
+            .expect("x + 1 ≤ y holds at x = 0, y = 1");
+        assert_eq!(poset.constraints(), constraints.as_slice());
+        assert_eq!(
+            poset.consistency().assignments().collect::<Vec<_>>(),
+            vec![(x(), value(0)), (y(), value(1))],
+            "the certificate keeps the declared variables alone"
+        );
+        assert_eq!(
+            poset.compiled_clauses(),
+            admitted(constraints.clone()).compiled_clauses(),
+            "the clauses are the ones admission compiles"
+        );
+        let violating = ConsistencyWitness::new(BTreeMap::from([(x(), value(1)), (y(), value(1))]));
+        assert_eq!(
+            LandmarkPoset::admit_modelled(constraints, violating)
+                .map(|_poset| ())
+                .map_err(|refusal| refusal.error()),
+            Err(PosetEvidenceError::ConstraintViolated {
+                index: ConstraintIndex::from(0_usize)
+            })
         );
     }
 

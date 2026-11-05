@@ -147,6 +147,8 @@ digraph crates {
   "kernel-core" -> "kernel-conversion-trace";
   "kernel-core" -> "kernel-strata";
   "kernel-core" -> "kernel-term";
+  "kernel-core" -> "theory-dynamic-graphs";
+  "kernel-core" -> "theory-graphs";
   "kernel-term" -> "kernel-check-memo";
   "kernel-term" -> "kernel-conversion-trace";
   "kernel-term" -> "kernel-strata";

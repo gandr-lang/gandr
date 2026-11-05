@@ -217,6 +217,7 @@ pub use crate::poset::EvidenceSubject;
 pub use crate::poset::LandmarkConstraint;
 pub use crate::poset::LandmarkPoset;
 pub use crate::poset::LoopWitness;
+pub use crate::poset::ModelRefusal;
 pub use crate::poset::PosetError;
 pub use crate::poset::PosetEvidenceError;
 pub use crate::poset::validate_consistency;
