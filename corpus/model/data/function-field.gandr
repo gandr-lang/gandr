@@ -1,0 +1,58 @@
+//! A pair whose first field holds a function, and whose second field's type
+//! reads the first.
+//!
+//! The type of the second field of `Pair(a, b)` is `b(x)`. When `x` is a
+//! function, the type must read the function as some value. A function
+//! written as a lambda returns no value, so the type cannot read it as one.
+//!
+//! The type reads the function as the thunk it stands for. The family can
+//! read its argument or ignore it.
+//!
+//! - see: #5374
+//! - see: #5353 — a lambda argument that a later type reads stands as its thunk
+
+/// The naturals.
+data Unary : Type where
+  /// Zero.
+  | Z : Unary
+  /// The successor of `n`.
+  | S : (n : Unary) --> Unary
+
+/// A value of a type.
+data Holder(a : Type) : Type where
+  /// The value.
+  | MkHolder : (x : a) --> Holder(a)
+
+/// A value of the first type with a value of the type it picks.
+data Pair(a : Type, b : a -> Type) : Type where
+  /// The two values.
+  | MkPair : (x : a, y : b(x)) --> Pair(a, b)
+
+/// A family over the functions from the unit, constantly the unit.
+def unitOver(f : Unit -> Unary) -> Type = return Unit
+
+/// A named function from the unit.
+def zeroAt(u : Unit) -> Unary = Z
+
+/// A family that calls its function argument: the unit when the call
+/// returns zero, and the naturals past it.
+def callsAtZero(f : Unit -> Unary) -> Type =
+  match f *{}
+    | Z => return Unit
+    | S(m) => return Unary
+
+/// A holder at a function type.
+def heldLambda : Holder(Unit -> Unary) = MkHolder (fun (u) { Z });
+
+/// A pair whose first field is a lambda, at a family that ignores it.
+def lambdaPaired : Pair(Unit -> Unary, fun (r) { return Unit }) = MkPair (fun (u) { Z }) *{};
+
+/// A pair whose family is a named definition.
+def named : Pair(Unit -> Unary, unitOver) = MkPair (fun (u) { Z }) *{};
+
+/// A pair whose first field is a named function.
+def constant : Pair(Unit -> Unary, fun (r) { return Unit }) = MkPair zeroAt *{};
+
+/// A pair at a family that calls the lambda the first field holds. The call
+/// returns zero, so the second field holds the unit.
+def reads : Pair(Unit -> Unary, callsAtZero) = MkPair (fun (u) { Z }) *{};
