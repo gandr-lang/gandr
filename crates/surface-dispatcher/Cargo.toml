@@ -90,7 +90,9 @@ tracing = { workspace = true, optional = true }
 # The corpus sweeps draw their samples through the sweep crate; the
 # critical-pair differential reads both overlap enumerators over the cells
 # and the presented terms. The weight probe weighs the oriented rules in the
-# max-plus semiring of the ordered-algebras crate, over exact dyadics.
+# max-plus semiring of the ordered-algebras crate, and the distance probe
+# composes the bounds of fusion cells in its Lawvere quantale, both over
+# exact dyadics.
 [dev-dependencies]
 gandr-theory-circuit-algebras.workspace = true
 gandr-theory-coherent-resolutions.workspace = true
