@@ -2587,6 +2587,38 @@ mod kernel_presented_readmission
         Environment::replay(decoded.arena().clone(), &declarations)
             .expect("the kernel readmits the composites over the solved carrier");
     }
+
+    /// #5324: a case on `c` whose goal reads a later binder `v`, the type of
+    /// `v` reading `c`, checks at the motive generalised over `v`, and the
+    /// kernel readmits it.
+    #[test]
+    fn a_goal_that_reads_a_later_binder_generalises_it_in_both_checkers_5324()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/data/motive-later-binder.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the case lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let segment = NameSegment::from_text("go".into()).expect("a name segment");
+        let named = StructuredName::from(vec![segment]);
+        let go = declarations
+            .iter()
+            .find(|marked| *marked.declaration().name() == named)
+            .expect("`go` crossed");
+        assert_eq!(
+            go.mark(),
+            gandr_kernel_term::AdmissionMark::Checked,
+            "the checker checks `go` at its generalised motive"
+        );
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits `go` at its generalised motive");
+    }
 }
 
 /// A step case at a variable readmits by the kernel's own reading of the bind
