@@ -8,4 +8,5 @@ error[UnknownGenerator]: a `ua` translator record must name the generators of it
 27 │ ┃ ] Magma Magma (*{.mul = exchange, .zero = keep}) (*{.mul = exchange, .one = keep}) ;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ no generator of the description
    │
-   ╰ note: `misspelt` is refused with UnknownGenerator, as its expectation states
+   ├ note: `misspelt` is refused with UnknownGenerator, as its expectation states
+   ╰ help: name only generators of the `ua` description

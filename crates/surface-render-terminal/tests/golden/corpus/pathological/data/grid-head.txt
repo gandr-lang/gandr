@@ -1,19 +1,19 @@
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
    ╭▸ corpus/pathological/data/grid-head.gandr:20:3
    │
-19 │    def anyCell(n : Nat, m : Nat, g : Grid(n, m)) -> Integer {
+19 │    def anyCell(n : Nat, m : Nat, g : Grid(n, m)) -> Integer =
    │    │           ┬        ┬        ─ checked against `Grid(n, m) -> -F Integer`; while checking the body of this function; binds g : Grid(n, m)
    │    │           │        │
    │    │           │        checked against `(m : Nat) -> Grid(n, m) -> -F Integer`; while checking the body of this function; binds m : Nat
    │ ┌──┘           checked against `(n : Nat) -> (m : Nat) -> Grid(n, m) -> -F Integer`; while checking the body of this function; binds n : Nat
    │ │
-20 │ │┏   match g {
-21 │ │┃     GRow(r, c, cell, rest) => cell,
-22 │ │┃     GCol(r, c, cell, rest) => cell
-23 │ │┃   }
-   │ │┗━━━┛ a path whose endpoints are not apart
-24 │ │  }
-   │ └──┘ checked against `(n : Nat, m : Nat, Grid(n, m)) => Integer`; while checking the body of this thunk
+20 │ │┏   match g
+21 │ │┃     | GRow(r, c, cell, rest) => cell
+22 │ │┃     | GCol(r, c, cell, rest) => cell
+   │ │┃                                    ╿
+   │ └┃────────────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(n : Nat, m : Nat, Grid(n, m)) -> Integer`; while checking the body of this thunk
+   │                                       a path whose endpoints are not apart
    │
    ├ note: `anyCell` is refused with NotApart, as its expectation states
    ╰ help: write an arm for the path, because its endpoints can be equal

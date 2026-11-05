@@ -5594,7 +5594,6 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-t
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-typed-deprecation.txt STE-5.3 d6565ea6daeaf10f
 crates/surface-render-terminal/tests/golden/corpus/pathological/builtins/list-patterns.txt STE-5.3 9861b85a5613cd7c
 crates/surface-render-terminal/tests/golden/corpus/pathological/classifier/implicit-telescope.txt STE-5.3 761ce136eef636cd
-crates/surface-render-terminal/tests/golden/corpus/pathological/classifier/implicit-telescope.txt STE-5.3 d3e653e5e32ebe66
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/held-unique.txt STE-5.2 9ca76855ff60440b
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/kept-view.txt STE-5.3 5388aacc3a654ccf
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/descent.txt STE-5.3 82cfda2e0c36480c

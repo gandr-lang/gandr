@@ -6129,12 +6129,12 @@ mod tests
             "  | A2 : (lo : Nat, hi : Nat) --> At2(lo, hi)\n",
             "}\n",
             "def ends(lo : Nat, hi : Nat, o : Over(Mk(lo, hi))) -> At2(lo, hi) {\n",
-            "  match o { O(l, h) => A2(l, h) }\n",
+            "  match o { | O(l, h) => A2 l h }\n",
             "}\n",
         );
         let table = table(SourceText::from(source));
-        let body = source.find("A2(l, h)").expect("the body occurs");
-        let lost: Vec<&str> = [("l", 3), ("h", 6)]
+        let body = source.find("A2 l h").expect("the body occurs");
+        let lost: Vec<&str> = [("l", 3), ("h", 5)]
             .into_iter()
             .filter(|&(written, offset)| {
                 let start = body + offset;
@@ -10404,8 +10404,8 @@ mod tests
     {
         let source = SourceText::from(
             "def pair(m : Integer, n : Bool) -> (quot : Integer, rem : Bool) { (m, n) }\n\ndef \
-             placed() -> -F Integer {\n  let (a, b) = pair(1, true);\n  a\n}\n\ndef labelled() \
-             -> -F Integer {\n  let (.rem = r, .quot = q) = pair(1, true);\n  q\n}\n",
+             placed() -> -F Integer {\n  let (a, b) = pair 1 true;\n  a\n}\n\ndef labelled() \
+             -> -F Integer {\n  let (.rem = r, .quot = q) = pair 1 true;\n  q\n}\n",
         );
         let table = table(source);
         for (needle, ty, reason) in [

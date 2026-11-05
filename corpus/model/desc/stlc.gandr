@@ -165,17 +165,14 @@ pub def apply(
 pub def liftAt(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g), b : ObjTy, x : Var(Extend(g, a), b)) -> Var(
   Extend(d, a),
   b
-) {
-  match x {
-    Here(_h, c) => Here(d, c),
-    There(_h, c, _e, y) => There(d, c, a, r(c)(y))
-  }
-}
+) =
+  match x
+    | Here(_h, c) => Here d c
+    | There(_h, c, _e, y) => There d c a ((r c) y)
 
 /// The renamer under one more entry.
-pub def lift(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, a), Extend(g, a)) {
-  return fun (b) { return fun (x) { liftAt(d, g, a, r, b, x) } }
-}
+pub def lift(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, a), Extend(g, a)) =
+  return fun (b) { return fun (x) { liftAt d g a r b x } }
 
 /// The size of a term. Each recursive call is at the indices its pattern
 /// binds.

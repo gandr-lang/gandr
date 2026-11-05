@@ -5174,9 +5174,9 @@ fn a_case_over_two_indices_prunes_at_the_apart_one_3402()
         "| GRow : (r : Nat, c : Nat, rest : Grid(r, c)) --> Grid(Succ(r), c) ",
         "| GCol : (r : Nat, c : Nat, rest : Grid(r, c)) --> Grid(r, Succ(c)) }\n",
         "def rows(n : Nat, m : Nat, g : Grid(Succ(n), m)) -> -F Nat ",
-        "{ match g { GRow(r, c, rest) => return r, GCol(r, c, rest) => return c } }\n",
+        "{ match g { | GRow(r, c, rest) => return r | GCol(r, c, rest) => return c } }\n",
         "def cols(n : Nat, m : Nat, g : Grid(m, Succ(n))) -> -F Nat ",
-        "{ match g { GRow(r, c, rest) => return r, GCol(r, c, rest) => return c } }\n",
+        "{ match g { | GRow(r, c, rest) => return r | GCol(r, c, rest) => return c } }\n",
     );
     let module = lowered(SourceText::from(source), &mut arena);
     // The equation the left-out `GNil` eliminates, counted from the innermost
