@@ -79,7 +79,9 @@ const JUXTAPOSED: &str = " ";
 /// leaves the table, as the infix `then`, the `as` pattern and the `\` type
 /// operator did (#4691): the corpus writing one again fails it unclassified.
 const KINDS: &[(&str, Standing)] = &[
-    ("Expression  ", Standing::Owed(0)),
+    // The floor's juxtaposition tile, `fun`, identifier, `*{` pattern and
+    // `Type .` nodes owed their entries (#5210).
+    ("Expression  ", Standing::Owed(65)),
     ("Expression !=", Standing::Owed(0)),
     ("Expression \"", Standing::Owed(0)),
     ("Expression #[", Standing::Owed(0)),
@@ -142,10 +144,10 @@ const KINDS: &[(&str, Standing)] = &[
             "a fork a `let` binds: the `let` answers, and its pattern at the end the fork gives",
         ),
     ),
-    ("Expression fun", Standing::Owed(0)),
+    ("Expression fun", Standing::Owed(8)),
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
-    ("Expression identifier", Standing::Owed(0)),
+    ("Expression identifier", Standing::Owed(105)),
     ("Expression if", Standing::Owed(0)),
     ("Expression loop", Standing::Owed(0)),
     ("Expression migrate", Standing::Owed(0)),
@@ -179,7 +181,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression ~", Standing::Owed(0)),
     ("Expression ∷", Standing::Owed(0)),
     ("Pattern #[", Standing::Owed(0)),
-    ("Pattern *{", Standing::Owed(0)),
+    ("Pattern *{", Standing::Owed(1)),
     ("Pattern +{", Standing::Owed(0)),
     ("Pattern _", Standing::Owed(0)),
     ("Pattern constructor", Standing::Owed(0)),
@@ -204,7 +206,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type +U", Standing::Owed(0)),
     ("Type ->", Standing::Owed(0)),
     ("Type -F", Standing::Owed(0)),
-    ("Type .", Standing::Owed(0)),
+    ("Type .", Standing::Owed(3)),
     ("Type ?", Standing::Owed(0)),
     ("Type Bridge", Standing::Owed(0)),
     ("Type Buf", Standing::Owed(0)),
