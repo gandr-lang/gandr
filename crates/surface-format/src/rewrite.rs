@@ -1150,7 +1150,8 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Where the form at `at` stands in its parent: after a rule's `<=>`, in
-    /// a theory's judgment or law, in a type, or anywhere else.
+    /// a theory's judgment or law, in a kind (a data declaration's, or a type
+    /// component's after `type T :`), in a type, or anywhere else.
     ///
     /// # Specification
     /// trivial.
@@ -1174,6 +1175,7 @@ impl<'source> Respelling<'_, 'source>
         let mut preceding = None;
         let mut law = false;
         let mut members = false;
+        let mut component = false;
         for child in self.tree.children(parent) {
             if child == at {
                 break;
@@ -1185,8 +1187,13 @@ impl<'source> Respelling<'_, 'source>
                 preceding = self.leaf(node.span()).map(|leaf| leaf.text);
                 match preceding.map(<&str>::from) {
                     Some("law") => law = true,
-                    Some(";") => law = false,
+                    Some(";") => {
+                        law = false;
+                        component = false;
+                    },
                     Some("where") => members = true,
+                    Some("type") => component = true,
+                    Some(",") => component = false,
                     _ => {},
                 }
             }
@@ -1198,6 +1205,7 @@ impl<'source> Respelling<'_, 'source>
             (Some("data_declaration" | "codata_declaration"), Some(":")) if !members => {
                 Context::Kind
             },
+            (_, Some(":")) if component => Context::Kind,
             // After a `:`, or at a definition's result, its returner left
             // unwritten.
             (_, Some(":"))

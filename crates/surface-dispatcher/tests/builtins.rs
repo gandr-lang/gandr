@@ -62,7 +62,7 @@ fn native_names_operators_and_partial_application_execute()
         ),
         (
             "def answer : +U (-F Integer) ; def answer = thunk { become -(7) } ;",
-            "-7",
+            "- 7",
         ),
         (
             "def partial : +U (Integer -> -F Integer) ; def partial = thunk { become sub 19 } ; def answer : +U (-F Integer) ; def answer = thunk { become partial 7 } ;",

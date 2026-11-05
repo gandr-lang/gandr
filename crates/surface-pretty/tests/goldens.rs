@@ -3726,8 +3726,8 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
         .map(|value| normal_form(&mut core, value));
     let source = CoreSource::new(&core, &names);
     for (root, expected) in leaves.into_iter().zip([
-        faithful(Written("-42")),
-        faithful(Written("-3.25")),
+        faithful(Written("- 42")),
+        faithful(Written("- 3.25")),
         faithful(Written("7")),
         faithful(Written("\"\\r\\0\"")),
         faithful(Written("*{}")),

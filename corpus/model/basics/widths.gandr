@@ -55,7 +55,7 @@ def past_greatest_i32() -> i32 { i32.from_integer 2147483648 }
 def wrapped_u32() -> u32 { u32.from_integer 4294967301 }
 
 /// The least `i64` through `Integer` keeps its sign.
-@[ runs("-9223372036854775808") ]
+@[ runs("- 9223372036854775808") ]
 def least_i64_integer() -> Integer =
   i64.to_integer (i64.from_integer (- 9223372036854775808))
 

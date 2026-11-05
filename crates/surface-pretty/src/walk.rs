@@ -6352,6 +6352,38 @@ impl Walk<'_, '_>
         ))
     }
 
+    /// How a type former applied to its operands binds on the walk's surface,
+    /// as [`type_applied`] states, noting the juxtaposed form a type inside
+    /// an expression takes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`type_applied`]'s binding for the walk's surface and `rule`;
+    ///   on the expression surface where `admits` reads a type,
+    ///   `Notation::TypeApplication` is among the notes, since the type grammar
+    ///   reads no juxtaposed application until #5200. A value the expression
+    ///   grammar reads, `pure (Vec MkIx)`, takes no note.
+    /// - provides: the one way a type former's applied binding is chosen.
+    /// - panics: none.
+    /// - executable: none — the binding is `type_applied`'s, and the note is
+    ///   one call.
+    fn applied_type(
+        &mut self,
+        rule: &'static str,
+        admits: Admits,
+    ) -> Binding
+    {
+        if self.surface == Surface::Expression
+            && matches!(
+                admits,
+                Admits::Type | Admits::ValueType | Admits::CompType | Admits::Thunked
+            )
+        {
+            self.note(Unspelled::Notation(Notation::TypeApplication));
+        }
+        type_applied(self.surface, rule)
+    }
+
     /// Pushes a finished atom holding `glyphs`.
     ///
     /// # Specification
@@ -8824,6 +8856,24 @@ impl Walk<'_, '_>
                         Production("typed_number.expression")
                     },
                 };
+                // A negative number is `- 1`: a glued `-1` is one run, a
+                // name. The minus binds as a prefix does, so an operand
+                // writes it in parentheses, `f (- 1)`.
+                if let Some(magnitude) = spelled.0.strip_prefix('-')
+                    && matches!(*value, Literal::Integer(_) | Literal::Numeric(_))
+                {
+                    let written = format!("- {magnitude}");
+                    return writes(
+                        Production("unary_expression"),
+                        self.leaf(Glyphs(written.as_str())).map(|doc| {
+                            self.pieces.push(Piece {
+                                doc,
+                                binding: Binding::Prefix,
+                                fields: None,
+                            });
+                        }),
+                    );
+                }
                 return writes(production, self.atom(Glyphs(spelled.0.as_str())));
             },
             Former::Capability {
@@ -9415,7 +9465,19 @@ impl Walk<'_, '_>
                 }
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
             },
-            Former::Returner(_) => {
+            Former::Returner(result) => {
+                // Inside an expression the type grammar reads a returner's
+                // result, and a family applied there is juxtaposed,
+                // `-F (Maybe a)`, which it reads only once #5200 lands.
+                if self.surface == Surface::Expression
+                    && matches!(
+                        source.read(result),
+                        Former::Data { arity, .. } | Former::Codata { arity, .. }
+                            if usize::from(arity) > 0_usize
+                    )
+                {
+                    self.note(Unspelled::Notation(Notation::TypeApplication));
+                }
                 Some(writes(Production("f_type"), Join::Prefix(Prefix::Returner)))
             },
             // A group of outputs is written after the returner it is,
@@ -9836,7 +9898,10 @@ impl Walk<'_, '_>
             )]
             Former::Element(code)
                 if self.surface == Surface::Expression
-                    && matches!(source.read(code), Former::Application(..)) =>
+                    && matches!(
+                        source.read(code),
+                        Former::Application(..) | Former::StaticApplication(..)
+                    ) =>
             {
                 self.note(Unspelled::Notation(Notation::TypeApplication));
                 None
@@ -11479,15 +11544,15 @@ impl Walk<'_, '_>
             // type application.
             Former::Path { carrier: None, .. } => {
                 let _ = parts.text("Path").applied(Arity(2_usize), self.surface);
-                type_applied(self.surface, "path_type")
+                self.applied_type("path_type", admits)
             },
             Former::Bridge { carrier: None, .. } => {
                 let _ = parts.text("Bridge").applied(Arity(2_usize), self.surface);
-                type_applied(self.surface, "bridge_type")
+                self.applied_type("bridge_type", admits)
             },
             Former::Flow { carrier: None, .. } => {
                 let _ = parts.text("Flow").applied(Arity(2_usize), self.surface);
-                type_applied(self.surface, "type_application")
+                self.applied_type("type_application", admits)
             },
             Former::Path {
                 carrier: Some(_), ..
@@ -11512,7 +11577,7 @@ impl Walk<'_, '_>
                 match (self.spelling, spelled.ascii) {
                     (grammar::Spelling::Ascii, grammar::Ascii::Head(head)) => {
                         let _ = parts.text(head.0).applied(Arity(2_usize), self.surface);
-                        type_applied(self.surface, "type_application")
+                        self.applied_type("type_application", admits)
                     },
                     (grammar::Spelling::Unicode, _)
                     | (grammar::Spelling::Ascii, grammar::Ascii::Token(_)) => {
@@ -12333,7 +12398,7 @@ impl Walk<'_, '_>
                 let _ = parts
                     .text(String::from(head.as_ref()))
                     .applied(Arity(1_usize), self.surface);
-                type_applied(self.surface, "type_path")
+                self.applied_type("type_path", admits)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",

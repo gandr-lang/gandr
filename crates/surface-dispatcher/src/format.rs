@@ -1020,9 +1020,9 @@ mod tests
                 tokens(&source)
                     .replace(
                         "multipliesendoMonoid",
-                        "multiplies(Monoid.Semigroup(endoMonoid))"
+                        "multiplies(Monoid.SemigroupendoMonoid)"
                     )
-                    .replace("multipliesm", "multiplies(UnitAndZero.Semigroup(m))"),
+                    .replace("multipliesm", "multiplies(UnitAndZero.Semigroupm)"),
                 Vec::new()
             ),
             "the explicit form writes the reduct the checker applies, the diamond's by the \
