@@ -114,6 +114,32 @@
     "output": ""
   },
   {
+    "name": "#5440: the integration cycle's App prices the reads and the writes of its API together, against its own ceiling",
+    "input": {
+      "sites": [
+        { "file": "a.toml", "scope": "ci:cycle", "verb": "api GET" },
+        { "file": "a.toml", "scope": "ci:cycle", "verb": "api POST" }
+      ],
+      "table": {
+        "budget": { "actions": { "rest": 1 }, "cycle": { "rest": 100 } },
+        "site": [
+          {
+            "file": "a.toml",
+            "scope": "ci:cycle",
+            "api": "rest",
+            "identity": "cycle",
+            "calls": 2,
+            "points": 2,
+            "measured": "rest",
+            "hour": 10,
+            "trigger": "each step"
+          }
+        ]
+      }
+    },
+    "output": ""
+  },
+  {
     "name": "#5061: a row with no points, a rule on a read, free points above 0, and no trigger or bound are each refused",
     "input": {
       "sites": [
