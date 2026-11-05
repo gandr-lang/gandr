@@ -2494,25 +2494,27 @@ echo "$url"
 # A merged pull request's `## Refactoring` verdict, filed (#2885):
 # `refactor:file <pr>` reads the pull request, the area and epic of the unit
 # it closed, and every `kind:refactor` issue, and carries out what
-# `.config/claims/filing.jq` decides. A `yes` or `maybe` with rows opens an
-# issue through `issue:file` (its labels `kind:refactor`, the unit's `area:`
-# and `status:unsectioned`, linked under the unit's epic); a `maybe` whose
-# `Where` an open refactor issue observes adds its rows and a `from:` line to
-# that issue instead. Either pages the coordinator through the page command of
-# the stall configuration (`.config/stall/stall.bash`); the seat that claims
-# the issue writes its sections (#3134). A pull request that closes no issue,
-# as one advancing an epic's unit does, takes the area and epic of the issue
-# its branch names (`<lane>-<n>-…`, or `<lane>-<seat>-<n>-…` from a numbered
-# seat, #3836), and failing that the lane's own `area:<lane>` label. An
-# issue carrying the pull request's `from:` line is the filing, so a second
-# run files nothing. Two runs that overlap, on one host or two, each read the
-# board before the other files (#5149). So a run that opens an issue reads
-# the board again, and closes its own issue as the duplicate of an earlier
-# one that carries the `from:` line. `pr:watch` runs it when its pull request
-# merges; `stall:watch` pages a verdict still unfiled. `--dry-run` prints the
-# decision and changes nothing.
+# `.config/claims/filing.jq` decides. A `yes` or `maybe` with rows joins the
+# one open collector of the unit's area, `refactor(<area>): verdicts`: the
+# collector gains the rows it lacks and a `from:` line. An area with no open
+# collector gets one through `issue:file` (its labels `kind:refactor`,
+# `collector` and the unit's `area:`, linked under the unit's epic). Either
+# pages the coordinator through the page command of the stall configuration
+# (`.config/stall/stall.bash`), who queues the collector in its area's lane.
+# A pull request that closes no issue, as one advancing an epic's unit does,
+# takes the area and epic of the issue its branch names (`<lane>-<n>-…`, or
+# `<lane>-<seat>-<n>-…` from a numbered seat, #3836), and failing that the
+# lane's own `area:<lane>` label. An issue carrying the pull request's
+# `from:` line is the filing, so a second run files nothing. Two runs that
+# overlap, on one host or two, each read the board before the other files
+# (#5149). So a run that opens a collector reads the board again. When an
+# earlier issue carries its `from:` line, or an earlier collector of its
+# area is open, the run closes its own collector as that issue's duplicate,
+# and adds its rows to the earlier collector when it lacks them. `pr:watch`
+# runs it when its pull request merges; `stall:watch` pages a verdict still
+# unfiled. `--dry-run` prints the decision and changes nothing.
 ["refactor:file"]
-description = "File a merged pull request's yes or maybe refactoring verdict as a kind:refactor issue and page the coordinator"
+description = "File a merged pull request's yes or maybe refactoring verdict on its area's refactor collector and page the coordinator"
 usage = '''
 arg "<pr>" help="the merged pull request's number"
 flag "--dry-run" help="print the decision without filing or paging"
@@ -2554,10 +2556,15 @@ fi
 # the refactor issues' bodies are past the argument limit (#3771, as #2671).
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,body > "$scratch/issues.json"
+# The run reads the board through `decide <board file>`, which prints what
+# `filing.jq` decides over it.
+decide() {
+  jq -n --argjson number "$number" --slurpfile pr "$scratch/pr.json" --argjson area "$area" --slurpfile issues "$1" \
+    '{pr: {number: $number, body: $pr[0].body, area: $area}, issues: $issues[0]}' | jq -c -L "$claims" -f "$claims/filing.jq"
+}
+gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,title,body > "$scratch/issues.json"
 printf '%s' "$pr" > "$scratch/pr.json"
-decision=$(jq -n --argjson number "$number" --slurpfile pr "$scratch/pr.json" --argjson area "$area" --slurpfile issues "$scratch/issues.json" \
-  '{pr: {number: $number, body: $pr[0].body, area: $area}, issues: $issues[0]}' | jq -c -L "$claims" -f "$claims/filing.jq")
+decision=$(decide "$scratch/issues.json")
 if [[ ${usage_dry_run:-false} == true ]]; then
   jq --arg epic "$epic" '. + {epic: (if $epic == "" then null else ($epic | tonumber) end)}' <<< "$decision"
   exit 0
@@ -2576,27 +2583,39 @@ case $(jq -r .act <<< "$decision") in
     issue=$(jq -r .issue <<< "$decision")
     jq -j .body <<< "$decision" > "$body"
     gh issue edit "$issue" -R "$repo" --body-file "$body" > /dev/null
-    line="refactor #$issue gains #$number's maybe rows; rule on it"
+    line="refactor collector #$issue gains #$number's verdict; queue it in its area's lane"
     ;;
   open)
     jq -j .body <<< "$decision" > "$body"
     mapfile -t labels < <(jq -r '.labels[]' <<< "$decision")
     url=$(mise run --quiet issue:file "$(jq -r .title <<< "$decision")" "$body" "${labels[@]}" ${epic:+--epic "$epic"})
     issue=${url##*/}
-    # Another run, on this host or another, can file the same verdict between
-    # this run's board read and its create (#5149). So the run reads the board
-    # again: the earliest issue that carries `from: #<pr>` is the filing. Of
-    # two runs, the later create reads after both issues exist, so it closes
-    # its own issue as the earlier one's duplicate, and the earlier run pages.
-    gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,body > "$scratch/after.json"
-    first=$(jq -r -L "$claims" --argjson pr "$number" \
-      'include "sections"; [.[] | select(.body | from_lines | any(.[]; . == $pr)) | .number] | min // empty' "$scratch/after.json")
+    # Another run, on this host or another, can file the same verdict, or a
+    # verdict of the same area, between this run's board read and its create
+    # (#5149). So the run reads the board again: the earliest issue that
+    # carries `from: #<pr>`, or the earliest open collector of the area, is
+    # the filing. Of two runs, the later create reads after both issues
+    # exist, so it closes its own issue as the earlier one's duplicate.
+    gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,title,body > "$scratch/after.json"
+    title=$(jq -r .title <<< "$decision")
+    first=$(jq -r -L "$claims" --argjson pr "$number" --arg title "$title" \
+      'include "sections"; [.[] | select((.body | from_lines | any(.[]; . == $pr)) or (.state == "OPEN" and .title == $title)) | .number] | min // empty' "$scratch/after.json")
     if [[ -n $first && $first -lt $issue ]]; then
       gh issue close "$issue" -R "$repo" --duplicate-of "$first" > /dev/null
-      echo "refactor:file: #$number is filed as #$first by another run, so #$issue is closed as its duplicate"
-      exit 0
+      jq --argjson own "$issue" 'map(select(.number != $own))' "$scratch/after.json" > "$scratch/others.json"
+      decision=$(decide "$scratch/others.json")
+      if [[ $(jq -r .act <<< "$decision") != update ]]; then
+        echo "refactor:file: #$number is filed as #$first by another run, so #$issue is closed as its duplicate"
+        exit 0
+      fi
+      jq -j .body <<< "$decision" > "$body"
+      gh issue edit "$first" -R "$repo" --body-file "$body" > /dev/null
+      echo "refactor:file: #$issue is closed as the duplicate of the earlier collector #$first, which gains #$number's verdict"
+      issue=$first
+      line="refactor collector #$issue gains #$number's verdict; queue it in its area's lane"
+    else
+      line="refactor collector #$issue opened from #$number's verdict; queue it in its area's lane"
     fi
-    line="refactor #$issue filed from #$number's verdict; its claiming seat sections it"
     ;;
 esac
 echo "refactor:file: $line"
