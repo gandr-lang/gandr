@@ -447,5 +447,110 @@
       ]
     },
     "output": ""
+  },
+  {
+    "name": "#5215: a gate's log gives each task's time, each suite's count and summed time, and its slowest tests, a test or a task that two lines name counted once at its longest",
+    "program": "times.jq",
+    "input": {
+      "log": "[check:tests] $ .config/mise/gated cargo nextest run --workspace\n[check:tests] Finished in 2.0s\n[check:tests]     Finished `test` profile [optimized] target(s) in 0.04s\n[check:tests]         PASS [   0.002s] (1/3) gandr-a tests::quick\n[check:tests]         SLOW [> 30.000s] (2/3) gandr-b::tests sweeps::census\n[check:tests]         PASS [  34.517s] (2/3) gandr-b::tests sweeps::census\n[check:tests]         \u001b[32mPASS\u001b[0m [   7.250s] (3/3) gandr-b::tests sweeps::parity\n[check:tests]      Summary [  34.600s] 3 tests run: 3 passed (1 slow), 0 skipped\n[check:tests]         PASS [  34.517s] gandr-b::tests sweeps::census\n[check:tests] Finished in 1m 2.5s\n[check:tests-enforcing]         TRY 2 PASS [  12.040s] (1/1) gandr-b::tests sweeps::census\n[check:tests-enforcing] Finished in 40.2s\n[check:host-lock] host-lock check OK\n[check:host-lock] Finished in 259.4ms\nFinished in 1m 3s\n",
+      "seconds": 63
+    },
+    "output": {
+      "seconds": 63,
+      "tasks": [
+        { "task": "check:tests", "seconds": 62.5 },
+        { "task": "check:tests-enforcing", "seconds": 40.2 },
+        { "task": "check:host-lock", "seconds": 0.3 }
+      ],
+      "suites": [
+        { "task": "check:tests", "tests": 3, "seconds": 41.8 },
+        { "task": "check:tests-enforcing", "tests": 1, "seconds": 12 }
+      ],
+      "tests": [
+        { "task": "check:tests", "test": "gandr-b::tests sweeps::census", "seconds": 34.5 },
+        { "task": "check:tests-enforcing", "test": "gandr-b::tests sweeps::census", "seconds": 12 },
+        { "task": "check:tests", "test": "gandr-b::tests sweeps::parity", "seconds": 7.3 },
+        { "task": "check:tests", "test": "gandr-a tests::quick", "seconds": 0 }
+      ]
+    }
+  },
+  {
+    "name": "#5215: a log with no task's line gives the wall time alone",
+    "program": "times.jq",
+    "input": { "log": "mise ERROR no task check:missing found\n", "seconds": 2 },
+    "output": { "seconds": 2, "tasks": [], "suites": [], "tests": [] }
+  },
+  {
+    "name": "#5215: a gate past its budget gives its observation and the template's fields, its slowest task and test named",
+    "program": "budget.jq",
+    "input": {
+      "record": {
+        "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
+        "gate": "gate:all",
+        "time": {
+          "seconds": 1900,
+          "tasks": [
+            { "task": "check:tests-enforcing", "seconds": 421.5 },
+            { "task": "check:tests", "seconds": 268.8 }
+          ],
+          "suites": [{ "task": "check:tests-enforcing", "tests": 6000, "seconds": 1598 }],
+          "tests": [
+            {
+              "task": "check:tests-enforcing",
+              "test": "gandr-b::tests sweeps::census",
+              "seconds": 38.2
+            }
+          ]
+        }
+      },
+      "budget": { "gate:all": 1800 }
+    },
+    "output": {
+      "over": true,
+      "observation": "## Observation\n\n`mise run gate:all` took 1900 s on main's tree `4b825dc642cb6eb9a060e54bf8d69288fbee4904`, at `1566710c2a0b`. Its budget is 1800 s in `.config/gate-scope/budget.json`.\n\nThe table gives the five slowest tasks.\n\n| Task | Seconds |\n| ---- | ------- |\n| `check:tests-enforcing` | 421.5 |\n| `check:tests` | 268.8 |\n\nThe table gives the ten slowest tests.\n\n| Task | Test | Seconds |\n| ---- | ---- | ------- |\n| `check:tests-enforcing` | `gandr-b::tests sweeps::census` | 38.2 |\n",
+      "fields": {
+        "seconds": "1900",
+        "budget": "1800",
+        "task": "check:tests-enforcing",
+        "test": "gandr-b::tests sweeps::census"
+      }
+    }
+  },
+  {
+    "name": "#5215: a gate at its budget is within it",
+    "program": "budget.jq",
+    "input": {
+      "record": {
+        "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
+        "gate": "gate:all",
+        "time": { "seconds": 1800, "tasks": [], "suites": [], "tests": [] }
+      },
+      "budget": { "gate:all": 1800 }
+    },
+    "output": {
+      "over": false,
+      "observation": "## Observation\n\n`mise run gate:all` took 1800 s on main's tree `4b825dc642cb6eb9a060e54bf8d69288fbee4904`, at `1566710c2a0b`. Its budget is 1800 s in `.config/gate-scope/budget.json`.\n\nThe table gives the five slowest tasks.\n\n| Task | Seconds |\n| ---- | ------- |\n\nThe table gives the ten slowest tests.\n\n| Task | Test | Seconds |\n| ---- | ---- | ------- |\n",
+      "fields": { "seconds": "1800", "budget": "1800", "task": "none", "test": "none" }
+    }
+  },
+  {
+    "name": "#5215: a gate with no budget is never past it",
+    "program": "budget.jq",
+    "input": {
+      "record": {
+        "tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "commit": "1566710c2a0b8f9e1d2c3b4a5968778695a4b3c2",
+        "gate": "check",
+        "time": { "seconds": 5000, "tasks": [], "suites": [], "tests": [] }
+      },
+      "budget": { "gate:all": 1800 }
+    },
+    "output": {
+      "over": false,
+      "observation": "## Observation\n\n`mise run check` took 5000 s on main's tree `4b825dc642cb6eb9a060e54bf8d69288fbee4904`, at `1566710c2a0b`. It has no budget in `.config/gate-scope/budget.json`.\n\nThe table gives the five slowest tasks.\n\n| Task | Seconds |\n| ---- | ------- |\n\nThe table gives the ten slowest tests.\n\n| Task | Test | Seconds |\n| ---- | ---- | ------- |\n",
+      "fields": { "seconds": "5000", "budget": "none", "task": "none", "test": "none" }
+    }
   }
 ]

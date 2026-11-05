@@ -33,7 +33,10 @@
 # ran (`.config/gate-scope/passed.bash`, #5076), and `pr:open` and `pr:land`
 # refuse a head whose tree no gate passed on. The tree is read before the
 # checks run and again after them: when the work changed in between, nothing
-# is recorded.
+# is recorded. The record also holds the gate's time (#5215): its wall time,
+# each task's time and each suite's slowest tests, read from its standard
+# error, which the gate keeps in `target/gate/<gate>.log`. The gate never
+# blocks on its time.
 #
 # It first reads the claim of the unit its branch works
 # (`.config/claims/taken.bash`, #5146): a branch `<lane>-<n>-…` whose issue #n
@@ -70,8 +73,10 @@ GATE_SCOPE=$(.config/gate-scope/scope.bash)
 export GATE_SCOPE
 tasks=()
 for check in "${checks[@]}"; do tasks+=("$check" :::); done
-mise run "${tasks[@]:0:${#tasks[@]}-1}"
-.config/gate-scope/passed.bash record check "$tree" "${checks[@]}"
+mkdir -p target/gate
+SECONDS=0
+{ MISE_TASK_TIMINGS=1 mise run --output prefix "${tasks[@]:0:${#tasks[@]}-1}" 2>&1 1>&3 3>&- | tee target/gate/check.log >&2; } 3>&1
+.config/gate-scope/passed.bash record check "$tree" target/gate/check.log "$SECONDS" "${checks[@]}"
 {% endraw %}'''
 
 # The whole wall (#5014): every `check:*` task over the whole workspace, in
@@ -79,7 +84,9 @@ mise run "${tasks[@]:0:${#tasks[@]}-1}"
 # group runs it before every landing, so a change runs it only when no
 # package set can scope it. It reads the claim of its branch's unit as
 # `check` does. Its name keeps it out of the `check:*` glob, so it never runs
-# itself.
+# itself. On main's tree its time is held to a budget (#5215): it runs
+# `report:gate-time`, which files the gate past its budget, and a report that
+# fails leaves the pass recorded.
 ["gate:all"]
 description = "Every check over the whole workspace, about half an hour; the merge group runs it before every landing"
 tools.jq = "1.8.1"
@@ -100,8 +107,70 @@ echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEX
 unset GATE_SCOPE
 tree=$(.config/gate-scope/passed.bash tree)
 mapfile -t checks < <(mise tasks ls --json | jq -r '.[] | .name | select(startswith("check:"))')
-mise run 'check:*'
-.config/gate-scope/passed.bash record gate:all "$tree" "${checks[@]}"
+mkdir -p target/gate
+SECONDS=0
+{ MISE_TASK_TIMINGS=1 mise run --output prefix 'check:*' 2>&1 1>&3 3>&- | tee target/gate/gate-all.log >&2; } 3>&1
+.config/gate-scope/passed.bash record gate:all "$tree" target/gate/gate-all.log "$SECONDS" "${checks[@]}"
+if [[ $tree == "$(git rev-parse 'origin/main^{tree}' 2> /dev/null)" ]]; then
+  REPORT_FILE=1 mise run report:gate-time || echo "gate:all: the report of main's gate time failed; the pass stays recorded" >&2
+fi
+{% endraw %}'''
+
+# The local gate's time against its budget (#5215). The gate on main runs
+# every check over the whole workspace, so its time compares from one run to
+# the next. The task reads the newest record of `gate:all` on the tree of
+# `origin/main` that holds a time, and `.config/gate-scope/budget.jq` holds
+# it to its budget in `.config/gate-scope/budget.json`. Past the budget it
+# files one issue through the `gate-time` template, or rewrites the open one
+# with the new observation: the time, the slowest tasks and the slowest tests.
+# Within the budget it writes nothing. Without REPORT_FILE set it prints the
+# observation and writes nothing. `gate:all` on main's tree runs it with
+# REPORT_FILE set, and a report that fails never fails the gate.
+["report:gate-time"]
+description = "Main's gate time against its budget, filed on one issue when past it"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+here=$root/.config/gate-scope
+records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate
+tree=$(git rev-parse 'origin/main^{tree}')
+title="the local gate past its budget"
+shopt -s nullglob
+files=("$records/$tree"/*.json)
+record=null
+if (( ${#files[@]} > 0 )); then
+  record=$(jq -s -c 'map(select(.gate == "gate:all" and .time != null and .carried == null)) | sort_by(.at) | last' "${files[@]}")
+fi
+if [[ $record == null ]]; then
+  echo "report:gate-time: no gate:all on main's tree $tree recorded a time; run \`mise run gate:all\` on main" >&2
+  exit 0
+fi
+verdict=$(jq -n -c --argjson record "$record" --slurpfile budget "$here/budget.json" '{record: $record, budget: $budget[0]}' | jq -c -f "$here/budget.jq")
+if [[ $(jq -r .over <<< "$verdict") != true ]]; then
+  jq -r '"report:gate-time: the gate on main took \(.fields.seconds) s, within its budget of \(.fields.budget) s"' <<< "$verdict"
+  exit 0
+fi
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+jq -r .observation <<< "$verdict" > "$scratch/observation.md"
+if [[ -z ${REPORT_FILE:-} ]]; then
+  cat "$scratch/observation.md"
+  echo "report:gate-time: main's gate is past its budget; REPORT_FILE unset, nothing written" >&2
+  exit 0
+fi
+fields=$(jq -c .fields <<< "$verdict")
+number=$(gh issue list --state open --search "\"$title\" in:title" --json number,title --jq "[.[] | select(.title == \"$title\")] | first | .number // empty")
+if [[ -z $number ]]; then
+  mise run --quiet issue:file "$title" "$scratch/observation.md" kind:performance area:workflow --template gate-time --fields "$fields"
+  exit 0
+fi
+jq -R -s -r -L "$root/.config/issues" --argjson fields "$fields" --rawfile observation "$scratch/observation.md" \
+  'include "template"; render($fields; $observation)' "$root/.config/issues/templates/gate-time.md" > "$scratch/body.md"
+mise run --quiet body:check --title "$title" "$scratch/body.md" >&2
+gh issue edit "$number" --body-file "$scratch/body.md" > /dev/null
+echo "report:gate-time: updated #$number: main's gate is past its budget"
 {% endraw %}'''
 
 # Every corpus source stays in the gandr formatter's layout (#492): one
@@ -1700,6 +1769,10 @@ run = ".config/mise/host-lock-cases.bash"
 # `passed.jq` (#5076), a gated tree accepted, a changed tree refused, a
 # reworded commit accepted, a gate that skipped a selected check refused,
 # and a head stacked on the top refused for the gate before the stack (#5091).
+# It holds `times.jq` (#5215), a gate's log giving each task's time, each
+# suite's tests and the slowest tests, a test or a task two lines name
+# counted once, and `budget.jq`, a gate on main past its budget filed, one
+# at its budget within it, and a gate with no budget never past it.
 # `.config/gate-scope/carry-cases.bash` builds scratch repositories (#5153): a
 # restack onto a top that touches other files carries the gate to the new
 # tree, a restack that changes the branch's patch carries none, and a head on

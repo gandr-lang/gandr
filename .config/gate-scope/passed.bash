@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # The records of passed gates (#5076, `passed.jq`). `mise run check` and
 # `mise run gate:all` record each pass: the tree they passed on, the commit
-# under it, the checks they ran and every `check:*` task the tree holds.
-# `pr:open` and `pr:land` read the records and refuse a head that no gate
-# passed on.
+# under it, the checks they ran, every `check:*` task the tree holds and the
+# time the gate took (#5215). `pr:open` and `pr:land` read the records and
+# refuse a head that no gate passed on.
 #
 # The records are under the repository's common git directory, so a gate in
 # one worktree counts for the same tree in another. Each record is one file,
@@ -16,10 +16,12 @@
 #   passed.bash tree
 #     Prints the tree of the work in this worktree: the index, the working
 #     tree and every untracked path git does not ignore.
-#   passed.bash record <gate> <tree> <check>...
-#     Records that <gate> ran the checks on <tree> and passed. When the work
+#   passed.bash record <gate> <tree> <log> <seconds> <check>...
+#     Records that <gate> ran the checks on <tree> and passed in <seconds>,
+#     with the times its log <log> holds (`times.jq`, #5215). When the work
 #     is no longer <tree>, it records nothing: the work changed while the
-#     gate ran.
+#     gate ran. A log that gives no times leaves the record's `time` null,
+#     and the pass is recorded all the same.
 #   passed.bash require <command> <commit>
 #     Exits 0 when a gate passed on the tree of <commit> and ran every check
 #     that the commit's change selects (`select.bash`). Otherwise it names
@@ -54,19 +56,23 @@ case ${1:-} in
     work_tree
     ;;
   record)
-    (( $# >= 3 )) || { echo 'usage: passed.bash record <gate> <tree> <check>...' >&2; exit 2; }
+    (( $# >= 5 )) || { echo 'usage: passed.bash record <gate> <tree> <log> <seconds> <check>...' >&2; exit 2; }
     gate=$2
     tree=$3
-    shift 3
+    log=$4
+    seconds=$5
+    shift 5
     if [[ $(work_tree) != "$tree" ]]; then
       echo "$gate: the work changed while the gate ran, so no pass is recorded; run \`mise run $gate\` again before \`pr:open\` or \`pr:land\`" >&2
       exit 0
     fi
+    time=$(jq -n --rawfile log "$log" --argjson seconds "$seconds" '{log: $log, seconds: $seconds}' 2> /dev/null | jq -c -f "$here/times.jq" 2> /dev/null) || time=
+    [[ -n $time ]] || { echo "$gate: the log $log gave no times, so the record holds none" >&2; time=null; }
     mkdir -p "$records/$tree"
     file=$(mktemp "$records/$tree/.record.XXXXXX")
     tasks=$(mise tasks ls --json | jq -c '[.[] | .name | select(startswith("check:"))]')
-    jq -n --arg tree "$tree" --arg commit "$(git rev-parse HEAD)" --arg gate "$gate" --argjson tasks "$tasks" \
-      '{tree: $tree, commit: $commit, gate: $gate, checks: $ARGS.positional, tasks: $tasks}' --args "$@" > "$file"
+    jq -n --arg tree "$tree" --arg commit "$(git rev-parse HEAD)" --arg gate "$gate" --argjson tasks "$tasks" --argjson time "$time" \
+      '{tree: $tree, commit: $commit, gate: $gate, checks: $ARGS.positional, tasks: $tasks, at: (now | todate), time: $time}' --args "$@" > "$file"
     mv "$file" "$records/$tree/${file##*/.record.}.json"
     echo "$gate: passed on the tree $tree; \`pr:open\` and \`pr:land\` accept a head with this tree"
     ;;
@@ -120,7 +126,7 @@ case ${1:-} in
     exit 2
     ;;
   *)
-    echo 'usage: passed.bash (tree | record <gate> <tree> <check>... | require <command> <commit> | carry <gated> <head> <base>)' >&2
+    echo 'usage: passed.bash (tree | record <gate> <tree> <log> <seconds> <check>... | require <command> <commit> | carry <gated> <head> <base>)' >&2
     exit 2
     ;;
 esac
