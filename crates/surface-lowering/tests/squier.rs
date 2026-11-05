@@ -399,7 +399,7 @@ fn spelled(term: &Term) -> Option<FreeTerm>
 
 /// The reading a block's pairs are decided in.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum Reading
+pub enum Reading
 {
     /// The sequent reading, over commands.
     Commands,
@@ -410,7 +410,7 @@ enum Reading
 /// The small complex of one reading of a block: its symbols, each rule's
 /// boundary over them, and each certified pair's boundary over the rules.
 #[derive(Debug, Default)]
-struct Small
+pub struct Small
 {
     /// The symbols, in order.
     symbols: Vec<String>,
@@ -425,20 +425,20 @@ struct Small
 /// The dimensions of the homology of a small complex, the last an upper
 /// bound, since no cell of dimension three is built.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Homology
+pub struct Homology
 {
     /// Symbols less the rank of the rules' boundary.
-    first: Rank,
+    pub first: Rank,
     /// The rules' cycles less the rank of the pairs' boundary.
-    second: Rank,
+    pub second: Rank,
     /// The pairs' cycles: an upper bound on the third homology.
-    third_at_most: Rank,
+    pub third_at_most: Rank,
 }
 
 /// A rank or a dimension.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-struct Rank(usize);
+pub struct Rank(pub usize);
 
 /// The rank over the rationals of the matrix whose columns are `columns`,
 /// each of `rows` entries, by fraction-free elimination.
@@ -492,7 +492,7 @@ impl Small
     ///
     /// # Specification
     /// trivial.
-    fn homology(&self) -> Option<Homology>
+    pub fn homology(&self) -> Option<Homology>
     {
         if self.closed() == Reducibility::Reducible {
             return None;
@@ -804,7 +804,7 @@ fn collapse(
 
 /// How a corpus source lowered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Lowering
+pub enum Lowering
 {
     /// The parser refused the source.
     Unparsed,
@@ -818,7 +818,7 @@ enum Lowering
 ///
 /// # Specification
 /// trivial.
-fn each_block<Visit>(
+pub fn each_block<Visit>(
     grammar: &Pbg,
     source: SourceText<'_>,
     mut visit: Visit,
@@ -853,7 +853,7 @@ where
 ///
 /// # Specification
 /// trivial.
-fn certified(cells: &DeclarationCells) -> Option<Certificates>
+pub fn certified(cells: &DeclarationCells) -> Option<Certificates>
 {
     match cells.coincidence {
         Coincidence::Joined(ref certificates) => Some(certificates.clone()),
@@ -938,7 +938,7 @@ fn unary(cells: &DeclarationCells) -> Option<UnaryBlock>
 ///
 /// # Specification
 /// trivial.
-fn small_complexes(cells: &DeclarationCells) -> Vec<(Reading, Option<Small>)>
+pub fn small_complexes(cells: &DeclarationCells) -> Vec<(Reading, Option<Small>)>
 {
     let Some(certificates) = certified(cells)
     else {
@@ -1238,7 +1238,7 @@ fn squier_homology_closes_on_every_corpus_block_whose_rules_keep_their_variables
 ///
 /// # Specification
 /// trivial.
-fn rules_of(
+pub fn rules_of(
     cells: &DeclarationCells,
     reading: Reading,
 ) -> Vec<(FreeTerm, FreeTerm)>
