@@ -14449,26 +14449,26 @@ impl<'source> Lowerer<'_, 'source>
     /// - provides: the head of a recursive call, and the self reference a value
     ///   position passes on.
     /// - fails: the bare-index refusal at the bracket for an instantiation that
-    ///   [`Self::bare_index`] reads as an element index; the reserved refusal
-    ///   for any other resident, a termination claim the grammar reserves,
-    ///   marking the resident under a named head and the whole instantiation
-    ///   under any other head (#3811); the unguarded-corecursion refusal for a
-    ///   `>` call that is not the whole arm of a copattern block; the
-    ///   foreign-claim refusal for an instantiation whose head names a function
-    ///   other than a recursive one in scope; the unresolved-name refusal, at
-    ///   the head, for a head that names nothing; the joint-telescope refusal,
-    ///   at the call, for a call through a joint member that stages a parameter
-    ///   after its first or passes a leading one (#5065); the unadmitted
-    ///   refusal for a joint member's claim standing unapplied, whose thunk is
-    ///   the joint's at the sum of the block's domains, and for a `>` claim
-    ///   standing unapplied or naming a joint member; the arity refusal, at the
-    ///   call, for a call on the function itself passing other than one
-    ///   argument per parameter, a call through a sibling held for
-    ///   [`Self::refuse_sibling_arities`]; the non-uniform refusal, at the
-    ///   argument, for a parameter before the staged one passed as anything but
-    ///   itself; the several-parameters refusal [`Self::claim`] raises; the
-    ///   wrong-sort refusal outside a head or value position; and the allowance
-    ///   refusal from the binder walk.
+    ///   [`Self::bare_index`] reads as an element index; the unresolved-name
+    ///   refusal, at the head, for a head that names nothing, whatever its
+    ///   resident (#5303); the reserved refusal for any other resident, a
+    ///   termination claim the grammar reserves, marking the resident under a
+    ///   named head and the whole instantiation under any other head (#3811);
+    ///   the unguarded-corecursion refusal for a `>` call that is not the whole
+    ///   arm of a copattern block; the foreign-claim refusal for an
+    ///   instantiation whose head names a function other than a recursive one
+    ///   in scope; the joint-telescope refusal, at the call, for a call through
+    ///   a joint member that stages a parameter after its first or passes a
+    ///   leading one (#5065); the unadmitted refusal for a joint member's claim
+    ///   standing unapplied, whose thunk is the joint's at the sum of the
+    ///   block's domains, and for a `>` claim standing unapplied or naming a
+    ///   joint member; the arity refusal, at the call, for a call on the
+    ///   function itself passing other than one argument per parameter, a call
+    ///   through a sibling held for [`Self::refuse_sibling_arities`]; the
+    ///   non-uniform refusal, at the argument, for a parameter before the
+    ///   staged one passed as anything but itself; the several-parameters
+    ///   refusal [`Self::claim`] raises; the wrong-sort refusal outside a head
+    ///   or value position; and the allowance refusal from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -14493,6 +14493,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
     /// - witness: `lower::tests::a_self_call_a_body_quotes_reads_its_fixpoint_at_its_index_3562`
     /// - witness: `lower::native::tests::a_reserved_claim_under_a_head_that_is_no_name_marks_the_whole_instantiation_3811`
+    /// - witness: `lower::native::tests::a_head_naming_nothing_over_a_resident_is_unresolved_5303`
     /// - witness: `lower::method::tests::a_bare_index_is_refused_naming_the_selector_4944`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _) | Plan::Application(..)))))]
     pub(super) fn instantiation(
@@ -14540,18 +14541,31 @@ impl<'source> Lowerer<'_, 'source>
                 })
             )
         });
+        let joint = match self.collected.owner_of(site.at.node) {
+            Maybe::Present(owner) => self.joint(owner),
+            Maybe::Absent(_) => Joint::alone(),
+        };
         let Some(claim) = claim
         else {
-            // A resident that is no claim is the mistake under a name a claim
-            // could stand on; under any other head the instantiation is (#3811).
-            let marked = if named {
-                Site {
-                    at: resident,
-                    ..site
-                }
+            // A head that names nothing is the mistake. A keyword misspelt
+            // before a bracket reads as a name over a resident (#5303).
+            // Under a name that resolves, a resident that is no claim is the
+            // mistake. Under any other head, the instantiation is (#3811).
+            if !named {
+                return Err(site.out(FragmentBoundary::Reserved(Unbuilt::RecursiveClaim)));
             }
-            else {
-                site
+            let name = self.name_at(head);
+            if let (Maybe::Absent(_), Maybe::Absent(_)) = (
+                self.scope.resolve(frame, name, &mut self.fuel)?,
+                joint.member(&self.collected, name),
+            ) && let refusal @ LoweringRefusal::UnresolvedName { .. } =
+                self.foreign_claim(site, frame, head, name)?
+            {
+                return Err(refusal);
+            }
+            let marked = Site {
+                at: resident,
+                ..site
             };
             return Err(marked.out(FragmentBoundary::Reserved(Unbuilt::RecursiveClaim)));
         };
@@ -14560,10 +14574,6 @@ impl<'source> Lowerer<'_, 'source>
         }
         let name = self.name_at(head);
         let descent = self.descents.get(&site.at.node).copied();
-        let joint = match self.collected.owner_of(site.at.node) {
-            Maybe::Present(owner) => self.joint(owner),
-            Maybe::Absent(_) => Joint::alone(),
-        };
         let resolved = self.scope.resolve(frame, name, &mut self.fuel)?;
         // A sibling of the joint answers by the function's own fixpoint
         // binder: the joint fixpoint is the function's own, read at the
@@ -14701,7 +14711,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   binder, a declaration or a builtin primitive; the unresolved-name
     ///   refusal at `head` when it resolves to nothing.
     /// - provides: the refusal [`Self::instantiation`] raises for a claim on
-    ///   another function.
+    ///   another function, and the unresolved-name refusal it raises for a head
+    ///   that names nothing over a resident that is no claim (#5303).
     /// - fails: the refusals name resolution raises before an answer: an
     ///   unmarked self reference, a forward member reference, a name an opened
     ///   module and another scope answer distinctly, the allowance.

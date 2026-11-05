@@ -1849,6 +1849,44 @@ fn a_reserved_claim_under_a_head_that_is_no_name_marks_the_whole_instantiation_3
     );
 }
 
+/// A head that names nothing is the mistake, whatever its resident. A keyword
+/// misspelt before a bracket reads as a name over a resident, and the refusal
+/// marks the name (#5303). Under a head that names a declaration, the resident
+/// that is no claim keeps the refusal (#3811).
+#[test]
+fn a_head_naming_nothing_over_a_resident_is_unresolved_5303()
+{
+    let mut arena = CoreArena::new();
+    let source = "def known = 1 ;\ndef misspelt = migrat[2] ;\ndef resolved = known[2] ;\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    let at = |text: &str, offset: usize, length: usize| {
+        let start = source.find(text).unwrap_or_default().saturating_add(offset);
+        crate::fixture::span(
+            gandr_surface_syntax::ByteOffset::from(start),
+            gandr_surface_syntax::ByteOffset::from(start.saturating_add(length)),
+        )
+    };
+
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("misspelt")),
+        LoweringRefusal::UnresolvedName {
+            span: at("migrat[2]", 0, "migrat".len()),
+            name: SurfaceName::from("migrat"),
+        },
+        "a head that names nothing is unresolved before its resident is read"
+    );
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("resolved")),
+        LoweringRefusal::OutOfFragment {
+            span: at("known[2]", "known[".len(), 1),
+            form: FormName::INSTANTIATION,
+            sort: FragmentSort::Value,
+            boundary: FragmentBoundary::Reserved(crate::Unbuilt::RecursiveClaim),
+        },
+        "a head that names a declaration leaves the refusal at its resident"
+    );
+}
+
 #[test]
 fn a_data_family_named_where_a_value_is_read_is_quoted()
 {
