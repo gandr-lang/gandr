@@ -2363,6 +2363,143 @@ mod kernel_presented_readmission
     }
 
     #[test]
+    fn the_holders_of_std_ir_cross_with_their_roles_and_a_forged_one_is_refused_5304()
+    {
+        use gandr_kernel_term::Builtin;
+        use quenchant_shape::shape::Maybe;
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../library/std/src/ir.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("`std.ir` lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("the four holders readmit: the kernel admits each in its canonical form");
+        let held = |role: Builtin| {
+            declarations
+                .iter()
+                .position(|marked| marked.declaration().role() == Maybe::Present(role))
+                .unwrap_or_else(|| panic!("a holder of {role:?} crossed with its role"))
+        };
+        let (pair, signature) = (held(Builtin::IrPair), held(Builtin::IrSignature));
+        let (_args, decode) = (held(Builtin::IrArgs), held(Builtin::IrDecode));
+        // The signature type forged to hold the pair role meets the pair's
+        // holder before it.
+        let mut twin = declarations.clone();
+        twin[signature] = MarkedDeclaration::new(
+            declarations[signature].mark(),
+            declarations[signature]
+                .declaration()
+                .clone()
+                .held(Builtin::IrPair),
+        );
+        let refusal = Environment::replay(arena.clone(), &twin)
+            .expect_err("a second holder of the pair role is refused");
+        assert_eq!(usize::from(refusal.position()), signature);
+        assert_eq!(*refusal.error(), KernelError::BuiltinRepeated {
+            role: Builtin::IrPair,
+            holder: gandr_kernel_term::ConstantIndex::from(pair),
+        });
+        // The decoder forged to hold the signature role is a definition, and
+        // the signature role marks a datatype.
+        let mut twin = declarations.clone();
+        twin[decode] = MarkedDeclaration::new(
+            declarations[decode].mark(),
+            declarations[decode]
+                .declaration()
+                .clone()
+                .held(Builtin::IrSignature),
+        );
+        let refusal = Environment::replay(arena.clone(), &twin)
+            .expect_err("the signature role on a definition is refused");
+        assert_eq!(usize::from(refusal.position()), decode);
+        assert_eq!(
+            *refusal.error(),
+            KernelError::BuiltinMisplaced(Builtin::IrSignature)
+        );
+        // The pair type forged to hold the signature role departs at its
+        // parameters.
+        let mut twin = declarations.clone();
+        twin[pair] = MarkedDeclaration::new(
+            declarations[pair].mark(),
+            declarations[pair]
+                .declaration()
+                .clone()
+                .held(Builtin::IrSignature),
+        );
+        let refusal =
+            Environment::replay(arena, &twin).expect_err("the pair type is no signature type");
+        assert_eq!(usize::from(refusal.position()), pair);
+        assert_eq!(*refusal.error(), KernelError::BuiltinNotCanonical {
+            role: Builtin::IrSignature,
+            departure: gandr_kernel_term::Departure::Parameters,
+        });
+    }
+
+    #[test]
+    fn a_holder_of_e_whose_delta_case_asks_from_the_family_is_refused_by_the_kernel_5304()
+    {
+        use gandr_kernel_term::Builtin;
+        // The pathological holder of `E` with its mark taken off: the checker
+        // admits it as a plain definition, so it crosses, and the kernel meets
+        // its body once the role is forged back on.
+        let unmarked = include_str!("../../../corpus/pathological/universe/ir-holders.gandr")
+            .replace(
+                "@[ builtin(irArgs), refuses(\"BuiltinNotCanonical\") ]\n",
+                "",
+            );
+        let path = std::env::temp_dir().join(alloc::format!(
+            "gandr-ir-fields-5304-{}.gandr",
+            std::process::id()
+        ));
+        std::fs::write(&path, unmarked).expect("the unmarked holder writes");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let swept = export(&pbg, path.clone(), Root::Fixture);
+        std::fs::remove_file(&path).expect("the unmarked holder is removed");
+        let Swept::Exported(exported) = swept
+        else {
+            panic!("the unmarked holder lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("the unmarked definition readmits beside the canonical holders");
+        let fields = declarations
+            .iter()
+            .rposition(|marked| {
+                matches!(
+                    *marked.declaration().content(),
+                    gandr_kernel_term::DeclarationContent::Def { .. }
+                )
+            })
+            .expect("`fields` crosses as a definition");
+        let mut twin = declarations.clone();
+        twin[fields] = MarkedDeclaration::new(
+            declarations[fields].mark(),
+            declarations[fields]
+                .declaration()
+                .clone()
+                .held(Builtin::IrArgs),
+        );
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("a `δ` case that asks for `h : X -> A` is no canonical `E`");
+        assert_eq!(usize::from(refusal.position()), fields);
+        assert_eq!(*refusal.error(), KernelError::BuiltinNotCanonical {
+            role: Builtin::IrArgs,
+            departure: gandr_kernel_term::Departure::Answer(
+                gandr_kernel_term::ConstructorTag::from(2_usize)
+            ),
+        });
+    }
+
+    #[test]
     fn rules_the_body_does_not_compute_are_refused_by_the_kernel_322()
     {
         let pbg = built_in().expect("the built-in grammar builds");

@@ -4685,6 +4685,17 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         &self.operation_rules
     }
 
+    /// The declaration that holds each built-in role.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn builtins(&self) -> &BTreeMap<gandr_kernel_term::Builtin, ConstantIndex>
+    {
+        &self.builtins
+    }
+
     /// Keep `signature` as the stage signature of the definition at
     /// `constant`.
     ///

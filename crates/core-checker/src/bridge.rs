@@ -2217,6 +2217,7 @@ where
         laws: report.laws(),
         operation_rules: report.operation_rules(),
         covers: report.covers(),
+        builtins: report.builtins(),
         stage_signatures: report.stage_signatures(),
         natives: report.natives(),
         definitions: report.definitions(),
@@ -2733,6 +2734,8 @@ struct Source<'source>
     /// The rules of the operation each ruled declaration lowered from, by
     /// position.
     operation_rules: &'source BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The built-in role each holder holds, by position.
+    builtins: &'source BTreeMap<ConstantIndex, gandr_kernel_term::Builtin>,
     /// The matches of each declaration's body with their derivations, by
     /// position.
     covers: &'source BTreeMap<ConstantIndex, Vec<(ComputationId, gandr_kernel_term::cover::Cover)>>,
@@ -2954,7 +2957,7 @@ where
             (source, &*positions),
             offer,
             vouch,
-            (crossing, base),
+            (crossing, base, held(source, constant)),
         ) {
             Ok(staged) => break staged,
             Err(Unstaged::Unseeded(seed)) => {
@@ -3103,7 +3106,11 @@ fn stage<Vouch>(
     (source, positions): (Source<'_>, &Positions),
     offer: Offer<'_>,
     vouch: &Vouch,
-    (crossing, base): (&[(ConstantIndex, ConstantIndex)], ConstantIndex),
+    (crossing, base, role): (
+        &[(ConstantIndex, ConstantIndex)],
+        ConstantIndex,
+        Maybe<gandr_kernel_term::Builtin, gandr_kernel_term::builtin_role::Absent>,
+    ),
 ) -> Result<Staged, Unstaged>
 where
     Vouch: Fn(Certificate) -> Certificate,
@@ -3269,11 +3276,37 @@ where
             }
         },
     };
+    // A holder crosses carrying its role, for the kernel to validate.
+    let declaration = match role {
+        Maybe::Present(role) => declaration.held(role),
+        Maybe::Absent(_) => declaration,
+    };
     Ok(Staged {
         declaration,
         image,
         replayed,
     })
+}
+
+/// No built-in role: what a seeded native or model holds.
+const UNHELD: Maybe<gandr_kernel_term::Builtin, gandr_kernel_term::builtin_role::Absent> =
+    Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unmarked);
+
+/// The built-in role the module declaration at `constant` holds.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn held(
+    source: Source<'_>,
+    constant: ConstantIndex,
+) -> Maybe<gandr_kernel_term::Builtin, gandr_kernel_term::builtin_role::Absent>
+{
+    source
+        .builtins
+        .get(&constant)
+        .copied()
+        .map_or(UNHELD, Maybe::Present)
 }
 
 /// An operation's rules over module positions, read at kernel positions.
@@ -3457,7 +3490,7 @@ where
                 (source, &*positions),
                 offer,
                 vouch,
-                (&crossing, base),
+                (&crossing, base, held(source, constant)),
             ) {
                 Ok(member) => staged.push(member),
                 Err(unstaged) => {
@@ -3680,7 +3713,7 @@ where
         (source, &*positions),
         Offer::Axiom { declared },
         vouch,
-        (&[], base),
+        (&[], base, UNHELD),
     )
     else {
         return Maybe::Absent(assumption::Absent::Unstaged);
@@ -3849,7 +3882,7 @@ where
         (source, &*positions),
         Offer::Data(&model),
         vouch,
-        (&[(declaration, next)], base),
+        (&[(declaration, next)], base, UNHELD),
     ) {
         Ok(staged) => staged,
         Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
@@ -4157,7 +4190,7 @@ where
                 stages: &UNQUANTIFIED,
             },
             vouch,
-            (&[], base),
+            (&[], base, UNHELD),
         ) {
             Ok(staged) => staged,
             Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
@@ -4227,7 +4260,7 @@ where
             stages: &UNQUANTIFIED,
         },
         vouch,
-        (crossing, base),
+        (crossing, base, UNHELD),
     ) {
         Ok(staged) => staged,
         Err(Unstaged::Refused(outcome, _)) => return Err(outcome),

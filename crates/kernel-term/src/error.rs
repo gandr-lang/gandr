@@ -212,6 +212,8 @@ pub enum TagSite
     /// A literal identity test's polarity, outside the same and different
     /// alphabet.
     IdentityPolarity,
+    /// A holder's built-in role, outside the role alphabet.
+    Role,
 }
 
 impl fmt::Display for TagSite
@@ -260,6 +262,7 @@ impl fmt::Display for TagSite
             Self::CoverCases => "a cover split's cases",
             Self::IdentityBase => "a literal identity test's base",
             Self::IdentityPolarity => "a literal identity test's polarity",
+            Self::Role => "a built-in role",
         })
     }
 }
@@ -614,6 +617,7 @@ mod tests
             TagSite::CoverCases,
             TagSite::IdentityBase,
             TagSite::IdentityPolarity,
+            TagSite::Role,
         ] {
             names.push(format!("{site}"));
             check_sink(&site);
