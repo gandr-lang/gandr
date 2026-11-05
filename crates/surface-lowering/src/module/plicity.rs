@@ -1045,7 +1045,7 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a constructor argument of a call to a function of
     ///   clauses takes its column's type, naming the parameter before it.
     /// - witness: `lower::native::tests::a_clause_column_types_its_call_s_argument`
-    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     fn column_parameters(
         &self,
         mut cursor: Cursor<'_>,

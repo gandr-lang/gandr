@@ -1966,7 +1966,7 @@ enum Classifies
 /// # Adequacy
 /// - hypothesis: L3 — the thunk of an arrow over a universe reads back equal,
 ///   where the alias `Type -> Type` read back as the static Pi.
-/// - witness: `typed::tests::a_type_instantiated_at_a_function_literal_reads_back_675`
+/// - witness: `tests::goldens::a_box_over_a_type_keeps_its_thunk_4853`
 fn classifies_codes<S>(
     source: &S,
     node: S::Node,
@@ -7590,7 +7590,7 @@ impl Walk<'_, '_>
     ///   reads.
     /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
     /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
-    /// - witness: `typed::tests::a_box_over_a_type_prints_as_its_thunk_4853`
+    /// - witness: `tests::goldens::a_box_over_a_type_keeps_its_thunk_4853`
     /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
     #[spec(

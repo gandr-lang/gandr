@@ -4419,7 +4419,7 @@ pub fn lower_module<'source>(
 /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
 /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
 /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
-/// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
+/// - witness: `lower::tests::a_computation_codomain_of_a_box_is_refused`
 /// - witness: `lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
 /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
 /// - witness: `tests::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
@@ -6877,7 +6877,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   refused.
     /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
-    /// - witness: `lower::tests::a_juxtaposed_call_is_the_call_it_spells_4853`
+    /// - witness: `lower::tests::a_call_argument_and_an_inferring_call_lower_4853`
     #[spec(
         captures: before = (
             usize::from(self.collected.owner.count()),
@@ -10592,7 +10592,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   with either arrow.
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
-    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| matches!(codomain.over, native::Over::Written | native::Over::Returning | native::Over::Valued { .. }))))]
     fn arrow_of(
         &mut self,
@@ -16055,7 +16055,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   each called where a type is read and observed through the unquote it
     ///   plans.
     /// - witness: `lower::tests::a_binder_at_a_family_standing_for_a_function_unquotes_its_call_522`
-    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     fn holds_function(
         &mut self,
         written: NodeIndex,
@@ -16373,8 +16373,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
     /// - witness: `lower::tests::a_computation_codomain_of_a_box_is_refused`
-    /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
-    /// - witness: `lower::tests::a_quoted_arrow_is_the_box_its_fat_spelling_wrote_4853`
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    /// - witness: `lower::tests::a_quoted_arrow_is_the_box_its_thunk_spells_4853`
     /// - witness: `lower::arity::tests::a_body_after_equals_is_its_block_4853`
     /// - witness: `lower::arity::tests::a_dependent_arrow_is_the_telescope_the_alias_abbreviates`
     /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
@@ -16469,7 +16469,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::form::classifies_codes`].
     /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
-    /// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     fn ranges_over_codes(
         &mut self,
         domain: Placed,
@@ -16498,7 +16498,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`crate::form::writes_box`].
-    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     pub(super) fn boxes(
         &mut self,
         at: NodeIndex,
@@ -16534,7 +16534,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::arrow`]: a quoted arrow over a value type
     ///   is the box and one over a returner the computation arrow.
-    /// - witness: `lower::tests::a_quoted_arrow_is_the_box_its_fat_spelling_wrote_4853`
+    /// - witness: `lower::tests::a_quoted_arrow_is_the_box_its_thunk_spells_4853`
     fn writes_computation(
         &mut self,
         at: Placed,
@@ -17057,7 +17057,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::static_at`].
     /// - witness: `lower::tests::a_lambda_s_position_decides_its_sort_4508`
-    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(domain, codomain)| domain != codomain)))]
     fn static_arrow(
         &mut self,

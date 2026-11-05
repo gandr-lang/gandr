@@ -3299,6 +3299,43 @@ fn a_binder_only_a_dropped_argument_names_is_unnamed_736()
     }
 }
 
+/// #4853: a box whose first domain classifies codes keeps its thunk. The
+/// alias `Type -> Type` reads as the static Pi, so a thunk over an arrow from
+/// `Type` prints whole, `+U (Type -> -F Type)`. A dependent arrow whose binder
+/// nothing names prints so too: the printer leaves its binder out, and the
+/// bare `Type -> Type` reads as the static Pi again.
+#[test]
+fn a_box_over_a_type_keeps_its_thunk_4853()
+{
+    let mut core = CoreArena::new();
+    let universe = small_universe(&mut core);
+    let returns_universe = core.comp_type_returner(universe);
+    let plain = core.comp_type_arrow(universe, returns_universe);
+    let plain = core.value_type_thunk(plain);
+    let unnamed = core.comp_type_pi(universe, returns_universe);
+    let unnamed = core.value_type_thunk(unnamed);
+    let source = CoreSource::new(&core, &[]);
+    for (root, reason) in [
+        (plain, "a thunk over an arrow from `Type`"),
+        (
+            unnamed,
+            "a thunk over a dependent arrow whose binder nothing names",
+        ),
+    ] {
+        let presented = presented_in(
+            &source,
+            Root::Type(CoreNode::ValueType(root)),
+            wide(),
+            Form::Sugared,
+        );
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            ("+U (Type -> -F Type)", Fidelity::Faithful),
+            "{reason} keeps its thunk"
+        );
+    }
+}
+
 /// #839: a quoted type that holds a part no expression reads — a sum or a
 /// lazy product written between braces, at its head or as a product's
 /// component — is written `type(T)` where an expression stands, as an

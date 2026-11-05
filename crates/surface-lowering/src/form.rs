@@ -1742,7 +1742,7 @@ pub struct Boxed(pub bool);
 /// - hypothesis: L3 — a kind arrow over universes stays the static Pi and an
 ///   arrow between value types is the box.
 /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
-/// - witness: `lower::tests::an_arrow_between_value_types_is_the_box_4853`
+/// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
 pub fn classifies_codes<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -2560,7 +2560,7 @@ pub fn read_pieces<'source>(
 ///   argument as its own call. While the call form stands, a `(` after an
 ///   operand molds as a call, so `f ()` and a grouped argument reach the spine
 ///   only after the call form leaves the grammar.
-/// - witness: `lower::tests::a_juxtaposed_call_is_the_call_it_spells_4853`
+/// - witness: `lower::tests::a_call_argument_and_an_inferring_call_lower_4853`
 #[spec(ensures: |ret| match ret {
     Some(head) => read.pieces.first() == Some(&Piece::Operand(head)) && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE),
     None => read.pieces.is_empty(),

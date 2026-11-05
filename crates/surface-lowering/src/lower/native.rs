@@ -4148,7 +4148,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Self::parameters_classify`].
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::an_argument_lambda_s_binder_is_typed_by_its_parameter_1948`
-    /// - witness: `lower::tests::a_box_written_with_the_thin_arrow_reads_as_the_fat_one_4853`
+    /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |answer| answer.is_none_or(|answer| answer.frame == Frame::Outermost)))]
     fn signed_answer(
         &mut self,
