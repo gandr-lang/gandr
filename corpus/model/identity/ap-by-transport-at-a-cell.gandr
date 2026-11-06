@@ -1,0 +1,64 @@
+// This source writes a map's action on a path as a transport, after the HoTT
+// book's Lemma 2.2.1.
+//
+// The defined path operations write `Path.ap` so. The definition must convert
+// with the native form at a presented type's cell.
+//
+// The transport starts at reflexivity on the map's image of the start. It
+// carries that path along the path, in the family of paths from the image.
+// The family calls the map through the definition's parameter. At the loop the
+// transport reads the map that the call binds. It computes by the map's loop
+// arm, as the native `Path.ap` does.
+//
+// - see: #5206
+// - see: #5481 — `alongFlipped`, `alongKept`
+
+// The circle and its flip, `invLooper`.
+import "./circle-base.gandr";
+
+/// A map's action on a path by transport, with its carriers and its endpoints
+/// as parameters.
+def along(A : Type, B : Type, f : A -> B, a : A, b : A, p : Path[.A = A](a, b)) -> Path[.A = B](
+  f a,
+  f b
+) =
+  Path.walk (fun (y) { type(Path[.A = B](f a, f y)) }) p (Path.here (f a))
+
+/// The map that keeps the loop: its loop arm is the loop's name.
+def keepLoop(x : Circle) -> Circle =
+  match x
+    | Base => Base
+    | loop => loop
+
+/// The flip's image of the loop by the transport is the flip's loop arm, the
+/// inverse loop.
+def alongFlipped : Path[.A = Path[.A = Circle](Base, Base)](
+  along Circle Circle invLooper Base Base loop,
+  Path.back loop
+) = Path.here (Path.back loop);
+
+/// The transport and the native action agree at the loop.
+def alongFlippedNative : Path[.A = Path[.A = Circle](Base, Base)](
+  along Circle Circle invLooper Base Base loop,
+  Path.ap invLooper loop
+) = Path.here (Path.ap invLooper loop);
+
+/// The same agreement at a map whose loop arm is the loop's name.
+def alongKept : Path[.A = Path[.A = Circle](Base, Base)](
+  along Circle Circle keepLoop Base Base loop,
+  Path.ap keepLoop loop
+) = Path.here (Path.ap keepLoop loop);
+
+/// Over a path parameter the transport and the native action agree, as before.
+def alongParameter(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
+  along Circle Circle invLooper Base Base p,
+  Path.ap invLooper p
+) =
+  Path.here (Path.ap invLooper p)
+
+/// The flip's image of the loop is not the loop.
+@[ refuses("EndpointMismatch") ]
+def alongFlippedApart : Path[.A = Path[.A = Circle](Base, Base)](
+  along Circle Circle invLooper Base Base loop,
+  loop
+) = Path.here loop;
