@@ -1,6 +1,11 @@
-// Numbers with a fraction, typed as IEEE 754 binary64 floats by the `f64`
-// suffix or an annotation, and the `float64` operations over them: the
-// exponential, arithmetic, comparison and rounding to an integer.
+// This source shows `f64` literals and operations.
+//
+// An `f64` suffix or annotation types fractions as IEEE 754 binary64.
+// The operations include exponentials, arithmetic, comparisons and integer rounding.
+//
+// The runtime calculates these values with `float64`.
+//
+// - see: `float64` — floating-point operations.
 
 /// A suffix types the number.
 def half = 0.5f64;
@@ -51,6 +56,6 @@ def restored() -> f64 =
 def negative() -> f64 =
   - 0.6931471805599453f64
 
-/// The exponential above, returned.
+/// `exponential` returns the exponential above.
 @[ runs("1.6487212707001282f64") ]
 def exponential() -> f64 { grown () }

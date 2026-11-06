@@ -1,13 +1,16 @@
-// A lambda's parameter written with its type, `fun (x : A) { … }`, is read at
-// `A`: the argument the lambda binds is returned at `A` and bound as the
-// parameter, so the arrow the lambda answers must take an `A`.
+// This source shows typed lambda parameters.
+//
+// A typed parameter binds an argument at `A`.
+// The lambda's arrow must accept `A`.
+//
+// The checker reads the parameter at its stated type.
 //
 // - see: #1310
 
-/// Doubles its argument, the parameter typed where the lambda binds it.
+/// `double` doubles an argument at its binding type.
 def double : Integer -> Integer = fun (x : Integer) { x + x };
 
-/// A function of a lazy record, handed its argument.
+/// `lend` accepts a lazy record and its argument.
 def lend(
   f : +U &{get : -F Integer, put : -F String} -> Integer,
   m : +U &{get : -F Integer, put : -F String}

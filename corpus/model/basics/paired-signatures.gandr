@@ -1,6 +1,10 @@
-// A signature and its definition, joined in one item or written apart: the
-// definition is checked against the type the signature states. Block
-// comments are grammar extras and nest, so the prose below changes nothing.
+// This source shows paired signatures and definitions.
+//
+// A pair may join one item or remain separate.
+// The checker checks a definition against its signature type.
+//
+// Block comments nest as grammar extras.
+// They do not change the prose semantics.
 //
 // - see: #1112 — `plus_two`
 
@@ -13,14 +17,14 @@
 @[ runs("40") ]
 def seed : Integer = prim.const 40 (prim.id 999);
 
-/// Two more than its argument, at a thunk of grade one; the lowering admits
-/// no thunk grade but `ω` yet.
+/// `plus_two` adds two at thunk grade one.
+/// The lowering accepts no grade other than `ω`.
 @[ refuses("GradedBridge") ]
 def plus_two : +U[1] (Integer -> -F Integer);
 def plus_two(x : Integer) -> -F Integer =
   return (x + 2)
 
-/// The function applied to the seed. `plus_two` is refused above, so the call
-/// names a declaration whose type is not known.
+/// `seeded` applies `plus_two` to `seed`.
+/// The unknown declaration type refuses the call.
 @[ refuses("UnknownConstant") ]
 def seeded() -> Integer { plus_two seed }
