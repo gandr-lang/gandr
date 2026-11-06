@@ -67,11 +67,6 @@
 //! shared or exclusive, stays [`FragmentBoundary::Held`], because an access
 //! lends a held slot.
 //!
-//! The alternative was a core former that reads an element of a list value
-//! where it stands, with no cell for the hold. The probe on #2670 declines it
-//! on its numbers. Over 10⁶ reads the hold adds 0.115 s to its loop, the hold
-//! a source writes adds 0.117 s, and a walk by a match adds 2.001 s.
-//!
 //! # References
 //!
 //! - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: §
