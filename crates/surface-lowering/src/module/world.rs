@@ -188,14 +188,13 @@ impl<'source> Collector<'_, 'source>
             self.document(slot, block.node, block.span.end(), declaration.node);
         }
         self.document(slot, declaration.node, named.span.start(), declaration.node);
-        let mut attributes = Vec::new();
-        let mut attributed = Ok(());
         for &block in decorations {
             self.collected.own(block.node, slot);
-            if attributed.is_ok() {
-                attributed = self.decoration(block, declaration.node, &mut attributes);
-            }
         }
+        let mut attributes = Vec::new();
+        let attributed = self
+            .decorations(decorations, declaration.node, &mut attributes)
+            .map_err(|(_block, refusal)| refusal);
         let (entries, read) = match read_requirement(self.pbg, self.tree, &mut cursor) {
             Ok(entries) => (entries, Ok(())),
             Err(refusal) => (Vec::new(), Err(refusal)),
