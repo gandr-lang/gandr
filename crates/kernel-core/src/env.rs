@@ -3063,6 +3063,10 @@ fn reach(
                 Some(&Value::Record(ref fields)) => {
                     pending.extend(fields.values().copied().map(AnyNode::Value));
                 },
+                Some(&Value::Restrict { value, ref fixed }) => pending.extend(
+                    core::iter::once(AnyNode::Value(value))
+                        .chain(fixed.values().copied().map(AnyNode::Value)),
+                ),
                 Some(&Value::Constant(index)) => {
                     if sink.meet(index) == Mention::Named {
                         return Mention::Named;

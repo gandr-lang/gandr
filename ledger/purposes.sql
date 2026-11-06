@@ -1549,6 +1549,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_QUANTIFIED_EVALUATION','c
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_QUOTE','constant','Node tag: the code of a value type, over one value type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_QUOTE_COMPUTATION','constant','Node tag: the code of a computation type, over one computation type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_RECORD','constant','Node tag: record literal with counted labels and children.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_RESTRICT','constant','Node tag: a record value restricted to the fields it does not fix, with counted labels, over the record value and the fixed values.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_RETURNED','constant','Node tag: a returned endpoint, the value a pure computation returns, standing where a value is read, over that one computation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_SESSION_FLOW','constant','Node tag: finite session simulation, classifier and payload-proof tuple.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_SESSION_PATH','constant','Node tag: finite bisimulation, classifier and payload-proof tuple.',NULL,'fits','sound',NULL);

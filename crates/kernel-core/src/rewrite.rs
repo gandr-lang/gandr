@@ -2054,6 +2054,7 @@ fn carried_occurrence(
         },
         Value::Constructor { .. }
         | Value::Record(_)
+        | Value::Restrict { .. }
         | Value::PathRefl(_)
         | Value::PathProduct(..)
         | Value::SessionPath { .. }
@@ -2215,7 +2216,7 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
-    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::FlowProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, Value::Stay { .. } | Value::PathRefl(_) | Value::Univalence(_) | Value::Here { .. } | Value::Returned(_) | Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) => 1 }),
+    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Restrict { ref fixed, .. } => fixed.len().saturating_add(1), Value::Tuple(ref components) => components.len(), Value::Higher { ref evidence, .. } => evidence.len(), Value::HigherEvaluation { ref components, .. } => components.len().saturating_mul(3), Value::QuantifiedEvaluation { ref children, .. } => children.len(), Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::PathProduct(..) | Value::FlowProduct(..) | Value::StaticApplication(..) | Value::Then { .. } => 2, Value::Stay { .. } | Value::PathRefl(_) | Value::Univalence(_) | Value::Here { .. } | Value::Returned(_) | Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) => 1 }),
     AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } | Computation::RelatedApplication { .. } | Computation::TelescopeTransport { .. } | Computation::TelescopeRide { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::With(ref components) => components.len(), Computation::ReturnAll(ref values) => values.len(), Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::SigmaSplit { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::BindAll { .. } => 2, Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }),
     AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } => 3, ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 2, ValueType::Session { .. } | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Staged { .. } => 1 }),
     AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } => 2, CompType::With(ref components) => components.len(), CompType::Returns(ref results) => results.len(), CompType::Returner(_) | CompType::Element { .. } => 1, CompType::Codata { ref arguments, .. } => arguments.len() }),
@@ -2255,6 +2256,15 @@ fn push_rewrite_children(
                     .rev()
                     .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
             ),
+            Some(&Value::Restrict { value, ref fixed }) => {
+                tasks.extend(
+                    fixed
+                        .values()
+                        .rev()
+                        .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+                );
+                tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
+            },
             Some(
                 &Value::ListNil | &Value::Variable(_) | &Value::Constant(_) | &Value::Literal(_),
             )
@@ -2899,6 +2909,7 @@ fn popped(
     captures: [before = results.len(), arity = arena.value(id).map_or(0, |matched_native_node| match *matched_native_node {
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
+Value::Restrict { ref fixed, .. } => fixed.len().saturating_add(1),
 Value::PathEquiv { .. } | Value::FunctionFlow { .. } => 3,
 Value::ForwardFlow { ref outputs, .. } => outputs.len().saturating_add(2),
 Value::Tuple(ref components) => components.len(),
@@ -2975,6 +2986,26 @@ fn close_value(
                 }
             }
             rewritten.map_or(id, |fields| arena.value_record(fields))
+        },
+        Value::Restrict { value, ref fixed } => {
+            let mut rewritten = None;
+            for (label, original) in fixed.iter().rev() {
+                let result = popped(results, AnyNode::Value(*original)).value_or(*original);
+                if result != *original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| fixed.clone())
+                        .get_mut(label)
+                {
+                    *slot = result;
+                }
+            }
+            let restricted = popped(results, AnyNode::Value(value)).value_or(value);
+            if rewritten.is_none() && restricted == value {
+                id
+            }
+            else {
+                arena.value_restrict(restricted, rewritten.unwrap_or_else(|| fixed.clone()))
+            }
         },
         Value::SessionPath {
             path_type,

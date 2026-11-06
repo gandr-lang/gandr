@@ -1263,6 +1263,10 @@ where
                 Some(&Value::Record(ref fields)) => {
                     pending.extend(fields.values().map(|&field| (AnyNode::Value(field), reach)));
                 },
+                Some(&Value::Restrict { value, ref fixed }) => {
+                    pending.push((AnyNode::Value(value), reach));
+                    pending.extend(fixed.values().map(|&field| (AnyNode::Value(field), reach)));
+                },
                 Some(
                     &Value::SessionPath {
                         path_type,

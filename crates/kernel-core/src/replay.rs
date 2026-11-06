@@ -4987,6 +4987,7 @@ where
                 &(Value::PathRefl(_)
                 | Value::Constructor { .. }
                 | Value::Record(_)
+                | Value::Restrict { .. }
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
                 | Value::SessionFlow { .. }
@@ -6016,6 +6017,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
  else if let Some(matched_left_node) = matched_left_value && let Value::Record(ref a) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Record(ref b) = *matched_right_node { {
             if a.keys().eq(b.keys()) { ret == Ok(Structure::of(a.values().zip(b.values()).map(|(a,b)| Premise::values(*a,*b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
         } }
+ else if let Some(matched_left_node) = matched_left_value && let Value::Restrict { value: a, fixed: ref a_fixed } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Restrict { value: b, fixed: ref b_fixed } = *matched_right_node { {
+            if a_fixed.keys().eq(b_fixed.keys()) { ret == Ok(Structure::of(core::iter::once(Premise::values(a, b)).chain(a_fixed.values().zip(b_fixed.values()).map(|(a,b)| Premise::values(*a,*b))).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
+        } }
  else if matched_left_value.is_none() || matched_right_value.is_none() || matches!(matched_left_value, Some(&Value::Returned(_))) || matches!(matched_right_value, Some(&Value::Returned(_))) { ret == Err(unreadable()) }
  else if let (Some(&Value::Here { point: one_point, .. }), Some(&Value::Here { point: other_point, .. })) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_point, other_point)]) }
  else if let (Some(&Value::Univalence(one)), Some(&Value::Univalence(other))) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]) }
@@ -6107,6 +6111,34 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             .map(|(a, b)| Premise::values(*a, *b))
                             .collect(),
                     )
+                }
+            },
+            // Two restrictions convert when their record values do and they
+            // fix one set of labels at convertible values.
+            (
+                &Value::Restrict {
+                    value: one_value,
+                    fixed: ref one_fixed,
+                },
+                &Value::Restrict {
+                    value: other_value,
+                    fixed: ref other_fixed,
+                },
+            ) => {
+                if one_fixed.keys().eq(other_fixed.keys()) {
+                    Structure::of(
+                        core::iter::once(Premise::values(one_value, other_value))
+                            .chain(
+                                one_fixed
+                                    .values()
+                                    .zip(other_fixed.values())
+                                    .map(|(a, b)| Premise::values(*a, *b)),
+                            )
+                            .collect(),
+                    )
+                }
+                else {
+                    Structure::Leaf(Expect::NotConvertible)
                 }
             },
             // Two reflexivities convert exactly when their points do; the
@@ -6233,6 +6265,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 &(Value::Variable(_)
                 | Value::Constructor { .. }
                 | Value::Record(_)
+                | Value::Restrict { .. }
                 | Value::Constant(_)
                 | Value::Literal(_)
                 | Value::Tuple(..)
@@ -6592,6 +6625,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Some(&Value::Record(ref fields)) => {
                         work.extend(fields.values().copied().map(AnyNode::Value));
                     },
+                    Some(&Value::Restrict { value, ref fixed }) => {
+                        work.extend(
+                            core::iter::once(AnyNode::Value(value))
+                                .chain(fixed.values().copied().map(AnyNode::Value)),
+                        );
+                    },
                     Some(&Value::Univalence(equivalence)) => {
                         work.push(AnyNode::Value(equivalence));
                     },
@@ -6887,6 +6926,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         &(Value::PathRefl(_)
                         | Value::Constructor { .. }
                         | Value::Record(_)
+                        | Value::Restrict { .. }
                         | Value::PathProduct(..)
                         | Value::SessionPath { .. }
                         | Value::SessionFlow { .. }
@@ -7112,6 +7152,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 &(Value::PathRefl(_)
                 | Value::Constructor { .. }
                 | Value::Record(_)
+                | Value::Restrict { .. }
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
                 | Value::SessionFlow { .. }
@@ -7845,6 +7886,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 Some(&Value::Record(ref fields)) => {
                                     let value = *fields.get(label).ok_or_else(unreadable)?;
                                     focus = read.with(self.arena.computation_return(value));
+                                    progress = Progress::Reduced;
+                                },
+                                // A restriction keeps its record value's other
+                                // fields: their projection reads the value's.
+                                Some(&Value::Restrict { value, ref fixed }) => {
+                                    if fixed.contains_key(label) {
+                                        return Err(unreadable());
+                                    }
+                                    focus = read.with(
+                                        self.arena
+                                            .computation_record_projection(value, label.clone()),
+                                    );
                                     progress = Progress::Reduced;
                                 },
                                 Some(_) => break,

@@ -250,6 +250,20 @@
 //! admits the three bytes. A reader at 7 refuses the artifact by its version
 //! before it meets them.
 //!
+//! # The restriction
+//!
+//! A record value restricted to the fields it does not fix persists as its
+//! own former. The fixed labels are inline, in canonical order, as a record
+//! literal's labels are. The children are the record value, then the value
+//! fixed at each label in the same order.
+//!
+//! | byte | node | family | children, in order | inline payload |
+//! | ---- | ---- | ------ | ------------------ | -------------- |
+//! | `0x73` | [`NODE_V_RESTRICT`] | value | the record value; the value fixed at each label | the label count, then the labels |
+//!
+//! The byte holds [`FORMAT_VERSION`]: a reader that predates it refuses it by
+//! name as an unassigned byte, so no artifact means anything else by it.
+//!
 //! # The dependent pair
 //!
 //! The dependent pair `Σ (x : A). B` persists as its own former beside the
@@ -1036,6 +1050,9 @@ pub const NODE_C_RETURN_ALL: WireTag = WireTag(0x71);
 /// Node tag: a bind of several values, with an inline value count, over the
 /// bound computation and the body under one binder per value.
 pub const NODE_C_BIND_ALL: WireTag = WireTag(0x72);
+/// Node tag: a record value restricted to the fields it does not fix, with
+/// the fixed labels inline, over the value and the value fixed at each label.
+pub const NODE_V_RESTRICT: WireTag = WireTag(0x73);
 /// Composition seam: the first output feeds the second input.
 pub const SEAM_SEQUENCE: WireTag = WireTag(0);
 /// Composition seam: the second output also feeds back into the first input.
@@ -1222,7 +1239,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE | NODE_CT_RETURNS | NODE_C_RETURN_ALL | NODE_C_BIND_ALL) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE | NODE_CT_RETURNS | NODE_C_RETURN_ALL | NODE_C_BIND_ALL | NODE_V_RESTRICT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1274,7 +1291,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE | NODE_CT_RETURNS | NODE_C_RETURN_ALL | NODE_C_BIND_ALL) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE | NODE_CT_RETURNS | NODE_C_RETURN_ALL | NODE_C_BIND_ALL | NODE_V_RESTRICT) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1374,7 +1391,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 81] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 82] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1462,6 +1479,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 81] = [
     unbounded(NODE_CT_RETURNS, ChildArity::Counted(0)),
     unbounded(NODE_C_RETURN_ALL, ChildArity::Counted(0)),
     unbounded(NODE_C_BIND_ALL, ChildArity::Fixed(2)),
+    unbounded(NODE_V_RESTRICT, ChildArity::Counted(1)),
 ];
 
 #[cfg(test)]
@@ -1513,6 +1531,7 @@ mod tests
                     AnyNode::Value(id) => match ret.0.value(id) {
                         Some(&crate::Value::Constructor { .. }) => row.tag == super::NODE_V_CONSTRUCTOR,
                         Some(&crate::Value::Record(_)) => row.tag == super::NODE_V_RECORD,
+                        Some(&crate::Value::Restrict { .. }) => row.tag == super::NODE_V_RESTRICT,
                         Some(&crate::Value::Variable(_)) => row.tag == super::NODE_V_VARIABLE,
                         Some(&crate::Value::Constant(_)) => row.tag == super::NODE_V_CONSTANT,
                         Some(&crate::Value::Literal(_)) => row.tag == super::NODE_V_LITERAL,
@@ -1836,6 +1855,13 @@ mod tests
                 crate::ResultCount::from(2_usize),
                 ret,
             )),
+            AnyNode::Value(arena.value_restrict(
+                record,
+                alloc::collections::BTreeMap::from([(
+                    crate::FieldLabel::from(alloc::string::String::from("fixed")),
+                    literal,
+                )]),
+            )),
         ];
         (arena, nodes)
     }
@@ -1858,6 +1884,7 @@ mod tests
                         .map_or(0, |matched_native_node| match *matched_native_node {
                             crate::Value::Constructor { ref fields, .. } => fields.len(),
                             crate::Value::Record(ref fields) => fields.len(),
+                            crate::Value::Restrict { ref fixed, .. } => fixed.len(),
                             crate::Value::Tuple(ref components) => components.len(),
                             crate::Value::Higher { ref evidence, .. } => evidence.len(),
                             crate::Value::HigherEvaluation { ref components, .. } => {
@@ -2024,10 +2051,14 @@ mod tests
                 "the formers of several results hold their bytes: {several}"
             );
         }
-        for unassigned in 0x73_u8 ..= u8::MAX {
+        assert!(
+            assigned[usize::from(u8::from(super::NODE_V_RESTRICT))],
+            "the restriction holds its byte"
+        );
+        for unassigned in 0x74_u8 ..= u8::MAX {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "every byte above the bind of several values is unassigned: {unassigned:#04x}"
+                "every byte above the restriction is unassigned: {unassigned:#04x}"
             );
         }
     }
@@ -2098,7 +2129,7 @@ mod tests
             .chain(0x48 ..= 0x4F)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x6b)
-            .chain([0x6D, 0x6E, 0x6F, 0x6C, 0x70, 0x71, 0x72])
+            .chain([0x6D, 0x6E, 0x6F, 0x6C, 0x70, 0x71, 0x72, 0x73])
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);
