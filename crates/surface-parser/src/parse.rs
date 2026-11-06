@@ -184,7 +184,9 @@ use crate::TokenRun;
 use crate::UnitSeam;
 use crate::label::Labeling;
 use crate::label::Lexeme;
+use crate::label::Move;
 use crate::label::label;
+use crate::label::label_moving;
 use crate::mold::Molding;
 use crate::mold::lookahead_reach;
 use crate::oblig::ObligationInstance;
@@ -617,9 +619,31 @@ fn molded<'pbg>(
     source: SourceText<'_>,
 ) -> MeldState<'pbg>
 {
+    molded_moving(pbg, source, &[])
+}
+
+/// A fresh state with every token of `source` molded into it, labeled with
+/// each line of `moves` kept in a layout block that its column closes.
+///
+/// # Specification
+/// - requires: `moves` ascend by line.
+/// - ensures: the state [`molded`] answers over [`label_moving`]'s tokens.
+/// - panics: none.
+/// - executable: none — the clause restates the fold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the gap search, whose witness judges a line at column
+///   zero in each block it may stand in.
+/// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
+fn molded_moving<'pbg>(
+    pbg: &'pbg Pbg,
+    source: SourceText<'_>,
+    moves: &[Move],
+) -> MeldState<'pbg>
+{
     let mut molder = Molder::new(pbg);
     let mut state = MeldState::new(pbg);
-    let tokens = label(SourceFragment::from(<&str>::from(source)));
+    let tokens = label_moving(SourceFragment::from(<&str>::from(source)), moves);
     molder.mold_stream(&mut state, &tokens, source);
     state
 }
