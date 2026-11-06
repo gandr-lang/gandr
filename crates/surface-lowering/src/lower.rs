@@ -701,6 +701,7 @@ use crate::origin::Labelled;
 use crate::origin::Omitted;
 use crate::origin::Origin;
 use crate::origin::OriginTable;
+use crate::origin::Provenance;
 use crate::origin::SplitComponent;
 use crate::resolve::Bound;
 use crate::resolve::Frame;
@@ -18647,6 +18648,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return;
         };
+        // A call through a joint has the joint's variable at its head. The
+        // source writes the member's name there and never the joint, so the
+        // variable and its force are the joint's, located at the name (#5519).
+        let joint = self.injected.contains_key(&position);
+        let origin = if joint {
+            origin.inserted(Insertion::Joint)
+        }
+        else {
+            origin
+        };
         let bridge = self.bridges.get(position).copied().unwrap_or(Bridge::Bare);
         let stands_in = matches!(*plan, Plan::Transparent(_) | Plan::Instantiated(..))
             && self.stand_ins.contains(&position);
@@ -18750,6 +18761,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ) => {
                 let id = sink.arena.computation_force(forced);
                 Maybe::Present(sink.computation(id, call))
+            },
+            (Bridge::Inserted(Insertion::Force), Maybe::Present(Lowered::Value(forced)), _)
+                if joint =>
+            {
+                let id = sink.arena.computation_force(forced);
+                Maybe::Present(sink.computation(id, origin))
             },
             (_, minted, _) => sink.bridge(minted, bridge, origin),
         };
@@ -19072,7 +19089,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Unplanned | Plan::Generic => Maybe::Absent(lowered::Absent::Unminted),
             Plan::Variable(index, binder) => {
                 let id = sink.arena.value_variable(self.scope.zone(binder), index);
-                if let Maybe::Present(site) = self.scope.site(binder) {
+                // The joint's variable at the head of a call through the joint
+                // uses no binder that the source writes (#5519).
+                if origin.provenance() != Provenance::Inserted(Insertion::Joint)
+                    && let Maybe::Present(site) = self.scope.site(binder)
+                {
                     sink.origins.record_binding(id, site);
                 }
                 Maybe::Present(sink.value(id, origin))
