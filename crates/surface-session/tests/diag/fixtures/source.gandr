@@ -1,0 +1,4 @@
+def a : Integer;
+def a = 1;
+def b : String;
+def b = 1;

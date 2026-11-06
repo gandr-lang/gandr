@@ -267,7 +267,9 @@ mod tests
     #[test]
     fn a_line_past_the_end_clamps()
     {
-        let index = LineIndex::new(SourceText::from("ab\ncd"));
+        let index = LineIndex::new(SourceText::from(include_str!(
+            "position/unformatted/a-line-past-the-end-clamps-index.gandr"
+        )));
         assert_eq!(
             at(At(9, 0)).byte(&index),
             ByteOffset::from(5_usize),
@@ -292,7 +294,9 @@ mod tests
     #[test]
     fn ranges_preserve_endpoint_order_and_projection_failures()
     {
-        let index = LineIndex::new(SourceText::from("a𝄞\r\nb\rc\n"));
+        let index = LineIndex::new(SourceText::from(include_str!(
+            "position/unformatted/ranges-preserve-endpoint-order-and-projection-failures-index.gandr"
+        )));
         for (start, end, first, last) in [
             (0_usize, 5_usize, At(0, 0), At(0, 3)),
             (7, 8, At(1, 0), At(1, 1)),

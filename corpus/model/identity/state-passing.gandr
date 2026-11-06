@@ -1,33 +1,29 @@
-//! A fold whose case sits beneath a parameter after the one it recurses on is
-//! read as the fixpoint, as one with the case at its root is. Programs that
-//! only store, quotiented by state's put-put law, are folded by passing the
-//! state: at `Store(s, Store(u, k))` the fold runs to `final(k, u)` through two
-//! of its own calls, and at `Store(u, k)` through one, so the two sides of the
-//! law meet from one fresh initial state. The law is the algebraic theory of
-//! state's `put(s, put(u, k)) = put(u, k)`
-//! [Plotkin-2002-notions_computation_determine_monads], and the fold is the
-//! handler that passes the state.
-//!
-//! - see: #2510
-//! - cites: [Plotkin-2002-notions_computation_determine_monads]
-//!
-//! [Plotkin-2002-notions_computation_determine_monads]: https://doi.org/10.1007/3-540-45931-6_24 "Plotkin and Power, Notions of computation determine monads"
+/// This source folds state-only programs with an explicit state parameter.
+///
+/// The `put-put` rule removes a store overwritten by the next store.
+/// `final` passes the latest state through the program.
+///
+/// The fold handles state effects at each constructor.
+/// Both sides of the rule end at the same final state.
+///
+/// - see: #2510
+/// - cites: [Plotkin-2002-notions_computation_determine_monads]
+///
+/// [Plotkin-2002-notions_computation_determine_monads]: https://doi.org/10.1007/3-540-45931-6_24 "Plotkin and Power, Notions of computation determine monads"
 
-/// Programs that only store, quotiented by put-put: a store the next store
-/// overwrites is no store.
+/// The `Stores` type keeps only the final store in a sequence.
 pub data Stores : Type where {
   | End : (x : Integer) --> Stores
   | Store : (s : Integer, k : Stores) --> Stores
   rule : Store s (Store u k) <=> Store u k;
 }
 
-/// The final state from an initial one: each store hands its state to the
-/// rest of the program, and the end returns the state it is handed.
+/// The `final` function returns the state from the final store.
 def rec final(p : Stores, s : Integer) -> Integer =
   match p
     | End(_x) => s
     | Store(t, k) => final[<] k t
 
-/// Three stores from zero leave the last stored.
+/// Three stores leave the last stored value.
 @[ runs("3") ]
 def finalOfThree : () -> Integer = final (Store 1 (Store 2 (Store 3 (End 0)))) 0;

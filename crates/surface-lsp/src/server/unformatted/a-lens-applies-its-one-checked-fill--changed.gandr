@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":
+                    {"uri":"file:///tmp/fill.gandr","version":2},
+                    "contentChanges":[{"text":"def f : Integer ;\ndef f = missing ;\n"}]}}

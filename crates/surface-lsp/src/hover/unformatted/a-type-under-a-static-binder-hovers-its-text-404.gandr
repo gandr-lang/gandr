@@ -1,0 +1,2 @@
+def pair : Type -> Type[-] ;
+def pair = fun (X) { -$0F (X * X) } ;

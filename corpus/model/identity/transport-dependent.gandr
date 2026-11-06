@@ -1,12 +1,14 @@
-// Transport in a family over a point and a path to it from a fixed one, the
-// motive of based path induction (the HoTT book's § 1.12.1): at reflexivity
-// it computes to the element given, along the unit type's evidence it
-// computes into the unit fibre, it reverses a path when the family is the
-// paths back, and it refuses a family not over the path's own endpoints or
-// one that reads no path.
-//
-// - see: #1854 — `carriedUnit`
-// - see: #1886 — `backUnit`
+//! This source transports values in a family over a path.
+//!
+//! Transport computes at reflexivity and across unit evidence.
+//! It can also reverse a path in a family of backward paths.
+//!
+//! The checker requires a family over the transported path endpoints.
+//! The pathological declarations refuse another family shape.
+//!
+//! - see: HoTT Book §1.12.1
+//! - see: #1854 — `carriedUnit`
+//! - see: #1886 — `backUnit`
 
 // The free naturals.
 import "./circle-base.gandr";

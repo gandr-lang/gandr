@@ -1,0 +1,2 @@
+def f(x : Integer) -> -F Integer { return x }
+def twice = thunk { become (force f) "text" };

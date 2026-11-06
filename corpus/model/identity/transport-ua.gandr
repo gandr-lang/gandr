@@ -1,8 +1,14 @@
-// Transport along `ua` by the family's shape, the HoTT book's § 2.10 at the
-// families of Theorem 2.6.4 and § 2.12. A family that never reads its argument
-// keeps the value. A product, a sum and a list carry the value part by part.
-// Each holds by conversion and by a run, along the loops' path to the
-// integers, `ua(winding)`, where a loop is carried to its winding number.
+//! This source transports values along `ua` by family shape.
+//!
+//! A constant family keeps its value.
+//! Products, sums and lists transport each component.
+//!
+//! The checker reduces `ua(winding)` at each family constructor.
+//! The runtime evaluates the same transport in a run.
+//!
+//! - see: HoTT Book §2.10
+//! - see: HoTT Book Theorem 2.6.4
+//! - see: HoTT Book §2.12
 
 // The circle, the presented integers, the winding number and spinning.
 import "./circle-base.gandr";

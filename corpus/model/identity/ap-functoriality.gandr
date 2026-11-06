@@ -1,23 +1,19 @@
-// `G` after `F` acts on a path as their composite does.
-//
-// The kernel re-derives what the checker accepts at a reflexivity whose
-// endpoint reads through a bind.
-//
-// Based path induction proves it. At reflexivity both actions reduce to the
-// reflexivity at `G (F x)`. The composite's action reads through its bind to
-// the call `G ⟨F x⟩`, which the other side holds. The functions stated as
-// lambdas read the same way: composing with `g`, then with `h`, acts on a
-// square as composing with both.
-//
-// - see: #3969 — the kernel's reading of an endpoint through its bind
-// - see: `then-units-in-the-kernel.gandr` — reflexivity's units under `Path.step`
-// - see: `transport-dependent.gandr` — based path induction
+/// This source states functorial action for a function composite.
+///
+/// Action by `G` after action by `F` equals action by their composite.
+///
+/// Based path induction proves the equality at reflexivity.
+/// The kernel rechecks the endpoint through its bind.
+///
+/// - see: #3969 — endpoint binds
+/// - see: corpus/model/identity/then-units-in-the-kernel.gandr
+/// - see: corpus/model/identity/transport-dependent.gandr
 
-/// A function's action on a path, whose type states its endpoints.
+/// The `actOn` function maps a path through a function.
 def actOn(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path(x, y)) -> Path(F x, F y) =
   Path.ap F p
 
-/// `G` after `F` acts on a path as their composite does.
+/// Action by `G` after `F` equals action by their composite.
 def apComp(
   A : Type,
   B : Type,
@@ -36,7 +32,7 @@ def apComp(
     actOn A C (fun (a : A) { G (F a) } : A -> C) x v k
   )) p (Path.here x) (Path.here p) (Path.here (Path.here (G (F x))))
 
-/// Composing with `g`, then with `h`, acts on `fa` as composing with both.
+/// Two actions by `g` and `h` equal one action by their composite.
 def apThenThen(
   A : Type,
   x : A,

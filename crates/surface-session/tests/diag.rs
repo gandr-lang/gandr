@@ -90,26 +90,25 @@ const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "type-mismatch",
         identifier: "TypeMismatch",
-        source: "def x : String ;\ndef x = 1 ;\n",
+        source: include_str!("diag/fixtures/error-corpus-1.gandr"),
         locus: "1",
     },
     Case {
         name: "shape-arrow",
         identifier: "ShapeMismatch",
-        source: "def h : +U (-F Integer) ;\ndef h = thunk { return 1 } ;\ndef g : +U (-F Integer) ;\ndef g \
-             = thunk { become (force h) 1 } ;\n",
+        source: include_str!("diag/fixtures/error-corpus-2.gandr"),
         locus: "force h",
     },
     Case {
         name: "shape-thunk",
         identifier: "ShapeMismatch",
-        source: "def y : +U (-F Integer) ;\ndef y = thunk { become force 1 } ;\n",
+        source: include_str!("diag/fixtures/error-corpus-3.gandr"),
         locus: "1",
     },
     Case {
         name: "shape-returner",
         identifier: "ShapeMismatch",
-        source: "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { return 1 } ;\n",
+        source: include_str!("diag/fixtures/error-corpus-4.gandr"),
         locus: "return 1",
     },
     Case {
@@ -121,7 +120,7 @@ const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "unknown-constant",
         identifier: "UnknownConstant",
-        source: "def a = thunk { return 1 } ;\ndef b = a ;\n",
+        source: include_str!("diag/fixtures/error-corpus-5.gandr"),
         locus: "a",
     },
     Case {
@@ -139,14 +138,14 @@ const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "duplicate-signature",
         identifier: "DuplicateSignature",
-        source: "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n",
-        locus: "def a : Integer ;",
+        source: include_str!("diag/fixtures/error-corpus-6.gandr"),
+        locus: "def a : Integer;",
     },
     Case {
         name: "duplicate-definition",
         identifier: "DuplicateDefinition",
-        source: "def a = 3 ;\ndef a = 4 ;\n",
-        locus: "def a = 4 ;",
+        source: include_str!("diag/fixtures/error-corpus-7.gandr"),
+        locus: "def a = 4;",
     },
     Case {
         name: "out-of-fragment",
@@ -163,7 +162,7 @@ const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "refused-whole",
         identifier: "OutOfFragment.WrongSort.declaration",
-        source: "def answer = 42 ;\n#!{echo hello |",
+        source: include_str!("diag/unformatted/error-corpus-8.gandr"),
         locus: "#!{echo hello |",
     },
 ];
@@ -335,7 +334,7 @@ fn repeated_equal_subterms_point_to_the_failing_occurrence()
 {
     // Equal literals keep their occurrence: the second `1`, the one checked
     // against `String`, is the report's locus.
-    const SOURCE: &str = "def a : Integer ;\ndef a = 1 ;\ndef b : String ;\ndef b = 1 ;\n";
+    const SOURCE: &str = include_str!("diag/fixtures/source.gandr");
     let start = SOURCE.rfind('1').expect("the source writes a `1`");
     let end = start
         .checked_add(1)

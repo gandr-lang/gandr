@@ -328,7 +328,9 @@ fn item_insertion_leaves_neighbours_untouched()
 fn hole_fill_and_erase()
 {
     let owed = snapshot("def answer : Integer ;\n");
-    let filled = snapshot("def answer : Integer ;\ndef answer = 42 ;\n");
+    let filled = snapshot(include_str!(
+        "edit/fixtures/hole-fill-and-erase-filled.gandr"
+    ));
 
     let fill = diff_sound(&owed, &filled);
     let [Action::FillHole { at, ref to }] = *fill.actions()
@@ -352,8 +354,12 @@ fn hole_fill_and_erase()
 #[test]
 fn item_ascription_change_is_one_set_item_ascription()
 {
-    let base = snapshot("def f : Integer ;\ndef f = 1 ;\n");
-    let edited = snapshot("def f : String ;\ndef f = 1 ;\n");
+    let base = snapshot(include_str!(
+        "edit/fixtures/item-ascription-change-is-one-set-item-ascription-base.gandr"
+    ));
+    let edited = snapshot(include_str!(
+        "edit/fixtures/item-ascription-change-is-one-set-item-ascription-edited.gandr"
+    ));
     let script = diff_sound(&base, &edited);
     assert!(
         matches!(*script.actions(), [Action::SetSignature { at, .. }] if at == ItemOrdinal::from(0_usize)),
@@ -409,7 +415,9 @@ fn comp_constructor_change_is_one_replace()
 #[test]
 fn item_deletion_is_one_delete()
 {
-    let base = snapshot("def a = 1 ;\ndef b = 2 ;\n");
+    let base = snapshot(include_str!(
+        "edit/fixtures/item-deletion-is-one-delete-base.gandr"
+    ));
     let edited = snapshot("def a = 1 ;\n");
     let script = diff_sound(&base, &edited);
     assert!(
@@ -482,9 +490,9 @@ fn edit_locus_contains_the_diff()
 #[test]
 fn multi_point_edit_localizes_to_the_common_ancestor()
 {
-    let functions = "def f(x : Integer) -> -F Integer { return x }\n\
-                     def g(x : Integer) -> -F Integer { return x }\n\
-                     def shown : +U (-F Integer) ;\n";
+    let functions = include_str!(
+        "edit/fixtures/multi-point-edit-localizes-to-the-common-ancestor-functions.gandr"
+    );
     let base = snapshot(&format!(
         "{functions}def shown = thunk {{ become (force f)(1) }} ;\n"
     ));
@@ -552,9 +560,8 @@ fn growing_a_tuple_replaces_it_325()
 {
     let revision = |component: &str| {
         snapshot(&format!(
-            "module Schema where {{\n  type Old = *{{String, Integer}};\n  type New = *{{Integer, \
-             String}};\n  @[ checks ]\n  def anonymise(old : Old) -> -F New {{\n    match old \
-             {{\n      | *{{name, age}} => return *{{age, {component}}}\n    }}\n  }}\n}}\n"
+            include_str!("edit/unformatted/growing-a-tuple-replaces-it-325-revision.gandr"),
+            component = component
         ))
     };
     let (base, edited) = (revision(""), revision("\"\""));

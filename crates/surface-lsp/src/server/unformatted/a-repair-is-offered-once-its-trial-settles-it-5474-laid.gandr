@@ -1,0 +1,4 @@
+def g(x : Integer, y : Integer) -> Integer =
+  let a = x
+   y
+  a

@@ -1,23 +1,23 @@
-// An equivalence between data types decided by computation, after the HoTT
-// book's § 2.10: a data type is covered as its constructors in tag order,
-// each applied to its fields' patterns, so two maps that move fields between
-// constructors and back return every pattern, and `equiv` makes them a path
-// between the two types. Transport along the path applies the map.
-
-// The shapes, the figures and `Shapes.toFigure`, the map from the one to the
-// other.
+/// This source states an equivalence between two data types.
+///
+/// The maps move constructor fields between shapes and figures.
+/// Their round trips return every constructor pattern.
+///
+/// The `equiv` record makes the maps a path between the data types.
+/// Transport along that path applies the forward map.
+///
+/// - see: corpus/model/identity/flow-data.gandr
 import "./flow-data.gandr";
 
-/// The map back: each figure to its shape, the sides swapped back.
+/// The `toShape` function swaps figure sides into shape order.
 def toShape(figure : Figure) -> Shape =
   match figure
     | Round(r) => Circle r
     | Box(h, w) => Rect w h
 
-/// The shapes and the figures are one type, by the two round trips at each
-/// constructor.
+/// The two round trips make shapes and figures one type.
 def redrawing : Path[.A = Type](Shape, Figure) = equiv Shapes.toFigure toShape;
 
-/// A rectangle transported along the path is its figure, the sides swapped.
+/// Transport maps the rectangle to the figure with swapped sides.
 @[ runs("Box 3 2") ]
 def boxed() -> Figure { Path.walk (fun (X) { X }) redrawing (Rect 2 3) }

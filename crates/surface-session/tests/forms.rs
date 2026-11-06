@@ -505,10 +505,18 @@ mod sweeps
         let first_end = starts.get(1).map_or(original.len(), |&Byte(at)| at);
         let last_start = starts.iter().rev().nth(1).map_or(0, |&Byte(at)| at);
         let (head, tail) = cut(middle);
-        let inserted = format!("{head}def inserted = 1;\n{tail}");
+        let inserted = format!(
+            include_str!("forms/unformatted/edit-script-inserted.gandr"),
+            head = head,
+            tail = tail
+        );
         let deleted = String::from(cut(first_end).1);
         let (front, last) = cut(last_start);
-        let moved = format!("{last}\n{front}");
+        let moved = format!(
+            include_str!("forms/unformatted/edit-script-moved.gandr"),
+            front = front,
+            last = last
+        );
         let mut incremental = session(root).with_pool(three());
         for (revision, name) in [
             (&original, "the source"),

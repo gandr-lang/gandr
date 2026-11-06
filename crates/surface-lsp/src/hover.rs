@@ -1808,7 +1808,9 @@ fn written(
     for &run in &declaration.members {
         let from = usize::from(run.start());
         let written = text.get(from .. usize::from(run.end())).unwrap_or_default();
-        code.plain(SourceText::from("\n  "));
+        code.plain(SourceText::from(include_str!(
+            "hover/unformatted/written-1.gandr"
+        )));
         lines(
             code,
             quoted,
@@ -1817,7 +1819,9 @@ fn written(
             SourceText::from("  "),
         );
     }
-    code.plain(SourceText::from("\n}"));
+    code.plain(SourceText::from(include_str!(
+        "hover/unformatted/written-2.gandr"
+    )));
 }
 
 /// Append to `code` `run`, the document's text from byte `start`, a line at
@@ -2346,7 +2350,7 @@ mod tests
             ),
             (
                 "the definition half of a signed declaration",
-                "def answer : Integer ;\ndef ans$0wer = 42 ;\n",
+                include_str!("hover/unformatted/each-marked-position-hovers-its-answer-1.gandr"),
                 Ok(fenced(SourceText::from("answer : Integer"))),
             ),
             (
@@ -2394,8 +2398,7 @@ mod tests
             ),
             (
                 "a declaration written with a dependent record",
-                "def r$0ing : *{n : Integer, v : Path[.A = Integer](n, n)} ;\ndef ring = *{2, Path.here 2} \
-                 ;\n",
+                include_str!("hover/unformatted/each-marked-position-hovers-its-answer-2.gandr"),
                 Ok(fenced(SourceText::from(
                     "ring : *{n : Integer, v : Path[.A = Integer](n, n)}",
                 ))),
@@ -2422,7 +2425,7 @@ mod tests
             ),
             (
                 "a mismatched term",
-                "def bad : Integer ;\ndef bad = *$0{} ;\n",
+                include_str!("hover/unformatted/each-marked-position-hovers-its-answer-3.gandr"),
                 Ok(String::from(
                     "```gandr\nUnit\n```\n\nchecked against\n\n```gandr\nInteger\n```",
                 )),
@@ -2434,12 +2437,12 @@ mod tests
             ),
             (
                 "a comment between declarations",
-                "def a = 1 ;\n// a $0word\ndef b = 2 ;\n",
+                include_str!("hover/unformatted/each-marked-position-hovers-its-answer-4.gandr"),
                 Err(hovered::Absent::Untyped),
             ),
             (
                 "past the last declaration",
-                "def later : Integer ;\n$0",
+                include_str!("hover/unformatted/each-marked-position-hovers-its-answer-5.gandr"),
                 Err(hovered::Absent::Untyped),
             ),
         ];
@@ -2462,11 +2465,9 @@ mod tests
     fn a_decode_written_as_a_type_hovers_as_a_type_419()
     {
         assert_eq!(
-            marked(SourceText::from(
-                "data Flag : Type where {\n  | On : Flag\n  | Off : Flag\n}\ndef decoded(f : Flag) -> -F \
-                 Type { match f { | On => return Integer | Off => return Unit } }\ndef kept(f : \
-                 Flag, n : decoded$0(f)) -> -F decoded(f) { return n }\n"
-            )),
+            marked(SourceText::from(include_str!(
+                "hover/unformatted/a-decode-written-as-a-type-hovers-as-a-type-419.gandr"
+            ))),
             Ok(fenced(SourceText::from("decoded(f) : Type")))
         );
     }
@@ -2477,11 +2478,9 @@ mod tests
     fn a_lambda_in_a_match_arm_names_its_written_binder_4172()
     {
         assert_eq!(
-            marked(SourceText::from(
-                "def probe(b : Type, w : *{x : b, y : b}) -> -F +U ((m : b) -> -F Path[.A = b](m, \
-                 m)) =\n  match w\n    | *{.x = u, .y = t} => return thunk { $0fun (k) { return \
-                 Path.here k } }\n"
-            )),
+            marked(SourceText::from(include_str!(
+                "hover/unformatted/a-lambda-in-a-match-arm-names-its-written-binder-4172.gandr"
+            ))),
             Ok(fenced(SourceText::from("(m : b) -> -F Path[.A = b](m, m)")))
         );
     }
@@ -2490,11 +2489,9 @@ mod tests
     fn a_constructor_applied_inside_a_type_hovers_its_text_420()
     {
         assert_eq!(
-            marked(SourceText::from(
-                "data U : Type where {\n  | NatC : U\n  | Arrow : (a : U, b : U) --> U\n}\ndef el(u : U) \
-                 -> -F Type { match u { | NatC => return Integer | Arrow(a, b) => return Unit } \
-                 }\ndef k : el(Arrow$0(NatC, NatC)) ;\n"
-            )),
+            marked(SourceText::from(include_str!(
+                "hover/unformatted/a-constructor-applied-inside-a-type-hovers-its-text-420.gandr"
+            ))),
             Ok(fenced(SourceText::from("Arrow(NatC, NatC) : U")))
         );
     }
@@ -2503,9 +2500,9 @@ mod tests
     fn a_type_under_a_static_binder_hovers_its_text_404()
     {
         assert_eq!(
-            marked(SourceText::from(
-                "def pair : Type -> Type[-] ;\ndef pair = fun (X) { -$0F (X * X) } ;\n"
-            )),
+            marked(SourceText::from(include_str!(
+                "hover/unformatted/a-type-under-a-static-binder-hovers-its-text-404.gandr"
+            ))),
             Ok(fenced(SourceText::from("-F (X * X) : Type[-]")))
         );
     }
@@ -2514,11 +2511,9 @@ mod tests
     fn a_module_instantiation_answers_itself_never_a_member_s_type_405()
     {
         assert_eq!(
-            marked(SourceText::from(
-                "module Seed :> *{ type T, zero : T } where {\n  type T = Integer;\n  def zero = \
-                 0;\n}\nmodule Keep(S : *{ type T, zero : T }) :> *{ type T, zero : T } where {\n  type \
-                 T = S.T;\n  def zero = S.zero;\n}\nmodule A = Keep(S$0eed) ;\n"
-            )),
+            marked(SourceText::from(include_str!(
+                "hover/unformatted/a-module-instantiation-answers-itself-never-a-member-s-type-405.gandr"
+            ))),
             Ok(fenced(SourceText::from("module A = Keep(Seed)")))
         );
     }
@@ -2529,8 +2524,7 @@ mod tests
         let call = |marked_at: &str| {
             marked(SourceText::from(
                 format!(
-                    "def quotientOf(c : Integer) -> -F Integer {{\n  let lead = ({marked_at}) c \
-                     64;\n  return lead\n}}\n"
+                    include_str!("hover/unformatted/a-builtin-namespace-hovers-the-path-it-qualifies-1170-call.gandr"), marked_at = marked_at
                 )
                 .as_str(),
             ))
@@ -2550,11 +2544,9 @@ mod tests
     fn the_parentheses_around_an_inverted_letter_answer_the_cons_pattern_408()
     {
         assert_eq!(
-            marked(SourceText::from(
-                "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef rec size(p : \
-                 Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    | here => return 0\n    \
-                 | loop ∷ q => become size[<] q\n    | back$0(loop) ∷ q => become size[<] q\n  }\n}\n"
-            )),
+            marked(SourceText::from(include_str!(
+                "hover/unformatted/the-parentheses-around-an-inverted-letter-answer-the-cons-pattern-408.gandr"
+            ))),
             Ok(fenced(SourceText::from(
                 "back(loop) ∷ q : Path[.A = Circle](Base, Base)"
             )))
@@ -2565,10 +2557,9 @@ mod tests
     fn a_sum_pattern_s_positional_label_answers_as_a_label_408()
     {
         assert_eq!(
-            marked(SourceText::from(
-                "def flip(b : +{Unit, Unit}) -> -F +{Unit, Unit} {\n  match b {\n    | +{.$00 = u} => \
-                 return +{.1 = u}\n    | +{.1 = u} => return +{.0 = u}\n  }\n}\n"
-            )),
+            marked(SourceText::from(include_str!(
+                "hover/unformatted/a-sum-pattern-s-positional-label-answers-as-a-label-408.gandr"
+            ))),
             Ok(fenced(SourceText::from("0 : Unit")))
         );
     }
@@ -2576,13 +2567,13 @@ mod tests
     #[test]
     fn a_declaration_hovers_its_type_and_documentation()
     {
-        let text = SourceText::from(
-            "/// The answer, said once.\ndef answer = 42 ;\ndef plain : String ;\n",
-        );
+        let text = SourceText::from(include_str!(
+            "hover/fixtures/a-declaration-hovers-its-type-and-documentation.gandr"
+        ));
         assert_eq!(
             shown(text, (1.into(), 5.into())),
             Ok(String::from(
-                "```gandr\nanswer : Integer\n```\n\nThe answer, said once."
+                "```gandr\nanswer : Integer\n```\n\nThe one answer."
             ))
         );
         assert_eq!(
@@ -2592,7 +2583,7 @@ mod tests
         assert_eq!(
             shown(text, (1.into(), 0.into())),
             Ok(String::from(
-                "```gandr\nanswer : Integer\n```\n\nThe answer, said once."
+                "```gandr\nanswer : Integer\n```\n\nThe one answer."
             )),
             "the keyword answers the declaration it introduces"
         );
@@ -2620,10 +2611,9 @@ mod tests
         let base = directory.join("base.gandr");
         std::fs::write(&base, "def one = 1 ;\ndef cube = 3 ;\n").expect("the sibling is written");
         let path = directory.join("top.gandr");
-        let text = SourceText::from(
-            "import \"./base.gandr\";\n/// Squares, as [cube] and [twice], not [Red].\ndef \
-             square = 1 ;\n\ndef twice = 2 ;\ndata Color : Type where { | Red : Color }\n",
-        );
+        let text = SourceText::from(include_str!(
+            "hover/unformatted/a-documentation-link-writes-its-reference-line-4963.gandr"
+        ));
         std::fs::write(&path, <&str>::from(text)).expect("the document is written");
         let grammar = grammar().expect("the grammar builds");
         let root = gandr_surface_dispatcher::classify(&path);
@@ -2681,10 +2671,9 @@ mod tests
     #[test]
     fn a_deprecated_declaration_hovers_its_note()
     {
-        let text = SourceText::from(
-            "/// The answer.\n@[ deprecated(*{ since = \"0.2\", note = \"use `other`\" }) ]\ndef \
-             answer = 42 ;\n@[ deprecated ] def bare = 1 ;\ndef other = 2 ;\n",
-        );
+        let text = SourceText::from(include_str!(
+            "hover/unformatted/a-deprecated-declaration-hovers-its-note.gandr"
+        ));
         assert_eq!(
             shown(text, (2.into(), 5.into())),
             Ok(String::from(
@@ -2710,10 +2699,9 @@ mod tests
     #[test]
     fn a_documented_parameter_hovers_its_documentation_1116()
     {
-        let text = SourceText::from(
-            "def plus(\n  /// The first summand.\n  n : Integer,\n  m : Integer\n) -> -F Integer \
-             {\n  return n\n}\ndef id(\n  k : Integer\n) -> -F Integer {\n  return k\n}\n",
-        );
+        let text = SourceText::from(include_str!(
+            "hover/fixtures/a-documented-parameter-hovers-its-documentation-1116.gandr"
+        ));
         let documented = Ok(String::from(
             "```gandr\nn : Integer\n```\n\nThe first summand.",
         ));
@@ -2729,9 +2717,9 @@ mod tests
     #[test]
     fn each_member_hovers_its_own_type()
     {
-        let text = SourceText::from(
-            "module A where {\n  def x = 1 ;\n}\nmodule B where {\n  def x = \"one\" ;\n}\n",
-        );
+        let text = SourceText::from(include_str!(
+            "hover/fixtures/each-member-hovers-its-own-type.gandr"
+        ));
         assert_eq!(
             shown(text, (1.into(), 6.into())),
             Ok(String::from("```gandr\nx : Integer\n```"))
@@ -2753,12 +2741,9 @@ mod tests
     #[test]
     fn an_admitted_law_hovers_the_law_it_admits_2407()
     {
-        let text = SourceText::from(
-            "theory Lawful where {\n  sort Carrier : Type;\n  oper alike : (a : Carrier, b : Carrier) \
-             --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);\n}\nmodule \
-             Host : Model(Lawful) with sort Carrier = Integer where {\n  def alike(a : Integer, b : \
-             Integer) -> Bool { int.eq a b }\n  law refl = ~admitted;\n}\n",
-        );
+        let text = SourceText::from(include_str!(
+            "hover/fixtures/an-admitted-law-hovers-the-law-it-admits-2407.gandr"
+        ));
         assert_eq!(
             shown(text, (7.into(), 7.into())),
             Ok(String::from(
@@ -2780,12 +2765,9 @@ mod tests
     #[test]
     fn a_handled_theory_hovers_the_theory_it_names_2407()
     {
-        let text = SourceText::from(
-            "theory State where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s : \
-             S) . C) --> C;\n}\ndef read() -> Integer {\n  handle st : State with sort S = \
-             Integer {\n    st.get ()\n  } with {\n    | pure(x) => pure x\n    | oper get(k) => \
-             k 4\n  }\n}\n",
-        );
+        let text = SourceText::from(include_str!(
+            "hover/unformatted/a-handled-theory-hovers-the-theory-it-names-2407.gandr"
+        ));
         assert_eq!(
             shown(text, (6.into(), 14.into())),
             Ok(String::from(
@@ -2800,10 +2782,9 @@ mod tests
     #[test]
     fn a_model_implicit_hovers_its_model_type_2407()
     {
-        let text = SourceText::from(
-            "theory Tally where {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n}\ndef stepped[s : \
-             Model(Tally)] (c : s.C) -> s.C { s.incr c }\n",
-        );
+        let text = SourceText::from(include_str!(
+            "hover/unformatted/a-model-implicit-hovers-its-model-type-2407.gandr"
+        ));
         assert_eq!(
             shown(text, (4.into(), 12.into())),
             Ok(String::from("```gandr\ns : Model(Tally)\n```"))
@@ -2813,10 +2794,9 @@ mod tests
     #[test]
     fn a_documented_module_hovers_its_documentation_1135()
     {
-        let text = SourceText::from(
-            "/// A module.\nmodule A where {\n  /// A def.\n  def x = 1 ;\n  /// Nested.\n  module B where { \
-             def y = 2 ; }\n}\n",
-        );
+        let text = SourceText::from(include_str!(
+            "hover/fixtures/a-documented-module-hovers-its-documentation-1135.gandr"
+        ));
         assert_eq!(
             shown(text, (1.into(), 7.into())),
             Ok(String::from("```gandr\nmodule A\n```\n\nA module.")),
@@ -2824,7 +2804,7 @@ mod tests
         );
         assert_eq!(
             shown(text, (5.into(), 9.into())),
-            Ok(String::from("```gandr\nmodule B\n```\n\nNested.")),
+            Ok(String::from("```gandr\nmodule B\n```\n\nThe inner module.")),
             "a nested module shows its own"
         );
         assert_eq!(
@@ -2886,9 +2866,9 @@ mod tests
             spelling: Spelling::Unicode,
             markup: Markup::Html,
         };
-        let (text, at) = marker(SourceText::from(
-            "/// Returns `answer`, not `../x.gandr`.\ndef $0answer = 42 ;\n",
-        ));
+        let (text, at) = marker(SourceText::from(include_str!(
+            "hover/unformatted/a-documented-fragment-hovers-in-its-editor-colours-4919.gandr"
+        )));
         let shown = styled(SourceText::from(text.as_str()), at, html);
         assert!(
             shown.as_ref().is_ok_and(|value| value.ends_with(
@@ -2926,7 +2906,9 @@ mod tests
     fn a_declaration_s_own_tile_hovers_the_declaration_1202()
     {
         let data = include_str!("hover/fixtures/natdiv.gandr");
-        let module = "module Ints where {\n  def one : Integer ;\n  def one = 1 ;\n}\n";
+        let module = include_str!(
+            "hover/unformatted/a-declaration-s-own-tile-hovers-the-declaration-1202-module.gandr"
+        );
         let rec = include_str!("hover/fixtures/rec-group.gandr");
         let succ = fenced(SourceText::from("Succ : (n : NatDiv) --> NatDiv"));
         let family = fenced(SourceText::from("NatDiv : Type"));
@@ -2934,9 +2916,9 @@ mod tests
         let ints = fenced(SourceText::from("module Ints"));
         let group = format!(
             "{}\n\nThe declarations this `rec_block` writes together.",
-            fenced(SourceText::from(
-                "def rec ping(n : Nat) -> -F Nat\ndef rec pong(n : Nat) -> -F Nat"
-            ))
+            fenced(SourceText::from(include_str!(
+                "hover/unformatted/a-declaration-s-own-tile-hovers-the-declaration-1202-group.gandr"
+            )))
         );
         let rows: [Row<'_>; 10] = [
             (
@@ -3100,22 +3082,17 @@ mod tests
     #[test]
     fn a_theory_and_a_module_hover_as_written_1122_1124()
     {
-        let model = "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> \
-                     M;\n}\n\n/// A semigroup with a unit.\ntheory Monoid where {\n  include \
-                     Semigroup;\n  oper one : () --> M;\n  rule unitL : mul (one ()) x ==> \
-                     x;\n}\n\nmodule Ints : Model(Semigroup) where {\n  type M = Integer;\n  def \
-                     mul(x : Integer, y : Integer) -> -F Integer { return y }\n}\n";
-        let shaped = "theory Generated where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val \
-                      : Type;\n  oper zero : Val;\n  ext Cell = Val on left is zero;\n}\n\ntheory \
-                      Wheel where {\n  sort Nat : Type;\n  obs emit : (s : Nat, x : Nat) --> (y : \
-                      Nat);\n  rule spin : (data stream : Nat) ==> (out : Nat) {\n    node : \
-                      emit(state, stream) --> (out);\n    feed : (out) --> (state);\n  };\n}\n";
+        let model = include_str!(
+            "hover/unformatted/a-theory-and-a-module-hover-as-written-1122-1124-model.gandr"
+        );
+        let shaped = include_str!(
+            "hover/unformatted/a-theory-and-a-module-hover-as-written-1122-1124-shaped.gandr"
+        );
         let monoid = format!(
             "{}\n\nA semigroup with a unit.",
-            fenced(SourceText::from(
-                "theory Monoid where {\n  include Semigroup;\n  oper one : () --> M;\n  rule unitL : \
-                 mul (one ()) x ==> x;\n}"
-            ))
+            fenced(SourceText::from(include_str!(
+                "hover/unformatted/a-theory-and-a-module-hover-as-written-1122-1124-monoid.gandr"
+            )))
         );
         let module = fenced(SourceText::from("module Ints : Model(Semigroup)"));
         let boundary = fenced(SourceText::from("boundary Two { p, q }"));
@@ -3150,14 +3127,12 @@ mod tests
     #[test]
     fn an_include_and_a_model_hover_the_theory_they_name_1123()
     {
-        let model = "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> \
-                     M;\n}\n\ntheory Monoid where {\n  include Semigroup;\n  include Unwritten;\n  \
-                     oper one : () --> M;\n}\n\nmodule Ints : Model(Semigroup) where {\n  type M = \
-                     Integer;\n  def mul(x : Integer, y : Integer) -> -F Integer { return y \
-                     }\n}\n";
-        let semigroup = Ok(fenced(SourceText::from(
-            "theory Semigroup where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}",
-        )));
+        let model = include_str!(
+            "hover/unformatted/an-include-and-a-model-hover-the-theory-they-name-1123-model.gandr"
+        );
+        let semigroup = Ok(fenced(SourceText::from(include_str!(
+            "hover/unformatted/an-include-and-a-model-hover-the-theory-they-name-1123-semigroup.gandr"
+        ))));
         let rows: [Row<'_>; 5] = [
             ("the theory's own name", model, (0, 9), semigroup.clone()),
             ("an include's name", model, (6, 12), semigroup.clone()),
@@ -3275,7 +3250,7 @@ mod tests
         let layout = include_str!("hover/fixtures/refused-call.gandr");
         let braced = layout
             .replace("-F Nat =\n", "-F Nat {\n")
-            .replace("Succ x x\n", "Succ x x\n}\n");
+            .replace("Succ x x\n", include_str!("hover/unformatted/a-layout-body-and-a-spine-hover-as-their-braced-and-call-forms-5196.gandr"));
         for (tile, (line, character)) in [("a constructor's use", (4, 9)), ("a keyword", (4, 2))] {
             let at = |text: &str| shown(SourceText::from(text), (line.into(), character.into()));
             assert_eq!(at(layout), at(&braced), "{tile}");
@@ -3406,7 +3381,9 @@ mod tests
             (Line::from(0_u32), Line::from(7_u32)),
             "about the whole run"
         );
-        let commented = "// A plain comment.\ndef x = 1 ;\n";
+        let commented = include_str!(
+            "hover/fixtures/a-source-s-own-documentation-hovers-at-its-head-1365-commented.gandr"
+        );
         assert_eq!(
             shown_at(SourceText::from(commented), Position {
                 line: Line::from(0_u32),
@@ -3424,16 +3401,18 @@ mod tests
     #[test]
     fn a_member_typed_nothing_inside_hovers_as_written_3303()
     {
-        let held = "def x = 1 ;\nmodule Holder where {\n  theory In.T where {\n    oper size : $0Integer;\n  }\n}\n";
+        let held = include_str!(
+            "hover/unformatted/a-member-typed-nothing-inside-hovers-as-written-3303-held.gandr"
+        );
         let (text, position) = marker(SourceText::from(held));
         assert_eq!(
             shown_at(SourceText::from(text.as_str()), position),
             Ok(String::from("```gandr\noper size : Integer\n```")),
             "the type of an operation the lowering did not read"
         );
-        let (text, position) = marker(SourceText::from(
-            "theory T where {\n  oper size : $0Integer;\n}\n",
-        ));
+        let (text, position) = marker(SourceText::from(include_str!(
+            "hover/unformatted/a-member-typed-nothing-inside-hovers-as-written-3303.gandr"
+        )));
         assert_eq!(
             shown_at(SourceText::from(text.as_str()), position),
             Ok(String::from("```gandr\nInteger : Type\n```")),
@@ -3453,7 +3432,7 @@ mod tests
         let rows: [(&str, &str, String); 5] = [
             (
                 "a final expression's `;`",
-                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame Integer answer $0;\n",
+                include_str!("hover/unformatted/a-stray-hovers-as-a-declaration-2073-1.gandr"),
                 format!(
                     "{}\n\nrefused: `identifier`, read as a declaration, {top_level}",
                     fenced(SourceText::from("answer"))
@@ -3461,7 +3440,7 @@ mod tests
             ),
             (
                 "an expression before a definition",
-                "$01 ;\ndef answer = 42 ;\n",
+                include_str!("hover/unformatted/a-stray-hovers-as-a-declaration-2073-2.gandr"),
                 format!(
                     "{}\n\nrefused: `number`, read as a declaration, {top_level}",
                     fenced(SourceText::from("1"))
@@ -3469,7 +3448,7 @@ mod tests
             ),
             (
                 "its `;`",
-                "1 $0;\ndef answer = 42 ;\n",
+                include_str!("hover/unformatted/a-stray-hovers-as-a-declaration-2073-3.gandr"),
                 format!(
                     "{}\n\nrefused: `number`, read as a declaration, {top_level}",
                     fenced(SourceText::from("1"))
@@ -3477,7 +3456,7 @@ mod tests
             ),
             (
                 "a block's statement",
-                "$0release x ;\ndef answer = 42 ;\n",
+                include_str!("hover/unformatted/a-stray-hovers-as-a-declaration-2073-4.gandr"),
                 format!(
                     "{}\n\nrefused: `release_expression`, read as a declaration, is not a former \
                      of this sort",
@@ -3486,7 +3465,7 @@ mod tests
             ),
             (
                 "the attribute before an expression",
-                "def answer = 42 ;\n@[ $0runs ]\nanswer\n",
+                include_str!("hover/unformatted/a-stray-hovers-as-a-declaration-2073-5.gandr"),
                 format!(
                     "{}\n\nrefused: `identifier`, read as a declaration, {top_level}",
                     fenced(SourceText::from("answer"))
@@ -3517,27 +3496,37 @@ mod tests
         for (what, fixture, answer) in [
             (
                 "the opening",
-                "$0@[ doc(\"first\") ]\n@[ doc(\"second\") ]\ndef f = 42;",
+                include_str!(
+                    "hover/unformatted/a-doc-attribute-hovers-its-declaration-3197-1.gandr"
+                ),
                 &documented,
             ),
             (
                 "the name",
-                "@[ $0doc(\"first\") ]\n@[ doc(\"second\") ]\ndef f = 42;",
+                include_str!(
+                    "hover/unformatted/a-doc-attribute-hovers-its-declaration-3197-2.gandr"
+                ),
                 &documented,
             ),
             (
                 "the payload",
-                "@[ doc(\"fi$0rst\") ]\n@[ doc(\"second\") ]\ndef f = 42;",
+                include_str!(
+                    "hover/unformatted/a-doc-attribute-hovers-its-declaration-3197-3.gandr"
+                ),
                 &documented,
             ),
             (
                 "the second block",
-                "@[ doc(\"first\") ]\n@[ doc(\"second\") $0]\ndef f = 42;",
+                include_str!(
+                    "hover/unformatted/a-doc-attribute-hovers-its-declaration-3197-4.gandr"
+                ),
                 &documented,
             ),
             (
                 "before another block",
-                "@[ $0doc(\"first\") ]\n@[ deprecated ]\ndef f = 42;",
+                include_str!(
+                    "hover/unformatted/a-doc-attribute-hovers-its-declaration-3197-5.gandr"
+                ),
                 &deprecated,
             ),
         ] {

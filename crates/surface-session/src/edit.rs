@@ -4502,10 +4502,10 @@ mod tests
     {
         let sources = [
             "def deep = thunk { return thunk { return thunk { return 1 } } } ;\n",
-            "def target(x : Integer) -> -F Integer {\n  return 1\n}\ndef shown : +U (-F Integer) ;\ndef shown = thunk { become (force target) 0 } ;\n",
-            "def a = 1 ;\ndef b = 2 ;\ndef c = 3 ;\n",
-            "def owed : Integer ;\ndef reads = owed ;\n",
-            "def f(x : Integer) -> -F Integer { return x }\ndef twice = thunk { become (force f) \"text\" } ;\n",
+            include_str!("edit/fixtures/descent-agrees-with-the-linear-stab-oracle-1.gandr"),
+            include_str!("edit/fixtures/descent-agrees-with-the-linear-stab-oracle-2.gandr"),
+            include_str!("edit/fixtures/descent-agrees-with-the-linear-stab-oracle-3.gandr"),
+            include_str!("edit/fixtures/descent-agrees-with-the-linear-stab-oracle-4.gandr"),
             // The tail return the lowering inserts spans the value it returns:
             // a tie the descent breaks by depth.
             "def g(x : Integer) -> -F Integer { x }\n",
@@ -4538,11 +4538,9 @@ mod tests
     {
         use super::addressed;
         use super::spanned;
-        let snapshot = snapshot_of(SourceText::from(
-            r#"def owed : Integer ;
-def body = 1 ;
-"#,
-        ));
+        let snapshot = snapshot_of(SourceText::from(include_str!(
+            "edit/fixtures/missing-paths-and-unrecorded-origins-stay-distinct-snapshot.gandr"
+        )));
         let missing_item = CorePath::new(ItemOrdinal::from(2_usize), Vec::new());
         let missing_body = CorePath::new(ItemOrdinal::from(0_usize), Vec::new());
         let missing_child =
@@ -5107,12 +5105,12 @@ def body = 1 ;
     #[test]
     fn a_changed_nominal_declaration_is_replaced_and_an_unchanged_one_kept()
     {
-        let two = snapshot_of(SourceText::from(
-            "data Color : Type where { | Red : Color | Green : Color }\ndef a = 1 ;\n",
-        ));
-        let three = snapshot_of(SourceText::from(
-            "data Color : Type where { | Red : Color | Green : Color | Blue : Color }\ndef a = 1 ;\n",
-        ));
+        let two = snapshot_of(SourceText::from(include_str!(
+            "edit/fixtures/a-changed-nominal-declaration-is-replaced-and-an-unchanged-one-kept-two.gandr"
+        )));
+        let three = snapshot_of(SourceText::from(include_str!(
+            "edit/fixtures/a-changed-nominal-declaration-is-replaced-and-an-unchanged-one-kept-three.gandr"
+        )));
         assert!(
             super::diff(&two, &two).actions().is_empty(),
             "an unchanged data declaration is kept"
@@ -5153,14 +5151,8 @@ def body = 1 ;
             let program = item_program(&module, arena).expect("positions ascend");
             (program, module)
         };
-        let (first, first_module) = read(
-            "data Color : Type where { | Red : Color | Green : Color }\ndef a = 1 ;\ndef b = thunk { \
-             return a } ;\ndef c = 2 ;\n",
-        );
-        let (second, second_module) = read(
-            "data Color : Type where { | Red : Color | Green : Color }\ndef a = 1 ;\ndef b = thunk { \
-             return a } ;\ndef c = 3 ;\ndef d = c ;\n",
-        );
+        let (first, first_module) = read(include_str!("edit/fixtures/str-1.gandr"));
+        let (second, second_module) = read(include_str!("edit/fixtures/str-2.gandr"));
         let shared = ItemOrdinal::from(3_usize);
         let before = Snapshot::of(&first, first_module.origins());
         let kept = before.leading(shared);
@@ -5550,12 +5542,9 @@ def body = 1 ;
     #[test]
     fn alignment_matches_exhaustive_reference_subsequences()
     {
-        let snapshot = snapshot_of(SourceText::from(
-            r#"def a = 1 ;
-def b = 2 ;
-def c = 3 ;
-"#,
-        ));
+        let snapshot = snapshot_of(SourceText::from(include_str!(
+            "edit/fixtures/descent-agrees-with-the-linear-stab-oracle-2.gandr"
+        )));
         let old = snapshot.items();
         let permutations = [
             [0_usize, 1_usize, 2_usize],

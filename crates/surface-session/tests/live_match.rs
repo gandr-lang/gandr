@@ -541,7 +541,10 @@ fn an_inexhaustive_match_does_not_block_its_siblings()
 {
     let mut session = session(SourceRoot::Strict);
     let source = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ | Red => return 0 }} }}\ndef sibling = 41 ;\n"
+        include_str!(
+            "live_match/unformatted/an-inexhaustive-match-does-not-block-its-siblings.gandr"
+        ),
+        COLOR = COLOR
     );
     let _submission = submit(&mut session, &source);
     assert!(
@@ -617,7 +620,9 @@ fn a_pattern_hole_is_named_by_its_place_among_the_holes()
 fn translation_covers_the_landed_pattern_grammar()
 {
     let source = alloc::format!(
-        "{COLOR}{NESTED}def shapes(m : Outer) -> -F Integer {{ match m {{ | None => return 0 | Some(Yes(y)) => return 1 | ? => return 2 | ?named => return 3 | x => return 4 | _ => return 5 }} }}\ndef literal(n : Integer) -> -F Integer {{ match n {{ | 7 => return 0 | _ => return 1 }} }}\ndef flag(b : Bool) -> -F Integer {{ match b {{ | true => return 0 | false => return 1 }} }}\ndef either(c : Color) -> -F Integer {{ match c {{ | Red | Green => return 0 | Blue => return 1 }} }}\n"
+        include_str!("live_match/unformatted/translation-covers-the-landed-pattern-grammar.gandr"),
+        COLOR = COLOR,
+        NESTED = NESTED
     );
     for (function, expected) in [
         ("shapes", &["#0()", "#1(#1(x))", "?", "?", "x", "_"][..]),

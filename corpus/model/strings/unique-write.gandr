@@ -1,55 +1,52 @@
-//! Copy-on-write pays for a holder count it reads at every write, even when the
-//! string is held once. A write that reads no count is sound exactly where the
-//! string has one holder: there it writes what copy-on-write writes, and on a
-//! shared string it would write the buffer another string reads. So where the
-//! program states that a string is not copied for a scope, the count and its
-//! branch can go
-//! [Racordon-2022-implementation_strategies_mutable_value_semantics], § 4:
-//! uniqueness-elided copies. The statement is a grade on the string: `var[1] s
-//! = e;` holds a string made where the hold stands, which nothing else holds
-//! while it is held, and the checker refuses a grade-one hold of a string that
-//! may have been copied. The items below show the write the grade licenses, and
-//! on what.
+//! This source models writes under a unique string hold.
+//!
+//! Copy-on-write reads a holder count at each write. A string with one holder
+//! can write without that count. A shared write changes bytes that another
+//! string reads.
+//!
+//! `pushInPlace` writes without the holder count. A grade-one hold certifies
+//! that no copy shares its string. The checker refuses a grade-one copied
+//! string.
 //!
 //! - cites: [Racordon-2022-implementation_strategies_mutable_value_semantics]
 //!
 //! [Racordon-2022-implementation_strategies_mutable_value_semantics]: https://doi.org/10.5381/jot.2022.21.2.a2 "Racordon et al., Implementation strategies for mutable value semantics"
 
-// The lists; the byte lists; the owned bytes; where they live; the writes.
+// This source imports declarations for lists, bytes, ownership, locations and
+// writes.
 import "../data/data-base.gandr";
 import "./string-base.gandr";
 import "./nul-terminated.gandr";
 import "./small-string.gandr";
 import "./copy-on-write.gandr";
 
-/// `b` appended with no holder count read: inline bytes as `push` writes
-/// them, a heap buffer written where it is, whoever holds it.
+/// `pushInPlace` appends `b` and skips the holder count.
+/// It writes inline or heap bytes in place.
 pub def pushInPlace(s : Repr, b : Integer) -> Written =
   match s
     | Inline(bs) => push s b
     | Shared(n, bs) => Written (Shared n (beforeZero bs b)) 0
 
-/// The number of strings holding a string's bytes: one for inline bytes.
+/// `holders` counts strings that hold a string's bytes.
+/// Inline bytes have one holder.
 def holders(s : Repr) -> Integer =
   match s
     | Inline(bs) => 1
     | Shared(n, bs) => n
 
-/// On a long string held once, the write that reads no count copies nothing,
-/// as copy-on-write does.
+/// `aloneCopies` writes an unshared long string without copying.
 @[ runs("0") ]
 def aloneCopies() -> [Partial] Integer { let s = force long; copies (pushInPlace s 33) }
 
-/// And its written buffer has the one holder copy-on-write's has.
+/// `aloneHolders` reports one holder after an unshared write.
 @[ runs("1") ]
 def aloneHolders() -> [Partial] Integer =
   let s = force long
   let w = pushInPlace s 33
   holders (written w)
 
-/// On a copy it writes the buffer the original reads too: the written buffer
-/// still has two holders, so the original would see the write. This is the
-/// write a grade must keep from a shared string.
+/// `sharedHolders` writes a copied string without a holder count.
+/// The original string reads the changed buffer.
 @[ runs("2") ]
 def sharedHolders() -> [Partial] Integer =
   let s = force long
@@ -57,15 +54,15 @@ def sharedHolders() -> [Partial] Integer =
   let w = pushInPlace c 33
   holders (written w)
 
-/// Under a grade-one hold the string is made in place, so the write that reads
-/// no count, through the hold's exclusive view, copies nothing.
+/// `heldOnce` writes a grade-one string without a holder count.
+/// The exclusive access copies no buffer.
 @[ runs("0") ]
 def heldOnce() -> [Partial] Integer =
   let bs = repeatOnto 97 24 (Nil : List(Integer))
   var[1] s = Shared 1 bs
   access s as v { let w = pushInPlace v 33; let t = written w; resume(v, t); copies w }
 
-/// And the buffer it wrote back still has its one holder.
+/// `heldOnceHolders` reports one holder after the grade-one write.
 @[ runs("1") ]
 def heldOnceHolders() -> [Partial] Integer =
   let bs = repeatOnto 97 24 (Nil : List(Integer))

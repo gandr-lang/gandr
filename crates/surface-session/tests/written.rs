@@ -56,7 +56,7 @@ pub const COLOR: &str =
 
 /// A payload-bearing pair of families: `No` and `Yes(n)` are tags 0 and 1 of
 /// `Inner`, `None` and `Some(i)` tags 0 and 1 of `Outer`.
-pub const NESTED: &str = "data Inner : Type where { | No : Inner | Yes : (n : Integer) --> Inner }\ndata Outer : Type where { | None : Outer | Some : (i : Inner) --> Outer }\n";
+pub const NESTED: &str = include_str!("written/fixtures/nested.gandr");
 
 /// The live evaluator's allowance for one fixture run.
 const FUEL: u32 = 10_000;

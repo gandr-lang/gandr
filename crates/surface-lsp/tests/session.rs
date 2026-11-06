@@ -567,7 +567,10 @@ fn a_session_round_trips_over_in_memory_streams()
 {
     let source = Source {
         uri: "file:///tmp/round-trip.gandr".to_owned(),
-        text: "def answer = 42 ;\ndef broken = missing ;\n".to_owned(),
+        text: include_str!(
+            "session/unformatted/a-session-round-trips-over-in-memory-streams.gandr"
+        )
+        .to_owned(),
     };
     let mut messages = opening();
     messages.push(open(&source));
@@ -668,7 +671,8 @@ fn a_hosted_workload_answers_what_it_read()
 {
     let source = Source {
         uri: "file:///tmp/hosted.gandr".to_owned(),
-        text: "def answer = 42 ;\ndef broken = missing ;\n".to_owned(),
+        text: include_str!("session/fixtures/a-session-round-trips-over-in-memory-streams.gandr")
+            .to_owned(),
     };
     let tokens = Method("textDocument/semanticTokens/full");
     let params = json!({"textDocument": {"uri": source.uri}});
@@ -886,7 +890,7 @@ fn a_refusal_is_published_where_the_model_locates_it()
 {
     let scratch = Scratch::new(Path::new("refusal"));
     let path = scratch.0.join("broken.gandr");
-    let text = "def answer = 42 ;\ndef broken = missing ;\n";
+    let text = include_str!("session/fixtures/a-session-round-trips-over-in-memory-streams.gandr");
     std::fs::write(&path, text).expect("the source is written");
 
     let ControlFlow::Break(found) = Walk::new(vec![path.clone()])
@@ -995,13 +999,21 @@ fn an_edit_to_a_large_document_rechecks_its_forms()
     let mut text = String::new();
     for i in 0 .. 1_000_usize {
         if i.is_multiple_of(2) {
-            writeln!(text, "def v{i} : Integer ;\ndef v{i} = {i} ;")
+            writeln!(
+                text,
+                include_str!(
+                    "session/unformatted/an-edit-to-a-large-document-rechecks-its-forms-1.gandr"
+                ),
+                i = i
+            )
         }
         else {
             writeln!(
                 text,
-                "def p{i} : +U (Integer -> Integer -> -F Integer) ;\n\
-                     def p{i} = thunk {{ fun (x) {{ fun (y) {{ return x }} }} }} ;"
+                include_str!(
+                    "session/unformatted/an-edit-to-a-large-document-rechecks-its-forms-2.gandr"
+                ),
+                i = i
             )
         }
         .expect("a string takes text");
@@ -1182,8 +1194,9 @@ fn judged(Line(line): Line<'_>) -> Judged
 fn an_edit_that_changes_nothing_republishes_the_same_bytes()
 {
     let uri = "file:///tmp/unchanged.gandr";
-    let text =
-        "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = \"text\" ;\ndef c = a ;\n";
+    let text = include_str!(
+        "session/unformatted/an-edit-that-changes-nothing-republishes-the-same-bytes.gandr"
+    );
     // The session opening `text` and changing it by `change`: each
     // publication's bytes as the server wrote them, its version written as
     // zero, and the log's lines.
@@ -1302,7 +1315,9 @@ fn an_importer_edit_offers_the_kernel_its_own_declarations_776()
     // The editor's buffer is what is judged; the file only has to exist.
     std::fs::write(&document, "").expect("the document is written");
     let address = uri(&document);
-    let first = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
+    let first = include_str!(
+        "session/unformatted/an-importer-edit-offers-the-kernel-its-own-declarations-776-first.gandr"
+    );
     let mut messages = opening();
     messages.push(open(&Source {
         uri: address.clone(),
@@ -1363,7 +1378,10 @@ fn a_definition_in_a_sibling_answers_the_sibling_s_path_795()
     let mut messages = opening();
     messages.push(open(&Source {
         uri: address.clone(),
-        text: "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n".to_owned(),
+        text: include_str!(
+            "session/unformatted/a-definition-in-a-sibling-answers-the-sibling-s-path-795.gandr"
+        )
+        .to_owned(),
     }));
     messages.push(json!({"jsonrpc": "2.0", "id": "definition", "method": "textDocument/definition", "params": {
         "textDocument": {"uri": address}, "position": {"line": 2_i32, "character": 11_i32},
@@ -1402,7 +1420,10 @@ fn a_completion_offers_what_a_sibling_declares_806()
     let mut messages = opening();
     messages.push(open(&Source {
         uri: address.clone(),
-        text: "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = o ;\n".to_owned(),
+        text: include_str!(
+            "session/unformatted/a-completion-offers-what-a-sibling-declares-806.gandr"
+        )
+        .to_owned(),
     }));
     messages.push(json!({"jsonrpc": "2.0", "id": "completion", "method": "textDocument/completion", "params": {
         "textDocument": {"uri": address}, "position": {"line": 2_i32, "character": 11_i32},
@@ -1448,9 +1469,8 @@ fn signature_help_reads_a_sibling_s_head()
     let mut messages = opening();
     messages.push(open(&Source {
         uri: address.clone(),
-        text:
-            "import \"./base.gandr\" ;\ndef two : +U (-F Integer) ;\ndef two = thunk { pick 1 } ;\n"
-                .to_owned(),
+        text: include_str!("session/unformatted/signature-help-reads-a-sibling-s-head.gandr")
+            .to_owned(),
     }));
     messages.push(json!({"jsonrpc": "2.0", "id": "signature", "method": "textDocument/signatureHelp", "params": {
         "textDocument": {"uri": address}, "position": {"line": 2_i32, "character": 23_i32},

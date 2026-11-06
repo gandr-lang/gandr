@@ -1,88 +1,85 @@
-// Reflexivity is a congruence for conversion (the HoTT book's § 1.12, `refl`,
-// under judgmental equality): two reflexivities are one path when their
-// points convert, by unfolding or by a presented type's rule, at every level,
-// and a parameter is no reflexivity.
-//
-// - see: #1723 — `peak_is_here`
-// - see: #2378 — `held_sum`
-// - see: #2391 — `compared_alike`, `passed_on`
+/// This source states congruence for reflexivity under conversion.
+///
+/// Two reflexivity terms agree when their points convert at every path level.
+/// A parameter does not reduce to a reflexivity term.
+///
+/// The checker converts endpoints by each rule form.
+/// It compares each path at its resolved equality.
+///
+/// - see: #1723 — `peak_is_here`
+/// - see: #2378 — `held_sum`
+/// - see: #2391 — `compared_alike`, `passed_on`
 
 // The integers, presented by their two cancellations.
 import "./circle-base.gandr";
 
-/// A declared reflexivity.
+/// A declared reflexivity at two.
 def refl_two : Path[.A = Integer](2, 2) = Path.here 2;
 
-/// Two reflexivities convert when their points do.
+/// The two reflexivities agree because their points convert.
 def two_is_here : Path[.A = Path[.A = Integer](2, 2)](
   refl_two,
   Path.here 2
 ) = Path.here (Path.here 2);
 
-/// `Path.here(refl_two)` at that path.
+/// `Path.here(refl_two)` has the same path type.
 def here_two : Path[.A = Path[.A = Integer](2, 2)](refl_two, Path.here 2) = Path.here refl_two;
 
-/// Points one unfolding apart, one level up.
+/// The two points agree one path level higher.
 def here_two_up : Path[.A = Path[.A = Path[.A = Integer](2, 2)](refl_two, Path.here 2)](
   Path.here refl_two,
   Path.here (Path.here 2)
 ) = Path.here (Path.here refl_two);
 
-/// The reflexivity at the cancelled side of a peak: `S(P(S(x)))` and `S(x)`
-/// are one integer by the rule `S(P(x)) <=> x`.
+/// The peak reflexivity uses the cancellation rule for integers.
 def refl_peak(x : Int) -> Path[.A = Int](S (P (S x)), S x) =
   Path.here (S x)
 
-/// The reflexivity at the peak itself, at the same path type.
+/// The peak reflexivity also uses the unreduced endpoint.
 def refl_peak_at(x : Int) -> Path[.A = Int](S (P (S x)), S x) =
   Path.here (S (P (S x)))
 
-/// Points a rule relates, one level up: the two reflexivities are one path.
+/// The two peak reflexivities agree one level higher.
 def peak_is_here(x : Int) -> Path[.A = Path[.A = Int](S (P (S x)), S x)](
   refl_peak x,
   refl_peak_at x
 ) =
   Path.here (refl_peak x)
 
-/// A parameter does not unfold to `Path.here(2)`.
+/// A path parameter does not unfold to `Path.here(2)`.
 @[ refuses("EndpointMismatch") ]
 def apart(q : Path[.A = Integer](2, 2)) -> Path[.A = Path[.A = Integer](2, 2)](q, Path.here 2) =
   Path.here q
 
-/// An integer, returned as it came.
+/// The `as_given` function returns its integer argument.
 def as_given(n : Integer) -> Integer { n }
 
-/// Points one unfolding apart over a native sum of parameters: the sum is
-/// held as its call, never run, and meets itself.
+/// The held sum compares with its own unresolved call.
 def held_sum(x : Integer, y : Integer) -> Path[.A = Integer](as_given (x + y), x + y) =
   Path.here (x + y)
 
-/// The sum with its operands exchanged is another call: conversion knows no
-/// arithmetic law.
+/// The exchanged sum is a different unresolved call.
 @[ refuses("EndpointMismatch") ]
 def exchanged_sum(x : Integer, y : Integer) -> Path[.A = Integer](as_given (x + y), y + x) =
   Path.here (x + y)
 
-/// A comparison's model is resolved from its operands once the body is
-/// judged: the point compares alike, and meets both endpoints when each
-/// comparison reads the integers' equality.
+/// The comparison model resolves from its operands before the points compare.
 def compared_alike(x : Integer, y : Integer) -> Path[.A = Bool](x == y, x == y) =
   Path.here (x == y)
 
-/// The comparison with its operands exchanged is another call once resolved.
+/// The exchanged comparison is another resolved call.
 @[ refuses("EndpointMismatch") ]
 def compared_turned(x : Integer, y : Integer) -> Path[.A = Bool](x == y, y == x) =
   Path.here (x == y)
 
-/// A path over a comparison, returned at a path type over comparisons of its
-/// own, converts once each comparison's model is resolved.
+/// The returned path converts after each comparison model resolves.
 def passed_on(x : Integer, y : Integer, p : Path[.A = Bool](x == y, x == y)) -> Path[.A = Bool](
   x == y,
   x == y
 ) =
   p
 
-/// At a path type over the exchanged comparison it is another type.
+/// The exchanged comparison gives a different path type.
 @[ refuses("TypeMismatch") ]
 def passed_turned(x : Integer, y : Integer, p : Path[.A = Bool](x == y, x == y)) -> Path[.A = Bool](
   y == x,

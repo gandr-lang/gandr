@@ -1,19 +1,16 @@
-// Two nestings of one chain of paths are one composite.
-//
-// A proof then writes `Path.here` where it would cite an associator, and the theory
-// adjoins no cell for one.
-//
-// A transport along a stuck composite moves its operand along each of the
-// composite's paths in turn, in evaluation and in the kernel. Every nesting of
-// a chain so reaches the left-nested `Path.step` fold the unbiased composite carries.
-//
-// - see: `compose-chain.gandr` — the unbiased composite and its fold
-// - see: `then.gandr` — the composite of two paths
-
-// The circle, its point and its loop.
+/// This source states that each nesting of one path chain has one composite.
+///
+/// The unbiased composite does not select a bracketing.
+/// A proof therefore uses `Path.here` instead of an associator.
+///
+/// Evaluation and the kernel move each transport through the chain paths.
+/// They reach the left-nested `Path.step` fold.
+///
+/// - see: corpus/model/identity/compose-chain.gandr
+/// - see: corpus/model/identity/then.gandr
 import "./circle-base.gandr";
 
-/// The right nesting of three paths is their unbiased composite.
+/// The right nesting of three paths equals their unbiased composite.
 def rightNested(
   A : Type,
   x : A,
@@ -29,7 +26,7 @@ def rightNested(
 ) =
   Path.here (Path.step f (Path.step g h))
 
-/// A composite standing as the later path: the first path moves along it.
+/// The first path moves along the later composite.
 def laterNested(
   A : Type,
   x : A,
@@ -47,7 +44,7 @@ def laterNested(
 ) =
   Path.here (Path.step k (Path.step (Path.step f g) h))
 
-/// The composite of two composites: the first moves along the second.
+/// The first composite moves along the second composite.
 def pairs(
   A : Type,
   x : A,
@@ -65,7 +62,7 @@ def pairs(
 ) =
   Path.here (Path.step (Path.step k f) (Path.step g h))
 
-/// Two paths composed by a definition.
+/// The `tailComposite` definition composes two paths.
 def tailComposite(
   A : Type,
   y : A,
@@ -79,7 +76,7 @@ def tailComposite(
 ) =
   Path.step g h
 
-/// A nesting written through a definition: the composite it returns stands as the later path.
+/// A call that returns a composite stands as the later path.
 def throughCall(
   A : Type,
   x : A,
@@ -95,7 +92,7 @@ def throughCall(
 ) =
   Path.here (Path.step (Path.step f g) h)
 
-/// A transport along a nesting moves along each path in turn, in any family.
+/// Transport through a nesting moves through each path in every family.
 def transported(
   A : Type,
   M : A -> Type,
@@ -113,7 +110,7 @@ def transported(
 ) =
   Path.here (Path.walk (fun (a) { M a }) (Path.step f (Path.step g h)) v)
 
-/// A loop between two paths at the circle's point nests as any path does.
+/// A circle loop between two paths nests as every path does.
 def aroundTheLoop(
   p : Path[.A = Circle](Base, Base),
   q : Path[.A = Circle](Base, Base)
@@ -123,7 +120,7 @@ def aroundTheLoop(
 ) =
   Path.here (Path.step p (Path.step loop q))
 
-/// Paths in another order are another composite.
+/// The checker refuses a composite whose paths use another order.
 @[ refuses("EndpointMismatch") ]
 def reordered(
   A : Type,

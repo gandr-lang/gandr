@@ -1,13 +1,17 @@
 // A record type's faces refused: one face holds a label the record lacks, and
-// one face is named twice.
+// one face is named twice. A static bracket refused: it names a field or a face
+// the record type lacks.
 //
 // A face lists only labels its record holds, and each face has its own name.
 // The refusal stands at the label or at the second name.
+// A static bracket fixes only the fields its record type writes, and a face
+// only when the type member names it. The refusal stands at the label or at
+// the face, by its name.
 //
 // The types stand in a module, whose members carry the verdict each refusal
 // states. Each refusal names the face and the record type.
 //
-// - see: `model/desc/record-faces.gandr` — the faces read
+// - see: `model/desc/record-faces.gandr` — the faces read, and the bracket read
 // - see: `pathological/desc/shaped-signature.gandr` — a theory's faces refused
 //   alike
 
@@ -26,3 +30,15 @@ module Faces where {
     face addr = { host };
     face addr = { port };
 }
+
+/// A server's configuration, with the face `secure`.
+type Config = *{host : String, port : Integer, tls : Bool} where
+  face secure = { port, tls };
+
+/// `mode` is no field of `Config`: the bracket is refused at the label.
+@[ refuses("UnresolvedName") ]
+def moded(c : Config[.mode = 1]) -> Integer { 0 }
+
+/// `remote` is no face of `Config`: the bracket is refused at the face.
+@[ refuses("UnresolvedName") ]
+def remote(c : Config[remote ↦ *{.host = "localhost"}]) -> Integer { 0 }

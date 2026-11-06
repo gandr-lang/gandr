@@ -1,0 +1,12 @@
+pub data Shape : Type where {
+  | Circle : Shape
+}
+pub def faraway : Integer;
+def faraway = 7;
+def farther : Integer;
+def farther = 3;
+pub def far : Integer;
+def far = 2;
+pub module Inner where {
+  def fargone = 1;
+}

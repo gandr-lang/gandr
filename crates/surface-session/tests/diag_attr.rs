@@ -260,7 +260,8 @@ fn a_bare_marker_missing_its_payload_is_a_diagnostic()
 {
     // `owes` takes an integer payload; written bare it is refused, and the
     // declaration it decorates is offered to no one.
-    let source = "@[owes]\ndef f : Integer ;\n";
+    let source =
+        include_str!("diag_attr/fixtures/a-bare-marker-missing-its-payload-is-a-diagnostic.gandr");
     assert_eq!(only(source), Seen {
         class: Class::Refusal(FailureClass::MalformedSource),
         identifier: String::from("MissingPayload"),
@@ -279,19 +280,26 @@ fn a_bare_marker_missing_its_payload_is_a_diagnostic()
 #[test]
 fn a_computation_payload_is_rejected_as_non_value()
 {
-    assert_eq!(only("@[owes(pure 1)]\ndef f : Integer ;\n"), Seen {
-        class: Class::Refusal(FailureClass::MalformedSource),
-        identifier: String::from("NonValuePayload"),
-        locus: String::from("pure 1"),
+    assert_eq!(
+        only(include_str!(
+            "diag_attr/fixtures/a-computation-payload-is-rejected-as-non-value.gandr"
+        )),
+        Seen {
+            class: Class::Refusal(FailureClass::MalformedSource),
+            identifier: String::from("NonValuePayload"),
+            locus: String::from("pure 1"),
 
-        context: Vec::new(),
-    });
+            context: Vec::new(),
+        }
+    );
 }
 
 #[test]
 fn duplicate_single_valued_attribute_is_a_diagnostic()
 {
-    let duplicate = only("@[refuses(\"a\")]\n@[refuses(\"b\")]\ndef f = 42 ;\n");
+    let duplicate = only(include_str!(
+        "diag_attr/fixtures/duplicate-single-valued-attribute-is-a-diagnostic-duplicate.gandr"
+    ));
     assert_eq!(
         duplicate,
         Seen {
@@ -313,12 +321,21 @@ fn an_ill_typed_payload_becomes_an_ordinary_type_error()
     // its schema where the lowering reads it, so the error is the lowering's
     // own refusal — reported as every type error is: a refusal of the
     // malformed-source class, located at the payload.
-    let mismatch = only("def x : String ;\ndef x = 1 ;\n");
+    let mismatch = only(include_str!(
+        "diag_attr/fixtures/an-ill-typed-payload-becomes-an-ordinary-type-error-mismatch.gandr"
+    ));
     assert_eq!(mismatch.identifier, "TypeMismatch");
     for (source, locus) in [
-        ("@[refuses(42)]\ndef f = 42 ;\n", "42"),
         (
-            "@[owes(thunk { return 1 })]\ndef f : Integer ;\n",
+            include_str!(
+                "diag_attr/fixtures/an-ill-typed-payload-becomes-an-ordinary-type-error-1.gandr"
+            ),
+            "42",
+        ),
+        (
+            include_str!(
+                "diag_attr/fixtures/an-ill-typed-payload-becomes-an-ordinary-type-error-2.gandr"
+            ),
             "thunk { return 1 }",
         ),
     ] {
@@ -340,11 +357,9 @@ fn an_ill_typed_payload_becomes_an_ordinary_type_error()
 fn an_unknown_attribute_is_located_at_its_application()
 {
     assert_eq!(
-        only(
-            r#"@[zzzzzzzz(1)]
-def f : Integer ;
-"#
-        ),
+        only(include_str!(
+            "diag_attr/fixtures/an-unknown-attribute-is-located-at-its-application.gandr"
+        )),
         Seen {
             class: Class::Refusal(FailureClass::MalformedSource),
             identifier: String::from("UnknownAttribute"),

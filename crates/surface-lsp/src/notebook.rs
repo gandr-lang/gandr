@@ -517,7 +517,9 @@ mod tests
     fn a_publication_splits_into_its_cells_in_their_coordinates()
     {
         let notebook = opened(&three(
-            &json!("def a = 1 ;\ndef x = 2 ;"),
+            &json!(include_str!(
+                "notebook/unformatted/a-publication-splits-into-its-cells-in-their-coordinates-notebook.gandr"
+            )),
             &json!("def b = q ;"),
         ));
         let uri = DocumentUri::from("file:///tmp/n.ipynb");

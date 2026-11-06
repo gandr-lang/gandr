@@ -1,0 +1,4 @@
+module Ints where {
+  def one : Integer ;
+  def one = 1 ;
+}

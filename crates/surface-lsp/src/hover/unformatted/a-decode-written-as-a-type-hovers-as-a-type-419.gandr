@@ -1,0 +1,6 @@
+data Flag : Type where {
+  | On : Flag
+  | Off : Flag
+}
+def decoded(f : Flag) -> -F Type { match f { | On => return Integer | Off => return Unit } }
+def kept(f : Flag, n : decoded$0(f)) -> -F decoded(f) { return n }

@@ -2132,12 +2132,22 @@ mod tests
             "at the next argument, that argument"
         );
         assert_eq!(
-            called(CALLED, " };\ndata List"),
+            called(
+                CALLED,
+                include_str!(
+                    "signature/unformatted/the-innermost-call-answers-with-its-argument-1.gandr"
+                )
+            ),
             answer("plus", 1),
             "just past the last argument, the spine it ends"
         );
         assert_eq!(
-            called(CALLED, "};\ndata List"),
+            called(
+                CALLED,
+                include_str!(
+                    "signature/unformatted/the-innermost-call-answers-with-its-argument-2.gandr"
+                )
+            ),
             None,
             "past the spine, no call"
         );
@@ -2147,7 +2157,12 @@ mod tests
             "on the head, not the spine it heads"
         );
         assert_eq!(
-            called(CALLED, "p)\ndef f"),
+            called(
+                CALLED,
+                include_str!(
+                    "signature/unformatted/the-innermost-call-answers-with-its-argument-3.gandr"
+                )
+            ),
             answer("plus[<]", 1),
             "a recursive call, headed by its claim"
         );
@@ -2444,8 +2459,9 @@ mod tests
     #[test]
     fn only_a_function_type_and_a_list_s_own_separators_make_parameters_1810()
     {
-        let text = "theory Lambda where {\n  sort Tm : Type;\n  oper lam : (t : pi+ (x : Tm) . Tm) --> \
-                    Tm;\n  oper app : (t : Tm, u : Tm) --> Tm;\n}\ndef g : -F (Nat -> -F Nat) ;\n";
+        let text = include_str!(
+            "signature/unformatted/only-a-function-type-and-a-list-s-own-separators-make-parameters-1810.gandr"
+        );
         let grammar = grammar().expect("the grammar builds");
         let roles = roles().expect("the roles build");
         let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");

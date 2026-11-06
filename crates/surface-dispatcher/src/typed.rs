@@ -174,6 +174,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ClauseBinder;
 use gandr_surface_lowering::ClausePlace;
 use gandr_surface_lowering::ComponentName;
+use gandr_surface_lowering::Container;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::Exit;
@@ -190,6 +191,8 @@ use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SplitComponent;
+use gandr_surface_lowering::Stratum;
+use gandr_surface_lowering::StructureIndex;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::WrittenModel;
@@ -240,6 +243,7 @@ use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
 use crate::compose::pattern_holes;
 use crate::evaluate::Evaluation;
+use crate::evaluate::hidden_members;
 use crate::typed::referent::Referents;
 
 mod referent;
@@ -736,8 +740,8 @@ fn preceding(
 
 /// The context an entry's type is spelled in: the names of the
 /// intuitionistic binders around it, and of the capability scopes among
-/// them, each outermost first, and the type each binder binds where the
-/// table knows it.
+/// them, each outermost first, the type each binder binds where the table
+/// knows it, and the module of the source's own text the entry stands in.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Context
 {
@@ -756,6 +760,44 @@ struct Context
     /// calls write: the surface writes it `f[<]` or `f[>]`, never by its bare
     /// name, which names the declaration.
     recursive: Option<Recursive>,
+    /// The innermost module the entry stands in, whose members the type
+    /// names as that module's body writes them; none at the top level.
+    scope: Option<ScopeIndex>,
+}
+
+/// A module of the source's own text, by its place in [`TypeTable::scopes`].
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ScopeIndex(usize);
+
+/// A module of the source's own text as a type printed inside it reads: the
+/// members a seal hides that its body writes by their own names, and where a
+/// read-back writes a probe into the body (#5391).
+///
+/// A seal hides each member that its signature leaves out. Outside the
+/// module, no name reaches that member. Inside, the module's path names the
+/// sealed module, which does not hold the member either. Only the member's own
+/// name reaches it, and only inside the module.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Scope
+{
+    /// The bytes the module form covers, as the source's own text measures
+    /// them.
+    span: ByteSpan,
+    /// Each member that a seal hides and the body writes by its own name,
+    /// ascending by admission position, with that name: a member of the
+    /// module or of a module around it.
+    names: Vec<(ConstantIndex, String)>,
+    /// The offset in the unit's text where a probe is written: the end of the
+    /// line that the module's last member ends on. None for a module whose
+    /// types read at the top level: a functor's body, its parameter, an
+    /// application's instance, and a module with no name or a clashing name.
+    probe: Option<ByteOffset>,
+    /// The indentation of the line the module's first member starts on.
+    indent: usize,
 }
 
 /// A model implicit among a context's binders, `[s : Model(S) with sort x =
@@ -795,7 +837,8 @@ struct Under
 
 /// One printed type the read-back reads: where it was printed, the node it
 /// was printed from and its spelling, its trip when it is settled before any
-/// lowering, and the binders a type naming them stands under.
+/// lowering, the binders a type naming them stands under, and the module it
+/// was printed in.
 #[derive(Clone, Debug)]
 struct Printed
 {
@@ -809,6 +852,23 @@ struct Printed
     settled: Option<RoundTrip>,
     /// The binders a type naming them stands under.
     under: Option<Under>,
+    /// The innermost module the type was printed in, whose body reads it
+    /// back; none at the top level.
+    scope: Option<ScopeIndex>,
+}
+
+/// One lowering of the read-back: the unit's text with probes written into
+/// it, the probes' names, and the bytes whose recorded origins it keeps.
+#[derive(Clone, Debug)]
+struct ProbeReading
+{
+    /// The unit's text with the probes written into it.
+    text: String,
+    /// The names of the probes it holds.
+    names: Vec<String>,
+    /// The bytes of its probes, whose origins it keeps; none for the
+    /// top-level reading, which keeps every origin.
+    window: Option<(usize, usize)>,
 }
 
 /// Each pair of `named` with the label `text` writes at its span, and each
@@ -982,10 +1042,16 @@ pub struct TypeTable
     entries: Vec<Entry>,
     /// Each declaration's type or refusal, by the key of each of its forms.
     declared: BTreeMap<NodeKey, Held>,
+    /// The innermost module each declaration that a module holds stands in,
+    /// by the key of each of its forms.
+    declared_in: BTreeMap<NodeKey, ScopeIndex>,
     /// The arena every type node lives in.
     arena: CoreArena,
     /// The name the printer writes for each constant, by admission position.
     names: Vec<String>,
+    /// The modules of the source's own text that hold a member, in pre-order:
+    /// a module's place comes before the places of the modules it holds.
+    scopes: Vec<Scope>,
     /// The name the printer writes for each homed type head the source does
     /// not write bare.
     homes: Vec<HomedName>,
@@ -1141,6 +1207,227 @@ fn own(
     let start = usize::from(span.start()).checked_sub(usize::from(base))?;
     let end = usize::from(span.end()).checked_sub(usize::from(base))?;
     ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
+}
+
+/// The modules of the source starting at `base` in the unit's text `text`
+/// that hold a member, in pre-order, each with the members a seal hides that
+/// its body writes by their own names, and where a probe is written into it;
+/// beside them, each of `module`'s structures' scope, by the structure.
+///
+/// Every name other than a hidden member's reads inside a module as it reads
+/// at the top level. So a module that holds no hidden name reads its types at
+/// the top level. A module also reads them there when one of its names
+/// clashes, and the body reads the name first as another declaration.
+///
+/// # Specification
+/// - requires: `names` are [`constant_names`] of `module` for the source that
+///   starts at `base`, and `text` is the unit's text that `module` lowers.
+/// - ensures: no scope when no module of the unit is sealed. Otherwise one
+///   scope per functor body, parameter and instance of the source's own text,
+///   and one per module of that text that holds a declaration or a module, in
+///   pre-order. A scope's names are the members that the seal of its module or
+///   of a module around it hides, each by its own name, when `names` writes the
+///   member by its whole path. A scope takes a probe only when it is a
+///   module's, holds a name and none of its names clashes. Its probe is the end
+///   of the line its last member ends on, at the indentation of the line its
+///   first member starts on. A structure has a scope only when that scope takes
+///   a probe.
+/// - provides: the names [`TypeTable::spell_in`] writes inside a module, and
+///   where [`TypeTable::read_back`] reads a type printed inside a module.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the scopes are a reading of the lowered module's
+///   structures, which a predicate would read again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a member's type that names a helper the module's seal
+///   hides prints as the body writes it and reads back inside the module. A
+///   name that another declaration shadows inside a module reads back at the
+///   top level.
+/// - witness: `typed::tests::a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391`
+/// - witness: `typed::tests::a_name_a_nested_module_shadows_reads_back_at_the_top_level_5391`
+/// - witness: `typed::tests::a_hidden_member_that_shadows_a_top_level_name_reads_back_at_the_top_level_5391`
+fn module_scopes(
+    module: &LoweredModule<'_>,
+    text: SourceText<'_>,
+    base: ByteOffset,
+    names: &[String],
+) -> (Vec<Scope>, Vec<Option<ScopeIndex>>)
+{
+    let structures = module.structures();
+    let mut placed: Vec<Option<ScopeIndex>> = alloc::vec![None; structures.len()];
+    let mut scopes: Vec<Scope> = Vec::new();
+    // A unit with no seal hides no member, so each type reads at the top
+    // level.
+    let hidden = hidden_members(module);
+    if hidden.is_empty() {
+        return (scopes, placed);
+    }
+    let written = <&str>::from(text);
+    // Each scope's module path, at the scope's place, beside its structure.
+    // A scope whose types read at the top level has no path.
+    let mut paths: Vec<(Option<&[SurfaceName<'_>]>, usize)> = Vec::new();
+    for (index, structure) in structures.iter().enumerate() {
+        let Some(span) = own(structure.span(), base)
+        else {
+            continue;
+        };
+        // A functor's body, its parameter and an application's instance
+        // declare nothing a probe can stand beside: a type printed inside one
+        // reads at the top level.
+        if structure.stratum() != Stratum::Module {
+            paths.push((None, index));
+            scopes.push(Scope {
+                span,
+                names: Vec::new(),
+                probe: None,
+                indent: 0_usize,
+            });
+            continue;
+        }
+        let container = Container::Module(StructureIndex::from(index));
+        let path = structure.path();
+        let inside = structure.span();
+        // The members: the declarations the module's body writes, and the
+        // modules one level inside it. A witness or a held slot can stand at
+        // a part of a member, or in the theory the module matches.
+        let members = module
+            .declarations()
+            .iter()
+            .filter(|declaration| {
+                declaration.container() == container && declaration.role() == Role::Declared
+            })
+            .map(gandr_surface_lowering::LoweredDeclaration::span)
+            .chain(
+                structures
+                    .iter()
+                    .filter(|nested| {
+                        nested.path().len() == path.len().saturating_add(1)
+                            && nested.path().starts_with(path)
+                            && nested.span().start() >= inside.start()
+                            && nested.span().end() <= inside.end()
+                    })
+                    .map(gandr_surface_lowering::LoweredStructure::span),
+            );
+        let mut first: Option<ByteOffset> = None;
+        let mut last: Option<ByteOffset> = None;
+        for member in members {
+            first = Some(first.map_or_else(|| member.start(), |first| first.min(member.start())));
+            last = Some(last.map_or_else(|| member.end(), |last| last.max(member.end())));
+        }
+        let (Some(first), Some(last)) = (first, last)
+        else {
+            continue;
+        };
+        let probe = written
+            .get(usize::from(last) ..)
+            .and_then(|rest| rest.find('\n'))
+            .map_or(written.len(), |newline| {
+                usize::from(last).saturating_add(newline)
+            });
+        // The members' column is the indentation of the line the first member
+        // starts on.
+        let line = written
+            .get(.. usize::from(first))
+            .and_then(|before| before.rfind('\n'))
+            .map_or(0_usize, |newline| newline.saturating_add(1));
+        let indent = written.get(line ..).map_or(0_usize, |rest| {
+            rest.len()
+                .saturating_sub(rest.trim_start_matches(' ').len())
+        });
+        paths.push((Some(path), index));
+        scopes.push(Scope {
+            span,
+            names: Vec::new(),
+            probe: Some(ByteOffset::from(probe)),
+            indent,
+        });
+    }
+    // Each hidden member of the source's own text, by its own name, in each
+    // scope that the module holding it covers, beside the depth of that
+    // module.
+    let mut whole = String::new();
+    let mut held: Vec<(usize, ConstantIndex, &str, usize)> = Vec::new();
+    for declaration in module.declarations() {
+        if !hidden.contains_key(&declaration.constant())
+            || own(declaration.span(), base).is_none()
+            || !matches!(
+                declaration.role(),
+                Role::Declared | Role::Admitted | Role::Discharged
+            )
+        {
+            continue;
+        }
+        let path = module.path_of(declaration);
+        let Some((&own_name, holder)) = path.split_last()
+        else {
+            continue;
+        };
+        whole.clear();
+        for (index, segment) in path.iter().enumerate() {
+            if index > 0 {
+                whole.push('.');
+            }
+            whole.push_str(<&str>::from(SourceFragment::from(*segment)));
+        }
+        // A name another reading wrote, an import's or a word's, stays.
+        if holder.is_empty() || names.get(usize::from(declaration.constant())) != Some(&whole) {
+            continue;
+        }
+        let bare = <&str>::from(SourceFragment::from(own_name));
+        for (at, &(around, _)) in paths.iter().enumerate() {
+            if around.is_some_and(|around| around.starts_with(holder)) {
+                held.push((at, declaration.constant(), bare, holder.len()));
+            }
+        }
+    }
+    for (at, scope) in scopes.iter_mut().enumerate() {
+        let Some(&(Some(around), index)) = paths.get(at)
+        else {
+            continue;
+        };
+        let mut mine = held.iter().filter(|&&(of, ..)| of == at).peekable();
+        // A name clashes when the body reads it first as another declaration:
+        // a member of a module nearer the scope than the member's own, or a
+        // constant that the top level writes by a path that starts with it.
+        let clashes = mine.clone().any(|&(_, constant, bare, depth)| {
+            let nearer =
+                |holder: &[SurfaceName<'_>]| holder.len() > depth && around.starts_with(holder);
+            module.declarations().iter().any(|other| {
+                other.constant() != constant
+                    && other.name().as_ref() == bare
+                    && match other.container() {
+                        Container::Module(holder) => structures
+                            .get(usize::from(holder))
+                            .is_some_and(|holder| nearer(holder.path())),
+                        Container::TopLevel(_) => false,
+                    }
+            }) || structures.iter().any(|nested| {
+                nested.path().split_last().is_some_and(|(&last, holder)| {
+                    <&str>::from(SourceFragment::from(last)) == bare && nearer(holder)
+                })
+            }) || names.iter().enumerate().any(|(other, name)| {
+                other != usize::from(constant)
+                    && name.split('.').next() == Some(bare)
+                    && !held
+                        .iter()
+                        .any(|&(of, overridden, ..)| of == at && usize::from(overridden) == other)
+            })
+        });
+        if mine.peek().is_none() || clashes {
+            scope.probe = None;
+            continue;
+        }
+        scope.names = mine
+            .map(|&(_, constant, bare, _)| (constant, String::from(bare)))
+            .collect();
+        scope.names.sort_by_key(|&(constant, _)| constant);
+        scope.names.dedup_by_key(|&mut (constant, _)| constant);
+        if let Some(slot) = placed.get_mut(index) {
+            *slot = Some(ScopeIndex(at));
+        }
+    }
+    (scopes, placed)
 }
 
 /// Each type `module` writes from `base` on, with its origin and the sort of
@@ -1831,6 +2118,7 @@ impl TypeTable
         endpoints.sort_by_key(|&(term, ..)| term);
         endpoints.dedup_by_key(|&mut (term, ..)| term);
         let names = constant_names(&module, module.unit().last());
+        let (scopes, placed) = module_scopes(&module, source, base, &names);
         let homes = homed_names(&module, module.unit().last());
         let reader = module.unit().last();
         let mut hosts: Vec<&'static str> = HOMES.iter().map(|&(_, home)| home).collect();
@@ -2672,6 +2960,7 @@ impl TypeTable
             !(shadowing || (unmatched && entry.span.start() >= base))
         });
         let mut declared = BTreeMap::new();
+        let mut declared_in = BTreeMap::new();
         let mut runs = Vec::new();
         for declaration in module.declarations() {
             // A `data` family's operation, the words of its loops and a
@@ -2780,6 +3069,11 @@ impl TypeTable
                     }
                     else {
                         let _replaced = declared.insert(key.form(), held.clone());
+                    }
+                    if let Container::Module(structure) = declaration.container()
+                        && let Some(&Some(scope)) = placed.get(usize::from(structure))
+                    {
+                        let _replaced = declared_in.insert(key.form(), scope);
                     }
                 }
             }
@@ -3035,8 +3329,10 @@ impl TypeTable
         Self {
             entries,
             declared,
+            declared_in,
             arena,
             names,
+            scopes,
             homes,
             hosts,
             naming,
@@ -3844,7 +4140,8 @@ impl TypeTable
         style: Style,
     ) -> Maybe<TypedSpan, typing::Absent>
     {
-        let binders = self.standing(entry.standing);
+        let mut binders = self.standing(entry.standing);
+        binders.scope = self.scope_of(entry.span);
         let Maybe::Present(ty) = self.spell(entry.ty, &binders, page, style)
         else {
             return Maybe::Absent(typing::Absent::Unspelled);
@@ -3896,9 +4193,23 @@ impl TypeTable
         style: Style,
     ) -> Option<Applied>
     {
+        // A constant's name inside the module the entry stands in: its own
+        // name where the module's seal hides it, its top-level name otherwise.
         let named = |constant: ConstantIndex| {
-            self.names
-                .get(usize::from(constant))
+            context
+                .scope
+                .and_then(|scope| self.scopes.get(scope.0))
+                .and_then(|scope| {
+                    let at = scope
+                        .names
+                        .binary_search_by_key(&constant, |&(held, _)| held)
+                        .ok()?;
+                    scope
+                        .names
+                        .get(at)
+                        .map(|&(_, ref written)| written.as_str())
+                })
+                .or_else(|| self.names.get(usize::from(constant)).map(String::as_str))
                 .filter(|name| !name.is_empty())
         };
         match *by {
@@ -3969,7 +4280,11 @@ impl TypeTable
     {
         match self.declared.get(&key) {
             Some(&(Held::Typed(node) | Held::Rejected { ty: node, .. })) => {
-                match self.spell(node, &Context::default(), page, style) {
+                let context = Context {
+                    scope: self.declared_in.get(&key).copied(),
+                    ..Context::default()
+                };
+                match self.spell(node, &context, page, style) {
                     Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
                     Maybe::Absent(reason) => Maybe::Absent(reason),
                 }
@@ -4082,6 +4397,45 @@ impl TypeTable
             .map(move |&key| (key, self.declared(key, page, style)))
     }
 
+    /// The innermost module of the source's own text that holds `span`; none
+    /// at the top level, and none inside a functor's body, its parameter or
+    /// an application's instance.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last scope in pre-order whose module form covers `span`'s
+    ///   start, which is the innermost one, when it takes a probe; none
+    ///   otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member's type in a sealed module reads back in its
+    ///   module, and a type in a module whose names clash reads back at the top
+    ///   level. Taking an outer scope or a scope with no probe reads the type
+    ///   where its names do not resolve, or as another type.
+    /// - witness: `typed::tests::a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391`
+    /// - witness: `typed::tests::a_hidden_member_that_shadows_a_top_level_name_reads_back_at_the_top_level_5391`
+    #[spec(ensures: |ret| ret.is_none_or(|scope| self.scopes.get(scope.0).is_some_and(|held|
+        held.probe.is_some() && held.span.start() <= span.start() && span.start() < held.span.end())))]
+    fn scope_of(
+        &self,
+        span: ByteSpan,
+    ) -> Option<ScopeIndex>
+    {
+        self.scopes
+            .iter()
+            .rposition(|scope| {
+                scope.span.start() <= span.start() && span.start() < scope.span.end()
+            })
+            .filter(|&at| {
+                self.scopes
+                    .get(at)
+                    .is_some_and(|scope| scope.probe.is_some())
+            })
+            .map(ScopeIndex)
+    }
+
     /// `node` spelled through the shared printer in `style` on a page of `page`
     /// columns, writing each constant by its name, each variable of `context`
     /// by the name written for its binder, and each capability scope's
@@ -4120,10 +4474,24 @@ impl TypeTable
         style: Style,
     ) -> Maybe<Presentation, typing::Absent>
     {
+        // The names the module the context stands in writes otherwise, taken
+        // in step with the constants they name.
+        let mut scoped = context
+            .scope
+            .and_then(|scope| self.scopes.get(scope.0))
+            .map_or(&[][..], |scope| scope.names.as_slice())
+            .iter()
+            .peekable();
         let names: Vec<Name<'_>> = self
             .names
             .iter()
-            .map(|name| Name::from(name.as_str()))
+            .enumerate()
+            .map(
+                |(at, name)| match scoped.next_if(|&&(constant, _)| usize::from(constant) == at) {
+                    Some(&(_, ref written)) => Name::from(written.as_str()),
+                    None => Name::from(name.as_str()),
+                },
+            )
             .collect();
         let homes: Vec<(Name<'_>, Name<'_>)> = self
             .homes
@@ -4348,6 +4716,7 @@ impl TypeTable
                     types: Vec::new(),
                     slots: Vec::new(),
                     recursive: None,
+                    scope: None,
                 };
             },
             Standing::Judged(within) => (within, None),
@@ -4537,6 +4906,7 @@ impl TypeTable
         while let Some(name) = context.binders.get(at) {
             let before = Context {
                 binders: names.clone(),
+                scope: context.scope,
                 ..Context::default()
             };
             let spelled = |ty: ValueTypeId| {
@@ -4603,6 +4973,7 @@ impl TypeTable
                 types: context.types.clone(),
                 slots: context.slots.clone(),
                 recursive: None,
+                scope: context.scope,
             },
         })
     }
@@ -4696,7 +5067,9 @@ impl TypeTable
         // the binders it stands under with the parameters declaring them.
         let mut printed: Vec<Printed> = Vec::new();
         for entry in &self.entries {
-            let binders = self.standing(entry.standing);
+            let scope = self.scope_of(entry.span);
+            let mut binders = self.standing(entry.standing);
+            binders.scope = scope;
             let own = self.spell(entry.ty, &binders, page, style);
             let mut sides = Vec::from([(ReadSite::Own(entry.span), entry.ty, own.clone())]);
             if entry.last != entry.ty {
@@ -4707,10 +5080,14 @@ impl TypeTable
                     sides.push((ReadSite::CheckedAgainst(entry.span), entry.last, last));
                 }
             }
+            let unbound = Context {
+                scope,
+                ..Context::default()
+            };
             for (site, node, spelled) in sides {
                 printed.push(match spelled {
                     Maybe::Present(spelled) => {
-                        let closed = self.spell(node, &Context::default(), page, style);
+                        let closed = self.spell(node, &unbound, page, style);
                         let (settled, under) = if !spelled.unspelled().is_empty() {
                             (Some(RoundTrip::Unknown), None)
                         }
@@ -4734,6 +5111,7 @@ impl TypeTable
                             spelled: spelled.to_string(),
                             settled,
                             under,
+                            scope,
                         }
                     },
                     Maybe::Absent(_) => Printed {
@@ -4742,6 +5120,7 @@ impl TypeTable
                         spelled: String::new(),
                         settled: Some(RoundTrip::Unspelled),
                         under: None,
+                        scope,
                     },
                 });
             }
@@ -4749,7 +5128,12 @@ impl TypeTable
         for (&key, held) in &self.declared {
             if let Held::Typed(node) | Held::Rejected { ty: node, .. } = *held {
                 let site = ReadSite::Declared(key);
-                printed.push(match self.spell(node, &Context::default(), page, style) {
+                let scope = self.declared_in.get(&key).copied();
+                let unbound = Context {
+                    scope,
+                    ..Context::default()
+                };
+                printed.push(match self.spell(node, &unbound, page, style) {
                     Maybe::Present(spelled) => Printed {
                         site,
                         node,
@@ -4764,6 +5148,7 @@ impl TypeTable
                         },
                         spelled: spelled.to_string(),
                         under: None,
+                        scope,
                     },
                     Maybe::Absent(_) => Printed {
                         site,
@@ -4771,6 +5156,7 @@ impl TypeTable
                         spelled: String::new(),
                         settled: Some(RoundTrip::Unspelled),
                         under: None,
+                        scope,
                     },
                 });
             }
@@ -4795,17 +5181,26 @@ impl TypeTable
                 },
             )
         };
-        let mut appended: BTreeMap<String, String> = BTreeMap::new();
+        // Each probe's name, by the module it is read in and its text.
+        let mut appended: BTreeMap<(Option<ScopeIndex>, String), String> = BTreeMap::new();
         // Each function's name with how many binders its parameters declare
         // before the read type's.
         let mut parameterised: BTreeMap<String, usize> = BTreeMap::new();
         let mut augmented = String::from(<&str>::from(self.naming.text()));
+        // The names of the probes read at the top level.
+        let mut top: Vec<String> = Vec::new();
+        // A type printed inside a module reads back inside it, after its last
+        // member, at its members' column: its body writes the names the type
+        // writes, and its seal hides no member from it (#5391). Each module's
+        // probes, with their names.
+        let mut scoped: BTreeMap<ScopeIndex, (String, Vec<String>)> = BTreeMap::new();
         let mut whole = String::new();
         for &Printed {
             node,
             ref spelled,
             ref settled,
             ref under,
+            scope,
             ..
         } in &printed
         {
@@ -4813,24 +5208,47 @@ impl TypeTable
                 continue;
             }
             let written = probe(node, spelled, under.as_ref());
-            if appended.contains_key(&written) {
+            let placed = scope.and_then(|scope| Some((scope, self.scopes.get(scope.0)?)));
+            let key = (placed.map(|(scope, _)| scope), written);
+            if appended.contains_key(&key) {
                 continue;
             }
             whole.clear();
-            for part in ["def read_back", written.as_str()] {
+            for part in ["def read_back", key.1.as_str()] {
                 whole.push_str(part);
             }
             if parse(grammar, SourceText::from(whole.as_str()))
                 .is_ok_and(|parsed| parsed.obligations().is_empty())
             {
                 let name = format!("read_back_{}", appended.len());
-                for part in ["\ndef ", name.as_str(), written.as_str()] {
-                    augmented.push_str(part);
+                if let Some((scope, held)) = placed {
+                    let &mut (ref mut text, ref mut names) = scoped.entry(scope).or_default();
+                    text.push('\n');
+                    text.extend(core::iter::repeat_n(' ', held.indent));
+                    for part in ["def ", name.as_str()] {
+                        text.push_str(part);
+                    }
+                    // A probe spread over lines keeps its lines' columns past
+                    // the members'.
+                    for (index, line) in key.1.trim_end_matches('\n').split('\n').enumerate() {
+                        if index > 0 {
+                            text.push('\n');
+                            text.extend(core::iter::repeat_n(' ', held.indent));
+                        }
+                        text.push_str(line);
+                    }
+                    names.push(name.clone());
+                }
+                else {
+                    for part in ["\ndef ", name.as_str(), key.1.as_str()] {
+                        augmented.push_str(part);
+                    }
+                    top.push(name.clone());
                 }
                 if let Some(under) = under.as_ref() {
                     let _fresh = parameterised.insert(name.clone(), under.context.binders.len());
                 }
-                let _fresh = appended.insert(written, name);
+                let _fresh = appended.insert(key, name);
             }
         }
         // A homed head the source does not import prints after its home's
@@ -4840,6 +5258,14 @@ impl TypeTable
         // A host interface is native, so where the unit lays no source of its
         // home, a stand-in of one newline before the source takes the import.
         let mut unit = self.unit.clone();
+        let start = unit
+            .sources()
+            .last()
+            .map_or(0_usize, |source| usize::from(source.start()));
+        // The imports each reading appends, and the stand-ins' newlines it
+        // writes before the source.
+        let mut imports = String::new();
+        let mut stood = 0_usize;
         let mut homes: BTreeSet<&str> = BTreeSet::new();
         let hosted = self
             .hosts
@@ -4870,18 +5296,69 @@ impl TypeTable
             match laid {
                 Some(at) => unit = unit.importing(ImportTarget::Source(SourceIndex::from(at))),
                 None if native => {
-                    let start = unit
-                        .sources()
-                        .last()
-                        .map_or(0_usize, |source| usize::from(source.start()));
-                    augmented.insert(start, '\n');
+                    stood = stood.saturating_add(1);
                     unit = unit.standing_in(SurfaceName::from(home));
                 },
                 None => continue,
             }
             for part in ["\nimport ", home, " ;"] {
-                augmented.push_str(part);
+                imports.push_str(part);
             }
+        }
+        // Each reading's text with the names of the probes it reads: the
+        // top-level probes after the source, then each module's probes in
+        // the module's body, one lowering each. A probe in a module comes
+        // before the declarations after the module, so it moves their
+        // admission positions: no other probe is read beside it.
+        let stand = "\n".repeat(stood);
+        let compose = |mut text: String| {
+            if text.is_char_boundary(start) {
+                text.insert_str(start, &stand);
+            }
+            text.push_str(&imports);
+            text
+        };
+        // A module's reading holds the source's own text again. Only the
+        // bytes of its probes give it names to keep, so it keeps none of the
+        // source's own origins twice.
+        let mut readings: Vec<ProbeReading> = Vec::new();
+        if !top.is_empty() {
+            readings.push(ProbeReading {
+                text: compose(augmented),
+                names: top,
+                window: None,
+            });
+        }
+        let own = <&str>::from(self.naming.text());
+        for (scope, (probes, names)) in scoped {
+            let Some((before, after)) = self
+                .scopes
+                .get(scope.0)
+                .and_then(|held| held.probe)
+                .and_then(|at| own.split_at_checked(usize::from(at)))
+            else {
+                continue;
+            };
+            let mut text = String::with_capacity(
+                own.len()
+                    .saturating_add(probes.len())
+                    .saturating_add(stand.len())
+                    .saturating_add(imports.len()),
+            );
+            for part in [before, probes.as_str(), after] {
+                text.push_str(part);
+            }
+            let from = if before.len() >= start {
+                before.len().saturating_add(stood)
+            }
+            else {
+                before.len()
+            };
+            readings.push(ProbeReading {
+                text: compose(text),
+                names,
+                window: Some((from, from.saturating_add(probes.len()))),
+            });
         }
         // The appended types, imported into a copy of the table's arena beside
         // the nodes they are compared with.
@@ -4898,120 +5375,157 @@ impl TypeTable
         // arrows, and the relations it records for the types written as one,
         // at their images, so a reprint binds and spells what was written.
         let mut read_back = Read::default();
-        match lower_unit_source(
-            grammar,
-            SourceText::from(augmented.as_str()),
-            &unit,
-            &mut LoweringCount::default(),
-        )
-        .map(Lowering::into_lowered)
+        for &ProbeReading {
+            text: ref augmented,
+            ref names,
+            window,
+        } in &readings
         {
-            Ok(Lowered::Module {
-                module,
-                arena: read,
-            }) => {
-                let mut importer = TypeImporter::new(&read, &mut arena);
-                for declaration in module.declarations() {
-                    let name = declaration.name();
-                    if !name.as_ref().starts_with("read_back_") {
-                        continue;
+            // Whether a reading keeps what the lowering records at `span`:
+            // the top reading keeps all of it, a module's reading only its
+            // probes'.
+            let inside = |span: ByteSpan| {
+                window.is_none_or(|(from, to)| {
+                    from <= usize::from(span.start()) && usize::from(span.end()) <= to
+                })
+            };
+            match lower_unit_source(
+                grammar,
+                SourceText::from(augmented.as_str()),
+                &unit,
+                &mut LoweringCount::default(),
+            )
+            .map(Lowering::into_lowered)
+            {
+                Ok(Lowered::Module {
+                    module,
+                    arena: read,
+                }) => {
+                    let mut importer = TypeImporter::new(&read, &mut arena);
+                    for declaration in module.declarations() {
+                        let name = declaration.name();
+                        if !name.as_ref().starts_with("read_back_") {
+                            continue;
+                        }
+                        let outcome = match declaration.outcome() {
+                            DeclarationOutcome::Uncompleted { declared_type }
+                            | DeclarationOutcome::Completed { declared_type, .. } => importer
+                                .value_type(declared_type)
+                                .map_err(|fault| format!("{fault:?}")),
+                            DeclarationOutcome::Refused(refusal) => Err(refusal.to_string()),
+                            other @ (DeclarationOutcome::Bodied { .. }
+                            | DeclarationOutcome::Data(_)
+                            | DeclarationOutcome::Codata(_)
+                            | DeclarationOutcome::Abstract(_)
+                            | DeclarationOutcome::World) => Err(format!("{other:?}")),
+                        };
+                        let _first = lowered.insert(String::from(name.as_ref()), outcome);
                     }
-                    let outcome = match declaration.outcome() {
-                        DeclarationOutcome::Uncompleted { declared_type }
-                        | DeclarationOutcome::Completed { declared_type, .. } => importer
-                            .value_type(declared_type)
-                            .map_err(|fault| format!("{fault:?}")),
-                        DeclarationOutcome::Refused(refusal) => Err(refusal.to_string()),
-                        other @ (DeclarationOutcome::Bodied { .. }
-                        | DeclarationOutcome::Data(_)
-                        | DeclarationOutcome::Codata(_)
-                        | DeclarationOutcome::Abstract(_)
-                        | DeclarationOutcome::World) => Err(format!("{other:?}")),
+                    let typed = |id: ValueTypeId| match module.origins().value_type(id) {
+                        Maybe::Present(origin) => inside(origin.span()),
+                        Maybe::Absent(_) => true,
                     };
-                    let _first = lowered.insert(String::from(name.as_ref()), outcome);
-                }
-                for &(arrow, origin) in module.origins().arrows() {
-                    let span = origin.span();
-                    if let (Some(image), Some(name)) = (
-                        importer.comp_type_image(arrow),
-                        augmented.get(usize::from(span.start()) .. usize::from(span.end())),
-                    ) {
-                        read_back.arrows.push((image, String::from(name)));
-                    }
-                }
-                for (named, kept) in [
-                    (module.origins().pairs(), &mut read_back.pairs),
-                    (module.origins().seconds(), &mut read_back.seconds),
-                ] {
-                    for &(pair, origin) in named {
+                    for &(arrow, origin) in module.origins().arrows() {
                         let span = origin.span();
+                        if !inside(span) {
+                            continue;
+                        }
                         if let (Some(image), Some(name)) = (
-                            importer.value_type_image(pair),
+                            importer.comp_type_image(arrow),
                             augmented.get(usize::from(span.start()) .. usize::from(span.end())),
                         ) {
-                            kept.push((image, String::from(name)));
+                            read_back.arrows.push((image, String::from(name)));
                         }
                     }
-                }
-                let spelled = |labels: &[Origin]| -> Option<Vec<String>> {
-                    labels
-                        .iter()
-                        .map(|label| {
-                            let span = label.span();
-                            augmented
-                                .get(usize::from(span.start()) .. usize::from(span.end()))
-                                .map(String::from)
-                        })
-                        .collect()
-                };
-                for &(sum, ref labels) in module.origins().sum_labels() {
-                    if let (Some(image), Some(names)) =
-                        (importer.value_type_image(sum), spelled(labels))
-                    {
-                        read_back.sum_labels.push((image, names));
+                    for (named, kept) in [
+                        (module.origins().pairs(), &mut read_back.pairs),
+                        (module.origins().seconds(), &mut read_back.seconds),
+                    ] {
+                        for &(pair, origin) in named {
+                            let span = origin.span();
+                            if !inside(span) {
+                                continue;
+                            }
+                            if let (Some(image), Some(name)) = (
+                                importer.value_type_image(pair),
+                                augmented.get(usize::from(span.start()) .. usize::from(span.end())),
+                            ) {
+                                kept.push((image, String::from(name)));
+                            }
+                        }
                     }
-                }
-                for &(with, ref labels) in module.origins().with_labels() {
-                    if let (Some(image), Some(names)) =
-                        (importer.comp_type_image(with), spelled(labels))
-                    {
-                        read_back.with_labels.push((image, names));
+                    let spelled = |labels: &[Origin]| -> Option<Vec<String>> {
+                        labels
+                            .iter()
+                            .map(|label| {
+                                let span = label.span();
+                                augmented
+                                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                                    .map(String::from)
+                            })
+                            .collect()
+                    };
+                    for &(sum, ref labels) in module.origins().sum_labels() {
+                        if !labels.iter().all(|label| inside(label.span())) {
+                            continue;
+                        }
+                        if let (Some(image), Some(names)) =
+                            (importer.value_type_image(sum), spelled(labels))
+                        {
+                            read_back.sum_labels.push((image, names));
+                        }
                     }
-                }
-                for &(related, relation) in module.origins().relations() {
-                    if let Some(image) = importer.value_type_image(related) {
-                        read_back.relations.push((image, relation));
+                    for &(with, ref labels) in module.origins().with_labels() {
+                        if !labels.iter().all(|label| inside(label.span())) {
+                            continue;
+                        }
+                        if let (Some(image), Some(names)) =
+                            (importer.comp_type_image(with), spelled(labels))
+                        {
+                            read_back.with_labels.push((image, names));
+                        }
                     }
-                }
-                for &(modelled, ref model) in module.origins().models() {
-                    let image = importer.value_type_image(modelled);
-                    let sorts: Option<Vec<_>> = model
-                        .sorts
-                        .iter()
-                        .map(|&(ref sort, carrier)| {
-                            importer
-                                .value_type_image(carrier)
-                                .map(|carrier| (sort.clone(), carrier))
-                        })
-                        .collect();
-                    if let (Some(image), Some(sorts)) = (image, sorts) {
-                        read_back.models.push((image, WrittenModel {
-                            theory: model.theory.clone(),
-                            sorts,
-                        }));
+                    for &(related, relation) in module.origins().relations() {
+                        if !typed(related) {
+                            continue;
+                        }
+                        if let Some(image) = importer.value_type_image(related) {
+                            read_back.relations.push((image, relation));
+                        }
                     }
-                }
-            },
-            Ok(Lowered::Refused(refusal)) => {
-                for name in appended.values() {
-                    let _first = lowered.insert(name.clone(), Err(refusal.to_string()));
-                }
-            },
-            Err(fault) => {
-                for name in appended.values() {
-                    let _first = lowered.insert(name.clone(), Err(fault.to_string()));
-                }
-            },
+                    for &(modelled, ref model) in module.origins().models() {
+                        if !typed(modelled) {
+                            continue;
+                        }
+                        let image = importer.value_type_image(modelled);
+                        let sorts: Option<Vec<_>> = model
+                            .sorts
+                            .iter()
+                            .map(|&(ref sort, carrier)| {
+                                importer
+                                    .value_type_image(carrier)
+                                    .map(|carrier| (sort.clone(), carrier))
+                            })
+                            .collect();
+                        if let (Some(image), Some(sorts)) = (image, sorts) {
+                            read_back.models.push((image, WrittenModel {
+                                theory: model.theory.clone(),
+                                sorts,
+                            }));
+                        }
+                    }
+                },
+                Ok(Lowered::Refused(refusal)) => {
+                    for name in names {
+                        let _first = lowered.insert(name.clone(), Err(refusal.to_string()));
+                    }
+                },
+                Err(fault) => {
+                    for name in names {
+                        let _first = lowered.insert(name.clone(), Err(fault.to_string()));
+                    }
+                },
+            }
         }
         let last_parameter = |arena: &mut CoreArena,
                               declared: ValueTypeId,
@@ -5096,13 +5610,14 @@ impl TypeTable
                         spelled,
                         settled,
                         under,
+                        scope,
                     },
                     held,
                 )| {
                     let read = match settled {
                         Some(_) => None,
                         None => appended
-                            .get(&probe(node, &spelled, under.as_ref()))
+                            .get(&(scope, probe(node, &spelled, under.as_ref())))
                             .and_then(|name| lowered.get(name)),
                     };
                     // A type naming binders that the declaration of its binders
@@ -5132,7 +5647,13 @@ impl TypeTable
                                     TypeNode::Value(read)
                                 },
                             };
-                            let context = under.map(|under| under.context).unwrap_or_default();
+                            let context = under.map_or_else(
+                                || Context {
+                                    scope,
+                                    ..Context::default()
+                                },
+                                |under| under.context,
+                            );
                             match self.spell_in(&arena, again, &context, &read_back, page, style) {
                                 Maybe::Present(again) => Maybe::Present(again.to_string()),
                                 Maybe::Absent(_) => Maybe::Absent(reprinted::Absent::Unspelled),
@@ -8063,6 +8584,115 @@ mod tests
                 "`{spelled}` reads back to its certificate: {trips:?}"
             );
         }
+    }
+
+    /// A member's type that names a helper the module's seal hides prints as
+    /// the module's body writes it, `first(g, a, z)`, and reads back inside
+    /// the module. Two sealed modules each hold a `first`: each type reads its
+    /// own module's helper, and the second module's types read back past the
+    /// first module's probes (#5391).
+    #[test]
+    fn a_member_type_naming_a_sealed_helper_reads_back_in_its_module_5391()
+    {
+        let module = |name: &str| {
+            format!(
+                "module {name} : Model(Fam) where\n  type Con = Type;\n  def base() -> Type {{ return \
+                 Unit }}\n  def first(g : Type, a : g -> Type, z : *{{x : g, y : a(x)}}) -> g {{ z.0 \
+                 }}\n  def second(g : Type, a : g -> Type) -> (z : *{{x : g, y : a(x)}}) -> a(first(g, \
+                 a, z)) =\n    return fun (z) {{ z.1 }}\n"
+            )
+        };
+        let written = format!(
+            "theory Fam where {{ sort Con : Type; oper base : Con; }}\n{}{}def after(n : Integer) -> \
+             Integer {{ return n }}\n",
+            module("Left"),
+            module("Right"),
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let read = table(SourceText::from(written.as_str())).read_back(
+            &grammar,
+            PageWidth::from(200_u32),
+            Form::Sugared.into(),
+        );
+        let helped: Vec<(&str, &RoundTrip)> = read
+            .iter()
+            .filter(|read| read.spelled.contains("first("))
+            .map(|read| (read.spelled.as_str(), &read.trip))
+            .collect();
+        assert!(
+            helped.len() >= 4
+                && helped.iter().all(|&(spelled, trip)| {
+                    *trip == RoundTrip::Equal && spelled.contains("a(first(g, a, z))")
+                }),
+            "each module's member type names its helper bare and reads back equal: {helped:?}"
+        );
+    }
+
+    /// A module that no seal hides a member of reads its types at the top
+    /// level, where each path names the declaration that the body names. A
+    /// `fam` stands at the top level, in `Outer` and in `Outer.Inner`, and
+    /// each type that names one of them reads back to its certificate (#5391).
+    #[test]
+    fn a_name_a_nested_module_shadows_reads_back_at_the_top_level_5391()
+    {
+        let source = SourceText::from(
+            "def fam(_n : Integer) -> Type { return Integer }\ndef top(x : fam(1)) -> fam(1) { \
+             return x }\nmodule Outer where\n  def fam(_n : Integer) -> Type { return Bool }\n  def \
+             g(x : fam(1)) -> fam(1) { return x }\n  def u = top;\n  module Inner where\n    def \
+             fam(_n : Integer) -> Type { return Unit }\n    def h(x : Outer.fam(1)) -> \
+             Outer.fam(1) { return x }\n    def k(x : fam(1)) -> fam(1) { return x }\n    def v \
+             = g;\ndef after(n : Integer) -> Integer { return n }\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let read =
+            table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
+        let named: Vec<(&str, &RoundTrip)> = read
+            .iter()
+            .filter(|read| read.spelled.contains("fam(1)"))
+            .map(|read| (read.spelled.as_str(), &read.trip))
+            .collect();
+        assert!(
+            named.len() >= 8 && named.iter().all(|&(_, trip)| *trip == RoundTrip::Equal),
+            "each type naming a shadowed `fam` reads back equal: {named:?}"
+        );
+    }
+
+    /// A sealed module's hidden `first` shadows the top-level `first` inside
+    /// the module. A member's type that names the top-level `first` then has
+    /// no spelling inside the module, so the module reads its types at the
+    /// top level, and no type reads back to another (#5391).
+    #[test]
+    fn a_hidden_member_that_shadows_a_top_level_name_reads_back_at_the_top_level_5391()
+    {
+        let source = SourceText::from(
+            "theory Fam where { sort Con : Type; oper base : Con; }\ndef first(_n : Integer) -> \
+             Type { return Integer }\ndef wrap(x : first(1)) -> first(1) { return x }\nmodule \
+             Left : Model(Fam) where\n  type Con = Type;\n  def base() -> Type { return Unit }\n  \
+             def first(_n : Integer) -> Type { return Bool }\n  def held(x : first(1)) -> \
+             first(1) { return x }\n  def u = wrap;\ndef after(n : Integer) -> Integer { return n \
+             }\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let read =
+            table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
+        let wrapped: Vec<&RoundTrip> = read
+            .iter()
+            .filter(|read| read.spelled == "first(1) -> first(1)")
+            .map(|read| &read.trip)
+            .collect();
+        let different: Vec<&str> = read
+            .iter()
+            .filter(|read| read.trip == RoundTrip::Different)
+            .map(|read| read.spelled.as_str())
+            .collect();
+        assert!(
+            !wrapped.is_empty() && wrapped.iter().all(|trip| **trip == RoundTrip::Equal),
+            "the top-level `first` reads back equal: {wrapped:?}"
+        );
+        assert!(
+            different.is_empty(),
+            "no type reads back to another: {different:?}"
+        );
     }
 
     /// #5390: a type that applies a call to a tuple of a number and a

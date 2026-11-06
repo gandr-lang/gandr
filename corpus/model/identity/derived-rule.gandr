@@ -1,28 +1,27 @@
-//! A rule a theory's completion derives, stated as a declaration of its own and
-//! proved for every model: `rule T.r : l <=> r;` holds when the theory's
-//! completed rules rewrite both sides to one normal form, and the rewrites are
-//! the proof. The group's laws derive the inverse of a product: each rule
-//! completion derived on the way is proved first, from the two paths of its
-//! certificate, then the statement from both sides' rewrites to their common
-//! normal form [Knuth-1970-simple_word_problems_universal_algebras], § 7. The
-//! rule is read at a model as the theory's member `Group.invMul`.
-//!
-//! - cites: [Knuth-1970-simple_word_problems_universal_algebras]
-//!
-//! [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"
+/// This source states a rule that completion derives for each group model.
+///
+/// Completion reduces both rule sides to one normal form.
+/// The two reduction certificates prove the derived rule.
+///
+/// The checker reads the rule as `Group.invMul` at a model.
+/// `Path.walk` reduces its filler to `Path.here`.
+///
+/// - cites: [Knuth-1970-simple_word_problems_universal_algebras]
+///
+/// [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"
 
 // The group's unit, associativity and inverse laws.
 import "./group-laws.gandr";
 
-/// The inverse of a product, in every group.
+/// The inverse-product rule holds in every group.
 rule Group.invMul : inv (mul x y) <=> mul (inv y) (inv x);
 
-/// A bit.
+/// A bit has two values.
 data Bit : Type where
   | Zero : Bit
   | One : Bit
 
-/// Exclusive or.
+/// The `xor` function computes exclusive or.
 def xor(a : Bit, b : Bit) -> Bit =
   match a
     | Zero => b
@@ -30,9 +29,7 @@ def xor(a : Bit, b : Bit) -> Bit =
       | Zero => One
       | One => Zero
 
-/// The group of order two: zero is the unit, exclusive or the product, and
-/// each bit its own inverse; the two elements the presentation names are one
-/// and zero.
+/// The `Parity` model uses zero as its unit and exclusive or as its product.
 module Parity : Model(Group) where {
   type G = Bit;
   def e = Zero;
@@ -67,17 +64,15 @@ module Parity : Model(Group) where {
       | One => Path.here Zero
 }
 
-/// The parity group, as a model.
+/// The `parityGroup` value is the group model.
 def parityGroup : Model(Group) = pack Parity at Model(Group);
 
-/// The derived rule read at the parity group, at one and zero: both sides are
-/// one.
+/// The derived rule gives a path from one to one.
 def invMulParity() -> Path(One, One) =
   let law = Group.invMul parityGroup
   law One Zero
 
-/// `Path.walk` over the derived rule, completion's filler, reduces to its
-/// base: the rule computes to `Path.here`, as any decided cell does.
+/// `Path.walk` over the derived filler reduces to `Path.here`.
 def overDerived(
   M : Bit -> Type,
   v : M(One)

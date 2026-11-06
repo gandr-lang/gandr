@@ -1,38 +1,37 @@
-// Representation independence read at a theory's models: `Model(Toggle)` is
-// the bundled record its signature states — one type per sort, one value per
-// operation — so the toggles of `structure-operations.gandr` are models of
-// `Toggle`, and the path relating them as structures relates them as models.
+//! This source states representation independence for theory models.
+//! It gives two models of `Toggle`.
+//!
+//! A path between the structures gives a path between the models.
+//! The pathological twin refuses a model whose start remains in place.
+//!
+//! The checker transports each carrier and operation along negation.
+//! It checks the model path after transport.
+//!
+//! - see: corpus/model/identity/structure-operations.gandr
+//! - see: corpus/model/identity/transport-list.gandr
+//! - see: corpus/model/identity/funext.gandr
 
-// Negation, `not`, and the identity, `same`, on the booleans.
-import "./funext.gandr";
-// The booleans' path to themselves by negation, `negation`.
-import "./transport-list.gandr";
-// The two toggles, `plainToggle` and `flippedToggle`, and their operations
-// carried along negation, `stepped` and `reread`.
-import "./structure-operations.gandr";
-
-/// A toggle: a carrier, where it starts, a step and a reading.
+/// The `Toggle` theory has a carrier, a start, a step and a reading.
 theory Toggle where
   sort T : Type;
   oper start : T;
   oper step : (t : T) --> T;
   oper read : (t : T) --> Bool;
 
-/// The toggle that starts false and reads its state as it is, as a model.
+/// The plain model starts false and reads its state.
 def plainModel : Model(Toggle) = plainToggle;
 
-/// The toggle that starts true and reads its state negated, as a model.
+/// The flipped model starts true and reads the negation of its state.
 def flippedModel : Model(Toggle) = flippedToggle;
 
-/// The two models are one along negation: the carriers by negation, the start
-/// carried to `true`, and each operation carried to the other's.
+/// The model path carries each carrier and operation along negation.
 def oneModel : Path(plainModel, flippedModel) = *{
   negation,
   *{Path.here (+{.1 = *{}}), *{stepped, reread}}
 };
 
-/// The start left unmoved does not relate the models: negation carries `false`
-/// to `true`, so `Path.here(false)` is no path from the carried start to `true`.
+/// The `startUnmoved` path keeps the start at false.
+/// Negation maps that start to true.
 @[ refuses("EndpointMismatch") ]
 def startUnmoved : Path(plainModel, flippedModel) = *{
   negation,

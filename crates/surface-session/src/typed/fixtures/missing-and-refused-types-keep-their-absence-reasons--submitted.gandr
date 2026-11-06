@@ -1,0 +1,2 @@
+def name : String;
+def name = 42;

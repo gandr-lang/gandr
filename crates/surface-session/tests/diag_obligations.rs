@@ -36,12 +36,14 @@ use crate::common::submit;
 /// A malformed declaration — a stray control byte, which no tile spells and
 /// the melder cannot mold — followed by a well-formed one: the
 /// recovery-continuation shape.
-const MALFORMED_THEN_VALID: &str = "def bad = 1 \u{1} 2 ;\ndef good = 2 ;\n";
+const MALFORMED_THEN_VALID: &str =
+    include_str!("diag_obligations/unformatted/malformed-then-valid.gandr");
 
 /// A source whose obligations disagree about order: the most severe, the
 /// unmolded control byte, is the last in the source, behind two lower-severity
 /// repairs.
-const SEVERITY_AND_SOURCE_ORDER_DISAGREE: &str = "def k = thunk { pure 1 ;\ndef b = 1 \u{1} 2 ;\n";
+const SEVERITY_AND_SOURCE_ORDER_DISAGREE: &str =
+    include_str!("diag_obligations/unformatted/severity-and-source-order-disagree.gandr");
 
 /// A recovering source the lowering refuses as a whole: an unterminated shell
 /// block, and no declaration.

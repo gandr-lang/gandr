@@ -1,13 +1,21 @@
-// A path's inverse, the HoTT book's Lemma 2.1.1 (`p⁻¹`), at the integers:
-// `Path.back(q)` reverses a path between two parameters, and a run reverses a
-// reflexivity to itself.
+/// This source states path inversion over integers.
+///
+/// `Path.back` reverses the endpoints of a path.
+/// A run preserves reflexivity under reversal.
+///
+/// The checker evaluates the inverse at its path argument.
+/// The run checks the result at reflexivity.
+///
+/// - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+///
+/// [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
-/// Reflexivity at seven, the path the runs here reverse and compose.
+/// The `p` path is reflexivity at seven.
 pub def p = Path.here 7;
 
-/// A path between two integers, reversed.
+/// The `flip` function reverses an integer path.
 def flip(a : Integer, b : Integer, q : Path(a, b)) -> Path(b, a) =
   Path.back q
 
-/// Reflexivity at seven, reversed by a run.
+/// The run reverses reflexivity at seven.
 def flipped_here() -> Path(7, 7) { flip 7 7 p }

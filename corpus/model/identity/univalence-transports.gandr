@@ -1,13 +1,12 @@
-// What `univalence`'s two owed laws state, read through transport, holds by
-// conversion: `ua` after `idtoequiv` transports forward and back as the path
-// does, at every path between types, and `idtoequiv` after `ua` transports
-// forward as the record's map, at every record. The laws themselves stay
-// owed: two paths between types that transport alike are not one path, and a
-// record's inverses are not determined by its map without function
-// extensionality from a homotopy
-// (`pathological/identity/univalence-owed.gandr`).
-//
-// - owes: #520 — `univalence`'s two laws
+//! This source records the transport consequences of the two univalence laws.
+//!
+//! `ua` after `idtoequiv` transports as its path does.
+//! `idtoequiv` after `ua` transports as its record map does.
+//!
+//! The checker proves these transport consequences by conversion.
+//! The two inverse laws remain owed.
+//!
+//! - owes: #520 — `univalence`'s two laws
 
 // Univalence over the user universe: `fwdAlong`, `bwdAlong`, `idtoequiv`.
 import "./univalence.gandr";

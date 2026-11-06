@@ -4855,6 +4855,7 @@ mod tests
             (Lexeme::Punct, "#!{", &["#!{", "#!{"]),
             (Lexeme::Punct, "<~>", &["<~>", "≃"]),
             (Lexeme::Punct, "~~>", &["~~>", "⇝"]),
+            (Lexeme::Punct, "|->", &["|->", "↦"]),
             (Lexeme::Punct, "::", &["::", "∷"]),
             (Lexeme::Punct, "≃", &["≃"]),
             (Lexeme::Punct, "*{", &["*{"]),

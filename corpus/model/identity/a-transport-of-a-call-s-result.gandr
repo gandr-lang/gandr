@@ -1,20 +1,18 @@
-/// Two transports of one value compare when one value is a call's result.
+/// This source compares two transports when one value comes from a call.
 ///
-/// The lowering binds a call's result before the transport runs. The kernel
-/// runs that call before it reads the path, so a comparison meets the call
-/// first.
+/// The lowering binds the call result before it transports the value.
+/// The kernel evaluates the call before it reads the path.
 ///
-/// Each row transports a value along a variable path, and a call that returns
-/// the value along the same path. The families are a loop and a path to a
-/// fixed point.
+/// Each row uses the same variable path and one value family.
+/// The loop family and the fixed-point family give the two cases.
 ///
-/// - see: #3806 — the checker compared the transports first, and the kernel refused its dialogue
+/// - see: #3806 — call result transport
 
-/// A definition that returns its argument, so a call to it unfolds.
+/// The `handedBack` function returns its argument.
 def handedBack(B : Type, b : B) -> B =
   b
 
-/// Two transports in a family of loops, their values one unfolding apart.
+/// The first proof compares transports in a loop family.
 def transportInALoopFamily(
   B : Type,
   x : B,
@@ -27,8 +25,7 @@ def transportInALoopFamily(
 ) =
   Path.here (Path.walk (fun (z) { type(Path[.A = B](z, z)) }) p v)
 
-/// Two transports in a family of paths to a fixed point, their values one
-/// unfolding apart.
+/// The second proof compares transports in a fixed-point path family.
 def transportInAFreeFamily(
   B : Type,
   x : B,

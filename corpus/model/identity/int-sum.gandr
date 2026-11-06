@@ -1,52 +1,45 @@
-// The integers' sum and its laws, after cubical Agda's `Cubical/Data/Int`:
-// the sum by recursion on its second summand, zero a unit of it, a successor
-// or a predecessor brought out of its left, and the sum commuting.
-// `circle-group.gandr` reads these laws through the winding number.
-//
-// - see: #427 — `plusComm`
+/// This source states integer addition and its path laws.
+///
+/// The sum recurses on its second summand.
+/// Zero is a unit, and successor and predecessor move through the sum.
+///
+/// The commutativity proof relates both operand orders.
+/// The winding-number source uses these integer laws.
+///
+/// - see: #427 — `plusComm`
 
 // The integers, one successor more and one predecessor more.
 import "./circle-base.gandr";
 
-/// The sum of two integers (cubical's `_+_` on `ℤ`), by recursion on the
-/// second. It respects `Int`'s rules: at `S(P(x))` it builds `S(P(plus(a,
-/// x)))`, which the first rule reads as `plus(a, x)`.
+/// The `plus` function adds two integers by recursion on its second argument.
 pub def rec plus(a : Int, b : Int) -> Int =
   match b
     | Z => a
     | S(x) => S (plus[<] a x)
     | P(x) => P (plus[<] a x)
 
-/// A successor on the left of a sum comes out of it (cubical's `sucℤ+`), by
-/// induction on the right summand: the kernel reads the endpoint `S(plus(a,
-/// P(x)))` by `Int`'s rules down to `plus(a, x)`, and the `Path.ap(up, …)`
-/// and `Path.ap(down, …)` arms as transports along the recursive path.
+/// The `plusS` proof moves a left successor through the sum.
 pub def rec plusS(a : Int, b : Int) -> Path(plus (S a) b, S (plus a b)) =
   match b
     | Z => Path.here (S a)
     | S(x) => Path.ap up (plusS[<] a x)
     | P(x) => Path.ap down (plusS[<] a x)
 
-/// A predecessor on the left of a sum comes out of it (cubical's `predℤ+`),
-/// as `plusS`.
+/// The `plusP` proof moves a left predecessor through the sum.
 pub def rec plusP(a : Int, b : Int) -> Path(plus (P a) b, P (plus a b)) =
   match b
     | Z => Path.here (P a)
     | S(x) => Path.ap up (plusP[<] a x)
     | P(x) => Path.ap down (plusP[<] a x)
 
-/// Zero is a left unit of the sum, by induction on the right summand.
+/// The `plusZ` proof makes zero a left sum unit.
 pub def rec plusZ(b : Int) -> Path(plus Z b, b) =
   match b
     | Z => Path.here Z
     | S(x) => Path.ap up (plusZ[<] x)
     | P(x) => Path.ap down (plusZ[<] x)
 
-/// The sum commutes (cubical's `+Comm`), by induction on the second summand,
-/// each step the recursive call carried along `up` or `down` and then the
-/// summand brought out of the left. The arms compose to no conversion of the
-/// answer at `x`, yet `Int` is a set, so its rules are respected by their
-/// endpoints alone.
+/// The `plusComm` proof relates the two operand orders.
 pub def rec plusComm(a : Int, b : Int) -> Path(plus a b, plus b a) =
   match b
     | Z => Path.back (plusZ a)

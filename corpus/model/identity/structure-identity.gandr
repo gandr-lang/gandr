@@ -1,48 +1,42 @@
-//! Representation independence of two structures, after Sterling, Gratzer and
-//! Birkedal [Sterling-2023-univalent_reference_types], § 5, the counters
-//! `posCounter ≡ negCounter` and the structure identity principle in Sterling's
-//! _Reflexive graph lenses in univalent foundations_
-//! [Sterling-2026-reflexive_graph_lenses_univalent_foundations]: a structure is
-//! a record over a carrier, its identity is read field by field, and two
-//! structures whose carriers are equivalent, the fields carried along, are one.
-//! The identity of a product is the product of its factors' identities, and the
-//! identity of a dependent pair is a path between the first components and,
-//! over it, one between the second.
-//!
-//! - cites: [Sterling-2026-reflexive_graph_lenses_univalent_foundations]
-//! - cites: [Sterling-2023-univalent_reference_types]
-//!
-//! [Sterling-2026-reflexive_graph_lenses_univalent_foundations]: https://arxiv.org/abs/2404.07854 "Sterling, Reflexive Graph Lenses in Univalent Foundations"
-//! [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
+/// This source states representation independence for simple structures.
+///
+/// A structure is a record over a carrier.
+/// Equivalent carriers carry each field to an equivalent structure.
+///
+/// Product identity compares each component.
+/// Dependent-pair identity compares the first field and then the second field.
+///
+/// - cites: [Sterling-2026-reflexive_graph_lenses_univalent_foundations]
+/// - cites: [Sterling-2023-univalent_reference_types]
+///
+/// [Sterling-2026-reflexive_graph_lenses_univalent_foundations]: https://arxiv.org/abs/2404.07854 "Sterling, Reflexive Graph Lenses in Univalent Foundations"
+/// [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
 
 // The booleans' path to themselves by negation, `negation`.
 import "./transport-list.gandr";
 
-/// A pair relates to a pair by a path in each place.
+/// A pair path has one path for each component.
 def corners : Path[.A = Integer * Integer](*{2, 3}, *{2, 3}) = *{Path.here 2, Path.here 3};
 
-/// A pair carried along negation is each component carried, so it relates to
-/// the swapped pair by a reflexivity in each place.
+/// Negation carries each pair component to its exchanged value.
 def swappedPair : Path(
   Path.walk (fun (t) { type(t * t) }) negation (*{+{.0 = *{}}, +{.1 = *{}}}),
   *{+{.1 = *{}}, +{.0 = *{}}}
 ) = *{Path.here (+{.1 = *{}}), Path.here (+{.0 = *{}})};
 
-/// A carrier with a start and a stop, starting false.
+/// The `rising` structure starts false.
 def rising : *{t : Type, start : t, stop : t} = *{Bool, *{+{.0 = *{}}, +{.1 = *{}}}};
 
-/// The same structure written the other way round, starting true.
+/// The `falling` structure starts true.
 def falling : *{t : Type, start : t, stop : t} = *{Bool, *{+{.1 = *{}}, +{.0 = *{}}}};
 
-/// The two structures are one: the carriers by negation, and each point
-/// carried along it to the other's.
+/// Negation carries the `rising` structure to `falling`.
 def oneStructure : Path(rising, falling) = *{
   negation,
   *{Path.here (+{.1 = *{}}), Path.here (+{.0 = *{}})}
 };
 
-/// Carried along reflexivity instead, the points stay where they are, and the
-/// path between the structures is refused at the first point.
+/// Reflexivity cannot carry the `rising` points to `falling`.
 @[ refuses("EndpointMismatch") ]
 def stayed : Path(rising, falling) = *{
   Path.here Bool,

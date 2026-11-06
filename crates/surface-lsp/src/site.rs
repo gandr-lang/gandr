@@ -627,7 +627,9 @@ mod tests
                 own: String::new(),
                 summary: String::new(),
                 items: Vec::from([twice(1), twice(2)]),
-                text: String::from("one\ntwo\n"),
+                text: String::from(include_str!(
+                    "site/unformatted/a-site-writes-each-page-the-search-and-the-source-view-made.gandr"
+                )),
                 spans: Vec::new(),
             },
         };

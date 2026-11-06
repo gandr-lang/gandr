@@ -1,29 +1,22 @@
-/// Actions whose arguments reduce alike.
+/// This source compares actions whose arguments reduce to the same path.
 ///
-/// An action on a path that is itself an action is one path, wherever the
-/// source writes the inner action. `whiskerAlong` unfolds to the action of
-/// composing with `g`. So a call of it and the action written out are one
-/// argument, beneath another action or another whisker. The nested action
-/// written in one definition is the same path as the outer action on the
-/// inner one.
+/// `whiskerAlong` applies an action that composes with `g`.
+/// A call and its expanded action provide the same outer argument.
 ///
-/// Each outer action unfolds to a transport whose motive reads the inner
-/// path. That path is the endpoint a transport along `fa` returns, held once
-/// per writing. The engine sets the two endpoints aside and reads each
-/// through to its transport. It emits the motives as one shared comparison,
-/// which the kernel replays on its own terms.
+/// The conversion walk compares each action motive below one variable.
+/// The kernel repeats the shared comparison with its own rules.
 ///
-/// - see: #3976 — the code walk pairs a lambda's captures laid out apart
-/// - see: #4005 — the checker refused two such endpoints inside a code
+/// - see: #3976 — lambda captures
+/// - see: #4005 — action endpoints
 
-/// The action of `F` on `p`.
+/// The `actAlong` function applies `F` to `p`.
 def actAlong(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
   F x,
   F y
 ) =
   Path.ap F p
 
-/// The action on `a` of composing with `g`.
+/// The `whiskerAlong` function applies composition with `g` to `a`.
 def whiskerAlong(
   A : Type,
   x : A,
@@ -42,7 +35,7 @@ def whiskerAlong(
     f2
     a
 
-/// The action of `G` on the action of `F` on `p`.
+/// The `actAct` function applies `G` after `F` to `p`.
 def actAct(
   A : Type,
   B : Type,
@@ -55,8 +48,7 @@ def actAct(
 ) -> Path[.A = C](G (F x), G (F y)) =
   actAlong B C G (F x) (F y) (actAlong A B F x y p)
 
-/// An outer action on the inner action written out, against the same outer
-/// action on a call of `whiskerAlong`.
+/// The `underAnAction` proof compares the expanded action with the `whiskerAlong` call.
 def underAnAction(
   A : Type,
   x : A,
@@ -97,8 +89,7 @@ def underAnAction(
     w
   )) (Path.step fm g) (Path.step fp g) (whiskerAlong A x y z fm fp fa g))
 
-/// An outer whisker on the inner action written out, against the same outer
-/// whisker on a call of `whiskerAlong`.
+/// The `underAWhisker` proof compares the expanded inner action with the `whiskerAlong` call.
 def underAWhisker(
   A : Type,
   x : A,
@@ -138,7 +129,7 @@ def underAWhisker(
   Path.here
     (whiskerAlong A x z w (Path.step fm g) (Path.step fp g) (whiskerAlong A x y z fm fp fa g) h)
 
-/// The nested action written out, against `actAct` at the two lambdas.
+/// The `nestedAtLambdas` proof compares the nested action with `actAct`.
 def nestedAtLambdas(
   A : Type,
   x : A,

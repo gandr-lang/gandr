@@ -315,6 +315,13 @@ unbuilt! {
     /// An inner attribute block at a source's root, `@![ … ]`: the source it
     /// decorates has no key of its own yet.
     SourceAttribute => "inner_attribute_block",
+    /// A value a static bracket fixes that the lowering does not read: a
+    /// face's value that is no record written in place, or a fixed field read
+    /// back where its value is no literal.
+    FixedValue => "staged_type.fixed_value",
+    /// A static bracket over a record type a field of which names an earlier
+    /// field.
+    DependentPatch => "staged_type.dependent",
 }
 
 impl Unbuilt
@@ -412,6 +419,7 @@ impl Unbuilt
             Self::CellMember | Self::GeneratorAttribute => TrackingIssue::DATA_MEMBER,
             Self::LinearPorts | Self::PortPattern => TrackingIssue::LINEAR_PORTS,
             Self::SourceAttribute => TrackingIssue::SOURCE_ATTRIBUTE,
+            Self::FixedValue | Self::DependentPatch => TrackingIssue::PATCHED_TYPE,
         }
     }
 }

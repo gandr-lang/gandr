@@ -1,40 +1,42 @@
-//! A flow between types given by a translator, after directed univalence
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory],
-//! Definition 1.2: riding it moves a record of the old schema to the new, and
-//! riding it in the family of lists moves every record of a list.
-//!
-//! - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
-//!
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
+/// This source states a record-schema flow from a translator.
+///
+/// The translator swaps two fields and adds a flag.
+/// A list family applies that migration to every record.
+///
+/// The flow rides one record or a list of records to the new schema.
+/// The checker evaluates both sample migrations.
+///
+/// - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+///
+/// [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 // The native finite lists.
 import std.list (List);
 
-/// The old and the new schema, the translator between them and the flow it
-/// gives.
+/// The `Schema` module gives two record layouts and their translator.
 pub module Schema where {
   type Old = String * Integer;
   type New = Integer * String * (Unit + Unit);
-  /// The translator: the fields swapped and a flag added.
+  /// The translator swaps fields and adds a flag.
   @[ checks ]
   def toNew(old : Old) -> New =
     match old
       | *{name, age} => *{age, name, +{.0 = *{}}}
-  /// The flow from the old schema to the new, by its translator.
+  /// The translator defines the schema flow.
   @[ checks ]
   def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
-  /// One record ridden along the flow.
+  /// The `moved` function rides one record through the schema flow.
   @[ checks ]
   def moved(old : Old) -> New =
     Flow.ride (fun (X) { X }) upgrade old
-  /// A list of records ridden along the flow in the family of lists.
+  /// The `everyone` function rides a record list through the list family.
   @[ checks ]
   def everyone(olds : List(Old)) -> List(New) =
     Flow.ride (fun (X) { List X }) upgrade olds
-  /// One old record migrated by a run.
+  /// The run migrates one old record.
   @[ runs("*{30, \"ada\", +{.0 = *{}}}") ]
   def one : () -> New = moved (*{"ada", 30});
-  /// Two old records migrated by a run.
+  /// The run migrates two old records.
   @[ runs("cons *{30, \"ada\", +{.0 = *{}}} (cons *{41, \"grace\", +{.0 = *{}}} nil)") ]
   def many : () -> List(New) = everyone (cons (*{"ada", 30}) (cons (*{"grace", 41}) nil));
 }

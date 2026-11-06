@@ -1,10 +1,14 @@
-// The loop is not reflexivity, the HoTT book's Lemma 6.4.1. The paths from the
-// circle's point to itself are the words over the loop and its inverse, a
-// presented type whose two cancellations converge, so two words are one path
-// exactly when their normal forms agree. `loop` and the empty word are normal
-// and differ at their first letter: they are apart, and a path between them is
-// eliminated by a match of no arm. The book reaches the same fact through a
-// universe and univalence; here it is the apartness rule at the words.
+/// This source proves that the circle loop differs from reflexivity.
+///
+/// Loop words normalize under their two cancellation rules.
+/// The loop and the empty word differ at their first letter.
+///
+/// The empty match eliminates an equality between those distinct normal forms.
+/// The proof supplies the apartness fact used by the circle sources.
+///
+/// - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+///
+/// [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
 // The empty type and the circle.
 import "./circle-base.gandr";
@@ -13,7 +17,7 @@ import "./circle-base.gandr";
 pub def loop_apart(e : Path[.A = Path[.A = Circle](Base, Base)](loop, Path.here Base)) -> Empty =
   match e {}
 
-/// Going around twice is not going around once.
+/// Two loops differ from one loop.
 def twice_apart(e : Path[.A = Path[.A = Circle](Base, Base)](loop ∷ loop, loop)) -> Empty =
   match e {}
 

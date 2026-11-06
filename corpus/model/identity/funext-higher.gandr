@@ -1,13 +1,19 @@
-// Function extensionality, the HoTT book's § 2.9 (`Path.funext`), one order up:
-// two functionals that agree at every function are one path, whether a body
-// binds its call's result or returns it, and two functionals that read a
-// function at different arguments are not.
+//! This source applies function extensionality to functionals.
+//!
+//! It proves equality when functionals agree at every function.
+//! It refuses functionals that use different arguments.
+//!
+//! The checker compares the function results.
+//! `Path.funext` builds the resulting path.
+//!
+//! - see: HoTT Book §2.9
 
 /// A function at truth.
 def at_truth(f : Unit + Unit -> Unit + Unit) -> Unit + Unit =
   f (+{.0 = *{}})
 
-/// A function at truth, its result bound and returned.
+/// The `through` function binds a result at truth.
+/// It returns the result.
 def through(f : Unit + Unit -> Unit + Unit) -> Unit + Unit =
   let b = at_truth f
   b
@@ -16,11 +22,11 @@ def through(f : Unit + Unit -> Unit + Unit) -> Unit + Unit =
 def at_falsity(f : Unit + Unit -> Unit + Unit) -> Unit + Unit =
   f (+{.1 = *{}})
 
-/// A function applied twice from truth, the second call in tail position.
+/// The `applied_twice` function calls its argument twice from truth.
 def applied_twice(f : Unit + Unit -> Unit + Unit) -> Unit + Unit =
   f (f (+{.0 = *{}}))
 
-/// A function applied twice from truth, both results bound.
+/// The `twice_bound` function binds both call results.
 def twice_bound(f : Unit + Unit -> Unit + Unit) -> Unit + Unit =
   let b = f (+{.0 = *{}})
   let c = f b
@@ -32,19 +38,19 @@ def reflexive : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
   at_truth
 ) = Path.funext at_truth at_truth;
 
-/// Binding the result and returning it agree at every function.
+/// The two functions give equal results at every function.
 def unfolded : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
   at_truth,
   through
 ) = Path.funext at_truth through;
 
-/// The two spellings of applying twice agree at every function.
+/// The two forms for a second call give equal results at every function.
 def nested : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
   applied_twice,
   twice_bound
 ) = Path.funext applied_twice twice_bound;
 
-/// Reading a function at truth and at falsity differ at some function.
+/// The calls at truth and falsity give different results for some function.
 @[ refuses("PointwiseDistinct") ]
 def elsewhere : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
   at_truth,

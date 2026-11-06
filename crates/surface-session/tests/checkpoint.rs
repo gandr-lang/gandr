@@ -54,17 +54,10 @@ use crate::common::grammar;
 use crate::common::resumed;
 
 /// The revision the first session writes checkpoints for.
-const WRITTEN: &str = r#"import "file:///lib/parse.gandr" as parse ;
-def a = 1 ;
-def b : Integer ;
-def b = a ;"#;
+const WRITTEN: &str = include_str!("checkpoint/fixtures/written.gandr");
 
 /// That revision with one definition appended.
-const APPENDED: &str = r#"import "file:///lib/parse.gandr" as parse ;
-def a = 1 ;
-def b : Integer ;
-def b = a ;
-def c = b ;"#;
+const APPENDED: &str = include_str!("checkpoint/fixtures/appended.gandr");
 
 /// A scratch directory's label, unique among the tests.
 #[repr(transparent)]

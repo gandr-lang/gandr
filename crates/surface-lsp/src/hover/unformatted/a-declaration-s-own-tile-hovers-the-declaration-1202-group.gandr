@@ -1,0 +1,2 @@
+def rec ping(n : Nat) -> -F Nat
+def rec pong(n : Nat) -> -F Nat

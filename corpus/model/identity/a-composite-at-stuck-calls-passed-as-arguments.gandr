@@ -1,15 +1,10 @@
-/// A stuck call passed to a parameter meets the call its parameter's type
-/// writes.
+/// This source compares a stuck call with the form required by its parameter type.
 ///
-/// `composedHere`'s type writes `Path.step(p, q)` over its parameters. Each `passed`
-/// declaration passes it paths, and states the type with those paths written in
-/// place. A variable reads alike in both. A call to `onPath` does not reduce on
-/// a variable path, so `composedHere`'s type must read it as that call.
+/// `composedHere` has a type over the composite of two paths.
+/// The `passed` declarations apply it to variables and stuck calls.
 ///
-/// The checker decides a pure call a type reads to stand as the value it
-/// returns. The instantiated type reads the argument in that form, as the
-/// stated type writes it. The kernel replays each declaration by its own
-/// reading.
+/// The checker evaluates pure calls in the types that it checks.
+/// The kernel replays each declaration at its evaluated form.
 ///
 /// - see: #4065 — the checker refused a stuck call passed to a parameter
 /// - see: #4038 — a composite by a definition over stuck endpoints

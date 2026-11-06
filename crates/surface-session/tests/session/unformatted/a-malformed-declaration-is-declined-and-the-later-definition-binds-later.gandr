@@ -1,0 +1,4 @@
+def bad = 1  2 ;
+def good = 2 ;
+def later : Integer ;
+def later = good ;

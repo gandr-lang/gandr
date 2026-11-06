@@ -1,35 +1,31 @@
-// A call written where a value is read runs, and a pure one whose value a type
-// after it reads stands there as what it returns: a dependent record's first
-// component under the second's type, and a dependent function's argument
-// under the parameters after it. A parameter function under `Path.ap`
-// answers at its own span. The records are the HoTT book's dependent
-// pairs (§ 1.6), and the maps out of the circle follow cubical Agda's
-// `IsoFunSpaceS¹` (`Cubical/HITs/S1/Properties.agda`).
-//
-// - see: #426 — `toLoopThroughImage`, `fromRecord`
-// - see: #443
+/// This source states calls that supply values for dependent types.
+///
+/// A dependent record type reads its first component.
+/// A dependent function type reads its argument.
+///
+/// The checker runs a pure call before a following type reads its value.
+/// `Path.ap` answers at the parameter function span.
+///
+/// - see: #426 — `toLoopThroughImage`, `fromRecord`
+/// - see: #443
 
 // The circle and the integers.
 import "./circle-base.gandr";
 // The map a point and a loop there determine, `fromLoopAt`.
 import "./circle-rotation.gandr";
 
-/// A map's image of the loop, at the map's image of the point: `Path.ap` of the
-/// parameter `f` along the loop.
+/// The `loopImage` function maps the circle loop through `f`.
 def loopImage(f : Circle -> Int) -> Path[.A = Int](f Base, f Base) =
   Path.ap f loop
 
-/// A map out of the circle as a point and a loop there, the loop through
-/// `loopImage`: the second component's type reads the first, the call
-/// `f(Base)`. `circle-rotation.gandr`'s `toLoop` writes the loop as
-/// `Path.ap(f, loop)` itself.
+/// The second `toLoopThroughImage` field reads the first field through `loopImage`.
 def toLoopThroughImage(f : Circle -> Int) -> *{
   point : Int,
   around : Path[.A = Int](point, point)
 } =
   *{f Base, loopImage f}
 
-/// Another map's loop is not one at this map's point.
+/// The checker refuses the loop image of another map.
 @[ refuses("TypeMismatch") ]
 def toOtherLoop(f : Circle -> Int, g : Circle -> Int) -> *{
   point : Int,
@@ -37,7 +33,6 @@ def toOtherLoop(f : Circle -> Int, g : Circle -> Int) -> *{
 } =
   *{f Base, loopImage g}
 
-/// A record's projections as the arguments of that map: the second
-/// parameter's type reads the first argument, the projection `r.point`.
+/// The `fromRecord` type reads a record projection through its dependent type.
 def fromRecord(r : *{point : Int, around : Path[.A = Int](point, point)}, c : Circle) -> Int =
   fromLoopAt r.point r.around c
