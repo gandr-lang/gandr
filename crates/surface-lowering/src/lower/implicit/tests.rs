@@ -437,6 +437,49 @@ fn a_signature_s_implicit_group_is_supplied_by_the_call_4853()
 }
 
 #[test]
+fn a_path_call_omits_its_member_s_implicits_5520()
+{
+    // A module path heads a call as a name does: `P.inv p`, `P.Q.flip p` and,
+    // inside `P`, `Q.flip p` each leave out the member's three implicits, and
+    // a hole names each. `P.plain 3` calls a member with no implicit, as before.
+    let source = include_str!("tests/fixtures/a-path-call-omits-its-member-s-implicits-5520.gandr");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let implicit = |function: &str, name: &str| Omitted::Implicit {
+        function: String::from(function),
+        implicit: String::from(name),
+    };
+    let inv = [
+        implicit("inv", "t"),
+        implicit("inv", "a"),
+        implicit("inv", "b"),
+    ];
+    let flip = [
+        implicit("flip", "t"),
+        implicit("flip", "a"),
+        implicit("flip", "b"),
+    ];
+    for (caller, expected) in [
+        ("viaModule", inv.as_slice()),
+        ("viaNested", flip.as_slice()),
+        ("inside", flip.as_slice()),
+        ("viaPlain", [].as_slice()),
+    ] {
+        let named: Vec<Maybe<&Omitted, _>> =
+            nominated_holes(&module, &arena, SurfaceName::from(caller))
+                .iter()
+                .map(|&(at, _)| module.origins().omitted(at))
+                .collect();
+        let expected: Vec<Maybe<&Omitted, _>> = expected.iter().map(Maybe::Present).collect();
+        assert_eq!(
+            named, expected,
+            "`{caller}` leaves out each implicit of the member, and a hole names it"
+        );
+    }
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
 fn a_wildcard_is_a_nominated_hole_of_its_own()
 {
     // `first[.a = _](5, unit)`: the wildcard the slot writes for `a` and the
