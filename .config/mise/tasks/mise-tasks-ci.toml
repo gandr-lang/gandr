@@ -3402,6 +3402,160 @@ issue_keep "$repo" "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body
   --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
 {% endraw %}'''
 
+# The dead-weight report (#2891): each crate's items that no code outside
+# tests names, and its exported items that no other crate names, from the
+# compiler's evidence records. The merge group's policy job keeps its
+# records as the `evidence-records` artifact, so the report builds nothing.
+# It reads the newest artifact whose commit has landed on the checked-out
+# trunk, and blames each item's lines at that commit. So the job that runs it
+# checks out the whole history. `.config/dead-weight/facts.jq` reduces each
+# unit's records, in parallel, `verdicts.jq` joins them, `blame.jq` dates each
+# item, and `render.jq` writes each crate's body. Their cases are
+# `check:dead-weight`'s.
+#
+# With REPORT_FILE set, each crate keeps one issue, `refactor(<crate>): dead
+# weight`: a changed table rewrites it, an unchanged one writes nothing, and
+# a crate with no row left closes it. A night writes at most 20 issues and
+# opens at most five of them, the closings first and then the crates with
+# the most rows, so the actions identity stays within its GraphQL hour
+# (`.config/gh/calls.toml`) and the board takes the first report over some
+# nights. Without REPORT_FILE, or with `--crate`, the task prints the bodies
+# and writes nothing. GH_REPO names the repository.
+["report:dead-weight"]
+description = "Report each crate's items with no caller outside tests and its exported items with no use in another crate, on one issue per crate"
+tools.jq = "1.8.1"
+usage = '''
+flag "--records <dir>" help="the evidence records read, of the checked-out tree; the newest landed evidence-records artifact by default"
+flag "--crate <dir>" help="print the body of one crate, its directory under crates/, with every row, and write nothing"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+rules=$root/.config/dead-weight
+source "$root/.config/issues/keep.bash"
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+write=${REPORT_FILE:-}
+grace=14
+budget=28000
+opening=5
+writes=20
+if [[ -n ${usage_crate:-} ]]; then write= budget=null; fi
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+# The records and the commit they describe: a directory named by
+# `--records` describes the working tree, and an artifact its run's head.
+if [[ -n ${usage_records:-} ]]; then
+  records=$usage_records
+  commit=$(git rev-parse HEAD)
+  rev=
+else
+  gh api "repos/$repo/actions/artifacts?name=evidence-records&per_page=20" \
+    --jq '.artifacts[] | select(.expired | not) | [.workflow_run.id, .workflow_run.head_sha] | @tsv' > "$scratch/artifacts.tsv"
+  run=
+  while IFS=$'\t' read -r id sha; do
+    if git merge-base --is-ancestor "$sha" HEAD 2> /dev/null; then run=$id commit=$sha; break; fi
+  done < "$scratch/artifacts.tsv"
+  # An artifact keeps for two days, and a merge group keeps one when it
+  # lints Rust. So none means no Rust landed in that time, and each table
+  # still holds. A failed upload fails its merge group's step.
+  if [[ -z $run ]]; then
+    echo "report:dead-weight: no unexpired evidence-records artifact of a landed commit; no Rust landed, and the tables stand"
+    exit 0
+  fi
+  records=$scratch/records
+  gh run download "$run" --repo "$repo" --name evidence-records --dir "$records"
+  rev=$commit
+fi
+shopt -s nullglob
+units=("$records"/*.jsonl)
+if (( ${#units[@]} == 0 )); then
+  echo "report:dead-weight: $records holds no evidence record" >&2
+  exit 1
+fi
+mkdir "$scratch/facts" "$scratch/dates"
+# xargs gives each file after the fixed arguments: `$1` the rules, `$2` the
+# directory written, `$3` the file.
+printf '%s\0' "${units[@]}" | xargs -0 -P "$(nproc)" -n 1 bash -c '
+  unit=$(basename "$3" .jsonl)
+  jq -s -c --arg unit "$unit" -f "$1/facts.jq" "$3" > "$2/$unit.json"' _ "$rules" "$scratch/facts"
+jq -n -c --rawfile kept "$rules/kept.txt" '{units: [inputs], kept: $kept}' "$scratch"/facts/*.json \
+  | jq -c -f "$rules/verdicts.jq" \
+  | jq -c --arg crate "${usage_crate:-}" 'map(select($crate == "" or .crate == $crate))' > "$scratch/verdicts.json"
+# One blame for each file, over the ranges of its items: `$1` the rules, `$2`
+# the directory written, `$3` the revision or nothing, `$4` the file and `$5`
+# its ranges.
+jq -r 'group_by(.file)[] | [.[0].file, (map([.start, .end]) | unique | tojson)] | @tsv' "$scratch/verdicts.json" \
+  | while IFS=$'\t' read -r file ranges; do printf '%s\0%s\0' "$file" "$ranges"; done \
+  | xargs -0 -r -P "$(nproc)" -n 2 bash -c '
+      mapfile -t flags < <(jq -r ".[] | \"-L\", \"\(.[0]),\(.[1])\"" <<< "$5")
+      git blame --porcelain ${3:+"$3"} "${flags[@]}" -- "$4" > "$2/$$.porcelain"
+      jq -n -c --rawfile porcelain "$2/$$.porcelain" --argjson ranges "$5" "{porcelain: \$porcelain, ranges: \$ranges}" \
+        | jq -c -f "$1/blame.jq" | jq -c --arg file "$4" "with_entries(.key = \"\(\$file):\(.key)\")" > "$2/$$.json"
+      rm -- "$2/$$.porcelain"' _ "$rules" "$scratch/dates" "$rev"
+jq -s -c 'add // {}' "$scratch"/dates/*.json < /dev/null > "$scratch/dates.json"
+jq -n -c --slurpfile items "$scratch/verdicts.json" --slurpfile dates "$scratch/dates.json" --arg today "$(date -u +%F)" \
+  --argjson grace "$grace" --argjson budget "$budget" --arg repository "$repo" --arg commit "$commit" \
+  '{items: $items[0], dates: $dates[0], today: $today, grace: $grace, budget: $budget, repository: $repository, commit: $commit}' \
+  | jq -c -f "$rules/render.jq" > "$scratch/bodies.json"
+rows=$(jq 'map(.count) | add // 0' "$scratch/bodies.json")
+if [[ -z $write ]]; then
+  jq -r '.[] | "# \(.title)\n\n\(.body)\n"' "$scratch/bodies.json"
+  echo "report:dead-weight: $(jq length "$scratch/bodies.json") crates, $rows rows at ${commit::9}; nothing written" >&2
+  exit 0
+fi
+gh issue list --repo "$repo" --state all --label kind:refactor --search '"dead weight" in:title' --limit 500 \
+  --json number,title,state,body > "$scratch/filed.json"
+written=0
+opened=0
+# The night's write bound: `$1` the title. A crate past it waits for a later
+# night, and its table stays as filed until then.
+room() {
+  if (( written >= writes )); then
+    echo "report:dead-weight: $1 waits for a later night; $writes issues written tonight"
+    return 1
+  fi
+  written=$((written + 1))
+}
+# A crate with no row left closes its open issue, first.
+while IFS=$'\t' read -r title crate; do
+  room "$title" || continue
+  found=$(jq -c --arg title "$title" '[.[] | select(.title == $title) | {number, state, body}] | first' "$scratch/filed.json")
+  printf 'No item of `%s` lacks a caller outside tests or a use in another crate at `%s` (#2891).\n' "$crate" "${commit::9}" > "$scratch/body.md"
+  issue_keep "$repo" "$title" "$found" 0 "$scratch/body.md" true
+done < <(jq -r --slurpfile bodies "$scratch/bodies.json" '($bodies[0] | map(.title)) as $kept
+  | .[] | select(.state == "OPEN") | .title | select(test("^refactor\\(.+\\): dead weight$")) | select(. as $t | $kept | index($t) | not)
+  | [., capture("^refactor\\((?<crate>.+)\\)").crate] | @tsv' "$scratch/filed.json")
+while IFS= read -r crate; do
+  jq -c --arg crate "$crate" '.[] | select(.crate == $crate)' "$scratch/bodies.json" > "$scratch/this.json"
+  title=$(jq -r .title "$scratch/this.json")
+  jq -r .body "$scratch/this.json" > "$scratch/body.md"
+  found=$(jq -c --arg title "$title" '[.[] | select(.title == $title) | {number, state, body}] | first' "$scratch/filed.json")
+  # A body names the commit of its records, which moves each night. So a
+  # body is the same as the filed one when they differ only in that commit,
+  # and an unchanged table writes nothing.
+  if [[ $(jq -r '.state // empty' <<< "$found") == OPEN ]] \
+    && jq -e --rawfile body "$scratch/body.md" '
+      def plain: gsub("\r"; "") | rtrimstr("\n") | gsub("blob/[0-9a-f]{40}/"; "blob/") | gsub("`[0-9a-f]{9}`"; "``");
+      (.body | plain) == ($body | plain)' <<< "$found" > /dev/null; then
+    continue
+  fi
+  if [[ $found == null ]]; then
+    if (( opened >= opening )); then
+      echo "report:dead-weight: $title waits for a later night; $opening issues opened tonight"
+      continue
+    fi
+    room "$title" || continue
+    opened=$((opened + 1))
+  else
+    room "$title" || continue
+  fi
+  issue_keep "$repo" "$title" "$found" "$(jq .count "$scratch/this.json")" "$scratch/body.md" \
+    gh issue create --repo "$repo" --title "$title" --label kind:refactor --label collector \
+    --label "area:$(jq -r .area "$scratch/this.json")" --label priority:backlog --label effort:easy --body-file "$scratch/body.md"
+done < <(jq -r 'sort_by(-.count, .crate)[].crate' "$scratch/bodies.json")
+{% endraw %}'''
+
 # The threads outside the pool (#3610): every site that states
 # `expect(pool_only_threads, reason = "…")` in the crates, with its item and
 # its reason, as one Markdown table on standard output. The nightly writes it
