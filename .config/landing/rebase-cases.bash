@@ -51,8 +51,10 @@ fix() {
   git checkout --quiet landing
 }
 # Runs the rebase in a clone of the origin with a scratch signing key, and
-# prints its exit status. The caller stays in its own clone, and it fetches
-# the origin again.
+# prints its exit status. The rebase's errors go to `$1/err`. A second
+# argument names the clone's upload-pack program: `false` refuses each fetch
+# and listing, and the push still goes through. The caller stays in its own
+# clone, and it fetches the origin again.
 run() {
   local status=0
   git clone --quiet "$1/origin.git" "$1/runner"
@@ -64,7 +66,10 @@ run() {
   git config gpg.ssh.program ssh-keygen
   git config user.signingkey "$1/key.pub"
   git config gpg.ssh.allowedSignersFile "$1/allowed"
-  "$rebase" > /dev/null 2>&1 || status=$?
+  if [[ -n ${2:-} ]]; then
+    git config remote.origin.uploadpack "$2"
+  fi
+  "$rebase" > /dev/null 2> "$1/err" || status=$?
   echo "$status"
 }
 
@@ -126,5 +131,21 @@ got=$(
 )
 [[ $got == "exit 3, stays" ]] || fail "#5441: a landing that conflicts with the fix stays as it was" "$got"
 
+# A refused fetch stops the attempt before the rebase: landing stays, and the
+# error names the fetch. The clone's refs from before would rebase landing,
+# and the push would go through (#5627).
+got=$(
+  setup "$scratch/refused"
+  land pr1 one 'one'
+  fix landing shared $'one\nfixed\nthree'
+  land pr2 two 'two'
+  before=$(git rev-parse landing)
+  status=$(run "$scratch/refused" false) && again
+  echo "exit $status," \
+    "$([[ $(git rev-parse origin/landing) == "$before" ]] && echo stays || echo moves)," \
+    "$([[ $(< "$scratch/refused/err") == *"git fetch of main and landing"* ]] && echo "names the fetch" || echo "names no fetch")"
+)
+[[ $got == "exit 1, stays, names the fetch" ]] || fail "#5627: a refused fetch stops the rebase, and landing stays" "$got"
+
 (( failed == 0 )) || exit 1
-echo "landing rebase OK: 4 cases stay, fast-forward, move and refuse as recorded"
+echo "landing rebase OK: 5 cases stay, fast-forward, move, stop on a conflict and stop on a refused fetch as recorded"

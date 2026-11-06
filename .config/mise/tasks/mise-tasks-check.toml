@@ -1974,9 +1974,10 @@ echo "landing queue check OK: $(jq length .config/landing/cases.json) cases read
 # commit past `main` fast-forwards to it. A fix on `main` moves the later
 # landings onto `main`, with the merge kept, each new commit signed by a
 # scratch key and each old commit noted with its new hash. A landing that
-# conflicts with the fix exits 3, and `landing` stays as it was.
+# conflicts with the fix exits 3, and `landing` stays as it was. A fetch that
+# the remote refuses exits 1 before the rebase, and `landing` stays (#5627).
 ["check:landing-rebase"]
-description = "The rebase of landing onto main keeps a landing that holds main, fast-forwards, moves the landings onto a fix signed and noted, and stops on a conflict"
+description = "The rebase of landing onto main keeps a landing that holds main, fast-forwards, moves the landings onto a fix signed and noted, stops on a conflict, and stops before the rebase on a refused fetch"
 run = ".config/landing/rebase-cases.bash"
 
 # The integration cycle's decisions (#5440, `ci:cycle`). `.config/
