@@ -101,8 +101,9 @@ use gandr_theory_shapes::BoundaryError;
 use gandr_theory_shapes::Membership;
 use gandr_theory_shapes::Point;
 use gandr_theory_shapes::Subshape;
-use gandr_theory_stone_duality::Comparison;
 use gandr_theory_stone_duality::DualityError;
+use gandr_theory_stone_duality::ElementCount;
+use gandr_theory_stone_duality::Membership as Held;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
@@ -1350,24 +1351,6 @@ fn inclusion(
     }
 }
 
-/// Whether the face `lower` lies strictly below the face `upper`: `upper`
-/// holds each point `lower` holds, and the two differ.
-///
-/// # Specification
-/// trivial.
-fn strictly_below(
-    lower: &Subshape,
-    upper: &Subshape,
-) -> Comparison
-{
-    if inclusion(lower, upper) == Membership::Inside && lower != upper {
-        Comparison::Below
-    }
-    else {
-        Comparison::NotBelow
-    }
-}
-
 impl RecordFaces<'_>
 {
     /// The meet of the faces `left` and `right`: the cell of the face poset
@@ -1408,6 +1391,11 @@ impl RecordFaces<'_>
     }
 }
 
+/// The most cells a record type's face poset holds: its faces and their new
+/// meets. Each row of the order keeps one word for each 64 cells, so a poset
+/// at the budget keeps 64 words for each cell.
+pub const FACE_CELLS: usize = 4_096;
+
 /// The face poset of `faces`: each face in written order, then each nonempty
 /// meet of two faces that no earlier cell is, each cell below the cells that
 /// strictly hold it.
@@ -1416,20 +1404,33 @@ impl RecordFaces<'_>
 /// - ensures: the poset's cells are the faces, then their new meets, in the
 ///   order of the pairs; a cell lies below another exactly when the other
 ///   strictly holds it, so two faces that hold one set of labels are apart.
-/// - fails: more than 64 cells, refused by their count.
+/// - fails: more than [`FACE_CELLS`] cells, refused by the first count past the
+///   budget, before the next meet is computed.
 /// - panics: none.
+/// - intension: the order is the strict inclusion of the cells' labels, read
+///   once for each cell and label, so no pair of cells is compared.
 ///
 /// # Errors
-/// [`DualityError::TooManyElements`] for more than 64 cells.
+/// [`DualityError::TooManyElements`] for more than [`FACE_CELLS`] cells.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the faces `{port, tls}` and `{host, port}` give a poset
-///   of three cells, their meet `{port}` below both.
+///   of three cells, their meet `{port}` below both; twelve faces whose 66
+///   meets differ give 78 cells, past one word; 90 faces of every label but one
+///   and the whole record give the 4,096 cells of the budget, and one face more
+///   gives 4,097.
 /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |poset| poset.cells().len() >= faces.len()))]
+/// - witness: `tests::modules::a_face_poset_past_one_word_is_admitted`
+/// - witness: `tests::modules::a_face_poset_past_its_budget_is_refused`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |poset| poset.cells().len() >= faces.len()
+    && poset.cells().len() <= FACE_CELLS))]
 fn face_poset(faces: &[(SurfaceName<'_>, Subshape)])
 -> Result<GradedPoset<Subshape>, DualityError>
 {
+    let past = |count: usize| DualityError::TooManyElements(ElementCount::from(count));
+    if faces.len() > FACE_CELLS {
+        return Err(past(faces.len()));
+    }
     let mut cells: Vec<Subshape> = faces.iter().map(|&(_, ref face)| face.clone()).collect();
     // Each cell by the points it holds, so one lookup finds a meet that is
     // already a cell.
@@ -1445,9 +1446,27 @@ fn face_poset(faces: &[(SurfaceName<'_>, Subshape)])
             }
             if let Ok(met) = Subshape::new(left.ambient(), &points) {
                 cells.push(met);
+                if cells.len() > FACE_CELLS {
+                    return Err(past(cells.len()));
+                }
                 let _new = held.insert(points);
             }
         }
     }
-    GradedPoset::new(cells, strictly_below)
+    // Every cell is a subshape of the record's labels, so a cell's labels are
+    // its points and the order is their strict inclusion.
+    let labels = cells.first().map_or(0, |cell| cell.decisions().len());
+    GradedPoset::by_inclusion(
+        cells,
+        ElementCount::from(labels),
+        |cell, label| {
+            if cell.decisions().get(usize::from(label)) == Some(&Membership::Inside) {
+                Held::Inside
+            }
+            else {
+                Held::Outside
+            }
+        },
+        ElementCount::from(FACE_CELLS),
+    )
 }

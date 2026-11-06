@@ -2615,6 +2615,126 @@ fn a_face_past_a_record_s_labels_is_refused_by_the_label()
 }
 
 #[test]
+fn a_face_poset_past_one_word_is_admitted()
+{
+    use gandr_theory_shapes::Membership::Inside;
+    use gandr_theory_stone_duality::Comparison;
+    use gandr_theory_stone_duality::Element;
+
+    let source = include_str!("../../../corpus/model/desc/wide-face-poset.gandr");
+    let lowered = lower(source);
+    let [ref record] = *lowered.module.record_faces()
+    else {
+        panic!("one record type names faces");
+    };
+    assert_eq!(record.name, name("Deploy"));
+    assert_eq!(record.faces.len(), 12);
+    let cells = record.poset.cells();
+    assert_eq!(
+        cells.len(),
+        78,
+        "the twelve faces and their 66 meets, each apart, are 78 cells, past one word"
+    );
+    // Each pair of cells, against inclusion of their labels: a pair read from
+    // the wrong word of a row differs here.
+    for (lower, below) in cells.iter().enumerate() {
+        for (upper, above) in cells.iter().enumerate() {
+            let held = below
+                .decisions()
+                .iter()
+                .zip(above.decisions())
+                .all(|(&inner, &outer)| inner != Inside || outer == Inside);
+            let expected = if held {
+                Comparison::Below
+            }
+            else {
+                Comparison::NotBelow
+            };
+            assert_eq!(
+                record
+                    .poset
+                    .compare(Element::from(lower), Element::from(upper)),
+                Ok(expected),
+                "cells {lower} and {upper}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_face_poset_past_its_budget_is_refused()
+{
+    // Each face holds every label but one, so each two faces meet at every
+    // label but two, and no two meets agree: 90 faces and the whole record
+    // give 90, 4,005 and 1 cells, the 4,096 a face poset holds. A face of one
+    // label meets the others at itself or at nothing, so it adds one cell.
+    let labels: Vec<String> = (0 .. 90_usize).map(|label| format!("l{label}")).collect();
+    let fields: Vec<String> = labels
+        .iter()
+        .map(|label| format!("{label} : Integer"))
+        .collect();
+    let mut faces: Vec<String> = (0 .. labels.len())
+        .map(|left_out| {
+            let mut face = format!("face f{left_out} = {{ ");
+            let held = labels
+                .iter()
+                .enumerate()
+                .filter(|&(at, _)| at != left_out)
+                .map(|(_, label)| label);
+            for (written, label) in held.enumerate() {
+                if written != 0 {
+                    face.push_str(", ");
+                }
+                face.push_str(label);
+            }
+            face.push_str(" };");
+            face
+        })
+        .collect();
+    faces.push(format!("face whole = {{ {} }};", labels.join(", ")));
+    let record = format!("*{{{}}}", fields.join(", "));
+    let source =
+        |faces: &[String]| format!("type Wide = {record} where {{ {} }}\n", faces.join(" "));
+    let at = source(&faces);
+    let admitted = lower(at.as_str());
+    let [ref held] = *admitted.module.record_faces()
+    else {
+        panic!(
+            "the record type at the budget is admitted: {:?}",
+            rows(&admitted)
+        );
+    };
+    assert_eq!(
+        held.poset.cells().len(),
+        4_096,
+        "the budget holds 4,096 cells"
+    );
+    faces.push("face first = { l0 };".to_owned());
+    let past = source(&faces);
+    let lowered = lower(past.as_str());
+    assert_eq!(
+        rows(&lowered),
+        [row(
+            "Wide",
+            Role::Held,
+            Amounts::Refused(LoweringRefusal::IllFormedDescription {
+                span: span_of(past.as_str(), record.as_str(), 0_usize),
+                kind: WfKind::FacePosetPastBudget,
+                subjects: [
+                    Maybe::Present(name("Wide")),
+                    Maybe::Absent(gandr_surface_lowering::description_subject::Absent::Unnamed),
+                ],
+            })
+        )],
+        "the record type past the budget is refused by its name"
+    );
+    assert!(
+        lowered.module.record_faces().is_empty(),
+        "and the refused type names no faces"
+    );
+}
+
+#[test]
 fn a_type_member_names_a_computation_type_3080()
 {
     let source = include_str!("modules/fixtures/a-type-member-names-a-computation-type-3080.gandr");

@@ -1,0 +1,79 @@
+// This record type has a face poset wider than one machine word. Its twelve
+// faces lie over nine labels. Their 66 pairwise meets differ from each other
+// and from each face. So the poset holds 78 cells. A system over two of the
+// faces checks.
+//
+// A face poset holds a record type's faces and each new meet of two faces. A
+// system converts each later face on its meet with the first face. Faces that
+// overlap at different labels give one meet for each pair. So twelve faces
+// pass 64 cells.
+//
+// The order of the face poset keeps one row of words for each cell. A row
+// keeps one word for each 64 cells. These 78 cells keep two words in each row.
+// The lowering states the most cells a face poset holds. A record type past
+// that count is refused by its name.
+//
+// - see: #5668 — the face poset past 64 cells
+// - see: `model/desc/record-faces.gandr` — a record type's faces, a static
+//   bracket by label or by face, and a system of two faces
+// - see: `pathological/desc/record-faces.gandr` — the faces a record type
+//   refuses
+
+/// A deployment: twelve faces, each over five to seven of its nine labels.
+/// The faces `placed` and `served` meet at the port, the region, the zone and
+/// the replicas.
+type Deploy = *{
+  host : String,
+  port : Integer,
+  tls : Bool,
+  user : String,
+  region : String,
+  zone : String,
+  tier : Integer,
+  replicas : Integer,
+  timeout : Integer
+} where
+  face placed = { host, port, user, region, zone, replicas };
+  face served = { port, tls, region, zone, tier, replicas };
+  face fronted = { host, port, tls, tier, replicas, timeout };
+  face guarded = { tls, user, tier, replicas, timeout };
+  face owned = { host, user, region, zone, tier, timeout };
+  face routed = { host, port, tls, region, tier };
+  face audited = { port, tls, user, region, zone, timeout };
+  face scaled = { host, zone, tier, replicas, timeout };
+  face pinned = { port, tls, user, zone, tier, timeout };
+  face mirrored = { host, tls, user, zone, tier, replicas };
+  face pooled = { port, user, region, zone, tier, replicas, timeout };
+  face drained = { host, tls, region, replicas, timeout };
+
+/// A deployment that states each of its fields.
+def local : Deploy = *{
+  .host = "localhost",
+  .port = 443,
+  .tls = true,
+  .user = "ops",
+  .region = "eu",
+  .zone = "a",
+  .tier = 1,
+  .replicas = 3,
+  .timeout = 30
+};
+
+/// The replicas of a deployment fixed on two faces in one system. The faces
+/// meet at four labels and agree there.
+def placed_replicas(d : Deploy[
+  placed ↦ *{
+    .host = "localhost",
+    .port = 443,
+    .user = "ops",
+    .region = "eu",
+    .zone = "a",
+    .replicas = 3
+  },
+  served ↦ *{.port = 443, .tls = true, .region = "eu", .zone = "a", .tier = 1, .replicas = 3}
+]) -> Integer { d.replicas }
+
+/// `local` stands at the system by the coercion in: each of its fields
+/// converts with the value that the system fixes.
+@[ runs("3") ]
+def local_replicas : Integer = placed_replicas (local);

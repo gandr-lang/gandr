@@ -25,10 +25,12 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_theory_graded_posets::GradedPoset;
+use gandr_theory_stone_duality::DualityError;
 use gandr_theory_stone_duality::Element;
 use gandr_theory_stone_duality::ElementCount;
 use gandr_theory_stone_duality::ElementSet;
 use gandr_theory_stone_duality::Membership;
+use gandr_theory_stone_duality::WIDEST;
 
 use crate::error::SheafError;
 use crate::index::CoverIndex;
@@ -82,9 +84,10 @@ impl<Cell> Sheaf<Cell>
     /// # Specification
     /// - ensures: each map holds one entry for each entry of its upper stalk,
     ///   each inside its lower stalk, and the maps compose.
-    /// - fails: a map of another width, a map that reads past its lower stalk,
-    ///   and a map that differs from the map through a cell between are each
-    ///   refused by the cells they name.
+    /// - fails: a poset of more than 64 cells is refused by its count, since
+    ///   each set of cells is one bit row; a map of another width, a map that
+    ///   reads past its lower stalk, and a map that differs from the map
+    ///   through a cell between are each refused by the cells they name.
     /// - panics: none.
     /// - intension: `width` is called once for each cell in cell order.
     ///   `restriction` is called once for each pair of a cell and a cell
@@ -99,6 +102,7 @@ impl<Cell> Sheaf<Cell>
     ///   stalk.
     /// - [`SheafError::NotFunctorial`]: a map differs from the map through a
     ///   cell between its two cells.
+    /// - [`SheafError::Poset`]: the poset has more than 64 cells.
     /// - [`SheafError::CellOutside`]: unreachable for a poset that
     ///   [`GradedPoset::new`] makes.
     ///
@@ -106,10 +110,12 @@ impl<Cell> Sheaf<Cell>
     /// - hypothesis: L2 — the face covers of every corpus shape and of every
     ///   small carrier, each with its maps to the meets; L3 — a map past its
     ///   stalk, a map one entry short and a chain of three cells whose maps do
-    ///   not compose separate the three refusals.
+    ///   not compose separate the three refusals; L3 — a tower's level of 127
+    ///   and of 128 cells separates the count refusal.
     /// - witness: `tests::sheaf::a_map_that_does_not_compose_is_refused`
     /// - witness: `tests::sheaf::a_map_past_its_stalk_is_refused`
     /// - witness: `tests::sheaf::a_map_of_another_width_is_refused`
+    /// - witness: `tests::towers::the_level_past_the_cell_budget_is_refused_by_its_count`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |sheaf| sheaf.widths.len() == sheaf.poset.cells().len()
         && sheaf.stars.len() == sheaf.poset.cells().len()))]
     #[inline]
@@ -124,6 +130,11 @@ impl<Cell> Sheaf<Cell>
         Map: IntoIterator<Item = Entry>,
     {
         let count = poset.cells().len();
+        if count > WIDEST {
+            return Err(SheafError::Poset(DualityError::TooManyElements(
+                ElementCount::from(count),
+            )));
+        }
         let widths: Vec<Width> = poset.cells().iter().map(width).collect();
         let mut starts = vec![0_usize; count.saturating_mul(count)];
         let mut entries = Vec::new();

@@ -166,7 +166,10 @@ fn read_back(
         .collect();
     assert_eq!(points, spectrum, "the spectrum of {faces:?}");
     for (point, &cell) in read.to_cells().images().iter().enumerate() {
-        let closure = poset.closure(cell).expect("a cell of the poset");
+        let closure = poset
+            .closure(cell)
+            .expect("a cell of the poset")
+            .meet(ElementSet::from(u64::MAX));
         assert_eq!(
             read.spectrum().points().get(point),
             Some(&closure),
@@ -182,7 +185,6 @@ fn read_back(
         for (upper, &above) in cells.iter().enumerate() {
             assert_eq!(
                 poset
-                    .order()
                     .compare(Element::from(lower), Element::from(upper))
                     .expect("cells of the poset"),
                 below.within(above),
@@ -192,7 +194,10 @@ fn read_back(
     }
     assert!(
         closures.iter().enumerate().all(|(cell, &closure)| {
-            poset.closure(Element::from(cell)) == Ok(ElementSet::from(closure.0))
+            poset
+                .closure(Element::from(cell))
+                .map(|row| row.meet(ElementSet::from(u64::MAX)))
+                == Ok(ElementSet::from(closure.0))
         }),
         "each closure is the cells whose points the cell holds"
     );

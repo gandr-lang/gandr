@@ -42,14 +42,18 @@ impl Points
 /// trivial.
 fn site(cells: Vec<Points>) -> Sheaf<Points>
 {
-    let poset = GradedPoset::new(cells, |lower, upper| {
-        if upper.0 & !lower.0 == 0 {
-            Comparison::Below
-        }
-        else {
-            Comparison::NotBelow
-        }
-    })
+    let poset = GradedPoset::new(
+        cells,
+        |lower, upper| {
+            if upper.0 & !lower.0 == 0 {
+                Comparison::Below
+            }
+            else {
+                Comparison::NotBelow
+            }
+        },
+        ElementCount::from(64_usize),
+    )
     .expect("distinct sets of points");
     Sheaf::new(
         poset,
@@ -177,6 +181,7 @@ fn chain(count: ElementCount) -> GradedPoset<Link>
                 Comparison::NotBelow
             }
         },
+        count,
     )
     .expect("a chain")
 }
@@ -268,12 +273,16 @@ fn an_overlap_with_two_least_cells_compares_at_each()
         Bigon::Edge(0),
         Bigon::Edge(1),
     ];
-    let poset = GradedPoset::new(cells, |lower, upper| match (*lower, *upper) {
-        (Bigon::Point(_), Bigon::Edge(_)) => Comparison::Below,
-        (Bigon::Point(_) | Bigon::Edge(_), Bigon::Point(_) | Bigon::Edge(_)) => {
-            Comparison::NotBelow
+    let poset = GradedPoset::new(
+        cells,
+        |lower, upper| match (*lower, *upper) {
+            (Bigon::Point(_), Bigon::Edge(_)) => Comparison::Below,
+            (Bigon::Point(_) | Bigon::Edge(_), Bigon::Point(_) | Bigon::Edge(_)) => {
+                Comparison::NotBelow
+            },
         },
-    })
+        ElementCount::from(4_usize),
+    )
     .expect("a bigon");
     let sheaf = Sheaf::new(
         poset,
