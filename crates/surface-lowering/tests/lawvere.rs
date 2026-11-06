@@ -52,7 +52,7 @@ use gandr_theory_coherent_resolutions::TermSize;
 use gandr_theory_coherent_resolutions::TermTable;
 use gandr_theory_coherent_resolutions::Truncation;
 use gandr_theory_coherent_resolutions::Variable;
-use gandr_theory_discrete_morse::Complex;
+use gandr_theory_discrete_morse::Complex as _;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;

@@ -6,7 +6,7 @@
 //! a composite. The theory of `a(z, x) ⇒ x` and `a(x, z) ⇒ x` has two rules
 //! that keep their variables, so the boundary of each boundary is zero.
 
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
 
 use gandr_theory_coherent_resolutions::Arity;
 use gandr_theory_coherent_resolutions::Arrow;
@@ -25,7 +25,7 @@ use gandr_theory_coherent_resolutions::TermTable;
 use gandr_theory_coherent_resolutions::Variable;
 use gandr_theory_coherent_resolutions::root_rewrite;
 use gandr_theory_coherent_resolutions::truncated;
-use gandr_theory_discrete_morse::Complex;
+use gandr_theory_discrete_morse::Complex as _;
 use gandr_theory_discrete_morse::Incidence;
 use gandr_theory_discrete_morse::Standing;
 use quenchant_shape::shape::Maybe;
@@ -373,7 +373,9 @@ fn the_boundary_of_each_boundary_in_a_truncation_is_zero() -> Result<(), Lawvere
         Maybe::Absent(truncated::Absent::Outside),
         "the truncation holds no term that a rule rewrites"
     );
-    assert_eq!(truncation.cells(BarDegree::from(4_usize)), &[]
-        as &[BarCell]);
+    assert!(
+        truncation.cells(BarDegree::from(4_usize)).is_empty(),
+        "the truncation holds no cell past its degree"
+    );
     Ok(())
 }

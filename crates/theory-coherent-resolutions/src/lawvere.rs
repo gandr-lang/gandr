@@ -92,28 +92,26 @@ impl fmt::Display for LawvereError
     #[inline]
     fn fmt(
         &self,
-        formatter: &mut fmt::Formatter<'_>,
+        f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
         match *self {
             Self::Exhausted(place) => write!(
-                formatter,
+                f,
                 "the normal form of the term at place {} takes more rewrites than the budget",
                 usize::from(place)
             ),
-            Self::Unissued(place) => write!(
-                formatter,
-                "the table holds no term at place {}",
-                usize::from(place)
-            ),
+            Self::Unissued(place) => {
+                write!(f, "the table holds no term at place {}", usize::from(place))
+            },
             Self::Unfilled(variable) => write!(
-                formatter,
+                f,
                 "the tuple that fills a term holds no term for its variable {}",
                 usize::from(variable)
             ),
-            Self::NoTerm => formatter.write_str("the first arrow of the cell holds no term"),
+            Self::NoTerm => f.write_str("the first arrow of the cell holds no term"),
             Self::Overflow => {
-                formatter.write_str("a coefficient passes the integers that an incidence holds")
+                f.write_str("a coefficient passes the integers that an incidence holds")
             },
         }
     }
@@ -798,7 +796,7 @@ impl LawvereTheory
                 let target = cell
                     .0
                     .last()
-                    .map_or(Arity::from(1_usize), |last| last.source);
+                    .map_or_else(|| Arity::from(1_usize), |last| last.source);
                 let room = usize::from(bound.weight)
                     .saturating_sub(usize::from(cell.weight(&self.table)?));
                 for (context, sized) in forms.iter().enumerate() {
@@ -1335,7 +1333,6 @@ impl Truncation
     ///   past the bound has none.
     /// - witness: `tests::lawvere::the_boundary_of_each_boundary_in_a_truncation_is_zero`
     #[inline]
-    #[must_use]
     pub fn faces(
         &self,
         cell: &BarCell,
