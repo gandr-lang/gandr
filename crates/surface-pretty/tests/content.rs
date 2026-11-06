@@ -284,6 +284,23 @@ fn corpus() -> Vec<(What, Body)>
             let product = a.value_type_product(&[integer_type, unit_type]);
             a.value_quote(product)
         }),
+        (What("quoted patched type"), |a| {
+            let integer_type = a.value_type_base(BaseType::Integer);
+            let unit_type = a.value_type_unit();
+            let record = a.value_type_record(
+                [("port", integer_type), ("tls", unit_type)]
+                    .map(|(label, field)| (FieldLabel::from(String::from(label)), field))
+                    .into(),
+            );
+            let port = integer(a, Digits("443"));
+            let patched = a.value_type_patched(
+                record,
+                [("port", port)]
+                    .map(|(label, field)| (FieldLabel::from(String::from(label)), field))
+                    .into(),
+            );
+            a.value_quote(patched)
+        }),
         (What("returned"), returns_one),
         (What("function"), |a| {
             let x = bound(a);

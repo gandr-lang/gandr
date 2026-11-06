@@ -1567,6 +1567,11 @@ where
             writer.tag(Tag(0x51));
             write_fields(writer, fields)?;
         },
+        ContentNode::Patched { base, ref fixed } => {
+            writer.tag(Tag(0x8F));
+            write_index(writer, base)?;
+            write_fields(writer, fixed)?;
+        },
         ContentNode::Constructor {
             ref family,
             datatype,
@@ -4064,7 +4069,8 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
 ///
 /// # Specification
 /// - fails: [`CodecError::Corrupt`] for an unknown tag or a malformed field; no
-///   tag spells an unresolved node.
+///   tag spells an unresolved node. [`CodecError::NonCanonical`] for a patched
+///   type that fixes no label.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4078,6 +4084,7 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `codec::tests::every_node_former_round_trips_under_its_own_frame`
+/// - witness: `codec::tests::a_patched_frame_that_fixes_no_label_is_refused`
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -4087,6 +4094,7 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
                 && reader.bytes.get(before).is_some_and(|&tag| match *node {
                     ContentNode::Data { .. } => tag == 0x50,
                     ContentNode::RecordType(_) => tag == 0x51,
+                    ContentNode::Patched { .. } => tag == 0x8F,
                     ContentNode::Constructor { .. } => tag == 0x52,
                     ContentNode::Record(_) => tag == 0x53,
                     ContentNode::DataCase { equations, .. } => tag == if usize::from(equations) == 0 { 0x54 } else { 0x5E },
@@ -4231,6 +4239,16 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             arguments: read_indices(reader)?,
         },
         0x51 => ContentNode::RecordType(read_fields(reader)?),
+        // A patch that fixes no label is its base, which the arena mints in
+        // its place: no canonical frame holds one.
+        0x8F => {
+            let base = read_index(reader)?;
+            let fixed = read_fields(reader)?;
+            if fixed.is_empty() {
+                return Err(CodecError::NonCanonical);
+            }
+            ContentNode::Patched { base, fixed }
+        },
         0x52 => ContentNode::Constructor {
             family: read_reference(reader)?,
             datatype: read_index(reader)?,
@@ -8163,7 +8181,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
 ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
-ContentNode::ReturnAll(_) | ContentNode::BindAll(..) | ContentNode::Returns { .. } |
+ContentNode::ReturnAll(_) | ContentNode::BindAll(..) | ContentNode::Returns { .. } | ContentNode::Patched { .. } |
 ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,

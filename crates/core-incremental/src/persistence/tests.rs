@@ -596,6 +596,14 @@ fn canonical_maps_and_supported_semantic_variants_round_trip()
                 .any(|answered| matches!(*answered.answer(), Answer::Typed(ref ty) if ty.nodes().len() > 1))),
             "some support holds a structured answer"
         );
+    assert!(
+        checkpoints.items().iter().any(|checkpoint| checkpoint
+            .content()
+            .nodes()
+            .iter()
+            .any(|node| matches!(*node.former(), crate::content::ContentNode::Patched { .. }))),
+        "some content holds a patched type"
+    );
     let bytes = bytes_of(&checkpoints);
     assert_eq!(
         bytes,

@@ -135,6 +135,10 @@ fn every_node_former_round_trips_under_its_own_frame()
             arguments: vec![a, b],
         },
         ContentNode::RecordType(fields.clone()),
+        ContentNode::Patched {
+            base: c,
+            fixed: fields.clone(),
+        },
         ContentNode::Constructor {
             family: reference.clone(),
             datatype: a,
@@ -438,6 +442,24 @@ fn every_node_former_round_trips_under_its_own_frame()
         assert_eq!(super::read_node(&mut reader), Ok(node));
         assert_eq!(reader.finish(), Ok(()));
     }
+}
+
+/// A patched frame that fixes no label is refused. The arena mints such a
+/// patch as its base, so no canonical frame holds one.
+#[test]
+fn a_patched_frame_that_fixes_no_label_is_refused()
+{
+    let empty = ContentNode::Patched {
+        base: NodeIndex::from(1_usize),
+        fixed: alloc::collections::BTreeMap::new(),
+    };
+    let mut bytes = CheckpointBytes::default();
+    super::write_node(&mut Writer { sink: &mut bytes }, &empty).expect("the writer frames it");
+    let mut reader = Reader {
+        bytes: bytes.as_ref(),
+        cursor: 0,
+    };
+    assert_eq!(super::read_node(&mut reader), Err(CodecError::NonCanonical));
 }
 
 #[test]
