@@ -1,7 +1,7 @@
 error[ShapeMismatch]: expected a thunk type `+U C`
   ╭▸ force.gandr:2:30
   │
-2 │ def a = thunk { become force 1 } ;
+2 │ def a = thunk { become force 1 };
   │                              ━ its type is not of the required shape: found `Integer`
   │
   ├ note: while checking the body of this thunk

@@ -197,7 +197,7 @@ mod tests
         let spans = highlight_source(
             &grammar,
             &roles,
-            SourceText::from("def answer : Integer ;\ndef answer = 42 ;"),
+            SourceText::from(include_str!("fixtures/clean-answer.gandr")),
         );
 
         assert_eq!(span_order(&spans), SpanOrder::SortedAndDisjoint);

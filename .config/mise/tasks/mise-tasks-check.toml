@@ -434,8 +434,6 @@ allowed = [
   "gandr-surface-lowering",
   "gandr-surface-lsp",
   "gandr-surface-parser",
-  "gandr-surface-render-terminal",
-  "gandr-surface-repl",
   "gandr-surface-session",
 ]
 '''

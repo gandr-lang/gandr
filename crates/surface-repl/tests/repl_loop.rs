@@ -530,7 +530,10 @@ fn an_outcome_only_refusal_is_visible_in_the_repl()
     let mut repl = repl();
     let _goal = lines(&mut repl, "def wrong : String ;");
     let refused = lines(&mut repl, "def wrong = 42 ;");
-    let expected = refusals("def wrong : String ;\ndef wrong = 42 ;", RenderStyle::Plain);
+    let expected = refusals(
+        include_str!("repl_loop/unformatted/wrong-revision.gandr"),
+        RenderStyle::Plain,
+    );
     assert!(!expected.is_empty(), "the revision is refused");
     assert_eq!(refused, expected);
     assert_eq!(lines(&mut repl, r#"def wrong = "right" ;"#), [
@@ -554,7 +557,10 @@ fn a_refused_chunk_is_not_kept()
     let unresolved = lines(&mut repl, "def c = b ;");
     assert_eq!(
         unresolved,
-        refusals("def a = 1 ;\ndef c = b ;", RenderStyle::Plain)
+        refusals(
+            include_str!("repl_loop/unformatted/unresolved-after-a.gandr"),
+            RenderStyle::Plain
+        )
     );
     assert_eq!(lines(&mut repl, "def d = a ;"), [
         (OutKind::Type, format!("d : {}", base(BaseType::Integer))),
@@ -971,9 +977,7 @@ where
 #[test]
 fn a_value_is_written_in_the_spelling_asked_782()
 {
-    let input = "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef once : +U (-F \
-                 Path[.A = Circle](Base, Base)) ;\ndef once = thunk { loop } ;\ndef r : Integer ≃ \
-                 String ;\ndef r = 1 ;\n";
+    let input = include_str!("repl_loop/fixtures/spellings.gandr");
     let transcript = |spelling| {
         let mut output = Vec::new();
         let _ended = run_batch(
@@ -1011,7 +1015,10 @@ fn a_value_is_written_in_the_spelling_asked_782()
 #[test]
 fn piped_value_prints_a_transcript()
 {
-    let input = format!(":load {}\n:type answer\n:q\n", CORPUS[0]);
+    let input = format!(
+        include_str!("repl_loop/unformatted/load-and-ask.gandr"),
+        CORPUS[0]
+    );
     let wide = Pool::new(Width::Threads(Threads::from(
         NonZeroUsize::new(3).expect("three is not zero"),
     )));
@@ -1058,11 +1065,19 @@ fn piped_value_prints_a_transcript()
 fn a_block_lays_out_as_rows()
 {
     let block = TranscriptBlock {
-        source: String::from("def a = (\r\n1) ;"),
+        source: String::from(include_str!("repl_loop/unformatted/crlf-source.gandr")),
         source_hl: Vec::new(),
         lines: Vec::from([
-            (OutKind::Diag, String::from("error: first\n  --> here\n")),
-            (OutKind::Info, String::from("a\n\nb")),
+            (
+                OutKind::Diag,
+                String::from(include_str!("repl_loop/unformatted/diagnostic-lines.gandr")),
+            ),
+            (
+                OutKind::Info,
+                String::from(include_str!(
+                    "repl_loop/unformatted/blank-middle-line.gandr"
+                )),
+            ),
             (OutKind::Goal, String::new()),
         ]),
     };
@@ -1408,7 +1423,7 @@ fn row_kinds_and_unicode_boundaries_keep_their_meaning()
         (OutKind::Info, "· ", "  "),
     ];
     let block = TranscriptBlock {
-        source: "é𐍈\r\n\nz\r".to_owned(),
+        source: include_str!("repl_loop/unformatted/mixed-terminators.gandr").to_owned(),
         source_hl: Vec::new(),
         lines: kinds
             .iter()
