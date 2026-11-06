@@ -31,8 +31,8 @@
 //! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: §
 //!   presented-spaces-frame-squier — completion is a Morse collapse of a
 //!   resolution, and this complex is the resolution that the collapse reads.
-//! - `guiraud-2019-convergent-presentations-polygraphic-resolutions` —
-//!   exemplar: the standard resolution of a convergent presentation, whose
+//! - `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras`
+//!   — exemplar: the standard resolution of a convergent presentation, whose
 //!   collapsing schemes end on the rules and the critical branchings.
 
 use alloc::collections::BTreeMap;

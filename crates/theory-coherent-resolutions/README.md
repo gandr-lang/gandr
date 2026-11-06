@@ -4,6 +4,7 @@ Coherent resolution of a cell rewriting system. A cell fires under the alphabet'
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -18,6 +19,11 @@ Coherent resolution of a cell rewriting system. A cell fires under the alphabet'
 **Why.** A rule system the surface admits is useful to the decision layer only once its critical pairs are resolved: joined under a certificate that can be checked, or oriented into a new rule. That is completion, and the coherence certificates it emits are the presentation's 3-cells, the evidence a later checker replays rather than trusts. Writing it once over the alphabet trait lets the same engine serve every term language that keeps the trait's laws, and its second inhabitant, a first-order toy, shows the claim is about the trait and not about one alphabet.
 
 **How.** Overlaps are single unifications at a seam, so enumeration is one pair query per ordered pair of cells. Certificates record which cell fired where, never a substitution, and replay re-matches every step against skolemized terms. Completion is one worklist loop shared by a fresh run, a supplied run and a resumed one, bounded by a step ceiling and a cell ceiling; a ceiling returns a decline carrying the pending batches. Absence and refusal are values: a step that does not happen returns `Maybe` with its reason, a refused operation returns `Result` with a typed refusal.
+
+## References
+
+- `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras` — exemplar: Yves Guiraud, Eric Hoffbeck and Philippe Malbos, "Convergent Presentations and Polygraphic Resolutions of Associative Algebras", _Mathematische Zeitschrift_ 293, 2019, `doi:10.1007/s00209-018-2185-z` — the standard resolution of a convergent presentation, which the bar complex of a first-order block builds.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the Squier frame of the presented-spaces page, which reads completion as a Morse collapse of the bar complex.
 
 ## Provided features
 

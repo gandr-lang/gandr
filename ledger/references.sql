@@ -41,6 +41,7 @@ INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstrac
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells::fusion','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ghrist-2022-cellular_sheaves_lattices_tarski_laplacian','theory-cellular-sheaves','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','lawvere','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-discrete-morse','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Henry-2018-nonunital_polygraphs_form_presheaf_category','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','db60bc4ed0a81c61929941b9f01c0256c2af1168','2026-11-02','bb7ea16a861957dfc8f4ee999b33a4d61bed1863');
@@ -548,6 +549,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theor
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-diagnostics','obstruction','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-lowering','module::sealing','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-cellular-sheaves','','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
