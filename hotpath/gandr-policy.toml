@@ -8,6 +8,11 @@
 # in any crate is a real one and fails the `hotpath / gandr` check, which is
 # never a required check: a regression lands red rather than blocks. The
 # comment is posted only when the comparison finds a change.
+#
+# The report counts allocations (`HOTPATH_ALLOC_METRIC: count` in ci.yml),
+# and a function budget takes its `alloc` only in bytes. Thus the budgets of
+# the series are in hotpath/gandr-bytes-policy.toml, which judges a report
+# in bytes.
 
 pr_check = "fail"
 pr_comment = "on_change"
@@ -24,27 +29,3 @@ min_calls = 1
 
 [functions.timing]
 judged = false
-
-# The per-component floor (#2395): what a component laid after the prelude
-# allocates to reuse the prelude's judgement, checked on every report without
-# a baseline. Where a reuse still copies the prelude's part rather than
-# sharing it (#2461), its average grows with the prelude; a ceiling broken by
-# a grown prelude is the floor growing with it. Measured in the series: 983
-# KB per resumed lowering, whose per-node tables, tables by declaration,
-# declarations, descriptions and model signatures are shared, 439 KB per
-# continued program, 14 KB per resumed kernel record, whose arena, entries and
-# exports are shared.
-[[functions.budgets]]
-match = "gandr_surface_dispatcher::compose::lower_onto_closure"
-alloc = { avg = "1186 KB" }
-message = "a component's lowering resumed onto the prelude's copies the prelude's slots, structures and other collected tables, and its origins (#2461)"
-
-[[functions.budgets]]
-match = "gandr_surface_dispatcher::evaluate::after"
-alloc = { avg = "512 KB" }
-message = "a component's program continued from the prelude's copies the prelude's program (#2461)"
-
-[[functions.budgets]]
-match = "gandr_core_checker::bridge::resume"
-alloc = { avg = "16 KB" }
-message = "a component's readmission resumed from the prelude's record shares its kernel arena, entries and exports; a grown average copies one of them again (#2461)"

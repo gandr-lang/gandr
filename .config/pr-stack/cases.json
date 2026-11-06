@@ -4041,5 +4041,37 @@
       { "number": 5340, "base": "main", "bot": false }
     ],
     "output": null
+  },
+  {
+    "name": "#5137: a copied unit that reads a source of the primary through CARGO_MANIFEST_DIR or a checksum is removed once, and a unit that names only the primary's build products is kept",
+    "program": "warm.jq",
+    "input": {
+      "root": "/w/gandr",
+      "named": [
+        "/w/unit/target/enforcing/debug/build/gandr-grammar/00000000000000a1/out/tests-00000000000000a1.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr/crates/grammar",
+        "/w/unit/target/debug/build/gandr-lang/00000000000000a2/out/gandr_lang-00000000000000a2.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr",
+        "/w/unit/target/enforcing/debug/build/gandr-lsp/00000000000000a3/out/tests-00000000000000a3.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr/crates/lsp",
+        "/w/unit/target/enforcing/debug/build/gandr-lsp/00000000000000a3/out/tests-00000000000000a3.d:# checksum:blake3=00 file_len:9 /w/gandr/clippy.toml",
+        "/w/unit/target/debug/build/ring/00000000000000a4/out/ring-00000000000000a4.d:# env-dep:OUT_DIR=/w/gandr/target/debug/build/ring/00000000000000a5/out",
+        "/w/unit/target/debug/build/ring/00000000000000a4/out/ring-00000000000000a4.d:# checksum:blake3=00 file_len:9 /w/gandr/target/debug/build/ring/00000000000000a5/out/prefix.rs"
+      ]
+    },
+    "output": [
+      "/w/unit/target/debug/build/gandr-lang/00000000000000a2",
+      "/w/unit/target/enforcing/debug/build/gandr-grammar/00000000000000a1",
+      "/w/unit/target/enforcing/debug/build/gandr-lsp/00000000000000a3"
+    ]
+  },
+  {
+    "name": "#5137: a path in a sibling directory whose name starts with the primary's is not the primary's, and a dep-info outside a unit directory names no unit",
+    "program": "warm.jq",
+    "input": {
+      "root": "/w/gandr",
+      "named": [
+        "/w/unit/target/debug/build/gandr-grammar/00000000000000b1/out/tests-00000000000000b1.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr-worktrees/unit/crates/grammar",
+        "/w/unit/target/debug/deps/tests-00000000000000b2.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr/crates/grammar"
+      ]
+    },
+    "output": []
   }
 ]

@@ -61,7 +61,7 @@ message = "a component resumes the prelude's crossing, never crosses it again (#
 
 # Each component after its root's first in a walk resumes the prelude's
 # record: 63 in the `component floor` workload, 85 in the series. What a resume
-# costs, in allocation, is pinned in hotpath/gandr-policy.toml.
+# costs, in allocation bytes, is pinned in hotpath/gandr-bytes-policy.toml.
 [[functions.budgets]]
 match = "gandr_core_checker::bridge::resume"
 calls = { min = 63 }

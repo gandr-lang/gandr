@@ -623,6 +623,13 @@ gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref refs/heads/main --key "${usa
 # workspace crate). hotpath's policy has no timing-only ignore, so the closure
 # needs a report of its own.
 #
+# A series with a bytes policy (hotpath/<series>-bytes-policy.toml) runs once
+# more with `HOTPATH_ALLOC_METRIC=bytes`, and the task uploads that report as
+# `<series>-bytes` (#5125). A function budget of hotpath takes its `alloc`
+# only in bytes, and the job counts allocations, so the budgets need this
+# report. The report goes to target/hotpath/reports/ and not to
+# target/hotpath/runs/, because the band judge reads counts there.
+#
 # The closure is every workspace crate a changed file sits in and every crate
 # that depends on one, however indirectly. A changed lockfile, workspace
 # manifest, toolchain pin or `.cargo/` file, or no base to compare with
@@ -653,7 +660,7 @@ gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref refs/heads/main --key "${usa
 # `hotpath-runs-<commit>` for a later pull request's base and main's next
 # push.
 ["ci:hotpath"]
-description = "Run a hotpath series and upload its allocation and timing reports"
+description = "Run a hotpath series and upload its allocation, timing and bytes reports"
 tools.jq = "1.8.1"
 usage = '''
 arg "<series>" help="the benchmark name"
@@ -670,13 +677,14 @@ root=$(git rev-parse --show-toplevel)
 scratch="$root/target/hotpath"
 mkdir -p "$scratch/reports" "$scratch/runs" "$scratch/unsent"
 rm -f "$scratch/runs/$series"-*.json "$scratch/$series-timing-policy.toml" \
-  "$scratch/unsent/$series" "$scratch/unsent/$series-timing"
+  "$scratch/unsent/$series" "$scratch/unsent/$series-timing" "$scratch/unsent/$series-bytes"
 kept=0
 keep() {
   kept=$((kept + 1))
   cp "$1" "$scratch/runs/$series-$kept.json"
 }
-upload() {
+# `send <benchmark> <policy>`: one run of the series, uploaded as <benchmark>.
+send() {
   rm -f "$scratch/$1.json"
   HOTPATH_BENCHMARK=$1 HOTPATH_POLICY_PATH=$2 HOTPATH_UPLOAD_RESPONSE_PATH="$scratch/$1.json" \
     HOTPATH_OUTPUT_FORMAT=json HOTPATH_OUTPUT_PATH="$scratch/reports/$1.json" \
@@ -693,6 +701,10 @@ upload() {
       : > "$scratch/unsent/$1"
       ;;
   esac
+}
+# `upload <benchmark> <policy>`: one run sent and kept as one of the runs.
+upload() {
+  send "$1" "$2"
   keep "$scratch/reports/$1.json"
 }
 more() {
@@ -703,6 +715,9 @@ more() {
   done
 }
 upload "$series" "$root/hotpath/$series-policy.toml"
+if [[ -f "$root/hotpath/$series-bytes-policy.toml" ]]; then
+  HOTPATH_ALLOC_METRIC=bytes send "$series-bytes" "$root/hotpath/$series-bytes-policy.toml"
+fi
 
 base=${CI_BASE_SHA:-}
 : > "$scratch/changed"
@@ -1951,9 +1966,15 @@ list "$repo: wip/ branches no open issue names" "$(jq -r '.wip[]' <<< "$reading"
 # written outside both trees (#3222): its source in the clone's git
 # directory, on the primary's filesystem, and its copy beside the worktree,
 # on the worktree's, so `git add -A` in either never meets it while the copy
-# runs.
+# runs. A copied unit that names a source of the primary would read the
+# primary's files, and cargo would still judge it fresh (#5137).
+# `.config/pr-stack/warm.jq` names each such unit from the dep-info lines
+# that name the primary, and the step removes it. Cargo then builds it again
+# in this worktree. The removal is safe to re-run, and a run that stops
+# half-way leaves a unit cargo builds again.
 ["wt:warm"]
-description = "Clone the primary worktree's gitignored artifacts into this one, or skip where the filesystem cannot clone"
+description = "Clone the primary worktree's gitignored artifacts into this one, or skip where the filesystem cannot clone, and remove each copied unit that reads the primary's sources"
+tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1973,6 +1994,20 @@ if ! "${clone[@]}" "$probe" "$copy" 2> /dev/null; then
 fi
 rm -f "$probe" "$copy"
 wt step copy-ignored
+[[ -d $here/target ]] || exit 0
+root=$(realpath "$primary")
+pattern="^# (env-dep:[^=]*=|checksum:[^ ]* file_len:[0-9]+ )$(sed 's/[][\.*^$+?(){}|]/\\&/g' <<< "$root")(/|\$)"
+named=$(grep -rE --include='*.d' "$pattern" "$here/target") || [[ $? == 1 ]]
+listed=$(jq -R -s --arg root "$root" '{root: $root, named: [split("\n")[] | select(. != "")]}' <<< "$named" \
+  | jq -f "$here/.config/pr-stack/warm.jq" | jq -r '.[]')
+removed=0
+if [[ -n $listed ]]; then
+  while IFS= read -r unit; do
+    rm -rf "$unit"
+    removed=$((removed + 1))
+  done <<< "$listed"
+fi
+echo "wt:warm: removed $removed copied units that read $primary's sources"
 '''
 
 # A unit issue is the brief, and work starts only on one that carries its

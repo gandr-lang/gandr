@@ -56,6 +56,14 @@
 //! term the run's arena holds. Reversal: a corpus row whose loop arm reads its
 //! scrutinee.
 //!
+//! **A function is a constant or a binder that holds one.** A definition's
+//! body reads the map it takes by its binder, so the family of `ap` defined by
+//! transport calls `f`, not a constant. The call of the definition binds `f` in
+//! the family's environment, and a binder there that holds a constant with no
+//! arguments reads as that constant (#5481). Alternative: a family quoted
+//! through its environment before each reading, which copies the family once
+//! per transport step.
+//!
 //! **A map's image of a loop is its case's loop arm**, the arm that case owes
 //! the loop or chooses for it, and a case with none sends the loop to
 //! reflexivity, as the checker reads a non-dependent case. Alternative: a loop
@@ -75,6 +83,7 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -167,10 +176,25 @@ struct Node
 enum Pending
 {
     /// A call answering the argument at a position of a read call, or the
-    /// endpoint's own.
-    Call(ComputationId, Option<(usize, usize)>),
+    /// endpoint's own, and the binders between it and the family's
+    /// environment.
+    Call(ComputationId, Option<(usize, usize)>, BinderDepth),
     /// The binder itself, as the argument at a position of a read call.
     Leaf(usize, usize),
+}
+
+/// The environment a path family is closed over, whose binders a call's
+/// function may read.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy)]
+struct Scope<'run>
+{
+    /// The arena the environment's values live in.
+    domain: &'run DomainArena,
+    /// The family's environment, outside its own binder.
+    environment: &'run Environment,
 }
 
 /// An endpoint read as the calls it runs the family's binder through: each
@@ -780,7 +804,8 @@ fn reads_through(
 /// reads it.
 ///
 /// # Specification
-/// - requires: `endpoint` is read under the family's one binder.
+/// - requires: `endpoint` is read under the family's one binder, and `scope` is
+///   the environment the family is closed over.
 /// - ensures: [`Action::Moving`] for the binder; [`Action::Fixed`] for an
 ///   endpoint that never reads it; [`Action::Through`] for calls [`routes`]
 ///   reads; `None` otherwise.
@@ -799,11 +824,12 @@ fn reads_through(
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| match *found {
     Some(Action::Moving) => matches!(core.value(endpoint), Some(&Value::Variable { .. })),
-    Some(Action::Through) => routes(core, endpoint).is_ok_and(|found| found.is_some()),
+    Some(Action::Through) => routes(core, scope, endpoint).is_ok_and(|found| found.is_some()),
     Some(Action::Fixed) | None => core.value(endpoint).is_some(),
 }))]
 fn action(
     core: &CoreArena,
+    scope: Scope<'_>,
     endpoint: ValueId,
 ) -> Result<Option<Action>, EvalFault>
 {
@@ -815,19 +841,21 @@ fn action(
     if reads_through(core, CoreTerm::Value(endpoint), bound)? == Reading::Ignores {
         return Ok(Some(Action::Fixed));
     }
-    Ok(routes(core, endpoint)?.map(|_| Action::Through))
+    Ok(routes(core, scope, endpoint)?.map(|_| Action::Through))
 }
 
 /// The calls an endpoint runs the family's binder through, and a route per
 /// occurrence of the binder, the leftmost first.
 ///
 /// # Specification
-/// - requires: `endpoint` is read under the family's one binder.
+/// - requires: `endpoint` is read under the family's one binder, and `scope` is
+///   the environment the family is closed over.
 /// - ensures: `Some(routes)` exactly when the endpoint is `⟨c⟩` for a call `c`
 ///   of the shape `force f a₁ … aₙ` some of whose arguments read the binder,
 ///   each of those the binder itself or `⟨c'⟩` for such a call, or `x ← c';
-///   force f x` for such a call `c'`, every function `f` a constant; each call
-///   once with its arguments, and a leaf per argument that is the binder.
+///   force f x` for such a call `c'`, every function `f` a constant as
+///   [`spine`] reads it; each call once with its arguments, and a leaf per
+///   argument that is the binder.
 /// - fails: the free-index walk's fault.
 /// - panics: none.
 ///
@@ -853,6 +881,7 @@ fn action(
     && matches!(core.value(endpoint), Some(&Value::Returned(_))))))]
 fn routes(
     core: &CoreArena,
+    scope: Scope<'_>,
     endpoint: ValueId,
 ) -> Result<Option<Routes>, EvalFault>
 {
@@ -866,18 +895,20 @@ fn routes(
         nodes: Vec::new(),
         leaves: Vec::new(),
     };
-    let mut pending = Vec::from([Pending::Call(call, None)]);
+    // The endpoint stands under the family's own binder.
+    let mut pending = Vec::from([Pending::Call(call, None, BinderDepth::from(1_usize))]);
     while let Some(next) = pending.pop() {
-        let (call, parent) = match next {
+        let (call, parent, under) = match next {
             Pending::Leaf(node, position) => {
                 read.leaves.push((node, position));
                 continue;
             },
-            Pending::Call(call, parent) => (call, parent),
+            Pending::Call(call, parent, under) => (call, parent, under),
         };
         let at = read.nodes.len();
         if let Some(&Computation::Bind(first, then)) = core.computation(call) {
-            let Some((function, arguments)) = spine(core, then)
+            let deeper = BinderDepth::from(usize::from(under).saturating_add(1));
+            let Some((function, arguments)) = spine(core, scope, (then, deeper))
             else {
                 return Ok(None);
             };
@@ -893,10 +924,10 @@ fn routes(
                 arguments,
                 parent,
             });
-            pending.push(Pending::Call(first, Some((at, 0))));
+            pending.push(Pending::Call(first, Some((at, 0)), under));
             continue;
         }
-        let Some((function, arguments)) = spine(core, call)
+        let Some((function, arguments)) = spine(core, scope, (call, under))
         else {
             return Ok(None);
         };
@@ -918,7 +949,7 @@ fn routes(
                 pending.push(Pending::Leaf(at, position));
             }
             else if let Some(&Value::Returned(inner)) = core.value(argument) {
-                pending.push(Pending::Call(inner, Some((at, position))));
+                pending.push(Pending::Call(inner, Some((at, position)), under));
             }
             else {
                 return Ok(None);
@@ -937,11 +968,20 @@ fn routes(
 }
 
 /// The function and the arguments, the first outermost, of the call `call`
-/// when it is `force f a₁ … aₙ` for a constant `f` and at least one argument.
+/// when it is `force f a₁ … aₙ` with at least one argument, for `f` a
+/// constant or a binder of `scope` that holds a constant unapplied. `under`
+/// counts the binders between the call and `scope`.
+///
+/// A definition's body reads the map it takes by its binder, so a family in
+/// that body, `y. Path[.A = B](f a, f y)`, calls `f` through the environment
+/// the call of the definition binds (#5481).
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: as the summary; `None` for any other computation.
+/// - requires: `scope` is the environment of the family that `call` stands in,
+///   past `under` binders.
+/// - ensures: as the summary; `None` for any other computation, and for a
+///   binder that holds anything but a neutral headed by a constant with an
+///   empty spine.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -950,12 +990,16 @@ fn routes(
 /// - measure: the spine's applications left.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`routes`].
+/// - hypothesis: L3 — as [`routes`]; and `cong(f, loop)` in a body whose binder
+///   `f` holds `flip` maps the loop to the flip's loop arm, which reading the
+///   binder as no constant leaves stuck.
 /// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_of_two_arguments`
+/// - witness: `eval::words::tests::cong_along_the_loop_reads_a_map_its_binder_holds_5481`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref arguments)| !arguments.is_empty()))]
 fn spine(
     core: &CoreArena,
-    call: ComputationId,
+    scope: Scope<'_>,
+    (call, under): (ComputationId, BinderDepth),
 ) -> Option<(ConstantIndex, Vec<ValueId>)>
 {
     let mut arguments = Vec::new();
@@ -968,7 +1012,35 @@ fn spine(
     else {
         return None;
     };
-    let Some(&Value::Constant(constant)) = core.value(function)
+    let constant = if let Some(&Value::Constant(constant)) = core.value(function) {
+        constant
+    }
+    else if let Some(&Value::Variable {
+        zone: Zone::Intuitionistic,
+        index,
+    }) = core.value(function)
+    {
+        let outside = usize::try_from(u32::from(index))
+            .ok()?
+            .checked_sub(usize::from(under))?;
+        let held = scope.environment.lookup(
+            Zone::Intuitionistic,
+            DeBruijnIndex::from(u32::try_from(outside).ok()?),
+        )?;
+        let DomainValue::Neutral { neutral, .. } = *scope.domain.value(held)?
+        else {
+            return None;
+        };
+        let neutral = scope.domain.neutral(neutral)?;
+        let crate::domain::NeutralHead::Constant(constant) = neutral.head()
+        else {
+            return None;
+        };
+        if !neutral.spine().is_empty() {
+            return None;
+        }
+        constant
+    }
     else {
         return None;
     };
@@ -1515,7 +1587,11 @@ fn family_actions(
     {
         return Ok(None);
     }
-    let (Some(left), Some(right)) = (action(core, left)?, action(core, right)?)
+    let scope = Scope {
+        domain,
+        environment: closure.environment(),
+    };
+    let (Some(left), Some(right)) = (action(core, scope, left)?, action(core, scope, right)?)
     else {
         return Ok(None);
     };
@@ -1593,7 +1669,11 @@ fn endpoint_routes(
         Side::Left => left,
         Side::Right => right,
     };
-    let read = routes(core, endpoint)?.ok_or(stuck)?;
+    let scope = Scope {
+        domain,
+        environment: closure.environment(),
+    };
+    let read = routes(core, scope, endpoint)?.ok_or(stuck)?;
     Ok((read, carrier, closure.environment().clone()))
 }
 

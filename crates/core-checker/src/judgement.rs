@@ -11775,13 +11775,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   normalising and the refuting outcomes; the recorded dialogues cross to
     ///   the kernel and replay there. Endpoints calling a definition over an
     ///   omitted model are met once the model is resolved, and refused when the
-    ///   filled endpoints are apart.
+    ///   filled endpoints are apart. A point that maps an implicit its call
+    ///   omits meets its endpoints once its argument binds the implicit.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
     /// - witness: `judgement::tests::a_pair_the_tier_meets_carries_its_evaluation_3557`
     /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
     /// - witness: `judgement::tests::reflexivity_at_a_stuck_native_point_meets_it_by_syntax`
     /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
     /// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
+    /// - witness: `bridge::tests::an_endpoint_over_a_bound_implicit_reads_its_solution_5480`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right, .. }) => site == at && named_left == left && named_right == right,
         | Ok(()) => self.context.reflexivities().contains_key(&at),
