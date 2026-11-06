@@ -26,3 +26,5 @@ mod laws;
 mod manifest;
 #[cfg(test)]
 mod values;
+#[cfg(test)]
+mod vectors;

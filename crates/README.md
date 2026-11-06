@@ -120,7 +120,7 @@ _Projection_ is the compiler: it takes a _choreography_, one program over named 
 
 ## Storage and distribution
 
-The storage crates are one content-addressable memory, _the CAM_, and the runtime's stores location-addressable memories, _the LAMs_ (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`). Each world runs its own LAMs; all reach one logical CAM, addressed by digests of canonical bytes, one key space. A value crosses a world by `crossing::commit` and `crossing::deref` when its type is `mobile`, the authority, and `Open`, holding no location. A digest proves integrity; validity is the checker's and the kernel's.
+The storage crates form the content-addressable CAM. Runtime stores form location-addressable LAMs. Each world has its own LAMs and reaches one logical CAM by canonical-byte digest. A `mobile`, `Open` value crosses by `crossing::commit` and `crossing::deref`. A digest proves integrity. The checker and kernel decide validity. The v1 storage vectors define the external contract (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`).
 
 ```mermaid
 flowchart LR

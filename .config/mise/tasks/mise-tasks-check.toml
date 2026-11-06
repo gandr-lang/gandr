@@ -91,6 +91,27 @@ SECONDS=0
 description = "A malformed cases file is refused before its program runs"
 run = ".config/cases/cases.bash"
 
+# The gate keeps each v1 vector immutable after landing (#3168).
+["check:vectors"]
+description = "Refuse a changed v1 storage vector without its v2 file"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/pr-stack/trunk.bash
+base=$(git merge-base "origin/$trunk" HEAD)
+status=0
+while IFS=$'\t' read -r change path; do
+  next="${path%v1.json}v2.json"
+  if ! git diff --name-only --diff-filter=A "$base" HEAD -- "$next" | read -r; then
+    printf 'check:vectors: %s changes without %s\n' "$path" "$next" >&2
+    status=1
+  fi
+done < <(git diff --name-status --diff-filter=M "$base" HEAD -- \
+  crates/storage-values/tests/vectors/v1.json \
+  crates/storage-records/tests/vectors/v1.json)
+exit "$status"
+'''
+
 # The whole wall (#5014): every `check:*` task over the whole workspace, in
 # one of the host's gate slots. It takes about half an hour, and the merge
 # group runs it before every landing, so a change runs it only when no
