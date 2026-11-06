@@ -127,6 +127,16 @@ env:
   # own checkout. A tag that is not published yet is built inside the run that
   # first needs it, and the image jobs wait for it.
   GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
+  # The integration cycle can run its Linux lanes on the self-hosted runner,
+  # which is x86-64 (#5526). The tree sets `/usr/bin/clang` as the x86-64
+  # linker (#4221). The image carries `cc` and no clang. So `cc` links there,
+  # as in coverage.yml's x86-64 run. `cc` refuses the tree's clang flag
+  # `--ld-path`. So the empty `RUSTFLAGS` drops the tree's flags, and a task
+  # that needs flags sets its own. No other lane builds for x86-64 Linux. The
+  # tree sets flags for no other target. So the two values change no other
+  # lane.
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: cc
+  RUSTFLAGS: ""
   # The corpus sweeps sample the corpus and add every source the change adds
   # or modifies; a pull request's first parent is the base it lands on, and
   # the lanes that run sweeps fetch that parent. A merge group's change runs
