@@ -186,7 +186,7 @@ pub enum Lexeme
 /// Borrowed UTF-8 source bytes under the labeler's cursor domain.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct SourceBytes<'source>(&'source [u8]);
+pub struct SourceBytes<'source>(&'source [u8]);
 
 impl SourceBytes<'_>
 {
@@ -755,6 +755,110 @@ impl Token
         let start = usize::try_from(self.start).unwrap_or(usize::MAX);
         let end = usize::try_from(self.end).unwrap_or(usize::MAX);
         SourceFragment::from(source.get(start .. end).unwrap_or(""))
+    }
+}
+
+/// How a token takes part in bracket nesting.
+///
+/// # Specification
+/// - ensures: as [`bracket`] reads a token.
+/// - panics: none.
+/// - executable: none — a plain value; [`bracket`] carries the executable
+///   clause.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Bracket
+{
+    /// The token opens a bracket: `(`, `[`, `{`, or a compound opener such as
+    /// `@[` or `#{`.
+    Open,
+    /// The token closes the innermost open bracket.
+    Close,
+    /// The token does not nest.
+    Neither,
+}
+
+/// What `token` does to the brackets open around it, its spelling read from
+/// `bytes`.
+///
+/// Every family nests alike: a closer closes the innermost open bracket
+/// whatever opened it, so a mismatched closer still balances the count, the
+/// convention the molder's form runs split by. The layout pass's block opener
+/// and closer nest as a written pair does.
+///
+/// # Specification
+/// - requires: `bytes` is the exact buffer `token` was labeled from.
+/// - ensures: [`Bracket::Open`] for a layout opener and [`Bracket::Close`] for
+///   a layout closer. For a punctuation or subshell token, [`Bracket::Open`]
+///   when its spelling ends in `(`, `[` or `{`, and [`Bracket::Close`] when it
+///   is `)`, `]` or `}`. [`Bracket::Neither`] otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — plain and compound openers, the three closers, a word and
+///   a string fragment spelling a bracket; reading the lexeme loosely counts a
+///   bracket inside a string, and reading the closer by suffix counts `]]` or a
+///   compound closer that does not exist.
+/// - witness: `mold::tests::brackets_are_classified_by_lexeme_and_text`
+#[inline]
+#[spec(ensures: |ret| {
+    let spelled = bytes.0.get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).unwrap_or_default();
+    ret == if token.lexeme == Lexeme::LayoutOpen {
+        Bracket::Open
+    } else if token.lexeme == Lexeme::LayoutClose {
+        Bracket::Close
+    } else if !matches!(token.lexeme, Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose) {
+        Bracket::Neither
+    } else if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
+        Bracket::Open
+    } else if matches!(spelled, b")" | b"]" | b"}") {
+        Bracket::Close
+    } else {
+        Bracket::Neither
+    }
+})]
+pub fn bracket(
+    token: Token,
+    bytes: SourceBytes<'_>,
+) -> Bracket
+{
+    match token.lexeme {
+        Lexeme::LayoutOpen => return Bracket::Open,
+        Lexeme::LayoutClose => return Bracket::Close,
+        Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose => {},
+        Lexeme::LowerWord
+        | Lexeme::UpperWord
+        | Lexeme::Number
+        | Lexeme::TypedNumber
+        | Lexeme::Character
+        | Lexeme::Quote
+        | Lexeme::StringFragment
+        | Lexeme::ShellStringFragment
+        | Lexeme::EscapeSequence
+        | Lexeme::ShellWord
+        | Lexeme::EnvAssign
+        | Lexeme::SingleQuotedContent
+        | Lexeme::VariableName
+        | Lexeme::FileDescriptor
+        | Lexeme::ArmBar
+        | Lexeme::LayoutSemi
+        | Lexeme::Space
+        | Lexeme::Unknown => return Bracket::Neither,
+    }
+    let spelled = bytes
+        .0
+        .get(
+            usize::try_from(token.start).unwrap_or(usize::MAX)
+                .. usize::try_from(token.end).unwrap_or(usize::MAX),
+        )
+        .unwrap_or_default();
+    if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
+        Bracket::Open
+    }
+    else if matches!(spelled, b")" | b"]" | b"}") {
+        Bracket::Close
+    }
+    else {
+        Bracket::Neither
     }
 }
 

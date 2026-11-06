@@ -187,6 +187,8 @@ use crate::label::Lexeme;
 use crate::label::Move;
 use crate::label::label;
 use crate::label::label_moving;
+use crate::meld::Splice;
+use crate::meld::Splices;
 use crate::mold::Molding;
 use crate::mold::lookahead_reach;
 use crate::oblig::ObligationInstance;
@@ -738,6 +740,47 @@ fn ordered(obligations: &mut [ObligationInstance])
             .then_with(|| left.span.start().cmp(&right.span.start()))
             .then_with(|| left.span.end().cmp(&right.span.end()))
     });
+}
+
+/// The parse of `source` that `copy` commits to, with each tile that
+/// `splices` writes read back as minted, and `owed` beside the obligations
+/// the copy reads.
+///
+/// The gap search and the placements each judge a copy that has tiles written
+/// in, and each answers the source's parse through this one judge.
+///
+/// # Specification
+/// - requires: `copy` holds the tokens of `source` with the tile of each of
+///   `splices` written in at its place, and `splices` stand in copy order.
+/// - ensures: the tree that `copy` commits over `source`, beside each
+///   obligation of the copy read back at its place in `source` and each of
+///   `owed`, ordered as [`ordered`] orders them; `None` when the commit fails.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the commit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the gap search's and the placements' witnesses each read
+///   a written tile back as minted at its place in the source.
+/// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+/// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+/// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
+fn spliced<'source>(
+    copy: MeldState<'_>,
+    source: SourceText<'source>,
+    splices: &[Splice],
+    owed: impl IntoIterator<Item = ObligationInstance>,
+) -> Option<ParseResult<'source>>
+{
+    let splices = Splices::from(splices);
+    let (tree, copied) = copy.commit_spliced(source, splices).ok()?;
+    let mut obligations: Vec<ObligationInstance> = copied
+        .into_iter()
+        .map(|obligation| splices.obligation(obligation))
+        .chain(owed)
+        .collect();
+    ordered(&mut obligations);
+    Some(ParseResult { tree, obligations })
 }
 
 /// One source split at its predicted top-level form boundaries, so its forms

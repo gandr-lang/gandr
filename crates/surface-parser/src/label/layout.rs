@@ -61,9 +61,11 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 
+use super::Bracket;
 use super::Lexeme;
 use super::SourceBytes;
 use super::Token;
+use super::bracket;
 use crate::meld::primitive_copy_wrapper;
 
 /// What ends the items of a block.
@@ -499,7 +501,8 @@ pub(super) fn lay_out(
         }
         let column = token.start.saturating_sub(line_begin);
         let spelled = text(&token);
-        let closer = punct && matches!(spelled, b")" | b"]" | b"}");
+        let nesting = bracket(token, bytes);
+        let closer = nesting == Bracket::Close;
         let brace = token.lexeme == Lexeme::Punct && spelled == b"{";
         let members = matches!(pending, Pending::Members { .. });
         let mut opened = false;
@@ -688,9 +691,7 @@ pub(super) fn lay_out(
                 pending = Pending::None;
             }
         }
-        else if punct
-            && (spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{"))
-        {
+        else if nesting == Bracket::Open {
             if attribute.is_none() && matches!(spelled, b"@[" | b"@![") {
                 attribute = Some(frames.len());
             }
@@ -926,39 +927,60 @@ fn block_column(
     indent: Column,
 ) -> Option<Column>
 {
-    let indent = u32::from(indent);
-    let mut least: Option<u32> = None;
-    let mut begin: Option<u32> = None;
-    for token in rest.iter().skip(1) {
-        if token.lexeme == Lexeme::Space {
-            if let Some(newline) = bytes
+    let mut least: Option<Column> = None;
+    for column in following(bytes, rest).filter_map(|after| after.begins) {
+        if column <= indent {
+            break;
+        }
+        least = Some(least.map_or(column, |least| least.min(column)));
+    }
+    least
+}
+
+/// A significant token after a line's first token, as [`following`] reads
+/// it.
+#[derive(Clone, Copy, Debug)]
+struct Following
+{
+    /// The token.
+    token: Token,
+    /// The column of the line that the token begins, none when the token does
+    /// not begin a line.
+    begins: Option<Column>,
+}
+
+/// Each significant token after the first of `rest`, in order, with the
+/// column of the line it begins: the one place the layout pass finds a line
+/// start after a token.
+///
+/// # Specification
+/// trivial.
+fn following<'rest>(
+    bytes: SourceBytes<'rest>,
+    rest: &'rest [Token],
+) -> impl Iterator<Item = Following> + 'rest
+{
+    let mut last = rest.first().map_or(0, |first| first.end);
+    rest.iter()
+        .skip(1)
+        .filter(|token| token.lexeme != Lexeme::Space)
+        .map(move |&token| {
+            let gap = usize::try_from(last).unwrap_or(usize::MAX)
+                .. usize::try_from(token.start).unwrap_or(usize::MAX);
+            let begins = bytes
                 .0
-                .get(
-                    usize::try_from(token.start).unwrap_or(usize::MAX)
-                        .. usize::try_from(token.end).unwrap_or(usize::MAX),
-                )
+                .get(gap.clone())
                 .unwrap_or_default()
                 .iter()
                 .rposition(|&byte| byte == b'\n')
-            {
-                begin = Some(
-                    token
-                        .start
-                        .saturating_add(u32::try_from(newline).unwrap_or(u32::MAX))
-                        .saturating_add(1),
-                );
-            }
-            continue;
-        }
-        if let Some(begin) = begin.take() {
-            let column = token.start.saturating_sub(begin);
-            if column <= indent {
-                break;
-            }
-            least = Some(least.map_or(column, |least| least.min(column)));
-        }
-    }
-    least.map(Column)
+                .map(|newline| {
+                    let begin = u32::try_from(gap.start.saturating_add(newline).saturating_add(1))
+                        .unwrap_or(u32::MAX);
+                    Column(token.start.saturating_sub(begin))
+                });
+            last = token.end;
+            Following { token, begins }
+        })
 }
 
 /// The move of the line that `token` begins, when `moves` holds one, with
@@ -1063,7 +1085,7 @@ fn next_line(
                 | (Lexeme::Punct, b"=" | b"," | b"->" | b"=>" | b":")
         )
     };
-    let Some((&first, after)) = rest.split_first()
+    let Some(&first) = rest.first()
     else {
         return NextLine {
             column: None,
@@ -1074,41 +1096,28 @@ fn next_line(
     // closed one it did not open.
     let mut depth = 0_u32;
     let mut closes_earlier = false;
-    let nest = |token: &Token, depth: &mut u32, closes_earlier: &mut bool| {
+    let nest = |token: Token, depth: &mut u32, closes_earlier: &mut bool| {
         if token.lexeme == Lexeme::Punct {
-            let spelled = spelled(token);
-            if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
-                *depth = depth.saturating_add(1);
-            }
-            else if matches!(spelled, b")" | b"]" | b"}") {
-                *closes_earlier |= *depth == 0;
-                *depth = depth.saturating_sub(1);
+            match bracket(token, bytes) {
+                Bracket::Open => *depth = depth.saturating_add(1),
+                Bracket::Close => {
+                    *closes_earlier |= *depth == 0;
+                    *depth = depth.saturating_sub(1);
+                },
+                Bracket::Neither => {},
             }
         }
     };
-    nest(&first, &mut depth, &mut closes_earlier);
+    nest(first, &mut depth, &mut closes_earlier);
     let mut last = first;
-    for &token in after {
-        if token.lexeme == Lexeme::Space {
-            continue;
-        }
-        let gap = usize::try_from(last.end).unwrap_or(usize::MAX)
-            .. usize::try_from(token.start).unwrap_or(usize::MAX);
-        if let Some(newline) = bytes
-            .0
-            .get(gap.clone())
-            .unwrap_or_default()
-            .iter()
-            .rposition(|&byte| byte == b'\n')
-        {
-            let begin = u32::try_from(gap.start.saturating_add(newline).saturating_add(1))
-                .unwrap_or(u32::MAX);
+    for Following { token, begins } in following(bytes, rest) {
+        if let Some(column) = begins {
             return NextLine {
-                column: Some(token.start.saturating_sub(begin)),
+                column: Some(u32::from(column)),
                 continued: closes_earlier || depth > 0 || continues(&last),
             };
         }
-        nest(&token, &mut depth, &mut closes_earlier);
+        nest(token, &mut depth, &mut closes_earlier);
         last = token;
     }
     NextLine {

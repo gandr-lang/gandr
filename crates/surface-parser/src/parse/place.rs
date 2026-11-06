@@ -74,7 +74,7 @@ use gandr_theory_graphs::Dir;
 
 use super::ParseResult;
 use super::molded;
-use super::ordered;
+use super::spliced;
 use super::unrepaired;
 use crate::MeldState;
 use crate::Molder;
@@ -88,7 +88,6 @@ use crate::label::label;
 use crate::meld::BOUNDARY_SORT;
 use crate::meld::Expected;
 use crate::meld::Splice;
-use crate::meld::Splices;
 use crate::meld::declaration_head;
 use crate::meld::primitive_copy_wrapper;
 use crate::mold::KEYWORDS;
@@ -477,18 +476,12 @@ fn headed<'source>(
                 sort: BOUNDARY_SORT.grout_sort(),
                 shape: GroutShape::Prefix,
             })?;
-            let splices = [splice];
-            let splices = Splices::from(splices.as_slice());
-            let (tree, copied) = molded(pbg, SourceText::from(copy.as_str()))
-                .commit_spliced(source, splices)
-                .ok()?;
-            let mut obligations: Vec<ObligationInstance> = copied
-                .into_iter()
-                .map(|obligation| splices.obligation(obligation))
-                .collect();
-            obligations.push(ObligationInstance::new(Oblig::MissingTile, lead));
-            ordered(&mut obligations);
-            Some(ParseResult { tree, obligations })
+            spliced(
+                molded(pbg, SourceText::from(copy.as_str())),
+                source,
+                &[splice],
+                [ObligationInstance::new(Oblig::MissingTile, lead)],
+            )
         })
 }
 
@@ -944,18 +937,12 @@ fn settled<'source>(
         },
     );
     let splice = Splice::new(place, spelled, leaf)?;
-    let splices = [splice];
-    let splices = Splices::from(splices.as_slice());
-    let (tree, copied) = molded(pbg, SourceText::from(copy.as_str()))
-        .commit_spliced(source, splices)
-        .ok()?;
-    let mut obligations: Vec<ObligationInstance> = copied
-        .into_iter()
-        .map(|obligation| splices.obligation(obligation))
-        .collect();
-    obligations.push(target.repair);
-    ordered(&mut obligations);
-    Some(ParseResult { tree, obligations })
+    spliced(
+        molded(pbg, SourceText::from(copy.as_str())),
+        source,
+        &[splice],
+        [target.repair],
+    )
 }
 
 /// The tiles of `tree` from `from` up to `upto`, each with its span measured
