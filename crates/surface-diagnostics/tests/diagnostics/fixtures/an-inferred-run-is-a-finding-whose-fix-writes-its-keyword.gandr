@@ -1,0 +1,6 @@
+def id(n : Integer) -> -F Integer { n }
+@[ explicit_runs ]
+def nested(n : Integer) -> -F Integer { id (id n) }
+def returned(n : Integer) -> -F Integer { return id n }
+def leading(n : Integer) -> -F Integer { id n + 1 }
+def grouped(n : Integer) -> -F Integer { return n + 1 }

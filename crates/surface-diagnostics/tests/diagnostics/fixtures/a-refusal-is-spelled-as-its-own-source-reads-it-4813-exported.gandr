@@ -1,0 +1,3 @@
+pub data Box : Type where {
+  | Wrap : (n : Integer) --> Box
+}
