@@ -2559,6 +2559,25 @@ impl CoreArena
         })
     }
 
+    /// Introduce the constructor `tag` of `family` over `fields`, at the data
+    /// classifier `family` applied to `arguments`, minted beside it: the
+    /// constructor's family and its classifier's declaration are one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constructor_of(
+        &mut self,
+        family: gandr_kernel_term::ConstantIndex,
+        arguments: alloc::vec::Vec<ValueId>,
+        tag: gandr_kernel_term::ConstructorTag,
+        fields: alloc::vec::Vec<ValueId>,
+    ) -> ValueId
+    {
+        let datatype = self.value_type_data(family, arguments);
+        self.value_constructor(family, datatype, tag, fields)
+    }
+
     /// Introduce a structural record.
     ///
     /// # Specification
