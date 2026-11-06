@@ -16,6 +16,8 @@ mod differential;
 #[cfg(test)]
 mod fixture;
 #[cfg(test)]
+mod lawvere;
+#[cfg(test)]
 mod overlap;
 #[cfg(test)]
 mod second_inhabitant;

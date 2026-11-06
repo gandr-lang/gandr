@@ -339,6 +339,7 @@ digraph crates {
   "theory-circuit-algebras" -> "theory-cell-complexes";
   "theory-circuit-algebras" -> "theory-spec-combinators";
   "theory-coherent-resolutions" -> "theory-cell-complexes";
+  "theory-coherent-resolutions" -> "theory-discrete-morse";
   "theory-coherent-resolutions" -> "theory-spec-combinators";
   "theory-computads" -> "theory-cell-complexes";
   "theory-computads" -> "theory-coherent-resolutions";

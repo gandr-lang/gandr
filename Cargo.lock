@@ -1880,6 +1880,7 @@ dependencies = [
  "gandr-kernel-term",
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
+ "gandr-theory-discrete-morse",
  "gandr-theory-spec-combinators",
  "hotpath",
  "proptest",
