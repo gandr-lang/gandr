@@ -11,13 +11,13 @@ def diffSum(m : Integer, n : Integer) -> (s : Integer, d : Integer) =
 /// A caller binds each output to its own name.
 @[ runs("14") ]
 def bound() -> -F Integer =
-  let *{s, d} = sumDiff 7 2
+  let (s, d) = sumDiff 7 2
   return s + d
 
 /// A caller binds the outputs by label.
 @[ checks ]
 def labelled() -> -F Integer =
-  let *{.s, .d} = diffSum 7 2
+  let (.s, .d) = diffSum 7 2
   return s - d
 
 /// A caller selects one output.
