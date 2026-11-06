@@ -1,0 +1,43 @@
+# hotpath Cloud's budgets for the allocation of the `gandr` series in bytes
+# (crates/surface-driver/benches/hotpath.rs,
+# https://hotpath.rs/performance_budgets). `mise run ci:hotpath` runs the
+# series with `HOTPATH_ALLOC_METRIC=bytes` and uploads the report as
+# `gandr-bytes`. A function budget takes its `alloc` only in bytes, and the
+# `gandr` report counts allocations (hotpath/gandr-policy.toml). Thus the
+# budgets need a report of their own.
+#
+# Cloud checks each budget on each report, with no base. This policy judges
+# no comparison against the base: the `gandr` report judges the counts. A
+# broken budget fails the `hotpath / gandr-bytes` check, which is never a
+# required check.
+
+pr_check = "fail"
+pr_comment = "on_change"
+
+[functions.alloc]
+judged = false
+
+# The per-component floor (#2395): what a component laid after the prelude
+# allocates to use the prelude's judgement again. Where a component still
+# copies a part of the prelude and does not share it (#2461), its average
+# grows with the prelude. Thus a budget that a grown prelude breaks shows the
+# floor growing with it. The series measures 1090 KB for each resumed
+# lowering, 333 KB for each continued program and 15.1 KB for each resumed
+# kernel record (`a2485e814`, linux-x86_64). The shared parts are these: for
+# the lowering, the tables of each node, the tables by declaration, the
+# declarations, the descriptions and the model signatures; for the kernel
+# record, the arena, the entries and the exports.
+[[functions.budgets]]
+match = "gandr_surface_dispatcher::compose::lower_onto_closure"
+alloc = { avg = "1186 KB" }
+message = "a component's lowering resumed onto the prelude's copies the prelude's slots, structures and other collected tables, and its origins (#2461)"
+
+[[functions.budgets]]
+match = "gandr_surface_dispatcher::evaluate::after"
+alloc = { avg = "512 KB" }
+message = "a component's program continued from the prelude's copies the prelude's program (#2461)"
+
+[[functions.budgets]]
+match = "gandr_core_checker::bridge::resume"
+alloc = { avg = "16 KB" }
+message = "a component's readmission resumed from the prelude's record shares its kernel arena, entries and exports; a grown average copies one of them again (#2461)"
