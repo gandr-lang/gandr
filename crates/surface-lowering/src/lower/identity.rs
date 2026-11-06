@@ -5018,11 +5018,12 @@ impl<'source> Lowerer<'_, 'source>
             *tags == *words.point
         })?;
         let own = constant(words.slot)?;
-        let word = sink.arena.value_type_data(own, Vec::new());
-        Some(
-            sink.arena
-                .value_constructor(own, word, gandr_core_term::FreeCells::nil(), Vec::new()),
-        )
+        Some(sink.arena.value_constructor_of(
+            own,
+            Vec::new(),
+            gandr_core_term::FreeCells::nil(),
+            Vec::new(),
+        ))
     }
 
     /// The identity type `answer` writes, relocated to `frame` where the

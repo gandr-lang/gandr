@@ -909,8 +909,9 @@ impl Unfocusing<'_>
                     .checked_sub(usize::from(arity))
                     .ok_or(UnfocusRefusal::DecodeInvariant)?;
                 let fields: Vec<ValueId> = self.values.drain(start ..).collect();
-                let datatype = self.core.value_type_data(family, Vec::new());
-                let constructed = self.core.value_constructor(family, datatype, tag, fields);
+                let constructed = self
+                    .core
+                    .value_constructor_of(family, Vec::new(), tag, fields);
                 self.values.push(constructed);
                 Ok(())
             },

@@ -11663,7 +11663,7 @@ impl<'source> Lowerer<'_, 'source>
                 Built::Constructed { family, tag, arity } => {
                     let from = values.len().checked_sub(arity)?;
                     let fields = values.drain(from ..).rev().collect();
-                    values.push(constructed(arena, family, tag, fields));
+                    values.push(arena.value_constructor_of(family, Vec::new(), tag, fields));
                 },
             }
         }
@@ -12522,8 +12522,12 @@ fn tracked_motives(
                                 .rev()
                                 .map(|field| variable(arena, Depth(field)))
                                 .collect();
-                            let at_constructor =
-                                constructed(arena, family, ConstructorTag::from(tag), fields);
+                            let at_constructor = arena.value_constructor_of(
+                                family,
+                                Vec::new(),
+                                ConstructorTag::from(tag),
+                                fields,
+                            );
                             gandr_core_term::instantiate_comp_type(arena, lifted, at_constructor)
                         },
                         Maybe::Present(_) | Maybe::Absent(_) => {
@@ -13117,7 +13121,7 @@ fn level_read(
             Maybe::Present(branch) if branch.depth.0 >= at.0 => {
                 let from = values.len().saturating_sub(branch.arity);
                 let fields = values.drain(from ..).rev().collect();
-                constructed(arena, branch.family, branch.tag, fields)
+                arena.value_constructor_of(branch.family, Vec::new(), branch.tag, fields)
             },
             Maybe::Present(_) | Maybe::Absent(_) => level_value(arena, scrutinised, depth, at),
         };
@@ -13253,21 +13257,6 @@ fn arm_read(
         }
     }
     Maybe::Present(read)
-}
-
-/// The constructor `tag` of the parameterless family `family` over `fields`.
-///
-/// # Specification
-/// trivial.
-pub(super) fn constructed(
-    arena: &mut CoreArena,
-    family: ConstantIndex,
-    tag: ConstructorTag,
-    fields: Vec<ValueId>,
-) -> ValueId
-{
-    let classifier = arena.value_type_data(family, Vec::new());
-    arena.value_constructor(family, classifier, tag, fields)
 }
 
 /// The closed constructor term the prefix-ordered `point` spells over

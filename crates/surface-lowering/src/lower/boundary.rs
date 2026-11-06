@@ -496,8 +496,12 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(unresolved);
         };
-        let value =
-            super::native::constructed(sink.arena, family, ConstructorTag::from(found.tag), fields);
+        let value = sink.arena.value_constructor_of(
+            family,
+            Vec::new(),
+            ConstructorTag::from(found.tag),
+            fields,
+        );
         sink.origins.record_value(value, origin);
         Ok(value)
     }
