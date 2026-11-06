@@ -1,0 +1,11 @@
+module Evolution where {
+  type Old = +{ report : !String. end };
+  type New = +{ report : !String. end, pause : end };
+  def sub : Flow[.A = Type](Old, New);
+  def sub = Flow.sim Old New;
+  def kept : Flow[.A = Type](Old, Old);
+  def kept = Flow.stay Old;
+  def widened() -> -F Flow[.A = Type](Old, New) {
+    become Path.step kept sub
+  }
+}

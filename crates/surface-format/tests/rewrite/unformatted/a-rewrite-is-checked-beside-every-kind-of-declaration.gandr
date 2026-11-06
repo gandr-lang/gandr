@@ -1,0 +1,15 @@
+codata Stream(a : Type) : Type[-] where {
+  head : a;
+  tail : Stream(a);
+}
+
+world seat;
+
+module Pair :> *{ type Kept, one : Kept } where {
+  type Kept = Integer;
+  def one = 1;
+}
+
+def lost() -> Integer { migrate [nowhere] { pure 1 } }
+
+def pair : *{Integer, String};

@@ -26,34 +26,7 @@ use gandr_surface_syntax::SourceText;
 /// A counter over the integers, a pairing with both its carriers manifest,
 /// and a monoid over the integers, whose sort set also takes the map onto
 /// the semigroup it includes.
-const SOURCE: &str = "theory Counter where {
-  sort C : Type;
-  oper zero : () --> C;
-}
-
-theory Pairing where {
-  sort A : Type;
-  sort B : Type;
-  oper first : () --> A;
-  oper second : () --> B;
-}
-
-theory Semigroup where {
-  sort M : Type;
-  oper mul : (x : M, y : M) --> M;
-}
-
-theory Monoid where {
-  include Semigroup;
-  oper one : () --> M;
-}
-
-def counted(m : Model(Counter) with sort C = Integer) -> -F Integer { return 0 }
-
-def paired(p : Model(Pairing) with sort A = Integer with sort B = Unit) -> -F Integer { return 0 }
-
-def monoidal(m : Model(Monoid) with sort M = Integer) -> -F Integer { return 0 }
-";
+const SOURCE: &str = include_str!("forget/unformatted/source.gandr");
 
 /// #2130: of the checker's crossings, the explicit form writes those by a
 /// map onto the theory it forgets whose every carrier is a quoted type, each

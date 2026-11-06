@@ -1,0 +1,3 @@
+{CIRCLE}def twice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {{
+  {body}
+}}

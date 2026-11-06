@@ -1,0 +1,20 @@
+{CIRCLE}def spin(x : Circle) -> -F Circle {{
+  x
+}}
+
+def thrice : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) (Path.walk (fun (a) {{
+    type(Path[.A = Circle](Base, a))
+  }}) loop loop) loop,
+  Path.here Base
+);
+
+def undone : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) loop (Path.here Base),
+  Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) loop (Path.here Base)
+);
+
+def spun : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.walk (fun (a) {{ type(Path[.A = Circle](spin Base, spin a)) }}) loop (Path.here (spin Base)),
+  Path.walk (fun (a) {{ type(Path[.A = Circle](spin Base, spin a)) }}) loop (Path.here (spin Base))
+);

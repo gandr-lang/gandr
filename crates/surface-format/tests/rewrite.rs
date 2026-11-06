@@ -33,37 +33,11 @@ use gandr_surface_syntax::SourceText;
 
 /// Every pair of the table in the explicit spelling, nested and
 /// parenthesised where the sugar needs it.
-const EXPLICIT: &str = "\
-def pair : *{Integer, String};
-def triple : *{Integer, String, Unit};
-def choice : +{Integer, *{String, Unit}};
-def nested : *{+{Integer, String}, Unit};
-def lazy : +U &{-F Integer, -F Integer, -F String};
-def right : +U &{-F Integer, &{-F Integer, -F String}};
-def mixed : +U &{&{-F Integer, -F Integer}, -F String};
-def step : +U (Integer -> String -> -F Unit);
-def dependent : +U ((a : Type) -> a -> -F a);
-def thunked : +U (-F Integer);
-def returned : +U (Integer -> -F *{Integer, String});
-def tuple = *{1, *{2, \"b\"}};
-";
+const EXPLICIT: &str = include_str!("rewrite/unformatted/explicit.gandr");
 
 /// [`EXPLICIT`] in the sugared spelling, as the presentation printer
 /// parenthesises it.
-const SUGARED: &str = "\
-def pair : Integer * String;
-def triple : Integer * String * Unit;
-def choice : Integer + String * Unit;
-def nested : (Integer + String) * Unit;
-def lazy : +U (-F Integer & -F Integer & -F String);
-def right : +U (-F Integer & (-F Integer & -F String));
-def mixed : +U ((-F Integer & -F Integer) & -F String);
-def step : (Integer, String) -> Unit;
-def dependent : (a : Type, a) -> a;
-def thunked : () -> Integer;
-def returned : Integer -> Integer * String;
-def tuple = *{1, *{2, \"b\"}};
-";
+const SUGARED: &str = include_str!("rewrite/unformatted/sugared.gandr");
 
 /// The built-in grammar.
 ///
@@ -172,17 +146,9 @@ fn each_rewrite_moves_its_pair_both_ways()
 fn the_default_grade_is_unwritten_in_either_form_1327()
 {
     let grammar = grammar();
-    let source = "\
-def step : +U[ω] (Integer -> -F Integer) ;
-def lazy : +U[inf] &{-F Integer, -F Integer} ;
-def noted : +U[/* every use */ ω] (-F Integer) ;
-def once : +U[1] (Integer -> -F Integer) ;
-theory Counting where {
-  sort T : Type;
-  oper next : +U[ω] (T -> -F T);
-  oper add : +U[ω] (T -> T -> -F T);
-}
-";
+    let source = include_str!(
+        "rewrite/unformatted/the-default-grade-is-unwritten-in-either-form-1327.gandr"
+    );
     for (form, expected) in [
         (
             Form::Sugared,
@@ -228,20 +194,12 @@ theory Counting where {
 fn a_law_keeps_its_statement_in_either_form_2384()
 {
     let grammar = grammar();
-    let explicit = "\
-theory Lawful where {
-  sort C : Type;
-  oper next : +U (C -> -F C);
-  law trivial : (a : C) -> Path[.A = Bool](true, true);
-}
-";
-    let sugared = "\
-theory Lawful where {
-  sort C : Type;
-  oper next : C -> C;
-  law trivial : (a : C) -> Path[.A = Bool](true, true);
-}
-";
+    let explicit = include_str!(
+        "rewrite/unformatted/a-law-keeps-its-statement-in-either-form-2384-explicit.gandr"
+    );
+    let sugared = include_str!(
+        "rewrite/unformatted/a-law-keeps-its-statement-in-either-form-2384-sugared.gandr"
+    );
     for (source, form, expected) in [
         (explicit, Form::Sugared, sugared),
         (sugared, Form::Explicit, explicit),
@@ -263,54 +221,9 @@ theory Lawful where {
 fn a_tail_return_is_left_out_where_the_lowering_would_infer_it_1327()
 {
     let grammar = grammar();
-    let source = "\
-data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-
-def succeeded(n : Nat) -> -F Nat {
-  return Succ n
-}
-
-def early(k : Nat) -> -F Nat {
-  match k {
-    | Zero => return k
-    | Succ(j) => {
-      let q = match j {
-        | Zero => return j
-        | Succ(r) => pure r
-      };
-      pure q
-    }
-  }
-}
-
-def computed(n : Nat) -> -F Nat {
-  return succeeded n
-}
-
-def stated(n : Nat) -> -F Nat {
-  return n;
-}
-
-def nested(n : Nat) -> -F (+U (Nat -> -F Nat)) {
-  return thunk { fun (x) { return Succ x } }
-}
-
-def blocked(n : Nat) -> -F Nat {
-  match n {
-    | Zero => { let y = succeeded n; return y }
-    | Succ(p) => p
-  }
-}
-
-def noted(n : Nat) -> -F Nat {
-  return /* the argument */ n
-}
-
-@[ explicit_exits ]
-def asked(n : Nat) -> -F Nat {
-  return n
-}
-";
+    let source = include_str!(
+        "rewrite/unformatted/a-tail-return-is-left-out-where-the-lowering-would-infer-it-1327.gandr"
+    );
     let sugared = "\
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
@@ -380,11 +293,8 @@ def asked(n : Nat) -> Nat {
 fn a_result_at_a_region_keeps_its_returner_2325()
 {
     let grammar = grammar();
-    let source = "\
-def pass[r : Region](k : (+U (-F Integer)) at r) -> -F ((+U (-F Integer)) at r) {
-  pure k
-}
-";
+    let source =
+        include_str!("rewrite/unformatted/a-result-at-a-region-keeps-its-returner-2325.gandr");
     let sugared = "\
 def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) {
   pure k
@@ -406,29 +316,8 @@ def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) {
 fn a_result_row_is_written_before_its_type_2255()
 {
     let grammar = grammar();
-    let source = "\
-import std.process;
-
-def both() -> -F [Partial, std.process.Exit.Eff] Integer {
-  pure 1
-}
-
-def pair() -> -F [Partial] (Integer * Integer) {
-  pure *{1, 2}
-}
-
-def apply(k : +U (Unit -> -F [Partial] Unit)) -> -F [Partial] Unit {
-  k *{}
-}
-
-def tailed[r : Row]() -> -F [Partial | r] Unit {
-  pure *{}
-}
-
-def open[r : Row]() -> -F [r] Unit {
-  pure *{}
-}
-";
+    let source =
+        include_str!("rewrite/unformatted/a-result-row-is-written-before-its-type-2255.gandr");
     let sugared = "\
 import std.process;
 
@@ -467,36 +356,12 @@ def open[r : Row]() -> [r] Unit {
 fn a_labelled_result_row_is_written_before_its_type_2271()
 {
     let grammar = grammar();
-    let source = "\
-import std.io;
-
-def say() -> -F [out : std.io.Console.Eff] Unit {
-  out.print \"said\"
-}
-
-def both() -> -F [Partial, out : std.io.Console.Eff] Unit {
-  out.print \"said\"
-}
-
-def tailed[r : Row]() -> -F [d : std.io.Console.Eff, Partial | r] Unit {
-  pure *{}
-}
-";
-    let sugared = "\
-import std.io;
-
-def say() -> [out : std.io.Console.Eff] Unit {
-  out.print \"said\"
-}
-
-def both() -> [Partial, out : std.io.Console.Eff] Unit {
-  out.print \"said\"
-}
-
-def tailed[r : Row]() -> [d : std.io.Console.Eff, Partial | r] Unit {
-  pure *{}
-}
-";
+    let source = include_str!(
+        "rewrite/unformatted/a-labelled-result-row-is-written-before-its-type-2271.gandr"
+    );
+    let sugared = include_str!(
+        "rewrite/unformatted/a-labelled-result-row-is-written-before-its-type-2271-sugared.gandr"
+    );
     assert_eq!(
         hosted_spelled(&grammar, source, Form::Sugared),
         sugared,
@@ -520,26 +385,12 @@ def tailed[r : Row]() -> [d : std.io.Console.Eff, Partial | r] Unit {
 fn a_value_function_alias_is_written_at_its_shortest_1327()
 {
     let grammar = grammar();
-    let source = "\
-def step : (Integer) -> Integer ;
-def named : (x : Integer) -> Integer ;
-def nested : ((Integer)) -> Integer ;
-def twice : (Integer) -> ((Integer) -> Integer) ;
-def unread : (a : Type, b : Integer) -> a ;
-def pair : (Integer, String) -> Unit ;
-def dependent : (a : Type, a) -> a ;
-def noted : (/* the count */ Integer) -> Integer ;
-";
-    let sugared = "\
-def step : Integer -> Integer;
-def named : Integer -> Integer;
-def nested : Integer -> Integer;
-def twice : Integer -> (Integer -> Integer);
-def unread : (a : Type, Integer) -> a;
-def pair : (Integer, String) -> Unit;
-def dependent : (a : Type, a) -> a;
-def noted : (/* the count */ Integer) -> Integer;
-";
+    let source = include_str!(
+        "rewrite/unformatted/a-value-function-alias-is-written-at-its-shortest-1327.gandr"
+    );
+    let sugared = include_str!(
+        "rewrite/unformatted/a-value-function-alias-is-written-at-its-shortest-1327-sugared.gandr"
+    );
     assert_eq!(
         spelled(&grammar, source, Form::Sugared, Selection::Every),
         sugared
@@ -552,13 +403,7 @@ def noted : (/* the count */ Integer) -> Integer;
 }
 
 /// The circle the path-composite goldens compose its loop in.
-const CIRCLE: &str = "\
-pub data Circle : Type where {
-  | Base : Circle
-  | loop : Base <-> Base
-}
-
-";
+const CIRCLE: &str = include_str!("rewrite/unformatted/circle.gandr");
 
 /// #5206: both forms write a derived path operation as the operation, as the
 /// printer does. A written composite, inverse or action keeps its spelling in
@@ -571,27 +416,10 @@ fn the_path_operations_fold_in_both_forms_5206()
 {
     let grammar = grammar();
     let unfolded = format!(
-        "{CIRCLE}def spin(x : Circle) -> -F Circle {{
-  x
-}}
-
-def thrice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) (Path.walk (fun (a) {{
-    type(Path[.A = Circle](Base, a))
-  }}) loop loop) loop,
-  Path.here Base
-);
-
-def undone : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) loop (Path.here Base),
-  Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) loop (Path.here Base)
-);
-
-def spun : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk (fun (a) {{ type(Path[.A = Circle](spin Base, spin a)) }}) loop (Path.here (spin Base)),
-  Path.walk (fun (a) {{ type(Path[.A = Circle](spin Base, spin a)) }}) loop (Path.here (spin Base))
-);
-"
+        include_str!(
+            "rewrite/unformatted/the-path-operations-fold-in-both-forms-5206-unfolded.gandr"
+        ),
+        CIRCLE = CIRCLE
     );
     let folded = |returner: &str| {
         format!(
@@ -684,28 +512,22 @@ fn a_composite_read_as_a_value_folds_in_both_forms_985()
 {
     let grammar = grammar();
     let sugared = format!(
-        "{CIRCLE}def two : Path[.A = Circle](Base, Base) = Path.step loop loop;
-
-def undone : Path[.A = Circle](Base, Base) = Path.back (Path.step loop loop);
-"
+        include_str!(
+            "rewrite/unformatted/a-composite-read-as-a-value-folds-in-both-forms-985-sugared.gandr"
+        ),
+        CIRCLE = CIRCLE
     );
     let unfolded = format!(
-        "{CIRCLE}def two : Path[.A = Circle](Base, Base);
-def two = Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) loop loop;
-
-def undone : Path[.A = Circle](Base, Base);
-def undone = Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) (Path.walk (fun (a) {{
-  type(Path[.A = Circle](Base, a))
-}}) loop loop) (Path.here Base);
-"
+        include_str!(
+            "rewrite/unformatted/a-composite-read-as-a-value-folds-in-both-forms-985-unfolded.gandr"
+        ),
+        CIRCLE = CIRCLE
     );
     let explicit = format!(
-        "{CIRCLE}def two : Path[.A = Circle](Base, Base);
-def two = Path.step loop loop;
-
-def undone : Path[.A = Circle](Base, Base);
-def undone = Path.back (Path.step loop loop);
-"
+        include_str!(
+            "rewrite/unformatted/a-composite-read-as-a-value-folds-in-both-forms-985-explicit.gandr"
+        ),
+        CIRCLE = CIRCLE
     );
     for (source, form, expected) in [
         (&sugared, Form::Explicit, &explicit),
@@ -730,10 +552,10 @@ fn a_transport_standing_as_a_computation_keeps_its_spelling()
 {
     let grammar = grammar();
     let source = format!(
-        "{CIRCLE}def twice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {{
-  Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) p p
-}}
-"
+        include_str!(
+            "rewrite/unformatted/a-transport-standing-as-a-computation-keeps-its-spelling.gandr"
+        ),
+        CIRCLE = CIRCLE
     );
     let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
     for form in [Form::Sugared, Form::Explicit] {
@@ -761,8 +583,11 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
          (Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p p) (Path.here Base))",
     ] {
         let source = format!(
-            "{CIRCLE}def twice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) \
-             {{\n  {body}\n}}\n"
+            include_str!(
+                "rewrite/unformatted/a-derived-operand-of-a-kept-transport-keeps-its-transport.gandr"
+            ),
+            CIRCLE = CIRCLE,
+            body = body
         );
         let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
         let laid_out = format(&grammar, &parsed, FormatOptions::default())
@@ -791,8 +616,9 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
 fn a_bare_checks_block_before_its_declaration_s_line_is_stripped_once_3049()
 {
     let grammar = grammar();
-    let source = "/// One.\n@[ checks ] def one(x : Unit) -> -F Unit { return x }\n\n/// Two.\n@[ checks \
-                  ]\ndef two(x : Unit) -> -F Unit { return x }\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-bare-checks-block-before-its-declaration-s-line-is-stripped-once-3049.gandr"
+    );
     let sugared = |text: &str| {
         let parsed = parse(&grammar, SourceText::from(text)).expect("the source parses");
         let options = FormatOptions {
@@ -819,9 +645,7 @@ fn a_bare_checks_block_before_its_declaration_s_line_is_stripped_once_3049()
 fn a_rule_s_outputs_are_not_a_tuple()
 {
     let grammar = grammar();
-    let rules = "data NatDiv : Type where {\n  | Zero : NatDiv\n  | Succ : (n : NatDiv) --> NatDiv\n  \
-                 oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);\n  rule : \
-                 divmod m Zero <=> (Zero, m);\n}\n\n";
+    let rules = include_str!("rewrite/unformatted/a-rule-s-outputs-are-not-a-tuple-rules.gandr");
     assert_eq!(
         spelled(
             &grammar,
@@ -840,9 +664,7 @@ fn a_rule_s_outputs_are_not_a_tuple()
 fn a_composite_s_cells_are_not_a_tuple_3957()
 {
     let grammar = grammar();
-    let source = "def cells(a : Type, x : a, y : a, z : a, w : a, p : Path[.A = a](x, y), q : Path[.A = a](\
-                  y, z), r : Path[.A = a](z, w)) -> Path[.A = a](x, w) {\n  compose[5, 7] (chain 3) (p, \
-                  q, r)\n}\n\ndef pair = *{1, 2} ;\n";
+    let source = include_str!("rewrite/unformatted/a-composite-s-cells-are-not-a-tuple-3957.gandr");
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -908,9 +730,7 @@ fn a_product_of_thunks_in_a_type_quote_is_braced_5207()
 fn a_fill_s_cells_are_not_a_tuple_4075()
 {
     let grammar = grammar();
-    let source = "def lifted(a : Type, x : a, y : a, z : a, fa : Path[.A = a](x, y), g : Path[.A = a](y, \
-                  z)) -> Path[.A = a](x, z) {\n  fill[5, 7] (chain 2) (selfComposite a x y z) (fa, \
-                  g)\n}\n";
+    let source = include_str!("rewrite/unformatted/a-fill-s-cells-are-not-a-tuple-4075.gandr");
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -937,9 +757,8 @@ fn a_fill_s_cells_are_not_a_tuple_4075()
 fn a_level_two_shape_s_heights_are_not_a_tuple_4475()
 {
     let grammar = grammar();
-    let source = "def w(a : Type, x : a, y : a, z : a, fm : Path[.A = a](x, y), fp : Path[.A = a](x, y), fa \
-                  : Path[.A = Path[.A = a](x, y)](fm, fp), g : Path[.A = a](y, z)) -> Path[.A = a](x, z) {\n  \
-                  compose[5, 11] (chain 2 (1, 0)) (fa, g)\n}\n\ndef pair = *{1, 0} ;\n";
+    let source =
+        include_str!("rewrite/unformatted/a-level-two-shape-s-heights-are-not-a-tuple-4475.gandr");
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -968,11 +787,7 @@ fn a_level_two_shape_s_heights_are_not_a_tuple_4475()
 fn a_composite_of_flows_keeps_its_then()
 {
     let grammar = grammar();
-    let source = "module Evolution where {\n  type Old = +{ report : !String. end };\n  type New = +{ \
-                  report : !String. end, pause : end };\n  def sub : Flow[.A = Type](Old, New);\n  \
-                  def sub = Flow.sim Old New;\n  def kept : Flow[.A = Type](Old, Old);\n  def kept = \
-                  Flow.stay Old;\n  def widened() -> -F Flow[.A = Type](Old, New) {\n    become Path.step kept \
-                  sub\n  }\n}\n";
+    let source = include_str!("rewrite/unformatted/a-composite-of-flows-keeps-its-then.gandr");
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid_out = format(&grammar, &parsed, FormatOptions::default())
         .expect("the source lays out")
@@ -1016,9 +831,7 @@ fn a_transport_along_no_path_motive_keeps_its_spelling()
 fn a_composite_of_types_sugars_back_803()
 {
     let grammar = grammar();
-    let source = "def joined(a : Type, b : Type, c : Type, p : Path[.A = Type](a, b), q : Path[.A = Type](b, c)) -> -F \
-                  Path[.A = Path[.A = Type](a, c)](Path.walk (fun (d) { type(Path[.A = Type](a, d)) }) q p, Path.walk (fun (d) { \
-                  type(Path[.A = Type](a, d)) }) q p) {\n  Path.here (Path.walk (fun (d) { type(Path[.A = Type](a, d)) }) q p)\n}\n";
+    let source = include_str!("rewrite/unformatted/a-composite-of-types-sugars-back-803.gandr");
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1050,21 +863,9 @@ fn a_composite_of_types_sugars_back_803()
 fn the_value_function_alias_is_written_where_the_printer_writes_it()
 {
     let grammar = grammar();
-    let argument = "\
-data Nat : Type where {
-  | Zero : Nat
-  | Succ : (n : Nat) --> Nat
-}
-
-def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
-  become Path.walk
-    (+U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Path[.A = Nat](y, a)))
-    q
-    (Path.here a)
-    (Path.here q)
-    (Path.here a)
-}
-";
+    let argument = include_str!(
+        "rewrite/unformatted/the-value-function-alias-is-written-where-the-printer-writes-it-argument.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(argument)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1088,16 +889,12 @@ def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
         }
     "#]]
     .assert_eq(formatted.text().as_ref());
-    let explicit = "\
-def motive : Type -> Type;
-def motive = fun (X) { +U (X -> -F X) };
-def suspended : Type -> Type;
-def suspended = fun (X) { +U (-F X) };
-";
-    let sugared = "\
-def motive : Type -> Type = fun (X) { X -> X };
-def suspended : Type -> Type = fun (X) { +U (-F X) };
-";
+    let explicit = include_str!(
+        "rewrite/unformatted/the-value-function-alias-is-written-where-the-printer-writes-it-explicit.gandr"
+    );
+    let sugared = include_str!(
+        "rewrite/unformatted/the-value-function-alias-is-written-where-the-printer-writes-it-sugared.gandr"
+    );
     for (source, form, expected) in [
         (explicit, Form::Sugared, sugared),
         (sugared, Form::Explicit, explicit),
@@ -1117,7 +914,9 @@ def suspended : Type -> Type = fun (X) { +U (-F X) };
 fn a_manifest_carrier_is_parenthesised_as_the_printer_writes_it_2246()
 {
     let grammar = grammar();
-    let theory = "theory Pointed where {\n  sort M : Type;\n  oper one : M;\n}\n\n";
+    let theory = include_str!(
+        "rewrite/unformatted/a-manifest-carrier-is-parenthesised-as-the-printer-writes-it-2246-theory.gandr"
+    );
     let explicit =
         format!("{theory}def endo : Model(Pointed) with sort M = +U (Integer -> -F Integer);\n");
     let sugared =
@@ -1141,20 +940,9 @@ fn a_manifest_carrier_is_parenthesised_as_the_printer_writes_it_2246()
 fn a_thunk_type_a_body_returns_takes_the_alias_838()
 {
     let grammar = grammar();
-    let explicit = "\
-data Nat : Type where {
-  | Zero : Nat
-  | Succ : (n : Nat) --> Nat
-}
-
-def onType(t : Type) -> -F Type {
-  return (+U (t -> -F t))
-}
-
-def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> -F Nat {
-  become Path.walk (+U (Nat -> -F Nat)) q v v v
-}
-";
+    let explicit = include_str!(
+        "rewrite/unformatted/a-thunk-type-a-body-returns-takes-the-alias-838-explicit.gandr"
+    );
     expect![[r#"
         data Nat : Type where {
           | Zero : Nat
@@ -1183,28 +971,12 @@ def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> -F Nat {
 fn a_sugared_source_keeps_every_comment_with_its_construct()
 {
     let grammar = grammar();
-    let source = "\
-/// A choice, the second arm a pair.
-def choice : +{Integer, /* a pair */ *{String, Unit}};
-
-def both : +U &{
-  -F Integer, // eager first
-  -F String
-};
-
-def pair = *{1, /* second */ \"a\"};
-";
-    let sugared = "\
-/// A choice, the second arm a pair.
-def choice : Integer + /* a pair */ String * Unit;
-
-def both : +U (
-  -F Integer & // eager first
-  -F String
-);
-
-def pair = *{1, /* second */ \"a\"};
-";
+    let source = include_str!(
+        "rewrite/unformatted/a-sugared-source-keeps-every-comment-with-its-construct.gandr"
+    );
+    let sugared = include_str!(
+        "rewrite/unformatted/a-sugared-source-keeps-every-comment-with-its-construct-sugared.gandr"
+    );
     assert_eq!(
         spelled(&grammar, source, Form::Sugared, Selection::Every),
         sugared
@@ -1235,7 +1007,11 @@ fn a_declared_form_wins_over_the_option()
             "Integer * String",
         ),
     ] {
-        let source = format!("@[ form({declared}) ]\ndef pair : {written} ;\n");
+        let source = format!(
+            include_str!("rewrite/unformatted/a-declared-form-wins-over-the-option.gandr"),
+            declared = declared,
+            written = written
+        );
         assert_eq!(
             spelled(&grammar, source.as_str(), asked, Selection::Every),
             format!("@[ form({declared}) ]\ndef pair : {expected};\n"),
@@ -1259,7 +1035,7 @@ fn a_match_over_a_stated_sum_is_sugared_791()
         )
     };
     let source = format!(
-        "{}\n\ndef pair : *{{Integer, String}} ;\n",
+        include_str!("rewrite/unformatted/a-match-over-a-stated-sum-is-sugared-791.gandr"),
         matched("+{Integer, Integer}", "return ", "-F Integer")
     );
     let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
@@ -1290,9 +1066,9 @@ fn a_match_over_a_stated_sum_is_sugared_791()
 fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 {
     let grammar = grammar();
-    let source = "data Color : Type where {\n  | Red : Color\n  | Green : Color\n}\n\ndef sketch(c : \
-                  Color) -> -F Integer {\n  match c {\n    | Red => return 0\n    | Green => ?\n  \
-                  }\n}\n\ndef pair : *{Integer, String};\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-body-hole-keeps-its-meaning-beside-a-rewrite-893.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1320,12 +1096,9 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 fn an_importing_source_is_rewritten_beside_its_imports()
 {
     let grammar = grammar();
-    let source =
-        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop loop,
-  Path.here Base
-);
-";
+    let source = include_str!(
+        "rewrite/unformatted/an-importing-source-is-rewritten-beside-its-imports.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -1378,22 +1151,9 @@ fn an_importing_source_is_rewritten_beside_its_imports()
 fn a_rewrite_of_a_dependent_alias_keeps_its_readers_812()
 {
     let grammar = grammar();
-    let source = "\
-data Nat : Type where {
-  | Zero : Nat
-  | Succ : (n : Nat) --> Nat
-}
-
-def next(n : Nat) -> -F Nat {
-  Succ n
-}
-
-def stay : (a : Nat) -> Path[.A = Nat](a, a) ;
-
-def stayUp(a : Nat) -> -F Path[.A = Nat](Succ a, Succ a) {
-  Path.step (Path.ap next (Flow.stay a)) (Path.here (Succ a))
-}
-";
+    let source = include_str!(
+        "rewrite/unformatted/a-rewrite-of-a-dependent-alias-keeps-its-readers-812.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -1422,7 +1182,8 @@ def stayUp(a : Nat) -> -F Path[.A = Nat](Succ a, Succ a) {
 fn a_selection_runs_only_the_rewrites_it_names()
 {
     let grammar = grammar();
-    let source = "def pair : Integer * String ;\ndef choice : Integer + String ;\n";
+    let source =
+        include_str!("rewrite/unformatted/a-selection-runs-only-the-rewrites-it-names.gandr");
     assert_eq!(
         spelled(
             &grammar,
@@ -1441,7 +1202,9 @@ fn a_selection_runs_only_the_rewrites_it_names()
 fn a_respaced_root_expression_keeps_the_rewrite_beside_it()
 {
     let grammar = grammar();
-    let source = "def pair : Integer * String;\ndef s = *{b = 1};\n*{ s | b = 2 }\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-respaced-root-expression-keeps-the-rewrite-beside-it.gandr"
+    );
     assert_eq!(
         spelled(&grammar, source, Form::Explicit, Selection::Every),
         "def pair : *{Integer, String};\ndef s = *{b = 1};\n*{s | b = 2}\n"
@@ -1508,11 +1271,8 @@ impl Elaborate for Oracle
 fn a_linear_run_follows_the_checker_s_elaborations()
 {
     let grammar = grammar();
-    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                  \n\
-                  def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
-                  \n\
-                  def field(n : Nat) -> Nat {\n  let m = twice n;\n  Succ m\n}\n";
+    let source =
+        include_str!("rewrite/unformatted/a-linear-run-follows-the-checker-s-elaborations.gandr");
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1562,11 +1322,9 @@ fn a_linear_run_follows_the_checker_s_elaborations()
 fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
 {
     let grammar = grammar();
-    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                  \n\
-                  def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
-                  \n\
-                  def again(n : Nat) -> Nat { return twice n }\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-tail-return-of-a-call-follows-the-checker-s-elaborations-2255.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1622,24 +1380,26 @@ fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
 fn the_runs_ending_a_block_are_written_away_together()
 {
     let grammar = grammar();
-    let head = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                \n\
-                def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
-                \n\
-                def both(m : Nat, k : Nat) -> Nat { Succ m }\n\
-                \n\
-                def field(n : Nat) -> Nat {\n";
+    let head = include_str!(
+        "rewrite/unformatted/the-runs-ending-a-block-are-written-away-together-head.gandr"
+    );
     for (body, written) in [
         (
-            "  let m = twice n ;\n  let k = twice n ;\n  both m k\n",
+            include_str!(
+                "rewrite/unformatted/the-runs-ending-a-block-are-written-away-together-1.gandr"
+            ),
             "  both (twice n) (twice n)\n",
         ),
         (
-            "  let m = twice n ;\n  // between\n  let k = twice n ;\n  both m k\n",
+            include_str!(
+                "rewrite/unformatted/the-runs-ending-a-block-are-written-away-together-2.gandr"
+            ),
             "  // between\n  both (twice n) (twice n)\n",
         ),
         (
-            "  let m = twice n ;\n  let k = twice m ;\n  both k m\n",
+            include_str!(
+                "rewrite/unformatted/the-runs-ending-a-block-are-written-away-together-3.gandr"
+            ),
             "  let m = twice n;\n  both (twice m) m\n",
         ),
     ] {
@@ -1670,12 +1430,9 @@ fn the_runs_ending_a_block_are_written_away_together()
 fn a_branch_s_runs_are_written_away_and_its_block_with_them_1935()
 {
     let grammar = grammar();
-    let head = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                \n\
-                def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
-                \n\
-                def both(m : Nat, k : Nat) -> Nat { Succ m }\n\
-                \n";
+    let head = include_str!(
+        "rewrite/unformatted/a-branch-s-runs-are-written-away-and-its-block-with-them-1935-head.gandr"
+    );
     for (body, written) in [
         (
             "def armed(a : Nat) -> Nat { match a { | Zero => Zero | Succ(b) => { let d = twice b ; Succ d } } }\n",
@@ -1801,16 +1558,9 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
 fn a_rewrite_is_checked_beside_every_kind_of_declaration()
 {
     let grammar = grammar();
-    let source = "codata Stream(a : Type) : Type[-] where {\n  head : a;\n  tail : Stream(a);\n}\n\
-                  \n\
-                  world seat;\n\
-                  \n\
-                  module Pair :> *{ type Kept, one : Kept } where {\n  type Kept = Integer;\n  def \
-                  one = 1;\n}\n\
-                  \n\
-                  def lost() -> Integer { migrate [nowhere] { pure 1 } }\n\
-                  \n\
-                  def pair : *{Integer, String};\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-rewrite-is-checked-beside-every-kind-of-declaration.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1832,13 +1582,9 @@ fn a_rewrite_is_checked_beside_every_kind_of_declaration()
 fn an_inserted_thunk_follows_the_checker_s_elaborations()
 {
     let grammar = grammar();
-    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                  \n\
-                  def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
-                  \n\
-                  def call(f : +U (-F Nat)) -> Nat { force f }\n\
-                  \n\
-                  def field(n : Nat) -> Nat { call (thunk { twice n }) }\n";
+    let source = include_str!(
+        "rewrite/unformatted/an-inserted-thunk-follows-the-checker-s-elaborations-1.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1890,7 +1636,9 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
             "call (thunk { become twice n })",
         ),
         (
-            "thunk // owned\n  { twice n }",
+            include_str!(
+                "rewrite/unformatted/an-inserted-thunk-follows-the-checker-s-elaborations-2.gandr"
+            ),
             "call (\n  thunk // owned\n  { twice n }\n)",
         ),
         (
@@ -1898,8 +1646,10 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
             "call (thunk { let m = twice n; m })",
         ),
         (
-            "thunk {\n    // kept\n    twice n\n  }",
-            "call (\n  // kept\n  twice n\n)",
+            include_str!(
+                "rewrite/unformatted/an-inserted-thunk-follows-the-checker-s-elaborations-3.gandr"
+            ),
+            "call (\n  // keeper\n  twice n\n)",
         ),
     ] {
         let source = source.replace("thunk { twice n }", body);
@@ -1928,27 +1678,8 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
 fn a_signed_thunk_merges_into_its_function_form_1449()
 {
     let grammar = grammar();
-    let source = "def twice(n : Integer) -> -F Integer { return (n + n) }\n\
-                  \n\
-                  /// Becomes a call.\n\
-                  @[ runs(\"2\") ]\n\
-                  def becomes : +U (-F Integer) ;\n\
-                  def becomes = thunk { become twice 1 } ;\n\
-                  \n\
-                  def block : () -> Integer ;\n\
-                  def block = thunk { let m = twice 1 ; return m } ;\n\
-                  \n\
-                  def pair : () -> Integer * Integer ;\n\
-                  def pair = thunk { return *{1, 2} } ;\n\
-                  \n\
-                  def commented : () -> Integer ;\n\
-                  def commented = thunk {\n  // kept\n  become twice 2\n} ;\n\
-                  \n\
-                  def graded : +U[1] (-F Integer) ;\n\
-                  def graded = thunk[1] { become twice 3 } ;\n\
-                  \n\
-                  def value : Integer ;\n\
-                  def value = 3 ;\n";
+    let source =
+        include_str!("rewrite/unformatted/a-signed-thunk-merges-into-its-function-form-1449.gandr");
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form| {
         let options = FormatOptions {
@@ -1983,7 +1714,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
         def pair() -> Integer * Integer { *{1, 2} }
 
         def commented : () -> Integer = thunk {
-          // kept
+          // keeper
           become twice 2
         };
 
@@ -2006,7 +1737,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
 
         def commented : +U (-F Integer);
         def commented = thunk {
-          // kept
+          // keeper
           become twice 2
         };
 
@@ -2030,26 +1761,9 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
 fn a_signed_lambda_merges_into_its_function_form_1899()
 {
     let grammar = grammar();
-    let source = "def identity : +U (Integer -> -F Integer) ;\n\
-                  def identity = thunk { fun (n) { return n } } ;\n\
-                  \n\
-                  def add : (Integer, Integer) -> Integer ;\n\
-                  def add = thunk { fun (a) { fun (b) { return (a + b) } } } ;\n\
-                  \n\
-                  def named : +U ((x : Integer) -> -F Integer) ;\n\
-                  def named = thunk { fun (x) { return x } } ;\n\
-                  \n\
-                  def stated : Integer -> Integer ;\n\
-                  def stated = thunk { fun (x : Integer) { return x } } ;\n\
-                  \n\
-                  def short : +U (Integer -> Integer -> -F Integer) ;\n\
-                  def short = thunk { fun (a) { become add a } } ;\n\
-                  \n\
-                  def renamed : +U ((x : Integer) -> -F Integer) ;\n\
-                  def renamed = thunk { fun (y) { return y } } ;\n\
-                  \n\
-                  def mistyped : Integer -> Integer ;\n\
-                  def mistyped = thunk { fun (x : String) { return 1 } } ;\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-signed-lambda-merges-into-its-function-form-1899.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form| {
         let options = FormatOptions {
@@ -2111,31 +1825,8 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
 fn an_adjacent_pair_joins_into_one_definition_2228()
 {
     let grammar = grammar();
-    let source = "def three : Integer ;\n\
-                  def three = 3 ;\n\
-                  \n\
-                  def four : Integer = 4 ;\n\
-                  \n\
-                  def five : Integer ;\n\
-                  // parts them\n\
-                  def five = 5 ;\n\
-                  \n\
-                  def six : Integer ;\n\
-                  /// Documents the definition.\n\
-                  def six = 6 ;\n\
-                  \n\
-                  def seven : Integer ;\n\
-                  def between : Integer = 0 ;\n\
-                  def seven = 7 ;\n\
-                  \n\
-                  def eight : Integer ; // on the signature\n\
-                  def eight = 8 ;\n\
-                  \n\
-                  def nine : Integer ;\n\
-                  def nine = (\n  // inside the value\n  9\n) ;\n\
-                  \n\
-                  def ten = 10 ;\n\
-                  def ten : Integer ;\n";
+    let source =
+        include_str!("rewrite/unformatted/an-adjacent-pair-joins-into-one-definition-2228.gandr");
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form| {
         let options = FormatOptions {
@@ -2222,25 +1913,9 @@ fn an_adjacent_pair_joins_into_one_definition_2228()
 fn a_module_member_pair_joins_as_a_top_level_one_2255()
 {
     let grammar = grammar();
-    let source = "module Outer where {\n\
-                  \x20 /// The one.\n\
-                  \x20 def one : Integer ;\n\
-                  \x20 def one = 1 ;\n\
-                  \n\
-                  \x20 def two : Integer = 2 ;\n\
-                  \n\
-                  \x20 def three : Integer ;\n\
-                  \x20 // parts them\n\
-                  \x20 def three = 3 ;\n\
-                  \n\
-                  \x20 def four : () -> Integer ;\n\
-                  \x20 def four = thunk { 4 } ;\n\
-                  \n\
-                  \x20 module Inner where {\n\
-                  \x20   def five : Integer ;\n\
-                  \x20   def five = 5 ;\n\
-                  \x20 }\n\
-                  }\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-module-member-pair-joins-as-a-top-level-one-2255.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form| {
         let options = FormatOptions {
@@ -2307,20 +1982,9 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
 fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 {
     let grammar = grammar();
-    let source = "def inc(x : Integer) -> -F Integer { x + 1 }\n\
-                  \n\
-                  def pair() -> -F (Integer * Integer) { *{1, 2} }\n\
-                  \n\
-                  def spin(x : Integer) -> -F [Partial] Integer { x }\n\
-                  \n\
-                  def call(f : +U (-F Integer)) -> -F Integer { force f }\n\
-                  \n\
-                  def four : () -> Integer ;\n\
-                  def four = thunk { 4 } ;\n\
-                  \n\
-                  module Kept where {\n\
-                  \x20 def five() -> -F Integer { 5 }\n\
-                  }\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-definition-s-result-leaves-its-returner-unwritten-2255.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form| {
         let options = FormatOptions {
@@ -2377,11 +2041,9 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
 {
     let grammar = grammar();
-    let source = "def identity : Integer -> Integer ;\n\
-                  def identity = fun (x) { x } ;\n\
-                  \n\
-                  def add : (Integer, Integer) -> Integer ;\n\
-                  def add = fun (a) { fun (b) { a + b } } ;\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-lambda-the-checker-thunks-merges-into-its-function-form-2228.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let laid = |form: Form, answer: Option<Answer>| {
         let options = FormatOptions {

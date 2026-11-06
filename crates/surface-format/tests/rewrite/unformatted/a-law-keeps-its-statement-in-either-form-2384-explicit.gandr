@@ -1,0 +1,5 @@
+theory Lawful where {
+  sort C : Type;
+  oper next : +U (C -> -F C);
+  law trivial : (a : C) -> Path[.A = Bool](true, true);
+}

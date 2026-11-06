@@ -1,0 +1,5 @@
+{CIRCLE}def two : Path[.A = Circle](Base, Base);
+def two = Path.step loop loop;
+
+def undone : Path[.A = Circle](Base, Base);
+def undone = Path.back (Path.step loop loop);
