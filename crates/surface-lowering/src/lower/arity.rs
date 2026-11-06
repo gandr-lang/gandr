@@ -1695,13 +1695,17 @@ impl<'source> Lowerer<'_, 'source>
     /// Classify a telescope type, `#{A, …}` or `#{l : A, …}`.
     ///
     /// # Specification
-    /// - requires: `site` is a telescope type in type position.
+    /// - requires: `site` is a telescope type in type position, or an operand
+    ///   of a constructor inside a type.
     /// - ensures: positional entries plan the product of their types, of any
     ///   arity, each read as a value type under the form's frame; labelled
     ///   entries plan the type over their labels, every label but the last
     ///   binding a frame extending the one before it, each entry's type read as
     ///   a value type under the frames of the labels before it and its label
-    ///   kept by [`Self::label_entry`] at that frame.
+    ///   kept by [`Self::label_entry`] at that frame. Positional entries read
+    ///   where a value is read, in a constructor's field that holds no code
+    ///   ([`Self::valued_telescopes`]), plan the tuple of their values instead,
+    ///   each read as a value under the form's frame.
     /// - fails: the wrong-sort refusal where no value type is read; the
     ///   entries' and the labels' own refusals.
     /// - panics: none.
@@ -1712,21 +1716,46 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the unit, one component, three, a record in two
     ///   orders, and a type over labels whose later entry names an earlier one,
-    ///   each asserted as the exact core type.
+    ///   each asserted as the exact core type; the unit and a pair in a
+    ///   constructor's field inside a type, asserted as the exact core value.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
     /// - witness: `lower::arity::tests::each_label_names_what_it_labels`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Product(_) | Plan::RecordType(..)))))]
+    /// - witness: `lower::tests::a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Product(_) | Plan::RecordType(..) | Plan::Tuple(_)))))]
     pub(super) fn telescope_type(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::ValueType)?;
+        let valued = matches!(site.reading, Reading::Value(_))
+            && self.valued_telescopes.contains(&site.at.node);
+        // A valued telescope reads a value or a type by its entries, so its
+        // sort waits for them.
+        let typed = if valued {
+            None
+        }
+        else {
+            Some(self.require(site, Produced::ValueType)?)
+        };
         closed(site, &mut cursor, TileName::RECORD)?;
         let entries = self.type_entries(site, &mut cursor, TileName::BRACE_CLOSE)?;
-        let plan = match arrange(site, entries)? {
+        let arranged = arrange(site, entries)?;
+        let frame = match (typed, &arranged) {
+            (Some(frame), _) => frame,
+            (None, &Arranged::Positional(_)) => self.require(site, Produced::Value)?,
+            (None, &Arranged::Labelled(_)) => self.require(site, Produced::ValueType)?,
+        };
+        let plan = match arranged {
+            Arranged::Positional(entries) if valued => {
+                let members = self.stored(&entries);
+                self.classify_members(site, members, frame)?;
+                for entry in &entries {
+                    self.read(entry.held.at().node, Reading::Value(frame));
+                }
+                Plan::Tuple(members)
+            },
             Arranged::Positional(entries) => {
                 let components = self.stored(&entries);
                 for entry in &entries {

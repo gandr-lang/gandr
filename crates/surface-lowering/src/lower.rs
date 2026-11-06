@@ -3848,6 +3848,10 @@ struct Lowerer<'run, 'source>
     /// argument, and its own operands in turn — whose quote stays in the
     /// enclosing type's telescope rather than carried into a term's context.
     type_read: BTreeSet<NodeIndex>,
+    /// Each telescope type written as an operand of a constructor at a field
+    /// whose type is no universe: where a value is read, it is the tuple of
+    /// its entries, not the quote of their product (#5208).
+    valued_telescopes: BTreeSet<NodeIndex>,
     /// Each head of a call of no arguments, beside the call: such a call is
     /// its head's force, so the force carries the call's origin.
     nullary: BTreeMap<NodeIndex, NodeIndex>,
@@ -4916,6 +4920,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         && self.injected.is_empty()
         && self.sibling_calls.is_empty()
         && self.type_read.is_empty()
+        && self.valued_telescopes.is_empty()
         && self.nullary.is_empty()
         && self.typed_heads.is_empty()
         && self.supplied.is_empty()
@@ -4967,6 +4972,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.injected.clear();
         self.sibling_calls.clear();
         self.type_read.clear();
+        self.valued_telescopes.clear();
         self.nullary.clear();
         self.typed_heads.clear();
         self.supplied.clear();
@@ -5697,6 +5703,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             sibling_calls: Vec::new(),
             reader: Reading::Unread,
             type_read: BTreeSet::new(),
+            valued_telescopes: BTreeSet::new(),
             nullary: BTreeMap::new(),
             typed_heads: BTreeMap::new(),
             supplied: BTreeSet::new(),
@@ -27253,6 +27260,69 @@ mod tests
                 .iter()
                 .all(|&field| matches!(arena.value(field), Some(&Value::Constructor { .. }))),
             "whose `NatC` arguments are constructors too"
+        );
+    }
+
+    /// #5208: a telescope written as an operand of a constructor inside a
+    /// type reads as a value at a field whose type is no universe, and as a
+    /// code at a field whose type is a universe.
+    #[test]
+    fn a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "data Box : Type where { | Done : (u : Unit) --> Box | Both : (p : Integer * \
+                 Integer) --> Box | Named : (t : Type) --> Box } def holds(b : Box) -> -F Type \
+                 { return Integer } def unit : holds(Done(*{})) ; def pair : \
+                 holds(Both(*{1, 2})) ; def code : holds(Named(*{})) ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let operand = |arena: &CoreArena, declaration: usize| {
+            let Some(&ValueType::Element { code, .. }) =
+                arena.value_type(declared_of(lowered[declaration]))
+            else {
+                panic!("`holds(…)` in a type is a decode");
+            };
+            let Some(&Value::Returned(call)) = arena.value(code)
+            else {
+                panic!("of the call's returned code");
+            };
+            let Some(&Computation::Application(_, argument)) = arena.computation(call)
+            else {
+                panic!("`holds` applied");
+            };
+            let Some(&Value::Constructor { ref fields, .. }) = arena.value(argument)
+            else {
+                panic!("to a constructor value");
+            };
+            let [field] = **fields
+            else {
+                panic!("of one field");
+            };
+            field
+        };
+
+        assert!(
+            matches!(arena.value(operand(&arena, 2)), Some(&Value::Tuple(ref members)) if members.is_empty()),
+            "`*{{}}` at a field of type `Unit` is the unit value"
+        );
+        let Some(&Value::Tuple(ref members)) = arena.value(operand(&arena, 3))
+        else {
+            panic!("`*{{1, 2}}` at a field of a product type is a tuple");
+        };
+        assert!(
+            members.len() == 2
+                && members
+                    .iter()
+                    .all(|&member| matches!(arena.value(member), Some(&Value::Literal(_)))),
+            "of the two literals"
+        );
+        assert!(
+            matches!(arena.value(operand(&arena, 4)), Some(&Value::Quote(_))),
+            "`*{{}}` at a field of type `Type` is the code `Unit`"
         );
     }
 

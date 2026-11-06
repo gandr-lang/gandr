@@ -671,10 +671,6 @@ mod sweeps
         reads_back(&Sweep::asked().expect("the run's sweep resolves").changed());
     }
 
-    /// Why the census holds a spelling whose reprint writes `Unit` for each
-    /// `*{}` alone.
-    const UNIT_READ: &str = "#5208, a `*{}` operand inside a type reads as `Unit`";
-
     /// Every printed type of every source `sweep` visits reads back to its
     /// certificate.
     ///
@@ -744,9 +740,8 @@ mod sweeps
                         format_args!("{} ({spelling:?})", path.display()),
                     )
                     .expect("a string accepts every write");
-                    // A constructor call inside a type reads a `*{}` operand
-                    // as the type `Unit` (#5208): held when the reprint writes
-                    // `Unit` for each `*{}` alone.
+                    // The spelling with each run of whitespace collapsed, the
+                    // form the fixed point compares.
                     spelled.clear();
                     for (index, word) in read.spelled.split_whitespace().enumerate() {
                         if index > 0 {
@@ -754,29 +749,13 @@ mod sweeps
                         }
                         spelled.push_str(word);
                     }
-                    let why = match read.reprinted {
-                        Maybe::Present(ref again)
-                            if spelled.contains("*{}")
-                                && spelled.replace("*{}", "Unit")
-                                    == collapsed(SourceText::from(again.as_str())) =>
-                        {
-                            Some(UNIT_READ)
-                        },
-                        Maybe::Present(_) | Maybe::Absent(_) => None,
-                    };
                     let class = match read.trip {
                         RoundTrip::Equal => "Equal",
                         RoundTrip::Open => "Open",
                         RoundTrip::Unknown => "Unknown",
                         RoundTrip::Wildcard => "Wildcard",
                         RoundTrip::Different => {
-                            let line = format!("{}: `{}` reads back as another type", at, read.spelled);
-                            if let Some(why) = why {
-                                held.push(format!("{why}: {line}"));
-                            }
-                            else {
-                                unread.push(line);
-                            }
+                            unread.push(format!("{}: `{}` reads back as another type", at, read.spelled));
                             "Different"
                         },
                         RoundTrip::Refused(ref refusal) => {
@@ -823,13 +802,7 @@ mod sweeps
                         Maybe::Present(ref again)
                             if collapsed(SourceText::from(again.as_str())) != spelled =>
                         {
-                            let line = format!("{}: `{}` reprints as `{again}`", at, read.spelled);
-                            if let Some(why) = why {
-                                held.push(format!("{why}: {line}"));
-                            }
-                            else {
-                                moved.push(line);
-                            }
+                            moved.push(format!("{}: `{}` reprints as `{again}`", at, read.spelled));
                         },
                         Maybe::Absent(reprinted::Absent::Unspelled) => {
                             moved.push(format!(

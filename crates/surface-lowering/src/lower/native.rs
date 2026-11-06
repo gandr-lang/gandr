@@ -782,6 +782,12 @@ pub(super) struct Decoded(pub bool);
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Alone(pub bool);
 
+/// Whether a constructor's field holds a value that is no code: its type is
+/// no universe, so a telescope type written in it reads as a tuple (#5208).
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct HoldsValue(bool);
+
 /// Whether a type application writes a recursive function's descent where a
 /// type is read, `own[<](…)`.
 #[repr(transparent)]
@@ -3463,7 +3469,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   it is an index a generator's result states; else, for a family
     ///   without, the one the lowering inserts. A field typed by the family
     ///   over its own parameters takes the constructor's classifier, and one
-    ///   typed by a parameter the argument a written classifier gives it.
+    ///   typed by a parameter the argument a written classifier gives it. A
+    ///   telescope type written in a field whose type is no universe
+    ///   ([`Self::field_holds_value`]) is filed among the valued telescopes, so
+    ///   it reads as the tuple of its entries.
     /// - provides: constructor application, bare and called.
     /// - fails: yields the arity refusal for a field count other than the
     ///   constructor's; the wrong-sort refusal outside value position; the
@@ -3487,7 +3496,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   one written as a data family's argument, classified by its place; one
     ///   passed to a parameter stating a closed type, classified by it; one
     ///   answering a definition's application, written as `= e` or as a
-    ///   function tail, and one a declared constant's.
+    ///   function tail, and one a declared constant's; a telescope type inside
+    ///   a type, in a field of type `Unit`, of a product type and of type
+    ///   `Type`.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
@@ -3496,6 +3507,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
     /// - witness: `lower::native::tests::a_constructor_answers_a_function_tail_s_application_3665`
     /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
+    /// - witness: `lower::tests::a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
     pub(super) fn construct(
         &mut self,
@@ -3577,20 +3589,35 @@ impl<'source> Lowerer<'_, 'source>
         for (index, position) in (fields.start .. fields.end).enumerate() {
             if let Some(&field) = self.operands.get(position) {
                 self.read(field, Reading::Value(frame));
+                let former = self.tree.node(field).and_then(|node| {
+                    if let Ok(Shape::Form { former, .. }) = shape_of(self.pbg, node) {
+                        Some(former)
+                    }
+                    else {
+                        None
+                    }
+                });
+                // A telescope type in a field that holds no code spells the
+                // tuple of its entries, as a telescope value does (#5208).
+                if former == Some(Former::TelescopeType)
+                    && let Generators::Written(form) = constructor.form
+                    && self.field_holds_value(
+                        FieldAt {
+                            form,
+                            tag: constructor.tag,
+                            index,
+                        },
+                        classifier,
+                        site.at.node,
+                    )? == HoldsValue(true)
+                {
+                    let _first = self.valued_telescopes.insert(field);
+                }
                 // Only a constructor written in the field, bare or applied,
                 // reads the classifier the field gives. A classifier read off
                 // the generator's result reads the fields, so it gives the
                 // fields no classifier (#5050).
-                let constructed = self.tree.node(field).is_some_and(|node| {
-                    matches!(
-                        shape_of(self.pbg, node),
-                        Ok(Shape::Form {
-                            former: Former::Constructor | Former::Call,
-                            ..
-                        })
-                    )
-                });
-                if constructed
+                if matches!(former, Some(Former::Constructor | Former::Call))
                     && !matches!(classifier, Classifier::Resulted(_))
                     && let Generators::Written(form) = constructor.form
                     && let Maybe::Present(inherited) = self.field_classifier(
@@ -4060,6 +4087,61 @@ impl<'source> Lowerer<'_, 'source>
             },
             Some(_) | None => substituted,
         })
+    }
+
+    /// Whether the field `at` of the constructor written at `around` holds a
+    /// value that is no code: whether its type, as [`Self::field_classifier`]
+    /// reads it from `classifier`, is no universe.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::field_classifier`].
+    /// - ensures: a value held when the field's type, its parentheses stripped,
+    ///   is no universe, also for a field typed by the family itself; for a
+    ///   field typed by a parameter of the family, the argument a written
+    ///   classifier gives the parameter stands for that type. No value held
+    ///   when `at` names no field.
+    /// - provides: the reading of a telescope type written in the field.
+    /// - fails: as [`Self::field_classifier`] and [`Self::unwrapped`].
+    /// - panics: none.
+    /// - executable: none — the answer is a reading of the field's syntax; a
+    ///   predicate restating it would read the syntax again.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a telescope type inside a type, in a field of type
+    ///   `Unit`, of a product type and of type `Type`, each asserted as the
+    ///   exact core value.
+    /// - witness: `lower::tests::a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208`
+    fn field_holds_value(
+        &mut self,
+        at: FieldAt,
+        classifier: Classifier,
+        around: NodeIndex,
+    ) -> Result<HoldsValue, LoweringRefusal<'source>>
+    {
+        let stated = match self.field_classifier(at, classifier, around)? {
+            Maybe::Present(Classifier::Written(stated)) => stated,
+            Maybe::Present(Classifier::Field(of)) => of.declared,
+            // The field is typed by the family the constructor builds.
+            Maybe::Present(
+                Classifier::Answered { .. }
+                | Classifier::Slot(_)
+                | Classifier::Parameter(_)
+                | Classifier::Stated(_)
+                | Classifier::Resulted(_)
+                | Classifier::Inserted,
+            ) => return Ok(HoldsValue(true)),
+            Maybe::Absent(_) => return Ok(HoldsValue(false)),
+        };
+        Ok(HoldsValue(!matches!(
+            self.unwrapped(stated)?,
+            Maybe::Present(Unwrapped {
+                former: Former::Universe,
+                ..
+            })
+        )))
     }
 
     /// Give each definition its signature as the type its constructors are
