@@ -649,6 +649,7 @@ fn first_order(
                 );
             },
             ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
@@ -822,6 +823,7 @@ fn coverage(
                         }
                     },
                     ValueTypeView::Record(_)
+                    | ValueTypeView::Patched { .. }
                     | ValueTypeView::Stack { .. }
                     | ValueTypeView::PathUniverse(..)
                     | ValueTypeView::Path { .. }

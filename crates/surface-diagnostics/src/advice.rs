@@ -1083,6 +1083,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             String::from("make each dialogue receipt match its sent value")
         },
         CheckRefusal::MissingRecordField { .. } => String::from("add the record's missing field"),
+        CheckRefusal::PatchOutsideBase { .. } => {
+            String::from("fix only the fields that the base record holds")
+        },
         CheckRefusal::LevelMismatch { .. } => {
             String::from("lower the code to the expected universe")
         },

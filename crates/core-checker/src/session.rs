@@ -361,6 +361,7 @@ pub(crate) fn session_at(
         ValueTypeView::Session(session) => Ok(session.clone()),
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
@@ -430,6 +431,7 @@ pub(crate) fn unrestricted(
         ValueTypeView::Element { .. } => context.whnf_value_type(declared)?,
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
@@ -472,6 +474,7 @@ pub(crate) fn unrestricted(
         }),
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }

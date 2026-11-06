@@ -1024,6 +1024,9 @@ fn checked(
         CheckRefusal::AbsentRecordField(_) => f.write_str("the record has no such field"),
         CheckRefusal::AbsentTupleComponent(_) => f.write_str("the tuple has no such component"),
         CheckRefusal::MissingRecordField { .. } => f.write_str("the record is missing a field"),
+        CheckRefusal::PatchOutsideBase { .. } => {
+            f.write_str("the base record has no field of this name to fix")
+        },
         CheckRefusal::UnknownOperation { .. } => f.write_str("the interface has no such operation"),
         CheckRefusal::HandlerCoverage { .. } => {
             f.write_str("the handler must handle every operation of its interface exactly once")

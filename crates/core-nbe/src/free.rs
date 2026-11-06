@@ -1472,6 +1472,10 @@ Err(_) => false,
                         extra = ExtraChildren::RecordTypes(fields.values());
                         [None, None, None, None, None]
                     },
+                    ValueType::Patched { base, ref fixed } => {
+                        extra = ExtraChildren::RecordValues(fixed.values());
+                        one(Reached::ValueType(base), Lowering::NONE)
+                    },
                     ValueType::Stack { input, output } => two(
                         Reached::CompType(input),
                         Reached::CompType(output),

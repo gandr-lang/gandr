@@ -902,6 +902,7 @@ fn checked(
         CheckRefusal::UnknownConstructor { at, .. } | CheckRefusal::ConstructorArity(at) => {
             (spanned(origins.value(at)), UNNAMED)
         },
+        CheckRefusal::PatchOutsideBase { value, .. } => (spanned(origins.value(value)), UNNAMED),
         CheckRefusal::MissingRecordField { at, expected }
         | CheckRefusal::CapabilityForged { at, expected }
         | CheckRefusal::LiteralAmbiguous { at, expected } => (spanned(origins.value(at)), [
@@ -1433,6 +1434,7 @@ impl fmt::Display for Checked
             CheckRefusal::AbsentRecordField(_) => f.write_str("the record type has no such field"),
             CheckRefusal::AbsentTupleComponent(_) => f.write_str("the product type has no such component"),
             CheckRefusal::MissingRecordField {..} => f.write_str("the record omits a required field"),
+            CheckRefusal::PatchOutsideBase {..} => f.write_str("the patched type fixes a field its base record does not hold"),
             | CheckRefusal::UnknownOperation { .. } => f.write_str("the operation is absent from its inline interface"),
             | CheckRefusal::HandlerCoverage { .. } => f.write_str("handler clauses must cover their interface exactly once"),
             | CheckRefusal::HandlerUnlawful { rule, .. } => write!(f, "the handler is not shown to satisfy law {} of its theory", usize::from(rule)),
@@ -2988,6 +2990,10 @@ mod tests
                 at: value,
                 expected: value_type,
             },
+            CheckRefusal::PatchOutsideBase {
+                at: value_type,
+                value,
+            },
             CheckRefusal::CapabilityForged {
                 at: value,
                 expected: value_type,
@@ -3744,6 +3750,7 @@ mod tests
                         | CheckRefusal::ConstructorArity(_)
                         | CheckRefusal::AtomTransport { .. }
                         | CheckRefusal::MissingRecordField { .. }
+                        | CheckRefusal::PatchOutsideBase { .. }
                         | CheckRefusal::CapabilityForged { .. }
                         | CheckRefusal::LiteralAmbiguous { .. }
                         | CheckRefusal::DependentStack { .. }

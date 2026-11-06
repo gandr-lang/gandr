@@ -400,6 +400,9 @@ impl Image
                 }
                 | ValueType::Kept {
                     value: ref mut ty, ..
+                }
+                | ValueType::Patched {
+                    base: ref mut ty, ..
                 },
             )
             | Self::CompType(CompType::Returner {
@@ -950,6 +953,12 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         .rev()
                                         .map(|&ty| Task::Open(Node::ValueType(ty))),
                                 ),
+                                ValueType::Patched { ref fixed, .. } => self.pending.extend(
+                                    fixed
+                                        .values()
+                                        .rev()
+                                        .map(|&value| Task::Open(Node::Value(value))),
+                                ),
                                 ValueType::Product(ref components)
                                 | ValueType::Sum(ref components) => self.pending.extend(
                                     components
@@ -1089,6 +1098,11 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         },
                         Image::Value(Value::Record(ref mut fields)) => {
                             for value in fields.values_mut() {
+                                *value = map_value(*value)?;
+                            }
+                        },
+                        Image::ValueType(ValueType::Patched { ref mut fixed, .. }) => {
+                            for value in fixed.values_mut() {
                                 *value = map_value(*value)?;
                             }
                         },

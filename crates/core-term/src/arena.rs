@@ -2537,6 +2537,32 @@ impl CoreArena
         self.alloc_value_type(ValueType::Record(fields))
     }
 
+    /// Fix the fields `fixed` names of the record type `base` at their values.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `base` itself when `fixed` is empty, since a patch that fixes
+    ///   nothing is its base; otherwise a fresh patched type of `base`.
+    /// - provides: a patched type always fixes at least one field.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty and a one-field patch of one record.
+    /// - witness: `arena::tests::a_patch_that_fixes_nothing_is_its_base`
+    #[spec(captures: empty = fixed.is_empty(), ensures: |ret| !empty || ret == base)]
+    #[inline]
+    pub fn value_type_patched(
+        &mut self,
+        base: ValueTypeId,
+        fixed: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>,
+    ) -> ValueTypeId
+    {
+        if fixed.is_empty() {
+            return base;
+        }
+        self.alloc_value_type(ValueType::Patched { base, fixed })
+    }
+
     /// Introduce a nominal constructor of `family` with explicit application
     /// and fields.
     ///

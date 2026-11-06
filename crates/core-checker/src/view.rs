@@ -128,6 +128,15 @@ pub enum ValueTypeView<'arena>
     },
     /// Structural record fields in exact label order.
     Record(&'arena alloc::collections::BTreeMap<gandr_core_term::FieldLabel, ValueTypeId>),
+    /// A record type with fields fixed at their values: the base and each
+    /// fixed label with its value, in exact label order.
+    Patched
+    {
+        /// The record type the patch fixes fields of.
+        base: ValueTypeId,
+        /// Each fixed field's label with its value.
+        fixed: &'arena alloc::collections::BTreeMap<gandr_core_term::FieldLabel, ValueId>,
+    },
     /// A stack consuming one computation type and delivering another.
     Stack
     {
@@ -393,6 +402,7 @@ pub enum CompTypeView<'arena>
 #[spec(ensures: |ret| match ret {
     | Ok(ValueTypeView::Data { declaration, arguments }) => matches!(arena.value_type(value_type), Some(ValueType::Data { declaration: actual, arguments: args }) if *actual == declaration && args == arguments),
     | Ok(ValueTypeView::Record(fields)) => matches!(arena.value_type(value_type), Some(ValueType::Record(actual)) if actual == fields),
+    | Ok(ValueTypeView::Patched { base, fixed }) => matches!(arena.value_type(value_type), Some(ValueType::Patched { base: found, fixed: actual }) if *found == base && actual == fixed),
     | Ok(ValueTypeView::Stack { input, output }) => matches!(arena.value_type(value_type), Some(ValueType::Stack { input: found_input, output: found_output }) if *found_input == input && *found_output == output),
     | Ok(ValueTypeView::Integer) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::Integer))),
     | Ok(ValueTypeView::String) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::String))),
@@ -456,6 +466,7 @@ pub fn value_type_view(
             arguments,
         }),
         ValueType::Record(ref fields) => Ok(ValueTypeView::Record(fields)),
+        ValueType::Patched { base, ref fixed } => Ok(ValueTypeView::Patched { base, fixed }),
         ValueType::Stack { input, output } => Ok(ValueTypeView::Stack { input, output }),
         ValueType::PathUniverse(source, target) => Ok(ValueTypeView::PathUniverse(source, target)),
         ValueType::Path {

@@ -436,7 +436,7 @@ enum Kind
 /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match ret {
-    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Product(_) | Former::RecordType(_)
+    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Product(_) | Former::RecordType(_) | Former::Patched(..)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
@@ -472,6 +472,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::WebType
         | Former::Product(_)
         | Former::RecordType(_)
+        | Former::Patched(..)
         | Former::Sum(_)
         | Former::List(_)
         | Former::ThunkType(_)
@@ -1105,6 +1106,9 @@ where
         && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::RecordUpdate(_, arity) => ret.len() == usize::from(arity).saturating_add(1_usize)
         && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::Patched(_, arity) => ret.len() == usize::from(arity).saturating_add(1_usize)
+        && ret.first().is_some_and(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE)
+        && ret.iter().skip(1_usize).all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::Data { arity, .. } | Former::Codata { arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Stated && slot.binds == Binds::NONE),
     | Former::With(arity) => ret.len() == usize::from(arity)
@@ -1286,6 +1290,17 @@ where
                 Admits::Value,
                 Binds::NONE,
                 Some(Label::Overwrite),
+            ));
+            slots
+        },
+        // The base, then the values the patch fixes, each after its label.
+        Former::Patched(base, arity) => {
+            let mut slots = Vec::from([value_type(base)]);
+            slots.extend(components(
+                arity,
+                Admits::Value,
+                Binds::NONE,
+                Some(Label::Assignment),
             ));
             slots
         },
@@ -3138,6 +3153,9 @@ enum Join
     /// A record update over its base and this many labelled fields,
     /// `*{b | l = a, …}`.
     Update(Arity),
+    /// A patched type over its base and this many labelled values,
+    /// `B[.l = v, …]`.
+    Patch(Arity),
     /// An infix chain over this many operands, two or more.
     Infix
     {
@@ -7887,6 +7905,7 @@ impl Walk<'_, '_>
                 | Former::Product(_)
                 | Former::Sum(_)
                 | Former::RecordType(_)
+                | Former::Patched(..)
                 | Former::ThunkType(_)
                 | Former::Universe { .. }
                 | Former::Element(_)
@@ -9750,6 +9769,10 @@ impl Walk<'_, '_>
                 arity: Arity(usize::from(arity)),
                 entries: Entries::Labelled(Label::Field),
             })),
+            Former::Patched(_, arity) => Some(writes(
+                Production("staged_type"),
+                Join::Patch(Arity(usize::from(arity))),
+            )),
             Former::List(_) => Some(writes(
                 Production("type_application"),
                 Join::Bracket(Bracket::List),
@@ -12766,6 +12789,7 @@ impl Walk<'_, '_>
             | Former::Product(_)
             | Former::Sum(_)
             | Former::RecordType(_)
+            | Former::Patched(..)
             | Former::ThunkType(_)
             | Former::Universe { .. }
             | Former::Element(_)
@@ -12987,7 +13011,7 @@ impl Walk<'_, '_>
             Join::Fill(_, Arity(cells)) => cells.checked_add(1_usize),
             Join::ValueFunction(Arity(domains), ..) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Update(Arity(count)) => {
+            Join::Update(Arity(count)) | Join::Patch(Arity(count)) => {
                 let taken = count.checked_mul(2_usize)?;
                 taken.checked_add(1_usize)
             },
@@ -13018,7 +13042,7 @@ impl Walk<'_, '_>
                     // reads it, and glues it, an atom, where a type reads it.
                     Join::Apply(_) if self.surface != Surface::Expression => Binding::Atom,
                     Join::Apply(_) | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) => Binding::Application,
-                    Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,
+                    Join::Braced { .. } | Join::Update(_) | Join::Patch(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -13159,6 +13183,31 @@ impl Walk<'_, '_>
                 let inner = self.builder.concat_all(&items)?;
                 let inner = self.none_or_break(inner)?;
                 let close = self.leaf(Glyphs("}"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
+            },
+            Join::Patch(Arity(count)) => {
+                let taken = count
+                    .checked_mul(2_usize)
+                    .ok_or(PresentationError::Unbalanced)?;
+                let mut popped = Vec::with_capacity(taken);
+                for _ in 0_usize .. taken {
+                    popped.push(self.pop()?);
+                }
+                let base = self.pop()?;
+                let base = self.bare_up_to(base, Binding::Atom)?;
+                let opener = self.leaf(Glyphs("["))?;
+                let mut items = Vec::from([base, opener]);
+                for (position, entry) in popped.rchunks(2_usize).enumerate() {
+                    if position > 0_usize {
+                        let comma = self.leaf(Glyphs(","))?;
+                        items.push(self.space_or_break(comma)?);
+                    }
+                    for &piece in entry.iter().rev() {
+                        items.push(self.bare_up_to(piece, Binding::ARGUMENT)?);
+                    }
+                }
+                let inner = self.builder.concat_all(&items)?;
+                let close = self.leaf(Glyphs("]"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
             Join::Infix { infix, arity } => {

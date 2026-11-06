@@ -4277,8 +4277,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - ensures: the corresponding former over its children's discovery
     ///   indices, the children discovered as [`gandr_core_term::children`]
     ///   lists them; the predicate bounds the sort and child indices. A staged
-    ///   type, the judgement's own, and a world type discover no child and are
-    ///   the unresolved node.
+    ///   type, the judgement's own, a world type and a patched type discover no
+    ///   child and are the unresolved node.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4287,7 +4287,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::ValueType
-        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_)))
+        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. }))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_value_type(
         &mut self,
@@ -4298,7 +4298,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         self.read_former(
             Sort::ValueType,
             |walk| {
-                if !matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_)) {
+                if !matches!(
+                    *value_type,
+                    ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. }
+                ) {
                     gandr_core_term::children::of_value_type(value_type, walk);
                 }
             },
@@ -5069,8 +5072,8 @@ fn computation_content(
 /// - requires: nothing.
 /// - ensures: a value-type former whose children of each sort are exactly that
 ///   family's numbers, in order; a data type and an abstract type name the
-///   reference `layout` resolves their position to; a staged type and a world
-///   type are the unresolved node.
+///   reference `layout` resolves their position to; a staged type, a world type
+///   and a patched type are the unresolved node.
 /// - fails: [`Short`] when a family runs out before the former's last slot.
 /// - panics: none.
 ///
@@ -5179,8 +5182,11 @@ fn value_type_content(
         // A stage is minted by one judgement and names nothing past it,
         // and a handle or a capability names a world, whose crossing
         // decisions read what no footprint records: content naming
-        // either has no identity to key on, and stays opaque.
-        ValueType::Staged { .. } | ValueType::World(_) => ContentNode::Unresolved(Sort::ValueType),
+        // either has no identity to key on, and stays opaque. A patched
+        // type has no content former, and stays opaque as well.
+        ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. } => {
+            ContentNode::Unresolved(Sort::ValueType)
+        },
     })
 }
 

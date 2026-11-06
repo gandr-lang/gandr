@@ -1984,7 +1984,7 @@ impl Kernel
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
               ValueType::Dialogue(_) | ValueType::Web |
-              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Buffer | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) | ValueType::Row | ValueType::RowTail(_) => false,
+              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Buffer | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) | ValueType::Row | ValueType::RowTail(_) | ValueType::Patched { .. } => false,
               ValueType::Path { carrier, left, right } | ValueType::Bridge { carrier, left, right } => ret.as_slice() == [Node::ValueType(carrier), Node::Value(left), Node::Value(right)],
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
@@ -2210,6 +2210,7 @@ impl Kernel
                         panic!("the pure fixture language has no directed identity")
                     },
                     ValueType::Staged { .. } => panic!("a fixture term names no stage"),
+                    ValueType::Patched { .. } => panic!("a fixture term fixes no field"),
                     ValueType::Row | ValueType::RowTail(_) => {
                         panic!("the pure fixture language has no row")
                     },
@@ -2664,6 +2665,7 @@ impl Kernel
                         panic!("the pure fixture language has no directed identity")
                     },
                     ValueType::Staged { .. } => panic!("a fixture term names no stage"),
+                    ValueType::Patched { .. } => panic!("a fixture term fixes no field"),
                     ValueType::Kept { .. } => panic!("the kernel has no kept type"),
                     ValueType::Path {
                         carrier,

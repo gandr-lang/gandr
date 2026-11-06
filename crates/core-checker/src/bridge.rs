@@ -7316,6 +7316,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let (frame, child) = match value_type_view(self.arena, at)? {
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Sum(_)
             | ValueTypeView::Product(_)
             | ValueTypeView::Session(_) => {

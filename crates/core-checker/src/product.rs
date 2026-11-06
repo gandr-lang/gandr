@@ -188,6 +188,7 @@ pub fn component(
                 } if *level == Level::zero() => (left, right, Reading::Element),
                 ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
+                | ValueTypeView::Patched { .. }
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
@@ -226,6 +227,7 @@ pub fn component(
         },
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Bridge { .. }
@@ -357,6 +359,7 @@ pub fn flow_component(
         } if *level == Level::zero() => {},
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }

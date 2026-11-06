@@ -300,7 +300,8 @@ enum Layout
 
 /// Whether a value of `ty` lays out apart: unlaid when `ty` holds a stack, a
 /// capability, an endpoint, a buffer or a kept value through a record, a
-/// product, a sum, a dependent pair, a list, a stage, a lift or a handle.
+/// patched record, a product, a sum, a dependent pair, a list, a stage, a lift
+/// or a handle.
 ///
 /// # Specification
 /// trivial.
@@ -332,6 +333,7 @@ fn layout(
             Some(
                 &(ValueType::List(inner)
                 | ValueType::Staged { base: inner, .. }
+                | ValueType::Patched { base: inner, .. }
                 | ValueType::Lift { inner, .. }
                 | ValueType::World(WorldType::At { inner, .. })),
             ) => pending.push(inner),

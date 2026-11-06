@@ -235,6 +235,7 @@ const KINDS: &[(&str, Standing)] = &[
         "Type sort",
         Standing::Design("a manifest sort's binding: the type it fixes the sort to answers"),
     ),
+    ("Type true", Standing::Owed(0)),
     ("Type type_identifier", Standing::Owed(0)),
     ("Type type_variable", Standing::Owed(0)),
     ("Type u32", Standing::Owed(0)),
@@ -574,17 +575,15 @@ enum Placed
     /// term nor a type, so the type answers (#4932). The pun `Path[.A](a,
     /// b)` reads `A` as the carrier, which answers.
     Implicit,
-    /// A value a static bracket fixes, `443` in `Config[.port = 443]`, or the
-    /// record a face fixes, `*{.port = 443}` in `Config[secure ↦ *{.port =
-    /// 443}]`: the patched type is the record of the fields the bracket
-    /// leaves free, so no core node of the type holds the value, and no
-    /// judgement types it until the checker reads each fixed value at its
-    /// field's type (#5536). The type answers.
-    Fixed,
+    /// A face form's face and the record it fixes the face at, `secure` and
+    /// `*{.port = 443}` in `Config[secure ↦ *{.port = 443}]`: the patched type
+    /// holds each of the record's values by its label, and no core node holds
+    /// the face or the record, so the type answers.
+    Faced,
     /// The name a selection reads a fixed field off, `c` in `c.port` where `c
     /// : Config[.port = 443]`: the selection reads the value the bracket
     /// fixes, so no core node holds the name until the checker reads the
-    /// field back through the patched type (#5536). The selection answers.
+    /// field back through the patched type (#5579). The selection answers.
     ReadBack,
 }
 
@@ -1042,14 +1041,14 @@ fn gated(
         // A flow's body: every child of a flow declaration after its `where`.
         // The pass over the children below opens the body at that tile.
         let flow = melded && def.label == "flow" && def.sort == Sort::Item;
-        // A static bracket's fixed values: every child of a bracket after a
-        // type, but its base, when a `.` or a `↦` stands among its tiles.
-        let patched = melded
+        // A face form's face and record: every child of a bracket after a
+        // type, but its base, when a `↦` stands among its tiles.
+        let faced = melded
             && def.label == "["
             && def.sort == Sort::Type
             && children
                 .iter()
-                .any(|&child| matches!(spelled(Some(child)), "." | "↦" | "|->"));
+                .any(|&child| matches!(spelled(Some(child)), "↦" | "|->"));
         let mut opened = false;
         stack.extend(
             children
@@ -1089,8 +1088,8 @@ fn gated(
                         else if bodied {
                             placed.or(Some(Placed::Template))
                         }
-                        else if patched && opener != Some(child) {
-                            placed.or(Some(Placed::Fixed))
+                        else if faced && opener != Some(child) {
+                            placed.or(Some(Placed::Faced))
                         }
                         else {
                             placed

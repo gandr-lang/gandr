@@ -149,6 +149,7 @@ pub fn require_unsealed(
                     ValueTypeView::Record(fields) => {
                         pending.extend(fields.values().map(|&field| Reached::Value(field)));
                     },
+                    ValueTypeView::Patched { base, .. } => pending.push(Reached::Value(base)),
                     ValueTypeView::Product(parts) | ValueTypeView::Sum(parts) => {
                         pending.extend(parts.iter().map(|&part| Reached::Value(part)));
                     },
@@ -454,6 +455,7 @@ fn clause(
         ValueTypeView::Abstract(atom) => Clause::Atom(atom),
         ValueTypeView::Data { .. } => Clause::Data,
         ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
@@ -801,6 +803,7 @@ fn interpret(
                 }
             },
             ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }

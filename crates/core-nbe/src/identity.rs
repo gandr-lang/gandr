@@ -262,6 +262,7 @@ pub fn clause(
             ValueType::Universe { .. }
             | ValueType::Data { .. }
             | ValueType::Record(_)
+            | ValueType::Patched { .. }
             | ValueType::PathUniverse(..)
             | ValueType::Path { .. }
             | ValueType::Bridge { .. }

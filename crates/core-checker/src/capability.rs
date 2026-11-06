@@ -444,6 +444,7 @@ pub fn authorise(
         | ValueTypeView::Web
         | ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Sum(..)
         | ValueTypeView::List(_)
         | ValueTypeView::Stack { .. }
@@ -710,7 +711,8 @@ fn successors(
             | ValueType::Path { carrier: inner, .. }
             | ValueType::Bridge { carrier: inner, .. }
             | ValueType::Flow { carrier: inner, .. }
-            | ValueType::Staged { base: inner, .. } => pending.push(TypeNode::Value(inner)),
+            | ValueType::Staged { base: inner, .. }
+            | ValueType::Patched { base: inner, .. } => pending.push(TypeNode::Value(inner)),
             ValueType::Thunk(body) => pending.push(TypeNode::Computation(body)),
             ValueType::StaticPi { domain, codomain }
             | ValueType::Sigma {

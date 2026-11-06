@@ -636,6 +636,7 @@ pub fn coverage(
                     },
                     ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
+                    | ValueTypeView::Patched { .. }
                     | ValueTypeView::Stack { .. }
                     | ValueTypeView::PathUniverse(..)
                     | ValueTypeView::Path { .. }

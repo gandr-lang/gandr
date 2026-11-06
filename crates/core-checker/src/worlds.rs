@@ -1015,6 +1015,7 @@ pub(crate) fn crosses(
             ValueTypeView::Record(fields) => {
                 pending.extend(fields.values().map(|&field| below(field)));
             },
+            ValueTypeView::Patched { base, .. } => pending.push(below(base)),
             ValueTypeView::List(inner)
             | ValueTypeView::Lift { inner, .. }
             | ValueTypeView::Staged { base: inner, .. }
