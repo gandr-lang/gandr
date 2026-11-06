@@ -4349,7 +4349,6 @@ crates/theory-cell-complexes/README.md STE-3.5 537e81a6b5505812
 crates/theory-cell-complexes/README.md STE-3.5 d3957798fb1571bc
 crates/theory-cell-complexes/README.md STE-3.5 d6cb1dab353759fe
 crates/theory-circuit-algebras/README.md STE-3.6 79e5c190a93cbc82
-crates/theory-coherent-resolutions/README.md STE-3.5 14ac15d9ef4e7672
 crates/theory-computads/README.md STE-3.6 2f34a44158e64449
 crates/theory-computads/README.md STE-3.6 448371eabfe71b2e
 crates/theory-decomposition-spaces/README.md STE-3.6 fe608625451f667e

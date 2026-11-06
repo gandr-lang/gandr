@@ -1,6 +1,6 @@
 # gandr-theory-coherent-resolutions
 
-Coherent resolution of a cell rewriting system: firing a cell under the alphabet's discipline, budgeted normalization, the multi-sum overlap enumerator and its support relation, replayable coherence certificates, budgeted Knuth–Bendix and Squier completion that declines with a report, and the bar complex of the Lawvere theory that a first-order block presents.
+Coherent resolution of a cell rewriting system. A cell fires under the alphabet's discipline, and normalization runs within a budget. The multi-sum overlap enumerator lists the critical pairs with their support relation. The crate can replay each coherence certificate. Knuth–Bendix and Squier completion runs within a budget and declines with a report. The crate also holds the bar complex of the Lawvere theory that a first-order block presents.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
