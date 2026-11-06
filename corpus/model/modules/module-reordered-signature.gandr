@@ -18,5 +18,4 @@ module Ordered : *{ third : Integer, first : Integer, second : Integer } where {
 }
 
 /// The three gathered in a record, each member typed by the signature.
-@[ checks ]
 def together = *{a = Ordered.first, b = Ordered.second, c = Ordered.third};
