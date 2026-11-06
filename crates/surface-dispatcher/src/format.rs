@@ -1031,8 +1031,8 @@ mod tests
                 "observe(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter))",
             ),
             (
-                "(upManifest : Model(Counter))",
-                "(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter) : Model(Counter))",
+                "(upManifest : Model Counter)",
+                "(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter) : Model Counter)",
             ),
             (
                 "observe negatedManifest",

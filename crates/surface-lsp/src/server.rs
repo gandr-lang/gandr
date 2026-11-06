@@ -9877,8 +9877,8 @@ mod tests
         assert_eq!(
             changed("data-maybe.gandr"),
             [
-                "def kept+0:37 `m` variable→parameter",
-                "def kept+0:40 `m` variable→parameter",
+                "def kept+0:36 `m` variable→parameter",
+                "def kept+0:39 `m` variable→parameter",
                 "def kept+1:8 `m` variable→parameter",
                 "def kept+2:24 `m` variable→parameter",
                 "def kept+3:27 `m` variable→parameter",
@@ -10002,8 +10002,8 @@ mod tests
                 "def unwrap_or_zero+3:17 `x` variable value",
                 "def kept+0:4 `kept` function declaration",
                 "def kept+0:9 `m` parameter declaration+value",
-                "def kept+0:37 `m` parameter value",
-                "def kept+0:40 `m` parameter value",
+                "def kept+0:36 `m` parameter value",
+                "def kept+0:39 `m` parameter value",
                 "def kept+1:8 `m` parameter value",
                 "def kept+2:6 `None` enumMember value",
                 "def kept+2:24 `m` parameter value",
