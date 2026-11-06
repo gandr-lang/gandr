@@ -1,20 +1,26 @@
 //! The exact reals a run reaches: where the operations of `Reals` go.
 //!
-//! The host at a program's entry holds the run's [`Plans`]: each one a plan
-//! of `theory-exact-reals` that the validation pass admits. `admit` reads
-//! its string as the canonical bytes of a plan in lowercase hexadecimal. It
-//! validates them under the default quotas, against the registered cut of
-//! stage A, and replies the place of the plan in the table. So a plan is an
-//! integer that names a plan this host holds, and it never crosses. `enclose`
-//! takes a plan and a precision `k`. It runs the refinement machine on the
-//! root of the plan until the machine certifies an enclosure no wider than
-//! `2^-k`. The checker replays the certificate, and the host replies the two
-//! ends, each spelled `<mantissa>p<exponent>` for `mantissa · 2^exponent`.
+//! The host at a program's entry holds the run's [`Reals`]: the plans of
+//! `theory-exact-reals` that the validation pass admits, and the machines that
+//! decide their open roots. `admit` reads its string as the canonical bytes of
+//! a plan in lowercase hexadecimal. It validates them under the default
+//! quotas, against the registered cut of stage A, and replies the place of the
+//! plan in the table. So a plan is an integer that names a plan this host
+//! holds, and it never crosses. `enclose` takes a plan and a precision `k`. It
+//! runs the refinement machine on the root of the plan until the machine
+//! certifies an enclosure no wider than `2^-k`. The checker replays the
+//! certificate, and the host replies the two ends, each spelled
+//! `<mantissa>p<exponent>` for `mantissa · 2^exponent`.
+//!
+//! `decide`, `step`, `checkpoint`, `restore` and `report` work on the machines
+//! that [`machine`] holds. A machine decides an open root such as `a < b`
+//! within a budget of quanta, and only a certificate that the checker replays
+//! makes it hold or fail. Each other end of a run is a named stop.
 //!
 //! An operation that fails is declined, and the run is stuck at it. Before
 //! the decline, the host writes one line to standard error. The line names
-//! the operation and the cause: the site and the check of a refused plan, or
-//! the other cause of the decline.
+//! the operation and the cause: the site and the check of a refused plan or
+//! checkpoint, or the other cause of the decline.
 //!
 //! # References
 //!
@@ -27,6 +33,7 @@
 
 use alloc::boxed::Box;
 use alloc::format;
+use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
@@ -68,20 +75,37 @@ use gandr_theory_exact_reals::Position;
 use gandr_theory_exact_reals::Quantum;
 use gandr_theory_exact_reals::Quotas;
 use gandr_theory_exact_reals::Refusal;
+use gandr_theory_exact_reals::ResumeError;
 use gandr_theory_exact_reals::Rounds;
 use gandr_theory_exact_reals::SuspendReason;
 use gandr_theory_exact_reals::ValidatedPlan;
 use gandr_theory_exact_reals::check;
 use gandr_theory_exact_reals::validate;
 
+use self::machine::MACHINES;
+use self::machine::Machines;
+use self::machine::QUANTA;
+use self::machine::Verdict;
 use super::Console;
 use super::Printed;
 use super::console::Line;
+
+mod machine;
 
 /// The operation of [`REALS`] that validates a plan.
 const ADMIT: &str = "admit";
 /// The operation of [`REALS`] that encloses the root of a plan.
 const ENCLOSE: &str = "enclose";
+/// The operation of [`REALS`] that mints a machine on an open root.
+const DECIDE: &str = "decide";
+/// The operation of [`REALS`] that runs one more quantum of a machine.
+const STEP: &str = "step";
+/// The operation of [`REALS`] that spells the checkpoint of a machine.
+const CHECKPOINT: &str = "checkpoint";
+/// The operation of [`REALS`] that mints a machine from a checkpoint.
+const RESTORE: &str = "restore";
+/// The operation of [`REALS`] that gives the work counters of a machine.
+const REPORT: &str = "report";
 
 /// The most plans that one run holds.
 const PLANS: usize = 64;
@@ -94,16 +118,19 @@ const PRECISION: i32 = 1 << 12;
 /// checker.
 const STEPS: u64 = 1 << 16;
 
-/// The plans that a run holds, each at the place that its handle names.
+/// The plans and the machines that a run holds, each at the place that its
+/// handle names.
 ///
-/// The table is empty until the first `admit`, so a run that performs no
-/// `Reals` operation allocates nothing for it.
-#[repr(transparent)]
+/// The tables are empty until the first `admit`, so a run that performs no
+/// `Reals` operation allocates nothing for them.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct Plans
+pub(super) struct Reals
 {
-    /// The validated plans, in the order of their `admit`.
-    held: Vec<ValidatedPlan>,
+    /// The validated plans, in the order of their `admit`. A machine shares
+    /// the plan that it decides.
+    plans: Vec<Rc<ValidatedPlan>>,
+    /// The machines, in the order that the run mints them.
+    machines: Machines,
 }
 
 /// The handle of a plan: its place in the table of the run.
@@ -115,6 +142,30 @@ struct Handle(usize);
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Decoded(Vec<u8>);
+
+/// The handle of a machine: its place in the table of the run.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct MachineHandle(usize);
+
+/// A budget of quanta, from zero to [`QUANTA`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Quanta(u64);
+
+/// The work counters of a machine, in the order that `report` replies them.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Counters
+{
+    /// The quanta that the machine spends over all its runs, before a
+    /// checkpoint too.
+    quanta: u64,
+    /// The obligations that the machine holds: both poles for a minted
+    /// machine, and the poles live at its checkpoint for a restored one.
+    obligations: usize,
+    /// The steps of the certificate that decides the machine, or zero.
+    certificate: usize,
+}
 
 /// What the payload of a `Reals` operation asks, read out of the store of the
 /// run.
@@ -131,6 +182,23 @@ enum Asked<'values>
         /// The power of two that bounds the width, from `-PRECISION` to zero.
         width: Exponent,
     },
+    /// Mint a machine on the open root of the plan at the handle, and run it
+    /// for a budget of quanta.
+    Decide
+    {
+        /// The place of the plan in the table.
+        handle: Handle,
+        /// The quanta of the first run.
+        budget: Quanta,
+    },
+    /// Run one more quantum of the machine at the handle.
+    Step(MachineHandle),
+    /// Spell the checkpoint of the machine at the handle.
+    Checkpoint(MachineHandle),
+    /// Mint a machine from the checkpoint that the text spells.
+    Restore(&'values StringLiteral),
+    /// Give the work counters of the machine at the handle.
+    Report(MachineHandle),
 }
 
 /// What a `Reals` operation answers, to be allocated as its reply.
@@ -141,6 +209,14 @@ enum Answered
     Plan(Handle),
     /// The lower end and the upper end of an enclosure, each spelled.
     Enclosure(String, String),
+    /// The verdict of a machine, and its handle.
+    Verdict(Verdict, MachineHandle),
+    /// The lowercase hexadecimal of a checkpoint.
+    Text(String),
+    /// The handle of a machine that the table now holds.
+    Machine(MachineHandle),
+    /// The work counters of a machine.
+    Counters(Counters),
 }
 
 /// Why a run of the machine stops short of an enclosure.
@@ -181,6 +257,22 @@ enum Declined
     Replay(CertificateRefusal),
     /// The certificate concludes another judgement than the enclosure asked.
     Mismatch,
+    /// The root of the plan is no open proposition.
+    Real,
+    /// The budget is past [`QUANTA`].
+    Quanta,
+    /// The run holds [`MACHINES`] machines already.
+    Machines,
+    /// The run holds no machine at the handle.
+    NoMachine,
+    /// The machine is decided or holds no live obligation.
+    Settled,
+    /// The bytes do not frame a plan of the length that they state.
+    Framing,
+    /// The scheduler refuses the checkpoint, at the check named.
+    Resumed(ResumeError),
+    /// The checkpoint asks another obligation than a pole of the root.
+    Foreign,
     /// The store refuses the reply.
     Store,
 }
@@ -202,8 +294,10 @@ impl fmt::Display for Declined
     /// # Adequacy
     /// - hypothesis: L3 — text that is not hexadecimal, a forged plan, an
     ///   unknown handle and a precision past the quota, each named on standard
-    ///   error.
+    ///   error; a budget past the quota, an unknown machine and a corrupt
+    ///   checkpoint, each named too.
     /// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
+    /// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
     #[inline]
     fn fmt(
         &self,
@@ -239,12 +333,26 @@ impl fmt::Display for Declined
             Self::Mismatch => {
                 f.write_str("the certificate concludes another judgement than the enclosure asked")
             },
+            Self::Real => f.write_str("the root of the plan is no open proposition"),
+            Self::Quanta => write!(f, "the budget is not from 0 to {QUANTA} quanta"),
+            Self::Machines => write!(f, "the run holds {MACHINES} machines already"),
+            Self::NoMachine => f.write_str("the run holds no machine at the handle"),
+            Self::Settled => f.write_str(
+                "the machine is decided or holds no live obligation, so no checkpoint resumes it",
+            ),
+            Self::Framing => {
+                f.write_str("the checkpoint does not frame a plan of its stated length")
+            },
+            Self::Resumed(error) => write!(f, "the checkpoint is refused: {error}"),
+            Self::Foreign => {
+                f.write_str("the checkpoint asks another obligation than a pole of the root")
+            },
             Self::Store => f.write_str("the store refuses the reply"),
         }
     }
 }
 
-/// Serve the `Reals` operation that `request` offers on `plans`: the reply
+/// Serve the `Reals` operation that `request` offers on `reals`: the reply
 /// that the host gives, or nothing when the request is another interface's.
 ///
 /// # Specification
@@ -252,12 +360,14 @@ impl fmt::Display for Declined
 /// - ensures: for `admit`, the plan that the hexadecimal text spells, validated
 ///   and held, and its handle as the reply; for `enclose`, the two ends of a
 ///   certified enclosure of the root no wider than `2^-k`, which the checker
-///   replays before the reply. A decline when the payload is not what `Reals`
-///   declares, the text is not hexadecimal, the table is full, the plan is
-///   refused, the handle names no plan, the precision is past the quota, the
-///   machine stops short, the checker refuses, or the store refuses the reply;
-///   one line on `console`'s standard error names the cause first. Nothing for
-///   any other interface.
+///   replays before the reply. For `decide` and `step`, the verdict of a
+///   machine and its handle, `holds` or `fails` only with a certificate that
+///   the checker replays; for `checkpoint`, the text of an undecided machine
+///   and its plan; for `restore`, a new machine from such text, validated
+///   again; for `report`, the quanta, the obligations and the certificate steps
+///   of a machine. A decline when the payload is not what `Reals` declares, or
+///   when a check of the operation fails; one line on `console`'s standard
+///   error names the cause first. Nothing for any other interface.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -265,14 +375,17 @@ impl fmt::Display for Declined
 /// - hypothesis: L3 — the exemplar admits the square root of two and encloses
 ///   it at `2^-64`; text that is not hexadecimal, a forged plan, an unknown
 ///   handle and a precision past the quota are each declined with their cause
-///   on standard error.
+///   on standard error. `sqrt 2 < 3/2` holds, two boundary comparisons stop by
+///   name, and a checkpoint after one quantum resumes to the uninterrupted
+///   verdict.
 /// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
+/// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
 #[spec(
     captures: [real = request.signature.name().as_ref() == REALS],
     ensures: |ret| ret.is_none() != real,
 )]
 pub(super) fn served<Abort>(
-    plans: &mut Plans,
+    reals: &mut Reals,
     console: &mut dyn Console,
     request: HostRequest<'_>,
     values: &mut HostValues<'_>,
@@ -282,7 +395,7 @@ pub(super) fn served<Abort>(
         return None;
     }
     let answered = asked(request.operation, request.payload, values)
-        .and_then(|asked| plans.answer(asked))
+        .and_then(|asked| reals.answer(asked))
         .and_then(|answer| reply(answer, values).ok_or(Declined::Store));
     Some(match answered {
         Ok(reply) => HostReply::Resume(reply),
@@ -296,9 +409,9 @@ pub(super) fn served<Abort>(
     })
 }
 
-impl Plans
+impl Reals
 {
-    /// Answer `asked` over the plans of the run.
+    /// Answer `asked` over the plans and the machines of the run.
     ///
     /// # Specification
     /// trivial.
@@ -312,6 +425,29 @@ impl Plans
             Asked::Enclose { handle, width } => self
                 .enclose(handle, width)
                 .map(|(lower, upper)| Answered::Enclosure(lower, upper)),
+            Asked::Decide { handle, budget } => {
+                let plan = self
+                    .plans
+                    .get(handle.0)
+                    .map(Rc::clone)
+                    .ok_or(Declined::Unknown)?;
+                self.machines
+                    .decide(plan, budget)
+                    .map(|(verdict, machine)| Answered::Verdict(verdict, machine))
+            },
+            Asked::Step(machine) => self
+                .machines
+                .step(machine)
+                .map(|(verdict, machine)| Answered::Verdict(verdict, machine)),
+            Asked::Checkpoint(machine) => self
+                .machines
+                .checkpoint(machine)
+                .map(|bytes| Answered::Text(lowercase(&bytes))),
+            Asked::Restore(text) => {
+                let bytes = hexadecimal(text).ok_or(Declined::Hexadecimal)?;
+                self.machines.restore(&bytes).map(Answered::Machine)
+            },
+            Asked::Report(machine) => self.machines.report(machine).map(Answered::Counters),
         }
     }
 
@@ -333,15 +469,15 @@ impl Plans
     /// - hypothesis: L3 — as [`served`].
     /// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
     #[spec(
-        captures: [before = self.held.len()],
-        ensures: |ret| ret.as_ref().map_or(self.held.len() == before, |&handle| handle.0 == before && self.held.len() == before.saturating_add(1)),
+        captures: [before = self.plans.len()],
+        ensures: |ret| ret.as_ref().map_or(self.plans.len() == before, |&handle| handle.0 == before && self.plans.len() == before.saturating_add(1)),
     )]
     fn admit(
         &mut self,
         text: &StringLiteral,
     ) -> Result<Handle, Declined>
     {
-        if self.held.len() >= PLANS {
+        if self.plans.len() >= PLANS {
             return Err(Declined::Full);
         }
         let bytes = hexadecimal(text).ok_or(Declined::Hexadecimal)?;
@@ -351,8 +487,8 @@ impl Plans
             &evidence(),
         )
         .map_err(Declined::Refused)?;
-        let handle = Handle(self.held.len());
-        self.held.push(plan);
+        let handle = Handle(self.plans.len());
+        self.plans.push(Rc::new(plan));
         Ok(handle)
     }
 
@@ -385,7 +521,11 @@ impl Plans
         width: Exponent,
     ) -> Result<(String, String), Declined>
     {
-        let plan = self.held.get(handle.0).ok_or(Declined::Unknown)?;
+        let plan: &ValidatedPlan = self
+            .plans
+            .get(handle.0)
+            .map(Rc::as_ref)
+            .ok_or(Declined::Unknown)?;
         let obligation =
             Obligation::new(plan, plan.plan().root().node(), Demand::Encloses { width })
                 .ok()
@@ -480,85 +620,134 @@ fn hexadecimal(text: &StringLiteral) -> Option<Decoded>
     Some(Decoded(bytes))
 }
 
-/// What `operation` asks of the plans, its payload `payload` read out of
-/// `values`.
+/// `bytes` spelled in lowercase hexadecimal, two digits a byte, the high digit
+/// first: the text that [`hexadecimal`] reads back.
+///
+/// # Specification
+/// trivial.
+fn lowercase(bytes: &Decoded) -> String
+{
+    bytes
+        .0
+        .iter()
+        .flat_map(|&byte| [byte.checked_shr(4).unwrap_or(0), byte & 0x0f])
+        .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
+        .collect()
+}
+
+/// What `operation` asks of the plans and the machines, its payload `payload`
+/// read out of `values`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `admit` with its text, and `enclose` with its handle and the
-///   width that its precision bounds.
+/// - ensures: `admit` and `restore` with their text, `enclose` with its handle
+///   and the width that its precision bounds, `decide` with its handle and its
+///   budget, and `step`, `checkpoint` and `report` with the handle of their
+///   machine.
 /// - fails: a payload that is not what `Reals` declares, or an operation that
-///   `Reals` does not declare, and a precision below zero or past
-///   [`PRECISION`].
+///   `Reals` does not declare; a handle below zero or past the places of a
+///   table; a precision below zero or past [`PRECISION`]; and a budget below
+///   zero or past [`QUANTA`].
 /// - panics: none.
 /// - executable: none — the clause restates the reading of the payload.
 ///
 /// # Errors
-/// [`Declined::Payload`], [`Declined::Unknown`] for a handle below zero or
-/// past the places of a table, or [`Declined::Precision`].
+/// [`Declined::Payload`], [`Declined::Unknown`], [`Declined::NoMachine`],
+/// [`Declined::Precision`] or [`Declined::Quanta`].
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`served`].
 /// - witness: `tests::run::a_script_encloses_the_square_root_of_two_5700`
+/// - witness: `tests::run::a_script_decides_comparisons_through_reals_5703`
 fn asked<'values>(
     operation: &OperationName,
     payload: HeapValueId,
     values: &'values HostValues<'_>,
 ) -> Result<Asked<'values>, Declined>
 {
+    let text = move || match values.value(payload) {
+        Some(&HeapValue::Literal(Literal::Text(ref text))) => Ok(text),
+        Some(_) | None => Err(Declined::Payload),
+    };
+    let pair = move || match values.value(payload) {
+        Some(&HeapValue::Constructed {
+            tag: ConstructorTag::Tuple(ProducerArity::TWO),
+            ref fields,
+        }) => fields
+            .first()
+            .copied()
+            .zip(fields.get(1).copied())
+            .ok_or(Declined::Payload),
+        Some(_) | None => Err(Declined::Payload),
+    };
+    let plan = move |value: HeapValueId| {
+        natural(values, value)?
+            .and_then(|digits| digits.as_ref().parse::<usize>().ok())
+            .map(Handle)
+            .ok_or(Declined::Unknown)
+    };
+    let machine = move |value: HeapValueId| {
+        natural(values, value)?
+            .and_then(|digits| digits.as_ref().parse::<usize>().ok())
+            .map(MachineHandle)
+            .ok_or(Declined::NoMachine)
+    };
     match operation.as_ref() {
-        ADMIT => match values.value(payload) {
-            Some(&HeapValue::Literal(Literal::Text(ref text))) => Ok(Asked::Admit(text)),
-            Some(_) | None => Err(Declined::Payload),
-        },
+        ADMIT => text().map(Asked::Admit),
+        RESTORE => text().map(Asked::Restore),
         ENCLOSE => {
-            let Some(&HeapValue::Constructed {
-                tag: ConstructorTag::Tuple(ProducerArity::TWO),
-                ref fields,
-            }) = values.value(payload)
-            else {
-                return Err(Declined::Payload);
-            };
-            let (&handle, &precision) =
-                fields.first().zip(fields.get(1)).ok_or(Declined::Payload)?;
-            let handle = natural(values, handle)?
-                .as_ref()
-                .parse::<usize>()
-                .ok()
-                .map(Handle)
-                .ok_or(Declined::Unknown)?;
+            let (handle, precision) = pair()?;
+            let handle = plan(handle)?;
             let width = natural(values, precision)
                 .ok()
+                .flatten()
                 .and_then(|digits| digits.as_ref().parse::<i32>().ok())
                 .filter(|&precision| precision <= PRECISION)
                 .map(|precision| Exponent::from(precision.saturating_neg()))
                 .ok_or(Declined::Precision)?;
             Ok(Asked::Enclose { handle, width })
         },
+        DECIDE => {
+            let (handle, budget) = pair()?;
+            let handle = plan(handle)?;
+            let budget = natural(values, budget)
+                .ok()
+                .flatten()
+                .and_then(|digits| digits.as_ref().parse::<u64>().ok())
+                .filter(|&quanta| quanta <= QUANTA)
+                .map(Quanta)
+                .ok_or(Declined::Quanta)?;
+            Ok(Asked::Decide { handle, budget })
+        },
+        STEP => machine(payload).map(Asked::Step),
+        CHECKPOINT => machine(payload).map(Asked::Checkpoint),
+        REPORT => machine(payload).map(Asked::Report),
         _ => Err(Declined::Payload),
     }
 }
 
-/// The magnitude of the non-negative integer that `value` holds.
+/// The magnitude of the integer that `value` holds, or nothing for an integer
+/// below zero.
 ///
 /// # Specification
 /// trivial.
 fn natural<'values>(
     values: &'values HostValues<'_>,
     value: HeapValueId,
-) -> Result<&'values Magnitude, Declined>
+) -> Result<Option<&'values Magnitude>, Declined>
 {
     match values.value(value) {
         Some(&HeapValue::Literal(Literal::Integer(ref integer))) => match integer.sign() {
-            Sign::NonNegative => Ok(integer.magnitude()),
-            Sign::Negative => Err(Declined::Unknown),
+            Sign::NonNegative => Ok(Some(integer.magnitude())),
+            Sign::Negative => Ok(None),
         },
         Some(_) | None => Err(Declined::Payload),
     }
 }
 
-/// `answer` allocated in `values`: a handle as an integer, and an enclosure
-/// as a pair of strings.
+/// `answer` allocated in `values`: a handle as an integer, an enclosure as a
+/// pair of strings, a verdict as its name and the handle of its machine, a
+/// checkpoint as its text, and the counters as a list of integers.
 ///
 /// # Specification
 /// trivial.
@@ -568,28 +757,91 @@ fn reply(
 ) -> Option<HeapValueId>
 {
     match answer {
-        Answered::Plan(handle) => {
-            let magnitude = Magnitude::from_decimal_text(handle.0.to_string())?;
-            values
-                .allocate(HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
-                    Sign::NonNegative,
-                    magnitude,
-                ))))
-                .ok()
-        },
+        Answered::Plan(handle) => integer(values, handle.0.to_string()),
+        Answered::Machine(handle) => integer(values, handle.0.to_string()),
         Answered::Enclosure(lower, upper) => {
-            let lower = values
-                .allocate(HeapValue::Literal(Literal::Text(StringLiteral::new(lower))))
-                .ok()?;
-            let upper = values
-                .allocate(HeapValue::Literal(Literal::Text(StringLiteral::new(upper))))
-                .ok()?;
-            values
+            let lower = text(values, lower)?;
+            let upper = text(values, upper)?;
+            pair(values, [lower, upper])
+        },
+        Answered::Verdict(verdict, handle) => {
+            let name = text(values, verdict.to_string())?;
+            let handle = integer(values, handle.0.to_string())?;
+            pair(values, [name, handle])
+        },
+        Answered::Text(spelled) => text(values, spelled),
+        Answered::Counters(counters) => {
+            let mut list = values
                 .allocate(HeapValue::Constructed {
-                    tag: ConstructorTag::Tuple(ProducerArity::TWO),
-                    fields: Box::new([lower, upper]),
+                    tag: ConstructorTag::ListNil,
+                    fields: Box::new([]),
                 })
-                .ok()
+                .ok()?;
+            for count in [
+                counters.certificate.to_string(),
+                counters.obligations.to_string(),
+                counters.quanta.to_string(),
+            ] {
+                let head = integer(values, count)?;
+                list = values
+                    .allocate(HeapValue::Constructed {
+                        tag: ConstructorTag::ListCons,
+                        fields: Box::new([head, list]),
+                    })
+                    .ok()?;
+            }
+            Some(list)
         },
     }
+}
+
+/// The non-negative integer that `digits` spell, allocated in `values`.
+///
+/// # Specification
+/// trivial.
+fn integer(
+    values: &mut HostValues<'_>,
+    digits: String,
+) -> Option<HeapValueId>
+{
+    let magnitude = Magnitude::from_decimal_text(digits)?;
+    values
+        .allocate(HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            magnitude,
+        ))))
+        .ok()
+}
+
+/// The string `spelled`, allocated in `values`.
+///
+/// # Specification
+/// trivial.
+fn text(
+    values: &mut HostValues<'_>,
+    spelled: String,
+) -> Option<HeapValueId>
+{
+    values
+        .allocate(HeapValue::Literal(Literal::Text(StringLiteral::new(
+            spelled,
+        ))))
+        .ok()
+}
+
+/// The pair of `fields`, allocated in `values`.
+///
+/// # Specification
+/// trivial.
+fn pair(
+    values: &mut HostValues<'_>,
+    fields: [HeapValueId; 2],
+) -> Option<HeapValueId>
+{
+    values
+        .allocate(HeapValue::Constructed {
+            tag: ConstructorTag::Tuple(ProducerArity::TWO),
+            fields: Box::new(fields),
+        })
+        .ok()
 }

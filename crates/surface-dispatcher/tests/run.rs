@@ -628,6 +628,172 @@ fn a_script_encloses_the_square_root_of_two_5700()
     }
 }
 
+/// #5703: the three comparison exemplars run as scripts. `sqrt 2 < 3/2`
+/// holds; `sqrt 2 < sqrt 2` spends each budget and `sqrt 2 · sqrt 2 < 2`
+/// suspends, and neither prints `fails`; a machine restored from its
+/// checkpoint after one quantum holds with the work of an uninterrupted one.
+/// The host declines six operations and names each cause on standard error
+/// first: a root that is no open proposition, a budget past the quota, a
+/// handle that names no machine, the checkpoint of a decided machine, text
+/// that frames no plan, and a checkpoint whose quantum is no steps.
+#[test]
+fn a_script_decides_comparisons_through_reals_5703()
+{
+    let reals = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals");
+    for (exemplar, printed) in [
+        ("comparison.gandr", &["holds"][..]),
+        (
+            "boundary.gandr",
+            &[
+                "exhausted exhausted exhausted",
+                "suspended suspended suspended",
+            ][..],
+        ),
+        ("resume.gandr", &["exhausted", "holds", "the same work"][..]),
+    ] {
+        let mut console = Captured::default();
+        let mut script = Script::new(reals.join(exemplar));
+        let run = script.run(&mut console);
+        assert!(
+            matches!(
+                run,
+                ScriptRun::Source {
+                    ran: Ran::Entered {
+                        entered: Entered::Exited(status),
+                        ..
+                    },
+                    ..
+                } if status == ExitStatus::from(0_u8)
+            ),
+            "{exemplar} exits 0: {run:?}"
+        );
+        let printed: Vec<String> = printed.iter().map(|line| (*line).to_owned()).collect();
+        assert_eq!(
+            (console.lines(), console.errors()),
+            (printed.as_slice(), &[][..]),
+            "{exemplar}: its verdicts are printed, and no refusal"
+        );
+    }
+
+    // Run `source` as a script: whether it exits, whether it is stuck, how
+    // the run spells itself, and what it printed.
+    let run = |name: &str, source: &str| {
+        let scratch = Scratch::write(
+            Path::new(&format!("reals-{name}-5703")),
+            SourceText::from(source),
+        );
+        let mut console = Captured::default();
+        let mut script = Script::new(scratch.0.clone());
+        let run = script.run(&mut console);
+        let exited = matches!(run, ScriptRun::Source {
+            ran: Ran::Entered {
+                entered: Entered::Exited(_),
+                ..
+            },
+            ..
+        });
+        let stuck = matches!(run, ScriptRun::Source {
+            ran: Ran::Entered {
+                entered: Entered::Ended(Evaluation::Stuck(_)),
+                ..
+            },
+            ..
+        });
+        let spelled = format!("{run:?}");
+        (exited, stuck, spelled, console)
+    };
+    // Each fixture admits the plan of `sqrt 2 < 3/2`, or the plan of the
+    // square root of two for `real`, and prints the string its operations end
+    // with. The `restore` fixture restores the text that replaces its
+    // `CHECKPOINT` and steps the machine once.
+    let (exited, _, spelled, console) = run(
+        "checkpoint",
+        include_str!(
+            "run/fixtures/a-script-decides-comparisons-through-reals-5703-checkpoint.gandr"
+        ),
+    );
+    assert!(exited, "the checkpoint is printed: {spelled}");
+    let [ref text] = *console.lines()
+    else {
+        panic!("one checkpoint line: {:?}", console.lines());
+    };
+    // The text holds the length of the plan in 4 bytes, the plan in 176, and
+    // then the checkpoint, whose quantum takes its bytes 6 to 10.
+    let quantum = (4 + 176 + 6) * 2;
+    let zeroed = format!(
+        "{}00000000{}",
+        text.get(.. quantum).expect("the text holds the quantum"),
+        text.get(quantum + 8 ..)
+            .expect("the text holds the quantum")
+    );
+    let restore =
+        include_str!("run/fixtures/a-script-decides-comparisons-through-reals-5703-restore.gandr");
+    let restoring = |text: &str| restore.replace("CHECKPOINT", text);
+    for (name, source, cause) in [
+        (
+            "real",
+            include_str!("run/fixtures/a-script-decides-comparisons-through-reals-5703-real.gandr")
+                .to_owned(),
+            "std.reals.Eff.decide: the root of the plan is no open proposition",
+        ),
+        (
+            "budget",
+            include_str!(
+                "run/fixtures/a-script-decides-comparisons-through-reals-5703-budget.gandr"
+            )
+            .to_owned(),
+            "std.reals.Eff.decide: the budget is not from 0 to 1024 quanta",
+        ),
+        (
+            "no-machine",
+            include_str!(
+                "run/fixtures/a-script-decides-comparisons-through-reals-5703-no-machine.gandr"
+            )
+            .to_owned(),
+            "std.reals.Eff.step: the run holds no machine at the handle",
+        ),
+        (
+            "decided",
+            include_str!(
+                "run/fixtures/a-script-decides-comparisons-through-reals-5703-decided.gandr"
+            )
+            .to_owned(),
+            "std.reals.Eff.checkpoint: the machine is decided or holds no live obligation, so no checkpoint resumes it",
+        ),
+        (
+            "unframed",
+            restoring("00"),
+            "std.reals.Eff.restore: the checkpoint does not frame a plan of its stated length",
+        ),
+        (
+            "zeroed",
+            restoring(&zeroed),
+            "std.reals.Eff.restore: the checkpoint is refused: the checkpoint's quantum is no steps",
+        ),
+    ] {
+        let (_, stuck, spelled, console) = run(name, &source);
+        assert!(
+            stuck,
+            "{name}: the run is stuck at the declined operation: {spelled}"
+        );
+        assert_eq!(
+            (console.lines(), console.errors()),
+            (&[][..], &[cause.to_owned()][..]),
+            "{name}: standard error names the cause, and nothing is printed"
+        );
+    }
+
+    // The unchanged checkpoint restores, and its machine goes on: one quantum
+    // later a pole is still live.
+    let (exited, _, spelled, console) = run("restored", &restoring(text));
+    assert!(exited, "the unchanged checkpoint restores: {spelled}");
+    assert_eq!(
+        (console.lines(), console.errors()),
+        (&["exhausted".to_owned()][..], &[][..]),
+        "one quantum after the restore, a pole is still live"
+    );
+}
+
 /// The migration model: two migrations to the seat, answering 42.
 ///
 /// # Specification

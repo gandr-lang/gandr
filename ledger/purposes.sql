@@ -748,7 +748,7 @@ INSERT INTO purpose VALUES('core-term','effect::host::INTERFACES','constant','Th
 INSERT INTO purpose VALUES('core-term','effect::host::NET','constant','The network interface''s name: a stream to a peer named by its key.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::PARTIAL','constant','The divergence interface''s name, with no operation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::PROC','constant','The early process-exit interface''s name.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','effect::host::REALS','constant','The exact reals interface''s name: a plan admitted from its canonical bytes, and its root enclosed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::REALS','constant','The exact reals interface''s name: a plan admitted from its canonical bytes, its root enclosed, and an open root decided by a resumable machine.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::RING','constant','The completion ring''s buffer interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::STDERR','constant','The error stream interface''s name: a line written to the process''s standard error.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::STDIN','constant','The input interface''s name: a line read from the process''s standard input.',NULL,'fits','sound',NULL);
