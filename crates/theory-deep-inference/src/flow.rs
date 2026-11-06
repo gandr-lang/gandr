@@ -879,7 +879,9 @@ pub fn flows_equal(
 ///   `store`.
 /// - ensures: the certificate's recorded peak and join and each leg's flow,
 ///   only when both legs fire step by step from the skolemized peak and reach
-///   the skolemized join, exactly when the certificate replays.
+///   the join skolemized at the peak's metavariables
+///   ([`CellAlphabet::skolemize_boundary`]), exactly when the certificate
+///   replays.
 /// - provides: the certificate-level datum [`tracelets_flow_equal`] compares.
 /// - fails: [`FlowObstruction`], from whichever leg is refused first, including
 ///   [`FlowObstruction::LegMissesTheJoin`] for a leg that fires throughout and
@@ -897,7 +899,7 @@ pub fn flows_equal(
 /// - witness: `tests::flow::a_leg_that_lands_off_the_join_has_no_certificate_flow`
 #[inline]
 #[spec(ensures: |output| {
-    let target = A::skolemize(&tracelet.joins_at);
+    let (_, target) = A::skolemize_boundary(&tracelet.overlap.peak, &tracelet.joins_at);
     project_leg(store, &tracelet.overlap.peak, &target, &tracelet.path_a).map_or_else(|expected| matches!(output, Err(ref reason) if *reason == expected), |path_a| {
         project_leg(store, &tracelet.overlap.peak, &target, &tracelet.path_b).map_or_else(|expected| matches!(output, Err(ref reason) if *reason == expected), |path_b| {
             output.as_ref().is_ok_and(|projected| projected.peak == tracelet.overlap.peak && projected.joins_at == tracelet.joins_at && projected.path_a == path_a && projected.path_b == path_b)
@@ -911,7 +913,7 @@ pub fn tracelet_flow<A>(
 where
     A: CellAlphabet,
 {
-    let target = A::skolemize(&tracelet.joins_at);
+    let (_, target) = A::skolemize_boundary(&tracelet.overlap.peak, &tracelet.joins_at);
     let path_a = project_leg(store, &tracelet.overlap.peak, &target, &tracelet.path_a)?;
     let path_b = project_leg(store, &tracelet.overlap.peak, &target, &tracelet.path_b)?;
     Ok(TraceletFlow {
@@ -925,7 +927,8 @@ where
 /// Project one leg of a certificate, refusing it unless it reaches `target`.
 ///
 /// # Specification
-/// - requires: `target` is the skolemized recorded join.
+/// - requires: `target` is the recorded join skolemized at the peak's
+///   metavariables.
 /// - ensures: [`project_flow`]'s flow when the leg reaches `target`.
 /// - fails: [`FlowObstruction::LegMissesTheJoin`] when it fires throughout and
 ///   lands elsewhere, or whatever [`project_flow`] refuses it for.

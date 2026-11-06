@@ -22,6 +22,7 @@ Coherent resolution of a cell rewriting system: firing a cell under the alphabet
 ## Provided features
 
 - `rewrite_at`, `apply_once`, `normalize`, `CellApp`, `Rewrite`, `Normalization`, `firing`, `redex_search`: one firing under the alphabet's discipline, and budgeted normalization that tells a normal form from a spent budget.
+- Wires (`Cell::wires`): a cell whose right-hand side writes a metavariable that its left-hand side does not bind fires renamed apart from the term. Each firing thus writes fresh wires, and a replay keeps them as metavariables of the join.
 - `enumerate_overlaps`, `overlaps_between`, `Overlap`, `OverlapKind`, `OverlapRefusal`, `peak_legs`, `PeakLegs`: the multi-sum family with its seam data, complete up to the root diagonal.
 - `interior_overlaps_between`, `root_overlaps_between`: the confluence family below the root of a left-hand side, a cell paired with itself included, and the root entry alone, which the joinability check reads over a first-order presentation.
 - `OverlapSupport`: the memoized overlap relation on cells and certificates, and independent batches.
@@ -36,7 +37,6 @@ Coherent resolution of a cell rewriting system: firing a cell under the alphabet
 ## Expected features
 
 - **An alphabet keeping the inhabitant laws.** The engine spends the three laws the substrate's `CellAlphabet` states and no type can check — a match substituted into its pattern reproduces the matched term, a successful match binds every metavariable the pattern names, a read and a splice at one position agree — and the trait's position and splice clauses: disjoint positions address disjoint subtrees, and a splice changes nothing but its position. An alphabet breaking one gets wrong answers rather than refusals.
-- **Rules whose right-hand sides introduce no hole.** Normalization and replay fire ground terms and skolemized peaks; a contractum carrying a metavariable its redex did not bind leaves a hole in the result.
 - **Stores sized for rule sets.** Enumeration is quadratic in the store, and completion re-enumerates the whole store after each derived cell; both are sized for presentations a surface declares, not for stores of thousands of cells.
 
 ## Examples

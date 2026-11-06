@@ -377,6 +377,7 @@ digraph crates {
   "core-checker" -> "core-term" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "measure"];
   "core-term" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "measure"];
   "surface-dispatcher" -> "theory-ordered-algebras" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "measure"];
+  "theory-coherent-resolutions" -> "theory-nominal-automata" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "nominal"];
   "theory-nominal-automata" -> "theory-shapes" [style = "dashed", dir = "none", constraint = false, color = "purple", label = "nominal"];
   "core-checker" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "oracle"];
   "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "darkorange", label = "oracle"];

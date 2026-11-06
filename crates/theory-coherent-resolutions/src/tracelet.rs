@@ -2,9 +2,10 @@
 //!
 //! A [`Tracelet`] is a peak — an overlap's superposition — and two recorded
 //! rewrite paths from it that both reach one join. It is evidence checked by
-//! replay, never trusted: [`Tracelet::replay`] skolemizes the peak and the
-//! join, re-fires every recorded step by ground rewriting, and answers whether
-//! both paths land on the join. Two certificates are the same transformation
+//! replay, never trusted: [`Tracelet::replay`] skolemizes the peak, and the
+//! join at the peak's metavariables. It re-fires every recorded step by ground
+//! rewriting, and answers whether both paths land on the join. Two
+//! certificates are the same transformation
 //! when they share a boundary and each replays ([`replay_equivalent`]); that
 //! relation is certificate identity, kept apart from the structural equality
 //! of the two values.
@@ -18,9 +19,12 @@
 //! # Certificates and their identity
 //!
 //! A `Tracelet` records which cell fired where on each of its two paths, never
-//! a substitution. `replay` skolemizes the peak and the join to constants,
+//! a substitution. `replay` skolemizes the peak to constants, and the join at
+//! the peak's metavariables ([`CellAlphabet::skolemize_boundary`]). It
 //! re-fires every step by ground rewriting and checks both paths land on the
-//! join: a certificate is evidence checked by replay, never trusted.
+//! join: a certificate is evidence checked by replay, never trusted. A wire
+//! that a firing writes stays a metavariable in the join, and each path must
+//! write it under the join's name.
 //! `replay_trace` is the same replay keeping every fired step and the first
 //! step that did not fire, with its reason; the verdict-only replay retains
 //! nothing.
@@ -202,7 +206,8 @@ pub struct ReplayTrace<A: CellAlphabet = SequentAlphabet>
     pub path_a: ReplayPath<A>,
     /// The second path's replay.
     pub path_b: ReplayPath<A>,
-    /// The skolemized join both paths must reach.
+    /// The join both paths must reach, skolemized at the peak's
+    /// metavariables.
     pub joins_at: A::Cmd,
 }
 
@@ -243,9 +248,10 @@ impl<A: CellAlphabet> Tracelet<A>
     ///
     /// # Specification
     /// - ensures: [`replay_from_peak`] over the overlap's peak, the join and
-    ///   the two recorded paths: positive exactly when, with the peak's and the
-    ///   join's metavariables skolemized to constants, every recorded step of
-    ///   both paths fires in order and both land on the skolemized join.
+    ///   the two recorded paths: positive exactly when, with the peak's
+    ///   metavariables skolemized to constants in the peak and in the join,
+    ///   every recorded step of both paths fires in order and both land on the
+    ///   join.
     /// - ensures: a recorded [`CellId`] resolves as an insertion-order index
     ///   into `store`, never by cell content: clones and append-only extensions
     ///   of the store keep the verdict, a permutation may change it.
@@ -260,6 +266,7 @@ impl<A: CellAlphabet> Tracelet<A>
     ///   stuck leg or a lost application change acceptance; empty derivations
     ///   test the identity boundary.
     /// - witness: `tracelet::tests::a_fused_cell_certificate_replays`
+    /// - witness: `tracelet::tests::a_wired_cell_fused_with_itself_replays_5638`
     /// - witness: `tracelet::tests::a_derivation_that_misses_its_boundary_is_not_self_equivalent`
     /// - witness: `tests::differential::the_fused_cell_certificate_replays_over_the_store`
     /// - witness: `tests::differential::completion_certificates_replay`
@@ -294,7 +301,8 @@ impl<A: CellAlphabet> Tracelet<A>
     /// - ensures: both paths start at the skolemized peak; each records every
     ///   step that fired with its result, in order, and ends at the term
     ///   reached or at the first step that did not fire, with its reason;
-    ///   [`ReplayTrace::joins_at`] is the skolemized join.
+    ///   [`ReplayTrace::joins_at`] is the join skolemized at the peak's
+    ///   metavariables.
     /// - ensures: [`ReplayTrace::verdict`] equals [`Tracelet::replay`] over the
     ///   same store.
     /// - ensures: identifiers resolve by insertion-order index, as
@@ -324,17 +332,17 @@ impl<A: CellAlphabet> Tracelet<A>
         )
     )]
     #[spec(ensures: |output| output.path_a.started_at == A::skolemize(&self.overlap.peak) && output.path_b.started_at == output.path_a.started_at
-        && output.joins_at == A::skolemize(&self.joins_at) && output.verdict() == self.replay(store))]
+        && output.joins_at == A::skolemize_boundary(&self.overlap.peak, &self.joins_at).1 && output.verdict() == self.replay(store))]
     pub fn replay_trace(
         &self,
         store: &CellStore<A>,
     ) -> ReplayTrace<A>
     {
-        let peak = A::skolemize(&self.overlap.peak);
+        let (peak, joins_at) = A::skolemize_boundary(&self.overlap.peak, &self.joins_at);
         ReplayTrace {
             path_a: trace_path(store, peak.clone(), &self.path_a),
             path_b: trace_path(store, peak, &self.path_b),
-            joins_at: A::skolemize(&self.joins_at),
+            joins_at,
         }
     }
 }
@@ -349,9 +357,11 @@ impl<A: CellAlphabet> Tracelet<A>
 /// [`Tracelet::replay`] is this replay on a certificate's overlap peak.
 ///
 /// # Specification
-/// - ensures: positive exactly when, with `peak` and `joins_at` skolemized to
-///   constants, every step of `path_a` and of `path_b` fires in order from the
-///   skolemized peak and both land on the skolemized `joins_at`.
+/// - ensures: positive exactly when, with the metavariables of `peak`
+///   skolemized to constants in `peak` and in `joins_at`
+///   ([`CellAlphabet::skolemize_boundary`]), every step of `path_a` and of
+///   `path_b` fires in order from the skolemized peak and both land on the
+///   join.
 /// - ensures: negative when a step names an identifier `store` did not issue,
 ///   when a step's cell does not fire at its position, or when a path lands on
 ///   another term.
@@ -369,11 +379,11 @@ impl<A: CellAlphabet> Tracelet<A>
 ///   conjunct or accepting a stuck path changes acceptance.
 /// - witness: `tracelet::tests::replay_from_peak_separates_a_reached_join_from_a_missed_one`
 /// - witness: `tracelet::tests::replay_records_only_the_successful_prefix`
+/// - witness: `tracelet::tests::a_wired_cell_fused_with_itself_replays_5638`
 #[inline]
 #[must_use]
 #[spec(ensures: |output| {
-    let start = A::skolemize(peak);
-    let target = A::skolemize(joins_at);
+    let (start, target) = A::skolemize_boundary(peak, joins_at);
     bool::from(output) == (bool::from(reached(&run_path(store, start.clone(), path_a, &mut Discard), &target))
         && bool::from(reached(&run_path(store, start, path_b, &mut Discard), &target)))
 })]
@@ -387,8 +397,7 @@ pub fn replay_from_peak<A>(
 where
     A: CellAlphabet,
 {
-    let peak = A::skolemize(peak);
-    let target = A::skolemize(joins_at);
+    let (peak, target) = A::skolemize_boundary(peak, joins_at);
     let ran_a = run_path(store, peak.clone(), path_a, &mut Discard);
     let ran_b = run_path(store, peak, path_b, &mut Discard);
     TraceletReplay::from(
@@ -405,9 +414,10 @@ where
 /// so a normalization is certified by the replay a join is certified by.
 ///
 /// # Specification
-/// - ensures: positive exactly when, with `start` and `end` skolemized to
-///   constants, every step of `path` fires in order from the skolemized start
-///   and lands on the skolemized `end`.
+/// - ensures: positive exactly when, with the metavariables of `start`
+///   skolemized to constants in `start` and in `end`
+///   ([`CellAlphabet::skolemize_boundary`]), every step of `path` fires in
+///   order from the skolemized start and lands on `end`.
 /// - ensures: a recorded [`CellId`] resolves as an insertion-order index into
 ///   `store`, never by cell content.
 /// - panics: none.
@@ -430,8 +440,9 @@ pub fn replay_path<A>(
 where
     A: CellAlphabet,
 {
-    let ran = run_path(store, A::skolemize(start), path, &mut Discard);
-    reached(&ran, &A::skolemize(end))
+    let (start, end) = A::skolemize_boundary(start, end);
+    let ran = run_path(store, start, path, &mut Discard);
+    reached(&ran, &end)
 }
 
 /// Whether two certificates are replay-equivalent: the definition of when two
@@ -971,6 +982,37 @@ mod tests
         );
         assert_eq!(2_usize, tracelet.path_a.len(), "a two-step path");
         assert_eq!(1_usize, tracelet.path_b.len(), "a single fused step");
+    }
+
+    #[test]
+    fn a_wired_cell_fused_with_itself_replays_5638()
+    {
+        // `cong1` of `theory NatSum`, ⟨x | add(y; k)⟩ ~> ⟨x′ | add(y; k)⟩: its
+        // right side writes the wire `x′`, and the fused cell writes `x′'`.
+        let add = || ConsPat::op("add", [ProdPat::meta("y")], ConsPat::meta("k"));
+        let mut store: CellStore = CellStore::new();
+        let cong = store.insert(Cell::new(
+            CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), add()),
+            CmdPat::cut(Polarity::Positive, ProdPat::meta("x′"), add()),
+            Orientation::PolarityDerived,
+            CellProvenance::SurfaceRule,
+        ));
+        let composition = enumerate_overlaps(&store)
+            .into_iter()
+            .find(|o| o.kind == OverlapKind::Composition && o.left == cong && o.right == cong)
+            .expect("the cell composes with itself");
+        let (_fused, tracelet) =
+            derive_fused(&composition, &mut store).expect("the fused cell is derived");
+        let trace = tracelet.replay_trace(&store);
+        assert_eq!(
+            &ProdPat::meta("x′'"),
+            trace.joins_at.producer(),
+            "the join keeps the fused cell's wire as a metavariable"
+        );
+        assert!(
+            bool::from(trace.verdict()),
+            "both paths write the wire under the join's name: {trace:?}"
+        );
     }
 
     #[test]

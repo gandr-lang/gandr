@@ -380,7 +380,7 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// engines rewrite. Equality and hashing are structural content identity.
     type Cmd: Clone + Eq + core::hash::Hash + core::fmt::Debug;
     /// The metavariable type: a hole in a pattern.
-    type Var: Clone + Eq + core::hash::Hash + core::fmt::Debug;
+    type Var: Clone + Eq + Ord + core::hash::Hash + core::fmt::Debug;
     /// The hole identity: how a metavariable is keyed across a cell's two
     /// faces.
     type Hole: Clone + Eq + Ord + core::hash::Hash + core::fmt::Debug;
@@ -826,6 +826,12 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - executable: none — an abstract declaration has no body; trait-wide
     ///   instrumentation changes the required implementation protocol.
     ///
+    /// # Clause cost
+    /// - bound: one ordered set of the names that the `anchor` faces hold. Each
+    ///   metavariable of `renamed` takes at most one lookup in that set for
+    ///   each prime that it gets, and a name gets at most one prime for each
+    ///   held name. Then one pass writes each `renamed` face.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — intersecting and already disjoint sequent faces
     ///   observe fresh names and the shared producer/consumer seam; collapsing
@@ -857,6 +863,56 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   conflation changes the term.
     /// - witness: `sequent::tests::skolemization_is_name_stable`
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd;
+
+    /// The two ends of a replay from `start` to `join`: `start` skolemized,
+    /// and `join` with each metavariable of `start` replaced by the same
+    /// constant.
+    ///
+    /// A replay fires from the ground start, so each metavariable that a
+    /// reached term holds is a wire that a firing writes. The join keeps each
+    /// of those wires as a metavariable, and a replay compares it by name.
+    ///
+    /// # Specification
+    /// - ensures: the first end is [`CellAlphabet::skolemize`] of `start`.
+    /// - ensures: the second end is `join` with each metavariable of `start`
+    ///   replaced by its constant in the first end, and each other metavariable
+    ///   kept. A `join` whose metavariables `start` all holds gives
+    ///   [`CellAlphabet::skolemize`] of `join`.
+    /// - ensures: when `start` does not match its own skolemization, the second
+    ///   end is [`CellAlphabet::skolemize`] of `join`.
+    /// - panics: none.
+    /// - intension: one skolemization and one match of `start`, then one
+    ///   substitution into `join`.
+    /// - executable: none — the clause would skolemize and match `start` a
+    ///   second time.
+    ///
+    /// # Clause cost
+    /// - bound: one skolemization and one match of `start`, then one
+    ///   substitution into `join` or one skolemization of it. So the cost is
+    ///   linear in `start`, `join` and the constants that the result copies.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sequent join that holds a wire beside the start's
+    ///   metavariables keeps the wire and grounds the others, and a join with
+    ///   no wire gives its whole skolemization. A grounded wire or a kept start
+    ///   metavariable changes the end.
+    /// - witness: `sequent::tests::a_replay_s_join_keeps_each_wire_that_its_start_does_not_hold`
+    #[inline]
+    fn skolemize_boundary(
+        start: &Self::Cmd,
+        join: &Self::Cmd,
+    ) -> (Self::Cmd, Self::Cmd)
+    {
+        let ground = Self::skolemize(start);
+        let mut constants = Self::Subst::default();
+        let target = if bool::from(Self::match_cmd(start, &ground, &mut constants)) {
+            Self::apply_subst(&constants, join)
+        }
+        else {
+            Self::skolemize(join)
+        };
+        (ground, target)
+    }
 
     /// The hole identity of a metavariable.
     ///
