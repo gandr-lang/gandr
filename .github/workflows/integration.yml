@@ -176,7 +176,8 @@ jobs:
   # the new commits. The host's credentials push them. The job runs the
   # default branch's script, and the rebase runs no code of `landing`. A
   # rebase that fails leaves `landing` as it was and pages the workflow lane
-  # with the run, whose log names the files in conflict.
+  # with the run. Its log names the cause: the files of a conflict, or the
+  # error of another failure, such as a refused fetch.
   rebase:
     name: rebase landing onto main
     needs: cycle
