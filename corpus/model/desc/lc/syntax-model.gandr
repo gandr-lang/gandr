@@ -1,10 +1,13 @@
-// The syntax model of `theory LC`, written as a `Model(LC)` module: a
-// context is its length, a substitution between two contexts is an `Env`
-// and a term in one a `Term`; each operation builds the syntax, ignoring the
-// context indices the derivation adds, and each law is the path its own file
-// proves of the syntax.
+//! `LCSyntax` is a `Model(LC)` module.
+//!
+//! A context is its length. A substitution is an `Env`. A term is a `Term`.
+//!
+//! Each operation builds syntax and ignores derivation indices. Each law uses
+//! the path that its source file proves.
+//!
+//! - see: #640
 
-// The naturals; the syntax; the six laws, in the theory's order.
+// This source imports naturals, syntax and the six law proofs.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 import "./sub-q-single.gandr";
@@ -38,8 +41,8 @@ pub module LCSyntax : Model(LC) where
   /// Single substitution conses its term onto the identity.
   def singleTm(g : N, a : Term) -> Env { Cons a (Shift Z) }
 
-  /// Lifting is the substitution's constructor; its indices stand in the
-  /// order their first occurrence gives, the target `d` before `g`.
+  /// `Lift` is the substitution constructor. Its indices start with target
+  /// `d` and then source `g`.
   def liftTm(d : N, g : N, s : Env) -> Env { Lift s }
 
   /// Abstraction binds index zero.
@@ -52,7 +55,7 @@ pub module LCSyntax : Model(LC) where
   def law1(g : N, b : Term) -> Path(subTm (S g) g (qTm g) (singleTm g b), b) =
     subQSingle b
 
-  /// Law 2, `subQLift`; its indices stand as `liftTm`'s do.
+  /// Law 2 is `subQLift`. Its indices follow `liftTm`.
   def law2(d : N, g : N, s : Env) -> Path(
     subTm (S g) (S d) (qTm g) (liftTm d g s),
     qTm d

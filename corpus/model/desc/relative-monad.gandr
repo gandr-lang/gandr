@@ -1,12 +1,11 @@
-//! A monad relative to the shift `-F`: a unit returning a value and an
-//! extension running a computation into a continuation, over a family of
-//! computation types [Altenkirch-2015-monads_need_not_be_endofunctors] and
-//! [Jiang-2025-notions_stackmanipulating_computation_relative_monads]. Its host
-//! half is ordinary definitions: the option monad's two operations, a program
-//! sequenced through them, and code polymorphic in the carrier. Of the laws,
-//! the left unit is a second-order rule and the right unit abstracts the
-//! variable the continuation binds; associativity overlaps itself and both
-//! units, and every pair joins, so the three are one theory.
+//! A relative monad is relative to shift `-F`.
+//!
+//! A unit returns a value. An extension runs a computation into a continuation.
+//!
+//! The host part has definitions for the option monad. The source also has
+//! code that is polymorphic in the carrier.
+//! The left unit is a second-order rule. The right unit abstracts a continuation
+//! variable. Associativity and both units form one theory.
 //!
 //! - see: #2115 — `MonadRightUnit`
 //! - see: #2116 — `RelativeMonad`
@@ -16,11 +15,10 @@
 //! [Altenkirch-2015-monads_need_not_be_endofunctors]: https://doi.org/10.2168/LMCS-11(1:3)2015 "Altenkirch, Chapman and Uustalu, Monads need not be endofunctors"
 //! [Jiang-2025-notions_stackmanipulating_computation_relative_monads]: https://doi.org/10.1145/3720434 "Jiang, Xue and New, Notions of Stack-Manipulating Computation and Relative Monads"
 
-// `Maybe`, the option monad's values.
+// This source imports values from the option monad.
 import "../data/data-maybe.gandr";
 
-/// The left unit: returning a value to an extension runs its continuation at
-/// that value, a second-order rule over values `V` and computations `C`.
+/// The left-unit rule passes a returned value to its continuation.
 theory MonadLeftUnit where
   sort V : Type+;
   sort C : Type;
@@ -28,9 +26,7 @@ theory MonadLeftUnit where
   oper ext : (m : C, k : pi+ (x : V). C) --> C;
   rule unitL : ext (ret a) k <=> k a;
 
-/// The right unit: extending a computation by the unit is the computation.
-/// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
-/// it at its port of the sort `V`.
+/// The right-unit rule removes an extension by `ret`.
 theory MonadRightUnit where
   sort V : Type+;
   sort C : Type;
@@ -38,10 +34,7 @@ theory MonadRightUnit where
   oper ext : (m : C, k : pi+ (x : V). C) --> C;
   rule unitR : ext m (bind x. (ret x)) <=> m;
 
-/// The three laws together. Associativity's inner `ext(m, k)` is an instance
-/// of its own left side and of both unit laws', and its right side
-/// substitutes `k` under `bind x .`: each pair is found by pattern
-/// unification, and its two reducts normalize to one term.
+/// The associativity and unit laws form `RelativeMonad`, and each critical pair joins.
 pub theory RelativeMonad where
   sort V : Type+;
   sort C : Type;
@@ -51,18 +44,17 @@ pub theory RelativeMonad where
   rule unitR : ext m (bind x. (ret x)) <=> m;
   rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
 
-/// The option monad's unit: the value, present.
+/// `ret` returns a present option value.
 def ret(A : Type, a : A) -> Maybe(A) { Some a }
 
-/// The option monad's extension: run the computation once, first, then pass
-/// a present value to the continuation and stop at an absent one.
+/// `ext` passes a present value to its continuation and keeps an absent value.
 def ext(A : Type, B : Type, m : () -> Maybe(A), k : A -> Maybe(B)) -> Maybe(B) =
   let r = force m
   match r where
     | None => None
     | Some(x) => k x
 
-/// One, then its successor, through the extension: the value read back.
+/// This extension of one returns two.
 @[ runs("2") ]
 def two() -> Integer =
   let r = ext
@@ -74,6 +66,5 @@ def two() -> Integer =
     | None => 0
     | Some(y) => y
 
-/// Code polymorphic in the carrier: a computation of any family of
-/// computation types, run again.
+/// This function reruns a computation that is polymorphic in its carrier.
 def again(T : Type -> Type[-], m : +U T(Integer)) -> T(Integer) { force m }

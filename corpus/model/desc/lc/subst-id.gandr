@@ -1,9 +1,13 @@
-// A substitution that sends every index to its own variable leaves every
-// term as it is. The lifted step weakens the hypothesis and reads the
-// weakened variable as its successor.
+//! An identity substitution leaves each term unchanged.
+//!
+//! Each index maps to its own variable.
+//!
+//! The lifted step weakens the hypothesis. The weakened variable is its
+//! successor.
+//!
+//! - see: #640
 
-// The naturals; the syntax; the congruences; the shift's lookup and the
-// weakened lookup.
+// This source imports naturals, syntax, congruences and lookup lemmas.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 import "./congruence.gandr";

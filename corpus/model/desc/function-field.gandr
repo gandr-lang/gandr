@@ -1,10 +1,10 @@
-//! A presented type whose constructor holds a continuation. A field written `A
-//! => T` is the description code's function former, the higher-order
-//! descriptions' `Π` over a type of arguments
-//! [Chapman-2010-gentle_art_levitation]. It decodes to the thunked arrow the
-//! native reading gives the same field, so the type keeps its rule. Programs
-//! that read and store a state are state's free model, and put-put is the law
-//! of state a store obeys [Plotkin-2002-notions_computation_determine_monads].
+//! A constructor can hold a continuation.
+//!
+//! An `A => T` field is the function former of the description code.
+//!
+//! The code decodes the field to the thunked arrow of the native reading.
+//! State programs form the free model of state. Put-put is a law for a state
+//! store.
 //!
 //! - see: #2511
 //! - cites: [Chapman-2010-gentle_art_levitation]
@@ -13,8 +13,8 @@
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 //! [Plotkin-2002-notions_computation_determine_monads]: https://doi.org/10.1007/3-540-45931-6_24 "Plotkin and Power, Notions of computation determine monads"
 
-/// Programs over an integer state: a read hands the state to its
-/// continuation, and a store the next store overwrites is no store.
+/// A read gives the state to its continuation. A later store replaces an
+/// earlier store.
 pub data Program : Type where {
   | Done : (x : Integer) --> Program
   | Get : (k : Integer -> Program) --> Program
@@ -22,9 +22,8 @@ pub data Program : Type where {
   rule : Put s (Put u k) <=> Put u k;
 }
 
-/// The state-passing handler: a read continues at the state it reads, and
-/// a store runs the rest from the state it stores. The fold reaches a
-/// read's rest by applying its continuation, one stage below the read.
+/// This handler runs a read continuation at the current state. A store runs
+/// the remaining program at its stored state.
 def rec final(p : Program, s : Integer) -> Integer =
   match p where
     | Done(x) => x
@@ -37,6 +36,6 @@ def answered(x : Integer) -> Program { Done x }
 /// Two stores, then a read.
 def overwritten : Program = Put 1 (Put 2 (Get answered));
 
-/// The read sees the second store: the first is overwritten.
+/// The read sees the second store. The second store replaces the first store.
 @[ runs("2") ]
 def readBack : () -> Integer = final overwritten 0;

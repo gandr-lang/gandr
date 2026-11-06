@@ -1,12 +1,16 @@
-//! A presented type with an eliminating operation whose rule cancels its one
-//! constructor [Baader-1998-term_rewriting_and_all_that], § 4.1: unwrapping a
-//! wrapped term gives the term.
+//! This presented type has one eliminating operation.
+//!
+//! A rule cancels the type's only constructor.
+//!
+//! The operation unwraps a wrapped term.
+//! [Baader-1998-term_rewriting_and_all_that] gives this example. The operation
+//! returns the wrapped term.
 //!
 //! - cites: [Baader-1998-term_rewriting_and_all_that]
 //!
 //! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
-/// A wrapper and its unwrapping, the rule cancelling the two.
+/// A wrapper and an unwrapping operation. The rule cancels the pair.
 data Wrap : Type where {
   | MkWrap : (n : Wrap) --> Wrap
   oper unwrap : (w : Wrap) --> Wrap;

@@ -1,9 +1,13 @@
-// A lookup under one binder more is the lookup weakened. `look` counts the
-// binders it has crossed and weakens what it finds by their number, so
-// crossing one more weakens once more; at a consed term the two weakenings
-// fuse by `renameRename`, and at a shift the sum is read by `shiftAdds`.
+//! A lookup under one more binder is a weakened lookup.
+//!
+//! `look` counts crossed binders.
+//!
+//! A crossed binder adds one weakening. A consed term uses `renameRename`.
+//! A shift uses `shiftAdds`.
+//!
+//! - see: #640
 
-// The naturals; the syntax; the shift's lookup and the fusion of renamings.
+// This source imports naturals, syntax, shift lookup and fusion lemmas.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 import "./shift-lookup.gandr";

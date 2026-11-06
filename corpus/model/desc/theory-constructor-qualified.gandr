@@ -1,29 +1,30 @@
-// A constructor is named by its family, `Family.Constructor`, in a pattern
-// and in a value. Where a source's own constructor takes the bare name
-// of one of `Theory`'s, the qualified form is how the source names `Theory`'s,
-// and how the printer writes it back.
+// A qualified constructor has the form `Family.Constructor`.
+//
+// A pattern can use a qualified constructor.
+//
+// A value can use a qualified constructor.
+// Qualification selects `Theory` when a source constructor has the same name.
 //
 // - see: #354
 // - see: #2428
 
-/// Trees whose application is named as `Theory`'s is.
+/// Trees have an application constructor named `App`.
 data Tree : Type where
   | Var : (n : Integer) --> Tree
   | App : (t : Tree, u : Tree) --> Tree
 
-/// A presentation, so this source reads `Theory`.
+/// This presentation reads `Theory`.
 theory Pointed where
   sort P : Type;
   oper point : () --> (p : P);
 
-/// One for `Theory`'s application link, zero for every other: the pattern
-/// names `Theory`'s `App`, which the bare name does not reach here.
+/// This match selects the `Theory.App` link.
 def isApplication(link : Theory) -> Integer =
   match link where
     | Theory.App(head, arguments) => 1
     | _ => 0
 
-/// `Theory`'s `App` built by its qualified name, ending at `Theory.End`.
+/// This value tests a qualified theory application.
 @[ runs("1") ]
 def theoryApplied() -> Integer { isApplication (Theory.App "f" Theory.End) }
 
@@ -31,6 +32,6 @@ def theoryApplied() -> Integer { isApplication (Theory.App "f" Theory.End) }
 @[ runs("App (Var 0) (Var 1)") ]
 def bare() -> Tree { App (Var 0) (Var 1) }
 
-/// A source's own constructor written qualified is the same constructor.
+/// Qualification keeps a source constructor's meaning.
 @[ runs("App (Var 0) (Var 1)") ]
 def qualified() -> Tree { Tree.App (Var 0) (Var 1) }

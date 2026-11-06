@@ -1,10 +1,14 @@
-// The syntax's constructors and operations respect paths: the successor,
-// a variable, an abstraction, weakening and a substitution each carry a path
-// between their arguments to one between their results. `Path.ap` takes a
-// named function, so each constructor is given one; a substitution's
-// congruence in its term is a `Path.walk` along the path.
+//! Syntax constructors and operations respect paths.
+//!
+//! The successor, variable and abstraction each map argument paths to result
+//! paths.
+//!
+//! Weakening and substitution map equal terms to equal terms.
+//! `Path.walk` carries a path through a substitution.
+//!
+//! - see: #640
 
-// The naturals; the syntax and its substitution.
+// This source imports naturals and syntax.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 

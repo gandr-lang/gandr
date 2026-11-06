@@ -1,13 +1,16 @@
-//! Addition on the naturals as an operation of their presentation, defined by
-//! two rules by recursion on its first argument
-//! [Baader-1998-term_rewriting_and_all_that], § 4.1: a sum of closed numerals
-//! normalizes to a numeral and runs to it.
+//! This presentation defines natural-number addition.
+//!
+//! Two rules recurse on the first argument.
+//!
+//! A closed sum normalizes to a numeral.
+//! A run gives that numeral. [Baader-1998-term_rewriting_and_all_that] gives
+//! this example.
 //!
 //! - cites: [Baader-1998-term_rewriting_and_all_that]
 //!
 //! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
-/// The naturals with addition as an operation.
+/// Natural numbers with addition as an operation.
 @[ normalizes("add(Succ(Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))") ]
 data NatAdd : Type where {
   | Zero : NatAdd

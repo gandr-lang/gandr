@@ -1,8 +1,13 @@
-// Law 2 of the single-substitution calculus, `sub(q, lift(s)) = q`: a lifted
-// substitution keeps the newest variable. It holds by computation: the
-// lookup at index zero of a lift is index zero, under no binder.
+//! Law 2 preserves the newest variable under a lifted substitution.
+//!
+//! `sub(q, lift(s))` equals `q`.
+//!
+//! A lifted lookup at index zero is index zero. The law holds by computation
+//! under no binder.
+//!
+//! - see: #640
 
-// The naturals; the syntax and its substitution.
+// This source imports naturals and substitution syntax.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 

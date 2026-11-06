@@ -1,22 +1,21 @@
-//! Renaming twice is renaming once, the renaming case of the fusion lemmas of
-//! Allais et al.
-//! [Allais-2021-a_type_and_scope_safe_universe_of_syntaxes_with_binding_their_semantics_and_proofs]:
-//! a term renamed by `a1` then `a2` is the term renamed by `a3` when the
-//! lookups agree at every index, and likewise for two composites. Each is an
-//! induction on the term whose hypothesis is the pointwise one, lifted once
-//! under each abstraction; an application's two paths are joined by
-//! `Path.walk`.
+//! Two renamings compose to one renaming.
+//!
+//! The pointwise lookup hypothesis proves the composition
+//! [Allais-2021-a_type_and_scope_safe_universe_of_syntaxes_with_binding_their_semantics_and_proofs].
+//!
+//! An induction on a term proves each composition. The hypothesis lifts under
+//! an abstraction. An application joins two paths with `Path.walk`.
 //!
 //! - cites: [Allais-2021-a_type_and_scope_safe_universe_of_syntaxes_with_binding_their_semantics_and_proofs]
 //!
 //! [Allais-2021-a_type_and_scope_safe_universe_of_syntaxes_with_binding_their_semantics_and_proofs]: https://doi.org/10.1017/S0956796820000076 "Allais et al., A type- and scope-safe universe of syntaxes with binding: their semantics and proofs"
 
-// The naturals; the syntax; the congruences.
+// This source imports naturals, syntax and congruences.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 import "./congruence.gandr";
 
-/// A pointwise agreement of `a1` then `a2` with `a3` holds of their lifts.
+/// The lifts preserve pointwise agreement of `a1`, `a2` and `a3`.
 def renameRenameLift(
   a1 : Ren,
   a2 : Ren,
@@ -28,8 +27,7 @@ def renameRenameLift(
     | Z => Path.here Z
     | S(m) => Path.ap succOf (h m)
 
-/// Renaming by `a1` then `a2` is renaming by `a3`, given they agree at every
-/// index.
+/// If three renamings agree at every index, their composite paths agree.
 pub def rec renameRename(
   t : Term,
   a1 : Ren,
@@ -60,7 +58,7 @@ pub def rec renameRename(
         (renameRename[<] x a1 a2 a3 h)
         (Path.here (Ap (rename (rename f a1) a2) (rename (rename x a1) a2))))
 
-/// A pointwise agreement of two composites holds of their lifts.
+/// The lifts preserve pointwise agreement of two renaming composites.
 def renameSquareLift(
   a1 : Ren,
   a2 : Ren,
@@ -73,8 +71,7 @@ def renameSquareLift(
     | Z => Path.here Z
     | S(m) => Path.ap succOf (h m)
 
-/// Renaming by `a1` then `a2` is renaming by `a3` then `a4`, given the two
-/// composites agree at every index.
+/// If two renaming composites agree at every index, their paths agree.
 pub def rec renameSquare(
   t : Term,
   a1 : Ren,

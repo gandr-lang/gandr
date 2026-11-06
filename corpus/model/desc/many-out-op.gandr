@@ -1,9 +1,10 @@
-//! An operation with two outputs, division with remainder on the naturals,
-//! defined by rules over a helper that walks the dividend
-//! [Baader-1998-term_rewriting_and_all_that], § 4.1: a closed division
-//! normalizes to its quotient and remainder, and a run binds both. A call
-//! names each output by its port's label, as a function's call does. One run
-//! selects an output, and one pattern binds both in another order.
+//! A natural-number operation can return quotient and remainder.
+//!
+//! Rules define the operation through a helper that walks the dividend.
+//!
+//! A closed division normalizes to its quotient and remainder.
+//! A call labels each output port. A run can select one output. A pattern can
+//! bind both outputs in a different order.
 //!
 //! - cites: [Baader-1998-term_rewriting_and_all_that]
 //!

@@ -1,6 +1,11 @@
-// Law 5 of the single-substitution calculus, `sub(lam(t), s) =
-// lam(sub(t, lift(s)))`: substitution goes under an abstraction lifted. It
-// holds by computation, `subst`'s abstraction arm.
+//! Law 5 moves substitution under an abstraction.
+//!
+//! `sub(lam(t), s)` equals `lam(sub(t, lift(s)))`.
+//!
+//! The substitution lifts under the abstraction. The abstraction arm of
+//! `subst` proves the law by computation.
+//!
+//! - see: #640
 
 // The syntax and its substitution.
 import "./syntax.gandr";

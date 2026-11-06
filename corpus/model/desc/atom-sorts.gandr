@@ -1,9 +1,12 @@
-//! Atom sorts [Pitts-2013-nominal_sets_names_symmetry_computer_science] and
-//! [Gabbay-2009-nominal_universal_algebra]. A sort classified `Atom` is
-//! orbit-infinite, with equality and swapping its only structure: an operation
-//! takes an atom, and none returns one. Each block is a value of `Theory` that
-//! keeps the atom sort as an `Atom` link of its sort chain, so a program reads
-//! it back by `case`.
+//! Atom sorts follow [Pitts-2013-nominal_sets_names_symmetry_computer_science]
+//! and [Gabbay-2009-nominal_universal_algebra].
+//!
+//! An `Atom` sort is orbit-infinite. Equality and swapping provide its only
+//! structure.
+//!
+//! Operations take atoms. Operations do not return atoms.
+//! Each block is a `Theory` value. Its sort chain has an `Atom` link. A program
+//! reads the link by `case`.
 //!
 //! - cites: [Pitts-2013-nominal_sets_names_symmetry_computer_science]
 //! - cites: [Gabbay-2009-nominal_universal_algebra]
@@ -11,27 +14,27 @@
 //! [Pitts-2013-nominal_sets_names_symmetry_computer_science]: https://doi.org/10.1017/CBO9781139084673 "Pitts, Nominal Sets: Names and Symmetry in Computer Science"
 //! [Gabbay-2009-nominal_universal_algebra]: https://doi.org/10.1093/logcom/exp033 "Gabbay and Mathijssen, Nominal (Universal) Algebra: Equational Logic with Names and Binding"
 
-/// One atom sort and nothing else.
+/// This theory declares one atom sort.
 theory AtomOnly where
   sort Name : Atom;
 
-/// Names and the terms that mention them: a variable names an atom, and a
-/// renaming takes two atoms and a term.
+/// This theory declares names and terms, and each variable names an atom.
+/// A renaming takes two atoms and one term.
 theory Renaming where
   sort Name : Atom;
   sort Tm : Type;
   oper var : (a : Name) --> Tm;
   oper rename : (a : Name, b : Name, t : Tm) --> Tm;
 
-/// Structural recursion over a sort chain: one per `Atom` link, none for an
-/// ordinary `Sort`.
+/// This recursion counts the `Atom` links in a sort chain. It ignores ordinary
+/// `Sort` links.
 def rec atoms(chain : Theory) -> Integer =
   match chain where
     | Atom(name, indices, rest) => { let r = atoms[<] rest; r + 1 }
     | Sort(name, indices, rest) => atoms[<] rest
     | _ => 0
 
-/// The renaming signature declares one atom sort, `Name`.
+/// The `Renaming` signature declares the atom sort `Name`.
 @[ runs("1") ]
 def atomSorts() -> Integer { match Renaming {
   | Presents(sorts, opers, rules) => atoms sorts
