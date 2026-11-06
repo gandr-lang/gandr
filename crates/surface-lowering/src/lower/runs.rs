@@ -394,7 +394,7 @@ impl Lowerer<'_, '_>
     /// - hypothesis: L3 — as [`LinearRun`].
     /// - witness: `lower::runs::tests::a_run_read_once_first_is_linear`
     /// - witness: `lower::runs::tests::a_run_in_a_match_branch_is_linear_1935`
-    #[spec(ensures: |ret| ret.len() <= self.statements.len() && ret.is_sorted())]
+    #[spec(ensures: |ret| ret.len() <= self.statements.entries().len() && ret.is_sorted())]
     pub(super) fn linear_runs(
         &self,
         arena: &CoreArena,
@@ -424,8 +424,8 @@ impl Lowerer<'_, '_>
         // Each statement's binds, beside the statement and the call it runs
         // when the statement could be written away, as far as it alone says.
         let mut statements: BTreeMap<ComputationId, (usize, Option<ByteSpan>)> = BTreeMap::new();
-        let mut listed: Vec<bool> = Vec::with_capacity(self.statements.len());
-        for (index, statement) in self.statements.iter().enumerate() {
+        let mut listed: Vec<bool> = Vec::with_capacity(self.statements.entries().len());
+        for (index, statement) in self.statements.entries().iter().enumerate() {
             let call = self.linear_call(statement);
             listed.push(call.is_some());
             for bind in minted(statement.origin) {
@@ -479,6 +479,7 @@ impl Lowerer<'_, '_>
         loop {
             let dropped: Vec<usize> = self
                 .statements
+                .entries()
                 .iter()
                 .enumerate()
                 .filter(|&(index, statement)| {
@@ -498,6 +499,7 @@ impl Lowerer<'_, '_>
         }
         let mut found: Vec<LinearRun> = self
             .statements
+            .entries()
             .iter()
             .enumerate()
             .filter(|&(index, _)| listed.get(index).copied().unwrap_or_default())

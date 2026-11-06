@@ -2561,6 +2561,8 @@ INSERT INTO purpose VALUES('surface-lowering','attribute::payload_form','functio
 INSERT INTO purpose VALUES('surface-lowering','attribute::payload_verdict','function','Names the verdict a payload''s schema returns, so a payload''s form is checked against the schema.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','attribute::registry::Absent','enum','Names why the registry holds no attribute, so an unknown name is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','attribute::suggestion::Absent','enum','Names why no suggestion exists for an unknown attribute, so the refusal names no nearest entry.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','by_form::At','struct','Names a position in a per-form store''s vector, so a stretch is built from the store''s mark.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','by_form::FormPlace','struct','Names an entry by its form and its place among the form''s entries, so an edit to another form leaves the key as it is.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','circuit::ArrowRow','enum','Names the row an arrow occupies in a ruled judgment, so a written arrow''s row is checked against the subject''s declared kind.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','circuit::ExtensionFault','enum','Names why an `ext` member generates nothing, so the refusal names the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','circuit::JoinFault','struct','Holds a pair of theories a block reaches with more than one join, so the refusal names the pair and the joins.',NULL,'fits','sound',NULL);

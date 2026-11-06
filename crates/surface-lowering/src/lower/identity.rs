@@ -336,6 +336,7 @@ use super::lowered;
 use super::native::Answer;
 use super::native::record_since;
 use super::native::rooted;
+use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -964,7 +965,7 @@ struct Callee
 {
     /// The function's binders, in the lowerer's parameter store: a tail's
     /// parameters or a telescope's entries; none for a plain value function.
-    parameters: Stretch,
+    parameters: FormStretch,
     /// How many arguments the function takes.
     arity: usize,
     /// The staged parameter's position, when a recursive tail binds its own
@@ -3772,7 +3773,7 @@ impl<'source> Lowerer<'_, 'source>
                 Synthesis::Lambda { lambda } => matches!(
                     self.plans.get(lambda),
                     Some(&Plan::Lambda(Block { statements, last }, _))
-                        if statements.start == statements.end && read.contains(&last)
+                        if self.statements.read(statements).is_empty() && read.contains(&last)
                 ),
                 Synthesis::Thunked { .. } | Synthesis::Stated { .. } => false,
             };
@@ -4145,12 +4146,12 @@ impl<'source> Lowerer<'_, 'source>
         let (parameters, arity, result, returned) = match self.plans.get(through(written.node)) {
             Some(&Plan::Telescope(entries, codomain)) => (
                 entries,
-                entries.end.saturating_sub(entries.start),
+                self.parameters.read(entries).len(),
                 codomain,
                 matches!(self.reading(codomain), Reading::Result(_)),
             ),
             Some(&Plan::ValueFunction(domains, codomain)) => (
-                none,
+                FormStretch::default(),
                 domains.end.saturating_sub(domains.start),
                 codomain,
                 matches!(self.reading(codomain), Reading::Result(_)),
@@ -4159,7 +4160,7 @@ impl<'source> Lowerer<'_, 'source>
                 let mut at = through(held);
                 let mut arity = 0_usize;
                 let mut plain = false;
-                let mut bound: Option<Stretch> = None;
+                let mut bound: Option<FormStretch> = None;
                 loop {
                     match self.plans.get(at) {
                         Some(&Plan::Arrow(_, codomain)) => {
@@ -4170,13 +4171,9 @@ impl<'source> Lowerer<'_, 'source>
                         Some(&Plan::DependentArrow(entries, codomain)) => {
                             bound = match bound {
                                 None => Some(entries),
-                                Some(held) if held.end == entries.start => Some(Stretch {
-                                    start: held.start,
-                                    end: entries.end,
-                                }),
-                                Some(_) => return None,
+                                Some(held) => Some(self.parameters.join(held, entries)?),
                             };
-                            arity = arity.saturating_add(entries.end.saturating_sub(entries.start));
+                            arity = arity.saturating_add(self.parameters.read(entries).len());
                             at = through(codomain);
                         },
                         Some(&Plan::Former(TypeFormer::Returner, _)) => break,
@@ -4186,7 +4183,7 @@ impl<'source> Lowerer<'_, 'source>
                 if plain && bound.is_some() {
                     return None;
                 }
-                (bound.unwrap_or(none), arity, at, true)
+                (bound.unwrap_or_default(), arity, at, true)
             },
             _ => return None,
         };
@@ -4268,7 +4265,7 @@ impl<'source> Lowerer<'_, 'source>
         let none = Stretch { start: 0, end: 0 };
 
         Some(Callee {
-            parameters: none,
+            parameters: FormStretch::default(),
             arity: 0,
             recursive: None,
             result: at,
@@ -4303,14 +4300,13 @@ impl<'source> Lowerer<'_, 'source>
         let none = Stretch { start: 0, end: 0 };
         Some(Callee {
             parameters: function.parameters,
-            arity: function
-                .parameters
-                .end
-                .saturating_sub(function.parameters.start),
+            arity: self.parameters.read(function.parameters).len(),
             recursive: match function.recursion {
-                Maybe::Present(scope) => Some(self.recursions.get(&scope).map_or(0, |recursion| {
-                    super::stretch(&self.parameters, recursion.uniform).len()
-                })),
+                Maybe::Present(scope) => Some(
+                    self.recursions
+                        .get(&scope)
+                        .map_or(0, |recursion| self.parameters.read(recursion.uniform).len()),
+                ),
                 Maybe::Absent(_) => None,
             },
             result,
@@ -5737,7 +5733,7 @@ impl<'source> Lowerer<'_, 'source>
             return unread;
         };
         let from = self.reading(callee.result).frame();
-        let parameters = super::stretch(&self.parameters, callee.parameters);
+        let parameters = self.parameters.read(callee.parameters);
         let applied = super::stretch(&self.operands, callee.arguments);
         let mut arguments = Vec::with_capacity(callee.arity);
         if callee.descends {

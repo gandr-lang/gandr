@@ -311,11 +311,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   at the world written.
     /// - witness: `lower::world::tests::the_located_forms_lower_to_their_world_forms`
     #[spec(
-        captures: before = self.statements.len(),
+        captures: before = self.statements.mark(),
         ensures: |ret| match ret {
-            | Ok(Maybe::Present(_)) => self.statements.len() == before.saturating_add(1)
+            | Ok(Maybe::Present(_)) => self.statements.mark() == before.next()
                 && self.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Opened { .. })),
-            | Ok(Maybe::Absent(_)) | Err(_) => self.statements.len() == before,
+            | Ok(Maybe::Absent(_)) | Err(_) => self.statements.mark() == before,
         },
     )]
     pub(super) fn opened(

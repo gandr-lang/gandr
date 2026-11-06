@@ -359,6 +359,7 @@ extern crate alloc;
 extern crate std;
 
 mod attribute;
+mod by_form;
 mod certify;
 pub mod circuit;
 mod classify;
