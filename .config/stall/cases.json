@@ -2317,6 +2317,19 @@
     "output": "STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue. Decide: queue it: `gh stack merge`; hold it: `mise run pr:hold 2774 \"<what it waits on>\"`; reassign it"
   },
   {
+    "name": "#3596: a stall report opens with the sentence that says what it is, and its observation gives the finding's line in a text block under a lead",
+    "program": "observation.jq",
+    "input": {
+      "kind": "root-unqueued",
+      "number": 2774,
+      "lane": "surface",
+      "placed": false,
+      "age": 30,
+      "line": "STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue"
+    },
+    "output": "This report routes the `root-unqueued` stall of #2774 to a seat.\n\n## Observation\n\n`stall:watch` reads this finding on #2774.\n\n```text\nSTALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\n```"
+  },
+  {
     "name": "#4655: an ejected pull request pages the coordinator to hold it or reassign it, never to queue it again",
     "program": "decide.jq",
     "input": {

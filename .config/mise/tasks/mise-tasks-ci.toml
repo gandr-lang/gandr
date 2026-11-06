@@ -4853,8 +4853,9 @@ exit 2
 # conflicts or merged under it (`.config/stall/detect.jq`, its cases held by
 # `check:stall`). It queues and revises nothing: a stall is its seat's to
 # answer and the coordinator's to decide, and one no seat holds is filed as
-# a unit, its `## Observation` the finding's line and its other sections the
-# `stall` template's (`issue:file --template stall`, #3112). Each reading
+# a unit: the observation `.config/stall/observation.jq` writes, the
+# finding's line in a text block, then the `stall` template's sections
+# (`issue:file --template stall`, #3112, #3596). Each reading
 # closes every open stall report whose stall no finding carries any more,
 # its comment naming what cleared it (`.config/stall/reports.jq`).
 #
@@ -5096,13 +5097,13 @@ while :; do
     echo "$line"
     sent=true
     page_seat "$(jq -r .lane <<< "$finding")" "$line" "$(jq -r -f "$stall_dir/decide.jq" <<< "$finding")" || sent=false
-    # A finding no lane places is filed once its pages are sent, its line
-    # the observation and its sections the `stall` template's (#3112), so a
-    # page sent again never files it twice.
+    # A finding no lane places is filed once its pages are sent, under the
+    # observation `observation.jq` writes and the `stall` template's sections
+    # (#3112, #3596), so a page sent again never files it twice.
     if [[ "$sent" == true && $(jq .placed <<< "$finding") == false ]]; then
       title=$(jq -r '"stall: \(.kind) on #\(.number), whose lane `\(.lane)` no seat holds"' <<< "$finding")
       observation=$(mktemp)
-      printf '## Observation\n\n%s\n' "$line" > "$observation"
+      jq -r -f "$stall_dir/observation.jq" <<< "$finding" > "$observation"
       mise run --quiet issue:file "$title" "$observation" kind:defect area:workflow priority:high effort:easy \
         --template stall --fields "$(jq -c '{pr: "\(.number)", kind, lane}' <<< "$finding")" || sent=false
       rm -f "$observation"
