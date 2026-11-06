@@ -2817,7 +2817,7 @@ impl<'source> Program<'source>
 /// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
 /// - witness: `evaluate::tests::a_run_naming_a_declaration_outside_every_sealed_module_is_spelled`
 #[spec(ensures: |ref ret| ret.keys().all(|constant| module.declarations().iter().any(|declaration| declaration.constant() == *constant)))]
-fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
+pub fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
 {
     let mut hidden = BTreeMap::new();
     if !module
