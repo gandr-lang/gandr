@@ -1580,8 +1580,18 @@ fn decide(
     };
     context.deferrals_mut().signing = Signing::Body;
     let mut signed = finish(context, outer);
-    let direction = match direction {
-        Ok(direction) => direction,
+    // The holes the signature's formation nominated and bound are read through
+    // their solutions, so the body is judged against the type they fix. A hole
+    // still unbound, a model slot's among them, waits for the body.
+    let formed = direction.and_then(|written| {
+        let filled = match context.deferrals().solutions(context.arena()) {
+            Ok(solutions) if !solutions.is_empty() => formed_filled(context, written, &solutions)?,
+            Ok(_) | Err(_) => written,
+        };
+        Ok((written, filled))
+    });
+    let (written, direction) = match formed {
+        Ok(directions) => directions,
         // The signature's refusal keeps the binders it stood under, and
         // names what the solver bound while it formed.
         Err(failure) => {
@@ -1594,16 +1604,6 @@ fn decide(
                 ..unrun(refusal)
             };
         },
-    };
-    let written = direction;
-    // The holes the signature's formation nominated and bound are read through
-    // their solutions, so the body is judged against the type they fix. A hole
-    // still unbound, a model slot's among them, waits for the body.
-    let direction = match context.deferrals().solutions(context.arena()) {
-        Ok(solutions) if !solutions.is_empty() => {
-            filled_direction(context.arena_mut(), direction, &solutions)
-        },
-        Ok(_) | Err(_) => direction,
     };
     let mut spending = Spending::Unspent;
     let mut typings = Maybe::Absent(untyped);
@@ -1751,10 +1751,8 @@ fn decide(
             // formation nominated are solved by now or never: an unbound one
             // is refused, and the table takes the type filled.
             let solved = match context.deferrals().solutions(context.arena()) {
-                Ok(solutions) => {
-                    entered = filled_direction(context.arena_mut(), direction, &solutions);
-                    Ok(entered)
-                },
+                Ok(solutions) => formed_filled(context, direction, &solutions)
+                    .inspect(|&filled| entered = filled),
                 Err((at, reason)) => Err(unsolved_failure(at, reason)),
             };
             let owed = solved
@@ -2147,10 +2145,11 @@ type Solutions = BTreeMap<gandr_core_term::hole::HoleId, (ValueId, gandr_core_te
 ///   the first hole of the first slot it refuses; the run's failure as
 ///   [`CheckRefusal::ImplicitUnsolved`] at the first hole the solver left
 ///   unbound; otherwise the filled body, minted after `body`, the direction
-///   with its declared type filled ([`filled_direction`]), a fresh run of the
-///   one against the other, the pairs, stages and residue `first` left dropped
-///   as the nesting elaboration's second run drops them, and the solutions both
-///   were filled with.
+///   with its declared type filled and formed again ([`formed_filled`]), a
+///   fresh run of the one against the other, the pairs, stages and residue
+///   `first` left dropped as the nesting elaboration's second run drops them,
+///   and the solutions both were filled with. A filled type that does not form
+///   gives the failure forming it in place of the fresh run.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2205,7 +2204,6 @@ fn implicits(
         },
     };
     let filled = fill(context.arena_mut(), body, &solutions);
-    let direction = filled_direction(context.arena_mut(), direction, &solutions);
     let _first = context.take_relating();
     let _first_restated = context.take_restating();
     let _stale = context.take_nesting();
@@ -2213,6 +2211,10 @@ fn implicits(
     let _crossed = context.take_crossings();
     context.forget_stages();
     crate::quantified::mint(context.stages_mut(), stages);
+    let direction = match formed_filled(context, direction, &solutions) {
+        Ok(direction) => direction,
+        Err(failure) => return (filled, direction, Err(failure), solutions),
+    };
     context.deferrals_mut().open(Collecting::On);
     context.own_body(filled);
     let judged = judge(context, filled, direction);
@@ -2220,45 +2222,62 @@ fn implicits(
 }
 
 /// `direction` with the type it checks against read with every solution in
-/// `solutions`, as [`fill`] reads a body.
+/// `solutions`, as [`fill`] reads a body, and formed again where the fill
+/// changes it.
+///
+/// The fill mints each node it changes, and a formation records the dialogues
+/// of each reflexivity it checks by node. So the filled type forms again, and
+/// each reflexivity its endpoints hold carries its dialogues at the node that
+/// crosses to the kernel (#5521).
 ///
 /// # Specification
 /// - requires: as [`fill`]; the declared type stands under no binder.
 /// - ensures: [`Direction::Check`] of the declared type with each hole
-///   `solutions` names filled, a rewrite of a formed type and so formed, or of
-///   the declared type itself when it holds none; [`Direction::Synthesise`]
+///   `solutions` names filled and formed as [`form_built`] forms it, or of the
+///   declared type itself when it holds none; [`Direction::Synthesise`]
 ///   unchanged.
+/// - fails: the failure forming the filled type, under the binders the
+///   formation had opened where it refused.
 /// - panics: none.
+///
+/// # Errors
+/// As `fails`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a path type whose endpoints call a definition over an
 ///   omitted model is met by a point calling it alike once the models are
 ///   resolved, and a path returned at a path type over calls of their own
 ///   converts; judging the filled body against the type as written leaves the
-///   endpoints on their unfilled holes, and both are refused.
+///   endpoints on their unfilled holes, and both are refused. A reflexivity in
+///   the type's endpoints over a call whose implicit the signature binds
+///   crosses with the dialogues of the filled type, and the kernel admits it.
 /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
 /// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
-#[spec(ensures: |ret| matches!(ret, Direction::Synthesise) == matches!(direction, Direction::Synthesise))]
-fn filled_direction(
-    arena: &mut gandr_core_term::CoreArena,
+/// - witness: `bridge::tests::a_filled_signature_s_reflexivity_crosses_with_its_dialogues_5521`
+#[spec(ensures: |ret| ret.as_ref().is_err_and(|_| matches!(direction, Direction::Check(_)))
+    || ret.as_ref().is_ok_and(|filled| matches!(filled, Direction::Synthesise) == matches!(direction, Direction::Synthesise)))]
+fn formed_filled(
+    context: &mut CheckingContext<'_>,
     direction: Direction<FormedValueType>,
     solutions: &Solutions,
-) -> Direction<FormedValueType>
+) -> Result<Direction<FormedValueType>, Failure>
 {
     let Direction::Check(declared) = direction
     else {
-        return direction;
+        return Ok(direction);
     };
     match solved_type(
-        arena,
+        context.arena_mut(),
         (
             TypeNode::Value(declared.id()),
             gandr_core_term::BinderDepth::default(),
         ),
         solutions,
     ) {
-        TypeNode::Value(filled) => Direction::Check(FormedValueType::derived(filled)),
-        TypeNode::Computation(_) => direction,
+        TypeNode::Value(filled) if filled != declared.id() => {
+            form_built(context, filled).map(Direction::Check)
+        },
+        TypeNode::Value(_) | TypeNode::Computation(_) => Ok(direction),
     }
 }
 
