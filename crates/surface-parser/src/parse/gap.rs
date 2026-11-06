@@ -38,33 +38,34 @@
 //! block and a layout block take no `,`, and a shell block or an
 //! interpolation hides its contents from the search.
 //!
-//! Two more signals give places on one line:
+//! Three more signals give places on one line:
 //!
 //! |signal|the place|it mints|
 //! |---|---|---|
 //! |sibling separators|between two operands side by side, directly inside a group|a `,`|
+//! |a returner after an operand|between an operand and a `-F` after it, which juxtaposition takes as no argument|a `->`|
 //! |edit distance|a word that is no keyword, with a keyword near it in [`misspelt`]|the keyword, over the word|
 //!
 //! The melder judges each place, as its dry run judges a candidate. The
-//! places before each line are tried in source order. Then the sibling and
-//! keyword places are tried nearest an obligation first, where an obligation
-//! before a place counts at twice its distance. The search tries [`COPIES`]
-//! places in all. Each place is judged in a copy of the top-level form it
-//! stands in, from a line at column zero to the next, with every place kept
-//! there before it. The form alone is melded once for its count, so a trial
-//! never melds the rest of the source. A place is kept when its copy owes
-//! fewer obligations than the form alone, each minted tile counting as one.
-//! A closer, a sibling separator or a keyword is kept only when its copy
-//! owes nothing but its minted tiles. A `)` deleted inside a line reads as
-//! well at the line's end with a repair left over, and a `,` between the
-//! wrong two operands of a parameter list reads with a repair left over. The
-//! source with every kept place written in is melded once more for the tree.
-//! The tree is the copy's, each written tile read back at its place: a
-//! closer as a minted close and a `,` as an empty postfix grout, each owing
-//! one [`Oblig::MissingTile`], and a keyword as a prefix grout over the
-//! misspelt word, owing one [`Oblig::IncompleteTile`]. The lowering refuses
-//! each grout and each minted close where it stands. A source that owes
-//! nothing runs no search.
+//! places before each line are tried in source order. Then the sibling,
+//! arrow and keyword places are tried nearest an obligation first, where an
+//! obligation before a place counts at twice its distance. The search tries
+//! [`COPIES`] places in all. Each place is judged in a copy of the top-level
+//! form it stands in, from a line at column zero to the next, with every
+//! place kept there before it. The form alone is melded once for its count,
+//! so a trial never melds the rest of the source. A place is kept when its
+//! copy owes fewer obligations than the form alone, each minted tile counting
+//! as one. A closer, a sibling separator, an arrow or a keyword is kept only
+//! when its copy owes nothing but its minted tiles. A `)` deleted inside a
+//! line reads as well at the line's end with a repair left over, and a `,`
+//! between the wrong two operands of a parameter list reads with a repair
+//! left over. The source with every kept place written in is melded once more
+//! for the tree. The tree is the copy's, each written tile read back at its
+//! place: a closer as a minted close, a `,` as an empty postfix grout and a
+//! `->` as an empty infix grout, each owing one [`Oblig::MissingTile`], and a
+//! keyword as a prefix grout over the misspelt word, owing one
+//! [`Oblig::IncompleteTile`]. The lowering refuses each grout and each minted
+//! close where it stands. A source that owes nothing runs no search.
 //!
 //! - Alternatives: a hard rule in the layout pass, which writes the `,` at
 //!   every such line, changes a valid source that continues an item at its
@@ -183,14 +184,14 @@ struct Gap
     /// What the place writes or moves.
     act: Act,
     /// Whether the place is kept only when its copy owes nothing in the
-    /// top-level form it stands in: a closer, a sibling separator, a keyword
-    /// or a move. A `,` alone before a line is kept by its count.
+    /// top-level form it stands in: a closer, a sibling separator, an arrow,
+    /// a keyword or a move. A `,` alone before a line is kept by its count.
     cleared: bool,
 }
 
 /// The places the signals give: the gap's before each line, the sibling
-/// separators' between two operands side by side, and the words a keyword
-/// may stand for.
+/// separators' between two operands side by side, the arrows' between an
+/// operand and a returner, and the words a keyword may stand for.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Places<'text>
 {
@@ -198,6 +199,9 @@ struct Places<'text>
     lines: Vec<Gap>,
     /// A `,` between two operands side by side in a group, in source order.
     siblings: Vec<Gap>,
+    /// A `->` between an operand and a `-F` after it on its line, in source
+    /// order.
+    arrows: Vec<Gap>,
     /// Each word of two or more characters that is no keyword, where it
     /// stands, in source order.
     words: Vec<(ByteOffset, SourceText<'text>)>,
@@ -263,6 +267,9 @@ struct Class
     /// Whether it is a lower-case word of two or more bytes that is no
     /// keyword, which a keyword may stand for.
     word: bool,
+    /// Whether it is `-F`, the returner. Its band is looser than a type's
+    /// juxtaposition, so it is no argument of the operand before it.
+    returner: bool,
 }
 
 /// What `token` is to the search. A keyword opens a form rather than
@@ -307,6 +314,7 @@ fn class(
             },
             separates: matches!(spelled, "," | ";"),
             word: false,
+            returner: spelled == "-F",
         },
         Lexeme::LayoutOpen => Class {
             bracketing: Bracketing::Opens(Kind::Block),
@@ -336,9 +344,9 @@ fn class(
     }
 }
 
-/// The places the gap before each line, the layout closers before it and the
-/// sibling separators give in `text`, labelled as `tokens`, and the words a
-/// keyword may stand for.
+/// The places the gap before each line, the layout closers before it, the
+/// sibling separators and the arrows before a returner give in `text`,
+/// labelled as `tokens`, and the words a keyword may stand for.
 ///
 /// # Specification
 /// - requires: `tokens` label `text`.
@@ -351,14 +359,16 @@ fn class(
 ///   limit and at or left of its items' column and the token before the line is
 ///   no `,`. In `siblings`, a `,` between each two tokens on one line, apart,
 ///   the first ending an operand and the second beginning one, directly inside
-///   a group. Each place stands at the end of the token before it, in source
-///   order. Also in `lines`, `k` moves at the first token of each line before
-///   which the layout pass closes `k > 0` blocks, one for each count of closes
-///   from 0 to `k - 1`, when the token neither closes nor separates, no shell
-///   block or interpolation is open, and the innermost open frame is none or a
-///   layout block whose items stand at another column. In `words`, each
-///   lower-case word of two or more bytes that is no keyword, outside a shell
-///   block or an interpolation, in source order.
+///   a group. In `arrows`, a `->` between each two tokens on one line, apart,
+///   the first ending an operand and the second `-F`, with no shell block or
+///   interpolation open. Each place stands at the end of the token before it,
+///   in source order. Also in `lines`, `k` moves at the first token of each
+///   line before which the layout pass closes `k > 0` blocks, one for each
+///   count of closes from 0 to `k - 1`, when the token neither closes nor
+///   separates, no shell block or interpolation is open, and the innermost open
+///   frame is none or a layout block whose items stand at another column. In
+///   `words`, each lower-case word of two or more bytes that is no keyword,
+///   outside a shell block or an interpolation, in source order.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
@@ -366,10 +376,11 @@ fn class(
 /// # Adequacy
 /// - hypothesis: L3 — a field left without its type before the next field, a
 ///   field whose `(` the line leaves open, a valid record, a line at column
-///   zero, two parameters side by side in a parameter list, and a misspelt
-///   keyword each give their places or none.
+///   zero, two parameters side by side in a parameter list, a type beside a
+///   returner, and a misspelt keyword each give their places or none.
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_separator_left_out_between_siblings_is_minted_5433`
+/// - witness: `parse::gap::tests::an_arrow_left_out_before_a_returner_is_minted_5501`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
 /// - witness: `parse::gap::tests::a_source_that_owes_nothing_keeps_its_parse_5433`
 /// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
@@ -522,6 +533,25 @@ fn gaps<'text>(
                 at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
                 act: Act::Writes {
                     tiles: alloc::vec![","],
+                    over: 0,
+                },
+                cleared: true,
+            });
+        }
+        // `-F` binds looser than a type's juxtaposition, so it cannot be the
+        // argument of the operand before it. Read as its row form, it takes
+        // down the form around it. A `->` between the two reads the operand
+        // as a domain and the returner as its codomain.
+        if !leads
+            && opaque == 0
+            && class.returner
+            && let Some((end, false, false, true)) = previous
+            && end < token.start
+        {
+            places.arrows.push(Gap {
+                at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
+                act: Act::Writes {
+                    tiles: alloc::vec!["->"],
                     over: 0,
                 },
                 cleared: true,
@@ -977,15 +1007,15 @@ struct Form<'gap>
 ///   each moved line, and one [`Oblig::IncompleteTile`] over each misspelt
 ///   word. The scan reads only the top-level forms, [`form_around`], that hold
 ///   an obligation. The search tries their places before each line in source
-///   order, each move of a line innermost block first, then their sibling
-///   places and the keywords [`misspelt`] gives for the [`COPIES`] words
+///   order, each move of a line innermost block first, then their sibling and
+///   arrow places and the keywords [`misspelt`] gives for the [`COPIES`] words
 ///   nearest an obligation, nearest first, [`COPIES`] places in all. Each place
 ///   is judged in a copy of its form with the places kept there before it, a
 ///   move in place of a move of its own line. A place is kept when that copy
 ///   owes fewer obligations than the form alone, each minted tile and each
-///   moved line counting as one. A closer, a sibling separator, a keyword or a
-///   move is kept only when the copy owes nothing but its minted tiles and its
-///   moved lines.
+///   moved line counting as one. A closer, a sibling separator, an arrow, a
+///   keyword or a move is kept only when the copy owes nothing but its minted
+///   tiles and its moved lines.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -994,12 +1024,14 @@ struct Form<'gap>
 /// - hypothesis: L3 — a field left without its type before the next field owes
 ///   one `,` on its own line and nothing after it; a field whose `(` the line
 ///   leaves open owes the `)` and the `,` there; two arguments side by side owe
-///   the `,` between them; a misspelt `matc` owes its word alone; a `)` deleted
-///   inside a line with a repair after it is not minted at the line's end; a
-///   line at column zero inside nested blocks owes only its own line; a source
-///   that owes nothing, and one whose places all owe more, keep their parse.
+///   the `,` between them; a type beside a returner owes the `->` between them;
+///   a misspelt `matc` owes its word alone; a `)` deleted inside a line with a
+///   repair after it is not minted at the line's end; a line at column zero
+///   inside nested blocks owes only its own line; a source that owes nothing,
+///   and one whose places all owe more, keep their parse.
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_separator_left_out_between_siblings_is_minted_5433`
+/// - witness: `parse::gap::tests::an_arrow_left_out_before_a_returner_is_minted_5501`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
 /// - witness: `parse::gap::tests::a_closer_deleted_inside_a_line_is_not_minted_at_its_end_5433`
 /// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
@@ -1042,6 +1074,10 @@ pub(super) fn gapped<'source>(
             ..gap
         }));
         near.extend(found.siblings.into_iter().map(|gap| Gap {
+            at: shift(gap.at),
+            ..gap
+        }));
+        near.extend(found.arrows.into_iter().map(|gap| Gap {
             at: shift(gap.at),
             ..gap
         }));
@@ -1180,8 +1216,9 @@ fn form_around(
 
 /// The parse of `source` with the tiles of `kept` written in and read back as
 /// minted, and with each line `kept` moves kept in its block: a closer as a
-/// minted close, a `,` as an empty postfix grout, and a keyword written over
-/// a misspelt word as a prefix grout over the word.
+/// minted close, a `,` as an empty postfix grout, a `->` as an empty infix
+/// grout between the two operands it joins, and a keyword written over a
+/// misspelt word as a prefix grout over the word.
 ///
 /// # Specification
 /// - requires: `kept` stand in source order, a move before a tile at one place.
@@ -1194,6 +1231,7 @@ fn form_around(
 /// # Adequacy
 /// - hypothesis: L3 — as [`gapped`].
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+/// - witness: `parse::gap::tests::an_arrow_left_out_before_a_returner_is_minted_5501`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
 /// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
 fn minted<'source>(
@@ -1223,7 +1261,12 @@ fn minted<'source>(
             Stands::LeftOut => ClosingClass::closing(DelimSpelling::from(tile)).map_or(
                 NodeLabel::Grout {
                     sort,
-                    shape: GroutShape::Postfix,
+                    shape: if tile == "->" {
+                        GroutShape::Infix
+                    }
+                    else {
+                        GroutShape::Postfix
+                    },
                 },
                 |class| NodeLabel::GhostClose {
                     sort,
@@ -1387,6 +1430,52 @@ mod tests
                 "two parameters side by side owe the `,` between them alone: {source}"
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn an_arrow_left_out_before_a_returner_is_minted_5501() -> Result<(), Box<dyn Error>>
+    {
+        // Row 19 of `fragment/shape-refusal.gandr`'s recovery record: the
+        // signature with its `->` dropped.
+        let source = "def returned : +U (Integer  -F Integer);\n";
+        let at = source
+            .find("(Integer")
+            .map(|start| start.saturating_add("(Integer".len()))
+            .unwrap_or_default();
+        let pbg = built_in()?;
+        let parsed = parse(&pbg, SourceText::from(source))?;
+        let tree = parsed.tree();
+        assert_eq!(
+            crate::testing::reconstruct(tree),
+            source,
+            "the tree spells the source"
+        );
+        assert_eq!(
+            parsed
+                .obligations()
+                .iter()
+                .map(|obligation| (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end())
+                ))
+                .collect::<alloc::vec::Vec<_>>(),
+            [(Oblig::MissingTile, at, at)],
+            "a type beside a returner owes the `->` between them alone"
+        );
+        assert!(
+            tree.positions()
+                .filter_map(|position| tree.node(position))
+                .any(|node| {
+                    matches!(node.label(), gandr_surface_syntax::NodeLabel::Grout {
+                        shape: gandr_surface_syntax::GroutShape::Infix,
+                        ..
+                    }) && usize::from(node.span().start()) == at
+                        && usize::from(node.span().end()) == at
+                }),
+            "the `->` stands as a repair between its two operands"
+        );
         Ok(())
     }
 
