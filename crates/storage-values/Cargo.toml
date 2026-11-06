@@ -32,6 +32,7 @@ gandr-theory-spec-combinators.workspace = true
 [dev-dependencies]
 gandr-storage-records.workspace = true
 proptest.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

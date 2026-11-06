@@ -24,3 +24,5 @@ mod range;
 mod sharing;
 #[cfg(test)]
 mod store;
+#[cfg(test)]
+mod vectors;
