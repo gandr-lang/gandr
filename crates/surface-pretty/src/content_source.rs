@@ -164,7 +164,7 @@ impl Source for ContentSource<'_>
             ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => reason == Unreadable::Lift,
             ContentNode::ReturnAll(_) | ContentNode::Returns { .. } => reason == Unreadable::SeveralResults,
             ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference) => reason == Unreadable::Unnamed && key(reference).is_none(),
-            ContentNode::BindAll(..) | ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::BufferType | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::RowValue(_) | ContentNode::WebType | ContentNode::DialogueType(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::BridgeType { .. } |
+            ContentNode::BindAll(..) | ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::BufferType | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::RowValue(_) | ContentNode::WebType | ContentNode::DialogueType(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::BridgeType { .. } | ContentNode::Patched { .. } |
             ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } => false,
         },
         (Some(&(ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference))), Former::Constant(name) | Former::Abstract(name)) => key(reference) == Some(name),
@@ -599,6 +599,9 @@ impl Source for ContentSource<'_>
             },
             ContentNode::Record(ref fields) if fields.is_empty() => Former::Unit,
             ContentNode::RecordType(ref fields) => Former::RecordType(Arity::from(fields.len())),
+            ContentNode::Patched { base, ref fixed } => {
+                Former::Patched(base, Arity::from(fixed.len()))
+            },
             ContentNode::Record(ref fields) => Former::Record(Arity::from(fields.len())),
             ContentNode::RecordUpdate(base, overlay) => {
                 let written = if let Some(&ContentNode::Record(ref fields)) =
@@ -808,9 +811,11 @@ impl Source for ContentSource<'_>
                 .checked_sub(1_usize)
                 .map_or(Some(generator), |cell| cells.get(cell).copied()),
             ContentNode::Primitive(_, ref arguments) => arguments.get(at).copied(),
-            ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
-                fields.values().nth(at).copied()
-            },
+            ContentNode::RecordType(ref fields)
+            | ContentNode::Record(ref fields)
+            | ContentNode::Patched {
+                fixed: ref fields, ..
+            } => fields.values().nth(at).copied(),
             ContentNode::RecordUpdate(_, overlay) => {
                 if let ContentNode::Record(ref fields) = *self.nodes.get(usize::from(overlay))? {
                     fields.values().nth(at).copied()
@@ -968,9 +973,11 @@ impl Source for ContentSource<'_>
     {
         let at = usize::from(index);
         let label: &str = match *self.nodes.get(usize::from(node))? {
-            ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
-                fields.keys().nth(at).map(AsRef::as_ref)
-            },
+            ContentNode::RecordType(ref fields)
+            | ContentNode::Record(ref fields)
+            | ContentNode::Patched {
+                fixed: ref fields, ..
+            } => fields.keys().nth(at).map(AsRef::as_ref),
             ContentNode::RecordUpdate(_, overlay) => {
                 if let ContentNode::Record(ref fields) = *self.nodes.get(usize::from(overlay))? {
                     fields.keys().nth(at).map(AsRef::as_ref)

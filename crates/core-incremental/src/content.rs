@@ -435,6 +435,16 @@ pub enum ContentNode
     },
     /// A structural record classifier, ordered by field label.
     RecordType(BTreeMap<gandr_core_term::FieldLabel, NodeIndex>),
+    /// A record classifier patched by a static bracket: the base record
+    /// type, then each fixed label with its value, ordered by label. It
+    /// fixes at least one label.
+    Patched
+    {
+        /// The base record type.
+        base: NodeIndex,
+        /// Each fixed label with the value it is fixed at.
+        fixed: BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+    },
     /// A constructor at its classifier, preserving its family's identity.
     Constructor
     {
@@ -1298,6 +1308,21 @@ impl<'node> Children<'node>
             ..Self::default()
         }
     }
+
+    /// Append the children of a label-ordered map after the fixed children.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn with_fields(
+        mut self,
+        fields: &'node BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+        sort: Sort,
+    ) -> Self
+    {
+        self.fields = Some(fields);
+        self.tail_sort = sort;
+        self
+    }
 }
 
 impl ContentNode
@@ -1411,6 +1436,7 @@ impl ContentNode
         | Self::Fixpoint { .. } => matches!(ret, Sort::Computation),
         | Self::Data { .. }
         | Self::RecordType(_)
+        | Self::Patched { .. }
         | Self::Stack { .. }
         | Self::Capability { .. }
         | Self::PathUniverse(..)
@@ -1539,6 +1565,7 @@ impl ContentNode
             | Self::Fixpoint { .. } => Sort::Computation,
             Self::Data { .. }
             | Self::RecordType(_)
+            | Self::Patched { .. }
             | Self::Stack { .. }
             | Self::Capability { .. }
             | Self::PathUniverse(..)
@@ -1601,6 +1628,7 @@ impl ContentNode
         (matches!(*self, Self::Returner { .. } | Self::Returns { .. } | Self::Capability { .. } | Self::RowValue(_)) || ret.effects.is_none()) && match *self {
             Self::Data { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
             Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
+            Self::Patched { base, ref fixed } => ret.iter().eq(core::iter::once((base,A)).chain(fixed.values().map(|&value| (value,V)))),
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
             Self::Record(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,V))),
             Self::DataCase { scrutinee,motive,ref branches,.. } => ret.iter().eq([(scrutinee,V),(motive,C)].into_iter().chain(branches.iter().map(|&branch| (branch,M)))),
@@ -1732,6 +1760,7 @@ impl ContentNode
         match *self {
             Self::Data { ref arguments, .. } => Children::default().followed_by(arguments, V),
             Self::RecordType(ref fields) => Children::fields(fields, A),
+            Self::Patched { base, ref fixed } => Children::of(&[(base, A)]).with_fields(fixed, V),
             Self::Constructor {
                 datatype,
                 ref fields,
@@ -2095,6 +2124,7 @@ impl ContentNode
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
         Self::Compose { .. } | Self::Fill { .. } | Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
         Self::ReturnAll(_) | Self::BindAll(..) | Self::Returns { .. } |
+        Self::Patched { .. } |
         Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
@@ -2108,6 +2138,7 @@ impl ContentNode
             } => Maybe::Present(reference),
             Self::PathUniverse(..)
             | Self::RecordType(_)
+            | Self::Patched { .. }
             | Self::Constructor { .. }
             | Self::Record(_)
             | Self::DataCase { .. }
@@ -4277,8 +4308,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - ensures: the corresponding former over its children's discovery
     ///   indices, the children discovered as [`gandr_core_term::children`]
     ///   lists them; the predicate bounds the sort and child indices. A staged
-    ///   type, the judgement's own, a world type and a patched type discover no
-    ///   child and are the unresolved node.
+    ///   type, the judgement's own, and a world type discover no child and are
+    ///   the unresolved node.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4287,7 +4318,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::ValueType
-        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. }))
+        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_)))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_value_type(
         &mut self,
@@ -4298,10 +4329,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         self.read_former(
             Sort::ValueType,
             |walk| {
-                if !matches!(
-                    *value_type,
-                    ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. }
-                ) {
+                if !matches!(*value_type, ValueType::Staged { .. } | ValueType::World(_)) {
                     gandr_core_term::children::of_value_type(value_type, walk);
                 }
             },
@@ -5072,8 +5100,9 @@ fn computation_content(
 /// - requires: nothing.
 /// - ensures: a value-type former whose children of each sort are exactly that
 ///   family's numbers, in order; a data type and an abstract type name the
-///   reference `layout` resolves their position to; a staged type, a world type
-///   and a patched type are the unresolved node.
+///   reference `layout` resolves their position to; a patched type holds its
+///   base, then its fixed values in label order; a staged type and a world type
+///   are the unresolved node.
 /// - fails: [`Short`] when a family runs out before the former's last slot.
 /// - panics: none.
 ///
@@ -5112,6 +5141,13 @@ fn value_type_content(
                 .map(|label| found.value_type().map(|field| (label.clone(), field)))
                 .collect::<Result<_, Short>>()?,
         ),
+        ValueType::Patched { ref fixed, .. } => ContentNode::Patched {
+            base: found.value_type()?,
+            fixed: fixed
+                .keys()
+                .map(|label| found.value().map(|value| (label.clone(), value)))
+                .collect::<Result<_, Short>>()?,
+        },
         ValueType::Stack { .. } => ContentNode::Stack {
             input: found.comp_type()?,
             output: found.comp_type()?,
@@ -5182,11 +5218,8 @@ fn value_type_content(
         // A stage is minted by one judgement and names nothing past it,
         // and a handle or a capability names a world, whose crossing
         // decisions read what no footprint records: content naming
-        // either has no identity to key on, and stays opaque. A patched
-        // type has no content former, and stays opaque as well.
-        ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. } => {
-            ContentNode::Unresolved(Sort::ValueType)
-        },
+        // either has no identity to key on, and stays opaque.
+        ValueType::Staged { .. } | ValueType::World(_) => ContentNode::Unresolved(Sort::ValueType),
     })
 }
 
@@ -5299,6 +5332,16 @@ where
                 .map(|(label, &field)| (label.clone(), image(field)))
                 .collect(),
         ),
+        ContentNode::Patched { base, ref fixed } => {
+            let base = image(base);
+            ContentNode::Patched {
+                base,
+                fixed: fixed
+                    .iter()
+                    .map(|(label, &value)| (label.clone(), image(value)))
+                    .collect(),
+            }
+        },
         ContentNode::Constructor {
             ref family,
             datatype,
@@ -6168,7 +6211,7 @@ fn minted_comp_type(
         Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
         } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::RowTail(_) | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_))
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::RowTail(_) | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::Patched { .. })
             || matches!(node,ContentNode::Data { arguments,.. } if !arguments.is_empty()) {
             reason == seating::Absent::Unseatable
         } else {
@@ -6400,6 +6443,7 @@ fn mint_node(
         },
         ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
         ContentNode::PathUniverse(..)
+        | ContentNode::Patched { .. }
         | ContentNode::PathType { .. }
         | ContentNode::BridgeType { .. }
         | ContentNode::FlowType { .. }

@@ -99,6 +99,9 @@ pub enum Ascription
     ReturnsInteger,
     /// `El 0 name`: a type position reading a definition.
     CodeOf(String),
+    /// `*{host : String, port : Integer}[.port = 443]`: a record type patched
+    /// at one field.
+    Patched,
 }
 
 /// `def name [: ascription] = body`.
@@ -330,6 +333,19 @@ fn lower_onto(
             Some(Ascription::CodeOf(ref name)) => {
                 let code = arena.value_constant(resolve(name));
                 Maybe::Present(arena.value_type_element(code, Level::zero()))
+            },
+            Some(Ascription::Patched) => {
+                let label = |name: &str| gandr_kernel_term::FieldLabel::from(String::from(name));
+                let text_type = arena.value_type_base(BaseType::String);
+                let integer_type = arena.value_type_base(BaseType::Integer);
+                let record = arena.value_type_record(BTreeMap::from([
+                    (label("host"), text_type),
+                    (label("port"), integer_type),
+                ]));
+                let port = arena.value_literal(integer(Natural(443)));
+                Maybe::Present(
+                    arena.value_type_patched(record, BTreeMap::from([(label("port"), port)])),
+                )
             },
         };
         let body = match statement.body {

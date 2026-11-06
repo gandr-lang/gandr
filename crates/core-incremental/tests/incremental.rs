@@ -1054,6 +1054,32 @@ fn a_changed_value_reaches_through_an_untouched_definition()
 }
 
 #[test]
+fn an_item_typed_by_a_patched_record_is_reused_across_an_unrelated_edit()
+{
+    let program_for = |value| {
+        [
+            ascribed(Name("patched"), Ascription::Patched, Body::Hole),
+            def(Name("bystander"), Body::Int(value)),
+        ]
+    };
+    let step = gate(&program_for(1), &program_for(2));
+    assert_eq!(
+        step.resumed
+            .checkpoints()
+            .items()
+            .first()
+            .map(|checkpoint| checkpoint.footprint().opacity()),
+        Some(Opacity::Transparent),
+        "the patched signature has content"
+    );
+    assert_eq!(
+        step.resumed.adoptions(),
+        [Adopted, Judged],
+        "the item the edit does not touch is answered from the store"
+    );
+}
+
+#[test]
 fn an_opaque_footprint_is_never_adopted()
 {
     // An id past anything the program's arena holds.
