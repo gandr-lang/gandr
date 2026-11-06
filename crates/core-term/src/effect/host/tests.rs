@@ -10,6 +10,7 @@ use super::HostSignatures;
 use super::NET;
 use super::PARTIAL;
 use super::PROC;
+use super::REALS;
 use super::STDERR;
 use super::STDIN;
 use super::declared;
@@ -92,6 +93,8 @@ fn host_interfaces_pin_names_payloads_and_replies()
     let output = arena.value_type_product(&[string, status]);
     let write = arena.value_type_product(&[string, string]);
     let frame = arena.value_type_product(&[integer, string]);
+    let precision = arena.value_type_product(&[integer, integer]);
+    let endpoints = arena.value_type_product(&[string, string]);
     let expected = [
         (&host.exec, EXEC, alloc::vec![("exec", command, output)]),
         (&host.fs, FS, alloc::vec![
@@ -119,6 +122,10 @@ fn host_interfaces_pin_names_payloads_and_replies()
             ("disconnect", integer, unit),
             ("receive", integer, string),
             ("transmit", frame, unit),
+        ]),
+        (&host.reals, REALS, alloc::vec![
+            ("admit", string, integer),
+            ("enclose", precision, endpoints),
         ]),
     ];
     for (signature, name, operations) in expected {

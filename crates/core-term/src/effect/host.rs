@@ -42,15 +42,25 @@
 //! refuses one it does not hold. A frame is a string because the boundary has
 //! no byte-sequence layout yet, so a frame that is not UTF-8 is refused.
 //!
+//! `Reals` is the exact reals of `theory-exact-reals`. `admit` takes the
+//! canonical bytes of a plan, spelled in lowercase hexadecimal, and replies a
+//! plan; `enclose` takes a plan and a precision `k` and replies the lower and
+//! the upper end of an enclosure of the plan's root no wider than `2^-k`, each
+//! spelled `<mantissa>p<exponent>` for `mantissa · 2^exponent`. A plan is an
+//! integer naming a validated plan the host holds, as a stream is: it never
+//! crosses, and a host refuses one it does not hold. The host validates the
+//! bytes at each `admit`, and it replies only an enclosure whose certificate
+//! the checker replays.
+//!
 //! Each interface lives in its API's module, as Rust's `std` places
 //! `io::Result`, and its name is its path: the module, then `Eff`. The
 //! standard streams and the ring sit under `std.io`, the process's execution
-//! and its early exit under `std.process`, and the filesystem, the environment
-//! and the network each in a module of its own. A source names an interface
-//! where it imports the module, as `import std.io;` for `std.io.Console.Eff`,
-//! and the module names its own (#4523). `Partial` names the partiality monad
-//! and stays ambient by its bare name until `std.partial.Eff` reads by its
-//! path.
+//! and its early exit under `std.process`, and the filesystem, the
+//! environment, the network and the exact reals each in a module of its own.
+//! A source names an interface where it imports the module, as
+//! `import std.io;` for `std.io.Console.Eff`, and the module names its own
+//! (#4523). `Partial` names the partiality monad and stays ambient by its bare
+//! name until `std.partial.Eff` reads by its path.
 //!
 //! | Interface | Path |
 //! | --- | --- |
@@ -61,6 +71,7 @@
 //! | the filesystem | `std.fs.Eff` |
 //! | the environment | `std.env.Eff` |
 //! | the network | `std.net.Eff` |
+//! | the exact reals | `std.reals.Eff` |
 //! | execution | `std.process.Exec.Eff` |
 //! | early exit | `std.process.Exit.Eff` |
 //! | divergence | `Partial` |
@@ -112,16 +123,18 @@ pub const STDERR: &str = "std.io.Stderr.Eff";
 pub const STDIN: &str = "std.io.Stdin.Eff";
 /// The network interface: a stream to a peer named by its key.
 pub const NET: &str = "std.net.Eff";
-/// The names of the ten interfaces, in the order [`HostSignatures::interfaces`]
-/// returns them.
-pub const INTERFACES: [&str; 10] = [
-    EXEC, FS, PROC, ENV, RING, PARTIAL, CONSOLE, STDERR, STDIN, NET,
+/// The exact reals interface: a plan admitted, and its root enclosed.
+pub const REALS: &str = "std.reals.Eff";
+/// The names of the eleven interfaces, in the order
+/// [`HostSignatures::interfaces`] returns them.
+pub const INTERFACES: [&str; 11] = [
+    EXEC, FS, PROC, ENV, RING, PARTIAL, CONSOLE, STDERR, STDIN, NET, REALS,
 ];
 
 /// The `std` module each host interface lives in, beside the interface: the
 /// module a source imports to name it (#4523). [`PARTIAL`] lives in none and
 /// stays ambient.
-pub const HOMES: [(&str, &str); 9] = [
+pub const HOMES: [(&str, &str); 10] = [
     (EXEC, "std.process"),
     (FS, "std.fs"),
     (PROC, "std.process"),
@@ -131,6 +144,7 @@ pub const HOMES: [(&str, &str); 9] = [
     (STDERR, "std.io"),
     (STDIN, "std.io"),
     (NET, "std.net"),
+    (REALS, "std.reals"),
 ];
 
 quenchant_shape::reason_enum! {
@@ -206,7 +220,7 @@ impl core::fmt::Display for HostHome
     }
 }
 
-/// The ten interfaces, sharing their arena-owned payload and reply types.
+/// The eleven interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostSignatures
 {
@@ -230,6 +244,8 @@ pub struct HostSignatures
     pub stdin: EffectSig,
     /// Open, accept, write, read and close a stream to a peer.
     pub net: EffectSig,
+    /// Admit a plan of exact reals, and enclose its root.
+    pub reals: EffectSig,
 }
 
 quenchant_shape::reason_enum! {
@@ -357,7 +373,7 @@ impl HostSignatures
     ///   product in place of a List changes an answer.
     /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|host|
-        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.partial, &host.console, &host.stderr, &host.stdin, &host.net].iter().all(|signature|
+        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.partial, &host.console, &host.stderr, &host.stdin, &host.net, &host.reals].iter().all(|signature|
             signature.operations().all(|operation|
                 arena.value_type(operation.payload).is_some()
                     && arena.value_type(operation.reply).is_some()))
@@ -498,6 +514,20 @@ impl HostSignatures
                 reply: unit,
             },
         ])?;
+        let precision = arena.value_type_product(&[integer, integer]);
+        let endpoints = arena.value_type_product(&[string, string]);
+        let reals = EffectSig::new(REALS.into(), [
+            EffectOp {
+                name: "admit".into(),
+                payload: string,
+                reply: integer,
+            },
+            EffectOp {
+                name: "enclose".into(),
+                payload: precision,
+                reply: endpoints,
+            },
+        ])?;
         Ok(Self {
             exec,
             fs,
@@ -509,16 +539,17 @@ impl HostSignatures
             stderr,
             stdin,
             net,
+            reals,
         })
     }
 
-    /// The ten interfaces, in the order the host declares them.
+    /// The eleven interfaces, in the order the host declares them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn interfaces(&self) -> [&EffectSig; 10]
+    pub const fn interfaces(&self) -> [&EffectSig; 11]
     {
         [
             &self.exec,
@@ -531,6 +562,7 @@ impl HostSignatures
             &self.stderr,
             &self.stdin,
             &self.net,
+            &self.reals,
         ]
     }
 
