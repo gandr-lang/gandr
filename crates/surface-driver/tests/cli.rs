@@ -3865,14 +3865,97 @@ fn mcp_reads_what_an_editor_holds_open()
     );
     let ended = editor.wait_with_output().expect("the editor's server runs");
     assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
-    let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
-    while socket.exists() && std::time::Instant::now() < deadline {
+    hub_lingers_out(&socket);
+}
+
+/// Wait for the hub on `socket` to linger out: its socket file removed and no
+/// `gandr serve` bound to it left in the process table (#4497).
+///
+/// # Specification
+/// trivial.
+fn hub_lingers_out(socket: &Path)
+{
+    let deadline = std::time::Instant::now()
+        .checked_add(core::time::Duration::from_secs(20))
+        .expect("the deadline is representable");
+    loop {
+        let serving = hubs_serving(socket);
+        if !socket.exists() && serving.is_empty() {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the hub on {} exits after its linger, and leaves no process: {serving:#?}",
+            socket.display()
+        );
         std::thread::sleep(core::time::Duration::from_millis(50));
     }
-    assert!(
-        !socket.exists(),
-        "the hub exits after its linger, removing its socket"
-    );
+}
+
+/// The command line of each `gandr serve` in the process table that is bound
+/// to `socket`.
+///
+/// # Specification
+/// trivial.
+fn hubs_serving(socket: &Path) -> Vec<String>
+{
+    let bound = format!("serve --socket {} ", socket.display());
+    process_table()
+        .into_iter()
+        .filter(|command| command.contains(&bound))
+        .collect()
+}
+
+/// The command line of each process in the process table, its arguments
+/// joined by spaces, read from `/proc`.
+///
+/// # Specification
+/// trivial.
+#[cfg(target_os = "linux")]
+fn process_table() -> Vec<String>
+{
+    std::fs::read_dir("/proc")
+        .expect("the process table is read")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.bytes().all(|byte| byte.is_ascii_digit()))
+        })
+        // A process that ends between the listing and the read is gone.
+        .filter_map(|entry| std::fs::read(entry.path().join("cmdline")).ok())
+        // `cmdline` ends each argument with a NUL byte, so a space in its
+        // place joins the arguments and ends the line with a space, as `ps`
+        // gives it below. The bytes become the line in place.
+        .map(|mut command| {
+            for byte in &mut command {
+                if *byte == 0_u8 {
+                    *byte = b' ';
+                }
+            }
+            String::from_utf8(command)
+                .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
+        })
+        .collect()
+}
+
+/// The command line of each process in the process table, as `ps` prints it.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(target_os = "linux"))]
+fn process_table() -> Vec<String>
+{
+    let table = Command::new("ps")
+        .args(["-A", "-o", "args="])
+        .output()
+        .expect("the process table is read");
+    assert!(table.status.success(), "`ps` reads the process table");
+    String::from_utf8_lossy(&table.stdout)
+        .lines()
+        .map(|command| format!("{command} "))
+        .collect()
 }
 
 /// A pseudo-terminal pair, or none where this host can allocate none: the test
@@ -4054,16 +4137,7 @@ fn view_follows_an_editor(
     std::io::Read::read_to_end(&mut from_editor, &mut rest).expect("the editor's output ends");
     let ended = editor.wait_with_output().expect("the editor's server runs");
     assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
-    let deadline = std::time::Instant::now()
-        .checked_add(core::time::Duration::from_secs(20))
-        .expect("the deadline is representable");
-    while socket.exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(core::time::Duration::from_millis(50));
-    }
-    assert!(
-        !socket.exists(),
-        "the hub exits after its linger, removing its socket"
-    );
+    hub_lingers_out(&socket);
 }
 
 #[test]
@@ -4154,14 +4228,7 @@ fn a_view_whose_output_closes_notes_why_and_exits_two()
     std::io::Read::read_to_end(&mut from_editor, &mut rest).expect("the editor's output ends");
     let ended = editor.wait_with_output().expect("the editor's server runs");
     assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
-    let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
-    while socket.exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(core::time::Duration::from_millis(50));
-    }
-    assert!(
-        !socket.exists(),
-        "the hub exits after its linger once the view has gone"
-    );
+    hub_lingers_out(&socket);
 }
 
 #[test]
@@ -4186,6 +4253,7 @@ fn a_view_reaching_no_hub_notes_why_and_exits_two()
     );
     assert!(unreached.stdout.is_empty(), "nothing is followed");
     assert!(!socket.exists(), "no hub is left behind");
+    hub_lingers_out(&socket);
 }
 
 /// The finished run of `gandr` with `arguments` and `input` on standard
