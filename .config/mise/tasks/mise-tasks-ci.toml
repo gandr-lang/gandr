@@ -1522,7 +1522,7 @@ fi
 # brake stands unread.
 keep_list() {
   local title="integration: the known-red list" found number current id held taken braked braking jobs='[]' known url own heading
-  found=$(issue_found "$repo" "$title")
+  found=$(issue_found "$title")
   number=$(jq -r '.number // empty' <<< "$found")
   current=$(jq -r '.body // empty' <<< "$found")
   id=$(jq -r '.id // empty' <<< "$verdict")
@@ -1576,7 +1576,7 @@ keep_list() {
   while IFS= read -r own; do
     jq -r .body <<< "$own" > "$scratch/own.md"
     heading=$(jq -r .title <<< "$own")
-    issue_keep "$repo" "$heading" "$(issue_found "$repo" "$heading")" 1 "$scratch/own.md" \
+    issue_keep "$heading" "$(issue_found "$heading")" 1 "$scratch/own.md" \
       gh issue create --repo "$repo" --title "$heading" --body-file "$scratch/own.md" --label kind:defect \
       --label "$(jq -r .area <<< "$own")" --label priority:high --label effort:unknown --label status:unsectioned
   done < <(jq -c '.soundness[]' <<< "$known")
@@ -1664,9 +1664,8 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-repo=${GH_REPO:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}
 source .config/issues/keep.bash
-found=$(issue_found "$repo" "integration: the known-red list")
+found=$(issue_found "integration: the known-red list")
 if [[ $found == null ]]; then
   echo "the integration cycle has written no known-red list yet"
   exit 0
@@ -2287,7 +2286,7 @@ source "$root/.config/issues/open.bash"
 # REST throughout: the GraphQL limit, shared by every seat's watches, runs out
 # within the hour, and a seat must still claim its next item. The open list
 # is `open_issues`' (`.config/issues/open.bash`, #5671).
-repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+repo=${GH_REPO:-'{owner}/{repo}'}
 # The board reaches jq through files, never as arguments: with its bodies it
 # is past the argument limit (#2671). Each reading `next.jq` takes is a file
 # here (`input.bash`, #5292).
@@ -2436,7 +2435,7 @@ if [[ $(yq -p toml -o json ".lane | has(\"$lane\")" "$root/.config/issues/lanes.
   echo "claim:release: no lane \`$lane\` in .config/issues/lanes.toml" >&2
   exit 2
 fi
-repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+repo=${GH_REPO:-'{owner}/{repo}'}
 issue=$(gh api "repos/$repo/issues/$number" --jq '{state, body: (.body // ""), claimed: ([.labels[].name] | index("status:claimed") != null)}')
 if [[ $(jq -r .claimed <<< "$issue") != true ]]; then
   echo "claim:release: #$number carries no status:claimed" >&2
@@ -2490,7 +2489,7 @@ if [[ -z $lane ]]; then
   [[ -n $lane ]] || { echo "claim:take: the branch \`$branch\` names no lane; name it with --lane" >&2; exit 2; }
 fi
 [[ $lane =~ ^[a-z][a-z0-9-]*$ ]] || { echo "claim:take: \`$lane\` is no lane" >&2; exit 2; }
-repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+repo=${GH_REPO:-'{owner}/{repo}'}
 read_issue() { gh api "repos/$repo/issues/$number" --jq '{number, state, labels: [.labels[].name], body: (.body // "")}'; }
 decision=$(read_issue | jq -c --arg lane "$lane" '{step: "take", lane: $lane, issue: .}' | jq -c -L "$claims" -f "$claims/taken.jq")
 case $(jq -r .verdict <<< "$decision") in
@@ -3009,7 +3008,7 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/issues/labels.bash"
 source "$root/.config/issues/open.bash"
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+repo=${GH_REPO:-'{owner}/{repo}'}
 defaults=$(labels_defaults)
 eval "issues=(${usage_issue:-})"
 scratch=$(mktemp -d)
@@ -3075,7 +3074,7 @@ epic=${usage_epic:?}
 eval "issues=(${usage_issue:?})"
 claims=$(git rev-parse --show-toplevel)/.config/claims
 source "$claims/deps.bash"
-repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+repo=${GH_REPO:-'{owner}/{repo}'}
 for n in "$epic" "${issues[@]}"; do
   [[ $n =~ ^[0-9]+$ ]] || { echo "epic:order takes issue numbers, not \`$n\`" >&2; exit 2; }
 done
@@ -3092,7 +3091,7 @@ for n in "${issues[@]}"; do
       edited=$(jq -n --arg body "$body" --argjson after "$previous" --argjson epic "$epic" \
         '{body: $body, after: $after, epic: $epic}' | jq -r -L "$claims" -f "$claims/chain.jq")
       if [[ $edited != "$body" ]]; then
-        printf '%s\n' "$edited" | gh issue edit "$n" --repo "$repo" --body-file - > /dev/null
+        printf '%s\n' "$edited" | gh issue edit "$n" --body-file - > /dev/null
         printf 'listed #%s in #%s'"'"'s ## After\n' "$previous" "$n"
       fi
     fi
@@ -3121,7 +3120,7 @@ run = '''
 set -euo pipefail
 claims=$(git rev-parse --show-toplevel)/.config/claims
 source "$claims/deps.bash"
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+repo=${GH_REPO:-'{owner}/{repo}'}
 eval "epics=(${usage_epic:-})"
 if [[ ${usage_all:-false} == true ]]; then
   mapfile -t epics < <(gh api --paginate "repos/$repo/issues?state=open&labels=kind:epic&per_page=100" --jq '.[] | select(.pull_request == null) | .number')
@@ -3177,7 +3176,7 @@ run = '''
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/claims/deps.bash"
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+repo=${GH_REPO:-'{owner}/{repo}'}
 # Every issue, 100 a page at one point, newest first as the REST list gives
 # them: REST takes a page for each 100 issues and pull requests (#5688).
 issues=$(gh api graphql --paginate -F owner="${repo%/*}" -F name="${repo#*/}" -f query='
@@ -3236,7 +3235,7 @@ run = '''
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/issues/open.bash"
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+repo=${GH_REPO:-'{owner}/{repo}'}
 OPEN_ISSUES='' open_issues "$repo" "${usage_file:?}"
 '''
 
@@ -3261,7 +3260,7 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/claims/design.bash"
 source "$root/.config/issues/open.bash"
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+repo=${GH_REPO:-'{owner}/{repo}'}
 open=$(mktemp)
 issues=$(mktemp)
 trap 'rm -f "$open" "$issues"' EXIT
@@ -3301,14 +3300,14 @@ source "$root/.config/issues/labels.bash"
 source "$root/.config/issues/keep.bash"
 source "$root/.config/ledger/owing.bash"
 source "$root/.config/issues/open.bash"
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+repo=${GH_REPO:-'{owner}/{repo}'}
 write=${REPORT_FILE:-}
 title='report: dependencies'
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 if [[ -n $write ]]; then
   status=0
-  GH_REPO=$repo mise run --quiet epic:deps --all || status=$?
+  mise run --quiet epic:deps --all || status=$?
   (( status <= 1 )) || exit "$status"
 fi
 open_issues "$repo" "$scratch/all.json"
@@ -3316,7 +3315,7 @@ jq '[.[] | select(.pull_request | not) | {number, title, labels, body}]' "$scrat
 deps_open_graph "$repo" > "$scratch/graph.json"
 jq -n -c --slurpfile open "$scratch/open.json" --slurpfile graph "$scratch/graph.json" '{open: $open[0], graph: $graph[0]}' \
   | jq -c -f "$claims/reads.jq" > "$scratch/issues.jsonl"
-issue_found "$repo" "$title" > "$scratch/filed.json"
+issue_found "$title" > "$scratch/filed.json"
 labels_defaults > "$scratch/defaults.json"
 sqlite3 -bail "$scratch/features.db" < "$root/ledger/features.sql"
 (cd "$root" && ledger_owing "$scratch/features.db") \
@@ -3332,8 +3331,8 @@ if [[ -z $write ]]; then
   echo "report:deps: $count finding(s); REPORT_FILE unset, nothing written" >&2
   exit 0
 fi
-issue_keep "$repo" "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body.md" \
-  gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
+issue_keep "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body.md" \
+  gh issue create --title "$title" --label collector --label kind:ci --label area:workflow \
   --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
 {% endraw %}'''
 
@@ -3356,7 +3355,7 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/issues/keep.bash"
 source "$root/.config/issues/open.bash"
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+repo=${GH_REPO:-'{owner}/{repo}'}
 write=${REPORT_FILE:-}
 title='report: prose'
 scratch=$(mktemp -d)
@@ -3392,14 +3391,14 @@ count=$(awk 'END { print NR }' "$scratch/rows.tsv")
   awk -F'\t' '{ printf "| #%s | %s | %s |\n", $1, $2, $3 }' "$scratch/rows.tsv"
   printf '\nRun `mise run body:prose <file>` on a body for each sentence and its fix.\n\nfrom: %s\n' "${GITHUB_RUN_URL:-a run by hand}"
 } > "$scratch/body.md"
-issue_found "$repo" "$title" > "$scratch/filed.json"
+issue_found "$title" > "$scratch/filed.json"
 if [[ -z $write ]]; then
   cat "$scratch/body.md"
   echo "report:prose: $count bodies with a finding; REPORT_FILE unset, nothing written" >&2
   exit 0
 fi
-issue_keep "$repo" "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body.md" \
-  gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
+issue_keep "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body.md" \
+  gh issue create --title "$title" --label collector --label kind:ci --label area:workflow \
   --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
 {% endraw %}'''
 
@@ -3435,6 +3434,8 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 rules=$root/.config/dead-weight
 source "$root/.config/issues/keep.bash"
+# Each row's link names the repository as text, which gh's `{owner}/{repo}`
+# cannot give. So a run by hand, with GH_REPO unset, reads the name (#5749).
 repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 write=${REPORT_FILE:-}
 grace=14
@@ -3523,7 +3524,7 @@ while IFS=$'\t' read -r title crate; do
   room "$title" || continue
   found=$(jq -c --arg title "$title" '[.[] | select(.title == $title) | {number, state, body}] | first' "$scratch/filed.json")
   printf 'No item of `%s` lacks a caller outside tests or a use in another crate at `%s` (#2891).\n' "$crate" "${commit::9}" > "$scratch/body.md"
-  issue_keep "$repo" "$title" "$found" 0 "$scratch/body.md" true
+  issue_keep "$title" "$found" 0 "$scratch/body.md" true
 done < <(jq -r --slurpfile bodies "$scratch/bodies.json" '($bodies[0] | map(.title)) as $kept
   | .[] | select(.state == "OPEN") | .title | select(test("^refactor\\(.+\\): dead weight$")) | select(. as $t | $kept | index($t) | not)
   | [., capture("^refactor\\((?<crate>.+)\\)").crate] | @tsv' "$scratch/filed.json")
@@ -3551,7 +3552,7 @@ while IFS= read -r crate; do
   else
     room "$title" || continue
   fi
-  issue_keep "$repo" "$title" "$found" "$(jq .count "$scratch/this.json")" "$scratch/body.md" \
+  issue_keep "$title" "$found" "$(jq .count "$scratch/this.json")" "$scratch/body.md" \
     gh issue create --repo "$repo" --title "$title" --label kind:refactor --label collector \
     --label "area:$(jq -r .area "$scratch/this.json")" --label priority:backlog --label effort:easy --body-file "$scratch/body.md"
 done < <(jq -r 'sort_by(-.count, .crate)[].crate' "$scratch/bodies.json")
@@ -3624,7 +3625,7 @@ run = '''
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+repo=${GH_REPO:-'{owner}/{repo}'}
 write=${REPORT_FILE:-}
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -3664,7 +3665,7 @@ period() {
 }
 # The open issue titled `$1`, or nothing.
 filed() {
-  gh issue list --repo "$repo" --state open --label collector --search "\"$1\" in:title" --json number,title \
+  gh issue list --state open --label collector --search "\"$1\" in:title" --json number,title \
     | jq -r --arg title "$1" 'first(.[] | select(.title == $title)) | .number'
 }
 since=${usage_since:-$(date -u +%Y-%m-01)}
@@ -3681,17 +3682,17 @@ previous_title="report: obligations, ${previous_since::7}"
 previous=$(filed "$previous_title")
 if [[ -n $previous ]]; then
   render "$previous_since" "$(jq -r .previous.until <<< "$span")"
-  gh issue edit "$previous" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
-  gh issue close "$previous" --repo "$repo" --reason completed > /dev/null
+  gh issue edit "$previous" --body-file "$scratch/body.md" > /dev/null
+  gh issue close "$previous" --reason completed > /dev/null
   echo "closed #$previous: ${previous_since::7} in full"
 fi
 render "$since" "$until"
 number=$(filed "$title")
 if [[ -z $number ]]; then
-  gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
+  gh issue create --title "$title" --label collector --label kind:ci --label area:workflow \
     --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
 else
-  gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+  gh issue edit "$number" --body-file "$scratch/body.md" > /dev/null
   echo "updated #$number"
 fi
 {% endraw %}'''
@@ -3781,16 +3782,15 @@ if [[ -z ${REPORT_FILE:-} ]]; then
   echo "report:bootstrap-census: ledger/census.md is current"
   exit 0
 fi
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 title='report: bootstrap census'
-gh issue list --repo "$repo" --state all --label collector --search "\"$title\" in:title" --json number,state,title \
+gh issue list --state all --label collector --search "\"$title\" in:title" --json number,state,title \
   | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/filed.json"
 number=$(jq -r '.number // empty' "$scratch/filed.json")
 state=$(jq -r '.state // empty' "$scratch/filed.json")
 head=$(git rev-parse --short HEAD)
 if [[ $stale == false ]]; then
   if [[ $state == OPEN ]]; then
-    gh issue close "$number" --repo "$repo" --reason completed --comment "\`ledger/census.md\` is current at $head." > /dev/null
+    gh issue close "$number" --reason completed --comment "\`ledger/census.md\` is current at $head." > /dev/null
     echo "closed #$number: the census is current"
   else
     echo "report:bootstrap-census: ledger/census.md is current"
@@ -3809,11 +3809,11 @@ fi
   fi
 } > "$scratch/body.md"
 if [[ -z $number ]]; then
-  gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
+  gh issue create --title "$title" --label collector --label kind:ci --label area:workflow \
     --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
 else
-  [[ $state == OPEN ]] || gh issue reopen "$number" --repo "$repo" > /dev/null
-  gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+  [[ $state == OPEN ]] || gh issue reopen "$number" > /dev/null
+  gh issue edit "$number" --body-file "$scratch/body.md" > /dev/null
   echo "updated #$number: the census is stale"
 fi
 {% endraw %}'''
