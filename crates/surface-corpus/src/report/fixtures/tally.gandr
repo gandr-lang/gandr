@@ -1,0 +1,8 @@
+def helper = 3;
+@[ owes(2) ]
+def owed : Integer;
+@[ refuses("OutOfFragment.typed_number") ]
+def half = 0.5f32;
+@[ checks ]
+def wrong : Integer;
+def wrong = "text";

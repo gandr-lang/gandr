@@ -1,0 +1,9 @@
+theory Same where {
+  sort Carrier : Type;
+  oper same : (a : Carrier, b : Carrier) --> Bool;
+  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);
+}
+module SameInteger : Model(Same) with sort Carrier = Integer where {
+  def same(a : Integer, b : Integer) -> Bool { int.eq a b }
+  law refl = ~admitted;
+}

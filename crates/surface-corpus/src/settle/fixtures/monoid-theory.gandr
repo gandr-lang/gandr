@@ -1,0 +1,8 @@
+theory Mon where {
+  sort M : Type;
+  oper one : () --> M;
+  oper mul : (x : M, y : M) --> M;
+  rule unitL : mul (one ()) x <=> x;
+  rule unitR : mul x (one ()) <=> x;
+  rule assoc : mul (mul x y) z <=> mul x (mul y z);
+}
