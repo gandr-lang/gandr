@@ -3236,9 +3236,10 @@ pub fn move_pair(
 ///   dependent arrow read as the plain arrow where its codomain reads as the
 ///   arrow's codomain weakened past its binder, and a dependent pair as the
 ///   product of two where its second factor reads as the product's second
-///   component weakened past its binder (#771), and two dialogues whose
-///   endpoints made the same moves, however the logs interleave them; under
-///   [`Reading::Syntax`] no reduction is performed.
+///   component weakened past its binder (#771), a patched type read at its base
+///   and its fixed values, the meets of a system of faces erased, and two
+///   dialogues whose endpoints made the same moves, however the logs interleave
+///   them; under [`Reading::Syntax`] no reduction is performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
 ///
@@ -3249,6 +3250,7 @@ pub fn move_pair(
 /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
 /// - witness: `syntax::tests::a_type_of_words_reads_as_the_path_at_its_point_399`
 /// - witness: `syntax::tests::a_session_type_reads_as_its_protocol_from_its_state_400`
+/// - witness: `syntax::tests::a_system_of_faces_reads_back_as_its_glued_type_5106`
 /// - witness: `syntax::tests::a_dependent_arrow_ignoring_its_binder_reads_as_the_arrow`
 /// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
 /// - witness: `syntax::tests::each_computation_former_equals_its_twin_and_differs_where_its_guard_does`
@@ -4379,6 +4381,31 @@ where
                     if matches!(reading, Reading::Printed(_)) =>
                 {
                     session_children(pending, left, right)
+                },
+                // The printer spells a system of faces as the glued type, its
+                // fixed fields. Formation admits a meet value only where it
+                // converts with the fixed value at its label, so the meets
+                // are evidence: read back, the glued type is the same type.
+                (
+                    &ValueType::Patched {
+                        base: left_base,
+                        fixed: ref left,
+                        ..
+                    },
+                    &ValueType::Patched {
+                        base: right_base,
+                        fixed: ref right,
+                        ..
+                    },
+                ) if matches!(reading, Reading::Printed(_))
+                    && left.len() == right.len()
+                    && left.keys().eq(right.keys()) =>
+                {
+                    pending.queue(VT(left_base, right_base), beside);
+                    for (&left, &right) in left.values().zip(right.values()) {
+                        pending.queue(V(left, right), beside);
+                    }
+                    CertificateEquality::Equal
                 },
                 (
                     &ValueType::Capability {
@@ -6762,6 +6789,49 @@ mod tests
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_system_of_faces_reads_back_as_its_glued_type_5106()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_unit();
+        let other = arena.value_tuple(&[unit]);
+        let unit_type = arena.value_type_unit();
+        let label = |name| FieldLabel::from(alloc::string::String::from(name));
+        let record = arena.value_type_record(
+            ["a", "b", "c"]
+                .into_iter()
+                .map(|name| (label(name), unit_type))
+                .collect(),
+        );
+        let fields = |value: ValueId| -> BTreeMap<FieldLabel, ValueId> {
+            ["a", "b", "c"]
+                .into_iter()
+                .map(|name| (label(name), value))
+                .collect()
+        };
+        let system = arena.value_type_system(record, fields(unit), alloc::vec![(label("b"), unit)]);
+        let glued = arena.value_type_patched(record, fields(unit));
+        let elsewhere = arena.value_type_patched(record, fields(other));
+        let signatures = BTreeMap::new();
+        for (left, right) in [(system, glued), (glued, system)] {
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_type_reading(&arena, &signatures, left, right),
+                "a system of faces reads back as its glued type, in either order"
+            );
+        }
+        assert_eq!(
+            CertificateEquality::Different,
+            equal_type_reading(&arena, &signatures, system, elsewhere),
+            "a glued type at other values is another type"
+        );
+        assert_eq!(
+            CertificateEquality::Different,
+            equal_type_syntax(&arena, system, glued),
+            "the syntax keeps the meets: only the printed reading erases them"
+        );
     }
 }
 
