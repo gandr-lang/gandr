@@ -14,8 +14,9 @@
 #   defect       whether the body works a `kind:defect` issue
 #   body         the pull request's body
 #   transcripts  the transcripts the change adds or edits: [{path, text}]
-#   paths        every path the change touches; absent, the change is read
-#                as touching Rust
+#   paths        every path the change touches, less each Rust file whose
+#                diff changes only comments (#5498); absent, the change is
+#                read as touching Rust
 #   cases        the `.config` cases the change adds: [{path, name}]
 #
 # Output: the block's lines between its markers, or nothing when the body
