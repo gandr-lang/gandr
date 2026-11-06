@@ -1,0 +1,41 @@
+[
+  {
+    "name": "#5125: a byte budget in the policy of a count report judges nothing, so the check names it",
+    "input": {
+      "policy": "hotpath/gandr-policy.toml",
+      "metric": "count",
+      "budgets": [{ "match": "gandr_core_checker::bridge::resume", "alloc": { "avg": "16 KB" } }]
+    },
+    "output": ["gandr_core_checker::bridge::resume"]
+  },
+  {
+    "name": "#5125: the same budget in the policy of a bytes report is judged, so the check names nothing",
+    "input": {
+      "policy": "hotpath/gandr-bytes-policy.toml",
+      "metric": "bytes",
+      "budgets": [{ "match": "gandr_core_checker::bridge::resume", "alloc": { "avg": "16 KB" } }]
+    },
+    "output": []
+  },
+  {
+    "name": "a budget on calls alone holds in a count report",
+    "input": {
+      "policy": "hotpath/gandr-timing-policy.toml",
+      "metric": "count",
+      "budgets": [
+        { "match": "gandr_core_checker::bridge::resume", "calls": { "min": 63 } },
+        { "match": "gandr_surface_dispatcher::evaluate::after", "alloc": { "avg": "512 KB" } }
+      ]
+    },
+    "output": ["gandr_surface_dispatcher::evaluate::after"]
+  },
+  {
+    "name": "a policy with no budget names nothing",
+    "input": {
+      "policy": "hotpath/store-policy.toml",
+      "metric": "count",
+      "budgets": []
+    },
+    "output": []
+  }
+]
