@@ -43,12 +43,12 @@ This crate holds discrete Morse theory on finite cell complexes for gandr: an ac
 ```rust
 use gandr_theory_discrete_morse::{Budget, Faults, collapse, greedy};
 use gandr_theory_graded_posets::GradedPoset;
-use gandr_theory_stone_duality::{Comparison, Element};
+use gandr_theory_stone_duality::{Comparison, Element, ElementCount};
 
 // Two points below one edge: the edge pairs with one point.
 let poset = GradedPoset::new(vec!['p', 'q', 'e'], |lower, upper| {
     if *upper == 'e' && *lower != 'e' { Comparison::Below } else { Comparison::NotBelow }
-})
+}, ElementCount::from(3_usize))
 .unwrap();
 let cells: Vec<Element> = (0..3).map(Element::from).collect();
 let mut complex = &poset;

@@ -131,8 +131,8 @@ pub enum WfKind
     DuplicateFaceName,
     /// A face of the signature's shape holds a point the shape lacks.
     FaceOutsideShape,
-    /// A record type's faces and their meets number more than the 64 cells
-    /// of a face poset.
+    /// A record type's faces and their meets number more than the cells the
+    /// lowering states for a face poset.
     FacePosetPastBudget,
     /// A rule uses a variable a binding port of its left side binds neither
     /// where a port binds the same variables over the same sort nor applied

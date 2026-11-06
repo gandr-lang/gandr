@@ -3,16 +3,20 @@
 //!
 //! A cell carries data of the caller's type, and an order on that data says
 //! which cell lies below which. The cells below a cell are its boundary. The
-//! cell with its boundary is its closure, held as one bit row. A subcomplex
-//! is a set of cells that holds the boundary of each of its cells, so it is a
-//! down-set of the order. The subcomplexes form a finite distributive lattice
-//! under union and intersection. The join-irreducible subcomplexes are the
-//! closures of the cells, so the spectrum of that lattice is the poset again.
+//! cell with its boundary is its closure, held as a row of words, one bit for
+//! each cell. A subcomplex is a set of cells that holds the boundary of each
+//! of its cells, so it is a down-set of the order. The subcomplexes form a
+//! finite distributive lattice under union and intersection. The
+//! join-irreducible subcomplexes are the closures of the cells, so the
+//! spectrum of that lattice is the poset again.
 //!
-//! The order is finite Stone duality's [`FinitePoset`]: one bit row for each
-//! cell. The crate enumerates the subcomplexes and reads the spectrum through
-//! that crate. It adds the cells as data, the rank and the two maps that show
-//! the spectrum is the poset.
+//! A poset of at most 64 cells keeps one word for each cell, as finite Stone
+//! duality's [`FinitePoset`](gandr_theory_stone_duality::FinitePoset) does. A
+//! wider poset keeps one word for each 64 cells in each row, up to the count
+//! its caller states. The crate enumerates the subcomplexes and reads the
+//! spectrum through finite Stone duality, so those two stay within 64 cells.
+//! It adds the cells as data, the rank and the two maps that show the spectrum
+//! is the poset.
 //!
 //! The rank of a cell is the length of the longest chain of cells below it,
 //! so it rises strictly along the order. The face poset of a shape need not
@@ -29,13 +33,13 @@ use gandr_theory_stone_duality::Comparison;
 use gandr_theory_stone_duality::DualityError;
 use gandr_theory_stone_duality::Element;
 use gandr_theory_stone_duality::ElementCount;
-use gandr_theory_stone_duality::ElementSet;
-use gandr_theory_stone_duality::FinitePoset;
 use gandr_theory_stone_duality::Membership;
 use gandr_theory_stone_duality::MonotoneMap;
 use gandr_theory_stone_duality::SetRing;
 use gandr_theory_stone_duality::Spectrum;
-use gandr_theory_stone_duality::WIDEST;
+
+use crate::rows::CellOrder;
+use crate::rows::CellRow;
 
 /// The rank of a cell: the length of the longest chain of cells below it.
 #[repr(transparent)]
@@ -68,8 +72,8 @@ impl From<Rank> for usize
     }
 }
 
-/// A finite graded poset of at most 64 cells: each cell's data, its closure
-/// as one bit row, and its rank, in cell order.
+/// A finite graded poset: each cell's data, its closure as a row of words, and
+/// its rank, in cell order.
 ///
 /// # Specification
 /// - ensures: the cells, the bit rows and the ranks hold one entry for each
@@ -93,8 +97,8 @@ pub struct GradedPoset<Cell>
 {
     /// Each cell's data, in cell order.
     cells: Vec<Cell>,
-    /// The order: each cell's closure as one bit row.
-    order: FinitePoset,
+    /// The order: each cell's closure as a row of words.
+    order: CellOrder,
     /// Each cell's rank, in cell order.
     ranks: Vec<Rank>,
 }
@@ -108,51 +112,106 @@ impl<Cell> GradedPoset<Cell>
     /// - ensures: the order is the least order that holds each pair `below`
     ///   puts below, and each cell's rank is the length of the longest chain
     ///   below it.
-    /// - fails: more than 64 cells are refused by their count, before `below`
-    ///   is called; two distinct cells that the order puts each below the other
-    ///   are refused by the least such pair.
+    /// - fails: more cells than `most` are refused by their count, before
+    ///   `below` is called; two distinct cells that the order puts each below
+    ///   the other are refused by the least such pair.
     /// - panics: none.
     /// - intension: `below` is called once for each ordered pair of distinct
-    ///   cells. The ranks take one pass over the cells by the size of their
+    ///   cells. The closure takes one pass over the rows for each cell, a word
+    ///   at a time. The ranks take one pass over the cells by the size of their
     ///   closure, which puts each cell after the cells below it.
     ///
     /// # Errors
-    /// - [`DualityError::TooManyElements`]: more than 64 cells.
+    /// - [`DualityError::TooManyElements`]: more cells than `most`.
     /// - [`DualityError::Cycle`]: two distinct cells lie each below the other.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — every face family over up to three points separates a
-    ///   lost pair; L3 — 65 cells, refused with `below` never called, and two
-    ///   equal faces separate the refusals.
+    /// - hypothesis: L2 — every face family over up to three points, and random
+    ///   orders on 65 and 130 cells against a naive closure, separate a lost
+    ///   pair; L3 — one cell past `most`, refused with `below` never called,
+    ///   and two equal faces separate the refusals.
     /// - witness: `tests::subcomplexes::every_small_face_family_reads_back_from_its_subcomplexes`
     /// - witness: `tests::graded::a_poset_past_the_cell_budget_is_refused_uncomputed`
+    /// - witness: `tests::wide::a_wide_poset_answers_as_its_naive_closure`
     /// - witness: `tests::graded::two_cells_each_below_the_other_are_refused`
     #[spec(ensures: |ref ret| match *ret {
         Ok(ref poset) => poset.ranks.len() == poset.cells.len()
-            && usize::from(poset.order.count()) == poset.cells.len(),
+            && poset.order.count() == ElementCount::from(poset.cells.len()),
         Err(error) => matches!(error, DualityError::TooManyElements(_) | DualityError::Cycle(_, _)),
     })]
     #[inline]
     pub fn new<Below>(
         cells: Vec<Cell>,
-        mut below: Below,
+        below: Below,
+        most: ElementCount,
     ) -> Result<Self, DualityError>
     where
         Below: FnMut(&Cell, &Cell) -> Comparison,
     {
-        let count = ElementCount::from(cells.len());
-        if cells.len() > WIDEST {
-            return Err(DualityError::TooManyElements(count));
+        if cells.len() > usize::from(most) {
+            return Err(DualityError::TooManyElements(ElementCount::from(
+                cells.len(),
+            )));
         }
-        let mut relation = Vec::new();
-        for (lower, lower_cell) in cells.iter().enumerate() {
-            for (upper, upper_cell) in cells.iter().enumerate() {
-                if lower != upper && below(lower_cell, upper_cell) == Comparison::Below {
-                    relation.push((Element::from(lower), Element::from(upper)));
-                }
-            }
+        let order = CellOrder::new(&cells, below)?;
+        let ranks = ranks(&order)?;
+        Ok(Self {
+            cells,
+            order,
+            ranks,
+        })
+    }
+
+    /// The graded poset on `cells` ordered by inclusion of the points each
+    /// holds, of `points` points: a cell lies below another when the other
+    /// holds each of its points and the two differ in a point.
+    ///
+    /// # Specification
+    /// - ensures: the order is [`GradedPoset::new`]'s with `below` the strict
+    ///   inclusion of the cells' points, so two cells that hold the same points
+    ///   are apart; each cell's rank is the length of the longest chain below
+    ///   it.
+    /// - fails: more cells than `most` are refused by their count, before
+    ///   `holds` is called.
+    /// - panics: none.
+    /// - intension: `holds` is called once for each cell and point, and no pair
+    ///   of cells is compared. A cell's row meets the row of the cells that
+    ///   lack each point the cell lacks, one word at a time, so the build reads
+    ///   `⌈n / 64⌉` words for each cell and point. Inclusion is an order, so
+    ///   the rows need no closure and no cycle check.
+    ///
+    /// # Errors
+    /// - [`DualityError::TooManyElements`]: more cells than `most`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — random sets of points on 6, 65 and 130 cells, with
+    ///   repeated sets, against [`GradedPoset::new`] over strict inclusion,
+    ///   separate a lost pair, a bit in the wrong word and two equal sets read
+    ///   as a cycle; L3 — one cell past `most`, refused with `holds` never
+    ///   called, separates the refusal.
+    /// - witness: `tests::wide::an_inclusion_order_is_the_order_its_pairs_give`
+    /// - witness: `tests::graded::a_poset_past_the_cell_budget_is_refused_uncomputed`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(ref poset) => poset.ranks.len() == poset.cells.len()
+            && poset.order.count() == ElementCount::from(poset.cells.len()),
+        Err(error) => matches!(error, DualityError::TooManyElements(_)),
+    })]
+    #[inline]
+    pub fn by_inclusion<Holds>(
+        cells: Vec<Cell>,
+        points: ElementCount,
+        holds: Holds,
+        most: ElementCount,
+    ) -> Result<Self, DualityError>
+    where
+        Holds: FnMut(&Cell, Element) -> Membership,
+    {
+        if cells.len() > usize::from(most) {
+            return Err(DualityError::TooManyElements(ElementCount::from(
+                cells.len(),
+            )));
         }
-        let order = FinitePoset::new(count, &relation)?;
+        let order = CellOrder::by_inclusion(&cells, points, holds)?;
         let ranks = ranks(&order)?;
         Ok(Self {
             cells,
@@ -183,22 +242,46 @@ impl<Cell> GradedPoset<Cell>
         &self.cells
     }
 
-    /// The order, one bit row for each cell: a cell's principal down-set is
-    /// its closure.
+    /// Whether `lower` lies below `upper`: whether the closure of `upper`
+    /// holds `lower`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: [`Comparison::Below`] exactly when the order puts `lower`
+    ///   below `upper`, each cell below itself.
+    /// - fails: a cell at or past the count is refused by name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`DualityError::ElementOutside`]: `lower` or `upper` is at or past the
+    ///   count.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every corpus shape's face poset, against inclusion of
+    ///   the faces, and random orders on 65 and 130 cells, against a naive
+    ///   closure, separate a pair read from the wrong word.
+    /// - witness: `tests::subcomplexes::every_corpus_shape_reads_its_face_poset_back_from_its_subcomplexes`
+    /// - witness: `tests::wide::a_wide_poset_answers_as_its_naive_closure`
+    #[spec(ensures: |ref ret| ret.is_ok() || matches!(*ret, Err(DualityError::ElementOutside(_))))]
     #[inline]
-    #[must_use]
-    pub const fn order(&self) -> &FinitePoset
+    pub fn compare(
+        &self,
+        lower: Element,
+        upper: Element,
+    ) -> Result<Comparison, DualityError>
     {
-        &self.order
+        if usize::from(lower) >= self.cells.len() {
+            return Err(DualityError::ElementOutside(lower));
+        }
+        Ok(match self.order.row(upper)?.contains(lower) {
+            Membership::Inside => Comparison::Below,
+            Membership::Outside => Comparison::NotBelow,
+        })
     }
 
     /// The closure of a cell: the cell and its boundary.
     ///
     /// # Specification
-    /// - provides: the bit row the order holds for `cell`.
+    /// - provides: the row the order holds for `cell`.
     /// - fails: a cell at or past the count is refused by name.
     /// - panics: none.
     ///
@@ -217,9 +300,9 @@ impl<Cell> GradedPoset<Cell>
     pub fn closure(
         &self,
         cell: Element,
-    ) -> Result<ElementSet, DualityError>
+    ) -> Result<CellRow<'_>, DualityError>
     {
-        self.order.below(cell)
+        self.order.row(cell)
     }
 
     /// The boundary of a cell: every cell strictly below it.
@@ -244,11 +327,9 @@ impl<Cell> GradedPoset<Cell>
     pub fn boundary(
         &self,
         cell: Element,
-    ) -> Result<ElementSet, DualityError>
+    ) -> Result<CellRow<'_>, DualityError>
     {
-        let closure = self.order.below(cell)?;
-        let own = ElementSet::single(cell)?;
-        Ok(ElementSet::from(u64::from(closure) & !u64::from(own)))
+        Ok(self.order.row(cell)?.without(cell))
     }
 
     /// The rank of a cell: the length of the longest chain of cells below it.
@@ -284,14 +365,17 @@ impl<Cell> GradedPoset<Cell>
     /// # Specification
     /// - ensures: the members are exactly the down-sets of the order, in
     ///   increasing order of their bits.
-    /// - fails: a lattice past `budget` members is refused.
+    /// - fails: a lattice past `budget` members is refused, and so is a poset
+    ///   of more than 64 cells, whose sets finite Stone duality does not hold.
     /// - panics: none.
     /// - intension: finite Stone duality's enumeration of down-sets, linear in
-    ///   the number of subcomplexes times the number of cells.
+    ///   the number of subcomplexes times the number of cells, after one copy
+    ///   of the order into one-word rows.
     ///
     /// # Errors
     /// - [`DualityError::PastBudget`]: the poset has more than `budget`
     ///   subcomplexes.
+    /// - [`DualityError::TooManyElements`]: the poset has more than 64 cells.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every face family over up to three points and the
@@ -302,7 +386,7 @@ impl<Cell> GradedPoset<Cell>
     /// - witness: `tests::graded::a_lattice_past_its_budget_is_refused`
     #[spec(ensures: |ref ret| match *ret {
         Ok(ref lattice) => lattice.carrier() == self.count() && lattice.members().len() <= usize::from(budget),
-        Err(error) => error == DualityError::PastBudget(budget),
+        Err(error) => error == DualityError::PastBudget(budget) || matches!(error, DualityError::TooManyElements(_)),
     })]
     #[inline]
     pub fn subcomplexes(
@@ -310,7 +394,7 @@ impl<Cell> GradedPoset<Cell>
         budget: Budget,
     ) -> Result<SetRing, DualityError>
     {
-        self.order.down_sets(budget)
+        self.order.narrow()?.down_sets(budget)
     }
 
     /// The lattice of subcomplexes, its spectrum, and the two monotone maps
@@ -321,7 +405,8 @@ impl<Cell> GradedPoset<Cell>
     ///   increasing order of their bits; the map to the cells sends each point
     ///   to the cell whose closure it is, and the map from the cells is its
     ///   inverse, so both maps keep the order.
-    /// - fails: a lattice past `budget` members is refused.
+    /// - fails: a lattice past `budget` members is refused, and so is a poset
+    ///   of more than 64 cells.
     /// - panics: none.
     /// - intension: the closures sorted by their bits name each point's cell,
     ///   so no point is searched for.
@@ -329,10 +414,11 @@ impl<Cell> GradedPoset<Cell>
     /// # Errors
     /// - [`DualityError::PastBudget`]: the poset has more than `budget`
     ///   subcomplexes.
+    /// - [`DualityError::TooManyElements`]: the poset has more than 64 cells.
     /// - [`DualityError::ImageCount`], [`DualityError::NotMonotone`],
-    ///   [`DualityError::ElementOutside`], [`DualityError::TooManyElements`]:
-    ///   unreachable for a poset [`GradedPoset::new`] makes, since its
-    ///   join-irreducible subcomplexes are the closures of its cells.
+    ///   [`DualityError::ElementOutside`]: unreachable for a poset
+    ///   [`GradedPoset::new`] makes, since its join-irreducible subcomplexes
+    ///   are the closures of its cells.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every face family over up to three points and the
@@ -349,12 +435,13 @@ impl<Cell> GradedPoset<Cell>
         budget: Budget,
     ) -> Result<ReadBack, DualityError>
     {
-        let subcomplexes = self.subcomplexes(budget)?;
+        let order = self.order.narrow()?;
+        let subcomplexes = order.down_sets(budget)?;
         let spectrum = subcomplexes.spectrum()?;
         let count = self.cells.len();
         let mut by_closure = Vec::with_capacity(count);
         for cell in 0 .. count {
-            let closure = self.order.below(Element::from(cell))?;
+            let closure = order.below(Element::from(cell))?;
             by_closure.push((closure, Element::from(cell)));
         }
         by_closure.sort_unstable();
@@ -366,8 +453,8 @@ impl<Cell> GradedPoset<Cell>
             *slot = Element::from(point);
         }
         let images = by_closure.into_iter().map(|(_, cell)| cell).collect();
-        let to_cells = MonotoneMap::new(spectrum.poset(), &self.order, images)?;
-        let from_cells = MonotoneMap::new(&self.order, spectrum.poset(), inverse)?;
+        let to_cells = MonotoneMap::new(spectrum.poset(), &order, images)?;
+        let from_cells = MonotoneMap::new(&order, spectrum.poset(), inverse)?;
         Ok(ReadBack {
             subcomplexes,
             spectrum,
@@ -390,25 +477,24 @@ impl<Cell> GradedPoset<Cell>
 ///
 /// # Errors
 /// - [`DualityError::ElementOutside`]: unreachable for an order
-///   [`FinitePoset::new`] makes.
+///   [`GradedPoset::new`] makes.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the square's sides separate a rank read as the size of
 ///   the closure from the longest chain.
 /// - witness: `tests::graded::a_square_ranks_its_cells_by_their_longest_chain`
-#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ranks| ranks.len() == usize::from(order.count())))]
-fn ranks(order: &FinitePoset) -> Result<Vec<Rank>, DualityError>
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ranks| ElementCount::from(ranks.len()) == order.count()))]
+fn ranks(order: &CellOrder) -> Result<Vec<Rank>, DualityError>
 {
     let count = usize::from(order.count());
     let mut by_size = Vec::with_capacity(count);
-    for cell in 0 .. count {
-        let closure = order.below(Element::from(cell))?;
-        by_size.push((u64::from(closure).count_ones(), Element::from(cell)));
+    for cell in (0 .. count).map(Element::from) {
+        by_size.push((order.row(cell)?.count(), cell));
     }
     by_size.sort_unstable();
     let mut ranks = vec![Rank::default(); count];
     for &(_, cell) in &by_size {
-        let closure = order.below(cell)?;
+        let closure = order.row(cell)?;
         let mut rank = 0_usize;
         for lower in closure.elements() {
             if lower != cell {

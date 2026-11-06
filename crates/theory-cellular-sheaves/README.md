@@ -43,12 +43,12 @@ This crate holds cellular sheaves over finite graded posets for gandr: a stalk o
 ```rust
 use gandr_theory_cellular_sheaves::{Entry, Gluing, Sheaf, Width};
 use gandr_theory_graded_posets::GradedPoset;
-use gandr_theory_stone_duality::{Comparison, Element};
+use gandr_theory_stone_duality::{Comparison, Element, ElementCount};
 
 // Two points below one edge, the constant sheaf: one entry on each cell.
 let poset = GradedPoset::new(vec!['p', 'q', 'e'], |lower, upper| {
     if *upper == 'e' && *lower != 'e' { Comparison::Below } else { Comparison::NotBelow }
-})
+}, ElementCount::from(3_usize))
 .unwrap();
 let sheaf = Sheaf::new(poset, |_| Width::from(1), |_, _| [Entry::from(0)]).unwrap();
 let (p, q) = (Element::from(0), Element::from(1));

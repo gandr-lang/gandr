@@ -10,22 +10,19 @@
 //! are the closures of the cells. The crate computes each of these, and two
 //! monotone maps show that the spectrum is the poset.
 //!
-//! The order is one bit row for each cell, so a poset holds at most 64 cells,
-//! the bits of one machine word. A poset with more cells is refused by its
-//! count before any order is computed. The lattice of subcomplexes can grow
-//! to two to the number of cells, so its enumeration takes a budget and
-//! refuses the poset past it.
-//!
-//! Finite Stone duality holds the bit rows, enumerates the down-sets and reads
-//! the spectrum, so this crate adds no second enumeration over the same words
-//! and uses that crate's types. A poset past one machine word would need sets
-//! wider than that crate holds.
+//! The order is one row of words for each cell, one word for each 64 cells.
+//! Each caller states the most cells it admits. A poset with more cells is
+//! refused by its count. An order by inclusion of points compares no pair.
+//! The lattice of subcomplexes can grow to two to the number of cells, so its
+//! enumeration takes a budget. Finite Stone duality enumerates it and reads
+//! the spectrum, so those two hold at most 64 cells.
 //!
 //! # Items
 //!
 //! | Item | What it holds |
 //! | ---- | ------------- |
-//! | [`GradedPoset`] | the cells as data, their order as bit rows, their boundary and rank, and the lattice of subcomplexes |
+//! | [`CellRow`] | a cell's closure or boundary, read off the order's words |
+//! | [`GradedPoset`] | the cells as data, their order as rows of words, their boundary and rank, and the lattice of subcomplexes |
 //! | [`Rank`] | the length of the longest chain below a cell |
 //! | [`ReadBack`] | the lattice of subcomplexes, its spectrum, and the two maps between the spectrum and the poset |
 //!
@@ -44,7 +41,9 @@
 extern crate alloc;
 
 mod graded;
+mod rows;
 
 pub use graded::GradedPoset;
 pub use graded::Rank;
 pub use graded::ReadBack;
+pub use rows::CellRow;

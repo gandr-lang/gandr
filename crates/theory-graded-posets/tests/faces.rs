@@ -4,6 +4,7 @@
 
 use gandr_theory_graded_posets::GradedPoset;
 use gandr_theory_stone_duality::Comparison;
+use gandr_theory_stone_duality::ElementCount;
 
 /// A face: a set of points of a carrier of at most six points, as a bit mask.
 #[repr(transparent)]
@@ -67,8 +68,13 @@ pub fn face_poset(
         .collect();
     cells.sort_unstable();
     cells.dedup();
-    GradedPoset::new(cells, |lower, upper| lower.within(*upper))
-        .expect("a face poset of distinct faces")
+    // A carrier of at most six points has at most 63 nonempty faces.
+    GradedPoset::new(
+        cells,
+        |lower, upper| lower.within(*upper),
+        ElementCount::from(64_usize),
+    )
+    .expect("a face poset of distinct faces")
 }
 
 /// A shape that the corpus states.

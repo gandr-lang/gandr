@@ -2030,8 +2030,9 @@ fn ill_formed(
         },
         WfKind::FacePosetPastBudget => write!(
             f,
-            "the faces of the record type {one} and their meets number more than the 64 cells \
-             of a face poset"
+            "the faces of the record type {one} and their meets number more than the {} cells \
+             of a face poset",
+            crate::module::FACE_CELLS
         ),
         WfKind::UnsortedBinding => write!(
             f,
