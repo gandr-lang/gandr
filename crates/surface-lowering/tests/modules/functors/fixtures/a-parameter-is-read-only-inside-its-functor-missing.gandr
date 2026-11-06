@@ -1,0 +1,2 @@
+module Peek(S : *{ type T, seed : T }) where { def wrong = S.missing; }
+module P = Peek(Seed);

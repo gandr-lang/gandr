@@ -1,0 +1,3 @@
+{MAYBE}def pick(a : Type, m : Maybe(a)) -> -F Integer {{ return 0 }}
+def wrong : () -> Integer ;
+def wrong = thunk {{ become pick (Integer) (Some true) }} ;

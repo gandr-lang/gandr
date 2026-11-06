@@ -1,0 +1,3 @@
+@[ refuses("UnresolvedTypeHead") ]
+type T = Nope;
+def after = 1;

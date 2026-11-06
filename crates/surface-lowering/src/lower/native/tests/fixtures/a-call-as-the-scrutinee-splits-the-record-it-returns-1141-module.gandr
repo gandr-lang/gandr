@@ -1,0 +1,5 @@
+def tagged(n : Integer) -> -F *{m : Integer, v : Path[.A = Integer](m, m)} {
+  return *{n, Path.here n}
+}
+def tag() -> -F Integer { match tagged 5 { | *{m, w} => return m } }
+def bound() -> -F Integer { let t = tagged 5; match t { | *{m, w} => return m } }

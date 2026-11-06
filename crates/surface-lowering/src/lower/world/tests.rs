@@ -48,7 +48,9 @@ fn a_world_declaration_names_its_world()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from("world seat;\nworld operator;\n"),
+        SourceText::from(include_str!(
+            "tests/fixtures/a-world-declaration-names-its-world-module.gandr"
+        )),
         &mut arena,
     );
     let outcomes: alloc::vec::Vec<_> = module
@@ -70,7 +72,12 @@ fn a_world_declaration_names_its_world()
 fn a_world_declared_twice_is_refused()
 {
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from("world seat;\nworld seat;\n"), &mut arena);
+    let module = lowered(
+        SourceText::from(include_str!(
+            "tests/fixtures/a-world-declared-twice-is-refused-module.gandr"
+        )),
+        &mut arena,
+    );
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("seat")),
@@ -82,11 +89,7 @@ fn a_world_declared_twice_is_refused()
 
 /// The effect theory a requirement row names under a label: values by key,
 /// each operation handing what it reads on.
-const STORE: &str = concat!(
-    "theory Store where { sort V : Type+; sort C : Type;\n",
-    "  oper get : (key : V, k : pi+ (v : V). C) --> C;\n",
-    "  oper put : (key : V, value : V, k : C) --> C; }\n",
-);
+const STORE: &str = include_str!("tests/fixtures/store.gandr");
 
 /// `world w requires [ … ] ;` files each entry of its row as a labelled row
 /// writes it, and refuses its world at the first entry a row refuses: an
@@ -195,18 +198,16 @@ fn a_world_s_requirement_is_a_row_3523()
 #[test]
 fn a_site_s_offer_answers_by_label_and_by_name_3523()
 {
-    let echo = concat!(
-        "theory Kept where { sort V : Type+; sort C : Type;\n",
-        "  oper get : (key : V, k : pi+ (v : V). C) --> C;\n",
-        "  oper put : (key : V, value : V, k : C) --> C; }\n",
-        "module Echo : Model(Kept) with sort V = String where {\n",
-        "  type C = String;\n",
-        "  def get(key : String, k : String -> String) -> String { k key }\n",
-        "  def put(key : String, value : String, k : String) -> String { k }\n",
-        "}\n",
-    );
+    let echo =
+        include_str!("tests/fixtures/a-site-s-offer-answers-by-label-and-by-name-3523-echo.gandr");
     let offered = |offers: &str| {
-        let text = alloc::format!("{offers}\n{echo}");
+        let text = alloc::format!(
+            include_str!(
+                "tests/unformatted/a-site-s-offer-answers-by-label-and-by-name-3523.gandr"
+            ),
+            echo = echo,
+            offers = offers
+        );
         let mut arena = CoreArena::new();
         let text = hosting(text.as_str());
         let module = hosted(&text, &mut arena);
@@ -272,7 +273,9 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
             "`{offers}` is refused {refused} as the offer's own: {outcomes}"
         );
     }
-    let twice = offered("offers [std.io.Console.Eff];\noffers [store = Echo];");
+    let twice = offered(include_str!(
+        "tests/fixtures/a-site-s-offer-answers-by-label-and-by-name-3523-twice.gandr"
+    ));
     assert!(
         matches!(
             twice,
@@ -282,7 +285,12 @@ fn a_site_s_offer_answers_by_label_and_by_name_3523()
     );
     // A site that imports no module of the interface it grants refuses it,
     // though its offer stands before the imports a source may write (#4523).
-    let unimported = alloc::format!("\noffers [std.io.Console.Eff];\n{echo}");
+    let unimported = alloc::format!(
+        include_str!(
+            "tests/unformatted/a-site-s-offer-answers-by-label-and-by-name-3523-unimported.gandr"
+        ),
+        echo = echo
+    );
     let mut arena = CoreArena::new();
     let module = crate::fixture::imported(&unimported, &mut arena);
     let outcomes = alloc::format!(
@@ -305,13 +313,9 @@ fn the_located_forms_lower_to_their_world_forms()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from(
-            r"world seat;
-def opened(h : Integer at seat) -> -F Integer { let x at seat = h; pure x }
-def held() -> -F (Integer at seat) { (hold 1) }
-def moved() -> -F Integer { migrate [seat] { pure 1 } }
-",
-        ),
+        SourceText::from(include_str!(
+            "tests/fixtures/the-located-forms-lower-to-their-world-forms-module.gandr"
+        )),
         &mut arena,
     );
     let seat = World::Declared(constant_of(&module, SurfaceName::from("seat")));
@@ -423,15 +427,9 @@ fn a_mobile_component_marks_its_sealing()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from(
-            r"module Pair :> *{ mobile type Mobile, type Kept, one : Mobile, two : Kept } where {
-  type Mobile = Integer;
-  type Kept = Integer;
-  def one = 1;
-  def two = 2;
-}
-",
-        ),
+        SourceText::from(include_str!(
+            "tests/fixtures/a-mobile-component-marks-its-sealing-module.gandr"
+        )),
         &mut arena,
     );
     let marks: alloc::vec::Vec<(SurfaceName<'_>, Mark)> = module
@@ -463,16 +461,9 @@ fn an_entry_names_its_home_then_its_capabilities()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        SourceText::from(
-            r"world operator;
-world seat;
-@[ entry(*{operator, seat}) ]
-def entered() -> -F Integer { pure 1 }
-@[ entry(operator) ]
-def homed() -> -F Integer { pure 1 }
-def placed() -> -F Integer { pure 1 }
-",
-        ),
+        SourceText::from(include_str!(
+            "tests/fixtures/an-entry-names-its-home-then-its-capabilities-module.gandr"
+        )),
         &mut arena,
     );
     let worlds = |name: &str| {

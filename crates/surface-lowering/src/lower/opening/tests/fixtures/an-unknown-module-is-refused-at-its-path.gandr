@@ -1,0 +1,6 @@
+module Counting where {
+  def two = 2;
+}
+def early() -> -F Integer { let x = two; import Counting; return x }
+def missing() -> -F Integer { import Absent; return 1 }
+def linked() -> -F Integer { import Counting.two; return 1 }

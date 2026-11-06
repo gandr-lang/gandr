@@ -1,0 +1,6 @@
+{PRELUDE}def f(b : Bool, n : Nat) -> -F [Partial] Nat {{
+let a = loop {{ break(n) }} ;
+let c = loop {{ loop {{ break(Zero) }} }} ;
+let d = while b {{ tick n }} ;
+loop {{ continue }}
+}}

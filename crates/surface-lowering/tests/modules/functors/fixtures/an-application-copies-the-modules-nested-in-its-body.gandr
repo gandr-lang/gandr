@@ -1,0 +1,7 @@
+module Plain where { type T = Integer; def seed = 1; }
+module Over(S : *{ type T, seed : T }) where {
+  module inner where { module deeper where { def kept = S.seed; } }
+}
+module O = Over(Plain);
+def g : Plain.T;
+def g = O.inner.deeper.kept;

@@ -1,0 +1,7 @@
+type Config = *{host : String, port : Integer, tls : Bool} where {
+  face secure = { tls, port };
+  face addr = { host, port };
+  face none = {};
+}
+def local : Config;
+def local = *{.host = "h", .port = 1, .tls = true};

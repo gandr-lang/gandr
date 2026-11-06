@@ -1,0 +1,9 @@
+theory Cost where {
+  sort N : Type+;
+  sort C : Type;
+  oper charge : (c : N, k : C) --> C;
+  oper zero : N;
+  oper plus : (a : N, b : N) --> N;
+  rule chargeZero : charge (zero ()) k <=> k;
+  rule chargeTwice : charge a (charge b k) <=> charge (plus a b) k;
+}

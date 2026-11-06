@@ -1,0 +1,3 @@
+module Pointed(R : *{ type V, y : V }) where {
+  def w = R.y;
+}

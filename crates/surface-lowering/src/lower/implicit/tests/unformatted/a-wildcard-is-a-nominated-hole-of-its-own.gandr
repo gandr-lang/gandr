@@ -1,0 +1,2 @@
+{FIRST}def wild : () -> Integer ;
+def wild = thunk {{ become first[.a = _] 5 *{{}} }} ;

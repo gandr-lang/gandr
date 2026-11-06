@@ -1,0 +1,6 @@
+def named(x : Integer) -> -F Integer {{ return ~x }}
+def pair : (Integer) -> Integer = ~intro assumption assumption ;
+def other : (Integer) -> Integer = ~apply assumption ;
+def literal : Integer = ~3 ;
+def deep : (Integer) -> Integer = ~{deep} ;
+def head(x : Integer) -> -F Integer {{ become ~assumption }}

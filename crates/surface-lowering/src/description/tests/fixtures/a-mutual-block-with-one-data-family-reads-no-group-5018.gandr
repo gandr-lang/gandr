@@ -1,0 +1,18 @@
+rec {
+  data Nat : Type where {
+    | Zero : Nat
+    | Succ : (n : Nat) --> Nat
+  }
+  def rec twice(n : Nat) -> Nat {
+    match n { | Zero => Zero | Succ(m) => Succ (Succ (twice[<] m)) }
+  }
+}
+rec {
+  data Left(a : Type) : Type where {
+    | Here : (x : a) --> Left(a)
+    | There : (r : Right) --> Left(a)
+  }
+  data Right : Type where {
+    | Stop : Right
+  }
+}

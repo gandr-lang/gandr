@@ -1,0 +1,3 @@
+{MAYBE}def isSome(m : Maybe(Integer)) -> Type {{ match m {{ | None => return Void | Some(_x) => return Unit }} }}
+def held(h : isSome((Some(3) : Maybe(Integer)))) -> -F Unit {{ return h }}
+def absent(h : isSome((None : Maybe(Integer)))) -> -F Unit {{ return h }}

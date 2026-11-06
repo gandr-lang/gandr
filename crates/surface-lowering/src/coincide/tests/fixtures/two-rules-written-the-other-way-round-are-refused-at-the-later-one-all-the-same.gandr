@@ -1,0 +1,9 @@
+@[ checks ]
+data NatApart : Type where {
+  | Zero : NatApart
+  | Succ : (n : NatApart) --> NatApart
+  oper add : (m : NatApart, n : NatApart) --> NatApart;
+  rule : add m Zero ==> Succ m;
+  rule : add Zero n ==> n;
+  rule : add (Succ m) n ==> Succ (add m n);
+}

@@ -1,0 +1,12 @@
+{MAYBE}data Box(m : Maybe(Integer)) : Type where {{ | Boxed : Box(m) }}
+def tail : +U (-F Maybe(Integer)) ;
+def tail = thunk {{ Some 3 }} ;
+def alias : () -> Maybe(Integer) ;
+def alias = thunk {{ None }} ;
+def pured : +U (-F Maybe(Integer)) ;
+def pured = thunk {{ pure Some 5 }} ;
+def returned(n : Integer) -> -F Maybe(Integer) {{ return Some n }}
+def nested : Maybe(Maybe(Integer)) ;
+def nested = Some None ;
+def boxed(b : Box(Some(1))) -> -F Integer {{ return 0 }}
+def bare = None ;

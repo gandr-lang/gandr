@@ -27,25 +27,14 @@ use crate::lower::native::tests::refusal_of;
 use crate::resolve::SurfaceName;
 
 /// The naturals every witness builds on, and a function to nest.
-const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                   def twice(n : Nat) -> -F Nat { Succ (Succ n) }\n";
+const NAT: &str = include_str!("tests/unformatted/nat.gandr");
 
 #[test]
 fn an_explicit_runs_attribute_asks_within_its_form()
 {
     let source = format!(
-        "{NAT}@[ explicit_runs ]\n\
-         module Asked where {{\n\
-         def every(n : Nat) -> -F Nat {{ Succ (twice n) }}\n\
-         @[ explicit_runs(\"effects\") ]\n\
-         def wider(n : Nat) -> -F Nat {{ Succ (twice (Succ n)) }}\n\
-         }}\n\
-         @[ explicit_runs(\"effects\") ]\n\
-         def effects(n : Nat) -> -F Nat {{ Succ (twice Zero) }}\n\
-         def unasked(n : Nat) -> -F Nat {{ Succ (twice (Succ Zero)) }}\n\
-         def written(n : Nat) -> -F Nat {{ Succ (run twice (Succ (Succ n))) }}\n\
-         @[ explicit_runs(\"effect\") ]\n\
-         def misspelled(n : Nat) -> -F Nat {{ Succ (Succ (twice n)) }}\n"
+        include_str!("tests/unformatted/an-explicit-runs-attribute-asks-within-its-form.gandr"),
+        NAT = NAT
     );
     let text = SourceText::from(source.as_str());
     let mut arena = CoreArena::new();
@@ -100,12 +89,9 @@ fn an_explicit_runs_attribute_asks_within_its_form()
 #[test]
 fn a_nested_run_is_spelled_as_its_written_run_reads_back()
 {
-    let text = SourceText::from(
-        "def id(n : Integer) -> -F Integer { n }\n\
-         def returned(n : Integer) -> -F Integer { return id n }\n\
-         def leading(n : Integer) -> -F Integer { id n + 1 }\n\
-         def grouped(n : Integer) -> -F Integer { return n + 1 }\n",
-    );
+    let text = SourceText::from(include_str!(
+        "tests/fixtures/a-nested-run-is-spelled-as-its-written-run-reads-back.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(text, &mut arena);
     let report = judged(&module, &mut arena);
@@ -141,12 +127,9 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
         "a call after `return` and one that begins a block's tail are spelled bare, and an \
          operator call is grouped after `run`"
     );
-    let written = SourceText::from(
-        "def id(n : Integer) -> -F Integer { n }\n\
-         def returned(n : Integer) -> -F Integer { return run id n }\n\
-         def leading(n : Integer) -> -F Integer { run id n + 1 }\n\
-         def grouped(n : Integer) -> -F Integer { return run (n + 1) }\n",
-    );
+    let written = SourceText::from(include_str!(
+        "tests/fixtures/a-nested-run-is-spelled-as-its-written-run-reads-back-written.gandr"
+    ));
     let mut rewritten = CoreArena::new();
     let fixed = lowered(written, &mut rewritten);
     let rechecked = judged(&fixed, &mut rewritten);
@@ -165,14 +148,9 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
 #[test]
 fn a_call_returning_a_function_runs_where_it_is_applied_3935()
 {
-    let text = SourceText::from(
-        "def plus(n : Integer) -> Integer -> Integer { thunk { fun (m : Integer) { m + n } } }\n\
-         def applied(n : Integer) -> Integer { let h = (plus n) 1 ; h }\n\
-         def dependent(A : Type) -> A -> A { thunk { fun (x : A) { x } } }\n\
-         def picked(A : Type, x : A) -> A { (dependent A) x }\n\
-         def curried(n : Integer, m : Integer) -> Integer { n + m }\n\
-         def partial(n : Integer) -> Integer { (curried n) 1 }\n",
-    );
+    let text = SourceText::from(include_str!(
+        "tests/fixtures/a-call-returning-a-function-runs-where-it-is-applied-3935.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(text, &mut arena);
     let report = judged(&module, &mut arena);
@@ -198,12 +176,9 @@ fn a_call_returning_a_function_runs_where_it_is_applied_3935()
         "a head call returning a function runs, spelled grouped where a bound statement \
          reads it as at a tail's start; a curried call runs nothing"
     );
-    let written = SourceText::from(
-        "def plus(n : Integer) -> Integer -> Integer { thunk { fun (m : Integer) { m + n } } }\n\
-         def applied(n : Integer) -> Integer { let h = (run plus n) 1 ; h }\n\
-         def dependent(A : Type) -> A -> A { thunk { fun (x : A) { x } } }\n\
-         def picked(A : Type, x : A) -> A { (run dependent A) x }\n",
-    );
+    let written = SourceText::from(include_str!(
+        "tests/fixtures/a-call-returning-a-function-runs-where-it-is-applied-3935-written.gandr"
+    ));
     let mut rewritten = CoreArena::new();
     let fixed = lowered(written, &mut rewritten);
     let rechecked = judged(&fixed, &mut rewritten);
@@ -219,18 +194,8 @@ fn a_call_returning_a_function_runs_where_it_is_applied_3935()
 fn a_run_read_once_first_is_linear()
 {
     let source = format!(
-        "{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}\n\
-         def field(n : Nat) -> -F Nat {{ let m = twice n ; Succ m }}\n\
-         def chained(n : Nat) -> -F Nat {{ let a = twice n ; let b = twice a ; become twice b }}\n\
-         def later(n : Nat) -> -F Nat {{ let c = twice n ; second c (twice n) }}\n\
-         def doubled(n : Nat) -> -F Nat {{ let d = twice n ; second d d }}\n\
-         def after(n : Nat) -> -F Nat {{ let e = twice n ; second (twice n) e }}\n\
-         def whole(n : Nat) -> -F Nat {{ let f = twice n ; f }}\n\
-         def reread(n : Nat) -> -F Nat {{ let g = twice n ; let h = twice g ; second g h }}\n\
-         def paired(n : Nat) -> -F Nat {{ let p = twice n ; let q = twice Zero ; second p q }}\n\
-         def swapped(n : Nat) -> -F Nat {{ let r = twice n ; let s = twice Zero ; second s r }}\n\
-         @[ explicit_runs ]\n\
-         def asked(n : Nat) -> -F Nat {{ let k = twice n ; Succ k }}\n"
+        include_str!("tests/unformatted/a-run-read-once-first-is-linear.gandr"),
+        NAT = NAT
     );
     let text = SourceText::from(source.as_str());
     let mut arena = CoreArena::new();
@@ -268,10 +233,8 @@ fn a_run_read_once_first_is_linear()
 fn a_run_in_a_match_branch_is_linear_1935()
 {
     let source = format!(
-        "{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}\n\
-         def armed(a : Nat) -> -F Nat {{ match a {{ | Zero => Zero | Succ(b) => {{ let d = twice b ; Succ d }} }} }}\n\
-         def chained(a : Nat) -> -F Nat {{ match a {{ | Zero => Zero | Succ(b) => {{ let e = twice b ; let f = twice e ; Succ f }} }} }}\n\
-         def reread(a : Nat) -> -F Nat {{ match a {{ | Zero => Zero | Succ(b) => {{ let g = twice b ; second g g }} }} }}\n"
+        include_str!("tests/unformatted/a-run-in-a-match-branch-is-linear-1935.gandr"),
+        NAT = NAT
     );
     let text = SourceText::from(source.as_str());
     let mut arena = CoreArena::new();

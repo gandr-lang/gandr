@@ -1,0 +1,4 @@
+{MAYBE}{plain}module Computed : Model(Plain) where {{
+  type Lift(a : Type) = -F Maybe(a);
+  type Cell = -F Integer;
+}}

@@ -321,9 +321,7 @@ env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified 
 # lines that reaches `SourceText` as a Rust literal: the source is a `.gandr`
 # file read with `include_str!`, so the format gate reads it (#491). It lists
 # every inline source that reaches the type, one line or more, under
-# `target/embedded-sources` for the migration's codemod. Each package in
-# `allowed` holds sources its migration unit under #491 moves, and leaves the
-# list with that unit.
+# `target/embedded-sources` for the migration's codemod.
 env.DYLINT_TOML = '''
 [quenchant-dylints]
 evidence_directory = "{{ config_root }}/target/evidence/records"
@@ -426,9 +424,6 @@ unproduced = [
 types = ["gandr_surface_syntax::SourceText", "gandr_surface_render_remote::SourceText"]
 extension = "gandr"
 directory = "{{ config_root }}/target/embedded-sources"
-allowed = [
-  "gandr-surface-lowering",
-]
 '''
 # Building the policy library or its driver links rustc's own crates, which
 # rustc-dev and llvm-tools supply. The CI image leaves both out (its
@@ -437,16 +432,11 @@ allowed = [
 # pinned rust-clippy (`.github/docker/rust-clippy.bash`, #3531), whose
 # repository is kept under the cache directory; a cached driver, as the CI
 # image bakes, is used as it is.
-# After the run, each package in `embedded_source.allowed` must still hold a
-# listed source of two or more lines. A package without one is refused, so its
-# entry leaves the list with the unit that moves its last source.
 # Cargo can count a library built from another quenchant revision as fresh,
 # and then each crate's lint results too; `ci.yml` keys its policy caches on
 # the revision for this reason. So the task stamps `target/dylint` with the
 # revision it builds. A run whose pinned revision differs from the stamp
 # starts from an empty `target/dylint`.
-tools.jq = "1.8.1"
-tools.yq = "4.54.1"
 run = '''
 rustup component add rustc-dev llvm-tools
 toolchain=$(rustup show active-toolchain | awk '{print $1}')
@@ -461,20 +451,7 @@ if [ ! -x "${DYLINT_DRIVER_PATH:-$HOME/.dylint_drivers}/$toolchain/dylint-driver
   channel=$(sed -n 's/^channel = "\([^"]*\)".*/\1/p' rust-toolchain.toml)
   set -- .github/docker/rust-clippy.bash "${XDG_CACHE_HOME:-$HOME/.cache}/gandr/rust-clippy.git" "$channel" "$@"
 fi
-.config/mise/gated "$@" || exit
-allowed=$(printf '%s' "$DYLINT_TOML" | yq -p toml -o json '.["quenchant-dylints"].embedded_source.allowed')
-held=$(find target/embedded-sources -name '*.jsonl' -exec cat {} + | jq -sc '[.[] | select(.text | rtrimstr("\n") | contains("\n")) | .file] | unique')
-stale=$(cargo metadata --no-deps --format-version 1 --locked | jq -r --argjson allowed "$allowed" --argjson held "$held" --arg root "$PWD/" '
-  .packages[]
-  | select(.name as $name | $allowed | index($name))
-  | (.manifest_path | ltrimstr($root) | rtrimstr("Cargo.toml")) as $directory
-  | select([$held[] | ltrimstr($root) | startswith($directory)] | any | not)
-  | .name')
-if [ -n "$stale" ]; then
-  echo "check:dylint: these packages hold no source of two or more lines, so delete each from embedded_source.allowed:" >&2
-  echo "$stale" >&2
-  exit 1
-fi
+.config/mise/gated "$@"
 '''
 
 # External workflow consumers use one full revision in Dylint metadata for

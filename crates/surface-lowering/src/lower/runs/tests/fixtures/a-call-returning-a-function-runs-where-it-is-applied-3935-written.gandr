@@ -1,0 +1,4 @@
+def plus(n : Integer) -> Integer -> Integer { thunk { fun (m : Integer) { m + n } } }
+def applied(n : Integer) -> Integer { let h = (run plus n) 1; h }
+def dependent(A : Type) -> A -> A { thunk { fun (x : A) { x } } }
+def picked(A : Type, x : A) -> A { (run dependent A) x }

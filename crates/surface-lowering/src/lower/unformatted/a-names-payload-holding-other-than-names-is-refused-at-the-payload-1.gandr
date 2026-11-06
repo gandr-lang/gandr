@@ -1,0 +1,2 @@
+def p : Integer ;
+@[ respects(*{p, 1}) ] def r = 1 ;

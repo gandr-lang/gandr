@@ -1,0 +1,7 @@
+def later(j : Stack(-F Unit, -F Integer)) -> -F Integer { j *{} }
+def apply(f : +U (Unit -> -F Integer)) -> -F Integer { f *{} }
+module Conts where {
+  type K = Stack(-F Unit, -F Integer);
+  def aliased(j : K) -> -F Integer { j *{} }
+}
+def qualified(j : Conts.K) -> -F Integer { j *{} }

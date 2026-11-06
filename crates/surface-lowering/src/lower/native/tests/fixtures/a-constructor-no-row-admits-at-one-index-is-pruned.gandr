@@ -1,0 +1,6 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+data Vec(a : Type) : Nat -> Type where {
+  | VNil : Vec(a, Zero)
+  | VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n))
+}
+def vhead(n : Nat, v : Vec(Integer, Succ(n))) -> -F Integer { match v { | VCons(m, h, t) => h } }

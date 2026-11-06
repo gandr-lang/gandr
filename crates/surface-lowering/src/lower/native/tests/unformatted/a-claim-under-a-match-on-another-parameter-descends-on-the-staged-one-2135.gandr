@@ -1,0 +1,2 @@
+{NAT}def rec paired(xs : Nat, ys : Nat) -> -F Nat {{ match xs {{ | Zero => return Zero | Succ(p) => match ys {{ | Zero => paired[<] p ys | Succ(q) => paired[<] p q }} }} }}
+def rec walked(xs : Nat, ys : Nat) -> -F Nat {{ match xs {{ | Zero => return ys | Succ(p) => match p {{ | Zero => walked[<] p ys | Succ(r) => match ys {{ | Zero => return Zero | Succ(q) => walked[<] r q }} }} }} }}

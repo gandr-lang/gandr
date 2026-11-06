@@ -1,0 +1,8 @@
+def unique() -> -F Unit {
+  var[1] c = 0;
+  access c as v { resume(v, v + 1) }
+}
+def two() -> -F Unit {
+  var[2] c = 0;
+  pure *{}
+}

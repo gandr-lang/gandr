@@ -1,0 +1,2 @@
+type D = -F Integer;
+def bad(x : D) -> -F Integer { return 1 }

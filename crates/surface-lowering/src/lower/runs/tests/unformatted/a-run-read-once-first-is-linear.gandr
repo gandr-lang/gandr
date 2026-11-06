@@ -1,0 +1,12 @@
+{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}
+def field(n : Nat) -> -F Nat {{ let m = twice n ; Succ m }}
+def chained(n : Nat) -> -F Nat {{ let a = twice n ; let b = twice a ; become twice b }}
+def later(n : Nat) -> -F Nat {{ let c = twice n ; second c (twice n) }}
+def doubled(n : Nat) -> -F Nat {{ let d = twice n ; second d d }}
+def after(n : Nat) -> -F Nat {{ let e = twice n ; second (twice n) e }}
+def whole(n : Nat) -> -F Nat {{ let f = twice n ; f }}
+def reread(n : Nat) -> -F Nat {{ let g = twice n ; let h = twice g ; second g h }}
+def paired(n : Nat) -> -F Nat {{ let p = twice n ; let q = twice Zero ; second p q }}
+def swapped(n : Nat) -> -F Nat {{ let r = twice n ; let s = twice Zero ; second s r }}
+@[ explicit_runs ]
+def asked(n : Nat) -> -F Nat {{ let k = twice n ; Succ k }}

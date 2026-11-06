@@ -100,16 +100,11 @@ fn resolved(
 
 /// A family, and a recursive function matching on it: each arm sees the
 /// parameters, the recursion and its own pattern's binder alone.
-const WRITTEN: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                       plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    | Zero => n\n    \
-                       | Succ(p) => Succ (plus[<] n p)\n  }\n}\ndef k : +U (Nat -> -F Nat) ;\ndef k \
-                       = thunk { fun (x) { return Succ x } } ;\n";
+const WRITTEN: &str = include_str!("scopes/unformatted/written.gandr");
 
 /// [`WRITTEN`] with the recursive call not yet written in full: `pl` resolves
 /// to nothing, and the lowering refuses `plus`.
-const TYPING: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                      plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    | Zero => n\n    \
-                      | Succ(p) => Succ pl\n  }\n}\n";
+const TYPING: &str = include_str!("scopes/fixtures/typing.gandr");
 
 #[test]
 fn the_binders_in_scope_are_the_innermost_reading_s_chain()
@@ -121,7 +116,9 @@ fn the_binders_in_scope_are_the_innermost_reading_s_chain()
         "an arm's body: its binder, then the function's"
     );
     assert_eq!(
-        at("n\n    |"),
+        at(include_str!(
+            "scopes/unformatted/the-binders-in-scope-are-the-innermost-reading-s-chain.gandr"
+        )),
         ["m", "plus", "n"],
         "a sibling arm: the function's, never `p`"
     );
@@ -196,13 +193,7 @@ fn a_refused_declaration_keeps_the_names_it_resolved_836()
 
 /// A rose tree's node and forest, one block, measured by two functions that
 /// call each other through their descent marker.
-const MUTUAL: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\nrec {\n  \
-                      data Rose : Type where { | Node : (kids : Forest) --> Rose }\n  data Forest : \
-                      Type where { | Empty : Forest | More : (head : Rose, tail : Forest) --> Forest \
-                      }\n  def rec size(t : Rose) -> -F Nat { match t { | Node(kids) => { let s \
-                      = sizes[<] kids; return Succ s } } }\n  def rec sizes(ts : Forest) \
-                      -> -F Nat { match ts { | Empty => return Zero | More(t, rest) => { let a = \
-                      size[<] t; sizes[<] rest } } }\n}\n";
+const MUTUAL: &str = include_str!("scopes/fixtures/mutual.gandr");
 
 /// #827: a call head written with its descent marker keeps what its name
 /// names at the name alone, the marker aside: the function's own fixpoint
@@ -249,7 +240,12 @@ fn a_marked_call_head_keeps_its_name_s_referent_827()
 #[test]
 fn an_unclosed_call_keeps_its_head_s_referent_843()
 {
-    let typing = alloc::format!("{WRITTEN}def f : +U (-F Nat) ;\ndef f = thunk {{ plus(Zero, ");
+    let typing = alloc::format!(
+        include_str!(
+            "scopes/unformatted/an-unclosed-call-keeps-its-head-s-referent-843-typing.gandr"
+        ),
+        WRITTEN = WRITTEN
+    );
     assert_eq!(
         resolved(
             SourceText::from(typing.as_str()),
@@ -267,22 +263,25 @@ fn an_unclosed_call_keeps_its_head_s_referent_843()
 #[test]
 fn a_use_inside_a_refused_form_keeps_its_referent_1265()
 {
-    let parameter = "def dropped(seat : Integer) -> -F Unit {\n  drop(seat)\n}\n";
+    let parameter = include_str!(
+        "scopes/fixtures/a-use-inside-a-refused-form-keeps-its-referent-1265-parameter.gandr"
+    );
     assert_eq!(
         resolved(SourceText::from(parameter), SourceText::from("drop(")),
         [(String::from("seat"), String::from("seat"))],
         "the parameter used inside the refused `drop` names its binder"
     );
-    let endpoint = "def forked() -> -F Unit {\n  let desk = fork (seat : end) { close(seat) };\n  \
-                    dup(desk)\n}\n";
+    let endpoint = include_str!(
+        "scopes/fixtures/a-use-inside-a-refused-form-keeps-its-referent-1265-endpoint.gandr"
+    );
     assert_eq!(
         resolved(SourceText::from(endpoint), SourceText::from("dup(")),
         [(String::from("desk"), String::from("desk"))],
         "the endpoint a `fork` binds, used inside the refused `dup`, names its binder"
     );
-    let joined = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef joined(n : \
-                  Nat) -> -F Nat {\n  let m = match n -> -F Nat {\n    | Zero => return n\n    \
-                  | Succ(p) => pure p\n  } ;\n  return m\n}\n";
+    let joined = include_str!(
+        "scopes/fixtures/a-use-inside-a-refused-form-keeps-its-referent-1265-joined.gandr"
+    );
     assert!(
         resolved(SourceText::from(joined), SourceText::from("match n"))
             .contains(&(String::from("n"), String::from("n"))),

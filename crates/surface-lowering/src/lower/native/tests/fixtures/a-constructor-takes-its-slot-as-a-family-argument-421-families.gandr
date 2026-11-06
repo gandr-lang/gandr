@@ -1,0 +1,7 @@
+data SumOb(a : Type, b : Type) : Type where {
+  | Inl : (x : a) --> SumOb(a, b)
+  | Inr : (y : b) --> SumOb(a, b)
+}
+data Tagged(l : Type, r : Type, s : SumOb(l, r)) : Type where {
+  | Tag : (n : Integer) --> Tagged(l, r, s)
+}

@@ -1,0 +1,9 @@
+data Bit : Type where {
+  | Off : Bit
+  | On : Bit
+  oper not : (a : Bit) --> Bit;
+  oper and : (a : Bit, b : Bit) --> Bit;
+  rule : not Off ==> On;
+  rule : not On ==> Off;
+  rule : and x x ==> x;
+}

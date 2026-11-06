@@ -1,0 +1,14 @@
+theory Same where {
+  sort Carrier : Type;
+  oper same : (a : Carrier, b : Carrier) --> Bool;
+  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);
+}
+data One : Type where {
+  | Only : One
+}
+module Converts : Model(Same) with sort Carrier = One where {
+  def same(a : One, b : One) -> Bool { true }
+}
+module Parts : Model(Same) with sort Carrier = One where {
+  def same(a : One, b : One) -> Bool { false }
+}

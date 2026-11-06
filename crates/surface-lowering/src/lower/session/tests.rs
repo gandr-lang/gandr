@@ -38,29 +38,7 @@ use crate::resolve::SurfaceName;
 /// The seat exchange over strings: the seat's end forked to the child, the
 /// operator's held by the rest of the block, with an intuitionistic parameter
 /// and every receipt's binder standing between an endpoint and its uses.
-const EXCHANGE: &str = "def exchange(n : Integer) -> -F Unit {\n\
-     let peer = fork (c : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !String >> end }) {\n\
-       let task = recv(c);\n\
-       select(c, report);\n\
-       send(c, \"progress\");\n\
-       offer(c) {\n\
-         | next => { select(c, handoff); send(c, \"notes\"); close(c) }\n\
-         | retire => close(c)\n\
-       }\n\
-     };\n\
-     send(peer, \"task\");\n\
-     offer(peer) {\n\
-       | report => {\n\
-         let first = recv(peer);\n\
-         select(peer, next);\n\
-         offer(peer) {\n\
-           | report => { let second = recv(peer); select(peer, retire); close(peer) }\n\
-           | handoff => { let notes = recv(peer); close(peer) }\n\
-         }\n\
-       }\n\
-       | handoff => { let notes = recv(peer); close(peer) }\n\
-     }\n\
-   }\n";
+const EXCHANGE: &str = include_str!("tests/unformatted/exchange.gandr");
 
 /// One move along a protocol: past a send or a receive, or into the branch a
 /// label names.
@@ -265,12 +243,9 @@ fn actions(
 #[test]
 fn a_session_type_lowers_to_its_protocol()
 {
-    let source = SourceText::from(
-        "def seat : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !Integer >> end } ;\n\
-         def ticker : rec t => !Integer >> (t) ;\n\
-         def choose : +{ ok : !Integer >> end } ;\n\
-         def menu : &{ get : !Integer >> end, put : ?String >> end } ;\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-session-type-lowers-to-its-protocol.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     let seat = declared_of(&module, SurfaceName::from("seat"));
@@ -428,14 +403,9 @@ fn each_state_answers_where_it_is_written()
 #[test]
 fn a_malformed_protocol_is_refused_where_it_is_written()
 {
-    let source = SourceText::from(
-        "def spin : rec t => t ;\n\
-         def nested : !Integer >> rec t => rec u => !Integer >> t ;\n\
-         def typed : !Integer >> Integer ;\n\
-         def free : !Integer >> t ;\n\
-         def positional : !Integer >> +{ end, end } ;\n\
-         def twice : !Integer >> &{ go : end, go : end } ;\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/unformatted/a-malformed-protocol-is-refused-where-it-is-written.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     let mu = FormName::from(NamedKind("mu_session_type"));
@@ -647,14 +617,9 @@ fn each_endpoint_answers_at_its_action()
 #[test]
 fn an_action_on_no_endpoint_is_refused()
 {
-    let source = SourceText::from(
-        "def other = 1 ;\n\
-         def parameter(n : Integer) -> -F Unit { close(n) }\n\
-         def literal(n : Integer) -> -F Unit { send(3, n) }\n\
-         def declared(n : Integer) -> -F Unit { select(other, go) }\n\
-         def unbound(n : Integer) -> -F Unit { close(missing) }\n\
-         def misspelt() -> -F Unit { let desk = fokr (seat : end) { close(seat) }; close(desk) }\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/an-action-on-no-endpoint-is-refused.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, written, subject, form) in [
@@ -714,14 +679,9 @@ fn an_action_on_no_endpoint_is_refused()
 #[test]
 fn a_parameter_at_a_session_type_is_placed_1862()
 {
-    let source = SourceText::from(
-        "def finish(seat : end) -> -F Unit { close(seat) }\n\
-         def answer(n : Integer, seat : ?Integer >> end) -> -F Integer {\n\
-           let m = recv(seat) ;\n\
-           close(seat) ;\n\
-           pure m\n\
-         }\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-parameter-at-a-session-type-is-placed-1862.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, expected) in [
@@ -745,18 +705,9 @@ fn a_parameter_at_a_session_type_is_placed_1862()
 #[test]
 fn a_parameter_at_a_named_session_type_is_placed()
 {
-    let source = SourceText::from(
-        "module Base where { type Ask = ?Integer >> end ; }\n\
-         module Gate :> *{ type T } where { type T = end ; }\n\
-         type Local = !Integer >> end ;\n\
-         type Again = Local ;\n\
-         type Count = Integer ;\n\
-         def asked(seat : Base.Ask) -> -F Unit { let n = recv(seat) ; close(seat) }\n\
-         def sent(seat : Local) -> -F Unit { send(seat, 1) ; close(seat) }\n\
-         def again(seat : Again) -> -F Unit { send(seat, 2) ; close(seat) }\n\
-         def counted(n : Count) -> -F Integer { pure n }\n\
-         def sealed(seat : Gate.T) -> -F Unit { close(seat) }\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-parameter-at-a-named-session-type-is-placed.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, expected) in [
@@ -787,18 +738,9 @@ fn a_parameter_at_a_named_session_type_is_placed()
 #[test]
 fn an_offer_arm_is_one_label()
 {
-    let source = SourceText::from(
-        "def twice(n : Integer) -> -F Unit {\n\
-           let d = fork (c : &{ go : end }) { offer(c) { | go => close(c) | go => close(c) } };\n\
-           select(d, go);\n\
-           close(d)\n\
-         }\n\
-         def patterned(n : Integer) -> -F Unit {\n\
-           let d = fork (c : &{ go : end }) { offer(c) { | 7 => close(c) } };\n\
-           select(d, go);\n\
-           close(d)\n\
-         }\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/an-offer-arm-is-one-label.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert!(
@@ -825,13 +767,9 @@ fn an_offer_arm_is_one_label()
 #[test]
 fn sharing_is_reserved_by_name()
 {
-    let source = SourceText::from(
-        "def shared(n : Integer) -> -F Unit { fork !(c : end) { close(c) } ; return *{} }\n\
-         def bound(n : Integer) -> -F Unit { let d = fork !(c : end) { close(c) } ; return *{} }\n\
-         def acquired(n : Integer) -> -F Unit { let c = acquire(n) ; return *{} }\n\
-         def released(n : Integer) -> -F Unit { let c = release(n) ; return *{} }\n\
-         def duplicated(n : Integer) -> -F Unit { let d = fork (c : end) { close(c) } ; dup(d) ; close(d) }\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/unformatted/sharing-is-reserved-by-name.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, context, written, feature) in [
@@ -894,17 +832,9 @@ fn sharing_is_reserved_by_name()
 #[test]
 fn a_receive_or_a_fork_no_let_binds_is_refused()
 {
-    let source = SourceText::from(
-        "def received() -> -F Unit {\n\
-           let d = fork (c : !Integer >> end) { send(c, 1); close(c) };\n\
-           recv(d);\n\
-           close(d)\n\
-         }\n\
-         def forked() -> -F Unit {\n\
-           fork (c : end) { close(c) };\n\
-           return *{}\n\
-         }\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-receive-or-a-fork-no-let-binds-is-refused.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, written, kind) in [
@@ -933,18 +863,9 @@ fn a_receive_or_a_fork_no_let_binds_is_refused()
 #[test]
 fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 {
-    let source = SourceText::from(
-        "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-         def joined(n : Nat) -> -F Integer {\n\
-           var c = 100;\n\
-           let m = match n { | Zero => return 7 | Succ(p) => { let d = fork (e : end) { close(e) }; close(d) } } ;\n\
-           pure c\n\
-         }\n\
-         def joined_by_hand(n : Nat) -> -F Integer {\n\
-           var c = 100;\n\
-           match n { | Zero => return 7 | Succ(p) => { let d = fork (e : end) { close(e) }; let m = close(d) ; pure c } }\n\
-         }\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-fork-in-a-joined-arm-leaves-the-rest-its-own-slots-1500.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert_accepted(&judged(&module, &mut arena));
@@ -961,28 +882,9 @@ fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 #[test]
 fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
 {
-    let source = SourceText::from(
-        "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-         def forked(n : Nat) -> -F Unit {\n\
-           let d = fork (c : end) { close(c) };\n\
-           close(d) ;\n\
-           let m = match n { | Zero => return *{} | Succ(p) => pure *{} } ;\n\
-           return m\n\
-         }\n\
-         def forked_by_hand(n : Nat) -> -F Unit {\n\
-           let d = fork (c : end) { close(c) };\n\
-           close(d) ;\n\
-           match n { | Zero => return *{} | Succ(p) => return *{} }\n\
-         }\n\
-         def offered(n : Nat) -> -F Unit {\n\
-           let d = fork (c : +{ go : end }) { select(c, go) ; close(c) };\n\
-           offer(d) { | go => { close(d) ; let m = match n { | Zero => return *{} | Succ(p) => pure *{} } ; return m } }\n\
-         }\n\
-         def offered_by_hand(n : Nat) -> -F Unit {\n\
-           let d = fork (c : +{ go : end }) { select(c, go) ; close(c) };\n\
-           offer(d) { | go => { close(d) ; match n { | Zero => return *{} | Succ(p) => return *{} } } }\n\
-         }\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/an-exit-commutes-through-a-fork-s-parent-and-an-offer-s-arms.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (written, by_hand) in [("forked", "forked_by_hand"), ("offered", "offered_by_hand")] {
@@ -997,16 +899,9 @@ fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
 #[test]
 fn a_drop_is_the_end_action_1054()
 {
-    let source = SourceText::from(
-        "def dropped() -> -F Unit {\n\
-           let desk = fork (seat : end) { drop(seat) };\n\
-           drop(desk)\n\
-         }\n\
-         def closed() -> -F Unit {\n\
-           let desk = fork (seat : end) { close(seat) };\n\
-           close(desk)\n\
-         }\n",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-drop-is-the-end-action-1054.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert_same_body(

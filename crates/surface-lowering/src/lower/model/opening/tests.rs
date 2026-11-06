@@ -8,13 +8,7 @@ use crate::module::DeclarationOutcome;
 use crate::resolve::SurfaceName;
 
 /// The theory both tests open a model of.
-const SEEDED: &str = "\
-theory Seeded where {
-  sort T : Type;
-  oper read : (t : T) --> Integer;
-  oper seed : T;
-}
-";
+const SEEDED: &str = include_str!("tests/unformatted/seeded.gandr");
 
 #[test]
 fn a_model_opens_as_a_bind_over_the_rest_of_its_block_4788()

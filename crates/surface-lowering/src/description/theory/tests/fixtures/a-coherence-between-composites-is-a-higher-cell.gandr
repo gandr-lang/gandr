@@ -1,0 +1,7 @@
+theory C where {
+  sort Ob : Type;
+  oper id : (a : Ob) --> Ob;
+  rule unitL : id a ==> a;
+  rule triangle : (Path.step (unitL a) (unitL a)) ==> unitL a;
+  rule face : (f) ==> (z : Ob) { node : id(f) --> (z); };
+}

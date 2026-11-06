@@ -1,0 +1,11 @@
+{MAYBE}data List(a : Type) : Type where {{ | Nil : List(a) | Cons : (head : a, tail : List(a)) --> List(a) }}
+def pick(a : Type, m : Maybe(a)) -> -F Integer {{ return 0 }}
+def dependent : () -> Integer ;
+def dependent = thunk {{ become pick (Integer) None }} ;
+def filled : () -> Integer ;
+def filled = thunk {{ become pick (Integer) (Some 3) }} ;
+def rec size(a : Type, xs : List(a)) -> -F Integer {{
+match xs {{ | Nil => 0 | Cons(_, rest) => {{ let n = size[<] a rest; n + 1 }} }}
+}}
+def one : () -> Integer ;
+def one = thunk {{ become size (Integer) (Cons 1 Nil) }} ;

@@ -1,0 +1,2 @@
+def four : Bridge[.A = Integer](4, 4);
+def four = Path.here 4;

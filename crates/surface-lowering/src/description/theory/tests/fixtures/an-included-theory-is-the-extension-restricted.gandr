@@ -1,0 +1,18 @@
+theory Mag where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+  rule assoc : mul (mul x y) z ==> mul x (mul y z);
+}
+theory Pointed where {
+  include Mag;
+  oper one : () --> M;
+  rule unitL : mul (one ()) x ==> x;
+}
+theory Comm where {
+  include Mag;
+  oper zero : () --> M;
+}
+theory Both where {
+  include Pointed;
+  include Comm;
+}

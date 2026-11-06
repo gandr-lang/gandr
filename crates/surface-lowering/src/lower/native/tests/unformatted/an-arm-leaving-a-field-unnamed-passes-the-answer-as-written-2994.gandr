@@ -1,0 +1,2 @@
+{NAT}data Pair : Type where {{ | Mk : (a : Nat, b : Nat) --> Pair }}
+def half(p : Pair) -> -F Path[.A = Pair](p, p) {{ match p {{ | Mk(a, _) => match a {{ | Zero => return Path.here p | Succ(c) => return Path.here p }} }} }}

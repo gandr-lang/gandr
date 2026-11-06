@@ -1,0 +1,4 @@
+//! A small source.
+
+/// The answer.
+pub def answer = 42;

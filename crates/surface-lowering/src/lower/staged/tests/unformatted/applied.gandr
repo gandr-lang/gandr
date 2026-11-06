@@ -1,0 +1,9 @@
+def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> -F Nat {
+  f x
+}
+def rec helped(n : Nat) -> -F Nat {
+  match n {
+    | Zero => Zero
+    | Succ(p) => Succ (applyAt helped[<] p)
+  }
+}

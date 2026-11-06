@@ -1,0 +1,20 @@
+theory Released where {
+  @[ inert ]
+  oper version : String;
+}
+theory Named where {
+  include Released;
+  @[ inert ]
+  oper name : String;
+  oper greeting : String;
+}
+module Family : Model(Released) where {
+  def version = "0.1";
+}
+module Hello : Model(Named) where {
+  def version = Family.version;
+  def name = "hello";
+  def greeting = name;
+}
+def named = Hello.name;
+def versionOf(r : Model(Released)) -> String { r.version }

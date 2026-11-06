@@ -1,0 +1,8 @@
+data Maybe(a : Type) : Type where { | Nothing : Maybe(a) | Just : (x : a) --> Maybe(a) }
+module M where {
+  type F(a : Type) = Maybe(a);
+  data Box(a : Type) : Type where { | Hold : (x : a) --> Box(a) }
+}
+def keep(x : M.F(Integer)) -> Maybe(Integer) { x }
+def boxed(x : M.Box(Integer)) -> M.Box(Integer) { x }
+def other(x : M.F(Integer)) -> Maybe(String) { x }

@@ -1,0 +1,5 @@
+import "./base.gandr";
+/// The left two.
+@[ checks ]
+def two : Integer;
+def two = 2;

@@ -1,0 +1,2 @@
+{COLOR}{MAYBE}def rank(c : Color) -> -F Integer {{ match c {{ | Red => return 0 | ? => return 1 | Blue => return 2 }} }}
+def inside(m : Maybe(Integer)) -> -F Integer {{ match m {{ | Some(?) => return 100 | None => return 0 }} }}

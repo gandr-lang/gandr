@@ -1,0 +1,6 @@
+{NAT}{APPLIED}def appliedAt[j : Size, k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> -F Nat {{
+  applyAt[.i = k] f x
+}}
+def stray[j : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> -F Nat {{
+  applyAt[.i = m] f x
+}}

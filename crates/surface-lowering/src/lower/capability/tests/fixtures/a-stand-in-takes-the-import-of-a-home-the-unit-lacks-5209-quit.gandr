@@ -1,0 +1,2 @@
+def quit(p : Cap { exit }) -> -F [std.process.Exit.Eff] Unit { p.exit 1 }
+import std.process;

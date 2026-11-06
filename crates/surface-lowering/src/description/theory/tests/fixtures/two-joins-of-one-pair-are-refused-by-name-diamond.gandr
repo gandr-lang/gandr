@@ -1,0 +1,15 @@
+theory Base where {
+  sort M : Type;
+}
+theory Left where {
+  include Base;
+  oper l : () --> M;
+}
+theory Right where {
+  include Base;
+  oper r : () --> M;
+}
+theory Both where {
+  include Left;
+  include Right;
+}

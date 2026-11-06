@@ -1,0 +1,6 @@
+data Inner : Type where { | No : Inner | Yes : (n : Integer) --> Inner }
+data Outer : Type where { | Nothing : Outer | Just : (i : Inner) --> Outer }
+def depth(m : Outer) -> -F Integer {
+  match m { | Just(Yes(n)) => return n | Just(No) => return 0 | other => return 1 }
+}
+def answer = (Just (Yes 41 : Inner) : Outer);

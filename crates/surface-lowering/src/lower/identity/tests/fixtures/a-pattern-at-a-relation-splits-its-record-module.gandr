@@ -1,0 +1,12 @@
+def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) {
+  match i { | *{t, k, s, r} => return *{t, *{*{k, s}, *{k, r}}} }
+}
+def forwardOf(e : Bool ≃ Integer) -> -F +U (Bool -> -F Integer) {
+  match e { | *{t, *{g, s}, *{h, r}} => return t }
+}
+def leftOf(e : Bool <~> Integer) -> -F +U (Integer -> -F Bool) {
+  match e { | *{.linv = *{.from = g, .sect = s}} => return g }
+}
+def backOf(i : Iso(Bool, Integer)) -> -F +U (Integer -> -F Bool) {
+  match i { | *{.from = k} => return k }
+}

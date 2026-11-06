@@ -1,0 +1,4 @@
+data Point : Type where { | Point : (x : Integer, y : Integer) --> Point }
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+data Shape : Type where { | Shape : (f : (Integer) -> Integer) --> Shape }
+data Box(a : Type) : Type where { | Box : (x : a) --> Box(a) }

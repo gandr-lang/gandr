@@ -643,9 +643,9 @@ mod tests
     #[test]
     fn both_spellings_read_to_one_text()
     {
-        let (lines, _) = read(SourceText::from(
-            "/// Squares\n/// its argument.\ndef square = 1 ;",
-        ));
+        let (lines, _) = read(SourceText::from(include_str!(
+            "doc/fixtures/both-spellings-read-to-one-text-1.gandr"
+        )));
         let (entry, _) = read(SourceText::from(
             "@[ doc(\"Squares\\nits argument.\") ] def square = 1 ;",
         ));
@@ -655,9 +655,9 @@ mod tests
             entry.text(),
             "a `///` run and the equivalent entry read to one text"
         );
-        let (inner, inner_links) = read(SourceText::from(
-            "//! Squares\n//!its [argument].\ndef square = 1 ;",
-        ));
+        let (inner, inner_links) = read(SourceText::from(include_str!(
+            "doc/fixtures/both-spellings-read-to-one-text-2.gandr"
+        )));
         assert_eq!(
             inner.text().as_ref(),
             "Squares\nits [argument].",
@@ -668,15 +668,17 @@ mod tests
             ["argument=argument"],
             "a link in a `//!` line spans its name"
         );
-        let (joined, _) = read(SourceText::from(
-            "/// First.\n@[ doc(\"Second.\") ] def x = 1 ;",
-        ));
+        let (joined, _) = read(SourceText::from(include_str!(
+            "doc/fixtures/both-spellings-read-to-one-text-3.gandr"
+        )));
         assert_eq!(
             joined.text().as_ref(),
             "First.\nSecond.",
             "pieces join in source order, one line break between them"
         );
-        let (unspaced, _) = read(SourceText::from("///Tight.\ndef x = 1 ;"));
+        let (unspaced, _) = read(SourceText::from(include_str!(
+            "doc/fixtures/both-spellings-read-to-one-text-4.gandr"
+        )));
         assert_eq!(
             unspaced.text().as_ref(),
             "Tight.",
@@ -687,9 +689,9 @@ mod tests
     #[test]
     fn links_are_found_where_they_are_written()
     {
-        let (_, links) = read(SourceText::from(
-            "/// See [first] and [`second`], not [text](url), [ref][], `[code]` or [1].\ndef x = 1 ;",
-        ));
+        let (_, links) = read(SourceText::from(include_str!(
+            "doc/fixtures/links-are-found-where-they-are-written-1.gandr"
+        )));
         assert_eq!(links, ["first=first", "second=second"]);
         let (_, entry) = read(SourceText::from(
             "@[ doc(\"Uses [M.inner].\") ] def x = 1 ;",
@@ -699,9 +701,9 @@ mod tests
             ["M.inner=M.inner"],
             "a link inside an entry's string spans its name in the source"
         );
-        let (_, mixed) = read(SourceText::from(
-            "/// Read [snake_case] beside [not-a-name].\ndef x = 1 ;",
-        ));
+        let (_, mixed) = read(SourceText::from(include_str!(
+            "doc/fixtures/links-are-found-where-they-are-written-2.gandr"
+        )));
         assert_eq!(
             mixed,
             ["snake_case=snake_case"],
@@ -712,17 +714,17 @@ mod tests
     #[test]
     fn a_footer_line_answers_its_label()
     {
-        let (_, footed) = read(SourceText::from(
-            "/// See [guide], [`spec`] and [other].\n///\n/// [guide]: https://example.org\n/// [`spec`]: ../spec.md\ndef x = 1 ;",
-        ));
+        let (_, footed) = read(SourceText::from(include_str!(
+            "doc/fixtures/a-footer-line-answers-its-label-1.gandr"
+        )));
         assert_eq!(
             footed,
             ["other=other"],
             "a label the footer defines needs no declaration, and another link still does"
         );
-        let (_, early) = read(SourceText::from(
-            "/// [guide]: https://example.org\n/// See [guide].\ndef x = 1 ;",
-        ));
+        let (_, early) = read(SourceText::from(include_str!(
+            "doc/fixtures/a-footer-line-answers-its-label-2.gandr"
+        )));
         assert_eq!(
             early,
             ["guide=guide"],

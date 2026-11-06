@@ -1,0 +1,15 @@
+theory CircleShape where {
+  sort Pt : Type;
+  oper base : Pt;
+  oper turn : (x : Pt) --> Pt;
+  oper unturn : (x : Pt) --> Pt;
+  rule turnUnturn : turn (unturn x) ==> x;
+  rule unturnTurn : unturn (turn x) ==> x;
+}
+theory CatShape where {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  oper id : (a : Ob) --> Hom(a, a);
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  rule unitL : comp (id a) f ==> f;
+}

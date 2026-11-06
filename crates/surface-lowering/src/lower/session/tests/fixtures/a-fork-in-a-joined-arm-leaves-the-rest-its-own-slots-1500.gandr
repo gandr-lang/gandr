@@ -1,0 +1,16 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+def joined(n : Nat) -> -F Integer {
+  var c = 100;
+  let m = match n {
+    | Zero => return 7
+    | Succ(p) => { let d = fork (e : end) { close(e) }; close(d) }
+  };
+  pure c
+}
+def joined_by_hand(n : Nat) -> -F Integer {
+  var c = 100;
+  match n {
+    | Zero => return 7
+    | Succ(p) => { let d = fork (e : end) { close(e) }; let m = close(d); pure c }
+  }
+}

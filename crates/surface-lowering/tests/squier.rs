@@ -1066,13 +1066,7 @@ pub fn corpus() -> Vec<PathBuf>
 }
 
 /// The circle presented by its two cancellations.
-const CIRCLE: &str = r#"data Circle : Type where {
-    | Base : Circle
-    | Loop : (c : Circle) --> Circle
-    | Unloop : (c : Circle) --> Circle
-    rule : Loop (Unloop x) ==> x;
-    rule : Unloop (Loop x) ==> x;
-}"#;
+const CIRCLE: &str = include_str!("squier/fixtures/circle.gandr");
 
 #[test]
 fn the_circles_bar_complex_collapses_onto_its_two_rules_and_two_certified_pairs()

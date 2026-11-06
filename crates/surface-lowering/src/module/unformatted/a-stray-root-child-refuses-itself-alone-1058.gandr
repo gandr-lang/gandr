@@ -1,0 +1,6 @@
+def a = 1 ;
+§
+release x ;
+def b = a ;
+1 + 2 ;
+def c = b ;

@@ -1,0 +1,4 @@
+def pick(b : Bool) -> -F Integer { if b { return 1 } else { return 2 } }
+def below(n : Integer) -> -F Integer { if n < 3 { 1 } else { 2 } }
+def answered(b : Bool) -> -F Integer { if b -> -F Integer { 1 } else { 2 } }
+def literal() -> -F Integer { if true { return 1 } else { return 2 } }

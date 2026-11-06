@@ -1,0 +1,26 @@
+def one() -> -F Integer { 1 }
+def became() -> -F Integer {
+  handle c : std.process.Exit.Eff {
+    become one ()
+  } with { | pure(x) => pure x | oper exit(code, k) => k *{} }
+}
+def broke() -> -F Integer {
+  loop {
+    handle c : std.process.Exit.Eff {
+      break(1)
+    } with { | pure(x) => pure x | oper exit(code, k) => k *{} }
+  }
+}
+def again() -> -F Integer {
+  loop {
+    handle c : std.process.Exit.Eff {
+      continue
+    } with { | pure(x) => pure x | oper exit(code, k) => k *{} }
+  }
+}
+def inner() -> -F Integer {
+  handle c : std.process.Exit.Eff { let v = loop { break(5) }; pure v } with {
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
+  }
+}

@@ -1,0 +1,5 @@
+def idAt(a : Type, y : a) -> -F a { return y }
+def forced : () -> Integer;
+def forced = thunk { become idAt _ 3 };
+def written : () -> Integer;
+def written = thunk { become idAt (Integer) 3 };

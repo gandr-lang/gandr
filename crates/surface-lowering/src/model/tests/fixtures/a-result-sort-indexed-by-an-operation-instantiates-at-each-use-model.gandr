@@ -1,0 +1,7 @@
+theory Stepped where {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  oper next : (a : Ob) --> Ob;
+  oper step : (a : Ob) --> Hom(a, next(a));
+  rule again : step a ==> step a;
+}

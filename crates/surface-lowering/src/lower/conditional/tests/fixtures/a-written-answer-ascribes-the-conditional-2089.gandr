@@ -1,0 +1,5 @@
+def bound() -> -F Integer {
+  let m = if true -> -F Integer { pure 1 } else { pure 2 };
+  pure (m + 1)
+}
+def stated(b : Bool) -> -F Integer { if b { 1 } else { 2 } }

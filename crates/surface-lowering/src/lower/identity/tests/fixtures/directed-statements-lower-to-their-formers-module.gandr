@@ -1,0 +1,19 @@
+module Schema where {
+  type Old = *{String, Integer};
+  type New = *{Integer, String};
+  type ReadNew = +U (New -> -F Integer);
+  type ReadOld = +U (Old -> -F Integer);
+  def toNew(old : Old) -> -F New {
+    match old { | *{name, age} => return *{age, name} }
+  }
+  def same(n : Integer) -> -F Integer {
+    return n
+  }
+  def upgrade : Flow[.A = Type](Old, New);
+  def upgrade = Flow.into toNew;
+  def kept : Flow[.A = Type](Integer, Integer);
+  def kept = Flow.into same;
+  def reader : Flow[.A = Type](ReadNew, ReadOld);
+  def reader = Flow.arrow upgrade kept;
+  def both = Flow.into toNew same;
+}

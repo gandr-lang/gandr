@@ -1,0 +1,4 @@
+module Pinned(S : *{ type T, z : T }) :> *{ type P, q : P } where {
+  type P = Path[.A = S.T](S.z, S.z);
+  def q = Path.here S.z;
+}

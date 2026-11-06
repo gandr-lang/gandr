@@ -1,0 +1,2 @@
+def absent : +{ok : Integer};
+def absent = +{.gone = 1};

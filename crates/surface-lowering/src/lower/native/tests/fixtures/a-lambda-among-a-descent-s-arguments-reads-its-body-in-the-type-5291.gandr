@@ -1,0 +1,10 @@
+data Codes(d : Type) : Type[+, 1] where {
+  | Stop : (e : d) --> Codes(d)
+  | Ask : (a : Type, f : (a -> d) -> Codes(d)) --> Codes(d)
+}
+def rec fields(d : Type, c : Codes(d), x : Type, t : x -> d) -> Type {
+  match c {
+    | Stop(e) => return Unit
+    | Ask(a, f) => return type(*{h : a -> x, r : fields[<](d, f(fun (z) { t (h z) }), x, t)})
+  }
+}

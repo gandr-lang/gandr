@@ -1,0 +1,6 @@
+module Turned = Reassociating(OnePoint);
+def written : (x : Unit, y : Unit, z : Unit) -> Path[.A = Unit](
+  OnePoint.mul x (OnePoint.mul y z),
+  OnePoint.mul (OnePoint.mul x y) z
+);
+def written = Turned.reassoc;

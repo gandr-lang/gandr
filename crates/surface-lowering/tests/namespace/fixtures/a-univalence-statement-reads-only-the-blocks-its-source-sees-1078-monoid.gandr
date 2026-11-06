@@ -1,0 +1,5 @@
+pub theory Monoid where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}

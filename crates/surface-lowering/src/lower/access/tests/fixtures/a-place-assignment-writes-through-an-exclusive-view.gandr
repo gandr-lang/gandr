@@ -1,0 +1,14 @@
+def pair : List(Integer);
+def pair = cons 1 (cons 2 nil);
+def written() -> -F Integer {
+  var n = 1;
+  n = n + 1;
+  n *= 3;
+  var xs = pair;
+  xs.#[0] += n;
+  return n
+}
+def ended() -> -F Unit {
+  var n = 1;
+  n -= 1;
+}

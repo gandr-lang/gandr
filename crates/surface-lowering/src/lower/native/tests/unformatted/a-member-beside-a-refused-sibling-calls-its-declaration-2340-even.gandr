@@ -1,0 +1,3 @@
+  def rec even(n : Nat) -> -F Integer {
+    match n { | Zero => return 1 | Succ(p) => odd[<] p }
+  }

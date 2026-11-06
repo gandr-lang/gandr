@@ -1,0 +1,2 @@
+def stated(n : Integer) -> &{get : -F Integer, put : -F String} { &{.put => return "s", .get => return n} }
+def positional(n : Integer) -> &{-F Integer, -F String} { &{.1 => return "s", .0 => return n} }

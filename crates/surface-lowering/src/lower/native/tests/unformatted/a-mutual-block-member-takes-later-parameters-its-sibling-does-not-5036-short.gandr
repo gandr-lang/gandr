@@ -1,0 +1,4 @@
+{NAT}rec {{
+  def rec count(n : Nat, k : Integer) -> -F Integer {{ match n {{ | Zero => return k | Succ(p) => tally[<] p }} }}
+  def rec tally(n : Nat) -> -F Integer {{ match n {{ | Zero => return 1 | Succ(p) => count[<] p }} }}
+}}

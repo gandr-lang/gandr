@@ -1,0 +1,4 @@
+data Box(a : Type) : Type where {
+  | Prims : (i : Integer, s : String, b : Boolean, u : Unit) --> Box(a)
+  | Nested : (inner : Pair(a, Pair(a, a))) --> Box(a)
+}

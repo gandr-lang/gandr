@@ -1,0 +1,10 @@
+data NatTwice : Type where {
+  | Zero : NatTwice
+  | Succ : (n : NatTwice) --> NatTwice
+  oper add : (m : NatTwice, n : NatTwice) --> NatTwice;
+  oper pick : (m : NatTwice, n : NatTwice) --> NatTwice;
+  rule : add Zero n ==> n;
+  rule : add (Succ m) n ==> Succ (add m n);
+  rule : pick m n ==> n;
+  rule : pick Zero n ==> add n n;
+}

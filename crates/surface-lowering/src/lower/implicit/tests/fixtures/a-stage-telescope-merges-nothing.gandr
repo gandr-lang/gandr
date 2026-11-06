@@ -1,0 +1,5 @@
+def staged[i : Size](x : Integer) -> -F Integer { return x }
+def stagedRun : () -> Integer;
+def stagedRun = thunk { become staged 1 };
+def kept[i : Size, a : Type](n : Integer, y : a) -> -F a { return y }
+def twin(a : Type, n : Integer, y : a) -> -F a { return y }

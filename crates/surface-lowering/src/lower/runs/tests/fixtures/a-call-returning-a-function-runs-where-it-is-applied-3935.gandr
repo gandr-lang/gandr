@@ -1,0 +1,6 @@
+def plus(n : Integer) -> Integer -> Integer { thunk { fun (m : Integer) { m + n } } }
+def applied(n : Integer) -> Integer { let h = (plus n) 1; h }
+def dependent(A : Type) -> A -> A { thunk { fun (x : A) { x } } }
+def picked(A : Type, x : A) -> A { (dependent A) x }
+def curried(n : Integer, m : Integer) -> Integer { n + m }
+def partial(n : Integer) -> Integer { (curried n) 1 }

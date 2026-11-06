@@ -1,0 +1,8 @@
+theory Gen where {
+  boundary Two { p, q };
+  face left = {p};
+  sort Val : Type;
+  oper zero : Val;
+  oper one : Val;
+  ext Cell = Val on left is zero;
+}

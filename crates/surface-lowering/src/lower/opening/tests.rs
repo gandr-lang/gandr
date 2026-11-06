@@ -55,17 +55,8 @@ fn resolution_at(
 #[test]
 fn an_opened_module_answers_the_rest_of_its_block()
 {
-    let source = "module Counting where {\n\
-                  def two = 2;\n\
-                  }\n\
-                  module Outer where {\n\
-                  module Inner where {\n\
-                  def three = 3;\n\
-                  }\n\
-                  }\n\
-                  def counted() -> -F Integer { import Counting; return two }\n\
-                  def nested() -> -F Integer { import Outer.Inner; return three }\n\
-                  def bound(two : Integer) -> -F Integer { import Counting; return two + 1 }\n";
+    let source =
+        include_str!("tests/fixtures/an-opened-module-answers-the-rest-of-its-block.gandr");
     let text = SourceText::from(source);
     let mut arena = CoreArena::new();
     let module = lowered(text, &mut arena);
@@ -118,12 +109,7 @@ fn an_opened_module_answers_the_rest_of_its_block()
 #[test]
 fn an_unknown_module_is_refused_at_its_path()
 {
-    let source = "module Counting where {\n\
-                  def two = 2;\n\
-                  }\n\
-                  def early() -> -F Integer { let x = two; import Counting; return x }\n\
-                  def missing() -> -F Integer { import Absent; return 1 }\n\
-                  def linked() -> -F Integer { import Counting.two; return 1 }\n";
+    let source = include_str!("tests/fixtures/an-unknown-module-is-refused-at-its-path.gandr");
     let text = SourceText::from(source);
     let module = lowered(text, &mut CoreArena::new());
     assert!(
@@ -156,20 +142,8 @@ fn an_unknown_module_is_refused_at_its_path()
 #[test]
 fn a_name_two_scopes_answer_is_refused_at_its_use()
 {
-    let source = "def two = 20;\n\
-                  module Counting where {\n\
-                  def two = 2;\n\
-                  def four = 4;\n\
-                  }\n\
-                  module Other where {\n\
-                  def four = 40;\n\
-                  }\n\
-                  def clash() -> -F Integer { import Counting; return two }\n\
-                  def twice() -> -F Integer { import Counting; import Other; return four }\n\
-                  def ahead() -> -F Integer { import Later; return five }\n\
-                  module Later where {\n\
-                  def five = 5;\n\
-                  }\n";
+    let source =
+        include_str!("tests/fixtures/a-name-two-scopes-answer-is-refused-at-its-use.gandr");
     let text = SourceText::from(source);
     let module = lowered(text, &mut CoreArena::new());
     assert!(

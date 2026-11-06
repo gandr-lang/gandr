@@ -1,0 +1,4 @@
+def lent(n : Integer) -> -F Unit { access n as v { abort(v) } }
+def resumed(n : Integer) -> -F Unit { resume(n, 1) }
+def aborted(n : Integer) -> -F Unit { abort(n) }
+def unbound(n : Integer) -> -F Unit { abort(missing) }

@@ -28,7 +28,7 @@ use crate::resolve::SurfaceName;
 const NAT: &str = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n";
 
 /// A function applied at a stage, and a recursion handing its claim to it.
-const APPLIED: &str = "def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> -F Nat {\n  f x\n}\ndef rec helped(n : Nat) -> -F Nat {\n  match n {\n    | Zero => Zero\n    | Succ(p) => Succ (applyAt helped[<] p)\n  }\n}\n";
+const APPLIED: &str = include_str!("tests/unformatted/applied.gandr");
 
 /// The bounds `name`'s telescope files.
 ///
@@ -80,7 +80,9 @@ fn verdict_of(
 fn a_telescope_files_its_bounds_and_marks_its_stages()
 {
     let source = format!(
-        "{NAT}{APPLIED}def bounded[n : Size, i : Size, i < n](x : Nat[i], y : Nat[< n]) -> -F Nat {{\n  return x\n}}\n"
+        include_str!("tests/unformatted/a-telescope-files-its-bounds-and-marks-its-stages.gandr"),
+        APPLIED = APPLIED,
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -119,7 +121,9 @@ fn a_telescope_files_its_bounds_and_marks_its_stages()
 #[test]
 fn a_definition_s_region_binders_are_named_by_ordinal_2138()
 {
-    let source = "def crossed[s : Region, i : Size, r : Region](k : (() -> Integer) at r, j : (() -> Integer) at s) -> -F Integer {\n  force k\n}\ndef plain(x : Integer) -> -F Integer {\n  return x\n}\n";
+    let source = include_str!(
+        "tests/fixtures/a-definition-s-region-binders-are-named-by-ordinal-2138.gandr"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let named = |name: &str| {
@@ -147,7 +151,9 @@ fn a_definition_s_region_binders_are_named_by_ordinal_2138()
 fn a_call_handing_the_scrutinee_is_refused()
 {
     let source = format!(
-        "{NAT}{APPLIED}def rec again(n : Nat) -> -F Nat {{\n  match n {{\n    | Zero => Zero\n    | Succ(p) => Succ (applyAt again[<] n)\n  }}\n}}\n"
+        include_str!("tests/unformatted/a-call-handing-the-scrutinee-is-refused.gandr"),
+        APPLIED = APPLIED,
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -166,7 +172,10 @@ fn a_call_handing_the_scrutinee_is_refused()
 fn a_bound_or_stage_naming_no_binder_is_refused_by_name()
 {
     let source = format!(
-        "{NAT}def later[i : Size, i < n, n : Size](x : Nat[i]) -> -F Nat {{\n  return x\n}}\ndef stray[i : Size](x : Nat[j]) -> -F Nat {{\n  return x\n}}\n"
+        include_str!(
+            "tests/unformatted/a-bound-or-stage-naming-no-binder-is-refused-by-name.gandr"
+        ),
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -190,7 +199,9 @@ fn a_bound_or_stage_naming_no_binder_is_refused_by_name()
 fn a_supplied_stage_crosses_at_the_call_s_head_1227()
 {
     let source = format!(
-        "{NAT}{APPLIED}def appliedAt[j : Size, k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> -F Nat {{\n  applyAt[.i = k] f x\n}}\ndef stray[j : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> -F Nat {{\n  applyAt[.i = m] f x\n}}\n"
+        include_str!("tests/unformatted/a-supplied-stage-crosses-at-the-call-s-head-1227.gandr"),
+        APPLIED = APPLIED,
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -249,7 +260,8 @@ fn a_supplied_stage_crosses_at_the_call_s_head_1227()
 fn a_stage_outside_a_signature_leaves_the_fragment()
 {
     let source = format!(
-        "{NAT}def inside[i : Size](x : Nat[i]) -> -F Nat {{\n  return (x : Nat[i])\n}}\ndef carried[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> -F Nat {{\n  return a\n}}\n"
+        include_str!("tests/unformatted/a-stage-outside-a-signature-leaves-the-fragment.gandr"),
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -274,7 +286,8 @@ fn a_stage_outside_a_signature_leaves_the_fragment()
 fn a_case_under_a_staged_result_answers_plainly()
 {
     let source = format!(
-        "{NAT}def predAt[i : Size](n : Nat[i]) -> -F Nat[i] {{\n  match n {{\n    | Zero => Zero\n    | Succ(p) => p\n  }}\n}}\n"
+        include_str!("tests/unformatted/a-case-under-a-staged-result-answers-plainly.gandr"),
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

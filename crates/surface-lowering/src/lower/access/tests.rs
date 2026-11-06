@@ -35,13 +35,7 @@ use crate::resolve::SurfaceName;
 
 /// The counter: a held count, one access that writes back its successor and
 /// one that aborts, then a read of the count, with a parameter between.
-const COUNTER: &str = r"def counter(n : Integer) -> -F Integer {
-  var c = 0;
-  access c as v { resume(v, v + 1) };
-  access c as v { abort(v) } unwind { pure *{} };
-  return c
-}
-";
+const COUNTER: &str = include_str!("tests/fixtures/counter.gandr");
 
 /// The temporary-access forms reachable from `tail` through binds, splits,
 /// lambdas and memory forms, in source order, one token each: `hold`, or
@@ -157,18 +151,9 @@ fn the_counter_lowers_to_its_memory_forms()
 #[test]
 fn a_shared_access_lowers_without_an_unwind()
 {
-    let source = SourceText::from(
-        r"def frozen() -> -F Integer {
-  var c = 2;
-  access exclusive c as v { resume(v, v + 1) };
-  access shared c as w { pure w }
-}
-def unwound() -> -F Unit {
-  var c = 0;
-  access shared c as w { pure *{} } unwind { pure *{} }
-}
-",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/unformatted/a-shared-access-lowers-without-an-unwind.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("frozen")));
@@ -200,20 +185,9 @@ def unwound() -> -F Unit {
 #[test]
 fn an_access_of_a_place_lowers_with_its_index()
 {
-    let source = listing(
-        r"def pair : List(Integer) ;
-def pair = cons 1 (cons 2 nil) ;
-def second() -> -F Integer {
-  var xs = pair;
-  access xs.#[1] as v { resume(v, v + 1) };
-  access shared xs.#[1] as w { pure w }
-}
-def indexed(i : Integer) -> -F Integer {
-  var xs = pair;
-  access shared xs.#[i] as w { pure w }
-}
-",
-    );
+    let source = listing(include_str!(
+        "tests/fixtures/an-access-of-a-place-lowers-with-its-index.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = listed(&source, &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("second")));
@@ -240,17 +214,9 @@ def indexed(i : Integer) -> -F Integer {
 #[test]
 fn a_hold_lowers_at_its_grade()
 {
-    let source = SourceText::from(
-        r"def unique() -> -F Unit {
-  var[1] c = 0;
-  access c as v { resume(v, v + 1) }
-}
-def two() -> -F Unit {
-  var[2] c = 0;
-  pure *{}
-}
-",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-hold-lowers-at-its-grade.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("unique")));
@@ -272,13 +238,9 @@ def two() -> -F Unit {
 #[test]
 fn an_access_names_a_held_value_and_an_eliminator_its_view()
 {
-    let source = SourceText::from(
-        r"def lent(n : Integer) -> -F Unit { access n as v { abort(v) } }
-def resumed(n : Integer) -> -F Unit { resume(n, 1) }
-def aborted(n : Integer) -> -F Unit { abort(n) }
-def unbound(n : Integer) -> -F Unit { abort(missing) }
-",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/an-access-names-a-held-value-and-an-eliminator-its-view.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, written, boundary) in [
@@ -314,21 +276,9 @@ def unbound(n : Integer) -> -F Unit { abort(missing) }
 #[test]
 fn an_exit_inside_an_access_is_refused()
 {
-    let source = SourceText::from(
-        r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-def leaves(n : Integer) -> -F Unit { var c = 0; access c as v { return *{} } }
-def unwinds(n : Integer) -> -F Unit { var c = 0; access c as v { abort(v) } unwind { return *{} } }
-def early(n : Nat) -> -F Integer {
-  var c = 0;
-  let m = match n { | Zero => return 5 | Succ(p) => pure 1 } ;
-  return c
-}
-def early_by_hand(n : Nat) -> -F Integer {
-  var c = 0;
-  match n { | Zero => return 5 | Succ(p) => return c }
-}
-",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/an-exit-inside-an-access-is-refused.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, context) in [
@@ -381,19 +331,9 @@ def early_by_hand(n : Nat) -> -F Integer {
 #[test]
 fn a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 {
-    let source = SourceText::from(
-        r"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-def joined(n : Nat) -> -F Integer {
-  var c = 100;
-  let m = match n { | Zero => return 7 | Succ(p) => { var c = *{}; pure 1 } } ;
-  pure c
-}
-def joined_by_hand(n : Nat) -> -F Integer {
-  var c = 100;
-  match n { | Zero => return 7 | Succ(p) => { var d = *{}; pure c } }
-}
-",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/a-hold-in-a-joined-arm-leaves-the-rest-its-own-slots-1500.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     assert_accepted(&judged(&module, &mut arena));
@@ -410,23 +350,9 @@ def joined_by_hand(n : Nat) -> -F Integer {
 #[test]
 fn a_place_assignment_writes_through_an_exclusive_view()
 {
-    let source = listing(
-        r"def pair : List(Integer) ;
-def pair = cons 1 (cons 2 nil) ;
-def written() -> -F Integer {
-  var n = 1;
-  n = n + 1;
-  n *= 3;
-  var xs = pair;
-  xs.#[0] += n;
-  return n
-}
-def ended() -> -F Unit {
-  var n = 1;
-  n -= 1;
-}
-",
-    );
+    let source = listing(include_str!(
+        "tests/fixtures/a-place-assignment-writes-through-an-exclusive-view.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = listed(&source, &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("written")));
@@ -453,12 +379,9 @@ def ended() -> -F Unit {
 #[test]
 fn an_assignment_writes_only_a_held_place()
 {
-    let source = SourceText::from(
-        r"def parameter(n : Integer) -> -F Unit { n = 3; }
-def viewed() -> -F Unit { var c = 0; access c as v { v = 1; resume(v, 2) } }
-def field(p : *{ a : Integer }) -> -F Unit { p.a += 1; }
-",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/fixtures/an-assignment-writes-only-a-held-place.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, written, named) in [("parameter", "n = 3", "n"), ("viewed", "v = 1", "v")] {
@@ -487,14 +410,9 @@ def field(p : *{ a : Integer }) -> -F Unit { p.a += 1; }
 #[test]
 fn a_stated_var_ascribes_its_value_or_holds_a_handle()
 {
-    let source = listing(
-        r"def listed() -> -F Integer {
-  var xs : List(Integer) = #[1, 2];
-  xs.#[0] += 1;
-  return 0
-}
-",
-    );
+    let source = listing(include_str!(
+        "tests/unformatted/a-stated-var-ascribes-its-value-or-holds-a-handle-1.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = listed(&source, &mut arena);
     let listed = tail_of(&arena, body_named(&module, SurfaceName::from("listed")));
@@ -513,15 +431,9 @@ fn a_stated_var_ascribes_its_value_or_holds_a_handle()
 
     // A handle is held only where its world runs, so these are read, not
     // judged: `pointing` in the worlds corpus is judged.
-    let source = SourceText::from(
-        r"world seat;
-def located() -> -F (Integer at seat) {
-  var h : Integer at seat = 3;
-  pure h
-}
-def graded() -> -F Unit { var[1] h : Integer at seat = 3; pure *{} }
-",
-    );
+    let source = SourceText::from(include_str!(
+        "tests/unformatted/a-stated-var-ascribes-its-value-or-holds-a-handle-2.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     let located = tail_of(&arena, body_named(&module, SurfaceName::from("located")));
@@ -568,18 +480,9 @@ def graded() -> -F Unit { var[1] h : Integer at seat = 3; pure *{} }
 #[test]
 fn each_name_a_form_lends_ends_or_writes_keeps_its_binder_5011()
 {
-    let source = listing(
-        r"def probed(i : Integer) -> -F Integer {
-  var xs : List(Integer) = #[1, 2];
-  access xs as v { resume(v, v) };
-  access shared xs.#[i] as w { pure *{} };
-  access xs as u { abort(u) };
-  xs.#[0] += 1;
-  let y = xs.#[i];
-  return y
-}
-",
-    );
+    let source = listing(include_str!(
+        "tests/fixtures/each-name-a-form-lends-ends-or-writes-keeps-its-binder-5011.gandr"
+    ));
     let mut arena = CoreArena::new();
     let module = listed(&source, &mut arena);
     assert_accepted(&judged(&module, &mut arena));

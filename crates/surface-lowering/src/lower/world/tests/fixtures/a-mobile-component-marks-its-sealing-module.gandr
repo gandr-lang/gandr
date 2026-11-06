@@ -1,0 +1,6 @@
+module Pair :> *{ mobile type Mobile, type Kept, one : Mobile, two : Kept } where {
+  type Mobile = Integer;
+  type Kept = Integer;
+  def one = 1;
+  def two = 2;
+}
