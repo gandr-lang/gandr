@@ -2283,8 +2283,10 @@ claims=$root/.config/claims
 source "$claims/deps.bash"
 source "$claims/input.bash"
 source "$claims/mark.bash"
+source "$root/.config/issues/open.bash"
 # REST throughout: the GraphQL limit, shared by every seat's watches, runs out
-# within the hour, and a seat must still claim its next item.
+# within the hour, and a seat must still claim its next item. The open list
+# is `open_issues`' (`.config/issues/open.bash`, #5671).
 repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
 # The board reaches jq through files, never as arguments: with its bodies it
 # is past the argument limit (#2671). Each reading `next.jq` takes is a file
@@ -2292,10 +2294,8 @@ repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
 board=$(mktemp -d)
 trap 'rm -rf "$board"' EXIT
 printf '%s\n' "$areas" > "$board/areas.json"
-gh api --paginate "repos/$repo/issues?state=open&per_page=100" --jq '[.[] | select(.pull_request == null)
-  | {number, title, labels: [.labels[].name],
-     body, blocked: (.issue_dependencies_summary.blocked_by // 0),
-     parent: ([.parent_issue_url // "" | capture("/repos/'"$repo"'/issues/(?<n>[0-9]+)$").n | tonumber][0])}]' | jq -s 'add // []' > "$board/issues.json"
+open_issues "$repo" "$board/open.json"
+jq '[.[] | select(.pull_request | not) | del(.pull_request)]' "$board/open.json" > "$board/issues.json"
 epics=$(jq -r --argjson areas "$areas" '[.[] | select(.labels | index("kind:epic")) | .number] as $epics
   | [.[] | select(any(.labels[]; IN($areas[])) and .parent != null) | .parent as $p | select($epics | index($p))] | map(.parent) | unique[]' "$board/issues.json")
 printf '{}\n' > "$board/order.json"
@@ -3008,14 +3008,15 @@ run = '''
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/issues/labels.bash"
+source "$root/.config/issues/open.bash"
 repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 defaults=$(labels_defaults)
 eval "issues=(${usage_issue:-})"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 if [[ ${usage_sweep:-false} == true ]]; then
-  gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
-    --jq '.[] | select(.pull_request == null) | {number, labels: [.labels[].name]} | @json' > "$scratch/issues"
+  open_issues "$repo" "$scratch/open.json"
+  jq -c '.[] | select(.pull_request | not) | {number, labels}' "$scratch/open.json" > "$scratch/issues"
 else
   (( ${#issues[@]} > 0 )) || { echo "issue:labels takes issues, or --sweep" >&2; exit 2; }
   for n in "${issues[@]}"; do
