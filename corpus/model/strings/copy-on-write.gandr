@@ -28,7 +28,7 @@ pub def copy(s : Repr) -> Repr =
     | Inline(bs) => Inline bs
     | Shared(n, bs) => Shared (n + 1) bs
 
-/// The bytes with `b` written before the terminating zero.
+/// This function places `b` before the final zero byte.
 pub def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) =
   match bs where
     | Nil => Nil
@@ -58,12 +58,12 @@ pub def push(s : Repr, b : Integer) -> Written =
         | false => Written (Shared 1 grown) 1
     }
 
-/// The buffers a write filled anew.
+/// This function counts the buffers that the write fills anew.
 pub def copies(w : Written) -> Integer =
   match w where
     | Written(s, n) => n
 
-/// The written string.
+/// This function returns the string after the write.
 pub def written(w : Written) -> Repr =
   match w where
     | Written(s, n) => s
