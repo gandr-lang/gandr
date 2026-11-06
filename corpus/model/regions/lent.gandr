@@ -1,14 +1,18 @@
-// A function over its caller's region, as Rust writes `fn read<'a>(k: &'a
-// T)`: `read` forces a thunk kept in whatever region its caller holds, and a
-// call places that region at the scope its argument is kept in.
-
-// Early exit's host interface.
+//! `lent` reads a thunk at its caller's region.
+//!
+//! A call places `read` at its argument's region. The pathological twin
+//! refuses a returned thunk that escapes the caller as `KeptEscaped`.
+//!
+//! `read` forces its thunk. The `lent` run returns `3`. Rust writes the same
+//! lifetime parameter as `fn read<'a>(k: &'a T)`.
+//!
+//! - see: corpus/pathological/regions/stashed.gandr — a returned thunk outside its region
 import std.process;
 
-/// Reads the thunk it is lent, whatever region keeps it.
+/// `read` forces its thunk in the region that keeps it.
 def read[r : Region](k : (() -> Integer) at r) -> Integer { force k }
 
-/// Lends `read` a view kept in the handler's region, which the call reads it at.
+/// `lent` passes a handler-held view to `read`.
 @[ runs("3") ]
 def lent() -> Integer =
   var s = 3

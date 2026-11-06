@@ -1,17 +1,18 @@
-// What the naturality square of a region-polymorphic function refuses: the
-// square holds only along the outlives extension, and only between one
-// function at two regions. `../../model/regions/natural.gandr` states the
-// square.
-
-// `pass`, which hands back the thunk it is lent, and `touch`, which forces it
-// first; each polymorphic in its region.
+//! `natural` refuses invalid region-polymorphism squares.
+//!
+//! A reversed widening changes the required type. Two different functions have
+//! unequal endpoints. The checker reports `TypeMismatch` or `EndpointMismatch`.
+//!
+//! The source applies model `pass` and `touch`. It imports the early exit host
+//! interface.
+//!
+//! - see: corpus/model/regions/natural.gandr — valid widening squares
 import "../../model/regions/passed.gandr";
 import "../../model/regions/natural.gandr";
-// Early exit's host interface.
+// The source imports the early exit host interface.
 import std.process;
 
-/// The square against the extension: a view kept at the inner region does not
-/// stand where the outer region's is asked.
+/// `backwards` reverses the valid outer-to-inner widening.
 @[ refuses("TypeMismatch") ]
 def backwards() -> Integer =
   var s = 5
@@ -32,8 +33,7 @@ def backwards() -> Integer =
     | oper exit(code, rest) => pure 0
   }
 
-/// Two functions on the square's sides: `pass` widened is not `touch`, which
-/// forces the view first.
+/// `unequal` compares `pass` and `touch` as path endpoints.
 @[ refuses("EndpointMismatch") ]
 def unequal() -> Integer =
   var s = 5

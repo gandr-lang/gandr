@@ -1,16 +1,16 @@
-// A view of a value held inside a scope, kept at the scope around its hold, as
-// Rust refuses a reference to a block's local that outlives the block: `let r;
-// { let x = 42; r = &x; } *r` (E0597, `x` does not live long enough). A shared
-// view kept in a region keeps its held value frozen until the region ends, and
-// a hold opened inside the scope ends before the scope does.
-//
-// - see: #1494 — `keptPastHold`, `keptPastNestedHold`
-
-// Early exit's host interface.
+//! `held-within` keeps a view past the hold that lends it.
+//!
+//! Each view escapes its hold. The checker refuses both programs as
+//! `ViewEscaped`.
+//!
+//! The source keeps each view at a handler region. Rust rejects a block
+//! reference after its local ends. The source imports the early exit host
+//! interface.
+//!
+//! - see: #1494 — `keptPastHold`, `keptPastNestedHold`
 import std.process;
 
-/// Keeps a view of a value held inside the handler at the handler's region,
-/// which the hold does not outlive.
+/// `keptPastHold` forces a view after its hold ends.
 @[ refuses("ViewEscaped") ]
 def keptPastHold() -> Integer =
   handle inner : std.process.Exit.Eff {
@@ -22,8 +22,7 @@ def keptPastHold() -> Integer =
     | oper exit(code, k) => pure 0
   }
 
-/// The same inside a handler a `run` binds within another: where a handler
-/// is bound opens no region of its own.
+/// `keptPastNestedHold` does the same with nested handlers.
 @[ refuses("ViewEscaped") ]
 def keptPastNestedHold() -> Integer =
   handle outer : std.process.Exit.Eff {
