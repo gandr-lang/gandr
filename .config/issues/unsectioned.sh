@@ -47,7 +47,7 @@ if [[ $(jq --argjson findings "$findings" '.state == "open" and ($findings | len
     and ([.labels[].name] | any(IN("status:unsectioned", "kind:epic", "collector")) | not)' <<< "$issued") == true ]]; then
   comments='[]'
 else
-  comments=$(gh api --paginate "repos/$repo/issues/$issue/comments" \
+  comments=$(gh api --paginate "repos/$repo/issues/$issue/comments?per_page=100" \
     --jq '.[] | select(.body | startswith("<!-- unit:check -->")) | {id, body}' | jq -s -c .)
 fi
 decision=$(jq -c --argjson findings "$findings" --argjson comments "$comments" \

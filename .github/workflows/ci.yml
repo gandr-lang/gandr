@@ -1600,7 +1600,7 @@ jobs:
             } > comment.cut.md
             mv comment.cut.md comment.md
           fi
-          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
+          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments?per_page=100" |
             jq -r --arg marker "$COMMENT_MARKER" '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker)))] | first | .id // ""')
           if [[ -n $id ]]; then
             gh api --method PATCH "repos/$GH_REPO/issues/comments/$id" -F body=@comment.md --silent

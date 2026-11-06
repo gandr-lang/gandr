@@ -311,6 +311,9 @@ jobs:
   # report:threads`, #3610): each site that states why it owns a thread, with
   # its reason, in the job summary. It reads the tree alone, in under a
   # second.
+  # The dependency and prose reports read the open issues and pull requests
+  # from one read of them (`mise run issues:open`, #5681), 8 pages, in place
+  # of 8 pages each, and each runs only when that read succeeds.
   #
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on
@@ -410,8 +413,17 @@ jobs:
           SLOW_RUN_ID: ${{ github.run_id }}
           SLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: mise run ci:slow-file
-      - name: report the dependencies
+      # The open issues and pull requests, read once for the reports that read
+      # them (#5681): 8 pages of 719 on 2026-11-06. Each such report reads
+      # the file `OPEN_ISSUES` names, and it runs only when the list is read.
+      - name: list the open issues for the reports
+        id: open-issues
         if: &not-cancelled ${{ !cancelled() }}
+        run: mise run issues:open "$RUNNER_TEMP/open-issues.json"
+      - name: report the dependencies
+        if: &listed ${{ !cancelled() && steps.open-issues.outcome == 'success' }}
+        env: &open-issues
+          OPEN_ISSUES: ${{ runner.temp }}/open-issues.json
         run: mise run report:deps
       - name: report the obligations answered
         if: *not-cancelled
@@ -433,7 +445,8 @@ jobs:
             ${{ steps.prose-tools.outputs.installs }}/pipx-spacy
           key: prose-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}
       - name: report the prose of the open bodies
-        if: *not-cancelled
+        if: *listed
+        env: *open-issues
         run: mise run report:prose
       - name: list the threads outside the pool
         if: *not-cancelled

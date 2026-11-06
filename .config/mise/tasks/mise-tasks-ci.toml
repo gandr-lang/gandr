@@ -995,7 +995,7 @@ while IFS=' ' read -r commit subject; do
     continue
   fi
   landed=$((landed + 1))
-  gh api --paginate "repos/$repo/commits/$head/check-runs" \
+  gh api --paginate "repos/$repo/commits/$head/check-runs?per_page=100" \
     --jq '.check_runs[] | select(.name | startswith("hotpath / ")) | {name, conclusion, summary: (.output.summary // "")}' \
     | jq -s . > "$scratch/runs.json"
   if [[ $(jq length "$scratch/runs.json") == 0 ]]; then
@@ -1122,7 +1122,7 @@ while IFS= read -r subject; do
     echo "#$pr names no pull request; skipped"
     continue
   fi
-  gh api --paginate --slurp "repos/$repo/issues/$pr/comments" \
+  gh api --paginate --slurp "repos/$repo/issues/$pr/comments?per_page=100" \
     | jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- gandr-mutants -->")))] | first | .body // ""' \
     > "$scratch/report.md"
   if [[ ! -s $scratch/report.md ]]; then
@@ -3131,6 +3131,26 @@ echo "epics:link: $epics open epic(s) read; $refused dependency(ies) refused"
 (( refused == 0 ))
 {% endraw %}'''
 
+# The open issues and pull requests as one JSON array in a file (#5681):
+# the nightly's reports job writes it once, and `report:deps` and
+# `report:prose` read the file that `OPEN_ISSUES` names in place of 8 pages
+# each (`open_issues` in `.config/issues/open.bash`). GH_REPO names the
+# repository.
+["issues:open"]
+description = "Write the open issues and pull requests to a file, one JSON array"
+usage = '''
+arg "<file>" help="the file to write"
+'''
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/issues/open.bash"
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+OPEN_ISSUES='' open_issues "$repo" "${usage_file:?}"
+'''
+
 # The design work that no open issue holds (#3401, #3160 step 6):
 # `report:design` reads the vault checkout that `vault_checkout` names, and
 # prints one line for each design page whose filename no `## Sources` row of
@@ -3151,11 +3171,13 @@ run = '''
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/claims/design.bash"
+source "$root/.config/issues/open.bash"
 repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+open=$(mktemp)
 issues=$(mktemp)
-trap 'rm -f "$issues"' EXIT
-gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
-  --jq '[.[] | select(.pull_request == null) | {number, body: (.body // "")}]' | jq -s 'add // []' > "$issues"
+trap 'rm -f "$open" "$issues"' EXIT
+open_issues "$repo" "$open"
+jq '[.[] | select(.pull_request | not) | {number, body}]' "$open" > "$issues"
 design_report "$issues"
 '''
 
@@ -3189,6 +3211,7 @@ source "$claims/deps.bash"
 source "$root/.config/issues/labels.bash"
 source "$root/.config/issues/keep.bash"
 source "$root/.config/ledger/owing.bash"
+source "$root/.config/issues/open.bash"
 repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 write=${REPORT_FILE:-}
 title='report: dependencies'
@@ -3199,8 +3222,8 @@ if [[ -n $write ]]; then
   GH_REPO=$repo mise run --quiet epic:deps --all || status=$?
   (( status <= 1 )) || exit "$status"
 fi
-gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
-  --jq '[.[] | select(.pull_request == null) | {number, title, labels: [.labels[].name], body: (.body // "")}]' | jq -s 'add // []' > "$scratch/open.json"
+open_issues "$repo" "$scratch/all.json"
+jq '[.[] | select(.pull_request | not) | {number, title, labels, body}]' "$scratch/all.json" > "$scratch/open.json"
 deps_open_graph "$repo" > "$scratch/graph.json"
 jq -n -c --slurpfile open "$scratch/open.json" --slurpfile graph "$scratch/graph.json" '{open: $open[0], graph: $graph[0]}' \
   | jq -c -f "$claims/reads.jq" > "$scratch/issues.jsonl"
@@ -3243,14 +3266,15 @@ run = '''
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/issues/keep.bash"
+source "$root/.config/issues/open.bash"
 repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 write=${REPORT_FILE:-}
 title='report: prose'
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 mkdir "$scratch/bodies"
-gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
-  --jq '.[] | select(any(.labels[]; .name == "collector") | not) | {number, body: (.body // "")}' > "$scratch/open.jsonl"
+open_issues "$repo" "$scratch/all.json"
+jq -c '.[] | select(.labels | index("collector") | not) | {number, body}' "$scratch/all.json" > "$scratch/open.jsonl"
 while read -r item; do
   jq -r .body <<< "$item" > "$scratch/bodies/$(jq .number <<< "$item").md"
 done < "$scratch/open.jsonl"
@@ -4970,7 +4994,7 @@ reports() {
 # Take pull request `$1`'s `<!-- stall -->` comments and its label off.
 release() {
   local id
-  for id in $(gh api --paginate "repos/$repo/issues/$1/comments" --jq '.[] | select(.body | startswith("<!-- stall -->")) | .id'); do
+  for id in $(gh api --paginate "repos/$repo/issues/$1/comments?per_page=100" --jq '.[] | select(.body | startswith("<!-- stall -->")) | .id'); do
     gh api -X DELETE "repos/$repo/issues/comments/$id" > /dev/null || return 1
   done
   gh api -X DELETE "repos/$repo/issues/$1/labels/status:stalled" > /dev/null 2>&1 || :
@@ -4992,7 +5016,7 @@ cuts() {
     echo "stall:watch: #$root cut: $before → $after" >&2
     read -r head base < <(pr_reading "$root" | jq -r '"\(.headRefOid) \(.baseRefName)"')
     mark="<!-- pr-ejected $head -->"
-    if [[ $(gh api --paginate "repos/$repo/issues/$root/comments" --jq '.[].body' | jq -sR --arg mark "$mark" 'contains($mark)') == false ]]; then
+    if [[ $(gh api --paginate "repos/$repo/issues/$root/comments?per_page=100" --jq '.[].body' | jq -sR --arg mark "$mark" 'contains($mark)') == false ]]; then
       gh pr comment "$root" -R "$repo" --body "$mark
 pr-ejected #$root: the required check \`$check\` failed at ${head::12} ($run). \`stall:watch\` cut #$root out of its stack and placed it on the top: $after. Fix the check, rebase the branch onto \`$base\`, and push. #$root lands last." > /dev/null || :
     fi
