@@ -1877,7 +1877,9 @@ impl TypeTable
             // does a term of the bind a typed lambda parameter is read through,
             // located at the lambda; nor does a term of the law or the proof a
             // derived rule mints, located at the statement's name; nor does the
-            // hole an omitted implicit is nominated as, located at its call.
+            // hole an omitted implicit is nominated as, located at its call;
+            // nor does a term of the joint a mutual block's recursive functions
+            // share, located at the block's first member (#5383).
             if let Maybe::Present(origin) = origin
                 && !matches!(
                     origin.provenance(),
@@ -1890,6 +1892,7 @@ impl TypeTable
                             | Insertion::Parameter
                             | Insertion::Derived
                             | Insertion::Implicit
+                            | Insertion::Joint
                     )
                 )
             {
