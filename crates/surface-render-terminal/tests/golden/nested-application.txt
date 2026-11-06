@@ -1,7 +1,7 @@
 error[ShapeMismatch]: expected an arrow `A → C`
   ╭▸ application.gandr:2:25
   │
-2 │ def b = thunk { become (pure 1) 2 } ;
+2 │ def b = thunk { become (pure 1) 2 };
   │         ┬──────────────┬┯━━━━━─────
   │         │              ││
   │         │              │its type is not of the required shape: found `-F Integer`

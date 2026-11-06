@@ -13,4 +13,5 @@ error[UnstatedComponent.Unsorted]: the model signature cannot state `loose`, whi
 11 │ def model : Model(T) ;
    │                   ━ the signature this model derives
    │
-   ╰ note: `model` is refused with UnstatedComponent.Unsorted, as its expectation states
+   ├ note: `model` is refused with UnstatedComponent.Unsorted, as its expectation states
+   ╰ help: use each variable where its sort is known

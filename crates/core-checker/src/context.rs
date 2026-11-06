@@ -1477,6 +1477,61 @@ impl<'arena> CheckingContext<'arena>
         }
     }
 
+    /// `ty` read `amount` binders deeper, each node the shift mints kept as
+    /// [`Self::settle_value_type`] keeps it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`gandr_core_term::shift_value_type`], settled; a
+    ///   recording log's copies grow at their end only.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the components of a pair a split opens, each read
+    ///   past the components before it, keep their labels in the copies.
+    /// - witness: `module::tests::a_variable_s_type_keeps_the_copies_its_reading_mints`
+    #[spec(
+        captures: before = self.typings.as_ref().map(|log| log.copies.len()),
+        ensures: self.typings.as_ref().map(|log| log.copies.len()) >= before,
+    )]
+    pub(crate) fn shift_value_type(
+        &mut self,
+        ty: ValueTypeId,
+        amount: gandr_core_term::Binders,
+    ) -> ValueTypeId
+    {
+        let relocated = gandr_core_term::shift_value_type(self.arena, ty, amount);
+        self.settle_value_type(relocated)
+    }
+
+    /// `ty` read `amount` binders deeper, each node the shift mints kept as
+    /// [`Self::settle_value_type`] keeps it: the type a body is checked
+    /// against past the binders its form opens.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`gandr_core_term::shift_comp_type`], settled; a recording
+    ///   log's copies grow at their end only.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match arm checked against a dependent record read
+    ///   past the arm's fields keeps the record's labels in the copy.
+    /// - witness: `module::tests::a_variable_s_type_keeps_the_copies_its_reading_mints`
+    #[spec(
+        captures: before = self.typings.as_ref().map(|log| log.copies.len()),
+        ensures: self.typings.as_ref().map(|log| log.copies.len()) >= before,
+    )]
+    pub(crate) fn shift_comp_type(
+        &mut self,
+        ty: CompTypeId,
+        amount: gandr_core_term::Binders,
+    ) -> CompTypeId
+    {
+        let relocated = gandr_core_term::shift_comp_type(self.arena, ty, amount);
+        self.settle_comp_type(relocated)
+    }
+
     /// The binder of the type `subject` instantiated at `argument`, each node
     /// it rewrites kept as [`Self::settle_value_type`] keeps it.
     ///

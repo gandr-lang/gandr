@@ -45,20 +45,16 @@ use quenchant_shape::shape::Maybe;
 
 /// A declaration whose definition synthesises a type its signature does
 /// not convert to.
-const MISMATCH: &str = r#"def wrong : Integer ;
-def wrong = "text" ;
-"#;
+const MISMATCH: &str = include_str!("render/fixtures/mismatch.gandr");
 
 /// A force of an integer, inside a thunk.
-const FORCE: &str = "def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n";
+const FORCE: &str = include_str!("render/fixtures/force.gandr");
 
 /// An application whose head is a return, not a function.
-const APPLICATION: &str = "def b : +U (-F Integer) ;\ndef b = thunk { become (pure 1) 2 } \
-                               ;\n";
+const APPLICATION: &str = include_str!("render/fixtures/application.gandr");
 
 /// A mismatch under a `let` binder.
-const BOUND: &str = "def id(x : Integer) -> -F Integer { return x }\ndef f(n : Integer) -> -F \
-                         String { let m = id n ; return m }\n";
+const BOUND: &str = include_str!("render/fixtures/bound.gandr");
 
 /// A fresh scratch directory, removed when dropped.
 #[repr(transparent)]
@@ -418,12 +414,12 @@ fn an_unended_form_renders_what_is_missing_where()
     for (path, source, golden) in [
         (
             "semicolon.gandr",
-            "def a : Integer ;\ndef a = 1\ndef b : Integer ;\ndef b = 2 ;\n",
+            include_str!("render/fixtures/missing-semicolon.gandr"),
             expect_file!["golden/missing-semicolon.txt"],
         ),
         (
             "string.gandr",
-            "def s : String ;\ndef s = \"abc ;\n",
+            include_str!("render/unformatted/unclosed-string.gandr"),
             expect_file!["golden/unclosed-string.txt"],
         ),
     ] {
@@ -474,7 +470,7 @@ fn the_other_kinds_render_as_their_goldens()
             only(
                 Path::new("shadow.gandr"),
                 SourceRoot::Strict,
-                SourceText::from("def add : Integer ;\ndef add = 1 ;\n"),
+                SourceText::from(include_str!("render/fixtures/shadowed-builtin.gandr")),
                 Verb::Check(Goals::Gated),
             ),
             expect_file!["golden/shadowed-builtin.txt"],
@@ -501,9 +497,7 @@ fn the_other_kinds_render_as_their_goldens()
             only(
                 Path::new("exits.gandr"),
                 SourceRoot::Strict,
-                SourceText::from(
-                    "@[ explicit_exits ]\ndef kept(n : Integer) -> -F Integer { n }\n",
-                ),
+                SourceText::from(include_str!("render/fixtures/explicit-exits.gandr")),
                 Verb::Check(Goals::Gated),
             ),
             expect_file!["golden/explicit-exits.txt"],
@@ -528,7 +522,7 @@ fn a_pathless_diagnostic_names_input()
         "a source with no path is named `<input>`: {rendered}"
     );
     assert!(
-        rendered.contains("1 │ def wrong : Integer ;\n  │             ───────"),
+        rendered.contains("1 │ def wrong : Integer;\n  │             ───────"),
         "the signature the term is checked against stands as context: {rendered}"
     );
 }
@@ -539,16 +533,16 @@ fn a_labeled_context_renders_under_its_bytes()
     let diagnostic = only(
         Path::new("duplicate.gandr"),
         SourceRoot::Strict,
-        SourceText::from("def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n"),
+        SourceText::from(include_str!("render/fixtures/duplicate-signature.gandr")),
         Verb::Check(Goals::Gated),
     );
     let rendered = plain(&diagnostic, Verbosity::User);
     assert!(
-        rendered.contains("1 │ def a : Integer ;\n  │ ─────────────────"),
+        rendered.contains("1 │ def a : Integer;\n  │ ────────────────"),
         "the first signature remains secondary context: {rendered}"
     );
     assert!(
-        rendered.contains("2 │ def a : Integer ;\n  │ ━━━━━━━━━━━━━━━━━"),
+        rendered.contains("2 │ def a : Integer;\n  │ ━━━━━━━━━━━━━━━━"),
         "the duplicate retains its primary locus: {rendered}"
     );
 }
@@ -556,7 +550,7 @@ fn a_labeled_context_renders_under_its_bytes()
 #[test]
 fn an_unlocated_diagnostic_names_its_path_and_quotes_no_line()
 {
-    let composed_text = SourceText::from("def answer = 42 ;\ndef broken = missing ;\n");
+    let composed_text = SourceText::from(include_str!("render/fixtures/unlocated.gandr"));
     let grammar = built_in().expect("the grammar builds");
     let step = Step::Source {
         path: Path::new("broken.gandr"),
@@ -632,14 +626,7 @@ fn forced_styling_colors_actual_facade_annotations()
 fn a_walk_renders_each_refused_declaration_at_its_line()
 {
     let scratch = Scratch::new(Path::new("refused"));
-    let text = SourceText::from(
-        r#"def answer = 42 ;
-def broken = missing ;
-def wrong : Integer ;
-def wrong = "text" ;
-@[ owes(1) ] def later : Integer ;
-"#,
-    );
+    let text = SourceText::from(include_str!("render/fixtures/refused.gandr"));
     let path = scratch.file(Path::new("refused.gandr"), text);
     for verb in [
         Verb::Check(Goals::Gated),

@@ -1,0 +1,2 @@
+def b : +U (-F Integer);
+def b = thunk { become (pure 1) 2 };

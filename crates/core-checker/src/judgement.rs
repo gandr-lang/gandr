@@ -717,7 +717,7 @@ pub fn synthesise_value_with_failure(
     let (produced, conversions) = Machine::run(context, goal)?;
     match produced {
         Produced::ValueType(produced) => Ok(Synthesised {
-            produced: FormedValueType::derived(produced.settle(context.arena_mut())),
+            produced: FormedValueType::derived(context.settle_value_type(produced)),
             conversions,
         }),
         Produced::CompType(_) | Produced::Checked => {
@@ -3477,11 +3477,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .checked_sub(usize::from(depth))
             .ok_or(CheckRefusal::MachineInvariant)?;
         let added = u32::try_from(added).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-        let answer = shift_comp_type(self.context.arena_mut(), answer, Binders::from(added))
-            .settle(self.context.arena_mut());
+        let answer = self.context.shift_comp_type(answer, Binders::from(added));
         let stack = self.context.arena_mut().value_type_stack(captured, answer);
-        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32))
-            .settle(self.context.arena_mut());
+        let expected = self.context.shift_comp_type(answer, Binders::from(1_u32));
         self.context.binders().open(Zone::Intuitionistic, stack);
         self.wait(Frame::LambdaBody);
         Ok(Step::Descend(Goal::Computation {
@@ -3618,8 +3616,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .arena_mut()
             .comp_type_returner_with_effects(answer_result, residual);
         comp_bridge(self.context, at, natural, answer, &mut self.conversions)?;
-        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32))
-            .settle(self.context.arena_mut());
+        let expected = self.context.shift_comp_type(answer, Binders::from(1_u32));
         self.context.binders().open(Zone::Intuitionistic, result);
         self.wait(Frame::HandlerReturn { at, answer });
         Ok(Step::Descend(Goal::Computation {
@@ -3716,10 +3713,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .arena_mut()
             .comp_type_returner_with_effects(reply, effects);
         let stack = self.context.arena_mut().value_type_stack(input, answer);
-        let stack = shift_value_type(self.context.arena_mut(), stack, Binders::from(1_u32))
-            .settle(self.context.arena_mut());
-        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(2_u32))
-            .settle(self.context.arena_mut());
+        let stack = self.context.shift_value_type(stack, Binders::from(1_u32));
+        let expected = self.context.shift_comp_type(answer, Binders::from(2_u32));
         let position = position.next()?;
         self.context.binders().open(Zone::Intuitionistic, payload);
         if owes {
@@ -4097,9 +4092,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
         };
         let authority = gandr_core_term::effect::EffectRow::singleton(signature.clone());
         let region = self.next_region()?;
-        let arena = self.context.arena_mut();
-        let capability = arena.value_type_capability(authority, CapabilityGrade::Durable, region);
-        let expected = shift_comp_type(arena, subject, Binders::from(1_u32)).settle(arena);
+        let capability = self.context.arena_mut().value_type_capability(
+            authority,
+            CapabilityGrade::Durable,
+            region,
+        );
+        let expected = self.context.shift_comp_type(subject, Binders::from(1_u32));
         self.context
             .binders()
             .open(Zone::Intuitionistic, capability);
@@ -4138,8 +4136,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        let expected = shift_comp_type(self.context.arena_mut(), answer, Binders::from(1_u32))
-            .settle(self.context.arena_mut());
+        let expected = self.context.shift_comp_type(answer, Binders::from(1_u32));
         self.context.binders().open(Zone::Intuitionistic, result);
         self.wait(Frame::HandlerReturn { at, answer });
         Ok(Step::Descend(Goal::Computation {
@@ -6770,9 +6767,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         }
                     },
                 };
-                let arena = self.context.arena_mut();
-                let recursive = arena.value_type_thunk(own);
-                let scoped = shift_comp_type(arena, inside, Binders::from(1_u32)).settle(arena);
+                let recursive = self.context.arena_mut().value_type_thunk(own);
+                let scoped = self.context.shift_comp_type(inside, Binders::from(1_u32));
                 // A structural fixpoint is the definition's own when its body
                 // thunks it: inside it, a case reads the definition's
                 // constant in its family's fields as this binder.
@@ -7152,10 +7148,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         &mut self.conversions,
                     )?;
                 }
-                let arena = self.context.arena_mut();
-                Direction::Check(
-                    shift_comp_type(arena, expected, Binders::from(1_u32)).settle(arena),
-                )
+                Direction::Check(self.context.shift_comp_type(expected, Binders::from(1_u32)))
             },
         };
         // A returned value binds a name that stands for the value itself: the
@@ -7300,9 +7293,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         &mut self.conversions,
                     )?;
                 }
-                let arena = self.context.arena_mut();
                 Direction::Check(
-                    shift_comp_type(arena, expected, Binders::from(binders)).settle(arena),
+                    self.context
+                        .shift_comp_type(expected, Binders::from(binders)),
                 )
             },
         };
@@ -7582,12 +7575,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let [left_first, left_second] = pair_components(self.context, left)?;
         let [right_first, right_second] = pair_components(self.context, right)?;
-        let arena = self.context.arena_mut();
-        let paths = arena.value_type_path(first, left_first, right_first);
-        let at_right = instantiate_value_type(arena, second, right_first);
-        let at_right = shift_value_type(arena, at_right, Binders::ONE).settle(arena);
+        let paths = self
+            .context
+            .arena_mut()
+            .value_type_path(first, left_first, right_first);
+        let at_right = instantiate_value_type(self.context.arena_mut(), second, right_first);
+        let at_right = self.context.shift_value_type(at_right, Binders::ONE);
         let motive =
-            shift_value_type_under(arena, second, Binders::ONE, Binders::ONE).settle(arena);
+            shift_value_type_under(self.context.arena_mut(), second, Binders::ONE, Binders::ONE);
+        let motive = self.context.settle_value_type(motive);
+        let arena = self.context.arena_mut();
         let path = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let moved = shift_value(arena, left_second, Binders::ONE).settle(arena);
         let transport = arena.computation_path_transport(motive, path, moved);
@@ -9234,10 +9231,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::ReturnValue, Produced::ValueType(result)) => {
-                let arena = self.context.arena_mut();
-                let result = result.settle(arena);
+                let result = self.context.settle_value_type(result);
                 Ok(Step::Ascend(Produced::CompType(
-                    arena.comp_type_returner(result),
+                    self.context.arena_mut().comp_type_returner(result),
                 )))
             },
             (Frame::NativeRecord { term, base }, Produced::Checked) => {
@@ -9272,7 +9268,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
             (Frame::ReturnValues { base }, Produced::Checked) => {
                 // Each value's type stands in the ambient context, so the
                 // telescope reads it past the binders of the values before it.
-                let arena = self.context.arena_mut();
                 let synthesised = self
                     .native_types
                     .get(base ..)
@@ -9281,10 +9276,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 for (before, &ty) in synthesised.iter().enumerate() {
                     let binders = u32::try_from(before)
                         .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-                    results.push(shift_value_type(arena, ty, Binders::from(binders)).settle(arena));
+                    results.push(self.context.shift_value_type(ty, Binders::from(binders)));
                 }
                 self.native_types.truncate(base);
-                let returns = arena.comp_type_returns_with_effects(
+                let returns = self.context.arena_mut().comp_type_returns_with_effects(
                     &results,
                     gandr_core_term::effect::EffectRow::EMPTY,
                 );
@@ -10286,9 +10281,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let classifier = self.context.settle_value_type(classifier);
                 let summands = self.sum_expected(scrutinee, classifier)?;
                 let outside = expected;
-                let expected =
-                    shift_comp_type(self.context.arena_mut(), expected, Binders::from(1_u32))
-                        .settle(self.context.arena_mut());
+                let expected = self.context.shift_comp_type(expected, Binders::from(1_u32));
                 let joining = self.arms_opened();
                 // The arms are read by position, so the arena stays free for
                 // the goal each arm reads at its injection.
@@ -10408,7 +10401,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     else {
                         return Err(CheckRefusal::DependentBind { at, synthesised });
                     };
-                    lowered = outer.settle(self.context.arena_mut());
+                    lowered = self.context.settle_comp_type(outer);
                 }
                 for _ in 0_usize .. usize::from(arity) {
                     self.close()?;
@@ -10497,11 +10490,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 else {
                     return Err(CheckRefusal::MachineInvariant);
                 };
-                let tail = shift_value_type(self.context.arena_mut(), tail, Binders::from(1_u32))
-                    .settle(self.context.arena_mut());
-                let expected =
-                    shift_comp_type(self.context.arena_mut(), expected, Binders::from(2_u32))
-                        .settle(self.context.arena_mut());
+                let tail = self.context.shift_value_type(tail, Binders::from(1_u32));
+                let expected = self.context.shift_comp_type(expected, Binders::from(2_u32));
                 self.context.binders().open(Zone::Intuitionistic, element);
                 self.context.binders().open(Zone::Intuitionistic, tail);
                 self.wait(Frame::ListCaseCons);
@@ -10700,7 +10690,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     else {
                         return Err(CheckRefusal::DependentBind { at, synthesised });
                     };
-                    lowered = outer.settle(self.context.arena_mut());
+                    lowered = self.context.settle_comp_type(outer);
                 }
                 for _ in 0_usize .. usize::from(arity) {
                     self.close()?;
@@ -11175,9 +11165,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 if crossing == Crossing::Restated {
                     self.restate_pair(at, expected)?;
                 }
-                let arena = self.context.arena_mut();
                 Direction::Check(
-                    shift_comp_type(arena, expected, Binders::from(binders)).settle(arena),
+                    self.context
+                        .shift_comp_type(expected, Binders::from(binders)),
                 )
             },
         };
@@ -11196,9 +11186,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         },
                         Components::Unknown(unknown) => unknown,
                     };
-                    let component =
-                        shift_value_type(self.context.arena_mut(), component, Binders::from(shift))
-                            .settle(self.context.arena_mut());
+                    let component = self
+                        .context
+                        .shift_value_type(component, Binders::from(shift));
                     self.context.binders().open(Zone::Intuitionistic, component);
                 }
             },
@@ -11254,9 +11244,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        let arena = self.context.arena_mut();
-        let motive = shift_comp_type(arena, result, Binders::from(1_u32)).settle(arena);
-        let restated = arena.computation_dependent_split(scrutinee, arity, motive, body);
+        let motive = self.context.shift_comp_type(result, Binders::from(1_u32));
+        let restated = self
+            .context
+            .arena_mut()
+            .computation_dependent_split(scrutinee, arity, motive, body);
         self.context.record_restated_split(at, restated);
         Ok(())
     }
@@ -12019,12 +12011,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 direction: Direction::Check(classifier),
             }),
             ListPhase::Nil => {
-                let result =
-                    shift_value_type(self.context.arena_mut(), result, Binders::from(1_u32))
-                        .settle(self.context.arena_mut());
-                let expected =
-                    shift_comp_type(self.context.arena_mut(), classifier, Binders::from(2_u32))
-                        .settle(self.context.arena_mut());
+                let result = self.context.shift_value_type(result, Binders::from(1_u32));
+                let expected = self
+                    .context
+                    .shift_comp_type(classifier, Binders::from(2_u32));
                 self.context.binders().open(Zone::Intuitionistic, element);
                 self.context.binders().open(Zone::Intuitionistic, result);
                 (ListPhase::Cons, Goal::Computation {

@@ -2471,6 +2471,21 @@ mod tests
         );
     }
 
+    /// A match arm reads the type it is checked against past the fields the
+    /// arm binds: a lambda there names the binder its written arrow names.
+    #[test]
+    fn a_lambda_in_a_match_arm_names_its_written_binder_4172()
+    {
+        assert_eq!(
+            marked(SourceText::from(
+                "def probe(b : Type, w : *{x : b, y : b}) -> -F +U ((m : b) -> -F Path[.A = b](m, \
+                 m)) =\n  match w\n    | *{.x = u, .y = t} => return thunk { $0fun (k) { return \
+                 Path.here k } }\n"
+            )),
+            Ok(fenced(SourceText::from("(m : b) -> -F Path[.A = b](m, m)")))
+        );
+    }
+
     #[test]
     fn a_constructor_applied_inside_a_type_hovers_its_text_420()
     {

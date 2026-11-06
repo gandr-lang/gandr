@@ -4,4 +4,5 @@ error[UnresolvedDocLink]: the documentation links to `missing`, which is not def
 3 │ /// Points at [missing], which nothing declares.
   │                ━━━━━━━ links to no declared name
   │
-  ╰ note: `stale` is refused with UnresolvedDocLink, as its expectation states
+  ├ note: `stale` is refused with UnresolvedDocLink, as its expectation states
+  ╰ help: declare `missing`, or link to a name this source declares
