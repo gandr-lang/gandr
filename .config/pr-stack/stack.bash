@@ -537,14 +537,80 @@ restack() {
   git fetch --quiet origin "${heads[@]}"
 }
 
+# The first member of the chain `$2`… (branches, bottom to top, fetched)
+# whose remote tip does not hold the tip below it, the first member's below
+# being the commit `$1` (#5071, #5695). Prints the member's index and fails,
+# or prints nothing when each member holds the one below it. A replay of such
+# a chain leaves the member its old commits, so `restack_past` and
+# `cut_closed` refuse it.
+chain_gap() {
+  local below=$1 head i=0
+  shift
+  for head in "$@"; do
+    if ! git merge-base --is-ancestor "$below" "origin/$head"; then
+      echo "$i"
+      return 1
+    fi
+    below=origin/$head
+    i=$((i + 1))
+  done
+}
+
+# Replay the chain `$5`… (branches, bottom to top, fetched) in the scratch
+# worktree `$1`, member by member (#5749). Each member's own commits, those
+# past the old tip below it (`$3` for the first), go onto the new tip below it
+# (`$2` for the first). `$4` names the signer. With `git`, the rebase signs
+# each commit it writes (`--gpg-sign`, #3745), and the caller pushes the new
+# tips. With `github`, the rebase writes its commits as `landing`, and
+# `signed_replay` moves each branch to commits that GitHub signs (#5214),
+# because a runner holds no signing key. Sets `chain_moved` to one
+# `<branch> <old> <new>` for each member replayed. At a conflict or a refused
+# replay it stops and fails. Then `chain_stop` is the index of the member that
+# stopped, and `chain_files` the files that conflict, empty when no file
+# conflicts. A rebase that stops on no conflict prints git's error. The
+# members replayed before the stop stay replayed.
+chain_moved=()
+chain_stop=
+chain_files=
+chain_replay() {
+  local dir=$1 onto=$2 from=$3 signer=$4 head old tip new error i=0
+  local -a rebase=(rebase --quiet --gpg-sign)
+  shift 4
+  [[ $signer == git ]] || rebase=(-c user.name=landing -c user.email=landing@users.noreply.github.com rebase --quiet)
+  chain_moved=()
+  chain_stop=
+  chain_files=
+  for head in "$@"; do
+    old=$(git rev-parse "origin/$head")
+    git -C "$dir" checkout --quiet --detach "$old"
+    if ! error=$(git -C "$dir" "${rebase[@]}" --onto "$onto" "$from" 2>&1 > /dev/null); then
+      chain_stop=$i
+      chain_files=$(git -C "$dir" diff --name-only --diff-filter=U | paste -sd ' ' -)
+      [[ -n $chain_files ]] || printf '%s\n' "$error" >&2
+      git -C "$dir" rebase --abort 2> /dev/null || :
+      return 1
+    fi
+    tip=$(git -C "$dir" rev-parse HEAD)
+    new=$tip
+    if [[ $signer == github ]]; then
+      new=$(signed_replay "$head" "$onto" "$tip" "$old") || { chain_stop=$i; return 1; }
+      git fetch --quiet origin "$head"
+    fi
+    chain_moved+=("$head $old $new")
+    onto=$new
+    from=$old
+    i=$((i + 1))
+  done
+}
+
 # Cut the red member `$2` out of the stack `$1` (bottom to top), and restack
 # the members above it past it (#4642): their own commits are replayed onto
 # the member below it, or onto `origin/$trunk` when it is the bottom, and the
-# red member's commits are left out. The replay runs in a scratch worktree
-# and signs every commit it writes (`--gpg-sign`, #3745), so a conflict stops
-# the cut with nothing moved. Each member's remote tip from the red one up
-# must be an ancestor of the member above it, or the replay leaves a member
+# red member's commits are left out. Each member's remote tip from the red one
+# up must hold the one below it (`chain_gap`), or the replay leaves a member
 # its old commits (#5071): such a stack is refused, both members named. The
+# replay runs in a scratch worktree and signs every commit it writes
+# (`chain_replay`), so a conflict stops the cut with nothing moved. The
 # server refuses a base edit on a stacked pull request, so the stack is
 # unstacked first and the member above the red one retargeted onto the red
 # one's base. The server is then read again, and only a reading with the red
@@ -554,7 +620,7 @@ restack() {
 # red member stays open on its base for its seat. Prints one line per branch
 # that moved.
 restack_past() {
-  local stack=$1 red=$2 at heads above head onto base scratch server held status=0 pushes=() leases=() moved=() old new number i
+  local stack=$1 red=$2 at heads above head onto base scratch server held gap line status=0 pushes=() leases=() moved=() old new number
   at=$(jq --argjson red "$red" 'map(.number) | index($red)' <<< "$stack")
   mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
   above=("${heads[@]:at+1}")
@@ -562,28 +628,20 @@ restack_past() {
   git fetch --quiet origin "$trunk" "${heads[@]}"
   if (( at == 0 )); then base=$trunk; else base=${heads[at-1]}; fi
   onto=origin/$base
+  if ! gap=$(chain_gap "origin/${heads[at]}" "${above[@]}"); then
+    echo "${above[gap]} does not contain ${heads[at+gap]}, the member below it; rebase it onto ${heads[at+gap]} first" >&2
+    return 1
+  fi
   scratch=$(mktemp -d "${TMPDIR:-/tmp}/gandr-scratch-$$.XXXXXX")
   pr_stack_scratch=$scratch
   git worktree add --quiet --detach "$scratch" "origin/${heads[-1]}"
-  for head in "${above[@]::${#above[@]}-1}"; do
-    git -C "$scratch" branch --quiet --force "pr-stack/$head" "origin/$head"
-  done
-  for (( i = at; i + 1 < ${#heads[@]}; i++ )); do
-    if ! git merge-base --is-ancestor "origin/${heads[i]}" "origin/${heads[i+1]}"; then
-      echo "${heads[i+1]} does not contain ${heads[i]}, the member below it; rebase it onto ${heads[i]} first" >&2
-      status=1
-      break
-    fi
-  done
-  if (( status == 0 )) && ! git -C "$scratch" rebase --quiet --gpg-sign --update-refs --onto "$onto" "origin/${heads[at]}" > /dev/null; then
-    echo "the restack of ${above[*]} past #$red onto $onto conflicts ($(git -C "$scratch" diff --name-only --diff-filter=U | paste -sd ' ' -)); land again once #$red is fixed" >&2
-    git -C "$scratch" rebase --abort || true
+  if ! chain_replay "$scratch" "$onto" "origin/${heads[at]}" git "${above[@]}"; then
+    [[ -z $chain_files ]] || echo "the restack of ${above[*]} past #$red onto $onto conflicts ($chain_files); land again once #$red is fixed" >&2
     status=1
   fi
   if (( status == 0 )); then
-    for head in "${above[@]}"; do
-      old=$(git rev-parse "origin/$head")
-      if [[ "$head" == "${heads[-1]}" ]]; then new=$(git -C "$scratch" rev-parse HEAD); else new=$(git -C "$scratch" rev-parse "pr-stack/$head"); fi
+    for line in "${chain_moved[@]}"; do
+      read -r head old new <<< "$line"
       pushes+=("$new:refs/heads/$head")
       leases+=("--force-with-lease=refs/heads/$head:$old")
       moved+=("$head ${old::12}..${new::12}")
@@ -613,9 +671,6 @@ restack_past() {
   if (( status == 0 )); then
     stack_link "$(jq -c --argjson red "$red" 'map(select(.number != $red))' <<< "$stack")" || status=$?
   fi
-  for head in "${above[@]::${#above[@]}-1}"; do
-    git branch --quiet --delete --force "pr-stack/$head" > /dev/null 2>&1 || true
-  done
   drop_scratch
   (( status == 0 )) || return "$status"
   printf 'moved %s\n' "${moved[@]}"
@@ -1073,17 +1128,18 @@ closed_pr() {
 # the chain `$2` stacked on it, bottom to top (#5695), as `cut_bottom` cuts a
 # red one. Each member's own commits, those past the old head below it, are
 # replayed onto the new head below it, and the bottom's onto the closed one's
-# base. So the closed one's commits are left out. GitHub signs each replayed
-# commit (`signed_replay`), because a runner holds no signing key. The cut is
-# refused with nothing moved when a member is queued (#2531), or when a
-# member's remote tip does not hold the head below it. After the replays,
-# the chain is unstacked, since GitHub refuses a stacked member's base
-# change. The bottom is then retargeted onto the closed one's base, and the
-# chain is linked again (`stack_link`). A conflict or a refused replay stops
-# the cut and names the member. The members below it stay moved, and they
-# are retargeted and linked in the same way. Prints one line on stderr.
+# base (`chain_replay`). So the closed one's commits are left out. GitHub
+# signs each replayed commit (`signed_replay`), because a runner holds no
+# signing key. The cut is refused with nothing moved when a member is queued
+# (#2531), or when a member's remote tip does not hold the head below it
+# (`chain_gap`). After the replays, the chain is unstacked, since GitHub
+# refuses a stacked member's base change. The bottom is then retargeted onto
+# the closed one's base, and the chain is linked again (`stack_link`). A
+# conflict or a refused replay stops the cut and names the member. The
+# members below it stay moved, and they are retargeted and linked in the same
+# way. Prints one line on stderr.
 cut_closed() {
-  local closed=$1 chain=$2 number base below onto from dir tip new stack i moved=0 status=0 heads=() numbers=() olds=()
+  local closed=$1 chain=$2 number base below dir gap stack moved status=0 heads=() numbers=()
   IFS=$'\t' read -r number base below < <(jq -r '[.number, .base, .oid] | @tsv' <<< "$closed")
   mapfile -t heads < <(jq -r '.[].head' <<< "$chain")
   mapfile -t numbers < <(jq -r '.[].number' <<< "$chain")
@@ -1092,36 +1148,21 @@ cut_closed() {
     return 1
   fi
   git fetch --quiet origin "$base" "${heads[@]}" "refs/pull/$number/head" || { echo "the fetch of the chain over #$number failed" >&2; return 1; }
-  for (( i = 0; i < ${#heads[@]}; i++ )); do
-    olds+=("$(git rev-parse "origin/${heads[i]}")")
-    if (( i == 0 )); then
-      if ! git merge-base --is-ancestor "$below" "${olds[0]}"; then
-        echo "the cut past #$number is refused: ${heads[0]} does not hold the head of #$number, which moved after the chain stacked on it; rebase ${heads[0]} onto $base without the commits of #$number" >&2
-        return 1
-      fi
-    elif ! git merge-base --is-ancestor "${olds[i-1]}" "${olds[i]}"; then
-      echo "the cut past #$number is refused: ${heads[i]} does not hold ${heads[i-1]}, the branch below it; rebase it onto ${heads[i-1]} first" >&2
-      return 1
+  if ! gap=$(chain_gap "$below" "${heads[@]}"); then
+    if (( gap == 0 )); then
+      echo "the cut past #$number is refused: ${heads[0]} does not hold the head of #$number, which moved after the chain stacked on it; rebase ${heads[0]} onto $base without the commits of #$number" >&2
+    else
+      echo "the cut past #$number is refused: ${heads[gap]} does not hold ${heads[gap-1]}, the branch below it; rebase it onto ${heads[gap-1]} first" >&2
     fi
-  done
+    return 1
+  fi
   dir=$(mktemp -d)
-  git worktree add --quiet --detach "$dir" "${olds[0]}" || { rm -rf "$dir"; echo "the scratch worktree for the cut past #$number failed" >&2; return 1; }
-  onto=origin/$base
-  for (( i = 0; i < ${#heads[@]}; i++ )); do
-    if (( i == 0 )); then from=$below; else from=${olds[i-1]}; fi
-    git -C "$dir" checkout --quiet --detach "${olds[i]}"
-    if ! git -C "$dir" -c user.name=landing -c user.email=landing@users.noreply.github.com rebase --quiet --onto "$onto" "$from" > /dev/null 2>&1; then
-      echo "the cut of #${numbers[i]} past #$number onto $base conflicts ($(git -C "$dir" diff --name-only --diff-filter=U | paste -sd ' ' -)): rebase it by hand" >&2
-      git -C "$dir" rebase --abort 2> /dev/null || :
-      status=1
-      break
-    fi
-    tip=$(git -C "$dir" rev-parse HEAD)
-    new=$(signed_replay "${heads[i]}" "$onto" "$tip" "${olds[i]}") || { status=1; break; }
-    git fetch --quiet origin "${heads[i]}"
-    onto=$new
-    moved=$((moved + 1))
-  done
+  git worktree add --quiet --detach "$dir" "origin/${heads[0]}" || { rm -rf "$dir"; echo "the scratch worktree for the cut past #$number failed" >&2; return 1; }
+  if ! chain_replay "$dir" "origin/$base" "$below" github "${heads[@]}"; then
+    [[ -z $chain_files ]] || echo "the cut of #${numbers[chain_stop]} past #$number onto $base conflicts ($chain_files): rebase it by hand" >&2
+    status=1
+  fi
+  moved=${#chain_moved[@]}
   git worktree remove --force "$dir" 2> /dev/null || rm -rf "$dir"
   git worktree prune
   if (( moved > 0 )); then
