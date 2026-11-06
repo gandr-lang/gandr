@@ -1279,7 +1279,7 @@ where
     /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
     #[spec(
         captures: before = self.composites.len(),
-        ensures: |_output| self.composites.len() == before,
+        ensures: self.composites.len() == before,
     )]
     #[inline]
     pub fn resume(
@@ -1426,7 +1426,7 @@ where
     #[spec(
         requires: pair.replay(store).is_ok(),
         captures: before = self.composites.len(),
-        ensures: |_output| self.composites.len() == before.saturating_add(1),
+        ensures: self.composites.len() == before.saturating_add(1),
     )]
     fn keep_composite(
         &mut self,
