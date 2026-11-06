@@ -13,7 +13,7 @@
 11:45-11:45 = ⇒ not : Bool -> Bool⏎⏎This source states function extensionality.⏎⏎Functions form one path when they agree at every argument.⏎⏎Double negation returns each Boolean value.⏎Single negation differs from the identity function.⏎⏎- see: corpus/model/identity/funext-higher.gandr⏎The `not` function exchanges the two Boolean values. @11:5-14:29
 12:3-12:7 match ⇒ -F Bool @12:3-14:29
 12:9-12:9 b ⇒ b : Bool @12:9-12:10
-13:5-13:5 | ⇒ -F Bool @12:3-14:29
+12:11-13:5 where⏎    | ⇒ -F Bool @12:3-14:29
 13:7-13:9 +{. ⇒ +{.0 = u} : Bool @13:7-13:16
 13:10-13:10 0 ⇒ 0 : Unit @13:10-13:11
 13:12-13:12 = ⇒ +{.0 = u} : Bool @13:7-13:16
