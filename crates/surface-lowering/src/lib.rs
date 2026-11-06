@@ -19,6 +19,14 @@
 //! where the source wrote no term, a closing delimiter the source never wrote —
 //! is reported where it stands rather than lowered around.
 //!
+//! # Side tables
+//!
+//! The module's attributes resolve against a closed [`AttributeRegistry`] into
+//! an [`AttributeTable`] keyed by each declaration's `NodeKey`. An
+//! [`OriginTable`] records the syntax origin of every minted core node.
+//! Imports bring a sibling source's declarations in, and every declared name
+//! is declared over an outermost [`Recognition`](namespace::Recognition) scope.
+//!
 //! # Ten decisions that interlock
 //!
 //! **Names resolve through tables with no fallthrough.** `Unit`, `Integer`,

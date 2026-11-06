@@ -130,8 +130,6 @@ unbuilt! {
     /// A projection, `e.1` or `e.field`, where the fragment reads none, or a
     /// path the projection does not resolve.
     Projection => "projection_expression",
-    /// An index `xs.#[i]` outside a view-answering method's body.
-    Index => "index_expression",
     /// A module packed at its model type, `pack M at Model(T)`, of a shape the
     /// lowering does not read.
     PackModel => "pack_model_expression",
@@ -346,7 +344,6 @@ impl Unbuilt
     {
         match self {
             Self::Projection => TrackingIssue::PROJECTION,
-            Self::Index => TrackingIssue::UNHELD_INDEX,
             Self::PackModel | Self::ForgetModel => TrackingIssue::PACKAGES,
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
             Self::FieldGrade => TrackingIssue::FIELD_GRADE,

@@ -64,6 +64,23 @@ def elementAt(i : Integer) -> Integer =
 def elementFirst() -> Integer =
   elementAt 0
 
+/// A read of an element of a list no var holds. The read holds the list for
+/// itself, as `element` holds it by hand.
+@[ runs("2") ]
+def unheldElement() -> Integer =
+  let y = pair.#[1]
+  pure y
+
+/// The same read of a parameter's list at an index that a parameter carries.
+def unheldAt(ys : List(Integer), i : Integer) -> Integer =
+  let y = ys.#[i]
+  pure y
+
+/// A call of that read at the first index.
+@[ runs("1") ]
+def unheldFirst() -> Integer =
+  unheldAt pair 0
+
 /// The first element read through a view the block lends shared: the block
 /// only reads it.
 @[ runs("2") ]

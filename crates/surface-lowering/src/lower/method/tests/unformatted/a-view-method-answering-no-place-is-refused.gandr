@@ -4,4 +4,3 @@
   def crossed[m : Mode, n : Mode](self : m List(Integer)) -> -F View[n](Integer) {{ self.#[0] }}
 }}
 def stray(v : View[m](Integer)) -> -F Integer {{ pure 0 }}
-def bare(xs : List(Integer), i : Integer) -> -F Integer {{ let y = xs.#[i]; pure y }}

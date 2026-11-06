@@ -328,17 +328,6 @@ fn a_view_method_answering_no_place_is_refused()
             refusal_of(&module, SurfaceName::from(name))
         );
     }
-    assert!(
-        matches!(
-            refusal_of(&module, SurfaceName::from("bare")),
-            LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::Index),
-                ..
-            }
-        ),
-        "an index of a list no slot holds is no read of a place: {:?}",
-        refusal_of(&module, SurfaceName::from("bare"))
-    );
 }
 
 #[test]
@@ -357,6 +346,32 @@ fn an_index_reads_its_held_element()
             forms(&arena, tail),
             ["hold", &format!("access shared @0[{place}]"), "read @0"],
             "`{name}` holds the list and answers the element its shared view sees"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// #2670: an index of a list no slot holds holds the list for the read
+/// alone. The lowering mints the hold a source would write, so the tail
+/// is the held read's: a hold, a shared view at the index, and its read.
+#[test]
+fn an_index_of_an_unheld_list_holds_it_for_the_read_2670()
+{
+    let source = format!(
+        include_str!(
+            "tests/unformatted/an-index-of-an-unheld-list-holds-it-for-the-read-2670.gandr"
+        ),
+        PLACES = PLACES
+    );
+    let mut arena = CoreArena::new();
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
+    for (name, place) in [("passed", "%0"), ("declared", "literal")] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            forms(&arena, tail),
+            ["hold", &format!("access shared @0[{place}]"), "read @0"],
+            "`{name}` holds its list for the read and answers the element its view sees"
         );
     }
     assert_accepted(&judged(&module, &mut arena));
