@@ -8065,6 +8065,36 @@ mod tests
         }
     }
 
+    /// #5390: a type that applies a call to a tuple of a number and a
+    /// boolean, in the call's one list and in a second list that applies its
+    /// result, reads back to its certificate.
+    #[test]
+    fn a_tuple_argument_of_a_call_in_a_type_reads_back_5390()
+    {
+        let source = SourceText::from(
+            "def pairs(p : Integer * Bool) -> -F Type { return Integer }\ndef curried(t : Type) \
+             -> Integer * Bool -> Type = return fun (p) { t } ;\ndef pair : pairs(*{3, true}) \
+             ;\ndef again : curried(Unit)(*{3, false}) ;\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+
+        let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
+        for spelled in ["pairs(*{3, true})", "curried(Unit)(*{3, false})"] {
+            let trips: Vec<&RoundTrip> = read
+                .iter()
+                .filter(|read| read.spelled == spelled)
+                .map(|read| &read.trip)
+                .collect();
+            assert!(
+                !trips.is_empty() && trips.iter().all(|trip| **trip == RoundTrip::Equal),
+                "`{spelled}` reads back to its certificate: {trips:?} among {:?}",
+                read.iter()
+                    .map(|read| (&read.spelled, &read.trip))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
     /// A type naming a model implicit's components spells them by their
     /// paths and reads back under the implicit declared whole, `[s :
     /// Model(Counter)]`, where every component's binder is written at the

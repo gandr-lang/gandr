@@ -9087,9 +9087,13 @@ impl Walk<'_, '_>
                 return writes(Production("type_identifier"), self.atom(name));
             },
             // `true` and `false`, each ascribed `Bool`, as the lowering mints
-            // the words (#3350).
+            // the words (#3350). A type reads the same words as its Type-sort
+            // booleans (#5390).
             Former::Annotated { value, ty } if let Some(word) = truth(source, value, ty) => {
-                return writes(Production("boolean.expression"), self.atom(word));
+                return writes(
+                    Production("boolean.expression"),
+                    writes(Production("boolean.type"), self.atom(word)),
+                );
             },
             Former::Unit => {
                 return writes(Production("telescope_expression"), self.atom(Glyphs("*{}")));

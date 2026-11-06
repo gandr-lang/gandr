@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x57d3bdf2f55a9c8c`
-- Rules: 171 — 170 committed, 1 internal
-- Molds: 3029
+- Grammar fingerprint: `0x60c9348063203aba`
+- Rules: 172 — 171 committed, 1 internal
+- Molds: 3031
 - Attributes: 18
 
 ## Reading a form
@@ -157,7 +157,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`redirection_operator`](../corpus/ledger/syntax/redirection-operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | admitted | Operator |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget-model-expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
-## `type` — 41 rules
+## `type` — 42 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -200,6 +200,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`moded_type`](../corpus/ledger/syntax/moded-type.gandr) | `‹type_variable› TYPE` | `type.arrow` | `moded_type` * | admitted | TypeVariable |
 | [`capability_type`](../corpus/ledger/syntax/capability-type.gandr) | `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` or `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` | `type.atom` | `capability_type` * | admitted | TypeBuiltin, Other, Number, Member |
 | [`number.type`](../corpus/ledger/syntax/number.type.gandr) | `‹number›` | `type.atom` | `number` | admitted | Number |
+| [`boolean.type`](../corpus/ledger/syntax/boolean.type.gandr) | `true ‖ false` | `type.atom` | `boolean` | admitted | Boolean |
 | [`f_type.row.labelled`](../corpus/ledger/syntax/f-type.row.labelled.gandr) | `-F [ ⦅ TYPE : TYPE ‖ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦅ , ⦅ TYPE : TYPE ‖ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type, Member, Operator |
 | [`f_type.result.labelled`](../corpus/ledger/syntax/f-type.result.labelled.gandr) | `[ ⦅ TYPE : TYPE ‖ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦅ , ⦅ TYPE : TYPE ‖ ⦅ ‹type_identifier› ⦅ . ⦅ ‹type_identifier› ‖ ‹identifier› ⦆ ⦆* ‖ TYPE ⦆ ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Other, Type, Member, Keyword, Operator |
 
@@ -263,7 +264,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 | [`builtin`](../corpus/ledger/attributes/builtin.gandr) | one of the words `irSignature`, `irPair`, `irArgs`, `irDecode` |
 
-## Decisions — 114 of 171 rules decided at every token
+## Decisions — 115 of 172 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -420,6 +421,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `moded_type` | type | 1 | `type_variable` | `type_application`, `type_variable` | 0 |
 | `capability_type` | type | 12 | `Cap` | — | 2 |
 | `number.type` | type | 1 | `number` | — | 0 |
+| `boolean.type` | type | 2 | `false` `true` | — | 0 |
 | `list_operator` | expression | 3 | `&` `;` `newline` | — | 0 |
 | `pipeline.pipe` | expression | 1 | `\|` | — | 0 |
 | `pipeline.pipe_both` | expression | 1 | `\|&` | — | 0 |
@@ -517,10 +519,12 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `@![` | 3 | 3 | 2 |
 | `at` | 3 | 3 | 1 |
 | `face` | 3 | 3 | 0 |
+| `false` | 3 | 3 | 3 |
 | `feed` | 3 | 2 | 0 |
 | `law` | 3 | 3 | 1 |
 | `node` | 3 | 2 | 0 |
 | `pure` | 3 | 2 | 1 |
+| `true` | 3 | 3 | 3 |
 | `~>` | 3 | 2 | 0 |
 | ` ` | 2 | 2 | 2 |
 | `!` | 2 | 2 | 1 |
@@ -533,10 +537,8 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `:>` | 2 | 2 | 0 |
 | `break` | 2 | 2 | 2 |
 | `else` | 2 | 1 | 0 |
-| `false` | 2 | 2 | 2 |
 | `hole_name` | 2 | 2 | 0 |
 | `include` | 2 | 2 | 1 |
-| `true` | 2 | 2 | 2 |
 | `typed_number` | 2 | 2 | 2 |
 | `⇝` | 2 | 2 | 1 |
 | `∷` | 2 | 2 | 1 |

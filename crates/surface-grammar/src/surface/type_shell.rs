@@ -82,7 +82,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 53 && rules.iter().take(39).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(39).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 54 && rules.iter().take(40).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(40).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -111,7 +111,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 39 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 40 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "boolean.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -880,6 +880,18 @@ fn add_type_rules(
         ty,
         type_atom,
         tile(TileLabel("number")),
+    ));
+    // A boolean literal is a Type-sort atom on the same terms, so a value a
+    // type takes as a call's argument, the tuple in `f(*{3, true})`, molds
+    // with its booleans (#5390). The Expression-sort `boolean.expression` and
+    // the pattern-position booleans of `literal_pattern` stay the other
+    // realisations of the same provenance.
+    rules.push(Rule::with_provenance(
+        RuleName("boolean.type"),
+        Provenance("boolean"),
+        ty,
+        type_atom,
+        Regex::alt([tile(TileLabel("true")), tile(TileLabel("false"))]),
     ));
     Ok(())
 }
