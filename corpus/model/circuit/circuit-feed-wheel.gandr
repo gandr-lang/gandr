@@ -1,10 +1,9 @@
-//! A wheel in a `theory` block: a rule whose output feeds back, one step later,
-//! as a port its own body reads. The fed-back port is read under an observation
-//! of its sort, one tick, so the loop is guarded; the bare twin is
-//! `pathological/circuit/circuit-feed-wheel.gandr`. Feedback follows Katis,
-//! Sabadini and Walters [Katis-2002-feedback_trace_fixedpoint_semantics]; the
-//! guard follows the feedback rule of Di Lavore, de Felice and Román
-//! [DiLavore-2022-monoidal_streams_for_dataflow_programming].
+//! `circuit-feed-wheel` models a guarded feedback rule in a `theory` block.
+//!
+//! `spin` feeds `out` back as `state` after one observed tick.
+//! The pathological source refuses unguarded feedback. The running source refuses a model that states a circuit rule.
+//!
+//! The checker reads `state` under the `emit` observation, which guards the loop.
 //!
 //! - see: #1031
 //! - cites: [Katis-2002-feedback_trace_fixedpoint_semantics]
@@ -13,13 +12,12 @@
 //! [Katis-2002-feedback_trace_fixedpoint_semantics]: https://doi.org/10.1051/ita:2002009 "Katis, Sabadini and Walters, Feedback, Trace and Fixed-Point Semantics"
 //! [DiLavore-2022-monoidal_streams_for_dataflow_programming]: https://doi.org/10.1145/3531130.3533365 "Di Lavore, de Felice and Román, Monoidal Streams for Dataflow Programming"
 
-/// A running fold: each step reads the stream's value together with the
-/// previous output through the observation `emit`, and feeds its output back
-/// as `state`. The block binds `Wheel : Theory`.
+/// `Wheel` declares its `Nat` sort and observed `emit` operation.
 pub theory Wheel where
   sort Nat : Type;
   obs emit : (s : Nat, x : Nat) --> (y : Nat);
 
+  /// `spin` reads `state` and `stream` through `emit`, then feeds `out` back as `state`.
   rule spin : (data stream : Nat) ==> (out : Nat) {
     node : emit(state, stream) --> (out);
     feed : (out) --> (state);

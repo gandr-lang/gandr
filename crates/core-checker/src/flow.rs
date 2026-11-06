@@ -426,6 +426,7 @@ pub fn session_code(
         },
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
@@ -1018,6 +1019,7 @@ pub fn endpoints(
         } => Ok((carrier, source, target)),
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
@@ -1234,6 +1236,14 @@ pub fn covariant(
                         .values()
                         .map(|&field| (Position::ValueType(field), polarity, depth)),
                 ),
+                ValueType::Patched { base, ref fixed } => {
+                    work.push((Position::ValueType(base), polarity, depth));
+                    work.extend(
+                        fixed
+                            .values()
+                            .map(|&value| (Position::Value(value), polarity, depth)),
+                    );
+                },
                 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => work.extend(
                     parts
                         .iter()
@@ -1549,6 +1559,7 @@ fn computed(
                 && !reads(CoreNode::Term(TermNode::Value(source)))? => {},
             ValueType::Data { .. }
             | ValueType::Record(_)
+            | ValueType::Patched { .. }
             | ValueType::PathUniverse(..)
             | ValueType::Path { .. }
             | ValueType::Bridge { .. }
@@ -1711,6 +1722,7 @@ pub fn run_premises(
         ValueTypeView::Unknown => return Ok(Vec::new()),
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
@@ -1831,6 +1843,7 @@ pub fn dialogue_premises(
         ValueTypeView::Unknown => return Ok(Vec::new()),
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }

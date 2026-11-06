@@ -268,6 +268,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
+use gandr_surface_grammar::TileKind;
 use gandr_surface_grammar::aliased;
 use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::SourceFragment;
@@ -3145,20 +3146,36 @@ impl<'pbg> Molder<'pbg>
 
     /// The obligations pushing `mold` flags, read by a dry-run.
     ///
+    /// A tile that ends a form reduces every operator that the form holds. A
+    /// left operand that such an operator lacks is owed by every reading: a
+    /// reading that leaves the form open owes it at a later reduce or at
+    /// `finalize`. So the delta of an end tile leaves those operands out
+    /// ([`MeldState::caused_delta_since`]), and the end tile does not lose to
+    /// a reading that only puts off the same repair. Any other tile keeps them
+    /// ([`MeldState::delta_since`]). A mid tile can go back into a form below
+    /// the operator, and when that form lacks its closer, as in `def f( -> T
+    /// =`, the mid tile then takes the place of the repair that mints the
+    /// closer.
+    ///
     /// # Specification
-    /// - ensures: returns the streaming delta of pushing `mold` with `text` and
-    ///   restores the melder exactly.
+    /// - ensures: returns the caused delta of pushing `mold` with `text` when
+    ///   `mold` ends a form, and the streaming delta otherwise; restores the
+    ///   melder exactly.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the dry-run of a valid and an invalid mold over a
     ///   state with prior obligations; checkpoint bytes before and after expose
-    ///   leakage, and the unmolded class exposes the delta. The clause reads
-    ///   the frontier cache's top and the obligation count;
-    ///   [`MeldState::rollback_to`]'s clause checks the rest of the restore.
+    ///   leakage, and the unmolded class exposes the delta. The `;` that ends a
+    ///   member after an operator with no left operand, beside the list `;`,
+    ///   exposes the end tile's delta. The clause reads the frontier cache's
+    ///   top and the obligation count; [`MeldState::rollback_to`]'s clause
+    ///   checks the rest of the restore.
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
+    /// - witness: `parse::gap::tests::a_semicolon_after_a_missing_left_operand_ends_the_member_5502`
     #[spec(captures: before = (state.open_form_mold(), state.obligations().len()), ensures: |_| state.open_form_mold() == before.0 && state.obligations().len() == before.1)]
     fn push_delta(
+        pbg: &Pbg,
         state: &mut MeldState<'_>,
         mold: MoldId,
         text: TokenText<'_>,
@@ -3166,7 +3183,12 @@ impl<'pbg> Molder<'pbg>
     {
         let mark = state.mark();
         state.push_text(mold, TileText::from(text));
-        let delta = state.delta_since(&mark);
+        let delta = if pbg.tile_kind(mold) == Ok(TileKind::End) {
+            state.caused_delta_since(&mark)
+        }
+        else {
+            state.delta_since(&mark)
+        };
         state.rollback_to(&mark);
         delta
     }
@@ -3273,7 +3295,7 @@ impl<'pbg> Molder<'pbg>
                     continue;
                 }
                 let delta = match procedure {
-                    Procedure::DryRuns => Self::push_delta(state, mold, text),
+                    Procedure::DryRuns => Self::push_delta(self.pbg, state, mold, text),
                     Procedure::Tables => {
                         let class = self.chain.key(self.pbg, mold);
                         if let Some(&(_, delta)) =
@@ -3282,7 +3304,7 @@ impl<'pbg> Molder<'pbg>
                             delta
                         }
                         else {
-                            let delta = Self::push_delta(state, mold, text);
+                            let delta = Self::push_delta(self.pbg, state, mold, text);
                             self.pushes.push((class, delta));
                             delta
                         }
@@ -5063,7 +5085,7 @@ mod tests
         let floor = molder.floor_key(&state, invalid, &state.admissibility_frontier());
         assert!(bool::from(floor.delta.is_empty()));
         assert_eq!(state.checkpoint().to_bytes(), before);
-        let delta = Molder::push_delta(&mut state, invalid, TokenText::from("!"));
+        let delta = Molder::push_delta(&pbg, &mut state, invalid, TokenText::from("!"));
         assert_eq!(usize::from(delta.inserted(crate::Oblig::UnmoldedTok)), 1);
         assert_eq!(state.checkpoint().to_bytes(), before);
         let _completion = Molder::completion(&mut state, invalid, TokenText::from("!"));

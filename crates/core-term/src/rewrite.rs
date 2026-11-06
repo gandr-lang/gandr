@@ -2209,6 +2209,7 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
         | Node::ValueType(id) => self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
+ValueType::Patched { ref fixed, .. } => fixed.len().saturating_add(1),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
@@ -2743,6 +2744,15 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                                 .rev()
                                 .map(|&field| open(Node::ValueType(field), depth)),
                         ),
+                        ValueType::Patched { base, ref fixed } => {
+                            self.tasks.extend(
+                                fixed
+                                    .values()
+                                    .rev()
+                                    .map(|&value| open(Node::Value(value), depth)),
+                            );
+                            self.tasks.push(open(Node::ValueType(base), depth));
+                        },
                         ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                             self.tasks.extend(
                                 components
@@ -4336,6 +4346,7 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
         captures: [ready = self.results.len(), children = self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
+ValueType::Patched { ref fixed, .. } => fixed.len().saturating_add(1),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
@@ -4392,6 +4403,26 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 match changed {
                     Some(fields) => self.arena.value_type_record(fields),
                     None => id,
+                }
+            },
+            ValueType::Patched { base, ref fixed } => {
+                let mut changed = None;
+                for (label, original) in fixed.iter().rev() {
+                    let rewritten = Self::value(&mut self.results, *original);
+                    if rewritten != *original {
+                        let changed = changed.get_or_insert_with(|| fixed.clone());
+                        if let Some(slot) = changed.get_mut(label) {
+                            *slot = rewritten;
+                        }
+                    }
+                }
+                let rewritten_base = Self::value_type(&mut self.results, base);
+                match (changed, rewritten_base == base) {
+                    (None, true) => id,
+                    (changed, _) => {
+                        let fixed = changed.unwrap_or_else(|| fixed.clone());
+                        self.arena.value_type_patched(rewritten_base, fixed)
+                    },
                 }
             },
             ValueType::Stack { input, output } => {

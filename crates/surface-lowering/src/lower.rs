@@ -2996,9 +2996,16 @@ enum Plan
     /// A data type at a stage its function's telescope binds: the type and
     /// the stage.
     Staged(NodeIndex, gandr_kernel_term::Stage),
-    /// A record type patched by a static bracket, `T[.l = v]`: the record of
-    /// the fields the bracket leaves free, each at the type `T` writes for it.
-    Patched(BTreeMap<FieldLabel, NodeIndex>),
+    /// A record type patched by a static bracket, `T[.l = v]`: each field of
+    /// the base `T` at the type `T` writes for it, and each fixed label at the
+    /// value the bracket writes for it.
+    Patched
+    {
+        /// The base's fields, by label.
+        fields: BTreeMap<FieldLabel, NodeIndex>,
+        /// The fixed values, by label.
+        fixed: BTreeMap<FieldLabel, NodeIndex>,
+    },
     /// A value type kept in a region: the type and the region, a capability
     /// scope's or a hold's by its depth, or the definition's region binder.
     Kept(NodeIndex, gandr_core_term::effect::capability::Region),
@@ -19403,7 +19410,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Session(..)
                 | Plan::World(world::Worlded::At { .. })
                 | Plan::Staged(..)
-                | Plan::Patched(_)
+                | Plan::Patched { .. }
                 | Plan::Kept(..)
                 | Plan::Carrier(..)
                 | Plan::FixedCarrier(..) => Some(Produced::ValueType),
@@ -19753,7 +19760,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Access(accessed) => self.mint_access(accessed, sink, origin),
             Plan::World(worlded) => self.mint_world(worlded, sink, origin),
             Plan::Staged(base, stage) => self.mint_staged(base, stage, sink, origin),
-            Plan::Patched(ref fields) => self.mint_record_type(fields, sink, origin),
+            Plan::Patched {
+                ref fields,
+                ref fixed,
+            } => self.mint_patched_type(fields, fixed, sink, origin),
             Plan::Kept(inner, region) => self.value_type_at(inner).map(|inner| {
                 let id = sink.arena.value_type_kept(inner, region);
                 sink.origins.record_value_type(id, origin);
@@ -20996,7 +21006,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Access(_)
             | Plan::World(_)
             | Plan::Staged(..)
-            | Plan::Patched(_)
+            | Plan::Patched { .. }
             | Plan::Kept(..)
             | Plan::TelescopeTransport(_)
             | Plan::Capability(..)

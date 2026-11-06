@@ -1,44 +1,42 @@
-//! Structural equality derived from a declaration's levitated code
-//! [Chapman-2010-gentle_art_levitation]. `Nat`'s code is `1` for `Zero` and
-//! `var Nat` for `Succ`; `Tagged`'s is one product of two fields, a builtin
-//! `Bool` and `Nat`. `Eq.generic(T)` reads that code — the constructor table,
-//! the product spine, a `var` as the recursion and each leaf at the type it
-//! names — into closed core the checker judges as written and the kernel
-//! replays; the derivation itself is never trusted. A family whose code takes a
-//! parameter, or a mutual pair, is refused beside
-//! `../../pathological/metaprograms/derive-eq-over-codes.gandr`.
+//! `derive-eq-over-codes` models generic equality from levitated declaration code.
+//!
+//! `Nat` and `Tagged` give closed codes that `Eq.generic` can traverse.
+//! The pathological twin refuses parameterized and mutually recursive codes.
+//!
+//! The checker lowers the traversal to closed core and judges the result.
+//! The kernel replays the checked derivation.
 //!
 //! - cites: [Chapman-2010-gentle_art_levitation]
 //!
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
-/// Unary naturals: a unit and a recursive occurrence.
+/// `Nat` gives unary naturals as a unit and a recursive occurrence.
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-/// A natural with a flag: one product whose leaves name a builtin and `Nat`.
+/// `Tagged` gives a product of `Bool` and `Nat`.
 data Tagged : Type where
   | Tagged : (shown : Bool, count : Nat) --> Tagged
 
-/// Naturals compared constructor by constructor, recursing at `var Nat`.
+/// `eqNat` compares naturals by constructor and recurses at `var Nat`.
 def eqNat = Eq.generic Nat;
 
-/// Tagged naturals compared leaf by leaf, `count` by `Nat`'s equality.
+/// `eqTagged` compares tagged naturals leaf by leaf and uses `Nat` equality for `count`.
 def eqTagged = Eq.generic Tagged;
 
-/// Two is two.
+/// `sameNat` compares two copies of two.
 @[ runs("+{.0 = *{}}") ]
 def sameNat() -> Bool { eqNat (Succ (Succ Zero)) (Succ (Succ Zero)) }
 
-/// One is not two: the recursion reaches `Zero` on one side only.
+/// `shorterNat` compares one and two, and the recursion reaches `Zero` on one side.
 @[ runs("+{.1 = *{}}") ]
 def shorterNat() -> Bool { eqNat (Succ Zero) (Succ (Succ Zero)) }
 
-/// Two tagged naturals alike in both leaves.
+/// `sameTagged` compares two tagged naturals with equal leaves.
 @[ runs("+{.0 = *{}}") ]
 def sameTagged() -> Bool { eqTagged (Tagged true (Succ Zero)) (Tagged true (Succ Zero)) }
 
-/// Two tagged naturals apart in their count alone.
+/// `recountedTagged` compares tagged naturals that differ only in `count`.
 @[ runs("+{.1 = *{}}") ]
 def recountedTagged() -> Bool { eqTagged (Tagged true (Succ Zero)) (Tagged true Zero) }

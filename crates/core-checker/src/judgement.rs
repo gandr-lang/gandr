@@ -8020,10 +8020,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   outside it unless a run frame waits beneath it, a run or prefix
     ///   staying on the checker's side; a capability forms the payload and
     ///   reply of every operation its authority grants, and is refused when
-    ///   consumable. A former formed at once leaves the frames as found, but
-    ///   for a data type, a record, a product, a sum, a session type and a
-    ///   capability, which queue their components; one that descends leaves
-    ///   them no shorter.
+    ///   consumable; a patched type forms its base, which is a record type
+    ///   holding every label it fixes, then checks each fixed value against its
+    ///   field's type, least label first. A former formed at once leaves the
+    ///   frames as found, but for a data type, a record, a product, a sum, a
+    ///   session type and a capability, which queue their components; one that
+    ///   descends leaves them no shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::TopUniverse`]; [`CheckRefusal::NotAnAbstractType`]
@@ -8033,7 +8035,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   [`CheckRefusal::OutOfFragment`] naming [`UnadmittedFormer::Stage`] for
     ///   a staged type whose stage this judgement did not mint;
     ///   [`CheckRefusal::OpenSessionPayload`] for a session type whose payload
-    ///   reads a binder outside it, no run frame waiting.
+    ///   reads a binder outside it, no run frame waiting;
+    ///   [`CheckRefusal::PatchOutsideBase`] naming the least fixed label of a
+    ///   patched type that its base does not hold.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -8079,6 +8083,31 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         owner,
                     }));
                 Ok(Step::Ascend(Produced::Checked))
+            },
+            ValueTypeView::Patched { base, fixed } => {
+                let held = match self.context.arena().value_type(base) {
+                    Some(&gandr_core_term::ValueType::Record(ref fields)) => Some(fields),
+                    _ => None,
+                };
+                let field = |label| held.and_then(|fields| fields.get(label)).copied();
+                if let Some((_, &value)) = fixed.iter().find(|&(label, _)| field(label).is_none()) {
+                    return Err(CheckRefusal::PatchOutsideBase { at, value });
+                }
+                if held.is_none() {
+                    return Err(CheckRefusal::MachineInvariant);
+                }
+                let owner = self.owner;
+                self.frames
+                    .extend(fixed.iter().rev().filter_map(|(label, &value)| {
+                        field(label).map(|expected| Waiting {
+                            frame: Frame::Next(Goal::Value {
+                                term: value,
+                                direction: Direction::Check(expected),
+                            }),
+                            owner,
+                        })
+                    }));
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(base))))
             },
             ValueTypeView::Stack { input, output } => {
                 self.wait(Frame::FormNext(TypeNode::Computation(output)));
@@ -8629,6 +8658,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Web
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
+                | ValueTypeView::Patched { .. }
                 | ValueTypeView::Sum(..)
                 | ValueTypeView::List(_)
                 | ValueTypeView::Stack { .. }
@@ -8708,6 +8738,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Web
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
+                | ValueTypeView::Patched { .. }
                 | ValueTypeView::Sum(..)
                 | ValueTypeView::List(_)
                 | ValueTypeView::Stack { .. }
@@ -10547,6 +10578,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     },
                     ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
+                    | ValueTypeView::Patched { .. }
                     | ValueTypeView::Stack { .. }
                     | ValueTypeView::PathUniverse(..)
                     | ValueTypeView::Path { .. }
@@ -11393,6 +11425,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             ValueTypeView::Unknown => Ok(PathReading::Unknown(head)),
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Bridge { .. }

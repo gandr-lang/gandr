@@ -421,6 +421,7 @@ impl Machine<'_, '_>
             ValueTypeView::World(WorldType::Capability(_))
             | ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }

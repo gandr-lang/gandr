@@ -1019,6 +1019,14 @@ where
                             .map(|&field| (AnyNode::ValueType(field), reach)),
                     );
                 },
+                Some(&ValueType::Patched { base, ref fixed }) => {
+                    pending.push((AnyNode::ValueType(base), reach));
+                    pending.extend(
+                        fixed
+                            .values()
+                            .map(|&value| (AnyNode::Value(value), reach.term())),
+                    );
+                },
                 Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
                     pending.extend(parts.iter().map(|&part| (AnyNode::ValueType(part), reach)));
                 },

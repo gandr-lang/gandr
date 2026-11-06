@@ -505,6 +505,10 @@ pub enum Former<'source, Node>
     /// A record type of this many fields, which the source answers in label
     /// order by [`Source::component`] and [`Source::label`]: `#{l : A, …}`.
     RecordType(Arity),
+    /// A record type patched at this many fields: its base, then each fixed
+    /// value, which the source answers in label order by
+    /// [`Source::component`] and [`Source::label`]: `B[.l = v, …]`.
+    Patched(Node, Arity),
     /// The suspension `+U C` of a computation type.
     ThunkType(Node),
     /// The universe of one sort at a level.
@@ -1468,17 +1472,17 @@ pub trait Source
     ///   a [`Former::Product`], a [`Former::Sum`], a [`Former::Tuple`], a
     ///   [`Former::With`], a [`Former::Lazy`], a [`Former::Record`], a
     ///   [`Former::RecordUpdate`], a [`Former::RecordType`], a
-    ///   [`Former::Session`], a [`Former::Data`], a [`Former::Codata`], a
-    ///   [`Former::Constructor`], a [`Former::Primitive`], a [`Former::Case`],
-    ///   a [`Former::DataCase`], a [`Former::Handle`], a [`Former::Scope`], a
-    ///   [`Former::Offer`], a [`Former::Returns`] or a
-    ///   [`Former::EffectfulReturner`] that returns a group for `node` and
-    ///   `index` is below its arity: a record's fields and the fields an update
-    ///   writes in label order, a session type's payloads in slot order, a
-    ///   family's arguments and a constructor's fields in telescope order, a
-    ///   primitive's arguments, a case's branches, a handler's operation
-    ///   clauses, an offer's arms and a returner's results in order; none
-    ///   otherwise.
+    ///   [`Former::Patched`], a [`Former::Session`], a [`Former::Data`], a
+    ///   [`Former::Codata`], a [`Former::Constructor`], a
+    ///   [`Former::Primitive`], a [`Former::Case`], a [`Former::DataCase`], a
+    ///   [`Former::Handle`], a [`Former::Scope`], a [`Former::Offer`], a
+    ///   [`Former::Returns`] or a [`Former::EffectfulReturner`] that returns a
+    ///   group for `node` and `index` is below its arity: a record's fields,
+    ///   the fields an update writes and the values a patch fixes in label
+    ///   order, a session type's payloads in slot order, a family's arguments
+    ///   and a constructor's fields in telescope order, a primitive's
+    ///   arguments, a case's branches, a handler's operation clauses, an
+    ///   offer's arms and a returner's results in order; none otherwise.
     /// - provides: the children of an n-ary former, which a [`Former`] counts
     ///   but does not hold.
     /// - fails: never; a missing component is an absence, which the printer
@@ -1513,13 +1517,13 @@ pub trait Source
     /// # Specification
     /// - requires: nothing; any handle and any position are admissible.
     /// - ensures: the label of the entry [`component`] answers at `index` when
-    ///   [`read`] answers a [`Former::Record`], a [`Former::RecordUpdate`] or a
-    ///   [`Former::RecordType`] — its field's label —, a [`Former::Handle`] or
-    ///   a [`Former::Scope`] — the operation its clause answers —, a
-    ///   [`Former::Offer`] — its arm's label — or a [`Former::Sum`] or a
-    ///   [`Former::With`] the source writes over labels — the label its entry
-    ///   is written under — for `node` and `index` is below its arity; none
-    ///   otherwise.
+    ///   [`read`] answers a [`Former::Record`], a [`Former::RecordUpdate`], a
+    ///   [`Former::Patched`] or a [`Former::RecordType`] — its field's label —,
+    ///   a [`Former::Handle`] or a [`Former::Scope`] — the operation its clause
+    ///   answers —, a [`Former::Offer`] — its arm's label — or a
+    ///   [`Former::Sum`] or a [`Former::With`] the source writes over labels —
+    ///   the label its entry is written under — for `node` and `index` is below
+    ///   its arity; none otherwise.
     /// - provides: the labels a record's fields, a handler's clauses, an
     ///   offer's arms and a labelled sum's or lazy record's entries are written
     ///   under, which a [`Former`] counts but does not hold.

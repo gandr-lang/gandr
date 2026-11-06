@@ -730,7 +730,9 @@ impl Machine<'_, '_>
     /// # Specification
     /// - requires: `term` is a record and `expected` is formed.
     /// - ensures: each required field checks at its declared type, and every
-    ///   additional field has a type rather than escaping judgment.
+    ///   additional field has a type rather than escaping judgment. At a
+    ///   patched type, the required fields are its base's free fields, and a
+    ///   fixed field is an additional one.
     /// - fails: wrong expected shape or a missing field, then field refusals.
     /// - panics: none.
     ///
@@ -741,6 +743,7 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — width in both directions, nested depth and a field of
     ///   the wrong type separate record checking from mere label inclusion.
     /// - witness: `tests::native_formers::record_width_depth_and_projection`
+    /// - witness: `tests::native_formers::a_patched_type_forms_over_its_base_and_types_its_free_fields`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn check_native_record(
@@ -759,14 +762,27 @@ impl Machine<'_, '_>
                 unfolded: TypeNode::Value(head),
             });
         };
-        let ValueType::Record(ref wanted) = *matched_native_node
+        let mismatch = CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(term),
+            wanted: ExpectedShape::Record,
+            found: TypeNode::Value(expected),
+            unfolded: TypeNode::Value(head),
+        };
+        // A patched type's elements are the records of its free fields: the
+        // fields it fixes are wanted nowhere.
+        let (wanted, fixed) = if let ValueType::Record(ref wanted) = *matched_native_node {
+            (wanted, None)
+        }
+        else if let ValueType::Patched { base, ref fixed } = *matched_native_node
+            && let Some(&ValueType::Record(ref wanted)) = self.context.arena().value_type(base)
+        {
+            (wanted, Some(fixed))
+        }
         else {
-            return Err(CheckRefusal::ShapeMismatch {
-                at: TermNode::Value(term),
-                wanted: ExpectedShape::Record,
-                found: TypeNode::Value(expected),
-                unfolded: TypeNode::Value(head),
-            });
+            return Err(mismatch);
+        };
+        let free = |label: &gandr_kernel_term::FieldLabel| {
+            fixed.is_none_or(|fixed| !fixed.contains_key(label))
         };
         let Some(matched_native_node) = self.context.arena().value(term)
         else {
@@ -776,12 +792,15 @@ impl Machine<'_, '_>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        if !wanted.keys().all(|label| fields.contains_key(label)) {
+        if !wanted
+            .keys()
+            .all(|label| !free(label) || fields.contains_key(label))
+        {
             return Err(CheckRefusal::MissingRecordField { at: term, expected });
         }
         let owner = self.owner;
         for (label, &field) in fields.iter().rev() {
-            let direction = if let Some(&expected) = wanted.get(label) {
+            let direction = if let Some(&expected) = wanted.get(label).filter(|_| free(label)) {
                 Direction::Check(expected)
             }
             else {
@@ -1431,6 +1450,19 @@ impl Machine<'_, '_>
                 .get(label)
                 .copied()
                 .ok_or(CheckRefusal::AbsentRecordField(term))?,
+            // A patched type's elements hold only its free fields: a fixed
+            // label projects nothing.
+            (
+                Some(&Computation::RecordProjection(_, ref label)),
+                Some(&ValueType::Patched { base, ref fixed }),
+            ) => match arena.value_type(base) {
+                Some(&ValueType::Record(ref fields)) if !fixed.contains_key(label) => fields
+                    .get(label)
+                    .copied()
+                    .ok_or(CheckRefusal::AbsentRecordField(term))?,
+                Some(&ValueType::Record(_)) => return Err(CheckRefusal::AbsentRecordField(term)),
+                _ => return Err(mismatch(ExpectedShape::Record)),
+            },
             (Some(&Computation::RecordProjection(..)), _) => {
                 return Err(mismatch(ExpectedShape::Record));
             },
@@ -1585,17 +1617,27 @@ impl Machine<'_, '_>
     >
     {
         let head = self.context.whnf_value_type(classifier)?;
-        if let Some(&ValueType::Record(ref fields)) = self.context.arena().value_type(head) {
-            Ok(fields.clone())
+        let arena = self.context.arena();
+        match arena.value_type(head) {
+            Some(&ValueType::Record(ref fields)) => return Ok(fields.clone()),
+            // A patched operand holds its free fields only.
+            Some(&ValueType::Patched { base, ref fixed }) => {
+                if let Some(&ValueType::Record(ref fields)) = arena.value_type(base) {
+                    return Ok(fields
+                        .iter()
+                        .filter(|&(label, _)| !fixed.contains_key(label))
+                        .map(|(label, &field)| (label.clone(), field))
+                        .collect());
+                }
+            },
+            _ => {},
         }
-        else {
-            Err(CheckRefusal::ShapeMismatch {
-                at: TermNode::Value(operand),
-                wanted: ExpectedShape::Record,
-                found: TypeNode::Value(classifier),
-                unfolded: TypeNode::Value(head),
-            })
-        }
+        Err(CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(operand),
+            wanted: ExpectedShape::Record,
+            found: TypeNode::Value(classifier),
+            unfolded: TypeNode::Value(head),
+        })
     }
 
     /// Open a dependent split's motive binder over the scrutinee's classifier
@@ -1698,6 +1740,7 @@ impl Machine<'_, '_>
             ValueTypeView::Unknown => (sigma, sigma),
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }

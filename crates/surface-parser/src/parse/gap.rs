@@ -1713,4 +1713,38 @@ mod tests
         );
         Ok(())
     }
+
+    #[test]
+    fn a_semicolon_after_a_missing_left_operand_ends_the_member_5502() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        for source in [
+            include_str!(
+                "gap/unformatted/a-semicolon-after-a-missing-left-operand-ends-the-member-5502-1.gandr"
+            ),
+            include_str!(
+                "gap/unformatted/a-semicolon-after-a-missing-left-operand-ends-the-member-5502-2.gandr"
+            ),
+        ] {
+            let operator = source.find("+ 1").ok_or("the operator is written")?;
+            let parsed = parse(&pbg, SourceText::from(source))?;
+            let owed: alloc::vec::Vec<(Oblig, usize, usize)> = parsed
+                .obligations()
+                .iter()
+                .map(|obligation| {
+                    (
+                        obligation.class,
+                        usize::from(obligation.span.start()),
+                        usize::from(obligation.span.end()),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                owed,
+                [(Oblig::MissingMeld, operator, operator)],
+                "{source}: the `;` ends `first`, so the parse owes only the left operand of `+`"
+            );
+        }
+        Ok(())
+    }
 }

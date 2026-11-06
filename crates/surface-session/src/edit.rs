@@ -3970,7 +3970,7 @@ where
                 ValueType::Buffer => ret == ContentNode::BufferType,
                 ValueType::Row => ret == ContentNode::RowKind,
                 ValueType::RowTail(_) => matches!(ret, ContentNode::RowTail(_)),
-                ValueType::Staged { .. } | ValueType::World(_) => ret == ContentNode::Unresolved(Sort::ValueType),
+                ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. } => ret == ContentNode::Unresolved(Sort::ValueType),
             },
         )
 },
@@ -4117,9 +4117,8 @@ where
         Some(&ValueType::Buffer) => ContentNode::BufferType,
         Some(&ValueType::Row) => ContentNode::RowKind,
         Some(&ValueType::RowTail(code)) => ContentNode::RowTail(child(Root::Value(code))),
-        Some(&(ValueType::Staged { .. } | ValueType::World(_))) | None => {
-            ContentNode::Unresolved(Sort::ValueType)
-        },
+        Some(&(ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. }))
+        | None => ContentNode::Unresolved(Sort::ValueType),
     }
 }
 

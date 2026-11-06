@@ -138,7 +138,6 @@ model/builtins/list-patterns.gandr:Grade.Met:1e02176973cebde2 uncommented
 model/builtins/list-patterns.gandr:Grade.Unmet:51f9cbd323e94662 uncommented
 model/circuit/circuit-feed-wheel.gandr:Wheel.Nat:766735245ec8870b uncommented
 model/circuit/circuit-feed-wheel.gandr:Wheel.emit:dfc1cf9fba8a46fd uncommented
-model/circuit/circuit-feed-wheel.gandr:Wheel.spin:86b77b50b1ac4015 uncommented
 model/circuit/circuit-rule-block.gandr:Nat.Succ:7c4f42ddb605906d uncommented
 model/circuit/circuit-rule-block.gandr:Nat.Zero:d5b53cc69ba075a3 uncommented
 model/circuit/circuit-rule-block.gandr:NatSum.Nat:766735245ec8870b uncommented

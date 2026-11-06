@@ -553,6 +553,7 @@ impl Machine<'_, '_>
             ValueTypeView::Unknown => head,
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::PathUniverse { .. }
             | ValueTypeView::Path { .. }
             | ValueTypeView::Bridge { .. }

@@ -1655,6 +1655,8 @@ impl<'arena> CoreSource<'arena>
             | (Some(&ValueType::Web), Former::WebType) => true,
         | (Some(&ValueType::Record(ref fields)), Former::Product(arity)) => fields.is_empty() && usize::from(arity) == 0_usize,
         | (Some(&ValueType::Record(ref fields)), Former::RecordType(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
+        | (Some(&ValueType::Patched { base, ref fixed }), Former::Patched(actual, arity)) =>
+            actual == CoreNode::ValueType(base) && usize::from(arity) == fixed.len(),
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
         | (Some(&ValueType::Product(ref parts)), Former::Product(arity))
         | (Some(&ValueType::Sum(ref parts)), Former::Sum(arity)) => usize::from(arity) == parts.len(),
@@ -1760,6 +1762,9 @@ impl<'arena> CoreSource<'arena>
                 Former::Product(Arity::from(0_usize))
             },
             ValueType::Record(ref fields) => Former::RecordType(Arity::from(fields.len())),
+            ValueType::Patched { base, ref fixed } => {
+                Former::Patched(CoreNode::ValueType(base), Arity::from(fixed.len()))
+            },
             ValueType::Product(ref parts) => Former::Product(Arity::from(parts.len())),
             ValueType::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
             ValueType::Stack { input, output } => {
@@ -2590,6 +2595,9 @@ impl Source for CoreSource<'_>
                     .values()
                     .nth(at)
                     .map(|&field| CoreNode::ValueType(field)),
+                ValueType::Patched { ref fixed, .. } => {
+                    fixed.values().nth(at).map(|&value| CoreNode::Value(value))
+                },
                 ValueType::Session(ref session) => session
                     .payloads()
                     .get(at)
@@ -2817,6 +2825,7 @@ impl Source for CoreSource<'_>
     #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
         | CoreNode::ValueType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value_type(self.unstaged(id)) {
             | Some(&ValueType::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+            | Some(&ValueType::Patched { ref fixed, .. }) => fixed.keys().nth(usize::from(index)).map(AsRef::as_ref),
             | Some(&ValueType::Sum(ref parts)) => entry_label(self.sum_labels, id, Arity::from(parts.len()), index).map(AsRef::as_ref),
             | Some(_) | None => None,
         },
@@ -2845,6 +2854,7 @@ impl Source for CoreSource<'_>
         let label: &str = match self.restoration.restored(node) {
             CoreNode::ValueType(id) => match *self.arena.value_type(self.unstaged(id))? {
                 ValueType::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
+                ValueType::Patched { ref fixed, .. } => fixed.keys().nth(at).map(AsRef::as_ref),
                 ValueType::Sum(ref parts) => {
                     entry_label(self.sum_labels, id, Arity::from(parts.len()), index)
                         .map(AsRef::as_ref)
@@ -3532,6 +3542,46 @@ mod tests
             source.component(CoreNode::ValueType(staged), Component::from(1_usize)),
             Some(CoreNode::ValueType(string))
         );
+    }
+
+    /// A patched type reads as its base, then each value it fixes in label
+    /// order, under its label.
+    #[test]
+    fn a_patched_type_reads_as_its_base_and_its_fixed_values()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let label = |name: &str| FieldLabel::from(String::from(name));
+        let record = arena.value_type_record(BTreeMap::from([
+            (label("host"), string),
+            (label("port"), integer),
+            (label("tls"), integer),
+        ]));
+        let port = arena.value_unit();
+        let tls = arena.value_tuple(&[port]);
+        let patched = arena.value_type_patched(
+            record,
+            BTreeMap::from([(label("tls"), tls), (label("port"), port)]),
+        );
+        let source = CoreSource::new(&arena, &[]);
+        let node = CoreNode::ValueType(patched);
+        assert!(matches!(
+            source.read(node),
+            Former::Patched(base, arity)
+                if base == CoreNode::ValueType(record) && usize::from(arity) == 2
+        ));
+        assert_eq!(
+            source.component(node, Component::from(1_usize)),
+            Some(CoreNode::Value(tls))
+        );
+        assert_eq!(
+            source
+                .label(node, Component::from(1_usize))
+                .map(|name| String::from(name.as_ref())),
+            Some(String::from("tls"))
+        );
+        assert_eq!(source.component(node, Component::from(2_usize)), None);
     }
 
     /// A product's, a sum's and a record's components read in order, a

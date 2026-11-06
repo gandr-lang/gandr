@@ -3,9 +3,10 @@
 // label or by face.
 //
 // A record type's labels are its boundary. A face over them names a part of
-// the record, so a later form restricts a value to that part. The patched type
-// is the record of the fields the bracket leaves free. A name at it reads a
-// fixed field as the value the bracket fixes.
+// the record, so a later form restricts a value to that part. The checker
+// checks each fixed value at its field's type. A value of the patched type is
+// the record of the fields the bracket leaves free. A name at it reads a fixed
+// field as the value the bracket fixes.
 //
 // The block names each face as a theory's `face` member does. The block ends
 // the type member at its `}`, as a `data` block ends its declaration. A record
@@ -19,8 +20,9 @@
 //   refused
 // - see: `model/desc/shaped-signature.gandr` — a theory's `boundary` and its
 //   faces
-// - owes: #5536 — a configuration coerced to a patched type, and an element
-//   of a patched type coerced back to the configuration
+// - owes: #5578 — a configuration coerced to a patched type
+// - owes: #5579 — an element of a patched type coerced back to the
+//   configuration
 // - owes: #5106 — two faces fixed at once, whose values agree where the faces
 //   meet
 

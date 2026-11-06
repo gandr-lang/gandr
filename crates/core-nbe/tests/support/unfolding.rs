@@ -160,6 +160,7 @@ pub struct Unfolded(pub u64);
                 match *node {
                     ValueType::Data { ref arguments, .. } => 1_u64.saturating_add(u64::try_from(arguments.len()).unwrap_or(u64::MAX)),
                     ValueType::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
+                    ValueType::Patched { ref fixed, .. } => 2_u64.saturating_add(u64::try_from(fixed.len()).unwrap_or(u64::MAX)),
                     ValueType::Product(ref parts) | ValueType::Sum(ref parts) => 1_u64.saturating_add(u64::try_from(parts.len()).unwrap_or(u64::MAX)),
                     ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row => 1,
                     ValueType::Session(ref session) => 1_u64.saturating_add(u64::try_from(session.payloads().len()).unwrap_or(u64::MAX)),
@@ -538,6 +539,10 @@ pub fn unfolded(
                     },
                     ValueType::Record(ref fields) => {
                         pending.extend(fields.values().copied().map(CoreNode::ValueType));
+                    },
+                    ValueType::Patched { base, ref fixed } => {
+                        pending.push(CoreNode::ValueType(base));
+                        pending.extend(fixed.values().copied().map(CoreNode::Value));
                     },
                     ValueType::Session(ref session) => {
                         pending.extend(session.payloads().iter().copied().map(CoreNode::ValueType));
