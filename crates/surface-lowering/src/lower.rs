@@ -16536,29 +16536,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 classifier = codomain;
             }
         }
-        let read = again.map_or(applied.start .. applied.end, |again| {
-            applied.start .. again.end
-        });
-        self.valued_arguments(resolved, Stretch {
-            start: read.start,
-            end: read.end,
-        })?;
-        for position in read.clone() {
-            if let Some(&argument) = self.operands.get(position) {
-                self.read(argument, Reading::Value(frame));
-            }
-        }
-        // Each argument of a decode or an unquote is a value the type reads:
-        // it counts in that type's telescope, as a family's arguments do.
-        if matches!(
-            plan,
-            Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..)
-        ) {
-            self.in_type
-                .extend(self.operands.get(read).unwrap_or_default().iter().copied());
-        }
-
-        self.plan(site, plan);
+        let read = Stretch {
+            start: applied.start,
+            end: again.map_or(applied.end, |again| again.end),
+        };
+        self.valued_arguments(resolved, read)?;
+        self.plan_applied(site, plan, read, frame);
 
         Ok(())
     }
@@ -18212,6 +18195,54 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(held) = self.plans.get_mut(site.at.node) {
             *held = plan;
         }
+    }
+
+    /// Plan the form at `site` as `plan`, a head applied to the arguments
+    /// `read` holds, each read as a value in `frame`.
+    ///
+    /// A decode, an unquote and a reapplication read their arguments inside
+    /// the type they make, so each argument counts in that type's telescope,
+    /// as a family's arguments do. A lambda among them reads its body inside
+    /// the type too. Each planner of an application marks its arguments here.
+    ///
+    /// # Specification
+    /// - requires: `read` holds the arguments of `plan` in the operand store.
+    /// - ensures: each argument of `read` is read as a value in `frame`, and
+    ///   counts among the values a type reads when `plan` is a decode, an
+    ///   unquote or a reapplication; `site` takes `plan`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses restate [`Self::read`] and
+    ///   [`Self::plan`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function to a universe unquoted where a type is
+    ///   read, a lambda in a type-valued call's argument and a descent's
+    ///   unquote each read their arguments inside the type.
+    /// - witness: `lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
+    /// - witness: `lower::tests::a_lambda_in_a_type_valued_call_reads_outer_variables_at_their_indices_3616`
+    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
+    fn plan_applied(
+        &mut self,
+        site: Site,
+        plan: Plan,
+        read: Stretch,
+        frame: Frame,
+    )
+    {
+        for position in read.start .. read.end {
+            if let Some(&argument) = self.operands.get(position) {
+                self.read(argument, Reading::Value(frame));
+            }
+        }
+        if matches!(
+            plan,
+            Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..)
+        ) {
+            self.in_type
+                .extend(stretch(&self.operands, read).iter().copied());
+        }
+        self.plan(site, plan);
     }
 
     /// The source text of `placed`.
