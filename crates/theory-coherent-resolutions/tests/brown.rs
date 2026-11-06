@@ -92,15 +92,32 @@ fn nat_units() -> Result<(LawvereTheory, Terms), LawvereError>
     }))
 }
 
-/// The arrow from `source` variables to `terms`.
+/// The variables of an arrow's context in these witnesses.
+#[derive(Clone, Copy, Debug)]
+enum Context
+{
+    /// No variable.
+    Closed,
+    /// The variable `x₁`.
+    One,
+    /// The variables `x₁` and `x₂`.
+    Two,
+}
+
+/// The arrow from the variables of `context` to `terms`.
 ///
 /// # Specification
 /// trivial.
 fn arrow(
-    source: usize,
+    context: Context,
     terms: &[TermPlace],
 ) -> Arrow
 {
+    let source = match context {
+        Context::Closed => 0_usize,
+        Context::One => 1,
+        Context::Two => 2,
+    };
     Arrow {
         source: Arity::from(source),
         terms: terms.to_vec(),
@@ -131,9 +148,18 @@ fn lefts(terms: &Terms) -> BTreeSet<BarCell>
         ..
     } = terms;
     BTreeSet::from([
-        cell(&[arrow(2, &[sum]), arrow(1, &[nought, first])]),
-        cell(&[arrow(2, &[sum]), arrow(1, &[first, nought])]),
-        cell(&[arrow(2, &[sum]), arrow(2, &[next, second])]),
+        cell(&[
+            arrow(Context::Two, &[sum]),
+            arrow(Context::One, &[nought, first]),
+        ]),
+        cell(&[
+            arrow(Context::Two, &[sum]),
+            arrow(Context::One, &[first, nought]),
+        ]),
+        cell(&[
+            arrow(Context::Two, &[sum]),
+            arrow(Context::Two, &[next, second]),
+        ]),
     ])
 }
 
@@ -154,14 +180,14 @@ fn overlaps(terms: &Terms) -> [BarCell; 2]
     } = terms;
     [
         cell(&[
-            arrow(2, &[sum]),
-            arrow(1, &[first, nought]),
-            arrow(0, &[nought]),
+            arrow(Context::Two, &[sum]),
+            arrow(Context::One, &[first, nought]),
+            arrow(Context::Closed, &[nought]),
         ]),
         cell(&[
-            arrow(2, &[sum]),
-            arrow(2, &[next, second]),
-            arrow(1, &[first, nought]),
+            arrow(Context::Two, &[sum]),
+            arrow(Context::Two, &[next, second]),
+            arrow(Context::One, &[first, nought]),
         ]),
     ]
 }
@@ -194,43 +220,50 @@ fn the_cells_of_nat_units_take_the_classes_of_the_scheme() -> Result<(), Lawvere
         next,
         one,
     } = terms;
+    let (closed, unary, binary) = (Context::Closed, Context::One, Context::Two);
     let classes = [
         (cell(&[]), Class::Critical),
-        (cell(&[arrow(0, &[nought])]), Class::Critical),
+        (cell(&[arrow(closed, &[nought])]), Class::Critical),
         (
-            cell(&[arrow(1, &[nought])]),
-            Class::Redundant(cell(&[arrow(0, &[nought]), arrow(1, &[])])),
+            cell(&[arrow(unary, &[nought])]),
+            Class::Redundant(cell(&[arrow(closed, &[nought]), arrow(unary, &[])])),
         ),
         (
-            cell(&[arrow(1, &[double])]),
-            Class::Redundant(cell(&[arrow(2, &[sum]), arrow(1, &[first, first])])),
-        ),
-        (
-            cell(&[arrow(1, &[next]), arrow(0, &[nought])]),
-            Class::Collapsible(cell(&[arrow(0, &[one])])),
-        ),
-        (
-            cell(&[arrow(2, &[sum]), arrow(0, &[nought, nought])]),
+            cell(&[arrow(unary, &[double])]),
             Class::Redundant(cell(&[
-                arrow(2, &[sum]),
-                arrow(1, &[nought, first]),
-                arrow(0, &[nought]),
+                arrow(binary, &[sum]),
+                arrow(unary, &[first, first]),
+            ])),
+        ),
+        (
+            cell(&[arrow(unary, &[next]), arrow(closed, &[nought])]),
+            Class::Collapsible(cell(&[arrow(closed, &[one])])),
+        ),
+        (
+            cell(&[arrow(binary, &[sum]), arrow(closed, &[nought, nought])]),
+            Class::Redundant(cell(&[
+                arrow(binary, &[sum]),
+                arrow(unary, &[nought, first]),
+                arrow(closed, &[nought]),
             ])),
         ),
         (
             cell(&[
-                arrow(2, &[sum]),
-                arrow(1, &[nought, first]),
-                arrow(0, &[nought]),
+                arrow(binary, &[sum]),
+                arrow(unary, &[nought, first]),
+                arrow(closed, &[nought]),
             ]),
-            Class::Collapsible(cell(&[arrow(2, &[sum]), arrow(0, &[nought, nought])])),
+            Class::Collapsible(cell(&[
+                arrow(binary, &[sum]),
+                arrow(closed, &[nought, nought]),
+            ])),
         ),
         (
-            cell(&[arrow(2, &[sum]), arrow(1, &[next, first])]),
+            cell(&[arrow(binary, &[sum]), arrow(unary, &[next, first])]),
             Class::Redundant(cell(&[
-                arrow(2, &[sum]),
-                arrow(2, &[next, second]),
-                arrow(1, &[first, first]),
+                arrow(binary, &[sum]),
+                arrow(binary, &[next, second]),
+                arrow(unary, &[first, first]),
             ])),
         ),
     ];
@@ -249,11 +282,11 @@ fn a_cell_led_by_a_variable_or_by_no_term_is_refused() -> Result<(), LawvereErro
 {
     let (mut theory, terms) = nat_units()?;
     assert_eq!(
-        theory.class(&cell(&[arrow(1, &[terms.first])])),
+        theory.class(&cell(&[arrow(Context::One, &[terms.first])])),
         Err(LawvereError::LeadingVariable)
     );
     assert_eq!(
-        theory.class(&cell(&[arrow(0, &[])])),
+        theory.class(&cell(&[arrow(Context::Closed, &[])])),
         Err(LawvereError::NoTerm)
     );
     Ok(())
@@ -275,11 +308,15 @@ fn an_overlap_names_the_rule_that_it_overlaps() -> Result<(), LawvereError>
         Maybe::Present(RulePlace::from(1_usize))
     );
     assert_eq!(
-        theory.overlapping(&cell(&[arrow(2, &[terms.sum])]))?,
+        theory.overlapping(&cell(&[arrow(Context::Two, &[terms.sum])]))?,
         Maybe::Absent(overlapped::Absent::Short)
     );
+    let stuck = cell(&[
+        arrow(Context::One, &[terms.next]),
+        arrow(Context::Closed, &[terms.nought]),
+    ]);
     assert_eq!(
-        theory.overlapping(&cell(&[arrow(1, &[terms.next]), arrow(0, &[terms.nought])]))?,
+        theory.overlapping(&stuck)?,
         Maybe::Absent(overlapped::Absent::NoRedex)
     );
     Ok(())
@@ -313,9 +350,9 @@ fn a_truncation_of_nat_units_collapses_onto_its_generators_rules_and_overlaps()
         }
     }
     let generators = BTreeSet::from([
-        cell(&[arrow(1, &[terms.next])]),
-        cell(&[arrow(0, &[terms.nought])]),
-        cell(&[arrow(2, &[terms.sum])]),
+        cell(&[arrow(Context::One, &[terms.next])]),
+        cell(&[arrow(Context::Closed, &[terms.nought])]),
+        cell(&[arrow(Context::Two, &[terms.sum])]),
     ]);
     assert_eq!(by_degree, [
         generators,
