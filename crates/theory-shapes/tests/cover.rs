@@ -8,19 +8,24 @@
 //! one square for each pair of faces. It refuses the first point of the meet
 //! where the two arms differ.
 //!
-//! The probe states the same condition as gluing. The cells of the site are
-//! the faces and their pairwise meets, ordered by inclusion of their points in
-//! a graded poset of `gandr-theory-graded-posets`. The stalk at a cell is one
-//! value for each of its points, and the restriction from a face to a meet
-//! below it keeps the values at the meet's points. The arms are the sections
-//! on the faces. They glue when, at the meet of each two faces, their
-//! restrictions agree. The probe reads each meet from the poset's bit rows:
-//! the cells below both faces, and the one of them whose closure is that set.
+//! The probe states the same condition as gluing in a sheaf of
+//! `gandr-theory-cellular-sheaves`. The cells of the site are the faces and
+//! their pairwise meets. A sheaf's maps run from a cell to each cell above
+//! it, so the site orders its cells by reverse inclusion of their points: a
+//! meet lies above each face that holds it. The stalk at a cell is one value
+//! for each of its points, and the map from a face to a meet above it keeps
+//! the values at the meet's points. The arms are the sections on the faces.
+//! They glue when, at the least cell above each two faces, which is their
+//! meet, their restrictions agree.
 //!
 //! The probe passes when the gluing and the agreement check give the same
 //! verdict on each pair of each cover, and each refusal names the meet where
 //! the two arms differ and its first point there.
 
+use gandr_theory_cellular_sheaves::Entry;
+use gandr_theory_cellular_sheaves::Gluing;
+use gandr_theory_cellular_sheaves::Sheaf;
+use gandr_theory_cellular_sheaves::Width;
 use gandr_theory_graded_posets::GradedPoset;
 use gandr_theory_shapes::Membership;
 use gandr_theory_shapes::Point;
@@ -30,12 +35,10 @@ use gandr_theory_shapes::Subshape;
 use gandr_theory_shapes::UnionSquare;
 use gandr_theory_stone_duality::Comparison;
 use gandr_theory_stone_duality::Element;
-use gandr_theory_stone_duality::ElementSet;
 
 use crate::carriers::Mask;
 use crate::carriers::points;
 use crate::spectrum::corpus;
-use crate::spectrum::included;
 
 /// The value an arm takes at a point.
 #[repr(transparent)]
@@ -67,21 +70,36 @@ struct Disagreement
     point: Point,
 }
 
-/// The site of a cover: the faces and their pairwise meets as the cells of a
-/// graded poset, and each face's cell.
+/// The site of a cover: the sheaf over its faces and their pairwise meets,
+/// and each face's cell.
 struct Site
 {
-    /// The cells, ordered by inclusion of their points.
-    poset: GradedPoset<Mask>,
+    /// The sheaf: one value for each point of a cell, kept by each map.
+    sheaf: Sheaf<Mask>,
     /// The cell of each face of the cover.
     faces: Vec<Element>,
+}
+
+/// The points of `mask` in a carrier of `carrier` points, in order.
+///
+/// # Specification
+/// trivial.
+fn inside(
+    carrier: PointCount,
+    mask: Mask,
+) -> impl Iterator<Item = Point>
+{
+    points(carrier).filter(move |&point| mask.at(point) == Membership::Inside)
 }
 
 /// The site of the faces `faces` of one carrier.
 ///
 /// # Specification
 /// trivial.
-fn site(faces: &[Mask]) -> Site
+fn site(
+    carrier: PointCount,
+    faces: &[Mask],
+) -> Site
 {
     let mut cells: Vec<Mask> = Vec::with_capacity(faces.len().saturating_mul(faces.len()));
     cells.extend_from_slice(faces);
@@ -100,97 +118,78 @@ fn site(faces: &[Mask]) -> Site
         )
     };
     let face_cells = faces.iter().map(|&face| cell_of(face)).collect();
-    let poset = GradedPoset::new(cells, |lower, upper| match included(*lower, *upper) {
-        Membership::Inside => Comparison::Below,
-        Membership::Outside => Comparison::NotBelow,
+    let poset = GradedPoset::new(cells, |lower, upper| {
+        if upper.0 & !lower.0 == 0 {
+            Comparison::Below
+        }
+        else {
+            Comparison::NotBelow
+        }
     })
     .expect("distinct cells of one carrier");
-    Site {
+    let sheaf = Sheaf::new(
         poset,
+        |&cell| Width::from(inside(carrier, cell).count()),
+        |&lower, &upper| {
+            inside(carrier, upper).map(move |point| {
+                Entry::from(
+                    inside(carrier, lower)
+                        .take_while(|&member| member != point)
+                        .count(),
+                )
+            })
+        },
+    )
+    .expect("the face cover's sheaf");
+    Site {
+        sheaf,
         faces: face_cells,
     }
 }
 
-/// The meet of two cells, read from the poset's bit rows: the cell whose
-/// closure is the set of cells below both.
-///
-/// # Specification
-/// trivial.
-fn meet(
-    poset: &GradedPoset<Mask>,
-    left: Element,
-    right: Element,
-) -> Element
-{
-    let below = u64::from(poset.closure(left).expect("a cell"))
-        & u64::from(poset.closure(right).expect("a cell"));
-    ElementSet::from(below)
-        .elements()
-        .find(|&cell| u64::from(poset.closure(cell).expect("a cell")) == below)
-        .expect("the meet of two faces is a cell")
-}
-
-/// The values of an arm on `face` at the points of `meet`, the restriction of
-/// the sheaf from the face to the meet.
-///
-/// # Specification
-/// trivial.
-fn restriction(
-    carrier: PointCount,
-    (face, arm): (Mask, &[Value]),
-    meet: Mask,
-) -> Vec<(Point, Value)>
-{
-    points(carrier)
-        .filter(|&point| face.at(point) == Membership::Inside)
-        .zip(arm.iter().copied())
-        .filter(|&(point, _)| meet.at(point) == Membership::Inside)
-        .collect()
-}
-
-/// The gluing of `arms` over the site of `faces`: each pair of faces whose
-/// restrictions to their meet differ, in pair order.
+/// The gluing of `arms` over `site`: each pair of faces whose restrictions
+/// to their meet differ, in pair order.
 ///
 /// # Specification
 /// trivial.
 fn glued(
     carrier: PointCount,
-    faces: &[Mask],
+    site: &Site,
     arms: &[Arm],
 ) -> Vec<Disagreement>
 {
-    let site = site(faces);
-    let mut refusals = Vec::new();
-    for (first, (&left_cell, (&left, left_arm))) in
-        site.faces.iter().zip(faces.iter().zip(arms)).enumerate()
-    {
-        for (second, (&right_cell, (&right, right_arm))) in site
-            .faces
-            .iter()
-            .zip(faces.iter().zip(arms))
-            .enumerate()
-            .skip(first.saturating_add(1))
-        {
-            let cell = meet(&site.poset, left_cell, right_cell);
-            let shared = *site
-                .poset
+    let cover: Vec<(Element, &[Value])> = site
+        .faces
+        .iter()
+        .zip(arms)
+        .map(|(&cell, arm)| (cell, arm.as_slice()))
+        .collect();
+    let obstructions = match site.sheaf.glue(&cover).expect("a well-formed cover") {
+        Gluing::Glued(_) => return Vec::new(),
+        Gluing::Obstructed(obstructions) => obstructions,
+    };
+    obstructions
+        .into_iter()
+        .map(|obstruction| {
+            let meet = *site
+                .sheaf
+                .poset()
                 .cells()
-                .get(usize::from(cell))
+                .get(usize::from(obstruction.overlap))
                 .expect("a cell of the site");
-            let differs = restriction(carrier, (left, left_arm), shared)
-                .into_iter()
-                .zip(restriction(carrier, (right, right_arm), shared))
-                .find(|&((_, from_left), (_, from_right))| from_left != from_right);
-            if let Some(((point, _), _)) = differs {
-                refusals.push(Disagreement {
-                    faces: (FaceIndex(first), FaceIndex(second)),
-                    meet: shared,
-                    point,
-                });
+            let point = inside(carrier, meet)
+                .nth(usize::from(obstruction.entry))
+                .expect("an entry of the meet's stalk");
+            Disagreement {
+                faces: (
+                    FaceIndex(usize::from(obstruction.members.0)),
+                    FaceIndex(usize::from(obstruction.members.1)),
+                ),
+                meet,
+                point,
             }
-        }
-    }
-    refusals
+        })
+        .collect()
 }
 
 /// The subshape of a mask's points.
@@ -202,10 +201,8 @@ fn subshape(
     mask: Mask,
 ) -> Subshape
 {
-    let inside: Vec<Point> = points(carrier)
-        .filter(|&point| mask.at(point) == Membership::Inside)
-        .collect();
-    Subshape::new(carrier, &inside).expect("a subset of the carrier")
+    let points: Vec<Point> = inside(carrier, mask).collect();
+    Subshape::new(carrier, &points).expect("a subset of the carrier")
 }
 
 /// The agreement check of the face cover: one union square for each pair of
@@ -265,11 +262,7 @@ fn every_arms(
 {
     let sizes: Vec<usize> = faces
         .iter()
-        .map(|&face| {
-            points(carrier)
-                .filter(|&point| face.at(point) == Membership::Inside)
-                .count()
-        })
+        .map(|&face| inside(carrier, face).count())
         .collect();
     let width = u32::try_from(sizes.iter().sum::<usize>()).expect("a small cover");
     let count = 1_u64.checked_shl(width).expect("a small cover");
@@ -305,9 +298,10 @@ fn probe(
 )
 {
     let Named(named) = named;
+    let site = site(carrier, faces);
     let mut named_by_gluing: Vec<(FaceIndex, FaceIndex, Point)> = Vec::new();
     for arms in every_arms(carrier, faces) {
-        let refusals = glued(carrier, faces, &arms);
+        let refusals = glued(carrier, &site, &arms);
         let checked = agreed(carrier, faces, &arms).unwrap_or_else(|error| {
             panic!("{named}: the agreement check cannot read {faces:?}: {error:?}")
         });
@@ -362,18 +356,35 @@ fn config_glues_on_port_and_refuses_naming_port()
     let secure = Mask(0b110);
     let addr = Mask(0b011);
     let faces = [secure, addr];
-    let site = site(&faces);
-    let shared = meet(&site.poset, site.faces[0], site.faces[1]);
-    assert_eq!(
-        site.poset.cells().get(usize::from(shared)),
-        Some(&Mask(0b010)),
-        "the meet of `secure` and `addr` is the cell of `port` alone"
+    let site = site(carrier, &faces);
+    let meet = Element::from(
+        site.sheaf
+            .poset()
+            .cells()
+            .iter()
+            .position(|&cell| cell == Mask(0b010))
+            .expect("the meet of `secure` and `addr` is the cell of `port` alone"),
     );
     let agreeing = [vec![Value(1), Value(0)], vec![Value(0), Value(1)]];
-    assert_eq!(glued(carrier, &faces, &agreeing), []);
+    assert_eq!(glued(carrier, &site, &agreeing), []);
     assert_eq!(agreed(carrier, &faces, &agreeing), Ok(vec![]));
+    let cover: Vec<(Element, &[Value])> = site
+        .faces
+        .iter()
+        .zip(&agreeing)
+        .map(|(&cell, arm)| (cell, arm.as_slice()))
+        .collect();
+    let Ok(Gluing::Glued(section)) = site.sheaf.glue(&cover)
+    else {
+        panic!("the arms agree at `port`");
+    };
+    assert_eq!(
+        section.at(meet),
+        Ok(&[Value(1)][..]),
+        "the glued section holds the shared value at `port`"
+    );
     let parting = [vec![Value(1), Value(0)], vec![Value(0), Value(0)]];
-    assert_eq!(glued(carrier, &faces, &parting), [Disagreement {
+    assert_eq!(glued(carrier, &site, &parting), [Disagreement {
         faces: (FaceIndex(0), FaceIndex(1)),
         meet: Mask(0b010),
         point: port,

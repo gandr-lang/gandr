@@ -10,6 +10,7 @@ digraph crates {
     label = "theory";
     "theory-cell-complexes";
     "theory-cell-complexes-tools";
+    "theory-cellular-sheaves";
     "theory-circuit-algebras";
     "theory-coherent-resolutions";
     "theory-computads";
@@ -325,6 +326,8 @@ digraph crates {
   "theory-cell-complexes" -> "theory-path-orders";
   "theory-cell-complexes" -> "theory-spec-combinators";
   "theory-cell-complexes-tools" -> "theory-cell-complexes";
+  "theory-cellular-sheaves" -> "theory-graded-posets";
+  "theory-cellular-sheaves" -> "theory-stone-duality";
   "theory-circuit-algebras" -> "theory-cell-complexes";
   "theory-circuit-algebras" -> "theory-spec-combinators";
   "theory-coherent-resolutions" -> "theory-cell-complexes";
@@ -391,6 +394,7 @@ digraph crates {
   "surface-lowering" -> "surface-parser" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "sharing"];
   "surface-parser" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "sharing"];
   "surface-session" -> "theory-cell-complexes" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "sharing"];
-  "theory-cell-complexes" -> "theory-deep-inference" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "sharing"];
+  "theory-cell-complexes" -> "theory-cellular-sheaves" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "sharing"];
+  "theory-cellular-sheaves" -> "theory-deep-inference" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "sharing"];
   "theory-deep-inference" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "sharing"];
 }

@@ -1848,6 +1848,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-cellular-sheaves"
+version = "0.0.0"
+dependencies = [
+ "gandr-theory-graded-posets",
+ "gandr-theory-stone-duality",
+ "quenchant-anodized",
+]
+
+[[package]]
 name = "gandr-theory-circuit-algebras"
 version = "0.0.0"
 dependencies = [
@@ -2008,6 +2017,7 @@ dependencies = [
 name = "gandr-theory-shapes"
 version = "0.0.0"
 dependencies = [
+ "gandr-theory-cellular-sheaves",
  "gandr-theory-graded-posets",
  "gandr-theory-nominal-automata",
  "gandr-theory-stone-duality",
