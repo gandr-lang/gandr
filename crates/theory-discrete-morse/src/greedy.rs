@@ -244,10 +244,10 @@ impl Greedy
     ///   each cell and each edge at most once.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the circle as two vertices and two edges pairs one
-    ///   edge and leaves the other critical, since its pair would close a
-    ///   cycle.
-    /// - witness: `tests::greedy::the_circle_keeps_one_vertex_and_one_edge_critical`
+    /// - hypothesis: L3 — the hollow triangle, three vertices and three edges,
+    ///   pairs two edges and leaves the third critical, since its pair would
+    ///   close a cycle.
+    /// - witness: `tests::greedy::the_hollow_triangle_keeps_one_vertex_and_one_edge_critical`
     fn reaches(
         &mut self,
         upper: Place,
@@ -315,11 +315,11 @@ impl Greedy
 ///
 /// # Adequacy
 /// - hypothesis: L2 — `collapse` checks each greedy matching of the suite and
-///   finds no fault. L3 — a triangle leaves one vertex critical, and a circle
-///   of two vertices and two edges leaves one vertex and one edge critical. A
-///   face at the incidence two pairs with nothing.
+///   finds no fault. L3 — a triangle leaves one vertex critical, and the hollow
+///   triangle leaves one vertex and one edge critical. A face at the incidence
+///   two pairs with nothing.
 /// - witness: `tests::greedy::the_triangle_matches_onto_one_vertex`
-/// - witness: `tests::greedy::the_circle_keeps_one_vertex_and_one_edge_critical`
+/// - witness: `tests::greedy::the_hollow_triangle_keeps_one_vertex_and_one_edge_critical`
 /// - witness: `tests::greedy::a_face_at_the_incidence_two_stays_unpaired`
 /// - witness: `tests::euler::the_two_counts_agree_where_every_boundary_is_a_sphere`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |matching| matching.classes.len() == cells.len()))]
