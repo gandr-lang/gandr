@@ -1,0 +1,10 @@
+module Named where {
+  type C = -F Integer;
+  type E = C;
+  def one() -> E { return 1 }
+}
+module Applied where {
+  type T(a : Type) = -F a;
+  type U = T(Integer);
+  def one() -> U { return 1 }
+}

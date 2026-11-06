@@ -6667,10 +6667,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 members.push(defined.node);
             }
         }
-        for defined in members {
-            let reading = self.member_reading(defined, Frame::Outermost)?;
-            seeds.push((defined, reading));
-        }
         for recorded in self
             .collected
             .abstracts
@@ -6698,6 +6694,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Some(held) = self.scopes.get_mut(root) {
                 *held = Maybe::Present(seen);
             }
+        }
+        for &defined in &members {
+            let _reading = self.member_reading(defined, Frame::Outermost)?;
         }
         for slot in self.collected.slots.iter().skip(from.slots) {
             if slot.role == Role::Generic {
@@ -6765,6 +6764,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         self.seed_data(&mut seeds);
         self.seed_families(&mut seeds)?;
+        for defined in members {
+            let reading = self.member_reading(defined, Frame::Outermost)?;
+            seeds.push((defined, reading));
+        }
         self.seed_descriptions(&mut seeds)?;
         self.sign_definitions()?;
         for (position, reading) in seeds {
