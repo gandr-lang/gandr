@@ -775,8 +775,10 @@ INSERT INTO purpose VALUES('core-term','handler::subject::normalize','function',
 INSERT INTO purpose VALUES('core-term','handler::subject::subject_rule','function','Reads a law as a rewrite of a scope''s subject when its right side makes fewer of its left side''s requests, or none.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::CodomainScope','enum','Where a matched function type''s codomain stands: in the ambient context, or under the domain''s binder.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::Components','enum','The components of a matched type, or the reason it matched no former.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','hole::HoleForm','struct','The top-level form a hole stands in, as the elaborator numbers its forms: the high bits of a hole''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::HoleId','struct','The name of a typed hole: what a fill finds it by, split into written, nominated and wildcard halves.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::HoleOrigin','enum','Where a hole comes from, read off the part of the names its own is in: written, nominated, or wildcard.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','hole::HolePlace','struct','The place of a hole among the holes of its origin that its form holds, counted from zero.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::Knowledge','enum','Whether a type is known: a former the judgement can read, or the unknown type a hole or a mark stands behind.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::MarkIndex','struct','The index of one entry of an elaboration''s mark table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::MatchedFunction','struct','A function type''s components, as a lambda or an application reads them: the domain, the codomain and where the codomain stands.',NULL,'fits','sound',NULL);

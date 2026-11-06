@@ -337,17 +337,30 @@ fn nominated_holes(
     name: SurfaceName<'_>,
 ) -> Vec<(gandr_core_term::ValueId, gandr_core_term::hole::HoleId)>
 {
+    let mut holes = holes_in(module, arena, name);
+    holes
+        .retain(|&(_, hole)| matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard));
+    holes
+}
+
+/// The value holes in the body of `name`, written or nominated, in the order
+/// [`nominated_holes`] meets them.
+///
+/// # Specification
+/// trivial.
+fn holes_in(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+    name: SurfaceName<'_>,
+) -> Vec<(gandr_core_term::ValueId, gandr_core_term::hole::HoleId)>
+{
     let mut holes = Vec::new();
     let mut pending = Vec::from([body_named(module, name)]);
     let mut computations = Vec::new();
     while let Some(value) = pending.pop() {
         match arena.value(value) {
             Some(&Value::Thunk(computation)) => computations.push(computation),
-            Some(&Value::Hole(hole))
-                if matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard) =>
-            {
-                holes.push((value, hole));
-            },
+            Some(&Value::Hole(hole)) => holes.push((value, hole)),
             _ => {},
         }
         while let Some(computation) = computations.pop() {
@@ -362,6 +375,45 @@ fn nominated_holes(
         }
     }
     holes
+}
+
+#[test]
+fn a_form_s_holes_keep_their_names_when_another_form_writes_more_5598()
+{
+    // `early` writes one hole and nominates two in the one text, and three
+    // and four in the other, its first argument a call of its own; `omitted`,
+    // the form after it, writes and nominates the same holes in both, so
+    // they keep their names.
+    let names = |early: &str| {
+        let source = format!(
+            include_str!(
+                "tests/unformatted/a-form-s-holes-keep-their-names-when-another-form-writes-more-5598.gandr"
+            ),
+            FIRST = FIRST,
+            EARLY = early
+        );
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source.as_str()), &mut arena);
+        holes_in(&module, &arena, SurfaceName::from("omitted"))
+            .into_iter()
+            .map(|(_, hole)| hole)
+            .collect::<Vec<_>>()
+    };
+    let before = names("thunk { become first ? *{} }");
+    let after = names("thunk { become first (first ? ?) ? }");
+    assert_eq!(
+        before.iter().map(|hole| hole.origin()).collect::<Vec<_>>(),
+        [
+            HoleOrigin::Nominated,
+            HoleOrigin::Nominated,
+            HoleOrigin::Written
+        ],
+        "`omitted` writes one hole and nominates its two implicits"
+    );
+    assert_eq!(
+        before, after,
+        "a form's holes keep their names whatever another form writes"
+    );
 }
 
 #[test]
