@@ -1,16 +1,12 @@
-/// Motives whose fixed endpoints reduce alike.
-///
-/// Two transports along one path compare by their motives, then by their
-/// operands. Here the motives' fixed endpoints differ as written and agree once
-/// they reduce. One endpoint calls a definition returning its argument. One
-/// transports along a reflexivity. One composes a path with a reflexivity on
-/// the right.
-///
-/// The checker enters each written call against what the other motive holds
-/// there. The kernel reads the motives' endpoints by its own reduction and
-/// agrees.
-///
-/// - see: #4179 — the checker refused transports whose motives' fixed endpoints differ by a reduction
+//! This source compares transports whose motive endpoints reduce alike.
+//!
+//! The written endpoints can differ before their reductions agree.
+//! The pathological twin refuses endpoints with distinct reductions.
+//!
+//! The checker compares each motive against the other reduced endpoint.
+//! The kernel reduces the endpoints before it checks them.
+//!
+//! - see: #4179 — the checker refused transports with reducible endpoints
 
 /// The identity on a type, a definition a motive may call.
 def itself(A : Type, a : A) -> A =
@@ -47,7 +43,7 @@ def thenStart(
 ) =
   Path.here (Path.step s r)
 
-/// Motives whose fixed endpoints differ by unfolding `itself(A, x)`.
+/// Motives differ at fixed endpoints after the checker unfolds `itself(A, x)`.
 def unfoldEnd(
   A : Type,
   x : A,

@@ -1,81 +1,74 @@
-//! Representation independence of two structures with operations: the toggles
-//! of Sterling, Gratzer and Birkedal's counters
-//! [Sterling-2023-univalent_reference_types], § 5, `posCounter ≡ negCounter`,
-//! related along negation. Each operation is carried along the carrier's path,
-//! its argument moved back by the equivalence's backward map and its result
-//! forward by its forward map, and the carried operation is related to the
-//! other structure's by `Path.funext`. A reading carried between two different
-//! carriers, booleans tagged with unit and the booleans, is related the same
-//! way.
-//!
-//! - see: #1747 — `untagged`
-//! - cites: [Sterling-2023-univalent_reference_types]
-//!
-//! [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
+/// This source states representation independence for structures with operations.
+///
+/// A carrier equivalence moves an operation argument backward and its result forward.
+/// `Path.funext` compares the carried operation with its target operation.
+///
+/// The examples relate two Boolean toggles and tagged Boolean readings.
+/// The checker carries each operation through its carrier path.
+///
+/// - see: #1747 — `untagged`
+/// - cites: [Sterling-2023-univalent_reference_types]
+///
+/// [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
 
 // Negation, `not`, and the identity, `same`, on the booleans.
 import "./funext.gandr";
 // The booleans' path to themselves by negation, `negation`.
 import "./transport-list.gandr";
 
-/// A toggle that starts false and reads its state as it is.
+/// The `plainToggle` structure starts false.
 pub def plainToggle : *{t : Type, start : t, step : t -> t, read : t -> Bool} = *{
   Bool,
   *{+{.0 = *{}}, *{not, same}}
 };
 
-/// A toggle that starts true and reads its state negated.
+/// The `flippedToggle` structure starts true and negates its reading.
 pub def flippedToggle : *{t : Type, start : t, step : t -> t, read : t -> Bool} = *{
   Bool,
   *{+{.1 = *{}}, *{not, not}}
 };
 
-/// The step carried along negation is the step: negating back, stepping and
-/// negating again steps.
+/// Negation carries the step function to itself.
 pub def stepped : Path(
   Path.walk (fun (t) { t -> t }) negation not,
   not
 ) = Path.funext (Path.walk (fun (t) { t -> t }) negation not) not;
 
-/// The reading carried along negation reads negated.
+/// Negation carries the reading to the negated reading.
 pub def reread : Path(
   Path.walk (fun (t) { t -> Bool }) negation same,
   not
 ) = Path.funext (Path.walk (fun (t) { t -> Bool }) negation same) not;
 
-/// The two toggles are one: the carriers by negation, the start carried to
-/// `true`, and each operation carried to the other's.
+/// Negation carries the plain toggle to the flipped toggle.
 def oneToggle : Path(
   plainToggle,
   flippedToggle
 ) = *{negation, *{Path.here (+{.1 = *{}}), *{stepped, reread}}};
 
-/// The reading carried along negation is not the reading left as it is.
+/// Negation does not carry the reading to itself.
 @[ refuses("PointwiseDistinct") ]
 def unread : Path(
   Path.walk (fun (t) { t -> Bool }) negation same,
   same
 ) = Path.funext (Path.walk (fun (t) { t -> Bool }) negation same) same;
 
-/// The boolean a tagged boolean carries.
+/// The `untag` function reads a tagged Boolean.
 def untag(p : Bool * Unit) -> Bool =
   match p { | *{x, u} => x }
 
-/// A boolean tagged with unit.
+/// The `tag` function pairs a Boolean with unit.
 def tag(b : Bool) -> Bool * Unit =
   *{b, *{}}
 
-/// The tagged booleans to the booleans: the tag dropped, and added back.
+/// The `tagging` equivalence relates tagged Booleans with Booleans.
 def tagging : Path[.A = Type](Bool * Unit, Bool) = equiv untag tag;
 
-/// The reading of a tagged boolean, its first component.
+/// The `readTagged` function reads the first pair component.
 def readTagged(p : Bool * Unit) -> Bool =
   match p { | *{x, u} => x }
 
-/// The reading carried along `tagging` reads the boolean itself. Its
-/// argument moves back by `tag`, and the reading takes both components of the
-/// pair that returns; the kernel ran `tag` once per component where the
-/// checker ran it once, and refused the pointwise evidence.
+/// The kernel rejects the pointwise evidence for the carried tagged reading.
 def untagged : Path(
   Path.walk (fun (t) { t -> Bool }) tagging readTagged,
   same

@@ -1,23 +1,21 @@
-//! Transport of a function along `ua`: the cubical case table of Cohen,
-//! Coquand, Huber and Mörtberg, _Cubical Type Theory: a constructive
-//! interpretation of the univalence axiom_
-//! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom],
-//! § 4.5, read at a function type. The argument moves back along the path by
-//! the record's left inverse, the function applies, and the result moves
-//! forward by the record's map.
+//! This source transports a function along `ua`.
+//!
+//! The transported function moves its argument backward along the path.
+//! It moves its result forward along the path.
+//!
+//! The checker expands the function family at the `ua` path.
+//! The runtime evaluates the transported function.
 //!
 //! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
 //!
 //! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]: https://arxiv.org/abs/1611.02108 "Cohen, Coquand, Huber and Mörtberg, Cubical Type Theory: a constructive interpretation of the univalence axiom"
 
-// The circle, the presented integers, the winding number and spinning.
+// This import supplies the circle, integers, winding and spin.
 import "./circle-base.gandr";
 // The loops at the point as the integers, `loopsAreIntegers`.
 import "./univalence.gandr";
 
-/// A function on the loops at the point, carried along `ua(winding)`, is the
-/// function on the integers that spins its argument back to a loop, applies
-/// `f` and winds the result, by conversion.
+/// The transport maps a loop function to an integer function by `spin`, `f` and `wind`.
 def funBeta(f : Path[.A = Circle](Base, Base) -> Path[.A = Circle](
   Base,
   Base
@@ -27,8 +25,7 @@ def funBeta(f : Path[.A = Circle](Base, Base) -> Path[.A = Circle](
 ) =
   Path.here (fun (n) { wind (f (spin n)) })
 
-/// Adding a loop, carried along `loopsAreIntegers`, adds one: the integer
-/// spins back to its word, gains a loop and winds to its successor, by a run.
+/// A run maps a loop function to the successor of its winding.
 @[ runs("S (S (S Z))") ]
 def funRun() -> Int =
   let g = Path.walk (fun (X) { X -> X }) loopsAreIntegers (fun (l) { loopOn l })

@@ -1,14 +1,14 @@
-// `Path.step` and `Path.ap` in a type take their types from their operands.
-//
-// A path between paths states its endpoints with these forms, as a paper
-// writes them. A wrapper definition that only restates an operand's type
-// hides that statement.
-//
-// Each declaration states a composite or an action in its own type.
-//
-// - see: #3772 — `Path.step` and `Path.ap` in a type, refused before
+//! This source types `Path.step` and `Path.ap` inside another path type.
+//!
+//! Their operand types determine the type of the composite or action.
+//! A wrapper can hide this operand type.
+//!
+//! The checker reads each operand type before it checks the outer path.
+//! The kernel replays the resulting composite.
+//!
+//! - see: #3772 — `Path.step` and `Path.ap` in a type
 
-/// The action of a function on a path of paths, stated in its own type.
+/// The function action uses a path of paths in its own type.
 def congInAType(
   A : Type,
   x : A,

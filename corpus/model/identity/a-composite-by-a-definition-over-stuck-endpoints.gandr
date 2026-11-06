@@ -1,20 +1,16 @@
-/// A definition's composite meets `Path.step` over the same paths, at endpoints that
-/// stuck calls return.
+/// This source compares a defined composite with `Path.step` at stuck endpoints.
 ///
-/// `concat`'s body is `Path.step(p, q)`, so a type written with `concat` reads as one
-/// written with `Path.step`. At variable endpoints the two read alike. At a stuck
-/// call, `concat`'s type reads the endpoint through the environment its call
-/// bound, which holds it. The type written with `Path.step` writes the call in place.
+/// The `concat` body is `Path.step p q`.
+/// A held call can supply an endpoint to either spelling.
 ///
-/// The machine runs the written call where its type reads it. It compares the
-/// result with the held endpoint, and the kernel replays the comparison by its
-/// own reading.
+/// The machine evaluates the call where the type reads it.
+/// The kernel repeats that endpoint comparison.
 ///
-/// - see: #4038 — the checker refused the composite at stuck endpoints
-/// - see: #4005 — two endpoints a call returned apart, which the code walk hands on
-/// - see: #4011 — a bind over a transport stuck on a path
+/// - see: #4038 — stuck endpoints
+/// - see: #4005 — returned endpoints
+/// - see: #4011 — bind over transport
 
-/// The composite of two paths, by definition.
+/// The `concat` function composes two paths.
 def concat(
   A : Type,
   x : A,
@@ -25,7 +21,7 @@ def concat(
 ) -> Path[.A = A](x, z) =
   Path.step p q
 
-/// Reflexivity at `concat`'s composite, its type written with `concat`.
+/// The `concatHere` proof is reflexivity at the defined composite.
 def concatHere(
   A : Type,
   x : A,
@@ -36,7 +32,7 @@ def concatHere(
 ) -> Path[.A = Path[.A = A](x, z)](concat A x y z p q, concat A x y z p q) =
   Path.here (concat A x y z p q)
 
-/// `concatHere` at variable endpoints, against `Path.step`.
+/// The `atVariables` proof compares `concatHere` with `Path.step`.
 def atVariables(
   A : Type,
   x : A,
@@ -47,7 +43,7 @@ def atVariables(
 ) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) =
   concatHere A x y z p q
 
-/// `concatHere` at endpoints that are the stuck composite `Path.step(f, g)`.
+/// The `atComposite` proof uses stuck composite endpoints.
 def atComposite(
   A : Type,
   x : A,
@@ -63,7 +59,7 @@ def atComposite(
 ) =
   concatHere (type(Path[.A = A](x, z))) (Path.step f g) (Path.step f g) (Path.step f g) p q
 
-/// `concatHere` at endpoints that apply a variable function.
+/// The `atApplication` proof uses variable-function endpoints.
 def atApplication(
   A : Type,
   F : A -> A,

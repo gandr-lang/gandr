@@ -1,75 +1,64 @@
-//! A flow at a universe above the smallest: the codes it relates are large
-//! types, which pack a type in a field, so they live one level up and so does
-//! the flow between them. The classifier `Flow[.A = Type[+, 1]](A, B)` is the
-//! directed hom of that universe
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory],
-//! Definition 1.2. It stands at its level as `Path` stands at every level. The
-//! kernel replays each declaration here at its flow over the level-one
-//! universe. A transport or a ride along a path or a flow at that universe
-//! reads its motive's binder there too, so the motive's body decodes a large
-//! code at level one.
-//!
-//! - see: #1628
-//! - see: #1837
-//! - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
-//!
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
+/// This source states flows between large codes.
+///
+/// A large code stores a type in one field.
+/// The flow type has a level above the universe of the code.
+///
+/// The kernel checks each declaration over the level-one universe.
+/// Each motive decodes its large code at that same level.
+///
+/// - see: #1628
+/// - see: #1837
+/// - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+///
+/// [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 // The native finite lists.
 import std.list (List);
 
-/// A list of values of a type it carries: a large type, since a field holds a
-/// type.
+/// A `Packed` value carries a list at its stored type.
 data Packed : Type[+, 1] where
   | Pack : (a : Type, xs : List(a)) --> Packed
 
-/// A second large type of the same shape.
+/// A `Boxed` value has the same large-code shape.
 data Boxed : Type[+, 1] where
   | Box : (a : Type, xs : List(a)) --> Boxed
 
-/// The stationary flow at a large code.
+/// The `packedKept` flow remains at one large code.
 def packedKept : Flow[.A = Type[+, 1]](Packed, Packed) = Flow.stay Packed;
 
-/// The stationary flow, then itself: the unit composes at the level it is
-/// stated at.
+/// The stationary flow composes with itself at its stated level.
 def packedTwice() -> Flow[.A = Type[+, 1]](Packed, Packed) =
   Flow.then packedKept packedKept
 
-/// A given flow from one large code to the other, after the stationary one.
+/// The `after` function composes a given large-code flow after the stationary flow.
 def after(f : Flow[.A = Type[+, 1]](Packed, Boxed)) -> Flow[.A = Type[+, 1]](Packed, Boxed) =
   Flow.then packedKept f
 
-/// The stationary flow at the smallest universe itself, read one level up.
+/// The `types` flow remains at the smallest universe one level above it.
 def types : Flow[.A = Type[+, 1]](Type, Type) = Flow.stay Type;
 
-/// A large code at a universe two levels up: a flow is stated at any level
-/// its codes inhabit.
+/// A large code has a type at two universe levels above its stored type.
 def lifted : Flow[.A = Type[+, 2]](Packed, Packed) = Flow.stay Packed;
 
-/// Reflexivity at a large code: a path at the universe its codes inhabit.
+/// The `packedSame` path is reflexivity at the large code.
 def packedSame : Path[.A = Type[+, 1]](Packed, Packed) = Path.here Packed;
 
-/// A packed list carried along reflexivity at its large type: the motive's
-/// binder ranges over `Type[+, 1]`, so its body decodes a code there.
+/// The motive for `packedMoved` decodes its code at level one.
 def packedMoved(p : Packed) -> Packed =
   Path.walk (fun (X) { X }) packedSame p
 
-/// A packed list ridden along the stationary flow at its large type.
+/// `Flow.ride` maps a packed value at its large type.
 def packedRode(p : Packed) -> Packed =
   Flow.ride (fun (X) { X }) packedKept p
 
-/// A list of packed lists carried along reflexivity: the decode under the
-/// list reads at the carrier's level as well.
+/// The list motive decodes the packed-list carrier at its own level.
 def packedLists(ps : List(Packed)) -> List(Packed) =
   Path.walk (fun (X) { List X }) packedSame ps
 
-/// A packed list ridden into a box along a given flow between the two large
-/// types: the endpoints differ, so the ride moves by the table's decode row,
-/// read at the flow's level.
+/// The flow ride moves a packed value to `Boxed` through its decode row.
 def packedCarried(f : Flow[.A = Type[+, 1]](Packed, Boxed), p : Packed) -> Boxed =
   Flow.ride (fun (X) { X }) f p
 
-/// A list of packed lists ridden into a list of boxes along the same flow:
-/// the list row carries the decode beneath it.
+/// The list flow ride carries its decode beneath the list row.
 def boxedLists(f : Flow[.A = Type[+, 1]](Packed, Boxed), ps : List(Packed)) -> List(Boxed) =
   Flow.ride (fun (X) { List X }) f ps

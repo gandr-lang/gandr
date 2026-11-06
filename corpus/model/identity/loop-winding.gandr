@@ -1,7 +1,12 @@
-// The winding number: the fold out of the loop's words into the presented
-// integers, which respects the words' rules by conversion, and the fold into
-// the native integers, which respects them by the native model's owed laws
-// under `respects`. Each runs at closed words and is read by conversion.
+/// This source maps loop words to presented and native integers.
+///
+/// The presented fold respects word rules by conversion.
+/// The native fold uses the native model obligations.
+///
+/// The folds map closed loop words.
+/// The checker reads each fold through its selected model.
+///
+/// - see: corpus/model/identity/loop-shape.gandr
 
 // The presented integers.
 import "./circle-base.gandr";
@@ -10,38 +15,28 @@ import "./loop-words.gandr";
 // The circle's shape and its two models.
 import "./loop-shape.gandr";
 
-/// The winding number, the fold out of the words into the presented
-/// integers. At `Loop(Unloop(x))` it builds `S(P(windWords(x)))`, whose
-/// normal form is `windWords(x)`, so it respects both rules and is admitted.
+/// The `windWords` function maps a loop word to a presented integer.
 pub def rec windWords(c : Words) -> Int =
   match c
     | Nil => Z
     | Loop(x) => S (windWords[<] x)
     | Unloop(x) => P (windWords[<] x)
 
-/// Two loops wind twice.
+/// Two loops map to two successors.
 @[ runs("S (S Z)") ]
 def twice_wound() -> Int { windWords (Loop (Loop Nil)) }
 
-/// A run builds the count letter by letter: a cancelled word winds to
-/// `S(P(Z))`, which conversion reads as `Z` (`wound_never`).
+/// The run keeps the cancelled word before conversion normalises it.
 @[ runs("S (P Z)") ]
 def wound_letterwise() -> Int { windWords (Loop (Unloop Nil)) }
 
-/// Conversion runs the fold at a closed word: two loops are two successors.
+/// Conversion maps two loops to two successors.
 def wound_twice : Path[.A = Int](windWords (Loop (Loop Nil)), S (S Z)) = Path.here (S (S Z));
 
-/// A cancelled word winds to zero in conversion.
+/// Conversion maps a cancelled word to zero.
 def wound_never : Path[.A = Int](windWords (Loop (Unloop Nil)), Z) = Path.here Z;
 
-/// The winding number into the native integers, a fold that rests on the
-/// native model's laws. At `Loop(Unloop(x))` it computes
-/// `turn(unturn(native_wind(x)))`, which conversion does not reduce to
-/// `native_wind(x)` on a variable; the law `turnUnturn` states exactly that
-/// path, so `respects` names it for the first rule and `unturnTurn` for the
-/// second. The loop arms call the model's operations rather than spelling
-/// `n + 1`, so each side the rule relates is the law's own endpoint. The fold
-/// checks and owes what its two laws owe.
+/// The `native_wind` function maps words through the native model.
 @[ respects(*{NativeWinding.turnUnturn, NativeWinding.unturnTurn}), owes(2) ]
 def rec native_wind(c : Words) -> Integer =
   match c
@@ -49,10 +44,10 @@ def rec native_wind(c : Words) -> Integer =
     | Loop(x) => NativeWinding.turn (native_wind[<] x)
     | Unloop(x) => NativeWinding.unturn (native_wind[<] x)
 
-/// Two loops wind twice into the native integers.
+/// Two loops map to two native integer units.
 @[ runs("2") ]
 def native_twice() -> Integer { native_wind (Loop (Loop Nil)) }
 
-/// A cancelled word winds as its normal form does: not at all.
+/// A cancelled word maps to native zero.
 @[ runs("0") ]
 def native_unwound() -> Integer { native_wind (Loop (Unloop Nil)) }

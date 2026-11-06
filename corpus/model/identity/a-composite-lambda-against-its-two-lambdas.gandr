@@ -1,26 +1,20 @@
-/// A lambda over a composite path, against the composite of two lambdas.
+/// This source compares one lambda with a composite of two lambdas.
 ///
-/// `q ↦ Path.step (Path.step q g) h` and the composite of
-/// `q ↦ Path.step q g` and `r ↦ Path.step r h` are one function. Each body
-/// agrees with the other once the machine takes the bind at the endpoint of
-/// `Path.step q g`.
+/// The two lambda bodies return the same path for each argument.
+/// A bind over the inner composite reads its endpoint.
 ///
-/// The composite's body binds `Path.step q g`, a transport stuck on `g`, into
-/// `t ↦ Path.step t h`. That transport returns the value it moves, whatever
-/// its path. So the bind is its continuation at that endpoint, the transport
-/// along `h` that the lambda writes. Inside an action's motive, the kernel
-/// reads the two codes by its own rules, which run the composite's calls.
+/// The kernel evaluates the composite calls inside the action motive.
+/// The two codes then compare by the same path rules.
 ///
-/// - see: #3824 — a call of a returning variable held by the same law
-/// - see: #4011 — the checker refused the composite against its two lambdas
-/// - see: #4005 — the action over the composite, which the code walk hands on
+/// - see: #3824 — returning variable call
+/// - see: #4011 — lambda composite
+/// - see: #4005 — composite action
 
-/// The composite of `F` and then `G`.
+/// The `composeAfter` function composes `F` and `G`.
 def composeAfter(A : Type, B : Type, C : Type, F : A -> B, G : B -> C) -> A -> C =
   (fun (a : A) { G (F a) } : A -> C)
 
-/// The lambda over the composite path, against the composite of its two
-/// lambdas.
+/// The first endpoint writes one lambda against the composite of two lambdas.
 def oneLambdaAgainstCompose(
   A : Type,
   x : A,
@@ -39,7 +33,7 @@ def oneLambdaAgainstCompose(
     Path.step (Path.step q g) h
   } : Path(x, y) -> Path(x, w))
 
-/// The same pair, the composite of the two lambdas its point.
+/// The second endpoint writes the composite as its point.
 def composeAgainstOneLambda(
   A : Type,
   x : A,
@@ -62,7 +56,7 @@ def composeAgainstOneLambda(
     z
   )) (fun (r : Path[.A = A](x, z)) { Path.step r h } : Path(x, z) -> Path(x, w)))
 
-/// The action of `F` on `p`.
+/// The `actThrough` function applies `F` to `p`.
 def actThrough(
   A : Type,
   B : Type,
@@ -76,7 +70,7 @@ def actThrough(
 ) =
   Path.ap F p
 
-/// The action of the composite of `F` and then `G` on `p`.
+/// The `actOfCompose` function applies the composite of `F` and `G` to `p`.
 def actOfCompose(
   A : Type,
   B : Type,
@@ -89,8 +83,7 @@ def actOfCompose(
 ) -> Path[.A = C](G (F x), G (F y)) =
   actThrough A C (fun (a : A) { G (F a) } : A -> C) x y p
 
-/// The action of the lambda over the composite path, against the action of
-/// the composite of its two lambdas.
+/// The final proof compares the lambda action with the composite action.
 def composedAgainstActOfCompose(
   A : Type,
   x : A,

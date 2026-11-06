@@ -1,28 +1,28 @@
-// Function extensionality from univalence, Voevodsky's argument: the
-// diagonal of the path space of `b` is an equivalence, so `ua` makes it a
-// path between types, and carrying a function out of the path space back
-// along that path is injective. The two ends of the path space read back
-// alike along it, both the identity, so they are one function, and any map
-// into the path space gives a path between its two ends. A homotopy is such
-// a map, and its ends read back as the two functions. The HoTT book's § 4.9
-// credits the argument to Voevodsky and reworks it through weak function
-// extensionality.
+/// This source derives function extensionality from univalence.
+///
+/// The diagonal makes each point into a reflexive path.
+/// A homotopy gives a map into that path space.
+///
+/// The checker turns the diagonal equivalence into a path with `ua`.
+/// Transport then proves that the path-space endpoints are equal.
+///
+/// - see: corpus/model/identity/univalence.gandr
 
-/// The diagonal of the path space: a point, to itself, along reflexivity.
+/// The diagonal maps a point to its reflexive path.
 def diag(b : Type, v : b) -> *{x : b, y : b, p : Path[.A = b](x, y)} =
   *{v, *{v, Path.here v}}
 
-/// The first end of a path.
+/// The `source` function reads the first endpoint of a path.
 def source(b : Type, w : *{x : b, y : b, p : Path[.A = b](x, y)}) -> b =
   match w
     | *{.x = u, .y = v, .p = q} => u
 
-/// The second end of a path.
+/// The `target` function reads the second endpoint of a path.
 def target(b : Type, w : *{x : b, y : b, p : Path[.A = b](x, y)}) -> b =
   match w
     | *{.x = u, .y = v, .p = q} => v
 
-/// The diagonal at a path's first end is the path, by `J` on it.
+/// The `diagSource` proof uses `J` to identify a diagonal with its path.
 def diagSource(
   b : Type,
   w : *{x : b, y : b, p : Path[.A = b](x, y)}
@@ -41,7 +41,7 @@ def diagSource(
       (Path.here q)
       (Path.here (diag b u))
 
-/// The diagonal is bi-invertible, the first end both its inverses.
+/// The diagonal is bi-invertible with `source` as both inverses.
 def diagEquiv(b : Type) -> b ≃ *{x : b, y : b, p : Path[.A = b](x, y)} =
   *{
     fun (v) { diag b v },
@@ -51,8 +51,7 @@ def diagEquiv(b : Type) -> b ≃ *{x : b, y : b, p : Path[.A = b](x, y)} =
     }
   }
 
-/// A function into `b` carried back along a path between types and forward
-/// again is itself, at every function, by `J` on the path.
+/// The round trip carries a function back then forward by `J`.
 def roundTrip(
   b : Type,
   x : Type,
@@ -72,8 +71,7 @@ def roundTrip(
     (Path.here p)
     (fun (v) { Path.here v })
 
-/// Two functions into `b` that are one stay one carried forward along a path
-/// between types, by `J` on the path between them.
+/// The `carryPath` proof carries an equality between functions forward by `J`.
 def carryPath(
   b : Type,
   x : Type,
@@ -93,7 +91,7 @@ def carryPath(
     (Path.here e)
     (Path.here (Path.walk (fun (Z) { Z -> b }) p u))
 
-/// Three paths between functions into `b`, the first reversed, in a row.
+/// The `chain` function composes three function paths with the first reversed.
 def chain(
   b : Type,
   y : Type,
@@ -107,8 +105,7 @@ def chain(
 ) -> Path[.A = y -> b](u, v) =
   Path.step (Path.step (Path.back l) c) m
 
-/// Carrying back along a path between types is injective: two functions
-/// into `b` whose carried copies are one are one.
+/// Back transport is injective for functions into `b`.
 def carryInjective(
   b : Type,
   x : Type,
@@ -143,9 +140,7 @@ def carryInjective(
     c
     m
 
-/// The two ends of the path space are one function: carried back along
-/// `ua` of the diagonal, each runs the diagonal and then reads an end, and
-/// both are the identity by conversion.
+/// Back transport maps both path-space endpoints to the identity function.
 def endsAgree(b : Type) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> b](
   thunk { fun (w) { source b w } },
   thunk { fun (w) { target b w } }
@@ -165,8 +160,7 @@ def endsAgree(b : Type) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> 
     (thunk { fun (w) { target b w } })
     (Path.here (thunk { fun (v) { v } }))
 
-/// Two functions out of the path space that are one stay one after any map
-/// into it, by `J` on the path between them.
+/// An equality between path-space functions persists after any map into that space.
 def whisker(
   a : Type,
   b : Type,
@@ -188,8 +182,7 @@ def whisker(
     (Path.here e)
     (Path.here (fun (x) { s (k x) }))
 
-/// Function extensionality at the path space: a map into it gives a path
-/// between its two ends, whatever the functions are.
+/// A map into path space gives a path between its endpoint functions.
 def funextOfSpace(
   a : Type,
   b : Type,
@@ -206,11 +199,7 @@ def funextOfSpace(
     (fun (w) { target b w })
     (endsAgree b)
 
-/// Function extensionality from a homotopy, through the path space: the map
-/// takes a point to both functions' results there and the homotopy's path
-/// between them. Its first end reads the first result, a returned call, and
-/// a returned call is the call it holds, so the end is `f`; the second is
-/// `g`.
+/// A homotopy maps each point to a path-space element with endpoints `f` and `g`.
 def funextFromUa(
   a : Type,
   b : Type,

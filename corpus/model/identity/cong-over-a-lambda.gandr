@@ -1,17 +1,16 @@
-// A function written as `fun (q) { e }` acts on a path through `Path.ap`.
-//
-// Whiskering composes each path of a path of paths with a fixed path. The
-// function that does it is short, and a stated type for it only repeats
-// the path's type.
-//
-// The binder takes the type of the path's points. Where no path type is
-// stated, `Path.ap` reads its own off the path type the body has.
-//
-// - see: #3773 — a lambda as `Path.ap`'s function, refused before
-// - see: #3829 — a lambda where no path type is stated, refused before
-// - see: #3919 — a lambda stating its binder's type, refused before
+/// This source states action on a path through a lambda.
+///
+/// Whiskering composes each path of a path equality with one fixed path.
+/// A stated lambda type repeats the path type.
+///
+/// The binder reads the type of the path points.
+/// The elaborator checks `Path.ap` against its own path type when no type occurs.
+///
+/// - see: #3773 — lambda action
+/// - see: #3829 — inferred path types
+/// - see: #3919 — stated binder types
 
-/// Whiskering a path of paths on the right.
+/// The right whisker maps a path equality through composition with `g`.
 def whiskerRight(
   A : Type,
   x : A,
@@ -24,8 +23,7 @@ def whiskerRight(
 ) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
   Path.ap (fun (q) { Path.step q g }) a
 
-/// The whisker composed with a reflexivity: `Path.ap` stands under
-/// `Path.step`, where no path type is stated.
+/// The whisker and its reflexivity form a `Path.step` without a stated path type.
 def whiskerThenHere(
   A : Type,
   x : A,
@@ -38,7 +36,7 @@ def whiskerThenHere(
 ) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
   Path.step (Path.ap (fun (q) { Path.step q g }) a) (Path.here (Path.step f2 g))
 
-/// The whisker as an endpoint of a stated path type: its reflexivity.
+/// The stated whisker endpoint equals itself by reflexivity.
 def whiskerHere(
   A : Type,
   x : A,
@@ -54,8 +52,7 @@ def whiskerHere(
 ) =
   Path.here (Path.ap (fun (q) { Path.step q g }) a)
 
-/// The whisker's reflexivity again, its binder stating the type of the path's
-/// points.
+/// The stated binder gives the whisker path its point type.
 def whiskerStatedHere(
   A : Type,
   x : A,

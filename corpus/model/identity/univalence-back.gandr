@@ -1,16 +1,16 @@
-//! Transport back along `ua`: the cubical case table of Cohen, Coquand, Huber
-//! and Mörtberg, _Cubical Type Theory: a constructive interpretation of the
-//! univalence axiom_
-//! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom],
-//! § 4.5, read at the universe. `Path.back(ua(e))` is the transport of
-//! `Path.here(a)` along `ua(e)` in `y. Path[.A = Type](y, a)`, and transport along
-//! it applies the record's left inverse `g`.
+//! This source transports values backward along `ua`.
+//!
+//! Backward transport applies the left inverse of the equivalence record.
+//! The examples transport integers to circle loops.
+//!
+//! The checker expands the backward `ua` transport.
+//! The runtime evaluates each named reverse path.
 //!
 //! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
 //!
 //! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]: https://arxiv.org/abs/1611.02108 "Cohen, Coquand, Huber and Mörtberg, Cubical Type Theory: a constructive interpretation of the univalence axiom"
 
-// The circle, the presented integers, the winding number and spinning.
+// This import supplies the circle, integers, winding and spin.
 import "./circle-base.gandr";
 // Transport forward and back along a path between types.
 import "./univalence.gandr";
@@ -39,8 +39,7 @@ def loopsBack(
 @[ runs("loop ∷ loop ∷ Path.here Base") ]
 def backRun : () -> Path[.A = Circle](Base, Base) = loopsBack loopsAreIntegers (S (S Z));
 
-/// The loops' path reversed and named, its type stated. `back` reads the
-/// type `loopsAreIntegers` states.
+/// The `integersAreLoops` path reverses `loopsAreIntegers`.
 def integersAreLoops : Path[.A = Type](
   Int,
   Path[.A = Circle](Base, Base)

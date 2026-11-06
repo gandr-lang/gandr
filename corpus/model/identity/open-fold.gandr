@@ -1,51 +1,45 @@
-//! A recursive call at a variable converts through the arm that waits on it.
-//! `windWords(Loop(x))` runs to the `Loop` arm, whose `run` waits on
-//! `windWords(x)`, stuck at the variable; an endpoint's computation is pure, so
-//! the bind reads as the arm's constructor over the held call,
-//! `S(windWords(x))`, and the kernel replays the reading by forcing it. An arm
-//! that cases on the call before it returns keeps the call stuck, and a path
-//! stating a value for it is refused. Conversion is definitional equality by
-//! computation [MartinLof-1984-intuitionistic_type_theory].
+//! This source tests recursive calls that remain open at a variable.
+//!
+//! The checker keeps a recursive call in an arm until the checker knows its argument.
+//! The pathological twin refuses an endpoint that gives this call a value.
+//!
+//! The checker retains the open call below the arm constructor.
+//! The kernel replays that retained computation.
 //!
 //! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
-// The presented integers and the free naturals.
+// This import supplies integers and free naturals.
 import "./circle-base.gandr";
 // The loop's words.
 import "./loop-words.gandr";
 // The winding number into the integers.
 import "./loop-winding.gandr";
-// Spinning back.
+// This import supplies the map from integers to loop words.
 import "./loop-space.gandr";
 
-/// The step case at a variable: the `Loop` arm's bind over `windWords(x)`
-/// reads as `S` over the held call.
+/// The `Loop` arm maps `windWords(x)` to `S(windWords(x))`.
 def wind_unfolded(x : Words) -> Path[.A = Int](windWords (Loop x), S (windWords x)) =
   Path.here (S (windWords x))
 
-/// Two loops read through two binds, the inner call's first.
+/// The outer bind reads the inner call first.
 def twice_unfolded(x : Words) -> Path[.A = Int](windWords (Loop (Loop x)), S (S (windWords x))) =
   Path.here (S (S (windWords x)))
 
-/// The round trip's step case: `spinWords` waits on the read
-/// `S(windWords(x))`, runs its `S` arm, and that arm's bind over
-/// `spinWords(windWords(x))` reads as `Loop`.
+/// The `spinWords` call waits for `S(windWords(x))`.
+/// Its `S` arm reads `spinWords(windWords(x))` as `Loop`.
 def round_unfolded(x : Words) -> Path[.A = Words](
   spinWords (windWords (Loop x)),
   Loop (spinWords (windWords x))
 ) =
   Path.here (Loop (spinWords (windWords x)))
 
-/// The round trip's base case, closed: every call runs to its value.
+/// The base case evaluates every call to its value.
 def base_case() -> Path[.A = Words](spinWords (windWords Nil), Nil) =
   Path.here Nil
 
-/// Parity by structural recursion over the free naturals: the successor arm
-/// cases on the parity of the predecessor before it returns. A case on the
-/// presented `Int` is refused before conversion as one its rules do not
-/// admit, so the twin that cases on its call counts here.
+/// The `parity` recursion cases on free naturals.
 def rec parity(n : Nat) -> Nat =
   match n
     | Zero => Zero
@@ -56,9 +50,7 @@ def rec parity(n : Nat) -> Nat =
         | Succ(r) => Zero
     }
 
-/// The twin: the successor arm needs `parity(n)`'s value, which is stuck at
-/// the variable, so the endpoint stays the bind over the call and is not
-/// read as a constructor over it.
+/// The `parity_stuck` endpoint keeps a bind over a variable call.
 @[ refuses("EndpointMismatch") ]
 def parity_stuck(n : Nat) -> Path[.A = Nat](parity (Succ n), Succ (parity n)) =
   Path.here (Succ (parity n))

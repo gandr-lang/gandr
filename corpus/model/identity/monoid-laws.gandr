@@ -1,7 +1,12 @@
-// The monoid laws of integer addition are not definitional (the HoTT book's
-// § 1.12, `refl` at judgmental equality): conversion leaves arithmetic on a
-// variable to the runtime, so reflexivity does not reach either unit law or
-// associativity, and each is refused at its endpoints.
+//! This source tests the monoid laws of integer addition.
+//!
+//! Conversion does not prove the unit laws or associativity on a variable.
+//! The pathological declarations refuse each law at its endpoints.
+//!
+//! The runtime evaluates arithmetic on a variable.
+//! The checker compares the resulting endpoints.
+//!
+//! - see: HoTT Book §1.12
 
 /// The unit of the sum.
 @[ runs("0") ]

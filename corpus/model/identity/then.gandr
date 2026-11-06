@@ -1,7 +1,12 @@
-// The composite of two paths, the HoTT book's Lemma 2.1.2 (`p · q`), at the
-// integers: `Path.step(q, r)` joins a path to one leaving its endpoint, and a run
-// joins reflexivity to itself. `Path.step(q, r)` is the unbiased composite of the
-// 2-chain at its least stratum, `compose[3, 5](chain(2), (q, r))`.
+//! This source defines the composite of two paths.
+//!
+//! The composite joins a path to one that starts at its endpoint.
+//! A run joins two reflexivity paths.
+//!
+//! The checker reads `Path.step` as the unbiased 2-chain composite.
+//! The kernel replays the composite.
+//!
+//! - see: HoTT Book Lemma 2.1.2
 
 // Reflexivity at seven.
 import "./back.gandr";

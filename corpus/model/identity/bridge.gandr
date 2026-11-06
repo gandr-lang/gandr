@@ -1,67 +1,59 @@
-//! A bridge `Bridge[.A = A](a, b)` relates two points of `A` parametrically, as
-//! the bridge fold reads `A`.
-//!
-//! A path identifies its endpoints, and a bridge only relates them. A bridge
-//! at the universe is a relation between two types, and one at a type former
-//! lifts the relations of its parts. A bridge has no reflexivity, transport
-//! or eliminator of its own.
-//!
-//! An introduction checked at a bridge checks at the fibre the fold reads from
-//! the carrier and the endpoints. The fold reads a list cell by cell, a base
-//! type or a sum as its identity, and a function code by extensionality. An
-//! atom stating an identity system bears its relation.
-//!
-//! - see: `pathological/identity/bridge.gandr` — the bridges refused
-//! - see: #3519 — the model laws of the fold
-//! - cites: [Cavallo-2021-internal_parametricity_cubical_type_theory], § 3
-//!
-//! [Cavallo-2021-internal_parametricity_cubical_type_theory]: https://doi.org/10.46298/lmcs-17(4:5)2021 "Cavallo and Harper, Internal parametricity for cubical type theory"
+/// This source states parametric bridges between values.
+///
+/// A bridge relates endpoints but does not identify them.
+/// It has no reflexivity, transport, or eliminator.
+///
+/// The bridge fold reads a fibre from its carrier and endpoints.
+/// The checker uses that fibre to validate each bridge introduction.
+///
+/// - see: corpus/pathological/identity/bridge.gandr
+/// - see: #3519 — bridge fold laws
+/// - cites: [Cavallo-2021-internal_parametricity_cubical_type_theory]
+///
+/// [Cavallo-2021-internal_parametricity_cubical_type_theory]: https://doi.org/10.46298/lmcs-17(4:5)2021 "Cavallo and Harper, Internal parametricity for cubical type theory"
 
 // The sealed points whose relation is their identity.
 import "./atom-identity.gandr";
 // The native finite lists.
 import std.list (List);
 
-/// The total relation between the unit type and the string type, at the
-/// relation type `Unit => String => Type`.
+/// The unit-string bridge has the total relation.
 def unitString : Bridge[.A = Type](Unit, String) = thunk {
   fun (x : Unit) { fun (y : String) { return Unit } }
 };
 
-/// The equal lists of integers related cell by cell, each cell by the unit
-/// identity of its equal integers.
+/// Equal integer lists have a cell-by-cell unit relation.
 def sameDigits : Bridge[.A = List(Integer)](#[1, 2], #[1, 2]) = *{*{}, *{*{}, *{}}};
 
-/// Two equal integers related by their identity, which is the unit.
+/// Equal integers have the unit identity relation.
 def sameFour : Bridge(4, 4) = *{};
 
-/// A light's two states.
+/// A signal has two states.
 data Signal : Type where
-  /// The light stops traffic.
+  /// The halt state stops traffic.
   | Halt : Signal
-  /// The light lets traffic pass.
+  /// The pass state permits traffic.
   | Pass : Signal
 
-/// `toggle` turns a signal into the other one.
+/// The `toggle` function exchanges the signal states.
 def toggle(signal : Signal) -> Signal =
   match signal
     | Halt => Pass
     | Pass => Halt
 
-/// `toggleTwice` turns a signal into the other one twice.
+/// The `toggleTwice` function exchanges the signal states twice.
 def toggleTwice(signal : Signal) -> Signal =
   toggle (toggle signal)
 
-/// `steady` returns the signal it receives.
+/// The `steady` function returns its signal.
 def steady(signal : Signal) -> Signal =
   signal
 
-/// Two functions related at their function code by extensionality: they
-/// agree at both signals.
+/// The two functions agree at both signal states.
 def toggledTwice : Bridge(toggleTwice, steady) = Path.funext toggleTwice steady;
 
-/// Two sealed points related by the relation their atom states.
+/// The sealed atom relation connects the two points.
 def originOtherBridge : Bridge(Point.origin, Point.other) = *{};
 
-/// A sealed point related to itself by the reflexivity its atom states.
+/// The atom reflexivity relates the origin to itself.
 def originHere : Bridge(Point.origin, Point.origin) = Path.here Point.origin;

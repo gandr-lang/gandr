@@ -1,42 +1,42 @@
-//! A flow between list types by a translator that recurses into the tail, after
-//! directed univalence
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory],
-//! Definition 1.2: at one cell the image binds the translator's own image of
-//! the rigid tail, and the cell it returns over that image and the head's
-//! leaves is natural, so the translator is natural at every list.
-//!
-//! - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
-//!
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
+/// This source states a list flow whose translator visits each cell.
+///
+/// The translator swaps one record and rides the record flow through a list.
+/// Each list cell uses the translated head and translated tail.
+///
+/// The list flow uses that recursive translator.
+/// The checker rides source lists through the result.
+///
+/// - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+///
+/// [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 // The native finite lists.
 import std.list (List);
 
-/// A list of records migrated by riding each cell along the records' flow.
+/// The `Cells` module migrates each record in a list.
 module Cells where {
   type Old = String * Integer;
   type New = Integer * String;
-  /// The records' translator: the fields swapped.
+  /// The translator swaps record fields.
   @[ checks ]
   def swap(old : Old) -> New =
     match old
       | *{name, age} => *{age, name}
-  /// The flow between the records, by their translator.
+  /// The translator defines the record flow.
   @[ checks ]
   def renamed : Flow[.A = Type](Old, New) = Flow.into swap;
-  /// The lists' translator: the list ridden along the records' flow.
+  /// The `each` function rides a list through the record flow.
   @[ checks ]
   def each(olds : List(Old)) -> List(New) =
     Flow.ride (fun (X) { List X }) renamed olds
-  /// At one cell the image is the swapped head before the translator's own
-  /// image of the tail, so the lists' flow forwards by it.
+  /// Each list cell uses a swapped head and the translated tail.
   @[ checks ]
   def everyone : Flow[.A = Type](List(Old), List(New)) = Flow.into each;
-  /// A list ridden along the lists' flow.
+  /// The `moved` function rides a list through the list flow.
   @[ checks ]
   def moved(olds : List(Old)) -> List(New) =
     Flow.ride (fun (X) { X }) everyone olds
-  /// Two records migrated by a run.
+  /// The run migrates two records.
   @[ runs("cons *{36, \"ada\"} (cons *{41, \"alan\"} nil)") ]
   def two : () -> List(New) = moved (cons (*{"ada", 36}) (cons (*{"alan", 41}) nil));
 }

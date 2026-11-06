@@ -1,7 +1,12 @@
-// Transport in a family over a point and a path to it from a fixed one, the
-// motive of based path induction (the HoTT book's § 1.12.1), whose element
-// is itself a path that reads the path transported along: reflexivity at
-// reflexivity carried to reflexivity at `q`.
+//! This source transports a path element in a dependent family.
+//!
+//! Based path induction carries reflexivity at reflexivity to reflexivity at `q`.
+//! The result is a path from `q` to itself.
+//!
+//! The checker forms the motive from the path binder.
+//! The kernel replays the transport.
+//!
+//! - see: HoTT Book §1.12.1
 
 // The free naturals.
 import "./circle-base.gandr";

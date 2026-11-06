@@ -1,21 +1,18 @@
-//! A group's laws stated as rules, the coincidence check certifying each with
-//! the others: the structure the circle's loops carry under composition, whose
-//! laws `circle-group.gandr` proves as paths. The written laws do not join
-//! among themselves: the cancellation `mul(inv(x), x) ==> e()` meets
-//! associativity at `mul(mul(inv(x), x), z)`, which the two leave at `z` and at
-//! `mul(inv(x), mul(x, z))`. Completion orients each such pair into a rule that
-//! follows from the written ones, certified by the pair's two paths, until
-//! every pair joins [Knuth-1970-simple_word_problems_universal_algebras], § 7.
-//! The row reads a law no written rule states, the inverse of a product.
+//! This source states group laws as rewrite rules.
+//! The circle loop obeys the group laws.
+//!
+//! The written rules can form critical pairs.
+//! Completion derives rules that join each pair.
+//!
+//! The coincidence checker certifies each derived rule.
+//! It checks the inverse-of-product row.
 //!
 //! - see: #338
 //! - cites: [Knuth-1970-simple_word_problems_universal_algebras]
 //!
 //! [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"
 
-/// A group's unit, associativity and inverse laws, each a rule: `e()` is the
-/// unit and `a()`, `b()` two elements the row reads; the row's normal form is
-/// one only a derived rule reaches.
+/// The `Group` theory states laws for units, association and inverses.
 @[ normalizes("inv(mul(a, b)) ~> mul(inv(b), inv(a))") ]
 pub theory Group where
   sort G : Type;

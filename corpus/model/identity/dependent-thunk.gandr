@@ -1,19 +1,18 @@
-/// A suspended function at a dependent value function type, whose result
-/// type reads its parameter.
+/// This source states a suspended function with a dependent value result.
 ///
-/// A family of paths, a homotopy among them, is a value of such a type.
+/// A family of paths forms a value of that function type.
 ///
-/// The function's parameter is the binder the result type reads, whichever
-/// name the function gives it.
+/// The result type reads the function parameter.
+/// The parameter may use a name different from its type binder.
 ///
-/// - see: #3735 — the parameter bound twice, once apart from the type's binder
-/// - see: `transport-dependent-element.gandr` — a path that reads its own path
+/// - see: #3735 — separate parameter names
+/// - see: corpus/model/identity/transport-dependent-element.gandr
 
-/// Each path's reflexivity, as a family.
+/// The `reflFamily` function gives reflexivity for each path in a family.
 def reflFamily(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](q, q) =
   thunk { fun (q : Path[.A = A](x, y)) { Path.here q } }
 
-/// The same family, its parameter named apart from the type's binder.
+/// The `reflFamilyApart` function uses a parameter name apart from the type binder.
 def reflFamilyApart(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](
   q,
   q

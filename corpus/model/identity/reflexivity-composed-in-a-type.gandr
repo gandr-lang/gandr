@@ -1,15 +1,15 @@
-// A reflexivity at a point composes with `Path.step` in a type.
-//
-// `Path.here(x)` reads its type off its point's binder, whatever type the binder
-// writes: `Path[.A = A](x, x)` when `x : A`. A composite whose first operand is a
-// reflexivity, or ends in one, takes its type from that reading.
-//
-// Each declaration states such a composite in its own type.
-//
-// - see: #3834 — a reflexivity first in a composite, refused before
+//! This source types composites that start or end with reflexivity.
+//!
+//! Each composite reads its endpoint type from the reflexivity binder.
+//! The pathological twin refuses a composite that lacks this type.
+//!
+//! The checker reads the composite type from both operands.
+//! The kernel replays each composite at that type.
+//!
+//! - see: #3834 — a reflexivity first in a composite
 
-/// A reflexivity stands first in the type's composite. The left unit holds
-/// up to a path, not by computation, so the composite stands on both sides.
+/// A reflexivity begins the composite in its type.
+/// Its left unit needs a path on both composite sides.
 def hereFirst(A : Type, x : A, y : A, f : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](
   Path.step (Path.here x) f,
   Path.step (Path.here x) f

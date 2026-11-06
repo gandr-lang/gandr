@@ -1,28 +1,23 @@
-/// An action over a lambda written twice.
+/// This source compares two actions over one lambda written twice.
 ///
-/// One action on a path, over a lambda that closes over a variable, is one
-/// path wherever the source writes it. Two definitions whose bodies write the
-/// action unfold to it, and a reflexivity relates them.
+/// Both actions unfold to the same path.
+/// Their lambda bodies close over copies of the same variables.
 ///
-/// The action unfolds to a transport whose motive calls the lambda. The two
-/// motives hold two thunks of the lambda, each closing its own copy of the
-/// body over its own captures. They compare by those bodies up to the
-/// variables each reads free, and by the captures those variables name. The
-/// two scopes may lay the captures out apart: one may bind more variables than
-/// the other, or bind `g` at another place.
+/// The checker compares the bodies by their free variables and captures.
+/// It aligns the captures when their scopes use different layouts.
 ///
-/// - see: #3807 — the code walk pairs two written calls by function and argument
-/// - see: #3920 — the checker declined two motives calling a lambda written twice
-/// - see: #3976 — the checker declined two such motives over captures laid out apart
+/// - see: #3807 — written lambda calls
+/// - see: #3920 — lambda body comparison
+/// - see: #3976 — capture layouts
 
-/// The action of `F` on `p`.
+/// The `act` function maps a path through `F`.
 def act(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
   F x,
   F y
 ) =
   Path.ap F p
 
-/// The action on `fa` of composing with `g`.
+/// The `apThen` function maps `fa` by composition with `g`.
 def apThen(
   A : Type,
   x : A,
@@ -41,7 +36,7 @@ def apThen(
     fp
     fa
 
-/// The same action, the lambda written again.
+/// The `apThenAgain` function writes the same lambda again.
 def apThenAgain(
   A : Type,
   x : A,
@@ -60,7 +55,7 @@ def apThenAgain(
     fp
     fa
 
-/// The action over the lambda written twice: a reflexivity relates the two.
+/// Reflexivity relates the two actions over the repeated lambda.
 def writtenTwice(
   A : Type,
   x : A,
@@ -76,7 +71,7 @@ def writtenTwice(
 ) =
   Path.here (apThen A x y z fm fp fa g)
 
-/// The action written in a scope that binds one more variable after `g`.
+/// The action scope binds one extra variable after `g`.
 def bindsOneMore(
   A : Type,
   x : A,
@@ -99,7 +94,7 @@ def bindsOneMore(
 ) =
   Path.here (apThen A x y z fm fp fa g)
 
-/// The action written in a scope that binds one more variable before `fm`.
+/// The action scope binds one extra variable before `fm`.
 def bindsOneBetween(
   A : Type,
   x : A,
@@ -122,7 +117,7 @@ def bindsOneBetween(
 ) =
   Path.here (apThen A x y z fm fp fa g)
 
-/// The action written in a scope that binds `g` before `fm`.
+/// The action scope binds `g` before `fm`.
 def bindsGFirst(
   A : Type,
   x : A,

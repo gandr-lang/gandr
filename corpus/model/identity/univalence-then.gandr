@@ -1,23 +1,21 @@
-//! Transport along a composite ending in `ua`: the cubical case table of Cohen,
-//! Coquand, Huber and Mörtberg, _Cubical Type Theory: a constructive
-//! interpretation of the univalence axiom_
-//! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom],
-//! § 4.5, read at the universe. `Path.step(p, ua(e))` is the transport of `p`
-//! along `ua(e)` in `y. Path[.A = Type](a, y)`, and transport along it moves the
-//! operand along `p`, then applies the record's forward map. A first path that
-//! does not compute, as `p` here, is carried on as the value it stands for.
+//! This source transports a value along a composite ending in `ua`.
+//!
+//! The first path transports the value before the record map applies.
+//! An open first path remains as the value that it represents.
+//!
+//! The checker expands each component of the composite transport.
+//! The runtime evaluates the named round trip.
 //!
 //! - cites: [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]
 //!
 //! [Cohen-2015-cubical_type_theory_a_constructive_interpretation_of_the_univalence_axiom]: https://arxiv.org/abs/1611.02108 "Cohen, Coquand, Huber and Mörtberg, Cubical Type Theory: a constructive interpretation of the univalence axiom"
 
-// The circle, the presented integers, the winding number and spinning.
+// This import supplies the circle, integers, winding and spin.
 import "./circle-base.gandr";
 // Transport forward along a path between types.
 import "./univalence.gandr";
 
-/// Transport along a composite whose second path is a `ua` applies the first
-/// path's transport, then the record's map.
+/// The composite transport applies the first path and the record map.
 def thenBeta(
   a : Type,
   b : Type,
@@ -31,26 +29,24 @@ def thenBeta(
 ) =
   Path.here (fwdAlong b c (ua e) (fwdAlong a b p x))
 
-/// Transport along a path from the loops at the point to the integers, then
-/// back along it.
+/// The `loopsRound` function is a round trip between loop paths and integers.
 def loopsRound(
   p : Path[.A = Type](Path[.A = Circle](Base, Base), Int),
   x : Path[.A = Circle](Base, Base)
 ) -> Path[.A = Circle](Base, Base) =
   Path.walk (fun (X) { X }) (Path.step p (Path.back p)) x
 
-/// A loop carried to the integers and back again is the loop, by a run.
+/// A run returns the original loop after the round trip.
 @[ runs("loop ∷ Path.here Base") ]
 def roundRun : () -> Path[.A = Circle](Base, Base) = loopsRound loopsAreIntegers loop;
 
-/// The round trip named, its type stated. `Path.step` and `Path.back` read the type
-/// `loopsAreIntegers` states.
+/// The `loopsAndBack` path names the loop round trip.
 def loopsAndBack : Path[.A = Type](
   Path[.A = Circle](Base, Base),
   Path[.A = Circle](Base, Base)
 ) = Path.step loopsAreIntegers (Path.back loopsAreIntegers);
 
-/// A loop carried along the named round trip is the loop, by a run.
+/// A run returns the loop through the named round trip.
 @[ runs("loop ∷ Path.here Base") ]
 def namedRoundRun() -> Path[.A = Circle](Base, Base) =
   Path.walk (fun (X) { X }) loopsAndBack loop

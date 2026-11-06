@@ -1,15 +1,16 @@
-// `Path.ap` acts on a path through a suspended function that states its type.
-//
-// The editor answers at every node the checker judges. A function given to
-// `Path.ap` holds such nodes, as a function given to a call does.
-//
-// The declaration whiskers a path of paths through `Path.ap`.
-//
-// - see: #3787 — no editor entry inside the function, before
-// - see: #3801 — the census reprints the thunk's path types one binder off, before
-// - see: #3872 — the formatter and the printer spell the map's thunk apart, before
+/// This source states action through a suspended function.
+///
+/// The suspended function holds nodes that the checker judges.
+/// The action whiskers a path equality through that function.
+///
+/// The editor answers at every node the checker judges.
+/// The function receives those nodes as a call function does.
+///
+/// - see: #3787 — editor entries
+/// - see: #3801 — census path types
+/// - see: #3872 — thunk spelling
 
-/// Whiskering a path of paths on the right, through a suspended function.
+/// The suspended function maps a right whisker through `Path.ap`.
 def whiskeredBySuspension(
   A : Type,
   x : A,
