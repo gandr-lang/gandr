@@ -1,24 +1,19 @@
-// Rules stated under a row of theories. A rule written `under [T | r]` fires
-// only where the row a program runs in holds `T` and possibly more; one
-// written `under [T]` only where the row holds exactly `T`. Two such rules
-// overlapping owe a join only in the rows both describe, the meet of their
-// rows, and there by the rules firing in each of those rows; two rules whose
-// rows share none owe nothing. A row is a set of theories, as an effect row
-// is a set of effects.
+// This source tests rewrite rules under theory rows.
+//
+// Open rows permit extra theories. Closed rows require the exact theory set.
+//
+// The checker tests overlaps only in rows each rule describes.
+//
+// - see: `../../pathological/effects/rows.gandr` — row refusals
 
 // The theory `State.Eff`.
 import "./state.gandr";
 
-/// Writes that go nowhere: a theory of no operation, which a row holds where
-/// what is written is discarded.
+/// `Sink` discards written computations.
 pub theory Sink where
   sort C : Type;
 
-/// Marks on a computation, flushed at the end. Where writes go nowhere a
-/// flushed mark leaves nothing, and where the state is kept flushing a mark
-/// keeps it. The two overlap at `flush(mark(k))` in the rows holding both
-/// `State.Eff` and `Sink`, where the rules erase marks and flushes, so both
-/// reducts reach `k`.
+/// `Marks` defines rules that flush and erase marks.
 pub theory Marks where
   sort C : Type;
   oper mark : (k : C) --> C;
@@ -28,9 +23,7 @@ pub theory Marks where
   rule erased : mark k <=> k where { | under [State.Eff, Sink | r] };
   rule flushed : flush k <=> k where { | under [Sink, State.Eff | r] };
 
-/// The same two rules under closed rows: a row holding exactly `Sink` is
-/// never one holding exactly `State.Eff`, so the overlap owes no join and no
-/// rule erases anything.
+/// `ExactMarks` defines the rules under closed rows.
 theory ExactMarks where
   sort C : Type;
   oper mark : (k : C) --> C;

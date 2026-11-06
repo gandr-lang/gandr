@@ -1,24 +1,22 @@
-// Effects as data. A program over a row of operations is a tree, the free
-// model of those operations: a result, or one operation of the row with the
-// continuation that awaits its reply. The row is a type parameter, a sum of
-// operation types, so an operation outside the row has no injection to be
-// written, and every declaration here is pure. Follows Swierstra, "Data types
-// à la carte" (JFP 2008), for the row as a sum of signatures, and Plotkin and
-// Pretnar, "Handling algebraic effects" (LMCS 2013), for a handler as a fold
-// of the free model.
+// This source defines effect rows as free-model trees.
+//
+// A program holds a result or a row operation with its continuation.
+//
+// The row type prevents operations outside the row.
+//
+// - see: `tree-rows.gandr` — row handlers
 
-/// The two sides of a row: the operation at its front, or the rest.
+/// `Either` chooses the first operation or the remaining row.
 pub data Either(l : Type, r : Type) : Type where
   | Left : (x : l) --> Either(l, r)
   | Right : (y : r) --> Either(l, r)
 
-/// State's operations: read the state, or store one.
+/// `StateOp` defines state reads and stores.
 pub data StateOp : Type where
   | Get : StateOp
   | Put : (s : Integer) --> StateOp
 
-/// A program over the row `e` answering an `a`: a result, or an operation of
-/// the row and its continuation, every reply an integer.
+/// `Prog` holds a result or an operation continuation.
 pub data Prog(e : Type, a : Type) : Type where
   | Done : (x : a) --> Prog(e, a)
   | Op : (o : e, k : Integer -> Prog(e, a)) --> Prog(e, a)

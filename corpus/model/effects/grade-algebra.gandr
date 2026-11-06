@@ -56,7 +56,7 @@ def twiceThree : Path(Count.times (2 : Nat) (3 : Nat), (6 : Nat)) = Path.here (6
 /// The test at a packed algebra: many covers once.
 def manyFitsOnce : Path(fits usage Once Many, true) = Path.here true;
 
-/// Three uses, counted, cover a need of once once counting collapses to usage.
+/// `threeCoversOnce` checks that three counted uses cover one use.
 def threeCoversOnce : Path(
   covers count usage collapse Once (3 : Nat),
   true
