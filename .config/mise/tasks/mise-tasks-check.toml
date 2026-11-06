@@ -1,7 +1,8 @@
 #:tombi toml-version = "v1.0.0"
 #:schema https://mise.jdx.dev/schema/mise-task.json
 
-# The wall. Every `check:*` task is one gate; `check` fans out to all of them.
+# The wall. Every `check:*` task is one gate; `gate:all` fans out to all of
+# them, and `check` to the share a landing runs before it opens.
 # A gate enters this file when a weed appears that it would have caught, with
 # the reason beside it, and never pre-emptively. A `check:*` task is a gate
 # every contributor runs locally, idempotent and cheap relative to what it
@@ -12,26 +13,32 @@
 
 # The gate graph holds its lane's lock and one of the host's gate slots for
 # its whole run, so at most `GANDR_GATE_SLOTS` (default 2) gates share a host,
-# one per lane, and its test runner takes the cores divided by the slots
-# (`.config/mise/gate.bash`, #3057, #4911). A lane's second gate, or a third
-# gate, waits, naming the holders, or with `--no-wait` refuses at once. A
-# change that selects no check of the table's groups (Rust, corpus,
+# one per lane (`.config/mise/gate.bash`, #3057, #4911). A lane's second gate,
+# or a third gate, waits, naming the holders, or with `--no-wait` refuses at
+# once. A change that selects no check of the table's groups (Rust, corpus,
 # extension) runs only light checks and takes no lock and no slot: it never
 # waits behind a gate that builds the workspace.
 #
-# It runs the checks the change selects (`.config/gate-scope/select.jq`,
-# #4911): the paths the branch changes against its fork from `origin/main`,
-# mapped by `.config/gate-scope/table.json`. A workflow-only change runs no Rust
-# check, since the merge group runs every check before a landing. The Rust
-# checks it selects run over the packages the change touches and every
-# package that depends on one (`.config/gate-scope/packages.jq`, #5014),
-# passed as `GATE_SCOPE`; a change to the workspace's own configuration runs
-# them over the whole workspace. `gate:all` runs every check over the whole
-# workspace.
+# It is the landing's gate (#5458): `pr:open` runs it on a head that no gate
+# passed on, and `pr:land` runs it again when a rebase changes the head's
+# tree. Six lanes ran the full suite before each pull request opened, more
+# load than the hosts carry, and the merge group runs every check on each
+# group. So it runs the light checks, which take seconds, and of the heavy
+# checks only Clippy and the compiler policy (`check:landing`). It runs no
+# test, no sweep and no specification obligation. `gate:all` runs every check
+# over the whole workspace.
+#
+# It runs those checks that the change selects
+# (`.config/gate-scope/select.jq`, #4911): the paths the branch changes against
+# its fork from `origin/main`, mapped by `.config/gate-scope/table.json`. A
+# workflow-only change runs no Rust check. The Rust checks it selects run over
+# the packages the change touches and every package that depends on one
+# (`.config/gate-scope/packages.jq`, #5014), passed as `GATE_SCOPE`; a change
+# to the workspace's own configuration runs them over the whole workspace.
 #
 # A gate that passes records the tree of the work it read and the checks it
 # ran (`.config/gate-scope/passed.bash`, #5076), and `pr:open` and `pr:land`
-# refuse a head whose tree no gate passed on. The tree is read before the
+# gate a head whose tree no gate passed on. The tree is read before the
 # checks run and again after them: when the work changed in between, nothing
 # is recorded. The record also holds the gate's time (#5215): its wall time,
 # each task's time and each suite's slowest tests, read from its standard
@@ -44,7 +51,7 @@
 # refusal names `claim:take <n>`. A branch that works no unit reads nothing,
 # and a failed read of the issue leaves the gate to run and says so.
 [check]
-description = "The gates the change selects, over the packages it touches and their dependents, in one of the host's gate slots"
+description = "The landing's gate: the light checks, and Clippy with the compiler policy over the packages the change reaches, in one of the host's gate slots"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
@@ -57,18 +64,16 @@ source .config/mise/gate.bash
 if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
 tree=$(.config/gate-scope/passed.bash tree)
-selected=$(.config/gate-scope/select.bash)
+selected=$(.config/gate-scope/select.bash --landing)
 heavy=$(jq -r --arg selected "$selected" '[.groups[][]] as $heavy | [$selected | split("\n")[] | select(IN($heavy[]))] | length' .config/gate-scope/table.json)
 if (( heavy > 0 )); then
   hold_gate_slot "mise run check"
-  NEXTEST_TEST_THREADS=$(gate_threads)
-  export NEXTEST_TEST_THREADS
-  echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads" >&2
+  echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane" >&2
 else
-  echo "check: the change selects no Rust, corpus or extension check, so it takes no gate slot" >&2
+  echo "check: the change selects no Clippy or compiler policy check, so it takes no gate slot" >&2
 fi
 mapfile -t checks <<< "$selected"
-echo "check: the change selects ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); \`mise run gate:all\` runs every one over the workspace" >&2
+echo "check: the landing's gate runs ${#checks[@]} of $(mise tasks ls --json | jq '[.[] | select(.name | startswith("check:"))] | length') checks (.config/gate-scope/table.json); the merge group and \`mise run gate:all\` run every one" >&2
 GATE_SCOPE=$(.config/gate-scope/scope.bash)
 export GATE_SCOPE
 tasks=()
@@ -670,6 +675,9 @@ printf '%s\n' "$base"
 # for lldb to stop in, so there the box is ticked when the change adds a
 # `.config` case whose name cites an issue the body closes (#3784). No hand
 # ticks it. `--require-acknowledged` exits 2 while it is open.
+# `--observed-only` reads this block alone and builds no Rust evidence:
+# `pr:open` runs no specification obligation (#5458), but the observation is
+# the author's to give before the pull request opens.
 #
 # A performance fix owes one more line: whether a lint could have refused the
 # pattern it fixes (#1370). The body names the issues it works
@@ -689,8 +697,8 @@ printf '%s\n' "$base"
 # whose verdict reads `hotpath: fixed — <benchmark> <before> → <after>` or
 # `hotpath: accepted — <benchmark> exercises <feature>; <n> allocations per
 # <use>; <one sentence>`, open until ticked in one of those shapes. The check
-# posts after the benchmark upload, so a CI run may predate it; `pr:land`
-# reads it again before the queue.
+# posts after the benchmark upload, so a CI run may predate it; a rerun of
+# the pull request's obligations lane reads it again.
 ["evidence:obligations"]
 description = "List the specifications a change obliges to re-verify"
 tools.jq = "1.8.1"
@@ -700,6 +708,7 @@ flag "--previous <file>" help="a pull-request body whose acknowledgements carry 
 flag "--body <file>" help="a pull-request body whose acknowledgements carry over, rewritten with its re-verification section"
 flag "--pr <number>" help="the pull request whose own labels join its targets' for the lint assessment, and whose head's hotpath checks owe a verdict when red"
 flag "--require-acknowledged" help="exit 2 while any prose obligation is unticked"
+flag "--observed-only" help="build no Rust evidence and list no specification obligation: read only a defect's observation"
 '''
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 run = '''
@@ -709,14 +718,17 @@ base=${usage_base:-$(mise run --quiet evidence:base)}
 # The specification obligations come from the Rust evidence: the Dylint
 # records and the rustdoc JSON. A change the gate's selection gives no Rust
 # check (`.config/gate-scope/select.bash`) changes no Rust item, so it owes no
-# specification obligation and builds neither.
+# specification obligation and builds neither. `--observed-only` builds
+# neither.
 rust=false
-selected=$(.config/gate-scope/select.bash)
-if [[ $'\n'$selected$'\n' == *$'\n'check:dylint$'\n'* ]]; then rust=true; fi
-if [[ $rust == true ]]; then
-  mise run check:dylint ::: evidence:rustdoc ::: workflow:install
-else
-  echo "evidence: the change touches no Rust path (.config/gate-scope/select.bash), so it owes no specification obligation; no Rust evidence is built" >&2
+if [[ ${usage_observed_only:-false} != true ]]; then
+  selected=$(.config/gate-scope/select.bash)
+  if [[ $'\n'$selected$'\n' == *$'\n'check:dylint$'\n'* ]]; then rust=true; fi
+  if [[ $rust == true ]]; then
+    mise run check:dylint ::: evidence:rustdoc ::: workflow:install
+  else
+    echo "evidence: the change touches no Rust path (.config/gate-scope/select.bash), so it owes no specification obligation; no Rust evidence is built" >&2
+  fi
 fi
 extra=()
 if [[ -n ${usage_previous:-} ]]; then extra+=(--previous "$usage_previous"); fi
@@ -794,7 +806,7 @@ exit "$status"
 # the pinned policy library records it, and commits `base.rs`. With
 # `edited.rs` in its place, it writes the crate's records and rustdoc JSON as
 # `check:dylint` and `evidence:rustdoc` do, then runs `quenchant-gates
-# obligations` as the lane does, `--require-acknowledged`, three times:
+# obligations` with `--require-acknowledged` three times:
 #   - over a body with no section, it exits 2 with `bump`'s clause open;
 #   - over that body with the clause's `still holds` box ticked, it exits 0
 #     with the clause held;
@@ -1791,7 +1803,10 @@ run = ".config/mise/host-lock-cases.bash"
 
 # The checks a change selects (#4911): `.config/gate-scope/cases.json` holds
 # `select.jq` over the table, a workflow-only change selecting no Rust check, a
-# crate's source the whole wall and an unmapped path every check, and
+# crate's source the whole wall and an unmapped path every check, and for the
+# landing's gate (#5458) a crate's source keeping the light checks and
+# `check:landing` and a corpus or extension source keeping the light checks
+# alone. It holds
 # `packages.jq` (#5014), #5007's diff scoping its one package, a `Cargo.lock`
 # change the whole workspace and a change growing by its dependents, and
 # `passed.jq` (#5076), a gated tree accepted, a changed tree refused, a
@@ -1809,9 +1824,9 @@ run = ".config/mise/host-lock-cases.bash"
 # a working change and a commit of 4000 paths, a list longer than one
 # argument holds, each select every check.
 # Then `unmapped.jq` reads the live tasks: a check that builds or runs the
-# toolchain outside every group of the table, or a group naming no check,
-# fails it. So does a check that builds `GATE_SCOPE` under
-# `--cfg anodized_panic` without the workspace feature unification.
+# toolchain outside every group of the table, or a group or the `landing`
+# list naming no check, fails it. So does a check that builds `GATE_SCOPE`
+# under `--cfg anodized_panic` without the workspace feature unification.
 ["check:gate-scope"]
 description = "The table scoping `mise run check` maps a change to its checks, and every check that builds the toolchain sits in one of its groups"
 tools.jq = "1.8.1"

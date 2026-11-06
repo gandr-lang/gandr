@@ -2,8 +2,8 @@
 # The records of passed gates (#5076, `passed.jq`). `mise run check` and
 # `mise run gate:all` record each pass: the tree they passed on, the commit
 # under it, the checks they ran, every `check:*` task the tree holds and the
-# time the gate took (#5215). `pr:open` and `pr:land` read the records and
-# refuse a head that no gate passed on.
+# time the gate took (#5215). `pr:open` and `pr:land` read the records, and
+# they run `mise run check` on a head that no gate passed on (#5458).
 #
 # The records are under the repository's common git directory, so a gate in
 # one worktree counts for the same tree in another. Each record is one file,
@@ -24,8 +24,9 @@
 #     and the pass is recorded all the same.
 #   passed.bash require <command> <commit>
 #     Exits 0 when a gate passed on the tree of <commit> and ran every check
-#     that the commit's change selects (`select.bash`). Otherwise it names
-#     the command to run, and exits 2.
+#     of the landing's gate that the commit's change selects
+#     (`select.bash --landing`, #5458). Otherwise it names the command to
+#     run, and exits 2.
 #   passed.bash carry <gated> <head> <base>
 #     Carries the gate on the tree of <gated> to the tree of <head>, when
 #     <head>'s own commits above <base> keep the patches of as many commits
@@ -35,7 +36,8 @@
 #     combination. The stack stays first come, first served: no seat gates
 #     again for another's `pr:open`. Each carried record names the tree it
 #     came from. Exits 0 when the trees are one, or once it carries; exits 2,
-#     naming why, when <gated> has no record or a patch differs.
+#     naming why, when <gated> has no record or a patch differs. Then
+#     `pr:open` runs the gate on the new head.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate
@@ -90,7 +92,7 @@ case ${1:-} in
     count=$(git rev-list --count "$4..$head")
     patches() { git rev-list --reverse -n "$count" "$1" | while IFS= read -r c; do git show --format= "$c" | git patch-id --stable | awk '{ print $1 }'; done; }
     if (( count == 0 )) || [[ $(patches "$gated") != "$(patches "$head")" ]]; then
-      echo "pr:open: the stacked head's $count own commits do not keep the patches the gate on $gated passed; run \`mise run check\` on it, then \`pr:open\` again" >&2
+      echo "pr:open: the stacked head's $count own commits do not keep the patches the gate on $gated passed" >&2
       exit 2
     fi
     mkdir -p "$records/$tree"
@@ -118,7 +120,7 @@ case ${1:-} in
     # the trunk adds the commits of the pull requests below it, which their
     # own gates and the merge queue check, so its selection is not read again.
     if jq -e 'any(.[]; .carried != null)' <<< "$passed" > /dev/null; then exit 0; fi
-    selected=$(GATE_TASKS=$(jq -c '.[0].tasks' <<< "$passed") "$here/select.bash" "$commit" 2> /dev/null | jq -R . | jq -cs .)
+    selected=$(GATE_TASKS=$(jq -c '.[0].tasks' <<< "$passed") "$here/select.bash" --landing "$commit" 2> /dev/null | jq -R . | jq -cs .)
     verdict=$(jq -n --arg tree "$tree" --argjson selected "$selected" --argjson records "$passed" \
       '{tree: $tree, selected: $selected, records: $records}' | jq -c -f "$here/passed.jq")
     if jq -e .accepted <<< "$verdict" > /dev/null; then exit 0; fi

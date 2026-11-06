@@ -1,7 +1,7 @@
 # Whether a gate passed on a head (#5076). On 2026-11-04 a pull request
 # opened on a head that no gate passed, and CI found four prose findings
 # that `mise run check` finds. So `pr:open` and `pr:land` read the records
-# that `passed.bash` writes when a gate passes, and refuse a head without one.
+# that `passed.bash` writes when a gate passes, and gate a head without one.
 #
 # A record is keyed by the tree, not by the commit. A rebase that changes
 # nothing, or a reworded message, keeps the tree, so its record still counts.

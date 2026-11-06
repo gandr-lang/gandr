@@ -1,11 +1,12 @@
-# The gate graph's host-wide slot (#3057), sourced by `check` and by
+# The gate graph's host-wide slot (#3057), sourced by `check`, `gate:all` and
 # `.config/mise/gated`. Three seats' gates on one host pushed its load past 50
 # on 32 cores, and the enforcing suite's slowest tests, which pass alone in 9 to
 # 11 seconds, timed out at 30: a false red that costs a rerun and hides a real
-# one. So `mise run check` holds one of `GANDR_GATE_SLOTS` (default 2) slots for
-# its whole run. It runs one full test suite, `check:tests-enforcing`, as CI
+# one. So a gate holds one of `GANDR_GATE_SLOTS` (default 2) slots for its
+# whole run. `gate:all` runs one full test suite, `check:tests-enforcing`, as CI
 # does (#5216), so the suite takes the host's cores divided by the slots, never
-# more. The plain build runs only `check:tests-plain-only`, one test.
+# more. The plain build runs only `check:tests-plain-only`, one test. The
+# landing's gate, `check`, runs no test (#5458).
 #
 # One lane once held both slots, its two worktrees' gates running at once, and
 # the host's load reached 70 on 32 cores (#4911). So a gate first takes its

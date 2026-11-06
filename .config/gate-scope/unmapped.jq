@@ -1,9 +1,10 @@
 # What keeps `table.json` true to the checks it scopes (#4911): a check that
 # builds or runs the toolchain sits in a group, so a workflow change never runs
-# it, and every check a group names exists. A heavy check is one whose script
-# runs `cargo` beyond `cargo metadata`, the gate binary `quenchant-gates`, or
-# the extension's `aube` or `node`, or one that depends on a grouped check. The
-# table's `light` list names a heavy check that runs on every change anyway.
+# it, and every check a group or the `landing` list names exists. A heavy check
+# is one whose script runs `cargo` beyond `cargo metadata`, the gate binary
+# `quenchant-gates`, or the extension's `aube` or `node`, or one that depends on
+# a grouped check. The table's `light` list names a heavy check that runs on
+# every change anyway.
 #
 # A check that builds `GATE_SCOPE` under `--cfg anodized_panic` unifies the
 # features over the whole workspace. A scope that keeps no member using
@@ -30,6 +31,9 @@ import "table" as $table;
   ($table.groups | to_entries[] | .key as $group | .value[]
     | select(IN($names[]) | not)
     | "\($group): it names \(.), which is no check task"),
+  (($table.landing // [])[]
+    | select(IN($names[]) | not)
+    | "landing: it names \(.), which is no check task"),
   (.tasks[]
     | select(any(.env[]?; test("^RUSTFLAGS=.*--cfg anodized_panic")))
     | select(.run | tostring | test("GATE_SCOPE"))
