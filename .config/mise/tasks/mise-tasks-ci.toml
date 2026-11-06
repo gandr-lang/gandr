@@ -1952,7 +1952,8 @@ flag "--remote" help="list only the remote's branches"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 source .config/pr-stack/trunk.bash
 kept=$(printf '%s\n' "${kept_branches[@]}" | jq -R . | jq -cs .)
 remote=$(git ls-remote --heads origin | awk '{ sub("^refs/heads/", "", $2); print $2 }' | jq -R . | jq -cs .)
@@ -2885,7 +2886,8 @@ number=${usage_pr:?}
 [[ $number =~ ^[1-9][0-9]*$ ]] || { echo "refactor:file: expected a pull request number, not \`$number\`" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$root/.config/gh/repo.bash"
+repo=$(repo_name)
 pr=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F number="$number" -f query='
   query($owner: String!, $name: String!, $number: Int!) {
     repository(owner: $owner, name: $name) {
@@ -3979,7 +3981,8 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 body=$(realpath "${usage_body:?}")
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 own=$(git branch --show-current)
 [[ -n "$own" && "$own" != "$trunk" ]] || { echo "pr:open opens the checked-out branch; check out a unit branch, not $trunk" >&2; exit 2; }
@@ -4321,7 +4324,8 @@ set -euo pipefail
 number=${usage_number:-}
 if [[ -z "$number" ]]; then number=$(gh pr view --json number --jq .number); fi
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 owner=${repo%/*}
 name=${repo#*/}
 deadline=$((SECONDS + 5400))
@@ -4616,7 +4620,8 @@ number=${usage_number:?}
 reason=${usage_reason:?}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 [[ -n "${reason// }" ]] || { echo 'pr:hold needs the reason it is held' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 who='as a draft'
 if [[ "${usage_owner:-false}" == true ]]; then
   gh label create hold:owner -R "$repo" --color B60205 --description "Held by the owner: no landing queues it or the stack above it" --force > /dev/null
@@ -4655,7 +4660,8 @@ run = '''
 set -euo pipefail
 number=${usage_number:?}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 IFS=$'\t' read -r draft owner < <(gh pr view "$number" -R "$repo" --json isDraft,labels --jq '[.isDraft, any(.labels[]; .name == "hold:owner")] | @tsv')
 if [[ "$owner" == true ]]; then gh pr edit "$number" -R "$repo" --remove-label hold:owner > /dev/null; fi
 if [[ "$draft" == true ]]; then gh pr ready "$number" -R "$repo" > /dev/null; fi
@@ -4693,7 +4699,8 @@ number=${usage_number:?}
 timeout=${usage_timeout:-10800}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected an issue or pull request number' >&2; exit 2; }
 [[ "$timeout" =~ ^[0-9]+$ ]] || { echo 'Expected --timeout in seconds' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 deadline=$((SECONDS + timeout))
 # The lock's key: one wait a number on a host (#4268), so a second
@@ -4825,7 +4832,8 @@ number=${usage_number:?}
 timeout=${usage_timeout:-10800}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 [[ "$timeout" =~ ^[0-9]+$ ]] || { echo 'Expected --timeout in seconds' >&2; exit 2; }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 deadline=$((SECONDS + timeout))
 seen_queued=false
 # The head the landing trigger last ran on, and the earliest time it runs
@@ -5138,7 +5146,8 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 source .config/stall/stall.bash
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source .config/gh/repo.bash
+repo=$(repo_name)
 source .config/pr-stack/trunk.bash
 reading=$(stall_reading "$repo" "$trunk" "$(stall_memory)") || { echo "stall:check: the reading failed" >&2; exit 2; }
 live=$(stall_liveness)
@@ -5313,7 +5322,8 @@ listen() {
     (( events_urgent == 0 )) || return 0
   done
 }
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source .config/gh/repo.bash
+repo=$(repo_name)
 source .config/pr-stack/stack.bash
 required=$(required_contexts)
 trap 'drop_scratch' EXIT
