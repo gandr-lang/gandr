@@ -177,40 +177,65 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-toolchain.toml", scope = "toolchain:bump", api = "rest", identity = "actions", calls = 5, points = 5, measured = "rest", hour = 1, trigger = "the toolchain workflow, by hand or weekly" },
   { file = ".config/mise/tasks/mise-tasks-toolchain.toml", scope = "toolchain:bump/clippy_channel_at", api = "rest", identity = "actions", calls = 1, points = 10, measured = "rest", hour = 1, trigger = "toolchain:bump: one read for each clippy commit it walks, about ten" },
 
-  # The landing watcher (Actions).
-  { file = ".config/pr-stack/landing.bash", scope = "-", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 45, trigger = "landing.yml: each CI run completed, each dequeue" },
-  { file = ".config/pr-stack/landing.bash", scope = "-", api = "rest", identity = "actions", calls = 4, points = 2, measured = "rest", hour = 45, trigger = "landing.yml: two rate_limit reads, free, and for each pull request the depth gate stopped that a landing moved to depth 3, its run read and rerun once" },
-  { file = ".config/pr-stack/landing.bash", scope = "read_prs", api = "graphql", identity = "actions", calls = 1, points = 1, pages = 1, measured = "cost", hour = 45, trigger = "landing.yml: the open pulls, one page of 20 at 1 point (rateLimit, 2026-11-04)" },
-  { file = ".config/pr-stack/landing.bash", scope = "tell", api = "graphql", identity = "actions", calls = 1, points = 2, measured = "rule", hour = 4, trigger = "landing.yml: a comment on a restacked pull request" },
+  # The landing watcher (Actions). landing.yml acts with `LANDING_TOKEN`, a
+  # token of the agents' account that reads and writes, so its rows stand
+  # under `landing`. Its rerun uses `RERUN_TOKEN`, the workflow's own token,
+  # and ci.yml's depth gate uses the workflow's token, so their rows stand
+  # under `actions` (#5695).
+  { file = ".config/pr-stack/landing.bash", scope = "-", api = "graphql", identity = "landing", calls = 1, points = 0, measured = "cost", hour = 45, trigger = "landing.yml and ci.yml set GITHUB_REPOSITORY, so the repository is not read" },
+  { file = ".config/pr-stack/landing.bash", scope = "-", api = "rest", identity = "landing", calls = 4, points = 1, measured = "rest", hour = 45, trigger = "landing.yml: two rate_limit reads, free, and the run of each pull request the depth gate stopped that a landing moved to the gate's depth" },
+  { file = ".config/pr-stack/landing.bash", scope = "-", api = "rest", identity = "actions", calls = 4, points = 1, measured = "rest", hour = 8, trigger = "landing.yml: that run rerun once, through RERUN_TOKEN" },
+  { file = ".config/pr-stack/landing.bash", scope = "read_prs", api = "graphql", identity = "landing", calls = 1, points = 1, pages = 1, measured = "cost", hour = 45, trigger = "landing.yml: the open pulls, one page of 20 at 1 point (rateLimit, 2026-11-04)" },
+  { file = ".config/pr-stack/landing.bash", scope = "tell", api = "graphql", identity = "landing", calls = 1, points = 2, measured = "rule", hour = 8, trigger = "landing.yml: a comment on a restacked pull request, or on a refused landing once a head (#5695)" },
   { file = ".config/pr-stack/landing.bash", scope = "depth_gate", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 8, trigger = "ci.yml's depth gate: a pull request above depth 3 cancels its own run" },
   { file = ".config/pr-stack/queued-push.bash", scope = "-", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "the pre-push hook, each push" },
 
-  # The stack library, sourced by the pr tasks on a host.
+  # The stack library, sourced by the pr tasks on a host and by landing.yml.
   { file = ".config/pr-stack/stack.bash", scope = "cancel_stale", api = "rest", identity = "read", calls = 1, points = 2, measured = "rest", hour = 2, trigger = "stall:watch: a cut lists the queued and the running runs" },
   { file = ".config/pr-stack/stack.bash", scope = "cancel_stale", api = "rest", identity = "write", calls = 1, points = 3, measured = "rest", hour = 2, trigger = "stall:watch: a cut cancels each run its moved heads made stale, about three" },
+  { file = ".config/pr-stack/stack.bash", scope = "closed_pr", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 2, trigger = "pr:land: a bottom off the trunk, the newest pull request of its base (rateLimit 1, 2026-11-06)" },
+  { file = ".config/pr-stack/stack.bash", scope = "closed_pr", api = "graphql", identity = "landing", calls = 1, points = 1, measured = "cost", hour = 4, trigger = "landing.yml: the same read in the watcher's landing (rateLimit 1, 2026-11-06)" },
   { file = ".config/pr-stack/stack.bash", scope = "cut_bottom", api = "graphql", identity = "write", calls = 1, points = 3, measured = "rule", hour = 2, trigger = "stall:watch: a cut retargets the red bottom onto the new top; gh pr edit's lookups and its mutation" },
+  { file = ".config/pr-stack/stack.bash", scope = "cut_closed", api = "graphql", identity = "write", calls = 2, points = 4, measured = "rule", hour = 1, trigger = "pr:land: a chain cut past a member closed unmerged, its unstack and its bottom's base edit" },
+  { file = ".config/pr-stack/stack.bash", scope = "cut_closed", api = "graphql", identity = "landing", calls = 2, points = 4, measured = "rule", hour = 2, trigger = "landing.yml: the same cut in the watcher's landing" },
   { file = ".config/pr-stack/stack.bash", scope = "depth_marked", api = "rest", identity = "actions", calls = 1, points = 1, pages = 1, measured = "rest", hour = 8, trigger = "ci.yml's depth gate: a pull request above depth 3, its comments read for the gate's mark, 100 a page" },
+  { file = ".config/pr-stack/stack.bash", scope = "depth_marked", api = "rest", identity = "landing", calls = 1, points = 1, pages = 1, measured = "rest", hour = 2, trigger = "landing.yml: a red member of a landing, its comments read for the gate's mark, 100 a page" },
   { file = ".config/pr-stack/stack.bash", scope = "hold_landing", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 8, trigger = "pr:land: the landing label" },
+  { file = ".config/pr-stack/stack.bash", scope = "hold_landing", api = "graphql", identity = "landing", calls = 1, points = 2, measured = "rule", hour = 8, trigger = "landing.yml: the landing label; the watcher queued 6 in 74 minutes on 2026-11-06" },
   { file = ".config/pr-stack/stack.bash", scope = "landed_heads", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "pr:open and pr:land: the merged heads of a branch" },
   { file = ".config/pr-stack/stack.bash", scope = "pr_reading", api = "graphql", identity = "read", calls = 1, points = 4, measured = "cost", hour = 16, trigger = "a pull request no longer open; an open one is read from pulls_reading" },
-  { file = ".config/pr-stack/stack.bash", scope = "signed_replay", api = "graphql", identity = "actions", calls = 1, points = 2, measured = "rule", hour = 2, trigger = "landing.yml: a dequeued pull request restacked, one createCommitOnBranch a commit, about two" },
-  { file = ".config/pr-stack/stack.bash", scope = "signed_replay", api = "rest", identity = "actions", calls = 9, points = 5, measured = "rest", hour = 2, trigger = "landing.yml: a dequeued pull request restacked: the scratch branch made and deleted, the replay's tree and the branch read, and the branch moved" },
+  { file = ".config/pr-stack/stack.bash", scope = "pr_reading", api = "graphql", identity = "landing", calls = 1, points = 4, measured = "cost", hour = 2, trigger = "landing.yml: a pull request no longer open, read alone" },
+  { file = ".config/pr-stack/stack.bash", scope = "signed_replay", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 1, trigger = "pr:land: a chain cut past a closed member, one createCommitOnBranch a commit, about two; the call gives --input, so it is a write" },
+  { file = ".config/pr-stack/stack.bash", scope = "signed_replay", api = "graphql", identity = "landing", calls = 1, points = 2, measured = "rule", hour = 3, trigger = "landing.yml: a dequeued pull request restacked, or a chain cut past a closed member; one createCommitOnBranch a commit, about two" },
+  { file = ".config/pr-stack/stack.bash", scope = "signed_replay", api = "rest", identity = "read", calls = 2, points = 2, measured = "rest", hour = 1, trigger = "pr:land: a cut's replay reads its tree and the branch" },
+  { file = ".config/pr-stack/stack.bash", scope = "signed_replay", api = "rest", identity = "write", calls = 7, points = 3, measured = "rest", hour = 1, trigger = "pr:land: a cut's replay makes and deletes its scratch branch, and moves the branch" },
+  { file = ".config/pr-stack/stack.bash", scope = "signed_replay", api = "rest", identity = "landing", calls = 9, points = 5, measured = "rest", hour = 3, trigger = "landing.yml: a replay's scratch branch made and deleted, its tree and the branch read, and the branch moved" },
   { file = ".config/pr-stack/stack.bash", scope = "pulls_reading", api = "graphql", identity = "read", calls = 1, points = 1, pages = 1, measured = "cost", hour = 120, trigger = "every watch, landing, wait and stacking on the host, shared through budget.bash: at most one read each 30 s, whatever the number of seats polling; a page of 25 at 1 point, 9 open" },
+  { file = ".config/pr-stack/stack.bash", scope = "pulls_reading", api = "graphql", identity = "landing", calls = 1, points = 3, pages = 1, measured = "cost", hour = 16, trigger = "landing.yml: each landing reads the open pulls, and again after each write; 16 landings in 74 minutes on 2026-11-06" },
   { file = ".config/pr-stack/stack.bash", scope = "pushed_heads", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "pr:open and pr:land: a branch's pushed heads" },
   { file = ".config/pr-stack/stack.bash", scope = "queue_removal", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "pr:watch: why the queue removed a pull request" },
   { file = ".config/pr-stack/stack.bash", scope = "queue_stack", api = "graphql", identity = "write", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "pr:land: the stack queued" },
+  { file = ".config/pr-stack/stack.bash", scope = "queue_stack", api = "graphql", identity = "landing", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "landing.yml: the stack queued; the watcher queued 6 in 74 minutes on 2026-11-06" },
   { file = ".config/pr-stack/stack.bash", scope = "queue_unit_cap", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 8, trigger = "pr:land: the queue's rules" },
+  { file = ".config/pr-stack/stack.bash", scope = "queue_unit_cap", api = "rest", identity = "landing", calls = 1, points = 2, measured = "rest", hour = 45, trigger = "landing.yml: each run's depth limit, and the cap of each landing" },
   { file = ".config/pr-stack/stack.bash", scope = "red_reading", api = "rest", identity = "read", calls = 2, points = 2, measured = "rest", hour = 12, trigger = "stall:watch, every 300 s: a stack's root the queue removed for failed checks, its failed runs and the failed job's name" },
   { file = ".config/pr-stack/stack.bash", scope = "release_landing", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 8, trigger = "pr:land: the landing label released" },
+  { file = ".config/pr-stack/stack.bash", scope = "release_landing", api = "graphql", identity = "landing", calls = 1, points = 2, measured = "rule", hour = 8, trigger = "landing.yml: the landing label released" },
   { file = ".config/pr-stack/stack.bash", scope = "remove_landed_worktree", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 8, trigger = "pr:land and pr:watch, once landed" },
   { file = ".config/pr-stack/stack.bash", scope = "required_contexts", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 120, trigger = "each wait on the required checks, shared through budget.bash: at most one read each 30 s" },
+  { file = ".config/pr-stack/stack.bash", scope = "required_contexts", api = "rest", identity = "landing", calls = 1, points = 1, measured = "rest", hour = 45, trigger = "landing.yml: each run, once; a landing's reads hit the run's 30 s cache" },
   { file = ".config/pr-stack/stack.bash", scope = "rerun_twins", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 8, trigger = "pr:land: the runs of a head" },
   { file = ".config/pr-stack/stack.bash", scope = "rerun_twins", api = "rest", identity = "write", calls = 1, points = 1, measured = "rest", hour = 2, trigger = "pr:land: a cancelled twin rerun" },
+  { file = ".config/pr-stack/stack.bash", scope = "rerun_twins", api = "rest", identity = "landing", calls = 2, points = 4, measured = "rest", hour = 8, trigger = "landing.yml: the runs of each member queued, about three, and a cancelled twin rerun" },
   { file = ".config/pr-stack/stack.bash", scope = "restack_past", api = "graphql", identity = "write", calls = 2, points = 4, measured = "rule", hour = 4, trigger = "pr:open: a stack restacked past a landed member" },
   { file = ".config/pr-stack/stack.bash", scope = "retarget_bottom", api = "graphql", identity = "write", calls = 4, points = 8, measured = "rule", hour = 2, trigger = "pr:land: a bottom retargeted to main" },
+  { file = ".config/pr-stack/stack.bash", scope = "retarget_bottom", api = "graphql", identity = "landing", calls = 4, points = 8, measured = "rule", hour = 2, trigger = "landing.yml: a bottom retargeted to main" },
   { file = ".config/pr-stack/stack.bash", scope = "retarget_landing", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 4, trigger = "pr:land: the pull requests on a deleted base" },
+  { file = ".config/pr-stack/stack.bash", scope = "retarget_landing", api = "graphql", identity = "landing", calls = 1, points = 2, measured = "rule", hour = 4, trigger = "landing.yml: the pull requests on a deleted base" },
   { file = ".config/pr-stack/stack.bash", scope = "stack_entries", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "pr:open and pr:land: a stack's members" },
+  { file = ".config/pr-stack/stack.bash", scope = "stack_entries", api = "graphql", identity = "landing", calls = 1, points = 3, measured = "cost", hour = 8, trigger = "landing.yml: a stack's members at each link, about three" },
   { file = ".config/pr-stack/stack.bash", scope = "stack_link", api = "graphql", identity = "write", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "pr:open: the stack linked" },
+  { file = ".config/pr-stack/stack.bash", scope = "stack_link", api = "graphql", identity = "landing", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "landing.yml: the stack linked at each queueing" },
 
   # The references watch, the stall reading and triage.
   { file = ".config/references/watch.bash", scope = "references_watch", api = "graphql", identity = "read", calls = 1, points = 2, measured = "cost", hour = 1, trigger = "the references watch, once a day" },
@@ -244,10 +269,12 @@ site = [
 # The hour's ceiling of each identity on each API: a fifth of the reader's
 # and the writer's 5,000 a host, and the whole of a workflow token's hour,
 # which no host shares. `cycle` holds the whole of the `gandr-lang` App
-# installation's 5,000 an hour (#5440). landing.yml shares it lightly when no
-# `LANDING_TOKEN` is set, and its rows stand under `actions`.
+# installation's 5,000 an hour (#5440). `landing` is landing.yml's
+# `LANDING_TOKEN`, a token of the writer's account, and holds a fifth of
+# its 5,000, as a host does (#5695).
 [budget]
 read = { graphql = 1000, rest = 1000 }
 write = { graphql = 1000, rest = 1000 }
 actions = { graphql = 1000, rest = 1000 }
+landing = { graphql = 1000, rest = 1000 }
 cycle = { graphql = 5000, rest = 5000 }

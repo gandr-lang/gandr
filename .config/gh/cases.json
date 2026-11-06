@@ -140,6 +140,55 @@
     "output": ""
   },
   {
+    "name": "#5695: landing.yml's token prices the reads and the writes of its API together, against its own ceiling",
+    "input": {
+      "sites": [
+        { "file": "a.bash", "scope": "land", "verb": "api graphql" },
+        { "file": "a.bash", "scope": "land", "verb": "pr edit" }
+      ],
+      "table": {
+        "budget": { "write": { "graphql": 1 }, "landing": { "graphql": 100 } },
+        "site": [
+          {
+            "file": "a.bash",
+            "scope": "land",
+            "api": "graphql",
+            "identity": "landing",
+            "calls": 2,
+            "points": 4,
+            "measured": "cost",
+            "hour": 10,
+            "trigger": "each landing"
+          }
+        ]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#5695: a GraphQL call that reads its request from --input is a write, so a read row does not price it",
+    "input": {
+      "sites": [{ "file": "a.bash", "scope": "replay", "verb": "api graphql", "input": true }],
+      "table": {
+        "budget": { "read": { "graphql": 100 } },
+        "site": [
+          {
+            "file": "a.bash",
+            "scope": "replay",
+            "api": "graphql",
+            "identity": "read",
+            "calls": 1,
+            "points": 1,
+            "measured": "cost",
+            "hour": 1,
+            "trigger": "each replay"
+          }
+        ]
+      }
+    },
+    "output": "unpriced: a.bash replay (graphql), 1 write call with no row in .config/gh/calls.toml\ngone: a.bash replay (graphql) as read is in .config/gh/calls.toml, but the site holds no such call"
+  },
+  {
     "name": "#5061: a row with no points, a rule on a read, free points above 0, and no trigger or bound are each refused",
     "input": {
       "sites": [
