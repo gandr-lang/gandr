@@ -2145,6 +2145,9 @@ impl<'pbg> MeldState<'pbg>
 
         match self.classify(mold) {
             Kind::FormStart { absorb_left } => {
+                if absorb_left {
+                    self.reduce_call_form(def.sort, def.prec);
+                }
                 self.open_form(mold, def.sort, cell, AbsorbsLeft::from(absorb_left));
             },
             Kind::FormMid => {
@@ -2291,6 +2294,89 @@ impl<'pbg> MeldState<'pbg>
         }
 
         Some(application)
+    }
+
+    /// Reduce the slope's top application when its argument is a group
+    /// written straight after the operand before it, before a form of `sort`
+    /// and `prec` that takes the operand before it opens. A call in call form,
+    /// `f(x)`, is thus the target of the postfix form after it: `f(x).l` reads
+    /// as `(f x).l` (#5665). A group after a space is an argument of its own,
+    /// so `f (x).l` reads as `f ((x).l)`, and `f x.l` reads as `f (x.l)`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slope's topmost operator is reduced exactly when it is
+    ///   the expression application, `sort` is the expression sort, `prec`
+    ///   binds tighter than the application, the top cell is an operand that
+    ///   opens with `(` and closes with `)`, and the cell below the application
+    ///   is an operand that ends where that one starts. The slope is unchanged
+    ///   otherwise. The source is unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `f(x).l` projects the call, `f (x).l` and `f x.l`
+    ///   project the argument, `g f(x).l` projects the whole spine, `a +
+    ///   f(x).l` leaves the `+` to take the projection, and each of the other
+    ///   postfix forms takes the call too. Reading the group without its glue
+    ///   reads `f (x).l` as the call's projection.
+    /// - witness: `tests::grammar::a_postfix_form_after_a_call_in_call_form_takes_the_call_5665`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    fn reduce_call_form(
+        &mut self,
+        sort: Sort,
+        prec: Prec,
+    )
+    {
+        let Some(application) = self.pbg.application()
+        else {
+            return;
+        };
+        let Ok(applied) = self.pbg.mold(application)
+        else {
+            return;
+        };
+        if sort != applied.sort || !bool::from(self.pbg.dag().lt(applied.prec, prec, Assoc::Right))
+        {
+            return;
+        }
+        let Some(operator) = self.topmost_operator_index()
+        else {
+            return;
+        };
+        if self
+            .operator_at(operator)
+            .is_none_or(|(mold, ..)| mold != application)
+        {
+            return;
+        }
+        let at = usize::from(operator);
+        let (Some(head), Some(argument)) = (
+            at.checked_sub(1).and_then(|below| self.stack.get(below)),
+            self.stack.get(at.saturating_add(1)),
+        )
+        else {
+            return;
+        };
+        if self.stack.len() != at.saturating_add(2)
+            || head.role != Role::Operand
+            || argument.role != Role::Operand
+            || head.end != argument.start
+        {
+            return;
+        }
+        let bytes = self.source.as_bytes();
+        let (Ok(start), Ok(end)) = (
+            usize::try_from(argument.start),
+            usize::try_from(argument.end),
+        )
+        else {
+            return;
+        };
+        let grouped = bytes.get(start) == Some(&b'(')
+            && end.checked_sub(1).and_then(|last| bytes.get(last)) == Some(&b')');
+        if grouped {
+            self.reduce_operator(operator);
+        }
     }
 
     /// Push a tile of `mold` over no text, owed as a missing tile at the

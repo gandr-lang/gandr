@@ -302,6 +302,60 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Box<dyn Error
     Ok(())
 }
 
+/// #5665: a postfix form after a call in call form, a head with a group
+/// written straight after it, takes the whole call as its target. A group
+/// after a space is an argument of its own, and a projection binds tighter
+/// than juxtaposition, so `mk (x).l` and `mk x.l` project the argument. In
+/// a spine the call is the whole spine, and a looser operator keeps its own
+/// operands.
+#[test]
+fn a_postfix_form_after_a_call_in_call_form_takes_the_call_5665() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        ("def f = mk(x).l;", "projection_expression", "mk(x)"),
+        ("def f = mk (x).l;", "projection_expression", "(x)"),
+        ("def f = mk x.l;", "projection_expression", "x"),
+        ("def f = g mk(x).l;", "projection_expression", "g mk(x)"),
+        ("def f = a + mk(x).l;", "projection_expression", "mk(x)"),
+        ("def f = mk(x)(y).l;", "projection_expression", "mk(x)(y)"),
+        ("def f = s.first().l;", "projection_expression", "s.first()"),
+        ("def f = mk(x).l.m;", "projection_expression", "mk(x).l"),
+        ("def f = mk(x).#[i];", "index_expression", "mk(x)"),
+        (
+            "def f = mk(x).*{.a};",
+            "record_selection_expression",
+            "mk(x)",
+        ),
+        ("def f = mk(x)[T];", "instantiation_expression", "mk(x)"),
+        ("def f = mk(x) as w { pure w };", "view_expression", "mk(x)"),
+    ];
+    let grammar = built();
+    for (source, rule, target) in cases {
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let formed = |position| {
+            tree.node(position).is_some_and(|node| {
+                matches!(node.label(), gandr_surface_syntax::NodeLabel::Meld(mold)
+                    if grammar.rule_of(mold).is_ok_and(|found| found.name().0 == rule))
+            })
+        };
+        // The outermost form of `rule` is the one whose text is longest.
+        let form = tree
+            .positions()
+            .filter(|&position| formed(position))
+            .max_by_key(|&position| {
+                tree.fragment(position)
+                    .map_or(0, |text| <&str>::from(text).len())
+            });
+        let read = form
+            .and_then(|position| tree.children(position).next())
+            .and_then(|child| tree.fragment(child))
+            .map(<&str>::from);
+        assert_eq!(read, Some(target), "`{source}`: the target of its {rule}");
+    }
+    Ok(())
+}
+
 /// Each ASCII token of the spelling table molds as its glyph's tile: a source
 /// written with it is the tree the glyph's source is, mold for mold (#782).
 #[test]

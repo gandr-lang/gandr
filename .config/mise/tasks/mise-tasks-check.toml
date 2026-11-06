@@ -86,6 +86,11 @@ SECONDS=0
 .config/gate-scope/passed.bash record check "$tree" target/gate/check.log "$SECONDS" "${checks[@]}"
 {% endraw %}'''
 
+# The cases runner rejects a malformed file before it runs a program (#5646).
+["check:cases"]
+description = "A malformed cases file is refused before its program runs"
+run = ".config/cases/cases.bash"
+
 # The whole wall (#5014): every `check:*` task over the whole workspace, in
 # one of the host's gate slots. It takes about half an hour, and the merge
 # group runs it before every landing, so a change runs it only when no
