@@ -439,7 +439,7 @@ enum Kind
     | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Product(_) | Former::RecordType(_) | Former::Patched(..)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
-        | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
+        | Former::Element(_) | Former::Abstract(_) | Former::Member(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
         | Former::Path { .. } | Former::Bridge { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::Returns(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
@@ -479,6 +479,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Universe { .. }
         | Former::Element(_)
         | Former::Abstract(_)
+        | Former::Member(_)
         | Former::Session { .. }
         | Former::StaticPi { .. }
         | Former::Sigma { .. }
@@ -1160,7 +1161,7 @@ where
         (None, Some(_)) => 1_usize,
         (None, None) => 2_usize,
     },
-    | Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
+    | Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Member(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
         | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::Unreadable(_) => ret.is_empty(),
     | _ => !ret.is_empty(),
@@ -1748,6 +1749,7 @@ where
         | Former::Web(_)
         | Former::Universe { .. }
         | Former::Abstract(_)
+        | Former::Member(_)
         | Former::Capability { .. }
         | Former::Variable { .. }
         | Former::Constant(_)
@@ -5565,6 +5567,7 @@ where
     let mut names = BTreeSet::new();
     let scan = scanned(source, root, admits, bodies, |former| {
         if let Former::Abstract(name)
+        | Former::Member(name)
         | Former::Constant(name)
         | Former::Data {
             name: Some(name), ..
@@ -7910,6 +7913,7 @@ impl Walk<'_, '_>
                 | Former::Universe { .. }
                 | Former::Element(_)
                 | Former::Abstract(_)
+                | Former::Member(_)
                 | Former::StaticPi { .. }
                 | Former::Sigma { .. }
                 | Former::Capability { .. }
@@ -9124,7 +9128,7 @@ impl Walk<'_, '_>
                 );
             },
             // A name is written as it stands, a qualified one as its path.
-            Former::Abstract(name) => {
+            Former::Abstract(name) | Former::Member(name) => {
                 return writes(
                     Production("type_identifier"),
                     writes(
@@ -12794,6 +12798,7 @@ impl Walk<'_, '_>
             | Former::Universe { .. }
             | Former::Element(_)
             | Former::Abstract(_)
+            | Former::Member(_)
             | Former::StaticPi { .. }
             | Former::Sigma { .. }
             | Former::Capability { .. }

@@ -1,8 +1,10 @@
+use alloc::collections::BTreeSet;
 use alloc::format;
 
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
+use gandr_core_term::ValueType;
 use gandr_kernel_term::Literal;
 use gandr_surface_syntax::SourceText;
 
@@ -42,6 +44,44 @@ fn a_patched_type_is_the_record_of_its_free_fields()
         };
         assert_eq!(fields.len(), 1, "`{name}` holds its one free field alone");
     }
+}
+
+#[test]
+fn a_base_named_by_a_type_member_keeps_the_name()
+{
+    // Three bases written by the member's name, a fourth beside a stage, and
+    // a record written in place, which keeps no name.
+    let source = format!(
+        include_str!("tests/unformatted/a-patched-type-is-the-record-of-its-free-fields.gandr"),
+        CONFIG = CONFIG
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let members = module.origins().members();
+    let named: BTreeSet<(usize, Option<&str>)> = members
+        .iter()
+        .map(|&(_, name)| {
+            let (start, end) = (
+                usize::from(name.span().start()),
+                usize::from(name.span().end()),
+            );
+            (start, source.get(start .. end))
+        })
+        .collect();
+    let written: BTreeSet<(usize, Option<&str>)> = source
+        .match_indices("Config[")
+        .map(|(start, _)| (start, Some("Config")))
+        .collect();
+    assert_eq!(
+        named, written,
+        "each base written by the member's name keeps the name"
+    );
+    assert!(
+        members
+            .iter()
+            .all(|&(ty, _)| matches!(arena.value_type(ty), Some(&ValueType::Record(_)))),
+        "the name stands for the record the patched type is over"
+    );
 }
 
 #[test]

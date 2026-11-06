@@ -925,8 +925,9 @@ where
 /// What a reprint's own lowering keeps beside the types it read, at their
 /// images in the table's arena: the name each dependent arrow binds, the
 /// labels each dependent pair was written with, the labels each sum and lazy
-/// product was written over, the relation each type was written as and the
-/// model type each was written as.
+/// product was written over, the relation each type was written as, the
+/// model type each was written as and the type member each record was
+/// written by.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Read
 {
@@ -946,6 +947,9 @@ struct Read
     /// Each model type's image with the theory and sorts it was written
     /// with, each carrier at its image.
     models: Vec<(ValueTypeId, WrittenModel)>,
+    /// Each record type's image with the name of the type member it was
+    /// written by.
+    members: Vec<(ValueTypeId, String)>,
 }
 
 /// What the table keeps for a declaration: its type node, a refusal of it as
@@ -4573,6 +4577,7 @@ impl TypeTable
             })
             .collect();
         models.sort_by_key(|&(modelled, _)| modelled);
+        let members = labelled(self.naming.members(), self.naming.text(), &read.members);
         let constructors = self.families.naming();
         // A call supplies its callee's implicits by name, `f[.x = a](b)`, and a
         // model implicit by the path its components read under, `f[.s = M]`:
@@ -4628,6 +4633,7 @@ impl TypeTable
             .naming_entries(&sum_labels, &with_labels)
             .relating(&relations)
             .modeling(&models)
+            .naming_members(&members)
             .naming_implicits(&implicits)
             .flattening(&flattened)
             .within(&binders)
@@ -5448,6 +5454,7 @@ impl TypeTable
                     for (named, kept) in [
                         (module.origins().pairs(), &mut read_back.pairs),
                         (module.origins().seconds(), &mut read_back.seconds),
+                        (module.origins().members(), &mut read_back.members),
                     ] {
                         for &(pair, origin) in named {
                             let span = origin.span();
@@ -5594,10 +5601,11 @@ impl TypeTable
                 .ok_or_else(|| String::from("the declaration is no function of its parameters"));
         }
         // A type the lowering recorded as written as a relation or a model
-        // type, a pair, a sum or a lazy product it recorded labels for, or a
-        // dependent arrow it recorded its binder's name for, stands at each
-        // copy a shift made of it, so a type read under a dropped binder
-        // reprints as written (#674, #1655, #1751, #2254, #4395).
+        // type, a pair, a sum or a lazy product it recorded labels for, a
+        // record it recorded a type member's name for, or a dependent arrow it
+        // recorded its binder's name for, stands at each copy a shift made of
+        // it, so a type read under a dropped binder reprints as written (#674,
+        // #1655, #1751, #2254, #4395).
         carry_labels(carried, &mut WrittenLabels {
             arrows: &mut read_back.arrows,
             pairs: &mut read_back.pairs,
@@ -5606,6 +5614,7 @@ impl TypeTable
             with_labels: &mut read_back.with_labels,
             relations: &mut read_back.relations,
             models: &mut read_back.models,
+            members: &mut read_back.members,
         });
         printed
             .into_iter()

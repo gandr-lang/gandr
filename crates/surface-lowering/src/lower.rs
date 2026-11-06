@@ -3005,6 +3005,9 @@ enum Plan
         fields: BTreeMap<FieldLabel, NodeIndex>,
         /// The fixed values, by label.
         fixed: BTreeMap<FieldLabel, NodeIndex>,
+        /// Where the base is written as the name of a type member, when it
+        /// is: the printer writes the name for the base's record.
+        member: Option<NodeIndex>,
     },
     /// A value type kept in a region: the type and the region, a capability
     /// scope's or a hold's by its depth, or the definition's region binder.
@@ -19763,7 +19766,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Patched {
                 ref fields,
                 ref fixed,
-            } => self.mint_patched_type(fields, fixed, sink, origin),
+                member,
+            } => self.mint_patched_type(fields, fixed, member, sink, origin),
             Plan::Kept(inner, region) => self.value_type_at(inner).map(|inner| {
                 let id = sink.arena.value_type_kept(inner, region);
                 sink.origins.record_value_type(id, origin);

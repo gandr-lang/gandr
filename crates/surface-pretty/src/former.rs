@@ -523,6 +523,10 @@ pub enum Former<'source, Node>
     Element(Node),
     /// A sealed abstract type, by its name.
     Abstract(Name<'source>),
+    /// The record type a type member defines, by the member's name, where the
+    /// source writes the name in its place: the base `Config` of
+    /// `Config[.port = 443]`.
+    Member(Name<'source>),
     /// The static Pi `A -> B` classifying a type operator, whose codomain
     /// binds nothing.
     StaticPi
