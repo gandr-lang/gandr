@@ -1183,6 +1183,53 @@ pub fn heads_declaration(
     }))
 }
 
+primitive_copy_wrapper!(
+    /// Whether a token can stand before a declaration head as an item form of
+    /// one tile.
+    struct DeclarationPrefix(bool);
+);
+
+/// Return whether some fresh-slot reading of `token` is an item form of one
+/// tile under `pbg`, as `pub` is.
+///
+/// Such a form opens and closes on its one tile. It has no successor, so
+/// [`declaration_head`] does not accept it, and it is no terminator. A
+/// declaration that it stands before starts at it.
+///
+/// # Specification
+/// - requires: the token bounds identify its exact source fragment.
+/// - ensures: true exactly when one of the token's candidate labels has a
+///   fresh-slot mold of an item position that is first and last in its form and
+///   has no successor.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `pub`, a declaration keyword and an identifier differ at
+///   the successor and at the form's last tile. Reading `pub` as no prefix puts
+///   a source of `pub` declarations in one run.
+/// - witness: `parse::tests::a_pub_declaration_starts_its_run_4667`
+#[spec(requires: source.as_ref().get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
+#[inline]
+fn prefixes_declaration(
+    pbg: &Pbg,
+    token: Token,
+    source: &SourceFragment<'_>,
+) -> DeclarationPrefix
+{
+    let slice = token.text(source);
+    let text = TokenText::from(AsRef::<str>::as_ref(&slice));
+    let labels = LabelIds::resolve(pbg, &candidate_labels(token.lexeme, text));
+    DeclarationPrefix::from(labels.as_slice().iter().any(|&label| {
+        pbg.label_fresh_candidates(label).iter().any(|&mold| {
+            pbg.mold(mold)
+                .is_ok_and(|def| matches!(def.sort, Sort::Item | Sort::ModuleMember))
+                && bool::from(pbg.mold_is_form_first(mold))
+                && bool::from(pbg.mold_is_form_last(mold))
+                && !bool::from(pbg.mold_has_successor(mold))
+        })
+    }))
+}
+
 /// The reserved uppercase words (the tree-sitter grammar's `KW` / primitive
 /// type names).
 ///
@@ -2402,19 +2449,22 @@ impl<'pbg> Molder<'pbg>
     ///
     /// A boundary is predicted before a significant token that some
     /// fresh-slot reading of opens an item-position declaration
-    /// ([`declaration_head`]), when the token before it is a `;` or a `}`
-    /// and no bracket opened before it is still unclosed. The prediction
-    /// reads tokens alone, so it is cheap and may be wrong: a `def` that a
-    /// keyword form without brackets still holds is predicted too.
-    /// [`join_unit`](Self::join_unit) re-molds a run whose seam does not
+    /// ([`declaration_head`]), when the token before it ends a form (a `;`,
+    /// a `}` or a layout block's separator or close) and no bracket opened
+    /// before it is still unclosed. An item form of one tile, as `pub`, that
+    /// stands in that place keeps the boundary open, and the boundary goes
+    /// before it when a declaration head follows it ([`prefixes_declaration`]).
+    /// The prediction reads tokens alone, so it is cheap and may be wrong: a
+    /// `def` that a keyword form without brackets still holds is predicted
+    /// too. [`join_unit`](Self::join_unit) re-molds a run whose seam does not
     /// hold, so a wrong prediction costs time, never the parse.
     ///
     /// # Specification
     /// - requires: `tokens` came from the labeler over `src`.
     /// - ensures: returns consecutive runs covering every position of `tokens`
     ///   exactly once, the first starting at position zero, each later one
-    ///   starting at a predicted declaration head; one empty run for an empty
-    ///   stream.
+    ///   starting at a predicted declaration head or at the one-tile item forms
+    ///   before it; one empty run for an empty stream.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2422,8 +2472,11 @@ impl<'pbg> Molder<'pbg>
     ///   attribute, one a module holding members, splits before each top-level
     ///   head and nowhere else; a run that skipped or repeated a token, a cut
     ///   inside brackets or between an attribute and its declaration, changes
-    ///   the runs.
+    ///   the runs. A source of `pub` declarations, laid out or terminated,
+    ///   splits before each `pub`; a cut between `pub` and its declaration, or
+    ///   no cut, changes the runs.
     /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+    /// - witness: `parse::tests::a_pub_declaration_starts_its_run_4667`
     #[inline]
     #[must_use]
     #[spec(requires: tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()), ensures: |ret| ret.first().is_some_and(|run| usize::from(run.start()) == 0) && ret.last().is_some_and(|run| usize::from(run.end()) == tokens.len()) && ret.windows(2).all(|pair| matches!(pair, [left, right] if left.end() == right.start())) && (tokens.is_empty() || ret.iter().all(|run| run.start() < run.end())))]
@@ -2438,20 +2491,25 @@ impl<'pbg> Molder<'pbg>
         let mut start = 0_usize;
         let mut depth = 0_usize;
         let mut after_terminator = false;
+        // The first one-tile item form after the terminator, as `pub`, which
+        // the declaration head after it starts its run at.
+        let mut prefix: Option<usize> = None;
         for (index, &token) in tokens.iter().enumerate() {
             if matches!(token.lexeme, Lexeme::Space) {
                 continue;
             }
-            if depth == 0
-                && after_terminator
-                && bool::from(heads_declaration(self.pbg, token, &source))
-            {
+            let at_boundary = depth == 0 && after_terminator;
+            let heads = at_boundary && bool::from(heads_declaration(self.pbg, token, &source));
+            if heads {
+                let cut = prefix.unwrap_or(index);
                 runs.push(TokenRun::new(
                     TokenIndex::from(start),
-                    TokenIndex::from(index),
+                    TokenIndex::from(cut),
                 ));
-                start = index;
+                start = cut;
             }
+            let held =
+                at_boundary && !heads && bool::from(prefixes_declaration(self.pbg, token, &source));
             let slice = token.text(&source);
             let text = AsRef::<str>::as_ref(&slice);
             match bracket(token, TokenText::from(text)) {
@@ -2459,7 +2517,9 @@ impl<'pbg> Molder<'pbg>
                 Bracket::Close => depth = depth.saturating_sub(1),
                 Bracket::Neither => {},
             }
-            after_terminator = matches!(token.lexeme, Lexeme::LayoutSemi | Lexeme::LayoutClose)
+            prefix = if held { prefix.or(Some(index)) } else { None };
+            after_terminator = held
+                || matches!(token.lexeme, Lexeme::LayoutSemi | Lexeme::LayoutClose)
                 || (matches!(token.lexeme, Lexeme::Punct) && matches!(text, ";" | "}"));
         }
         runs.push(TokenRun::new(

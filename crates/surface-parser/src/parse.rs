@@ -1601,6 +1601,38 @@ pure greeting
     }
 
     #[test]
+    fn a_pub_declaration_starts_its_run_4667() -> Result<(), Box<dyn Error>>
+    {
+        // A floor source: an import, then `pub` declarations laid out by
+        // column, documented, attributed and terminated. Each top-level `pub`
+        // starts the run of the declaration after it, and every seam holds.
+        let pbg = built_in()?;
+        let src = "import \"base.gandr\";\npub def one : Nat = Zero\n\n/// Two.\npub def rec two(n : Nat) -> Nat =\n  match n\n    | Zero => Zero\n    | Succ(m) => two[<] m\n\n@[ checks ]\npub data Bit : Type where\n  | Off : Bit\n  | On : Bit\n\npub def three = 3;\n";
+        let source = SourceText::from(src);
+        let mut molder = Molder::new(&pbg);
+        let split = FormSplit::new(&molder, source);
+        let tokens = label(SourceFragment::from(src));
+        let heads: Vec<&str> = split
+            .runs()
+            .iter()
+            .filter_map(|run| tokens.get(usize::from(run.start())))
+            .filter_map(|token| {
+                src.get(usize::try_from(token.start).ok()? .. usize::try_from(token.end).ok()?)
+            })
+            .collect();
+        assert_eq!(heads, ["import", "pub", "pub", "@[", "pub"]);
+        let units: Vec<_> = split
+            .runs()
+            .iter()
+            .map(|&run| split.mold(&mut molder, run))
+            .collect();
+        let joined = split.join(&mut molder, units)?;
+        assert_eq!(joined.seams(), [UnitSeam::Joined; 5]);
+        assert_eq!(*joined.result(), parse(&pbg, source)?);
+        Ok(())
+    }
+
+    #[test]
     fn a_parked_unit_joins_as_the_unit_it_parked() -> Result<(), Box<dyn Error>>
     {
         // Every corpus source's units, parked and taken up again, meet the
