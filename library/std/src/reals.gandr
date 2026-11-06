@@ -1,5 +1,6 @@
 // `std.reals`: the home of the exact reals' host interface, `std.reals.Eff`,
-// whose operations admit the canonical bytes of a plan and enclose its root.
+// whose operations admit the canonical bytes of a plan, enclose its root, and
+// decide an open root by a resumable machine.
 // A source names the interface where it imports this module,
 // `import std.reals;`, and nowhere else. The interface is native, so no
 // declaration here states it.

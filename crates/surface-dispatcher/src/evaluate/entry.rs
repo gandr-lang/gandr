@@ -6,10 +6,10 @@
 //! to it: `Proc.exit` stops the run with its payload as the exit status,
 //! `Console.print` writes its line to the run's [`Console`], a `Net`
 //! operation goes to the run's network when it has one, a `Reals` operation
-//! goes to the plans the run holds, and every other operation is declined, so
-//! the run is stuck at it and reported as any stuck run is. A migration goes
-//! where the host's world bindings bind its world, or runs in this process
-//! when the host has none.
+//! goes to the plans and the machines the run holds, and every other operation
+//! is declined, so the run is stuck at it and reported as any stuck run is. A
+//! migration goes where the host's world bindings bind its world, or runs in
+//! this process when the host has none.
 
 use alloc::string::String;
 
@@ -53,7 +53,7 @@ use super::Unrunnable;
 use super::console;
 use super::net;
 use super::reals;
-use super::reals::Plans;
+use super::reals::Reals;
 use super::worlds;
 use super::worlds::Worlds;
 
@@ -153,16 +153,17 @@ pub enum Entered<'source>
 
 /// The host of an entry run: `Proc.exit` ends it, `Console.print` writes to
 /// its console, a `Net` operation goes to its network when it has one, a
-/// `Reals` operation goes to the plans it holds, a migration goes where its
-/// bindings bind the world when it has them, and nothing else is served.
+/// `Reals` operation goes to the plans and the machines it holds, a migration
+/// goes where its bindings bind the world when it has them, and nothing else
+/// is served.
 struct EntryHost<'host>
 {
     /// Where the run's printed lines go.
     console: &'host mut dyn Console,
     /// The run's network, when it has one.
     net: Option<&'host mut Net>,
-    /// The plans of exact reals that the run admitted.
-    plans: Plans,
+    /// The plans and the machines of exact reals that the run holds.
+    reals: Reals,
     /// The run's world bindings and the program's names, when it has them.
     worlds: Option<(Worlds<'host>, &'host [String])>,
 }
@@ -174,7 +175,8 @@ impl HostHandler for EntryHost<'_>
     /// Stop at `Proc.exit` with its integer payload as the status; write a
     /// `Console.print` line to the console and resume with the unit; serve a
     /// `Net` operation on the network, when the run has one; serve a `Reals`
-    /// operation on the run's plans; decline every other operation.
+    /// operation on the run's plans and machines; decline every other
+    /// operation.
     ///
     /// # Specification
     /// trivial.
@@ -192,7 +194,7 @@ impl HostHandler for EntryHost<'_>
         {
             return reply;
         }
-        if let Some(reply) = reals::served(&mut self.plans, self.console, request, values) {
+        if let Some(reply) = reals::served(&mut self.reals, self.console, request, values) {
             return reply;
         }
         if request.signature.name().as_ref() != PROC || request.operation.as_ref() != EXIT {
@@ -240,8 +242,8 @@ impl<'source> Program<'source>
     /// Run `entry` with `arguments`, under a host that serves `Proc.exit`,
     /// writes each `Console.print` line to `console`, serves each `Net`
     /// operation on `net` when it is given, serves each `Reals` operation on
-    /// the plans the run admits, and runs each migration where `worlds`'
-    /// bindings bind its world when it is given.
+    /// the plans and the machines the run holds, and runs each migration where
+    /// `worlds`' bindings bind its world when it is given.
     ///
     /// # Specification
     /// - requires: nothing; an entry the program cannot run is an outcome.
@@ -254,10 +256,10 @@ impl<'source> Program<'source>
     ///   operation exercised through it is offered to the host; each line it
     ///   prints is handed to `console` in order as it runs, each `Net`
     ///   operation it performs is served on `net`, or declined without one,
-    ///   each `Reals` operation is served on a table of plans that the run
-    ///   owns, empty until its first `admit`, and each migration runs where the
-    ///   bindings bind its world, or here without one; a run that performs
-    ///   `Proc.exit` with an integer, or returns an integer, is
+    ///   each `Reals` operation is served on tables of plans and machines that
+    ///   the run owns, empty until its first `admit`, and each migration runs
+    ///   where the bindings bind its world, or here without one; a run that
+    ///   performs `Proc.exit` with an integer, or returns an integer, is
     ///   [`Entered::Exited`] with that integer's low byte, one returning the
     ///   unit is [`Entered::Exited`] with zero, and any other end is
     ///   [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it,
@@ -321,7 +323,7 @@ impl<'source> Program<'source>
         let mut host = EntryHost {
             console,
             net,
-            plans: Plans::default(),
+            reals: Reals::default(),
             worlds: worlds.map(|worlds| (worlds, self.names.as_slice())),
         };
         match self.hosted(command, &mut store, &mut host) {

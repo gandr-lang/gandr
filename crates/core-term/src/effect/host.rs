@@ -52,6 +52,16 @@
 //! bytes at each `admit`, and it replies only an enclosure whose certificate
 //! the checker replays.
 //!
+//! `decide` takes a plan whose root is an open proposition, such as `a < b`,
+//! and a budget of quanta. It replies the name of the outcome and a machine,
+//! an integer as a plan is. `step` runs one more quantum of a machine.
+//! `checkpoint` spells an undecided machine and its plan in lowercase
+//! hexadecimal, and `restore` validates that text again and replies a new
+//! machine. The name is not `resume`, a keyword of the surface. `report`
+//! replies the work counters of a machine in a list: the quanta, the
+//! obligations and the steps of its certificate. Only `holds` and `fails`
+//! carry evidence, and each other outcome is a named stop, never false.
+//!
 //! Each interface lives in its API's module, as Rust's `std` places
 //! `io::Result`, and its name is its path: the module, then `Eff`. The
 //! standard streams and the ring sit under `std.io`, the process's execution
@@ -123,7 +133,8 @@ pub const STDERR: &str = "std.io.Stderr.Eff";
 pub const STDIN: &str = "std.io.Stdin.Eff";
 /// The network interface: a stream to a peer named by its key.
 pub const NET: &str = "std.net.Eff";
-/// The exact reals interface: a plan admitted, and its root enclosed.
+/// The exact reals interface: a plan admitted, its root enclosed, and an open
+/// root decided by a resumable machine.
 pub const REALS: &str = "std.reals.Eff";
 /// The names of the eleven interfaces, in the order
 /// [`HostSignatures::interfaces`] returns them.
@@ -516,6 +527,9 @@ impl HostSignatures
         ])?;
         let precision = arena.value_type_product(&[integer, integer]);
         let endpoints = arena.value_type_product(&[string, string]);
+        let budgeted = arena.value_type_product(&[integer, integer]);
+        let verdict = arena.value_type_product(&[string, integer]);
+        let counters = arena.value_type_list(integer);
         let reals = EffectSig::new(REALS.into(), [
             EffectOp {
                 name: "admit".into(),
@@ -526,6 +540,31 @@ impl HostSignatures
                 name: "enclose".into(),
                 payload: precision,
                 reply: endpoints,
+            },
+            EffectOp {
+                name: "decide".into(),
+                payload: budgeted,
+                reply: verdict,
+            },
+            EffectOp {
+                name: "step".into(),
+                payload: integer,
+                reply: verdict,
+            },
+            EffectOp {
+                name: "checkpoint".into(),
+                payload: integer,
+                reply: string,
+            },
+            EffectOp {
+                name: "restore".into(),
+                payload: string,
+                reply: integer,
+            },
+            EffectOp {
+                name: "report".into(),
+                payload: integer,
+                reply: counters,
             },
         ])?;
         Ok(Self {

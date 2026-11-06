@@ -95,6 +95,7 @@ fn host_interfaces_pin_names_payloads_and_replies()
     let frame = arena.value_type_product(&[integer, string]);
     let precision = arena.value_type_product(&[integer, integer]);
     let endpoints = arena.value_type_product(&[string, string]);
+    let counters = arena.value_type_list(integer);
     let expected = [
         (&host.exec, EXEC, alloc::vec![("exec", command, output)]),
         (&host.fs, FS, alloc::vec![
@@ -125,7 +126,12 @@ fn host_interfaces_pin_names_payloads_and_replies()
         ]),
         (&host.reals, REALS, alloc::vec![
             ("admit", string, integer),
+            ("checkpoint", integer, string),
+            ("decide", precision, status),
             ("enclose", precision, endpoints),
+            ("report", integer, counters),
+            ("restore", string, integer),
+            ("step", integer, status),
         ]),
     ];
     for (signature, name, operations) in expected {
