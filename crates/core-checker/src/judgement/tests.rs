@@ -249,9 +249,10 @@ fn a_pair_synthesises_its_eager_product_and_checks_against_one()
     );
     assert_eq!(
         check_value(&mut context, with_thunk, checking_only).map(|evidence| evidence.conversions()),
-        Ok(ConversionCount::from(2_usize)),
+        Ok(ConversionCount::from(1_usize)),
         "a component that only checks is checked, not synthesised: the thunk's returned \
-             literal and the second component each cross once"
+             literal crosses once, and the second component is that literal at that type, \
+             which the goal memo answers"
     );
     assert_eq!(
         synthesise_value(&mut context, with_thunk).map(|found| found.produced().id()),
@@ -364,8 +365,10 @@ fn n_ary_tuples_injections_and_cases_check_at_their_arity()
         "an injection past the last summand names a summand the sum lacks"
     );
     let returns_integer = form_comp_type(&mut context, returns_integer).unwrap();
+    // The two `constant` branches check one literal at one type. The goal memo
+    // answers the second, so the three-way case crosses twice.
     for (case, scrutinised, checked) in [
-        (three_way, three.id(), Ok(ConversionCount::from(3_usize))),
+        (three_way, three.id(), Ok(ConversionCount::from(2_usize))),
         (
             two_way,
             three.id(),

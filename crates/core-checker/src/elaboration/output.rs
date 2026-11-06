@@ -53,6 +53,8 @@ pub struct Transports
     uses: BTreeMap<ValueId, VecDeque<CodeUse>>,
     /// Enables the identity output fast path.
     effect: Effect,
+    /// How many uses the recording holds, over all nodes.
+    recorded: usize,
 }
 
 impl Transports
@@ -86,6 +88,18 @@ impl Transports
             self.effect = Effect::Lift;
         }
         self.uses.entry(at).or_default().push_back(transport);
+        self.recorded = self.recorded.saturating_add(1);
+    }
+
+    /// How many uses the recording holds, over all nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn recorded(&self) -> usize
+    {
+        self.recorded
     }
 }
 
@@ -110,6 +124,20 @@ impl Emission
     {
         if let Self::Recording(ref mut transports) = *self {
             *transports = Transports::default();
+        }
+    }
+
+    /// How many code uses the recording holds: zero when no run records.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn recorded(&self) -> usize
+    {
+        match *self {
+            Self::Off => 0,
+            Self::Recording(ref transports) => transports.recorded(),
         }
     }
 }

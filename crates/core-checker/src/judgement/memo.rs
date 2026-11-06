@@ -28,8 +28,10 @@
 //!   fence and no linear use is skipped;
 //! - the goal reads no linear binder.
 //!
-//! A finished goal is recorded only when its run marked nothing and left the
-//! session scope and the staged motives as it found them.
+//! A finished goal is recorded only when its run marked nothing, recorded no
+//! code use, and left the session scope and the staged motives as it found
+//! them. The output emission reads one code use for each occurrence of a code,
+//! so an answer that skips a use gives a later occurrence no lift.
 //!
 //! A typed run keeps the typings of a goal's first judgement. An answer keeps
 //! no typing again. Each node under the goal holds its typing from that first
@@ -199,6 +201,8 @@ struct Effects
     staged: usize,
     /// The linear state's scope.
     sessions: Scope,
+    /// The code uses the elaboration recorded.
+    uses: usize,
 }
 
 /// A goal under way whose answer the memo may record.
@@ -413,6 +417,7 @@ impl Machine<'_, '_>
             marks: self.marks.len(),
             staged: self.staged_motives.len(),
             sessions: self.session_scope(),
+            uses: self.context.code_uses(),
         }
     }
 

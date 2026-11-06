@@ -3618,6 +3618,17 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
     }
 
+    /// How many code uses the elaboration recorded: zero outside elaboration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn code_uses(&self) -> usize
+    {
+        self.deferrals.emission.recorded()
+    }
+
     /// Record that the code `at` was checked at a universe above its own.
     ///
     /// # Specification
