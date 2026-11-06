@@ -1,0 +1,82 @@
+test: circuit::embed::tests::a_body_past_the_budget_is_refused_by_name_5800
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering circuit::embed::tests::a_body_past_the_budget_is_refused_by_name_5800 --break embed::circuit_canon
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lowering/b88a468dd90a081f/out/gandr_surface_lowering-b88a468dd90a081f"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lowering/b88a468dd90a081f/out/gandr_surface_lowering-b88a468dd90a081f' (arm64).
+(lldb) settings set -- target.run-args  "circuit::embed::tests::a_body_past_the_budget_is_refused_by_name_5800" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex embed::circuit_canon
+Breakpoint 1: 5 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lowering-b88a468dd90a081f`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001021b54a8
+(lldb) run
+
+running 1 test
+test circuit::embed::tests::a_body_past_the_budget_is_refused_by_name_5800 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 69476 launched: 'target/debug-trace/debug/build/gandr-surface-lowering/b88a468dd90a081f/out/gandr_surface_lowering-b88a468dd90a081f' (arm64)
+Process 69476 stopped
+* thread #2, name = 'circuit::embed::tests::a_body_past_the_budget_is_refused_by_nam', stop reason = breakpoint 1.5
+       frame #0: 0x000000010095d63c gandr_surface_lowering-b88a468dd90a081f`gandr_surface_lowering::circuit::embed::circuit_canon(reading={body:{nodes:{data_ptr:Frame({head:Op(…), args:{…}, outs:{…}}), length:2}, outs:{data_ptr:{__0:{data_ptr:"z", length:1}}, length:1}, feeds:{data_ptr:{source:({…}), port:({…})}, length:0}}, inputs:size=2, spiders:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}, budget={0:1}) at embed.rs:298:1
+   295 	/// # Errors
+   296 	/// As the failure clause states.
+   297 	#[inline]
+-> 298 	#[spec(ensures: |ref result| match *result {
+    	^
+   299 	    Ok(ref canon) => usize::from(canon.trials()) <= usize::from(budget),
+   300 	    Err(CircuitCanonError::Canon(SpiderObstruction::BudgetExhausted { budget: allowed, .. })) => allowed == budget,
+   301 	    Err(_) => true,
+(lldb) bt 24
+* thread #2, name = 'circuit::embed::tests::a_body_past_the_budget_is_refused_by_nam', stop reason = breakpoint 1.5
+   * frame #0: 0x000000010095d63c gandr_surface_lowering-b88a468dd90a081f`gandr_surface_lowering::circuit::embed::circuit_canon(reading={body:{nodes:{data_ptr:Frame({head:Op(…), args:{…}, outs:{…}}), length:2}, outs:{data_ptr:{__0:{data_ptr:"z", length:1}}, length:1}, feeds:{data_ptr:{source:({…}), port:({…})}, length:0}}, inputs:size=2, spiders:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}, budget={0:1}) at embed.rs:298:1
+     frame #1: 0x0000000100c2399c gandr_surface_lowering-b88a468dd90a081f`gandr_surface_lowering::circuit::embed::tests::a_body_past_the_budget_is_refused_by_name_5800 at tests.rs:371:9
+     frame #2: 0x0000000100c0a544 gandr_surface_lowering-b88a468dd90a081f`gandr_surface_lowering::circuit::embed::tests::a_body_past_the_budget_is_refused_by_name_5800::{closure#0}((null)={}) at tests.rs:363:52
+     frame #3: 0x00000001011ab818 gandr_surface_lowering-b88a468dd90a081f`<gandr_surface_lowering::circuit::embed::tests::a_body_past_the_budget_is_refused_by_name_5800::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x00000001013b3218 gandr_surface_lowering-b88a468dd90a081f`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #5: 0x00000001013b3210 gandr_surface_lowering-b88a468dd90a081f`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #6: 0x00000001013be734 gandr_surface_lowering-b88a468dd90a081f`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #7: 0x00000001013be728 gandr_surface_lowering-b88a468dd90a081f`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #8: 0x00000001013be728 gandr_surface_lowering-b88a468dd90a081f`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #9: 0x00000001013be724 gandr_surface_lowering-b88a468dd90a081f`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #10: 0x00000001013be724 gandr_surface_lowering-b88a468dd90a081f`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #11: 0x00000001013be724 gandr_surface_lowering-b88a468dd90a081f`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #12: 0x00000001013be718 gandr_surface_lowering-b88a468dd90a081f`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #13: 0x00000001013b9128 gandr_surface_lowering-b88a468dd90a081f`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #14: 0x00000001013b90c4 gandr_surface_lowering-b88a468dd90a081f`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #15: 0x00000001013c0bf8 gandr_surface_lowering-b88a468dd90a081f`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #16: 0x00000001013c0be8 gandr_surface_lowering-b88a468dd90a081f`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #17: 0x00000001013c0be8 gandr_surface_lowering-b88a468dd90a081f`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #18: 0x00000001013c0be4 gandr_surface_lowering-b88a468dd90a081f`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #19: 0x00000001013c0be4 gandr_surface_lowering-b88a468dd90a081f`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #20: 0x00000001013c0be4 gandr_surface_lowering-b88a468dd90a081f`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #21: 0x00000001013c0bd4 gandr_surface_lowering-b88a468dd90a081f`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #22: 0x0000000101f4c6b8 gandr_surface_lowering-b88a468dd90a081f`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #23: 0x0000000101f4c6ac gandr_surface_lowering-b88a468dd90a081f`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+(lldb) frame variable --depth 3
+(gandr_surface_lowering::circuit::embed::CircuitReading) reading = {body:{nodes:{data_ptr:Frame({head:Op(…), args:{…}, outs:{…}}), length:2}, outs:{data_ptr:{__0:{data_ptr:"z", length:1}}, length:1}, feeds:{data_ptr:{source:({…}), port:({…})}, length:0}}, inputs:size=2, spiders:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}
+(gandr_theory_circuit_algebras::normal_form::spider::SpiderBudget) budget = {0:1}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000000100c2399c gandr_surface_lowering-b88a468dd90a081f`gandr_surface_lowering::circuit::embed::tests::a_body_past_the_budget_is_refused_by_name_5800 at tests.rs:371:9
+   368 	    let (inputs, marks) = (names(["x", "y"]), marked(["z"]));
+   369 	    let reading = CircuitReading::new(&body, &inputs, &marks);
+   370 	    assert_eq!(
+-> 371 	        circuit_canon(reading, SpiderBudget::from(1_usize)),
+    	        ^
+   372 	        Err(CircuitCanonError::Canon(
+   373 	            SpiderObstruction::BudgetExhausted {
+   374 	                needed: SpiderTrials::from(2_usize),
+(lldb) frame variable --depth 3
+(gandr_theory_levitation::circuit::CircuitBody) body = {nodes:{data_ptr:Frame({head:Op({…}), args:{data_ptr:{…}, length:1}, outs:{data_ptr:{…}, length:1}}), length:2}, outs:{data_ptr:{__0:{data_ptr:"z", length:1}}, length:1}, feeds:{data_ptr:{source:({data_ptr:(…), length:(…)}), port:({data_ptr:(…), length:(…)})}, length:0}}
+(alloc::vec::Vec<gandr_theory_levitation::code::Name, alloc::alloc::Global>) inputs = size=2 {
+  [0] = {0:{data_ptr:"x", length:1}}
+  [1] = {0:{data_ptr:"y", length:1}}
+}
+(alloc::collections::btree::map::BTreeMap<gandr_theory_levitation::code::Name, gandr_theory_levitation::code::Name, alloc::alloc::Global>) marks = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:1, keys:(…), vals:(…)}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}
+(gandr_surface_lowering::circuit::embed::CircuitReading) reading = {body:{nodes:{data_ptr:Frame({head:Op(…), args:{…}, outs:{…}}), length:2}, outs:{data_ptr:{__0:{data_ptr:"z", length:1}}, length:1}, feeds:{data_ptr:{source:({…}), port:({…})}, length:0}}, inputs:size=2, spiders:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}
