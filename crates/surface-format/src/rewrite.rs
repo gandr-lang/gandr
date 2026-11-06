@@ -1083,8 +1083,8 @@ pub struct Rewrites<'run, 'source>
     /// The spans of the top-level forms whose reducts stay as written.
     pub unreduced: &'run [ByteSpan],
     /// The spans of the top-level forms whose type applications keep their
-    /// call form: a juxtaposition there lowered otherwise, or the text no
-    /// longer parsed.
+    /// call form: a juxtaposition there lowers to other core, or the text
+    /// with it does not parse.
     pub called: &'run [ByteSpan],
 }
 

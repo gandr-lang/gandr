@@ -1005,6 +1005,7 @@ pub fn format_beside(
     // withdrawn.
     let mut called: Vec<ByteSpan> = Vec::new();
     let mut recalled: Vec<ByteSpan> = Vec::new();
+    let mut recall = Recall::Forms;
     loop {
         let spans = forms_of(tree, &withdrawn);
         let rewrites = match (chosen, lowered.as_ref()) {
@@ -1027,9 +1028,10 @@ pub fn format_beside(
         let laid = match write(grammar, tree, &flat, (rewrites, &apart), &layout, ending) {
             Err(FormatError::Unbalanced)
                 if let Some(whole) = everywhere
-                    && !called.contains(&whole) =>
+                    && recall == Recall::Forms =>
             {
                 called = Vec::from([whole]);
+                recall = Recall::Everywhere;
                 continue;
             },
             written => written?,
@@ -1101,10 +1103,9 @@ pub fn format_beside(
                         unjoined.extend(forms);
                         continue;
                     }
-                    if !forms.iter().all(|form| {
-                        called.binary_search(form).is_ok()
-                            || everywhere.is_some_and(|whole| called.contains(&whole))
-                    }) {
+                    if recall == Recall::Forms
+                        && !forms.iter().all(|form| called.binary_search(form).is_ok())
+                    {
                         recalled.extend(forms);
                         continue;
                     }
@@ -1160,25 +1161,41 @@ pub fn format_beside(
                     // operation among them, still lowers otherwise: every
                     // type application is written back as the call before
                     // the text is refused.
-                    match everywhere {
-                        Some(whole) if !called.contains(&whole) => {
+                    match (everywhere, recall) {
+                        (Some(whole), Recall::Forms) => {
                             called = Vec::from([whole]);
+                            recall = Recall::Everywhere;
                         },
-                        Some(_) | None => return Err(FormatError::Changed(Change::Meaning)),
+                        (Some(_), Recall::Everywhere) | (None, _) => {
+                            return Err(FormatError::Changed(Change::Meaning));
+                        },
                     }
                 }
             },
             // A juxtaposed type application the type grammar reads as no form
             // there, `Twisted (Twisted a)` as a codata observation's type, is
             // written back as the call everywhere before the text is refused.
-            Agreement::Unpaired => match everywhere {
-                Some(whole) if !called.contains(&whole) => {
+            Agreement::Unpaired => match (everywhere, recall) {
+                (Some(whole), Recall::Forms) => {
                     called = Vec::from([whole]);
+                    recall = Recall::Everywhere;
                 },
-                Some(_) | None => return Err(FormatError::Changed(Change::Meaning)),
+                (Some(_), Recall::Everywhere) | (None, _) => {
+                    return Err(FormatError::Changed(Change::Meaning));
+                },
             },
         }
     }
+}
+
+/// Which type applications the formatter writes back in their call form.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Recall
+{
+    /// Those in the forms it names.
+    Forms,
+    /// Every type application in the source.
+    Everywhere,
 }
 
 /// The declarations whose rewrites the declarations `stuck` read: each kept
