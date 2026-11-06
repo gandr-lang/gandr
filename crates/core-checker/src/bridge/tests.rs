@@ -299,6 +299,7 @@ fn erase(
     let source = Source {
         lifts: &lifts,
         funexts: &BTreeMap::new(),
+        coercions: &BTreeMap::new(),
         equivalences: &BTreeMap::new(),
         flows: &BTreeMap::new(),
         directed: &BTreeMap::new(),
@@ -5750,6 +5751,7 @@ fn the_machine_faults_are_refused_exactly()
     let source = Source {
         lifts: &lifts,
         funexts: &BTreeMap::new(),
+        coercions: &BTreeMap::new(),
         equivalences: &BTreeMap::new(),
         flows: &BTreeMap::new(),
         directed: &BTreeMap::new(),
@@ -6529,6 +6531,7 @@ fn a_static_lambda_crosses_only_as_a_closed_operator()
     let source = Source {
         lifts: &lifts,
         funexts: &BTreeMap::new(),
+        coercions: &BTreeMap::new(),
         equivalences: &BTreeMap::new(),
         flows: &BTreeMap::new(),
         directed: &BTreeMap::new(),

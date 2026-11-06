@@ -2193,6 +2193,7 @@ where
     let source = Source {
         lifts: report.lifts(),
         funexts: report.funexts(),
+        coercions: report.coercions(),
         equivalences: report.equivalences(),
         flows: report.flows(),
         directed: report.directed(),
@@ -2689,6 +2690,9 @@ struct Source<'source>
     lifts: &'source BTreeMap<ValueId, Lift>,
     /// The function extensionalities the judgement decided, by node.
     funexts: &'source BTreeMap<ValueId, Funext>,
+    /// The values the judgement coerced in to a patched type, by node, each
+    /// with the fixed fields it compared.
+    coercions: &'source BTreeMap<ValueId, crate::conversion::Coercion>,
     /// The universe equivalences the judgement decided, by node.
     equivalences: &'source BTreeMap<ValueId, crate::equiv::Equivalence>,
     /// The session statements the judgement decided, by node.
@@ -4270,6 +4274,19 @@ struct ForwardErasure
     dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
 }
 
+/// A value coerced in to a patched type part-way through erasure: the value
+/// crosses first, then each fixed value in label order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Restriction
+{
+    /// The coerced value.
+    at: ValueId,
+    /// The fixed fields still to cross, the next one last.
+    pending: Vec<(gandr_core_term::FieldLabel, ValueId)>,
+    /// The fixed values crossed so far, by label.
+    crossed: BTreeMap<gandr_core_term::FieldLabel, gandr_kernel_term::ValueId>,
+}
+
 /// A rule waiting on the image of a child.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Frame
@@ -4285,6 +4302,19 @@ enum Frame
         at: ValueId,
         /// Source tail.
         tail: ValueId,
+    },
+    /// Await the image of a coerced value, crossed as written.
+    RestrictedValue(Restriction),
+    /// Await the image of the value a coerced value's patched type fixes at
+    /// `label`.
+    RestrictedField
+    {
+        /// The restriction under way.
+        restriction: Restriction,
+        /// The coerced value's image.
+        value: gandr_kernel_term::ValueId,
+        /// The label whose fixed value is crossing.
+        label: gandr_core_term::FieldLabel,
     },
     /// Await a native cell's tail.
     ListTail
@@ -6266,6 +6296,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
             None => {},
         }
+        // A value the judgement coerced in to a patched type crosses as its
+        // restriction to the free fields: the value as written, then each
+        // value the type fixes, which the kernel converts with its field.
+        if let Some(fixed) = self.source.coercions.get(&at) {
+            self.frames.push(Frame::RestrictedValue(Restriction {
+                at,
+                pending: fixed
+                    .iter()
+                    .rev()
+                    .map(|(label, &held)| (label.clone(), held))
+                    .collect(),
+                crossed: BTreeMap::new(),
+            }));
+        }
         // A constructor the judgement restated at its stated application
         // crosses as that restatement, which the kernel checks; the core body
         // keeps the constructor as written, which the machine runs.
@@ -7885,6 +7929,47 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         Ok(self.erased_value(at, image))
     }
 
+    /// Cross the next value that the patched type of `restriction`'s coerced
+    /// value fixes, or mint the kernel's restriction of `value` once every
+    /// fixed value has crossed.
+    ///
+    /// # Specification
+    /// - requires: `value` is the image of the coerced value, and `restriction`
+    ///   holds the fixed values crossed so far.
+    /// - ensures: while a fixed value remains, the restriction waits on it and
+    ///   the fixed value is the next goal; once none remains, the kernel's
+    ///   restriction of `value` at every crossed fixed value is recorded at the
+    ///   coerced value and ascends.
+    /// - panics: none.
+    /// - executable: none — the kernel node is minted into the target arena the
+    ///   frame stack hands back later, out of the predicate's reach.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as [`Self::argument`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a configuration coerced in to a patched type crosses
+    ///   as its restriction at both fixed fields, and the kernel admits it.
+    /// - witness: `module::tests::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
+    fn restricted(
+        &mut self,
+        target: &mut TermArena,
+        mut restriction: Restriction,
+        value: gandr_kernel_term::ValueId,
+    ) -> Result<Step, Refusal>
+    {
+        if let Some((label, fixed)) = restriction.pending.pop() {
+            self.frames.push(Frame::RestrictedField {
+                restriction,
+                value,
+                label,
+            });
+            return self.argument(fixed);
+        }
+        let Restriction { at, crossed, .. } = restriction;
+        Ok(self.erased_value(at, target.value_restrict(value, crossed)))
+    }
+
     /// Hand `image` to the rule `frame` holds.
     ///
     /// # Specification
@@ -7928,6 +8013,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             (Frame::ListTail { at, head }, AnyNode::Value(tail)) => {
                 Ok(self.erased_value(at, target.value_list_cons(head, tail)))
+            },
+            (Frame::RestrictedValue(restriction), AnyNode::Value(value)) => {
+                self.restricted(target, restriction, value)
+            },
+            (
+                Frame::RestrictedField {
+                    mut restriction,
+                    value,
+                    label,
+                },
+                AnyNode::Value(image),
+            ) => {
+                restriction.crossed.insert(label, image);
+                self.restricted(target, restriction, value)
             },
             (Frame::ListElement { at }, AnyNode::ValueType(element)) => {
                 let Some(&Computation::ListFold { result, .. }) = self.arena.computation(at)
@@ -8651,6 +8750,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::TelescopeValue { .. }
                 | Frame::Injection { .. }
                 | Frame::ListHead { .. }
+                | Frame::RestrictedValue(_)
+                | Frame::RestrictedField { .. }
                 | Frame::ListTail { .. }
                 | Frame::ListInput { .. }
                 | Frame::ListCaseList { .. }

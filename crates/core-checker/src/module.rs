@@ -515,6 +515,9 @@ pub struct ModuleReport
     lifts: BTreeMap<ValueId, Lift>,
     /// The function extensionalities the run decided, by node.
     funexts: BTreeMap<ValueId, Funext>,
+    /// The values the run coerced in to a patched type, by node, each with the
+    /// fixed fields it compared.
+    coercions: BTreeMap<ValueId, crate::conversion::Coercion>,
     /// The universe equivalences the run decided, by node.
     equivalences: BTreeMap<ValueId, Equivalence>,
     /// The session statements the run decided, by node.
@@ -699,6 +702,18 @@ impl ModuleReport
     pub const fn funexts(&self) -> &BTreeMap<ValueId, Funext>
     {
         &self.funexts
+    }
+
+    /// The values the run coerced in to a patched type, by node, each with the
+    /// fixed fields it compared.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn coercions(&self) -> &BTreeMap<ValueId, crate::conversion::Coercion>
+    {
+        &self.coercions
     }
 
     /// The universe equivalences the run decided, by node, with the evidence
@@ -2586,6 +2601,7 @@ pub fn check_declaration_supported(
     && ret.suspensions.keys().copied().eq(ret.judged.iter().filter(|judged| matches!(judged.verdict, Verdict::Suspended(_))).map(|judged| judged.constant))
     && &ret.lifts == context.lifts()
     && &ret.funexts == context.funexts()
+    && &ret.coercions == context.coercions()
     && &ret.equivalences == context.equivalences()
     && &ret.flows == context.flows()
     && &ret.directed == context.directed()
@@ -2915,6 +2931,7 @@ impl ModuleRun
             ledger,
             lifts: context.lifts().clone(),
             funexts: context.funexts().clone(),
+            coercions: context.coercions().clone(),
             equivalences: context.equivalences().clone(),
             flows: context.flows().clone(),
             directed: context.directed().clone(),
@@ -3043,6 +3060,7 @@ where
 /// - witness: `elaboration::tests::incremental_equals_from_scratch`
 /// - witness: `elaboration::tests::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
 #[spec(ensures: context.funexts().keys().all(|at| report.funexts.contains_key(at))
+    && context.coercions().keys().all(|at| report.coercions.contains_key(at))
     && context.relations().keys().all(|at| report.relations.contains_key(at))
     && context.restatements().keys().all(|at| report.restatements.contains_key(at))
     && context.motives().keys().all(|at| report.motives.contains_key(at))
@@ -3058,6 +3076,12 @@ pub fn absorb(
             .funexts()
             .iter()
             .map(|(&at, funext)| (at, funext.clone())),
+    );
+    report.coercions.extend(
+        context
+            .coercions()
+            .iter()
+            .map(|(&at, fixed)| (at, fixed.clone())),
     );
     report.equivalences.extend(
         context
