@@ -510,10 +510,12 @@
 //! # Source holes
 //!
 //! Source `?` and `?name` lower to core value or computation holes according to
-//! their term position. Occurrences have distinct `HoleId`s, each the hole's
-//! form and the number of holes the form writes before it. A hole keeps its
-//! name however the text around it is spelled, and whatever another form
-//! writes; they retain the usual written origins. Witness:
+//! their term position. Occurrences have distinct `HoleId`s, each the group
+//! of the hole's form and the number of holes the group writes before it. The
+//! forms of one declaration, as a signature and its definition, make one
+//! group. A hole keeps its name however the text around it is spelled,
+//! whatever another declaration writes, and whether another declaration is one
+//! form or two; they retain the usual written origins. Witness:
 //! `tests::source_holes_keep_their_families_and_distinct_occurrences`.
 
 use alloc::collections::BTreeMap;
@@ -3391,6 +3393,37 @@ enum InstanceType
     Computation(CompTypeId),
 }
 
+/// The groups that hole names count the tree's blocks by (#5469), read as
+/// far as a hole asks. A block that holds a top-level form joins the group of
+/// the block before it when one slot owns both forms, as a signature and its
+/// definition, or a declaration and its attributes. A block that holds a
+/// root joins the group before it. Each other block opens the next group.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `groups` holds one group for each block read, in order; `form` is
+///   the next top-level form no block read has passed; `owner` is the slot of
+///   the last form's block, when a slot owns its form.
+/// - executable: none — [`Lowerer::hole_group`] states the relations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration written in one form or in two names the
+///   holes of the declaration after it alike.
+/// - witness: `lower::implicit::tests::a_declaration_in_one_form_or_two_names_the_later_holes_alike_5469`
+#[derive(Clone, Debug, Default)]
+struct HoleGroups
+{
+    /// Each block's group, by the block's number: the number a hole's name
+    /// holds, and the group's first block.
+    groups: Vec<(u32, LayoutBlock)>,
+    /// The next of the tree's top-level forms whose block no block read has
+    /// passed.
+    form: usize,
+    /// The slot that owns the form of the last block read, when a slot owns
+    /// one.
+    owner: Option<SlotIndex>,
+}
+
 /// The lowering's working state, shared by both sweeps.
 ///
 /// # Specification
@@ -3869,10 +3902,15 @@ struct Lowerer<'run, 'source>
     /// frame its computation reads under and the computation, whose callee's
     /// written result states the binder's type to a match on it.
     ran: BTreeMap<ScopeId, (Frame, Placed)>,
-    /// Every hole of the tree, by its form and where its text starts, read
-    /// once the first hole is lowered: a hole is named by its form and its
-    /// place among its form's holes here.
-    holes: Vec<(gandr_core_term::hole::HoleForm, ByteOffset, NodeIndex)>,
+    /// Every hole of the tree, by its form's block and where its text starts,
+    /// read once the first hole is lowered: a hole is named by its block's
+    /// group and its place among the group's holes here
+    /// ([`Self::hole_group`]).
+    holes: Vec<(LayoutBlock, ByteOffset, NodeIndex)>,
+    /// The group of each block that a hole names, read as far as a hole asks
+    /// ([`HoleGroups`]): the forms of one declaration share one group
+    /// (#5469).
+    hole_groups: HoleGroups,
     /// Each pattern variable whose position a written type states, by the
     /// name's syntax node: the node of that type, which the arm binds the
     /// variable at.
@@ -5759,6 +5797,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             models: BTreeMap::new(),
             ran: BTreeMap::new(),
             holes: Vec::new(),
+            hole_groups: HoleGroups::default(),
             pattern_stated: BTreeMap::new(),
             scrutinised: BTreeMap::new(),
             descents: BTreeMap::new(),
@@ -18327,16 +18366,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         SurfaceName::from(self.text_at(placed))
     }
 
-    /// The name of the hole written at `at`: its form, and its place among
-    /// the form's holes in the order the text writes them. A hole keeps its
-    /// name however the text around it is spelled or laid out, and whatever
-    /// another form writes.
+    /// The name of the hole written at `at`: its form's group, and its place
+    /// among the group's holes in the order the text writes them. A hole
+    /// keeps its name however the text around it is spelled or laid out, and
+    /// whatever another declaration writes.
     ///
     /// # Specification
     /// - requires: `at` is a hole of the tree.
-    /// - ensures: each hole is named by its form and by how many holes its form
-    ///   writes before it, so distinct holes have distinct names.
-    /// - fails: the budget refusal for a form or a place past the written
+    /// - ensures: each hole is named by its form's group and by how many holes
+    ///   the group writes before it, so distinct holes have distinct names.
+    /// - fails: the budget refusal for a group or a place past the written
     ///   names' bits ([`gandr_core_term::hole::HoleId::written`]).
     /// - panics: none.
     ///
@@ -18346,16 +18385,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — holes before, between and after other declarations,
     ///   in a pattern and in a body, each named by its written place; a form's
-    ///   holes keep their names when another form writes more.
+    ///   holes keep their names when another form writes more, and when another
+    ///   declaration is written in one form or in two.
     /// - witness: `lower::tests::source_holes_keep_their_families_and_distinct_occurrences`
     /// - witness: `lower::implicit::tests::a_form_s_holes_keep_their_names_when_another_form_writes_more_5598`
+    /// - witness: `lower::implicit::tests::a_declaration_in_one_form_or_two_names_the_later_holes_alike_5469`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&hole| {
-        let form = self.hole_form(self.form_of(at.node));
-        let first = self.holes.partition_point(|&(held, ..)| held < form);
-        self.holes.binary_search(&(form, at.span.start(), at.node)).is_ok_and(|index| {
-            u32::try_from(index.saturating_sub(first)).ok().and_then(|place| {
-                gandr_core_term::hole::HoleId::written(form, gandr_core_term::hole::HolePlace::from(place))
-            }) == Some(hole)
+        let block = self.form_of(at.node);
+        self.hole_groups.groups.get(usize::from(block)).is_some_and(|&(number, first_block)| {
+            let first = self.holes.partition_point(|&(held, ..)| held < first_block);
+            self.holes.binary_search(&(block, at.span.start(), at.node)).is_ok_and(|held| {
+                u32::try_from(held.saturating_sub(first)).ok().and_then(|place| {
+                    gandr_core_term::hole::HoleId::written(
+                        gandr_core_term::hole::HoleForm::from(number),
+                        gandr_core_term::hole::HolePlace::from(place),
+                    )
+                }) == Some(hole)
+            })
         })
     }))]
     fn hole(
@@ -18369,57 +18415,101 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let exceeded = LoweringRefusal::BudgetExceeded {
             budget: self.fuel.budget,
         };
-        let form = self.hole_form(self.form_of(at.node));
-        let index = self
+        let block = self.form_of(at.node);
+        let (form, first_block) = self.hole_group(block);
+        let held = self
             .holes
-            .binary_search(&(form, at.span.start(), at.node))
+            .binary_search(&(block, at.span.start(), at.node))
             .map_err(|_absent| exceeded)?;
-        let first = self.holes.partition_point(|&(held, ..)| held < form);
-        let place = u32::try_from(index.saturating_sub(first)).map_err(|_overflow| exceeded)?;
+        let first = self.holes.partition_point(|&(read, ..)| read < first_block);
+        let place = u32::try_from(held.saturating_sub(first)).map_err(|_overflow| exceeded)?;
         gandr_core_term::hole::HoleId::written(form, gandr_core_term::hole::HolePlace::from(place))
             .ok_or(exceeded)
     }
 
-    /// The number a hole's name holds for the form whose layout block is
-    /// `block`: the block's place among the tree's blocks that hold no root.
-    /// A tree joined after a closure and the parse of its whole text lay one
-    /// block for each form in one order, and one more block for each root.
-    /// Thus both give each form one number.
+    /// The group of the layout block `block`: the number a hole's name holds
+    /// for the block, and the group's first block. A block that holds a
+    /// top-level form joins the group of the block before it when one slot
+    /// owns both forms, as a signature and its definition, or a declaration
+    /// and its attributes. A block that holds a root joins the group before
+    /// it, and the first block after the leading roots joins their group.
+    /// Thus a tree joined after a closure numbers its groups as the parse of
+    /// its whole text does. Each other block opens the next group, so a
+    /// rewrite that writes a declaration in one form or in two renames no
+    /// hole of another declaration (#5469).
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `block` less the count of roots in `block` or a block before
-    ///   it; the number past a `u32` for a block past it.
+    /// - requires: the slot of each top-level form up to `block` is collected.
+    /// - ensures: the groups of the blocks up to `block` are held in
+    ///   [`Self::hole_groups`], one for each block; the group of `block`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a document resumed after its closure names its holes
-    ///   as the whole text does.
+    /// - hypothesis: L3 — a declaration written in one form or in two names the
+    ///   holes of the declaration after it alike; a block that holds
+    ///   documentation, and no form, opens a group of its own; a document
+    ///   resumed after its closure names its holes as the whole text does.
+    /// - witness: `lower::implicit::tests::a_declaration_in_one_form_or_two_names_the_later_holes_alike_5469`
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
-    #[spec(ensures: |ret| ret == gandr_core_term::hole::HoleForm::from(u32::try_from(usize::from(block).saturating_sub(self.tree.roots().partition_point(|root| root.block() <= block))).unwrap_or(u32::MAX)))]
-    fn hole_form(
-        &self,
+    #[spec(ensures: |ret| self.hole_groups.groups.len() > usize::from(block)
+        && ret.0 == gandr_core_term::hole::HoleForm::from(self.hole_groups.groups.get(usize::from(block)).map_or(u32::MAX, |&(number, _)| number)))]
+    fn hole_group(
+        &mut self,
         block: LayoutBlock,
-    ) -> gandr_core_term::hole::HoleForm
+    ) -> (gandr_core_term::hole::HoleForm, LayoutBlock)
     {
-        let roots = self
-            .tree
-            .roots()
-            .partition_point(|root| root.block() <= block);
-        let number = usize::from(block).saturating_sub(roots);
-        gandr_core_term::hole::HoleForm::from(u32::try_from(number).unwrap_or(u32::MAX))
+        let tree = self.tree;
+        let roots = tree.roots();
+        let forms = tree.forms();
+        while self.hole_groups.groups.len() <= usize::from(block) {
+            let next = LayoutBlock::from(self.hole_groups.groups.len());
+            let earlier = roots.partition_point(|root| root.block() < next);
+            let group = if roots.get(earlier).is_some_and(|root| root.block() == next) {
+                self.hole_groups.groups.last().copied().unwrap_or((0, next))
+            }
+            else {
+                while forms
+                    .get(self.hole_groups.form)
+                    .is_some_and(|&form| self.form_of(form) < next)
+                {
+                    self.hole_groups.form = self.hole_groups.form.saturating_add(1);
+                }
+                let owner = forms
+                    .get(self.hole_groups.form)
+                    .filter(|&&form| self.form_of(form) == next)
+                    .and_then(|&form| match self.collected.owner_of(form) {
+                        Maybe::Present(slot) => Some(slot),
+                        Maybe::Absent(_) => None,
+                    });
+                // Only roots lie before the block: it joins their group.
+                let leading = earlier == usize::from(next);
+                let joined = leading || (owner.is_some() && owner == self.hole_groups.owner);
+                self.hole_groups.owner = owner;
+                match (joined, self.hole_groups.groups.last()) {
+                    (true, Some(&previous)) => previous,
+                    (_, Some(&(number, _))) => (number.saturating_add(1), next),
+                    (_, None) => (0, next),
+                }
+            };
+            self.hole_groups.groups.push(group);
+        }
+        self.hole_groups.groups.get(usize::from(block)).map_or_else(
+            || (gandr_core_term::hole::HoleForm::from(u32::MAX), block),
+            |&(number, first)| (gandr_core_term::hole::HoleForm::from(number), first),
+        )
     }
 
     /// Read the holes among the tree's nodes from block `from` on into the
-    /// holes read before, by their form, then in the order the text writes
-    /// them.
+    /// holes read before, by their form's block, then in the order the text
+    /// writes them. The read needs no slot, so a source not yet collected
+    /// reads its holes too.
     ///
     /// # Specification
     /// - requires: no node from block `from` on was read before.
-    /// - ensures: every hole from block `from` on is held beside its form,
-    ///   sorted by its form, then by where its text starts, beside the holes
-    ///   held before.
+    /// - ensures: every hole from block `from` on is held beside its form's
+    ///   block, sorted by that block, then by where its text starts, beside the
+    ///   holes held before.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -18448,8 +18538,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             if matches!(shape_of(self.pbg, node), Ok(Shape::Form { name, .. }) if name == FormName::HOLE)
             {
-                let form = self.hole_form(self.form_of(position));
-                self.holes.push((form, node.span().start(), position));
+                let block = self.form_of(position);
+                self.holes.push((block, node.span().start(), position));
             }
         }
         self.holes.sort_unstable();

@@ -1582,8 +1582,8 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Nominate a hole for `nomination`, an implicit a call omits, a component
     /// of the model a capability scope names none of, a wildcard or a splice
-    /// the text writes: the next name of its kind in the form the lowering
-    /// reads now.
+    /// the text writes: the next name of its kind in the group of the form the
+    /// lowering reads now ([`Self::hole_group`]).
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1591,9 +1591,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   wildcard's name for a wildcard, so the printer writes it back as `_`,
     ///   a splice's, carrying its tactic, for a splice, and a nominated one for
     ///   an omitted implicit or a scope's component, which it leaves out. The
-    ///   name holds the form and the count of its form's holes of its kind
-    ///   nominated before it.
-    /// - fails: the budget refusal once the form's share of its kind's names
+    ///   name holds the form's group and the count of the group's holes of its
+    ///   kind nominated before it.
+    /// - fails: the budget refusal once the group's share of its kind's names
     ///   has no more names.
     /// - panics: none.
     ///
@@ -1604,11 +1604,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — two implicits a call omits are two distinct holes,
     ///   each kept with its implicit's name, and a wildcard beside them a
     ///   third, named as a wildcard; a splice's hole carries its tactic; a
-    ///   form's nominations keep their names when another form nominates more.
+    ///   form's nominations keep their names when another form nominates more,
+    ///   and when another declaration is written in one form or in two.
     /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
     /// - witness: `lower::implicit::tests::a_wildcard_is_a_nominated_hole_of_its_own`
     /// - witness: `lower::splice::tests::a_splice_is_a_hole_carrying_its_tactic_2762`
     /// - witness: `lower::implicit::tests::a_form_s_holes_keep_their_names_when_another_form_writes_more_5598`
+    /// - witness: `lower::implicit::tests::a_declaration_in_one_form_or_two_names_the_later_holes_alike_5469`
     #[spec(
         captures: before = self.nominations.len(),
         ensures: |ret| match ret {
@@ -1630,7 +1632,7 @@ impl<'source> Lowerer<'_, 'source>
         nomination: Nomination<'source>,
     ) -> Result<gandr_core_term::hole::HoleId, LoweringRefusal<'source>>
     {
-        let form = self.hole_form(self.scope.form());
+        let form = self.hole_group(self.scope.form()).0;
         let origin = match nomination {
             Nomination::Wildcard => gandr_core_term::hole::HoleOrigin::Wildcard,
             Nomination::Spliced(_) => gandr_core_term::hole::HoleOrigin::Spliced,

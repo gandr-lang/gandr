@@ -417,6 +417,60 @@ fn a_form_s_holes_keep_their_names_when_another_form_writes_more_5598()
 }
 
 #[test]
+fn a_declaration_in_one_form_or_two_names_the_later_holes_alike_5469()
+{
+    // `early` is one form, its signature and its definition together, in
+    // the one text, and two forms in the other, as the formatter's explicit
+    // spelling writes it. `omitted`, the declaration after it, writes and
+    // nominates the same holes in both, so they keep their names, and so do
+    // the holes of `early` itself.
+    let names = |(signature, definition): (&str, &str), name: &str| {
+        let source = format!(
+            include_str!(
+                "tests/unformatted/a-declaration-in-one-form-or-two-names-the-later-holes-alike-5469.gandr"
+            ),
+            FIRST = FIRST,
+            SIGNATURE = signature,
+            DEFINITION = definition
+        );
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source.as_str()), &mut arena);
+        holes_in(&module, &arena, SurfaceName::from(name))
+            .into_iter()
+            .map(|(_, hole)| hole)
+            .collect::<Vec<_>>()
+    };
+    let one = (
+        "def early : () -> Integer = thunk { become first ? *{} } ;",
+        "",
+    );
+    let two = (
+        "def early : () -> Integer ;",
+        "def early = thunk { become first ? *{} } ;",
+    );
+    let later = names(one, "omitted");
+    assert_eq!(
+        later.iter().map(|hole| hole.origin()).collect::<Vec<_>>(),
+        [
+            HoleOrigin::Nominated,
+            HoleOrigin::Nominated,
+            HoleOrigin::Written
+        ],
+        "`omitted` writes one hole and nominates its two implicits"
+    );
+    assert_eq!(
+        later,
+        names(two, "omitted"),
+        "a later declaration's holes keep their names whether `early` is one form or two"
+    );
+    assert_eq!(
+        names(one, "early"),
+        names(two, "early"),
+        "a declaration's own holes keep their names whether it is one form or two"
+    );
+}
+
+#[test]
 fn an_omitted_implicit_is_a_nominated_hole()
 {
     // `first(5, unit)`: one nominated hole per omitted implicit, applied in
