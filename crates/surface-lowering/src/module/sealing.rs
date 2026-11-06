@@ -84,6 +84,9 @@
 //! - Andreas Rossberg, Claudio Russo and Derek Dreyer. "F-ing Modules."
 //!   _Journal of Functional Programming_ 24(5) (2014).
 //!   <https://doi.org/10.1017/S0956796814000264>
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: §
+//!   presented-spaces-crates — the face cover reads the meet of two faces from
+//!   a graded poset of the faces of a record type.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -92,9 +95,14 @@ use anodized::spec;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::SealExtent;
+use gandr_theory_graded_posets::GradedPoset;
 use gandr_theory_shapes::Boundary;
 use gandr_theory_shapes::BoundaryError;
+use gandr_theory_shapes::Membership;
+use gandr_theory_shapes::Point;
 use gandr_theory_shapes::Subshape;
+use gandr_theory_stone_duality::Comparison;
+use gandr_theory_stone_duality::DualityError;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
@@ -775,20 +783,22 @@ impl<'source> Collector<'_, 'source>
     ///   member's block.
     /// - ensures: the boundary holds exactly the labels of `defined`'s keyed
     ///   entries, none for a type that is no record, and one face per written
-    ///   face, in written order.
+    ///   face, in written order; the face poset holds those faces, then each
+    ///   nonempty meet of two faces that no earlier cell is.
     /// - fails: a face listing a label the record lacks is refused at that
     ///   label, a face named twice at its second name, and a label listed twice
-    ///   in one face, or a record labelling twice, at the face or the type.
+    ///   in one face, or a record labelling twice, at the face or the type;
+    ///   faces and meets past the poset's 64 cells are refused at the type.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::IllFormedDescription`] as `FaceOutsideShape` or
-    /// `DuplicateFaceName`, naming the face and the type, and
-    /// [`LoweringRefusal::MalformedForm`] naming the module form.
+    /// [`LoweringRefusal::IllFormedDescription`] as `FaceOutsideShape`,
+    /// `DuplicateFaceName` or `FacePosetPastBudget`, naming the face and the
+    /// type, and [`LoweringRefusal::MalformedForm`] naming the module form.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two faces over three labels are read, and a face
-    ///   listing a fourth is refused by it.
+    /// - hypothesis: L3 — two faces over three labels are read, with their meet
+    ///   as a third cell, and a face listing a fourth is refused by it.
     /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
     /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_by_the_label`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |faces| faces.name == name && faces.faces.len() == written.len()))]
@@ -855,11 +865,23 @@ impl<'source> Collector<'_, 'source>
                 ) => return Err(misplaced_in(FormName::MODULE, face.span)),
             }
         }
+        let Ok(poset) = face_poset(&faces)
+        else {
+            return Err(LoweringRefusal::IllFormedDescription {
+                span: defined.span,
+                kind: WfKind::FacePosetPastBudget,
+                subjects: [
+                    Maybe::Present(name),
+                    Maybe::Absent(crate::error::description_subject::Absent::Unnamed),
+                ],
+            });
+        };
 
         Ok(RecordFaces {
             name,
             boundary,
             faces,
+            poset,
         })
     }
 
@@ -1276,3 +1298,156 @@ impl<'source> Collector<'_, 'source>
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct TypeMemberForm(pub bool);
+
+/// The points both faces `left` and `right` hold, in carrier order. A face's
+/// own points are its meet with itself.
+///
+/// # Specification
+/// - requires: `left` and `right` stand over one carrier.
+/// - ensures: a point is in the list exactly when both faces hold it, once, in
+///   carrier order; the list is empty when no point is inside both.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the faces `{port, tls}` and `{host, port}` meet at
+///   `{port}`, and two faces that share no label have no meet.
+/// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
+#[spec(ensures: |ret| ret.is_sorted())]
+fn shared_points(
+    left: &Subshape,
+    right: &Subshape,
+) -> Vec<Point>
+{
+    left.decisions()
+        .iter()
+        .zip(right.decisions())
+        .enumerate()
+        .filter(|&(_, (one, other))| *one == Membership::Inside && *other == Membership::Inside)
+        .map(|(at, _)| Point::from(at))
+        .collect()
+}
+
+/// Whether the face `upper` holds each point the face `lower` holds:
+/// `Inside` when it does, `Outside` when it does not.
+///
+/// # Specification
+/// trivial.
+fn inclusion(
+    lower: &Subshape,
+    upper: &Subshape,
+) -> Membership
+{
+    if lower
+        .decisions()
+        .iter()
+        .zip(upper.decisions())
+        .all(|(below, above)| *below == Membership::Outside || *above == Membership::Inside)
+    {
+        Membership::Inside
+    }
+    else {
+        Membership::Outside
+    }
+}
+
+/// Whether the face `lower` lies strictly below the face `upper`: `upper`
+/// holds each point `lower` holds, and the two differ.
+///
+/// # Specification
+/// trivial.
+fn strictly_below(
+    lower: &Subshape,
+    upper: &Subshape,
+) -> Comparison
+{
+    if inclusion(lower, upper) == Membership::Inside && lower != upper {
+        Comparison::Below
+    }
+    else {
+        Comparison::NotBelow
+    }
+}
+
+impl RecordFaces<'_>
+{
+    /// The meet of the faces `left` and `right`: the cell of the face poset
+    /// inside both that holds the most labels.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a nonempty cell of the poset inside both faces; nothing for
+    ///   two faces that share no label.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the faces `secure = {port, tls}` and `addr = {host,
+    ///   port}` meet at `{port}`.
+    /// - witness: `lower::patched::tests::a_system_of_faces_keeps_each_later_face_s_value_on_its_meet`
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_none_or(|met| inclusion(met, left) == Membership::Inside && inclusion(met, right) == Membership::Inside))]
+    pub(crate) fn meet(
+        &self,
+        left: &Subshape,
+        right: &Subshape,
+    ) -> Option<&Subshape>
+    {
+        self.poset
+            .cells()
+            .iter()
+            .filter(|cell| {
+                inclusion(cell, left) == Membership::Inside
+                    && inclusion(cell, right) == Membership::Inside
+            })
+            .max_by_key(|cell| {
+                cell.decisions()
+                    .iter()
+                    .filter(|&&decision| decision == Membership::Inside)
+                    .count()
+            })
+            .filter(|met| met.decisions().contains(&Membership::Inside))
+    }
+}
+
+/// The face poset of `faces`: each face in written order, then each nonempty
+/// meet of two faces that no earlier cell is, each cell below the cells that
+/// strictly hold it.
+///
+/// # Specification
+/// - ensures: the poset's cells are the faces, then their new meets, in the
+///   order of the pairs; a cell lies below another exactly when the other
+///   strictly holds it, so two faces that hold one set of labels are apart.
+/// - fails: more than 64 cells, refused by their count.
+/// - panics: none.
+///
+/// # Errors
+/// [`DualityError::TooManyElements`] for more than 64 cells.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the faces `{port, tls}` and `{host, port}` give a poset
+///   of three cells, their meet `{port}` below both.
+/// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |poset| poset.cells().len() >= faces.len()))]
+fn face_poset(faces: &[(SurfaceName<'_>, Subshape)])
+-> Result<GradedPoset<Subshape>, DualityError>
+{
+    let mut cells: Vec<Subshape> = faces.iter().map(|&(_, ref face)| face.clone()).collect();
+    // Each cell by the points it holds, so one lookup finds a meet that is
+    // already a cell.
+    let mut held: BTreeSet<Vec<Point>> = faces
+        .iter()
+        .map(|&(_, ref face)| shared_points(face, face))
+        .collect();
+    for (at, &(_, ref left)) in faces.iter().enumerate() {
+        for &(_, ref right) in faces.iter().skip(at.saturating_add(1)) {
+            let points = shared_points(left, right);
+            if points.is_empty() || held.contains(&points) {
+                continue;
+            }
+            if let Ok(met) = Subshape::new(left.ambient(), &points) {
+                cells.push(met);
+                let _new = held.insert(points);
+            }
+        }
+    }
+    GradedPoset::new(cells, strictly_below)
+}

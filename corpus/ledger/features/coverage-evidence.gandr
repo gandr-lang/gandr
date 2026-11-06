@@ -1,11 +1,14 @@
 /// `coverage-evidence`: Coverage as replayable evidence.
-/// Implemented: a semantic coverage verdict the kernel replays, fed by unification: a pattern hole's arms covered by the canonical cover.
+/// Implemented: a semantic coverage verdict the kernel replays, fed by unification: a pattern hole's arms covered by the canonical cover, and a face cover whose faces agree on each meet.
 /// Not implemented: index refinement and local matching equations; a hole whose cover cannot be derived is refused as undecided by name.
 ///
 /// - owes: #391
 // A match whose every arm is written covers its scrutinee, and a hole in an
 // arm's body leaves it covering: the term is owed, the arm is decided. The
-// twin in `pathological/holes/` leaves an arm to a pattern hole.
+// twin in `pathological/holes/` leaves an arm to a pattern hole. A system of
+// faces is a face cover: the faces of `Config` meet at the port, and the
+// system holds because they agree there. The twin in `pathological/desc/`
+// disagrees at the port.
 
 /// Three colours, one arm each.
 @[ checks ]
@@ -30,3 +33,15 @@ def sketch(c : Color) -> Integer =
     | Red => 0
     | Green => ?
     | Blue => 2
+
+/// A server's configuration: the faces `secure` and `addr` meet at the port.
+type Config = *{host : String, port : Integer, tls : Bool} where
+  face secure = { port, tls };
+  face addr = { host, port };
+
+/// A face cover of `Config`: both faces, which agree on their meet.
+@[ checks ]
+def both_port(c : Config[
+  secure ↦ *{.port = 443, .tls = true},
+  addr ↦ *{.host = "localhost", .port = 443}
+]) -> Integer { c.port }

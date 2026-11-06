@@ -2007,6 +2007,11 @@ fn ill_formed(
                 "the face {one} holds a name the boundary {other} does not list"
             )
         },
+        WfKind::FacePosetPastBudget => write!(
+            f,
+            "the faces of the record type {one} and their meets number more than the 64 cells \
+             of a face poset"
+        ),
         WfKind::UnsortedBinding => write!(
             f,
             "a rule uses {one} where no port binds it over the same sorts"
@@ -3315,6 +3320,7 @@ mod tests
             WfKind::SplitCircuitOutputs,
             WfKind::DuplicateFaceName,
             WfKind::FaceOutsideShape,
+            WfKind::FacePosetPastBudget,
             WfKind::UnsortedBinding,
             WfKind::AtomResult,
             WfKind::NonAtomAbstraction,
@@ -3431,6 +3437,7 @@ mod tests
                 crate::WfKind::SplitCircuitOutputs,
                 crate::WfKind::DuplicateFaceName,
                 crate::WfKind::FaceOutsideShape,
+                crate::WfKind::FacePosetPastBudget,
                 crate::WfKind::UnsortedBinding,
                 crate::WfKind::MisplacedAbstraction,
                 crate::WfKind::AtomResult,

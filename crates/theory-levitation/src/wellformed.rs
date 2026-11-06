@@ -128,6 +128,9 @@ pub enum WfKind
     DuplicateFaceName,
     /// A face of the signature's shape holds a point the shape lacks.
     FaceOutsideShape,
+    /// A record type's faces and their meets number more than the 64 cells
+    /// of a face poset.
+    FacePosetPastBudget,
     /// A rule uses a variable a binding port of its left side binds neither
     /// where a port binds the same variables over the same sort nor applied
     /// to one argument per variable it binds, or applies a variable no binding
@@ -334,7 +337,8 @@ fn located(
     WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
     | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement
     | WfKind::NonRepresentableBinder | WfKind::DuplicateFaceName | WfKind::FaceOutsideShape
-    | WfKind::AtomResult | WfKind::NonAtomAbstraction => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
+    | WfKind::FacePosetPastBudget | WfKind::AtomResult
+    | WfKind::NonAtomAbstraction => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
 }) && diagnostics.iter().filter(|diagnostic| diagnostic.kind == WfKind::NonRepresentableBinder).count()
     == desc.opers.iter()
         .flat_map(|op| op.arity.inputs.iter().chain(&op.arity.outputs))

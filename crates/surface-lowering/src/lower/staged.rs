@@ -536,7 +536,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   telescope marked it with, the operand read where the staged type
     ///   stands; a view type its function recorded stands as its place's index,
     ///   the atom `Integer`, its element read by the function; a patched type
-    ///   is read as [`Self::patched_fields`] and [`Self::patched_face`] read
+    ///   is read as [`Self::patched_fields`] and [`Self::patched_faces`] read
     ///   it.
     /// - fails: the wrong-sort refusal where no value type is read; a fault
     ///   naming the form for a tile out of place; the out-of-fragment refusal
@@ -569,7 +569,7 @@ impl<'source> Lowerer<'_, 'source>
         match self.bracket(site, &mut cursor)? {
             Bracket::Stage => {},
             Bracket::Fields(fixed) => return self.patched_fields(site, frame, base, &fixed),
-            Bracket::Face(face, value) => return self.patched_face(site, frame, base, face, value),
+            Bracket::Faces(faces) => return self.patched_faces(site, frame, base, &faces),
         }
         let _below = cursor.tile(TileName::LESS_THAN);
         let Maybe::Present(_) = cursor.tile(TileName::IDENTIFIER)

@@ -1480,7 +1480,11 @@ impl Machine<'_, '_>
             // operand as that record (#5579).
             (
                 Some(&Computation::RecordProjection(operand, ref label)),
-                Some(patched @ &ValueType::Patched { base, ref fixed }),
+                Some(
+                    patched @ &ValueType::Patched {
+                        base, ref fixed, ..
+                    },
+                ),
             ) => {
                 let Some(free) = arena.element_fields(patched)
                 else {

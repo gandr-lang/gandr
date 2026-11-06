@@ -562,9 +562,16 @@ pub fn of_value_type<Walk>(
                 visit.value_type(field, at);
             }
         },
-        ValueType::Patched { base, ref fixed } => {
+        ValueType::Patched {
+            base,
+            ref fixed,
+            ref meets,
+        } => {
             visit.value_type(base, at);
             for &value in fixed.values() {
+                visit.value(value, at);
+            }
+            for &(_, value) in meets {
                 visit.value(value, at);
             }
         },

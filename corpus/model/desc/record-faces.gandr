@@ -1,6 +1,7 @@
 // A record type's faces: each a set of the record's labels, named in a `where`
 // block after the type. A static bracket after the type fixes some fields, by
-// label or by face.
+// label, by face, or by a system of faces. In a system, the checker converts
+// each later face's value on a meet with the first face's value there.
 //
 // A record type's labels are its boundary, and a face over them names a part
 // of the record. The checker checks each fixed value at its field's type. A
@@ -18,12 +19,11 @@
 // `|->` spells `↦` in ASCII.
 //
 // - see: `pathological/desc/record-faces.gandr` — a face past the labels, a
-//   face named twice, a bracket naming a field or a face the type lacks, and a
-//   literal stating a fixed field at another value, refused
+//   face named twice, a bracket naming a field or a face the type lacks, a
+//   literal stating a fixed field at another value, and two faces that
+//   disagree on their meet, refused
 // - see: `model/desc/shaped-signature.gandr` — a theory's `boundary` and its
 //   faces
-// - owes: #5106 — two faces fixed at once, whose values agree where the faces
-//   meet
 
 /// A server's configuration: the faces `secure` and `addr` meet at the port.
 type Config = *{host : String, port : Integer, tls : Bool} where
@@ -82,3 +82,15 @@ def defaulted : Config[.port = default_port] = *{.host = "localhost", .tls = tru
 /// The port of `defaulted`: the value of `default_port`.
 @[ runs("443") ]
 def defaulted_port : Integer = named_port (defaulted);
+
+/// Both faces in one system: they meet at the port and agree there, so the
+/// system fixes every field of `Config`.
+def both_port(c : Config[
+  secure ↦ *{.port = 443, .tls = true},
+  addr ↦ *{.host = "localhost", .port = 443}
+]) -> Integer { c.port }
+
+/// `local` stands at the system by the coercion in: each of its fields
+/// converts with the value that the system fixes.
+@[ runs("443") ]
+def local_both_port : Integer = both_port (local);

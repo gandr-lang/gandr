@@ -1236,11 +1236,16 @@ pub fn covariant(
                         .values()
                         .map(|&field| (Position::ValueType(field), polarity, depth)),
                 ),
-                ValueType::Patched { base, ref fixed } => {
+                ValueType::Patched {
+                    base,
+                    ref fixed,
+                    ref meets,
+                } => {
                     work.push((Position::ValueType(base), polarity, depth));
                     work.extend(
                         fixed
                             .values()
+                            .chain(meets.iter().map(|met| &met.1))
                             .map(|&value| (Position::Value(value), polarity, depth)),
                     );
                 },

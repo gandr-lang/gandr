@@ -546,6 +546,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theor
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','stratum::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-diagnostics','obstruction','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-lowering','module::sealing','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-cellular-sheaves','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);

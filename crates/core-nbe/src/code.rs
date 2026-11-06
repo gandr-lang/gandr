@@ -1637,7 +1637,7 @@ if a != b || left.len() != right.len() { Ok((Alike::Different,0,0)) }
 else { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.iter().zip(right).map(|(a,b)| (Node::Code(*a,here),Node::Code(*b,there))))); Ok((Alike::Same,left.len(),0)) }
 } else if let ValueType::Record(ref left) = *left && let ValueType::Record(ref right) = *right {
 if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.values().zip(right.values()).map(|(a,b)| (Node::ValueType(*a,here),Node::ValueType(*b,there))))); Ok((Alike::Same,left.len(),0)) } else { Ok((Alike::Different,0,0)) }
-} else if let ValueType::Patched { base: a, fixed: ref left } = *left && let ValueType::Patched { base: b, fixed: ref right } = *right {
+} else if let ValueType::Patched { base: a, fixed: ref left, .. } = *left && let ValueType::Patched { base: b, fixed: ref right, .. } = *right {
 if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(core::iter::once((Node::ValueType(a,here),Node::ValueType(b,there))).chain(left.values().zip(right.values()).map(|(a,b)| (Node::Code(*a,here),Node::Code(*b,there)))))); Ok((Alike::Same,left.len().saturating_add(1),0)) } else { Ok((Alike::Different,0,0)) }
 } else if let (&ValueType::Product(ref left), &ValueType::Product(ref right)) | (&ValueType::Sum(ref left), &ValueType::Sum(ref right)) = (left, right) {
 if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().rev().copied().eq(left.iter().zip(right.iter()).map(|(a,b)| (Node::ValueType(*a,here),Node::ValueType(*b,there))))); Ok((Alike::Same,left.len(),0)) } else { Ok((Alike::Different,0,0)) }
@@ -1814,10 +1814,12 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     else if let ValueType::Patched {
                         base: a,
                         fixed: ref left,
+                        ..
                     } = *matched_left_value
                         && let ValueType::Patched {
                             base: b,
                             fixed: ref right,
+                            ..
                         } = *matched_right_value
                     {
                         if !left.keys().eq(right.keys()) {
@@ -3283,7 +3285,9 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         },
                         ValueType::Record(ref fields) => types
                             .extend(fields.values().map(|field| Node::ValueType(*field, place))),
-                        ValueType::Patched { base, ref fixed } => {
+                        ValueType::Patched {
+                            base, ref fixed, ..
+                        } => {
                             types.push(Node::ValueType(base, place));
                             for value in fixed.values() {
                                 atoms.push(self.atom(Node::Code(*value, place))?);
