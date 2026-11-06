@@ -1,11 +1,12 @@
-//! A first-order model of `theory Nat` written in gandr source. For a
-//! first-order signature, Kaposi and Xie's first-order models
-//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
-//! are its algebras: a carrier for the sort and a function per operation.
-//! Written in source, the models of `Nat` are the record type `#{nat : Type,
-//! zero : () => nat, succ : (n : nat) => nat}`, one field per component of
-//! `Model(Nat)` in the order the derivation mints them, and the syntax model, a
-//! counting model and a `Model(Nat)` module each inhabit it.
+//! This source defines a first-order model of `theory Nat`.
+//!
+//! A first-order model is an algebra for its signature
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics].
+//!
+//! The model provides one carrier for each sort. The model provides one
+//! function for each operation.
+//! A source model of `Nat` has a record type. The syntax model, counting model
+//! and `Model(Nat)` module inhabit that type.
 //!
 //! - see: #640
 //! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]

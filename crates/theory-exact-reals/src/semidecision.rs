@@ -6,10 +6,10 @@
 //! validated plan and its [`Demand`], the evidence that it asks for: an
 //! enclosure of a real node to a width, or a certificate that an open node
 //! holds or fails. The machine works on an obligation one certificate step
-//! at a time, so each unit
-//! of work adds one step of the certificate that [`crate::certificate::check`]
-//! replays. The work of one step is at most two exact squares, or four exact
-//! products, of dyadics within the checker's width quota.
+//! at a time, so each unit of work adds one step of the certificate that
+//! [`crate::certificate::check`] replays. The work of one step is at most two
+//! exact squares, or four exact products, of dyadics within the checker's
+//! width quota, or the series of one builtin at the precision of its step.
 //!
 //! An obligation ends in one of five [`Outcome`]s. [`Outcome::Certified`]
 //! carries the certificate. [`Outcome::Suspended`] states why the machine
@@ -18,11 +18,16 @@
 //! unless its certificate concludes it: a failure is evidence only when an
 //! obligation asks for it and the certificate replays.
 //!
+//! # Boundaries
+//!
 //! The machine has rules for constants, registered cuts, strict comparisons of
 //! such reals, the lower and upper cuts of a registered cut, and bounded
 //! quantifiers over intervals whose body compares polynomials in the bound
-//! variable. The search of a quantifier is `crate::bisection`. Any other form
-//! suspends with [`SuspendReason::NoRule`].
+//! variable. The search of a quantifier is `crate::bisection`. It also has a
+//! rule for a real made of constants, sums, differences, products, π,
+//! cosines, sines and angles, and for a strict comparison of two such reals:
+//! the compound chain of `crate::compound`. Any other form suspends with
+//! [`SuspendReason::NoRule`].
 
 use alloc::vec::Vec;
 
@@ -40,6 +45,7 @@ use crate::certificate::Side;
 use crate::certificate::Step;
 use crate::certificate::StepId;
 use crate::certificate::replay_prefix;
+use crate::compound::Compound;
 use crate::dovetail::ResumeError;
 use crate::dovetail::Steps;
 use crate::dyadic::Dyadic;
@@ -215,7 +221,7 @@ pub enum Answer
 ///
 /// # Specification
 /// trivial.
-fn gap(interval: &NumericInterval) -> Option<Dyadic>
+pub(crate) fn gap(interval: &NumericInterval) -> Option<Dyadic>
 {
     let (&Endpoint::Finite(ref lower), &Endpoint::Finite(ref upper)) =
         (&interval.lower().endpoint, &interval.upper().endpoint)
@@ -353,6 +359,33 @@ fn chainable(
     });
 }
 
+/// Whether a chain serves `obligation`: an enclosure of a chainable real, a
+/// comparison of two chainable reals, or a cut at a chainable point. The
+/// machine rebuilds such work from its steps, and runs any other work again.
+///
+/// # Specification
+/// trivial.
+fn chained(
+    plan: &Plan,
+    obligation: Obligation,
+) -> Chainable
+{
+    let node = obligation.node;
+    return Chainable(match (plan.node(node), obligation.demand) {
+        (Ok(&Node::Real(Real::Constant(_) | Real::Cut(_))), Demand::Encloses { .. }) => {
+            chainable(plan, node).0
+        },
+        (Ok(&Node::Open(Open::Less(first, second))), Demand::Holds | Demand::Fails) => {
+            chainable(plan, first.node()).0 && chainable(plan, second.node()).0
+        },
+        (
+            Ok(&Node::Open(Open::LowerCut(cut, point) | Open::UpperCut(cut, point))),
+            Demand::Holds | Demand::Fails,
+        ) => radicand(plan, cut.node()).is_ok() && chainable(plan, point.node()).0,
+        (Ok(_) | Err(_), _) => false,
+    });
+}
+
 /// Where the work on an obligation is.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum State
@@ -383,6 +416,9 @@ enum State
     },
     /// The search of a bounded quantifier's domain.
     Searching(Search),
+    /// The compound chain of a real made of builtins, or of a comparison of
+    /// two such reals.
+    Composing(Compound),
     /// The certificate of the evidence asked for.
     Certified(Certificate),
     /// The reason the machine stopped.
@@ -436,7 +472,7 @@ impl Progress
     /// - panics: none.
     /// - executable: none — the clause speaks of the work that wrote the steps.
     /// - intension: one replay of the steps, then one walk of them for a chain,
-    ///   or one run of the search to the same steps for a quantifier.
+    ///   or one run of the machine to the same steps for any other work.
     ///
     /// # Errors
     /// - [`ResumeError::Replay`]: the steps do not replay.
@@ -459,10 +495,7 @@ impl Progress
             return Ok(Self::new(obligation));
         }
         replay_prefix(plan, &steps, quotas).map_err(ResumeError::Replay)?;
-        if matches!(
-            plan.plan().node(obligation.node),
-            Ok(&Node::Open(Open::Exists(_) | Open::Forall(_)))
-        ) {
+        if !chained(plan.plan(), obligation).0 {
             return Self::rerun(plan, obligation, &steps, quotas);
         }
         let state = rebuilt(plan.plan(), obligation, &steps)?;
@@ -473,28 +506,29 @@ impl Progress
         });
     }
 
-    /// The work on a quantified `obligation` that `steps` record, rebuilt by
-    /// running its search again until it writes as many steps.
+    /// The work on an `obligation` that no chain serves, as `steps` record it,
+    /// rebuilt by running the machine again until it writes as many steps.
     ///
     /// # Specification
     /// - ensures: the work writes `steps` and is live, so it goes on as the
-    ///   work that wrote them goes on. The search is deterministic, so a run
+    ///   work that wrote them goes on. The machine is deterministic, so a run
     ///   writes the same steps from the same plan.
-    /// - fails: refuses steps that the search does not write, or that it writes
-    ///   only after it settles, as [`ResumeError::Steps`].
+    /// - fails: refuses steps that the machine does not write, or that it
+    ///   writes only after it settles, as [`ResumeError::Steps`].
     /// - panics: none.
     /// - executable: none — the clause speaks of the run that wrote the steps.
-    /// - intension: one run of the search over as many units as `steps`, and
+    /// - intension: one run of the machine over as many units as `steps`, and
     ///   one comparison of the steps.
     ///
     /// # Errors
-    /// - [`ResumeError::Steps`]: the search does not write these steps.
+    /// - [`ResumeError::Steps`]: the machine does not write these steps.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — a checkpoint of a generated quantified formula at
-    ///   every turn resumes to the run that never stops. L3 — steps that the
-    ///   search does not write.
+    /// - hypothesis: L2 — a checkpoint of a generated quantified formula, and
+    ///   of a comparison of builtins, at every turn resumes to the run that
+    ///   never stops. L3 — steps that the machine does not write.
     /// - witness: `tests::quantifier::a_search_resumes_from_its_checkpoint`
+    /// - witness: `tests::elementary::the_machine_certifies_the_builtins`
     fn rerun(
         plan: &ValidatedPlan,
         obligation: Obligation,
@@ -543,7 +577,8 @@ impl Progress
             | State::Enclosing(_)
             | State::Comparing { .. }
             | State::Cutting { .. }
-            | State::Searching(_) => None,
+            | State::Searching(_)
+            | State::Composing(_) => None,
         };
     }
 
@@ -560,6 +595,7 @@ impl Progress
             | State::Comparing { .. }
             | State::Cutting { .. }
             | State::Searching(_)
+            | State::Composing(_)
             | State::Certified(_)
             | State::Suspended(_) => None,
         };
@@ -594,7 +630,8 @@ impl Progress
     ///   the evidence asked for, or with the reason the machine cannot go on.
     /// - panics: none.
     /// - intension: at most `allowance` certificate steps, each at most two
-    ///   exact squares within the checker's width quota.
+    ///   exact squares within the checker's width quota, or the series of one
+    ///   builtin.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — generated obligations on generated plans, each
@@ -647,6 +684,7 @@ impl Progress
             },
             State::Cutting { open, point } => self.cutting(plan, open, point, quotas),
             State::Searching(search) => self.search(plan, search, quotas),
+            State::Composing(compound) => self.compose(plan, compound, quotas),
             settled @ (State::Certified(_) | State::Suspended(_)) => (settled, Unit::Stopped),
         };
         self.state = state;
@@ -688,6 +726,12 @@ impl Progress
             (Ok(&Node::Open(Open::Exists(_) | Open::Forall(_))), Demand::Holds | Demand::Fails) => {
                 match Search::new(plan, node, self.obligation.demand) {
                     Ok(search) => self.search(plan, search, quotas),
+                    Err(reason) => (State::Suspended(reason), Unit::Stopped),
+                }
+            },
+            (Ok(&Node::Real(_) | &Node::Open(Open::Less(..))), _) => {
+                match Compound::new(plan, node, self.obligation.demand) {
+                    Ok(compound) => self.compose(plan, compound, quotas),
                     Err(reason) => (State::Suspended(reason), Unit::Stopped),
                 }
             },
@@ -1052,6 +1096,24 @@ impl Progress
         };
     }
 
+    /// One unit of work on a compound chain: one step of its attempt.
+    ///
+    /// # Specification
+    /// trivial.
+    fn compose(
+        &mut self,
+        plan: &Plan,
+        mut compound: Compound,
+        quotas: &CheckerQuotas,
+    ) -> (State, Unit)
+    {
+        return match compound.unit(plan, &mut self.steps, quotas) {
+            Ok(Turn::Stepped) => (State::Composing(compound), Unit::Stepped),
+            Ok(Turn::Concluded) => (self.certified(), Unit::Concluded),
+            Err(reason) => (State::Suspended(reason), Unit::Stopped),
+        };
+    }
+
     /// The certificate of the steps written so far.
     ///
     /// # Specification
@@ -1181,7 +1243,11 @@ fn rebuilt(
             | Step::Witness { .. }
             | Step::Cover { .. }
             | Step::Counterexample { .. }
-            | Step::Refutation { .. } => return Err(ResumeError::Steps),
+            | Step::Refutation { .. }
+            | Step::Pi { .. }
+            | Step::Cosine { .. }
+            | Step::Sine { .. }
+            | Step::Angle { .. } => return Err(ResumeError::Steps),
         }
     }
     let node = obligation.node;

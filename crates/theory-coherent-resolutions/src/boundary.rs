@@ -150,6 +150,12 @@ wrapper! {
 }
 
 wrapper! {
+    /// The place of a rule in the rules of a Lawvere theory.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct RulePlace(usize);
+}
+
+wrapper! {
     /// A number of variables: the arity of an operation, or the variables of
     /// a context.
     #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]

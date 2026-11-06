@@ -1,6 +1,6 @@
 # gandr-theory-coherent-resolutions
 
-Coherent resolution of a cell rewriting system. A cell fires under the alphabet's discipline, and normalization runs within a budget. The multi-sum overlap enumerator lists the critical pairs with their support relation. The crate can replay each coherence certificate. Knuth–Bendix and Squier completion runs within a budget and declines with a report. The crate also holds the bar complex of the Lawvere theory that a first-order block presents.
+Coherent resolution of a cell rewriting system. A cell fires under the alphabet's discipline, and normalization runs within a budget. The multi-sum overlap enumerator lists the critical pairs with their support relation. The crate can replay each coherence certificate. Knuth–Bendix and Squier completion runs within a budget and declines with a report. The crate also holds the bar complex of the Lawvere theory that a first-order block presents, and Brown's collapsing scheme on that complex.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -24,6 +24,7 @@ Coherent resolution of a cell rewriting system. A cell fires under the alphabet'
 
 - `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras` — exemplar: Yves Guiraud, Eric Hoffbeck and Philippe Malbos, "Convergent Presentations and Polygraphic Resolutions of Associative Algebras", _Mathematische Zeitschrift_ 293, 2019, `doi:10.1007/s00209-018-2185-z` — the standard resolution of a convergent presentation, which the bar complex of a first-order block builds.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the Squier frame of the presented-spaces page, which reads completion as a Morse collapse of the bar complex.
+- Kenneth S. Brown, "The Geometry of Rewriting Systems: A Proof of the Anick–Groves–Squier Theorem", in _Algorithms and Classification in Combinatorial Group Theory_, MSRI Publications 23, 1992, pages 137–163 — the collapsing scheme of the bar complex along a rewriting strategy, which `LawvereTheory` gives as a `Scheme`.
 
 ## Provided features
 
@@ -39,8 +40,9 @@ Coherent resolution of a cell rewriting system. A cell fires under the alphabet'
 - `join_critical_pairs`, `Joinability`, `PairJoining`: the joinability check with no derivation, and its resumption over a store grown by appended cells, which decides no joined pair again.
 - `LawvereTheory`, `TermTable`, `TermNode`, `TermHead`, `root_rewrite`: the Lawvere theory of a first-order block that the caller states, with its terms interned once and its normal forms innermost first within a `NormalizationBudget`.
 - `BarCell`, `Arrow`, `Degeneracy`, `BarBound`, `Truncation`, `truncated`, `LawvereError`: the bar complex of that theory as a `Complex` of `gandr-theory-discrete-morse`, which states the faces of a cell when a caller asks, and the largest subcomplex inside a bound.
+- `Scheme` for `LawvereTheory`, `LawvereTheory::overlapping`, `overlapped`, `TermTable::generator`: Brown's collapsing scheme on that bar complex as a `Scheme` of `gandr-theory-discrete-morse`, along the leftmost innermost redex, and the second rule of each essential overlap.
 - The engine trusts the splice law rather than checking it, and an alphabet that breaks it shows through the step.
-- The boundary wrappers (`NormalizationBudget`, `CompletionStepBudget`, `CompletionCellBudget`, `CertificateIndex`, `BatchIndex`, `OverlapIndex`, `PairDecisions`, `BudgetExhaustion`, `TraceletReplay`, `TraceletEquivalence`, `StepIndependence`, `CompletionStatus`, `Operation`, `Variable`, `TermPlace`, `Arity`, `TermSize`, `Occurrences`, `BarDegree`): every budget, index and verdict a signature here crosses.
+- The boundary wrappers (`NormalizationBudget`, `CompletionStepBudget`, `CompletionCellBudget`, `CertificateIndex`, `BatchIndex`, `OverlapIndex`, `PairDecisions`, `BudgetExhaustion`, `TraceletReplay`, `TraceletEquivalence`, `StepIndependence`, `CompletionStatus`, `Operation`, `Variable`, `TermPlace`, `RulePlace`, `Arity`, `TermSize`, `Occurrences`, `BarDegree`): every budget, index and verdict a signature here crosses.
 
 ## Expected features
 
@@ -139,6 +141,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Certificates, their identity, peak-rooted replay and replay reuse | [`tracelet`](src/tracelet.rs) |
 | Completion and supplied overlaps | [`completion`](src/completion.rs) |
 | The bar complex of a block's Lawvere theory | [`lawvere`](src/lawvere.rs) |
+| Brown's collapsing scheme on that bar complex | [`brown`](src/lawvere/brown.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 | Executable specifications, references | [`src/lib.rs`](src/lib.rs) |
 

@@ -4,12 +4,15 @@
 //! collapse of the standard resolution. For a block whose operations are all
 //! unary, the rules are a string rewriting system, and the block presents a
 //! monoid. The standard resolution of a monoid is its bar complex. Its cells
-//! are the tuples of nonempty normal forms. Brown's collapsing scheme, along
-//! the rules, pairs every other cell and leaves Anick's chains: the letters,
-//! the rules' left sides, and the chains of overlaps of two left sides. The
-//! suite builds the bar complex of each such block of the corpus, truncated
-//! at a word length, collapses it, and compares the chains of dimensions two
-//! and three with the rules and the pairs that completion certifies.
+//! are the tuples of nonempty normal forms. The suite reads such a block as
+//! the Lawvere theory of its letters, whose cells in one variable are the
+//! cells of that bar complex. Brown's collapsing scheme, along the rules,
+//! pairs every other cell and leaves Anick's chains: the letters, the rules'
+//! left sides, and the chains of overlaps of two left sides. The suite builds
+//! the bar complex of each such block of the corpus, truncated at a word
+//! length, collapses it through the scheme of `theory-coherent-resolutions`,
+//! and compares the chains of dimensions two and three with the rules and the
+//! pairs that completion certifies.
 //!
 //! The suite also computes Squier's homology over the rationals on the small
 //! complex of every block of the corpus: one cell for each symbol, each rule
@@ -17,13 +20,11 @@
 //! side less those of its right side. A pair's boundary counts the rules along
 //! its first joining path less those along its second.
 //!
-//! A block with a binary operation presents a Lawvere theory, whose bar
-//! complex no crate builds. The suite counts such a block as undecided for
-//! the collapse and never as a pass.
+//! A block with a binary operation is the concern of the collapse suite,
+//! which reads the bar complex of its Lawvere theory.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use core::convert::Infallible;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -39,17 +40,22 @@ use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 use gandr_theory_cell_complexes::CellId;
+use gandr_theory_coherent_resolutions::Arity;
+use gandr_theory_coherent_resolutions::Arrow;
+use gandr_theory_coherent_resolutions::BarCell;
 use gandr_theory_coherent_resolutions::CellApp;
+use gandr_theory_coherent_resolutions::LawvereTheory;
+use gandr_theory_coherent_resolutions::NormalizationBudget;
+use gandr_theory_coherent_resolutions::Operation;
+use gandr_theory_coherent_resolutions::TermHead;
+use gandr_theory_coherent_resolutions::TermPlace;
+use gandr_theory_coherent_resolutions::TermTable;
 use gandr_theory_coherent_resolutions::Tracelet;
+use gandr_theory_coherent_resolutions::Variable;
 use gandr_theory_computads::EtaElaboration;
 use gandr_theory_computads::Term;
 use gandr_theory_discrete_morse::Budget;
-use gandr_theory_discrete_morse::Class;
-use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Faults;
-use gandr_theory_discrete_morse::Incidence;
-use gandr_theory_discrete_morse::Scheme;
-use gandr_theory_discrete_morse::Standing;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
@@ -126,226 +132,123 @@ impl Strings
             Reducibility::Irreducible
         }
     }
-
-    /// The normal form of `word`, the leftmost redex first at each step.
-    ///
-    /// # Specification
-    /// trivial.
-    fn normal(
-        &self,
-        word: &Word,
-    ) -> Word
-    {
-        let mut current = word.0.clone();
-        for _ in 0_u32 .. 1_000_u32 {
-            let redex = (0 .. current.len()).find_map(|start| {
-                self.rules.iter().find_map(|&(ref left, ref right)| {
-                    current
-                        .get(start .. start.saturating_add(left.0.len()))
-                        .filter(|window| *window == left.0.as_slice() && !left.0.is_empty())
-                        .map(|_| (start, left.0.len(), right))
-                })
-            });
-            let Some((start, width, right)) = redex
-            else {
-                return Word(current);
-            };
-            let _removed: Vec<Letter> = current
-                .splice(
-                    start .. start.saturating_add(width),
-                    right.0.iter().copied(),
-                )
-                .collect();
-        }
-        panic!("a terminating block normalizes {word:?} within a thousand steps")
-    }
 }
-
-/// A cell of the bar complex: a tuple of nonempty normal forms.
-#[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct BarCell(Vec<Word>);
 
 /// A coefficient of a boundary.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Coefficient(i64);
 
-/// The class of `cell` under the collapsing scheme of `strings`.
-///
-/// The first entry must be a letter, else the cell is redundant and pairs with
-/// the cell that splits its first letter off. Then, for each entry after the
-/// first, the previous entry and this one must join to a reducible word whose
-/// first redex ends at the end of this entry. A pair that joins to a normal
-/// form makes the cell collapsible onto the cell that joins them. A redex that
-/// ends inside the entry makes the cell redundant, paired with the cell that
-/// splits the entry after the redex.
+/// The Lawvere theory of `strings` over `letters` letters: each letter a unary
+/// operation, and each word of a rule the term it spells in the variable `x₁`.
 ///
 /// # Specification
 /// trivial.
-fn class(
+fn theory(
     strings: &Strings,
-    cell: &BarCell,
-) -> Class<BarCell>
+    letters: LetterCount,
+) -> LawvereTheory
 {
-    let entries = &cell.0;
-    let Some(first) = entries.first()
-    else {
-        return Class::Critical;
-    };
-    if first.0.len() >= 2 {
-        let mut split = Vec::with_capacity(entries.len().saturating_add(1));
-        split.push(Word(first.0[.. 1].to_vec()));
-        split.push(Word(first.0[1 ..].to_vec()));
-        split.extend(entries.iter().skip(1).cloned());
-        return Class::Redundant(BarCell(split));
+    let mut table = TermTable::default();
+    let rules = strings
+        .rules
+        .iter()
+        .map(|&(ref left, ref right)| (spelt(&mut table, left), spelt(&mut table, right)))
+        .collect();
+    let arities = vec![Arity::from(1_usize); usize::from(letters.0)];
+    LawvereTheory::new(
+        arities,
+        rules,
+        table,
+        NormalizationBudget::from(1_000_usize),
+    )
+}
+
+/// The term that `word` spells in the variable `x₁`, the outermost letter
+/// first.
+///
+/// # Specification
+/// trivial.
+fn spelt(
+    table: &mut TermTable,
+    word: &Word,
+) -> TermPlace
+{
+    let mut place = table.var(Variable::from(0_usize));
+    for letter in word.0.iter().rev() {
+        place = table
+            .op(Operation::from(usize::from(letter.0)), vec![place])
+            .expect("a letter takes a term of the table");
     }
-    for index in 1 .. entries.len() {
-        let (before, after) = (index.saturating_sub(1), index.saturating_add(1));
-        let (previous, current) = (&entries[before], &entries[index]);
-        let joined = previous.then(current);
-        if strings.reducibility(&joined) == Reducibility::Irreducible {
-            let mut merged: Vec<Word> = entries[.. before].to_vec();
-            merged.push(joined);
-            merged.extend(entries[after ..].iter().cloned());
-            return Class::Collapsible(BarCell(merged));
-        }
-        let shortest = (1 ..= current.0.len())
-            .find(|&length| {
-                strings.reducibility(&previous.then(&Word(current.0[.. length].to_vec())))
-                    == Reducibility::Reducible
+    place
+}
+
+/// The cell of the bar complex whose arrows the words `entries` spell, each
+/// in one variable.
+///
+/// # Specification
+/// trivial.
+fn bar_cell(
+    table: &mut TermTable,
+    entries: &[Word],
+) -> BarCell
+{
+    BarCell(
+        entries
+            .iter()
+            .map(|word| Arrow {
+                source: Arity::from(1_usize),
+                terms: vec![spelt(table, word)],
             })
-            .expect("the joined word is reducible");
-        if shortest < current.0.len() {
-            let mut split: Vec<Word> = entries[.. index].to_vec();
-            split.push(Word(current.0[.. shortest].to_vec()));
-            split.push(Word(current.0[shortest ..].to_vec()));
-            split.extend(entries[after ..].iter().cloned());
-            return Class::Redundant(BarCell(split));
-        }
-    }
-    Class::Critical
+            .collect(),
+    )
 }
 
-/// The boundary of `cell` in the bar complex with trivial coefficients: the
-/// cell without its first entry, each two neighbours joined with an
-/// alternating sign, and the cell without its last entry. A join to the empty
-/// word is degenerate and dropped.
+/// The words that the arrows of `cell` spell, or none for an arrow that is no
+/// chain of letters over one variable.
 ///
 /// # Specification
 /// trivial.
-fn boundary(
-    strings: &Strings,
+fn entries(
+    table: &TermTable,
     cell: &BarCell,
-) -> BTreeMap<BarCell, Coefficient>
+) -> Option<Vec<Word>>
 {
-    let entries = &cell.0;
-    let count = entries.len();
-    let mut out: BTreeMap<BarCell, Coefficient> = BTreeMap::new();
-    let mut add = |face: Vec<Word>, sign: i64| {
-        let entry = out.entry(BarCell(face)).or_default();
-        entry.0 = entry.0.saturating_add(sign);
-    };
-    if count == 0 {
-        return out;
-    }
-    add(entries[1 ..].to_vec(), 1);
-    for index in 1 .. count {
-        let (before, after) = (index.saturating_sub(1), index.saturating_add(1));
-        let joined = strings.normal(&entries[before].then(&entries[index]));
-        if joined.0.is_empty() {
-            continue;
-        }
-        let mut face: Vec<Word> = entries[.. before].to_vec();
-        face.push(joined);
-        face.extend(entries[after ..].iter().cloned());
-        add(face, if index % 2 == 1 { -1 } else { 1 });
-    }
-    add(
-        entries[.. count.saturating_sub(1)].to_vec(),
-        if count % 2 == 1 { -1 } else { 1 },
-    );
-    out.retain(|_, coefficient| coefficient.0 != 0);
-    out
-}
-
-/// A unary block's bar complex under Brown's collapsing scheme, as the Morse
-/// crate reads it.
-#[repr(transparent)]
-struct Bar<'strings>
-{
-    /// The block's rules as a string rewriting system.
-    strings: &'strings Strings,
-}
-
-impl Complex for Bar<'_>
-{
-    type Cell = BarCell;
-    type Fault = Infallible;
-
-    /// Whether each entry of `cell` is a nonempty normal form.
-    ///
-    /// # Specification
-    /// trivial.
-    fn standing(
-        &mut self,
-        cell: &BarCell,
-    ) -> Result<Standing, Infallible>
-    {
-        let normal = cell.0.iter().all(|word| {
-            !word.0.is_empty() && self.strings.reducibility(word) == Reducibility::Irreducible
-        });
-        Ok(if normal {
-            Standing::Inside
-        }
+    let mut out = Vec::with_capacity(cell.0.len());
+    for arrow in &cell.0 {
+        let [mut place] = *arrow.terms.as_slice()
         else {
-            Standing::Outside
-        })
+            return None;
+        };
+        let mut letters = Vec::new();
+        loop {
+            let node = table.node(place).ok()?;
+            match node.head {
+                TermHead::Var(_) => break,
+                TermHead::Op(operation) => {
+                    letters.push(Letter(u8::try_from(usize::from(operation)).ok()?));
+                    let [inner] = *node.children.as_slice()
+                    else {
+                        return None;
+                    };
+                    place = inner;
+                },
+            }
+        }
+        out.push(Word(letters));
     }
-
-    /// The faces of `cell` in its boundary, each with its coefficient.
-    ///
-    /// # Specification
-    /// trivial.
-    fn faces(
-        &mut self,
-        cell: &BarCell,
-        faces: &mut Vec<(BarCell, Incidence)>,
-    ) -> Result<(), Infallible>
-    {
-        faces.extend(
-            boundary(self.strings, cell)
-                .into_iter()
-                .map(|(face, coefficient)| (face, Incidence::from(coefficient.0))),
-        );
-        Ok(())
-    }
+    Some(out)
 }
 
-impl Scheme for Bar<'_>
-{
-    /// The class of `cell` under Brown's collapsing scheme.
-    ///
-    /// # Specification
-    /// trivial.
-    fn class(
-        &mut self,
-        cell: &BarCell,
-    ) -> Result<Class<BarCell>, Infallible>
-    {
-        Ok(class(self.strings, cell))
-    }
-}
-
-/// Every cell of the bar complex of `strings` over `letters` letters, its
-/// entries' lengths summing to at most [`WORD_BUDGET`], by dimension.
+/// Every tuple of nonempty normal forms of `strings` over `letters` letters,
+/// its entries' lengths summing to at most [`WORD_BUDGET`], by dimension.
 ///
 /// # Specification
 /// trivial.
 fn bar_cells(
     strings: &Strings,
     letters: LetterCount,
-) -> Vec<Vec<BarCell>>
+) -> Vec<Vec<Vec<Word>>>
 {
     let mut normal: Vec<Word> = Vec::new();
     let mut layer: Vec<Word> = vec![Word::default()];
@@ -364,17 +267,17 @@ fn bar_cells(
         normal.extend(next.iter().cloned());
         layer = next;
     }
-    let mut by_dimension: Vec<Vec<BarCell>> = vec![vec![BarCell(Vec::new())]];
+    let mut by_dimension: Vec<Vec<Vec<Word>>> = vec![vec![Vec::new()]];
     loop {
         let last = by_dimension.last().expect("the empty cell");
         let mut next = Vec::new();
         for cell in last {
-            let used: usize = cell.0.iter().map(|word| word.0.len()).sum();
+            let used: usize = cell.iter().map(|word| word.0.len()).sum();
             for word in &normal {
                 if used.saturating_add(word.0.len()) <= WORD_BUDGET {
-                    let mut grown = cell.0.clone();
+                    let mut grown = cell.clone();
                     grown.push(word.clone());
-                    next.push(BarCell(grown));
+                    next.push(grown);
                 }
             }
         }
@@ -685,14 +588,13 @@ struct Collapse
     /// The peak and the two left sides of each essential cell of dimension
     /// three.
     pairs: BTreeSet<(Word, Word, Word)>,
-    /// The number of cells of each dimension.
-    cells: Vec<Rank>,
 }
 
-/// Collapse the bar complex of `strings`. The Morse crate checks that the
-/// scheme is an acyclic matching: each pair's partner names it back, the
-/// redundant cell has the coefficient one or minus one in its partner's
-/// boundary, and the gradient has no cycle.
+/// Collapse the bar complex of `strings` through Brown's collapsing scheme of
+/// its Lawvere theory. The Morse crate checks that the scheme is an acyclic
+/// matching: each pair's partner names it back, the redundant cell has the
+/// incidence one or minus one in its partner's boundary, and the gradient has
+/// no cycle.
 ///
 /// # Specification
 /// trivial.
@@ -701,21 +603,16 @@ fn collapse(
     letters: LetterCount,
 ) -> Collapse
 {
-    let by_dimension = bar_cells(strings, letters);
-    let mut twice: BTreeMap<BarCell, Coefficient> = BTreeMap::new();
-    for cell in by_dimension.iter().flatten() {
-        twice.clear();
-        for (face, outer) in boundary(strings, cell) {
-            for (deeper, inner) in boundary(strings, &face) {
-                let entry = twice.entry(deeper).or_default();
-                entry.0 = entry.0.saturating_add(outer.0.saturating_mul(inner.0));
-            }
-        }
-        assert!(
-            twice.values().all(|coefficient| coefficient.0 == 0),
-            "the boundary of the boundary of {cell:?} is zero"
-        );
-    }
+    let mut theory = theory(strings, letters);
+    let by_dimension: Vec<Vec<BarCell>> = bar_cells(strings, letters)
+        .iter()
+        .map(|cells| {
+            cells
+                .iter()
+                .map(|words| bar_cell(theory.table_mut(), words))
+                .collect()
+        })
+        .collect();
     // A partner keeps the letters of its cell, so the walk stays inside the
     // truncation and visits fewer cells than it holds.
     let held = by_dimension
@@ -723,7 +620,7 @@ fn collapse(
         .map(Vec::len)
         .fold(0_usize, usize::saturating_add);
     let done = gandr_theory_discrete_morse::collapse(
-        &mut Bar { strings },
+        &mut theory,
         by_dimension.iter().flatten(),
         Budget::from(held),
     )
@@ -733,12 +630,10 @@ fn collapse(
         Faults::default(),
         "Brown's scheme is an acyclic matching"
     );
-    let mut out = Collapse {
-        cells: by_dimension.iter().map(|cells| Rank(cells.len())).collect(),
-        ..Collapse::default()
-    };
+    let mut out = Collapse::default();
     for cell in done.critical() {
-        match *cell.0.as_slice() {
+        let words = entries(theory.table(), cell).expect("a cell of a unary block spells words");
+        match *words.as_slice() {
             [ref x, ref u] => {
                 let _new = out.rules.insert(x.then(u));
             },

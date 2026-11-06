@@ -195,11 +195,10 @@ if [[ -z ${REPORT_FILE:-} ]]; then
   exit 0
 fi
 fields=$(jq -c .fields <<< "$verdict")
-repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 jq -R -s -r -L "$root/.config/issues" --argjson fields "$fields" --rawfile observation "$scratch/observation.md" \
   'include "template"; render($fields; $observation)' "$root/.config/issues/templates/gate-time.md" > "$scratch/body.md"
 mise run --quiet body:check --title "$title" "$scratch/body.md" >&2
-issue_keep "$repo" "$title" "$(issue_found "$repo" "$title")" 1 "$scratch/body.md" \
+issue_keep "$title" "$(issue_found "$title")" 1 "$scratch/body.md" \
   mise run --quiet issue:file "$title" "$scratch/observation.md" kind:performance area:workflow --template gate-time --fields "$fields"
 {% endraw %}'''
 

@@ -84,7 +84,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
 }
 ```
 
-The same example is the crate-level doctest; the crate rustdoc says how the witnesses build their trees.
+The same example is the crate-level doctest.
 
 ## Where the detail lives
 
@@ -131,6 +131,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: the data design — a sibling field is a recursive occurrence.
 - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the implicit-arguments design — a telescope on no function is malformed source.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the face cover reads the meet of two faces from a graded poset of the faces of a record type.
+- `vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199` — newest: a merge on a marked wire is a spider.
 
 ## License
 

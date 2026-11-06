@@ -19,6 +19,7 @@ use gandr_theory_exact_reals::Exponent;
 use gandr_theory_exact_reals::Judgement;
 use gandr_theory_exact_reals::Node;
 use gandr_theory_exact_reals::NodeId;
+use gandr_theory_exact_reals::NumericInterval;
 use gandr_theory_exact_reals::Obligation;
 use gandr_theory_exact_reals::Open;
 use gandr_theory_exact_reals::Outcome;
@@ -540,13 +541,18 @@ fn each_form_settles_or_suspends_by_name()
         replayed(&plan, certificate(report.outcome(Position::from(3)))),
         Conclusion::Fails { open: descending }
     );
+    // A sum of constants is a compound real: its chain encloses it as a
+    // point, and its comparison with a constant holds.
     assert_eq!(
-        report.outcome(Position::from(4)),
-        Some(Outcome::Suspended(SuspendReason::NoRule))
+        replayed(&plan, certificate(report.outcome(Position::from(4)))),
+        Conclusion::Encloses {
+            real: sum,
+            interval: NumericInterval::point(two),
+        }
     );
     assert_eq!(
-        report.outcome(Position::from(5)),
-        Some(Outcome::Suspended(SuspendReason::NoRule))
+        replayed(&plan, certificate(report.outcome(Position::from(5)))),
+        Conclusion::Holds { open: summed }
     );
     assert_eq!(
         report.outcome(Position::from(6)),

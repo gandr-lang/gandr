@@ -1,23 +1,8 @@
-//! The pure λ-calculus as data and its single substitution, the base of the
-//! λ-calculus syntax model. `theory LC` is the single-substitution calculus of
-//! Kaposi and Xie
-//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics],
-//! §7: the presentation `first_order` mints from `theory Lambda`, its names
-//! written without the generated `$` and its context arguments implicit, as a
-//! `theory` block writes them. The syntax model's carriers are de Bruijn terms
-//! and two substitution data: a substitution shifts, conses a term onto another
-//! or lifts one under a binder, and a renaming shifts or lifts. Lifting is a
-//! constructor, so the substitution laws reach their inductive steps by
-//! conversion; lifting written as a definition reaches them too.
+//! This source defines the pure lambda calculus.
 //!
-//! The argument, file by file: this base; the laws that hold by computation
-//! (`sub-q-single`, `sub-q-lift`, `sub-lam`, `sub-app`); the congruences and
-//! the lemmas laws 3 and 4 are proved from (`congruence`, `shift-lookup`,
-//! `rename-rename`, `lookup-weaken`, `subst-rename`, `subst-subst`,
-//! `lift-as-definition`, `subst-id`, `subst-as-rename`); laws 3 and 4
-//! (`sub-weaken-lift`, `sub-weaken-single`); the syntax model
-//! (`syntax-model`) and the record of `LC`'s models it packs into
-//! (`model-record`).
+//! `LC` has one substitution.
+//!
+//! The source uses de Bruijn indices. `Lift` is a substitution constructor.
 //!
 //! - see: #640
 //! - see: #2422
@@ -28,13 +13,7 @@
 // The naturals, the de Bruijn indices.
 import "../model-in-source.gandr";
 
-/// The single-substitution calculus of the pure λ-calculus: contexts,
-/// substitutions between them and terms in a context; the empty context,
-/// substitution, context extension, weakening, the newest variable, single
-/// substitution and lifting; abstraction and application; the six
-/// substitution laws. Law 3 moves a weakening past a lift and back, so no
-/// path order orients it and the rules are refused; `Model(LC)` derives from
-/// the block all the same.
+/// `LC` is the pure lambda calculus with single substitution.
 @[ refuses("RulesUnoriented") ]
 pub theory LC where
   sort Con : Type;
@@ -58,40 +37,36 @@ pub theory LC where
   rule law5 : subTm (lam t) s <=> lam (subTm t (liftTm s));
   rule law6 : subTm (app t u) s <=> app (subTm t s) (subTm u s);
 
-/// λ-terms with de Bruijn indices: a variable, an abstraction whose body
-/// binds index zero, and an application.
+/// `Term` stores variables, abstractions and applications.
 pub data Term : Type where
   | Ix : (n : N) --> Term
   | Lam : (t : Term) --> Term
   | Ap : (t : Term, u : Term) --> Term
 
-/// Renamings: every index shifted by `k`, or a renaming lifted under one
-/// binder.
+/// `Ren` stores a shift or a lift.
 pub data Ren : Type where
   | RShift : (k : N) --> Ren
   | RLift : (r : Ren) --> Ren
 
-/// Substitutions: every index shifted by `k`, a term consed on for index
-/// zero, or a substitution lifted under one binder.
+/// `Env` stores a shift, a term with a rest or a lift.
 pub data Env : Type where
   | Shift : (k : N) --> Env
   | Cons : (a : Term, s : Env) --> Env
   | Lift : (s : Env) --> Env
 
-/// Addition, by recursion on the second summand.
+/// `plus` adds its second argument to its first.
 pub def rec plus(n : N, k : N) -> N =
   match k where
     | Z => n
     | S(j) => S (plus[<] n j)
 
-/// `n + j + k`, by recursion on `k`: a shift's index under `k` more binders.
+/// `plusTwo` adds `j` and `k` to `n`.
 pub def rec plusTwo(n : N, j : N, k : N) -> N =
   match k where
     | Z => plus n j
     | S(i) => S (plusTwo[<] n j i)
 
-/// The index a renaming sends `n` to: a lift keeps zero and renames under
-/// it.
+/// `rlook` applies a renaming to an index.
 pub def rec rlook(n : N, r : Ren) -> N =
   match r where
     | RShift(k) => plus n k
@@ -99,25 +74,24 @@ pub def rec rlook(n : N, r : Ren) -> N =
       | Z => Z
       | S(m) => S (rlook[<] m q)
 
-/// A renaming applied to a term, lifted under each abstraction.
+/// `rename` applies a renaming to a term.
 pub def rec rename(t : Term, r : Ren) -> Term =
   match t where
     | Ix(n) => Ix (rlook n r)
     | Lam(b) => Lam (rename[<] b (RLift r))
     | Ap(f, a) => Ap (rename[<] f r) (rename[<] a r)
 
-/// Weakening: every index shifted by one.
+/// `wk` adds one to each index.
 pub def wk(t : Term) -> Term =
   rename t (RShift (S Z))
 
-/// A term under `k` more binders: itself under none.
+/// `shiftBy` shifts a term under `k` binders.
 pub def shiftBy(a : Term, k : N) -> Term =
   match k where
     | Z => a
     | S(j) => rename a (RShift (S j))
 
-/// The term a substitution sends index `n` to, under `k` binders the lookup
-/// has crossed: each lift it passes adds one.
+/// `look` returns the term for `n` under `k` binders.
 pub def rec look(n : N, s : Env, k : N) -> Term =
   match s where
     | Shift(j) => Ix (plusTwo n j k)
@@ -128,7 +102,7 @@ pub def rec look(n : N, s : Env, k : N) -> Term =
       | Z => Ix (plus Z k)
       | S(m) => look[<] m r (S k)
 
-/// A substitution applied to a term, lifted under each abstraction.
+/// `subst` applies a substitution to a term.
 pub def rec subst(t : Term, s : Env) -> Term =
   match t where
     | Ix(n) => look n s Z

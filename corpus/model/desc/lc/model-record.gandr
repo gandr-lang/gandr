@@ -1,19 +1,19 @@
-// The record type of `LC`'s models, one field per component of `Model(LC)`
-// in the order the derivation mints them: contexts a type, substitutions and
-// terms families over it; the nine operations, each over the context indices
-// it ranges over; the six laws, each a path. A component's indices stand in
-// the order they first occur in the sorts it binds, so `liftTm` and law 2,
-// whose first binder is `s : Sub(d, g)`, take `d` before `g`. The syntax model
-// packs into it as `SyntaxNat` packs into `Nat`'s (`model-in-source`), and
-// its operations run: β-reduction is a single substitution.
+//! This record type holds the components of `Model(LC)`.
+//!
+//! The derivation fixes the order of fields. The fields include contexts,
+//! substitutions, terms, operations and laws.
+//!
+//! Component indices use the order of their source sorts. The syntax model
+//! packs into this record. Beta reduction uses one substitution.
+//!
+//! - see: #640
 
-// The naturals; the syntax; the syntax model.
+// This source imports naturals, syntax and the syntax model.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 import "./syntax-model.gandr";
 
-/// The syntax model packed into the record of `LC`'s models: its carriers,
-/// then its operations and laws in the order `Model(LC)` mints them.
+/// `lcSyntax` packs the syntax model into `Model(LC)` order.
 def lcSyntax : *{
   con : Type,
   sub : (con, con) -> Type,
@@ -92,13 +92,10 @@ def lcSyntax : *{
   }
 };
 
-/// The record is `Model(LC)`: the packed syntax model stands at the type the
-/// derivation states, the families over contexts read applied and a term in an
-/// extended context read after its extension runs.
+/// `lcModel` contains the packed syntax model.
 def lcModel : Model(LC) = lcSyntax;
 
-/// `(λx. x)(λx. x)` contracts, by the model's single substitution of the
-/// argument into the body, to `λx. x`.
+/// The identity application reduces to the identity.
 @[ runs("Lam (Ix Z)") ]
 def betaIdentity() -> Term =
   let q = LCSyntax.qTm Z

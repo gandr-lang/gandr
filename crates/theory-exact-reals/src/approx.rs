@@ -49,10 +49,15 @@ use core::cmp::Ordering;
 
 use anodized::spec;
 
+use crate::certificate::CertificateCheck;
 use crate::dyadic::Dyadic;
 use crate::dyadic::Exactness;
 use crate::dyadic::Precision;
 use crate::dyadic::Rounding;
+use crate::elementary::angle;
+use crate::elementary::cosine;
+use crate::elementary::pi;
+use crate::elementary::sine;
 use crate::interval::Bound;
 use crate::interval::Closure;
 use crate::interval::Containment;
@@ -399,6 +404,11 @@ fn enclose(
     precision: Precision,
 ) -> NumericInterval
 {
+    // A builtin's rule reads the precision as absolute bits, and a rule that
+    // refuses its precision gives the whole line.
+    let builtin = |enclosure: Result<NumericInterval, CertificateCheck>| {
+        return enclosure.unwrap_or_else(|_refused| NumericInterval::whole());
+    };
     let enclosure = match *real {
         Real::Bound(_) => Ok(NumericInterval::whole()),
         Real::Constant(ref value) => constant(value, precision),
@@ -412,6 +422,12 @@ fn enclose(
         } => real_at(slots, numerator).div(real_at(slots, denominator), precision),
         Real::Power(base, power) => raised(real_at(slots, base), power, precision),
         Real::Cut(ref cut) => Ok(cut.hull.clone()),
+        Real::Pi => return builtin(pi(precision)),
+        Real::Cos(argument) => return builtin(cosine(real_at(slots, argument), precision)),
+        Real::Sin(argument) => return builtin(sine(real_at(slots, argument), precision)),
+        Real::Arg(x, y) => {
+            return builtin(angle(real_at(slots, x), real_at(slots, y), precision));
+        },
     };
     return enclosure.unwrap_or_else(|_failure| NumericInterval::whole());
 }

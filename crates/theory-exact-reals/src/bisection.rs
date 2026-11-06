@@ -390,7 +390,11 @@ impl Search
                         | Real::Mul(..)
                         | Real::Div { .. }
                         | Real::Power(..)
-                        | Real::Cut(_) => Operation::Product,
+                        | Real::Cut(_)
+                        | Real::Pi
+                        | Real::Cos(_)
+                        | Real::Sin(_)
+                        | Real::Arg(..) => Operation::Product,
                     };
                     let interval = combined(operation, &first.interval, &second.interval, quotas)
                         .map_err(suspension)?;

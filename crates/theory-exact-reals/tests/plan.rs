@@ -535,6 +535,7 @@ enum Step
     Bound(u32),
     Constant(i128, i32),
     Arithmetic(u8, usize, usize),
+    Builtin(u8, usize, usize),
     Div(usize, usize, u32),
     Power(usize, u32),
     Cut(i64, i64, usize, usize, u32),
@@ -562,6 +563,8 @@ fn step() -> impl Strategy<Value = Step>
             .prop_map(|(mantissa, exponent)| Step::Constant(mantissa, exponent)),
         (0_u8 .. 3, index.clone(), index.clone())
             .prop_map(|(kind, left, right)| Step::Arithmetic(kind, left, right)),
+        (0_u8 .. 4, index.clone(), index.clone())
+            .prop_map(|(kind, left, right)| Step::Builtin(kind, left, right)),
         (index.clone(), index.clone(), any::<u32>())
             .prop_map(|(left, right, evidence)| Step::Div(left, right, evidence)),
         (index.clone(), 0_u32 .. 9).prop_map(|(base, power)| Step::Power(base, power)),
@@ -671,6 +674,15 @@ fn build(steps: &[Step]) -> (PlanBuilder, Root)
                     0 => Real::Add(left, right),
                     1 => Real::Sub(left, right),
                     _ => Real::Mul(left, right),
+                };
+                reals.push(builder.real(node).unwrap());
+            },
+            Step::Builtin(kind, left, right) => {
+                let node = match kind {
+                    0 => Real::Pi,
+                    1 => Real::Cos(real(left)),
+                    2 => Real::Sin(real(left)),
+                    _ => Real::Arg(real(left), real(right)),
                 };
                 reals.push(builder.real(node).unwrap());
             },

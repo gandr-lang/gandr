@@ -1,9 +1,9 @@
-//! Rules that overlap are admitted when their critical pairs join (the
-//! completion of [Knuth-1970-simple_word_problems_universal_algebras], and
-//! [Baader-1998-term_rewriting_and_all_that], § 6.2): zero a unit of addition
-//! on both sides overlaps the recursion on the first argument at `add(Zero,
-//! Zero)` and at `add(Succ(m), Zero)`, and both pairs rewrite to one term;
-//! associativity overlaps itself, and its one pair joins too.
+//! The checker admits rules that overlap when each critical pair joins.
+//!
+//! Addition has two zero-unit rules. The rules overlap with recursion.
+//!
+//! Each addition pair rewrites to one term.
+//! Associativity overlaps with itself. Its critical pair also joins.
 //!
 //! - see: #654 — `Semigroup`
 //! - cites: [Knuth-1970-simple_word_problems_universal_algebras]
@@ -12,7 +12,7 @@
 //! [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"
 //! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
-/// The naturals with addition, zero stated a unit on both sides.
+/// Addition has a left and right zero unit.
 @[ normalizes("add(Zero, Zero) ~> Zero") ]
 data NatUnits : Type where {
   | Zero : NatUnits
@@ -23,22 +23,19 @@ data NatUnits : Type where {
   rule : add (Succ m) n <=> Succ (add m n);
 }
 
-/// Zero plus zero, where the two unit rules overlap.
+/// At zero plus zero, the two unit rules overlap.
 @[ runs("Zero") ]
 def zero_plus_zero() -> NatUnits { add Zero Zero }
 
-/// One plus zero, where the right unit overlaps the recursion.
+/// At one plus zero, the right unit and recursion overlap.
 @[ runs("Succ Zero") ]
 def one_plus_zero() -> NatUnits { add (Succ Zero) Zero }
 
-/// Two plus one, by the recursion alone.
+/// The recursive rule alone evaluates two plus one.
 @[ runs("Succ (Succ (Succ Zero))") ]
 def two_plus_one_overlapping() -> NatUnits { add (Succ (Succ Zero)) (Succ Zero) }
 
-/// A semigroup's one law: associativity overlaps itself at
-/// `mul(mul(mul(a, b), c), d)`, and both ways round reach `mul(a, mul(b,
-/// mul(c, d)))`. The rewrite at the peak matches the rule's `z` against a
-/// subterm holding the peak's own `z`, which stays the peak's.
+/// Associativity overlaps with itself at the nested product.
 theory Semigroup where
   sort S : Type;
 

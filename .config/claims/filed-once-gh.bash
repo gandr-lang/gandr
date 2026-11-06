@@ -46,7 +46,6 @@ case "$*" in
             | if . == null then null else . + {fullDatabaseId: "\($n)", parent: null, blockedBy: listed(0), blocking: listed(0)} end)})
         | from_entries)}}' "$board"
     ;;
-  "api repos/{owner}/{repo} --jq .full_name") echo case/case ;;
   "issue list"*)
     locked
     reads=$(($(cat "$dir/reads" 2> /dev/null || echo 0) + 1))

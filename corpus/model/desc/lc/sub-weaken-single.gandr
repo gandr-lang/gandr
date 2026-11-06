@@ -1,11 +1,13 @@
-// Law 4 of the single-substitution calculus, `sub(sub(b, p), single(a)) =
-// b`: weakening then substituting for the new variable is the identity. It
-// does not hold by computation — at a variable `b` the substitution is stuck
-// — and is proved by induction on `b`: `substSquare` takes it to the shift
-// by zero twice, and `substId` takes that to `b`.
+//! Law 4 cancels a weakening and a single substitution.
+//!
+//! `sub(sub(b, p), single(a))` equals `b`.
+//!
+//! The law does not hold by direct computation. An induction on `b` proves
+//! the law. `substSquare` and `substId` prove the required index agreement.
+//!
+//! - see: #640
 
-// The naturals; the syntax; the congruences, the composites' square and the
-// identity substitution.
+// This source imports syntax, congruences and identity lemmas.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 import "./congruence.gandr";
@@ -22,7 +24,7 @@ def weakenSingleAgree(a : Term, n : N) -> Path(
     | Z => Path.here (Ix Z)
     | S(j) => Path.here (Ix (S j))
 
-/// Weakening then substituting `a` for the new variable is the identity.
+/// The composition of `wk` and a single substitution is the identity.
 pub def subWeakenSingle(
   b : Term,
   a : Term

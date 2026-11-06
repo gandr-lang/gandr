@@ -8,8 +8,11 @@
 # REST. `deps_open_graph` reads every open issue in one paginated GraphQL
 # pass, at two points a page (#3192).
 #
-# Each takes the repository as `owner/name` first. A setter checks before it
-# writes, so each is idempotent and a rerun repairs what a first run missed.
+# Each takes the repository first, as `owner/name` or as gh's
+# `{owner}/{repo}`. gh fills the placeholders in a path and in a `-F` value
+# from `GH_REPO` or the checkout's remote, so a caller reads no name (#5749).
+# A setter checks before it writes, so each is idempotent and a rerun repairs
+# what a first run missed.
 
 # shellcheck source=../gh/budget.bash
 source "${BASH_SOURCE[0]%/*}/../gh/budget.bash"

@@ -228,7 +228,12 @@ fn evaluated(plan: &Plan) -> Vec<Exact>
                         (0 .. u32::from(power))
                             .fold(Rational::of(&Dyadic::ONE), |product, _| product.times(&x))
                     }),
-                    Real::Bound(_) | Real::Cut(_) => None,
+                    Real::Bound(_)
+                    | Real::Cut(_)
+                    | Real::Pi
+                    | Real::Cos(_)
+                    | Real::Sin(_)
+                    | Real::Arg(..) => None,
                 };
                 value.map_or(Exact::Undefined, Exact::Real)
             },

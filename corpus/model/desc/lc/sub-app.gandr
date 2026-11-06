@@ -1,6 +1,11 @@
-// Law 6 of the single-substitution calculus, `sub(app(t, u), s) =
-// app(sub(t, s), sub(u, s))`: substitution distributes over application. It
-// holds by computation, `subst`'s application arm.
+//! Law 6 distributes substitution over application.
+//!
+//! `sub(app(t, u), s)` equals `app(sub(t, s), sub(u, s))`.
+//!
+//! The application arm of `subst` proves the law. The proof holds by
+//! computation.
+//!
+//! - see: #640
 
 // The syntax and its substitution.
 import "./syntax.gandr";

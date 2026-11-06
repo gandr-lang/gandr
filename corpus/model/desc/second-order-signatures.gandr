@@ -1,9 +1,10 @@
-//! Second-order signatures written as their descriptions render them. A sort
-//! classified `Type+` is representable, and a port `t : pi+ (x : S) . T` binds
-//! a variable of the representable sort `S` over `T`
-//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics],
-//! Definition 3 and the identity-return example. Each block is a value of
-//! `Theory` that keeps both, so a program reads them back by `case`.
+//! A second-order signature reads from its description.
+//!
+//! A `Type+` sort is representable.
+//!
+//! A `pi+` port binds a variable of a representable sort over its result.
+//! Each block is a `Theory` value. A program reads representable sorts and
+//! binding ports by `case`.
 //!
 //! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
 //!
@@ -23,9 +24,8 @@ theory Lambda where
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
   oper app : (t : Tm, u : Tm) --> Tm;
 
-/// The identity-return signature: value types and computation types, values
-/// representable and indexed by their type, and an abstraction whose body
-/// binds a value of its domain.
+/// The identity-return signature has values, computations and representable values.
+/// Its `lam` body binds a value.
 theory IdentityReturn where
   sort VTy : Type;
   sort CTy : Type;

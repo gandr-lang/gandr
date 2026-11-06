@@ -1,16 +1,19 @@
-// A substitution that sends every index to a variable is the renaming that
-// sends it to that variable's index; at weakening, the substitution by the
-// shift by one is weakening.
+//! A variable substitution is a renaming.
+//!
+//! Each index maps to the variable at the renamed index.
+//!
+//! A substitution by shift one weakens a term. The proof compares every index.
+//!
+//! - see: #640
 
-// The naturals; the syntax; the congruences; the shift's lookup and the
-// weakened lookup.
+// This source imports naturals, syntax, congruences and lookup lemmas.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 import "./congruence.gandr";
 import "./shift-lookup.gandr";
 import "./lookup-weaken.gandr";
 
-/// The hypothesis at `m`, weakened.
+/// This function applies `wk` to the hypothesis at `m`.
 def weakenedVariable(
   s : Env,
   r : Ren,
@@ -19,8 +22,7 @@ def weakenedVariable(
 ) -> Path[.A = Term](wk (look m s Z), wk (Ix (rlook m r))) =
   Path.ap wk (h m)
 
-/// A substitution renaming at every index renames at every index of its
-/// lift.
+/// If a substitution and a renaming agree at every index, their lifts agree.
 def substRenamesLift(
   s : Env,
   r : Ren,
@@ -35,7 +37,7 @@ def substRenamesLift(
       ixShiftAdds (rlook m r) (S Z)
     )
 
-/// A substitution that renames at every index is that renaming.
+/// If a substitution equals a renaming at every index, they agree on terms.
 pub def rec substRenames(
   t : Term,
   s : Env,
@@ -54,7 +56,7 @@ pub def rec substRenames(
         type(Path[.A = Term](Ap (subst f s) (subst x s), Ap (subst f s) z))
       }) (substRenames[<] x s r h) (Path.here (Ap (subst f s) (subst x s))))
 
-/// The substitution shifting by one renames each index by the shift by one.
+/// The shift by one renames each index by that shift.
 pub def shiftOneRenames(i : N) -> Path[.A = Term](look i (Shift (S Z)) Z, Ix (rlook i (RShift (S Z)))) =
   match i where
     | Z => Path.here (Ix (S Z))

@@ -1,22 +1,12 @@
-// A record type's faces: each a set of the record's labels, named in a `where`
-// block after the type. A static bracket after the type fixes some fields, by
-// label, by face, or by a system of faces. In a system, the checker converts
-// each later face's value on a meet with the first face's value there.
+// A record face is a named set of record labels.
 //
-// A record type's labels are its boundary, and a face over them names a part
-// of the record. The checker checks each fixed value at its field's type. A
-// value of the patched type is the record of its free fields, and a literal
-// can state a fixed field at its fixed value. A value of the record type stands
-// at the patched type when each fixed field converts with its fixed value. An
-// element of the patched type stands at the record type as its record, and a
-// selection reads a fixed field's value.
+// A `where` block declares faces after a record type. A static bracket fixes
+// fields by label, by face or by a system of faces.
 //
-// The block names each face as a theory's `face` member does. The block ends
-// the type member at its `}`, as a `data` block ends its declaration. A record
-// type with no block keeps its labels as its boundary all the same.
-// `Config[.port = 443, .tls = true]` fixes two fields by label, and
-// `Config[secure ↦ *{.port = 443, .tls = true}]` fixes the face `secure`.
-// `|->` spells `↦` in ASCII.
+// The checker checks each fixed value at its field type. A patched value keeps
+// its free fields. A selection returns a fixed value. A record type ends at
+// `}` and keeps its labels as its boundary without a block. `|->` spells `↦`
+// in ASCII.
 //
 // - see: `pathological/desc/record-faces.gandr` — a face past the labels, a
 //   face named twice, a bracket naming a field or a face the type lacks, a

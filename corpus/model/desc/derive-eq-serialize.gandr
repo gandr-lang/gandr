@@ -1,12 +1,15 @@
-//! An enumeration read as a description [Chapman-2010-gentle_art_levitation]:
-//! two nullary constructors and no operation, the smallest description the
-//! route reads.
+//! This enumeration reads as a description.
+//!
+//! [Chapman-2010-gentle_art_levitation] describes this form.
+//!
+//! The enumeration has two nullary constructors. It has no operation.
+//! This route reads the smallest description.
 //!
 //! - cites: [Chapman-2010-gentle_art_levitation]
 //!
 //! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
 
-/// One bit: off or on.
+/// One bit has off and on values.
 data Bit : Type where
   | Off : Bit
   | On : Bit

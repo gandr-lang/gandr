@@ -1,15 +1,13 @@
-//! An atom named inside the abstraction that binds it, read by its depth below
-//! its binder.
+//! An occurrence names an atom inside its binding abstraction.
 //!
-//! Admission re-mints an atom with its binder, so a rule naming the channel
-//! its restriction abstracts is one rule whatever the atom is called. A rule
-//! stating a freshness condition fires only where its instance names no atom
-//! it may not.
+//! The occurrence has a depth below its binder. Admission re-mints each atom
+//! with its binder.
 //!
-//! Matching, the critical pairs and the kernel's replay count the abstractions
-//! between an occurrence and its binder. A rule's variable is a hole over the
-//! atoms it may name, so the check decides an overlap under the condition it
-//! composes. Each theory below normalizes one process its rules meet.
+//! A rule that names its restricted channel is independent of atom spelling.
+//! A freshness condition limits a rule to permitted instances. The kernel
+//! counts each binder above an occurrence. The checker uses that count during
+//! matching and critical-pair analysis. Each theory normalizes a process where
+//! its rules meet.
 //!
 //! - owes: #1934 — a rule matching a variable both under an
 //!   abstraction and beside it
@@ -26,10 +24,8 @@
 //! [Mayr-1998-higher_order_rewrite_systems_and_their_confluence]: https://doi.org/10.1016/S0304-3975(97)00143-6 "Mayr and Nipkow, Higher-order rewrite systems and their confluence"
 //! [Miller-1991-a_logic_programming_language_with_lambda_abstraction]: https://doi.org/10.1093/logcom/1.4.497 "Miller, A Logic Programming Language with Lambda-Abstraction, Function Variables, and Simple Unification"
 
-/// A send on a restricted channel, which no process outside the restriction
-/// can receive: the process never moves, so it is the inert one. The checker
-/// orients the law and the kernel replays the verdict; a restriction naming
-/// its channel `b` normalizes by the law written over `a`.
+/// A restricted send has no receiver, and it is inert. The checker orients the
+/// law, and the kernel replays the verdict for restrictions named `a` or `b`.
 @[ normalizes("nu(bind b . out(b, nil)) ~> nil") ]
 theory Unheard where
   sort Name : Atom;
@@ -39,8 +35,8 @@ theory Unheard where
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   rule unheard : nu (bind a. (out a p)) ==> nil ();
 
-/// The law below a second restriction, sending on the outer channel. The
-/// occurrence's depth differs from the law's, so the law does not apply.
+/// This send uses the outer channel. Its depth differs from the law depth, so
+/// the law does not apply.
 @[ normalizes("nu(bind a . nu(bind b . out(a, nil))) ~> nu(bind a0 . nu(bind a1 . out(a0, nil)))") ]
 theory Overheard where
   sort Name : Atom;
@@ -50,8 +46,8 @@ theory Overheard where
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   rule unheard : nu (bind a. (out a p)) ==> nil ();
 
-/// An inner restriction of the outer one's name shadows it. The channel sent
-/// on is the inner one, and the law applies below the outer restriction.
+/// The inner restriction shadows the outer name. The law applies below the
+/// outer restriction.
 @[ normalizes("nu(bind a . nu(bind a . out(a, nil))) ~> nu(bind a0 . nil)") ]
 theory Shadowed where
   sort Name : Atom;
@@ -61,9 +57,8 @@ theory Shadowed where
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   rule unheard : nu (bind a. (out a p)) ==> nil ();
 
-/// Scope extrusion where `out` takes a channel, `q` moved under the
-/// restriction stated fresh for it. Each channel `q` names counts one
-/// abstraction further.
+/// Scope extrusion moves `q` under a fresh restriction. Each occurrence of
+/// `q` is one abstraction deeper.
 @[ normalizes("nu(bind c . par(nu(bind b . out(b, nil)), out(c, nil))) ~> nu(bind a0 . nu(bind a1 . par(out(a1, nil), out(a0, nil))))") ]
 theory Extruding where
   sort Name : Atom;
@@ -74,9 +69,8 @@ theory Extruding where
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q)) where { | a # q };
 
-/// Garbage collection where `out` takes a channel: a restriction whose process
-/// names none of its channel is the process. It fires on the inner
-/// restriction only.
+/// Garbage collection removes a restriction when its process omits the channel.
+/// This rule applies only to the inner restriction.
 @[ normalizes("nu(bind c . nu(bind b . out(c, nil))) ~> nu(bind a0 . out(a0, nil))") ]
 theory Collected where
   sort Name : Atom;
@@ -86,9 +80,8 @@ theory Collected where
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   rule gc : nu (bind a. p) <=> p where { | a # p };
 
-/// Scope extrusion beside garbage collection, whose overlap the check decides
-/// as a higher-order critical pair. Each variable is a pattern over the
-/// channels it may name, and both rewrites of the peak meet.
+/// Scope extrusion and garbage collection form a higher-order critical pair.
+/// The checker joins both rewrites of the peak.
 @[ normalizes("nu(bind c . par(nu(bind b . nil), out(c, nil))) ~> nu(bind a0 . par(nil, out(a0, nil)))") ]
 theory Collecting where
   sort Name : Atom;
@@ -100,9 +93,8 @@ theory Collecting where
   rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q)) where { | a # q };
   rule gc : nu (bind a. p) <=> p where { | a # p };
 
-/// Garbage collection beside the law that an inert restriction is `nil`.
-/// Their left sides unify, but collection's `p` may not name the sent
-/// channel, so no instance overlaps.
+/// Garbage collection and the inert-restriction law have unifiable left sides.
+/// The freshness condition prevents an overlap.
 @[ normalizes("nu(bind c . nu(bind b . out(b, nil))) ~> nil") ]
 theory Quiet where
   sort Name : Atom;

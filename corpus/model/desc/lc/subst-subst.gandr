@@ -1,12 +1,13 @@
-// Two composites of substitutions act alike on every term when they agree
-// at every index. At an abstraction both composites unfold by conversion
-// (`substTwiceUnderLam`; with lifting a definition as well,
-// `lift-as-definition`). The lifted step reads a lookup under one binder as
-// the weakened lookup (`lookWeakens`), pushes the weakening through the
-// lifted substitution (`substWeaken`), and weakens the hypothesis.
+//! Two substitution composites act alike under index agreement.
+//!
+//! An abstraction unfolds both composites by conversion.
+//!
+//! A lifted lookup is a weakened lookup. `substWeaken` moves a weak term
+//! through a lifted substitution. The proof weakens the index hypothesis.
+//!
+//! - see: #640
 
-// The naturals; the syntax; the congruences; the lemmas the lifted step
-// uses.
+// This source imports syntax and lemmas for lifted substitutions.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 import "./congruence.gandr";
@@ -40,7 +41,7 @@ def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> Path(
 ) =
   Path.step (substLookWeakens s1 s2 m) (substWeaken (look m s1 Z) s2)
 
-/// The hypothesis at `m`, weakened.
+/// This function applies `wk` to the hypothesis at `m`.
 def weakenedComposites(
   s1 : Env,
   s2 : Env,
@@ -68,8 +69,7 @@ def substSquareLift(
       Path.back (substLookWeakenLift u1 u2 m)
     )
 
-/// Substituting `s1` then `s2` is substituting `u1` then `u2`, given the
-/// two composites agree at every index.
+/// The two substitution composites agree at every index.
 pub def rec substSquare(
   t : Term,
   s1 : Env,
