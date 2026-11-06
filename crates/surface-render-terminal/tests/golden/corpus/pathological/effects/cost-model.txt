@@ -1,0 +1,27 @@
+error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
+   ╭▸ corpus/pathological/effects/cost-model.gandr:43:5
+   │
+19 │   module Doubled : Model(Cost.Eff) with sort N = Nat -> Nat where
+   │                               ┬──
+   │                               │
+   │                               an endpoint the point does not convert to
+   │                               an endpoint the point does not convert to
+   ┆
+34 │ ┌   @[ refuses("EndpointMismatch") ]
+35 │ │   def chargeTwice(
+36 │ │     a : Nat -> Nat,
+   │ │     ─ checked; while checking the body of this function; binds a : Nat -> Nat
+37 │ │     b : Nat -> Nat,
+   │ │     ─ checked; while checking the body of this function; binds b : Nat -> Nat
+38 │ │     k : (Nat -> Nat) -> Nat
+   │ │     ─ checked; while checking the body of this function; binds k : (Nat -> Nat) -> Nat
+   ┆ ┆
+42 │ │   ) =
+43 │ │     Path.here (charge (plus a b) k)
+   │ │     ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └─────│─────────────────────────────┤
+   │       │                             checked; while checking the body of this thunk
+   │       not both endpoints of the path
+   │
+   ├ note: `chargeTwice` is refused with EndpointMismatch, as its expectation states
+   ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
