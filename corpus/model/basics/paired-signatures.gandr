@@ -8,9 +8,9 @@
    /* inner note */
    the program below is unchanged by this prose. */
 
-/// The seed, through two primitive calls. A call nested in a value runs
-/// before the computation around it, and a definition's value has none.
-@[ refuses("UnenclosedRun") ]
+/// The seed, through two primitive calls. The calls are pure, so the
+/// definition's value stands as what they return.
+@[ runs("40") ]
 def seed : Integer = prim.const 40 (prim.id 999);
 
 /// Two more than its argument, at a thunk of grade one; the lowering admits
@@ -20,7 +20,7 @@ def plus_two : +U[1] (Integer -> -F Integer);
 def plus_two(x : Integer) -> -F Integer =
   return (x + 2)
 
-/// The function applied to the seed, both refused above, so it names a
-/// declaration whose type is not known.
+/// The function applied to the seed. `plus_two` is refused above, so the call
+/// names a declaration whose type is not known.
 @[ refuses("UnknownConstant") ]
 def seeded() -> Integer { plus_two seed }

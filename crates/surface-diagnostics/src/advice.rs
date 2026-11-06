@@ -37,7 +37,6 @@ use alloc::string::String;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::ExpectedShape;
-use gandr_core_checker::RunSource;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
@@ -870,17 +869,6 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "prove the law by a definition at its type, or admit it where the host asserts it",
         ),
         CheckRefusal::UnassertedLaw { .. } => String::from("prove the law"),
-        // A crossing's call carries a written value, a literal read by its
-        // reader or a model by its reduct, to its type: only a body runs it
-        // (#4806). A written run's remedy depends on where it stands, which
-        // the refusal does not hold.
-        CheckRefusal::UnenclosedRun {
-            source: RunSource::Crossing,
-            ..
-        } => String::from(
-            "write the value in a function's body, `def name() -> T { … }`, where the reader's or \
-             reduct's call that carries it to its type runs",
-        ),
         CheckRefusal::ShapeMismatch {
             wanted: ExpectedShape::EmptySum,
             ..
@@ -971,10 +959,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::CapabilityEscaped { .. } => {
             String::from("keep the capability inside its scope")
         },
-        CheckRefusal::UnenclosedRun {
-            source: RunSource::Written,
-            ..
-        } => String::from("write the run in a function's body, where the body can run it"),
+        CheckRefusal::UnenclosedRun { .. } => {
+            String::from("write the run in a function's body, where the body can run its effects")
+        },
         CheckRefusal::StagesDisagree { .. } => {
             String::from("change the call's arguments so that they stand at one stage")
         },
@@ -1299,7 +1286,6 @@ mod tests
         "NoFiller",
         "NoFiller.Omitted",
         "DerivedComponent",
-        // Worded for each source of a run.
         "UnenclosedRun",
         "UnresolvedTypeHead",
         "UsedAfterClose",

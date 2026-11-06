@@ -7280,7 +7280,6 @@ macro_rules! tagged {
 tagged! {
     gandr_core_checker::LoopRespect [Corrupt] { Apart = 0, NotPresentedSet = 1 }
     gandr_core_checker::fill::UnsupportedFamily [Corrupt] { Flow = 0, Bridge = 1 }
-    gandr_core_checker::RunSource [Corrupt] { Written = 0, Crossing = 1 }
     Zone [Corrupt] { Intuitionistic = 0, Linear = 1 }
     gandr_core_checker::codata::CodataFault [NonCanonical] {
         Undeclared = 0,

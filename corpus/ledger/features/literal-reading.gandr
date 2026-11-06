@@ -1,9 +1,8 @@
 /// `literal-reading`: at a type a model of the prelude's `FromNat`, `FromNeg` or `FromDecimal` carries, the checker reads a natural literal through its `fromNat`, a negative literal through its `fromNeg` at the magnitude and a decimal through its `fromDecimal` at its digits and exponent; a literal at `Integer` stays the literal, and a decimal at `f64` stays the float it rounds to.
-/// Implemented: the checker reads a natural, a negative or a decimal literal at a type a top-level model of `FromNat`, `FromNeg` or `FromDecimal` carries, reads a decimal at `f64` as its float, and refuses a literal `LiteralAmbiguous` where two such models answer.
-/// Not implemented: a reader carrying a constraint, so `Fin(3)` refuses `5`, and a literal read as a definition's own value, which refuses `UnenclosedRun` at the literal.
+/// Implemented: the checker reads a natural, a negative or a decimal literal at a type a top-level model of `FromNat`, `FromNeg` or `FromDecimal` carries, reads a decimal at `f64` as its float, and refuses a literal `LiteralAmbiguous` where two such models answer. A literal written as a definition's own value stands as what the reader's call returns.
+/// Not implemented: a reader carrying a constraint, so `Fin(3)` refuses `5`.
 ///
 /// - owes: #4733 — a reader carrying a constraint
-/// - owes: #4812 — a literal read as a definition's own value
 
 /// Expressions over the integers.
 data Expr : Type where
@@ -29,6 +28,10 @@ def doubled() -> Expr { twice 3 }
 /// A literal at `Integer` is the literal itself, with no reader applied.
 @[ runs("4") ]
 def plain() -> Integer { 4 }
+
+/// A literal as a definition's own value stands as what the reader's call returns.
+@[ runs("Add (Lit 1) (Lit 2)") ]
+def summed : Expr = Add 1 2;
 
 /// An expression reads a negative literal as the negation of its magnitude's leaf.
 module ExprFromNeg : Model(FromNeg) with sort Carrier = Expr where

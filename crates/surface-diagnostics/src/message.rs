@@ -1154,8 +1154,8 @@ fn checked(
             f.write_str("`fill` lifts its generator along paths only")
         },
         CheckRefusal::UnenclosedRun { .. } => f.write_str(
-            "a computation read as a value runs before the computation around it, and none \
-             stands around this one",
+            "a computation read as a value that performs effects runs before the computation \
+             around it, and none stands around this one",
         ),
         CheckRefusal::ImplicitUnsolved { reason, .. } => match unsolved(reason) {
             Maybe::Present(why) => write!(
@@ -2737,10 +2737,7 @@ pub mod tests
                 cell: value,
                 family: gandr_core_checker::fill::UnsupportedFamily::Bridge,
             },
-            CheckRefusal::UnenclosedRun {
-                at: value,
-                source: gandr_core_checker::RunSource::Crossing,
-            },
+            CheckRefusal::UnenclosedRun { at: value },
             CheckRefusal::ImplicitUnsolved {
                 at: value,
                 reason: gandr_core_checker::Unsolved::Unforced,

@@ -2,8 +2,9 @@
 // the call stood.
 //
 // A computation is a value only once it runs, so each nested call runs before
-// the expression that reads it. A run a value definition cannot hold is
-// refused `UnenclosedRun`.
+// the expression that reads it. A pure run that a value definition holds
+// stands as the value it returns. An effectful one there is refused
+// `UnenclosedRun`.
 //
 // The checker sequences each nested call before its reader. A call returning
 // a function runs before the call it is passed to, and before an application
@@ -26,7 +27,7 @@ def rec down(n : Nat) -> -F Nat =
 def held : +U (-F Nat);
 def held = down (Succ Zero);
 
-@[ refuses("UnenclosedRun") ]
+@[ runs("Zero") ]
 def ran : Nat;
 def ran = down Zero;
 

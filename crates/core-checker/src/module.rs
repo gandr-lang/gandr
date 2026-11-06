@@ -1369,7 +1369,7 @@ struct Decision
 /// - witness: `module::tests::a_refused_body_keeps_the_rules_it_was_refused_inside`
 /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
 /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
-/// - witness: `module::tests::a_run_in_a_definition_s_own_value_is_unenclosed`
+/// - witness: `module::tests::a_run_in_a_definition_s_own_value_is_unenclosed_only_when_effectful_4812`
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 /// - witness: `module::tests::a_typed_module_keys_what_each_run_formed`
 /// - witness: `module::tests::a_refused_first_run_leaves_its_nesting_unaccepted`
@@ -1662,11 +1662,11 @@ fn decide(
             let stood = crossings
                 .values()
                 .any(|crossing| matches!(crossing.by, Maybe::Absent(())));
-            let (solved, crossed, decisions, minted) = if first.is_ok() && !crossings.is_empty() {
+            let (solved, crossed, decisions) = if first.is_ok() && !crossings.is_empty() {
                 crate::nested::cross(context.arena_mut(), solved, &crossings, &decisions)
             }
             else {
-                (solved, Vec::new(), decisions, BTreeMap::new())
+                (solved, Vec::new(), decisions)
             };
             let judged = match first {
                 Ok(_) if !decisions.is_empty() || !updates.is_empty() || stood => {
@@ -1690,7 +1690,7 @@ fn decide(
                             let _second = context.take_crossings();
                             second
                         },
-                        Err(unenclosed) => Err(unenclosed_failure(unenclosed.run(), &minted)),
+                        Err(unenclosed) => Err(unenclosed_failure(unenclosed.run())),
                     }
                 },
                 Ok(_) | Err(_) => {
@@ -2452,25 +2452,18 @@ fn call_failure(
     )
 }
 
-/// The failure of a body whose elaboration found `run` with no computation
-/// around it: no rule of the judgement is pending, and the refusal names the
-/// run, or the written value a crossing's run carries (#4806).
+/// The failure of a body whose elaboration found the effectful `run` with no
+/// computation around it: no rule of the judgement is pending, and the
+/// refusal names the run.
 ///
 /// # Specification
 /// trivial.
-fn unenclosed_failure(
-    run: ValueId,
-    minted: &BTreeMap<ValueId, ValueId>,
-) -> Failure
+fn unenclosed_failure(run: ValueId) -> Failure
 {
-    let (at, source) = match minted.get(&run) {
-        Some(&written) => (written, crate::nested::RunSource::Crossing),
-        None => (run, crate::nested::RunSource::Written),
-    };
     Failure::bare(
-        CheckRefusal::UnenclosedRun { at, source },
+        CheckRefusal::UnenclosedRun { at: run },
         Pursuit::new(
-            CoreNode::Term(TermNode::Value(at)),
+            CoreNode::Term(TermNode::Value(run)),
             Maybe::Absent(judged::Absent::Synthesised),
             Stage::Starting,
         ),

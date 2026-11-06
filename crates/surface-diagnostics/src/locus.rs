@@ -1549,7 +1549,7 @@ impl fmt::Display for Checked
                 | UnsupportedFamily::Flow => f.write_str("the filler generator lifts along paths, and a directed `Flow` cell has no filler yet"),
                 | UnsupportedFamily::Bridge => f.write_str("the filler generator lifts along paths, and a bridge has no filler yet"),
             },
-            | CheckRefusal::UnenclosedRun { .. } => f.write_str("a run where a value is read needs a computation around it to run before"),
+            | CheckRefusal::UnenclosedRun { .. } => f.write_str("an effectful run where a value is read needs a computation around it to run before"),
             | CheckRefusal::ImplicitUnsolved { .. } => f.write_str("an implicit this call omits is determined by neither its arguments nor the type it is checked against"),
             | CheckRefusal::ModelUnanswered { .. } => f.write_str("no module in scope is a model this call's omitted model implicit admits"),
             | CheckRefusal::ModelAmbiguous { .. } => f.write_str("more than one module in scope is a model this call's omitted model implicit admits"),
@@ -3259,10 +3259,7 @@ mod tests
                 cell: value,
                 family: gandr_core_checker::fill::UnsupportedFamily::Flow,
             },
-            CheckRefusal::UnenclosedRun {
-                at: value,
-                source: gandr_core_checker::RunSource::Written,
-            },
+            CheckRefusal::UnenclosedRun { at: value },
             CheckRefusal::ImplicitUnsolved {
                 at: value,
                 reason: gandr_core_checker::Unsolved::Unforced,

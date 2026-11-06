@@ -67,6 +67,7 @@ use crate::arena::CoreArena;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
 use crate::effect::EffectRow;
+use crate::effect::Purity;
 use crate::effect::capability::CapabilityGrade;
 use crate::effect::capability::Region;
 use crate::effect::capability::RegionBinder;
@@ -3179,6 +3180,7 @@ fn term_text(
                 Some(&Value::Thunk(body)) => ("thunk".into(), vec![Piece::Computation(body)]),
                 Some(&Value::Nested(body)) => ("nested".into(), vec![Piece::Computation(body)]),
                 Some(&Value::Run(body)) => ("run".into(), vec![Piece::Computation(body)]),
+                Some(&Value::Returned(body)) => ("returned".into(), vec![Piece::Computation(body)]),
                 Some(&Value::Tuple(ref components)) => (
                     "tuple".into(),
                     components
@@ -3251,7 +3253,10 @@ fn an_elaboration_runs_in_written_order_before_its_region()
     let region = arena.computation_application(spine, last_x);
     let lambda = arena.computation_lambda(region);
     let subject = arena.value_thunk(lambda);
-    let nesting = BTreeMap::from([(first, Nesting::Run), (inner, Nesting::Run)]);
+    let nesting = BTreeMap::from([
+        (first, Nesting::Run(Purity::Pure)),
+        (inner, Nesting::Run(Purity::Pure)),
+    ]);
     let mut carried = Vec::new();
     let mut binds = Vec::new();
     let Ok(elaborated) =
@@ -3293,7 +3298,10 @@ fn an_elaboration_suspends_and_runs_as_decided()
     let returned = arena.computation_return(pair);
     let lambda = arena.computation_lambda(returned);
     let subject = arena.value_thunk(lambda);
-    let nesting = BTreeMap::from([(suspended, Nesting::Thunk), (run, Nesting::Run)]);
+    let nesting = BTreeMap::from([
+        (suspended, Nesting::Thunk),
+        (run, Nesting::Run(Purity::Pure)),
+    ]);
     let mut carried = Vec::new();
     let mut binds = Vec::new();
     let minted = arena.watermark();
@@ -3368,7 +3376,7 @@ fn a_forced_suspension_elaborates_as_its_call_3935()
             "a suspended head is the call it spells",
         ),
         (
-            Nesting::Run,
+            Nesting::Run(Purity::Pure),
             "thunk(lambda(bind(apply(force(#1),v0),apply(force(v0),v1))))",
             "a run head binds ahead and the force reads its variable",
         ),
@@ -3409,7 +3417,10 @@ fn an_elaboration_never_hoists_out_of_a_thunk_or_an_arm()
     let case = arena.computation_case(scrutinee, &[first_arm, second_arm]);
     let lambda = arena.computation_lambda(case);
     let subject = arena.value_thunk(lambda);
-    let nesting = BTreeMap::from([(armed, Nesting::Run), (suspended, Nesting::Run)]);
+    let nesting = BTreeMap::from([
+        (armed, Nesting::Run(Purity::Pure)),
+        (suspended, Nesting::Run(Purity::Pure)),
+    ]);
     let Ok(elaborated) = elaborate_nested_traced(
         &mut arena,
         subject,
@@ -3429,7 +3440,7 @@ fn an_elaboration_never_hoists_out_of_a_thunk_or_an_arm()
 }
 
 #[test]
-fn a_run_in_no_computation_is_unenclosed()
+fn an_effectful_run_in_no_computation_is_unenclosed()
 {
     let mut arena = CoreArena::new();
     let argument = variable(&mut arena, DeBruijnIndex::from(0_u32));
@@ -3439,14 +3450,14 @@ fn a_run_in_no_computation_is_unenclosed()
     let refused = elaborate_nested_traced(
         &mut arena,
         definition,
-        &BTreeMap::from([(nested, Nesting::Run)]),
+        &BTreeMap::from([(nested, Nesting::Run(Purity::Effectful))]),
         &mut Vec::new(),
         &mut Vec::new(),
     );
     assert_eq!(
         refused.map_err(Unenclosed::run),
         Err(nested),
-        "a definition's own value has no computation to run before"
+        "a definition's own value has no computation to run an effect before"
     );
     let Ok(suspended) = elaborate_nested_traced(
         &mut arena,
@@ -3482,6 +3493,91 @@ fn a_run_in_no_computation_is_unenclosed()
 }
 
 #[test]
+fn a_pure_run_in_no_computation_stands_as_what_it_returns_4812()
+{
+    let mut arena = CoreArena::new();
+    let argument = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let inner = call(&mut arena, ConstantIndex::from(2_usize), argument);
+    let inner = arena.value_nested(inner);
+    let computation = call(&mut arena, ConstantIndex::from(1_usize), inner);
+    let nested = arena.value_nested(computation);
+    let definition = arena.value_tuple(&[nested]);
+    let mut binds = Vec::new();
+    let Ok(elaborated) = elaborate_nested_traced(
+        &mut arena,
+        definition,
+        &BTreeMap::from([
+            (nested, Nesting::Run(Purity::Pure)),
+            (inner, Nesting::Run(Purity::Effectful)),
+        ]),
+        &mut Vec::new(),
+        &mut binds,
+    )
+    else {
+        panic!("a pure run needs no computation around it");
+    };
+    assert_eq!(
+        term_text(&arena, elaborated),
+        "returned(bind(bind(apply(force(#2),v0),apply(force(#1),v0)),return(tuple(v0))))",
+        "the pure run binds before the definition's return, which the definition stands as, \
+         and the run inside that run's computation binds before it there"
+    );
+    assert_eq!(
+        binds.iter().map(|&(run, _)| run).collect::<Vec<_>>(),
+        [inner, nested],
+        "the inner run binds inside, then the pure run binds before the return"
+    );
+    let mut binds = Vec::new();
+    let Ok(alone) = elaborate_nested_traced(
+        &mut arena,
+        nested,
+        &BTreeMap::from([
+            (nested, Nesting::Run(Purity::Pure)),
+            (inner, Nesting::Run(Purity::Effectful)),
+        ]),
+        &mut Vec::new(),
+        &mut binds,
+    )
+    else {
+        panic!("a pure run as the whole value needs no computation around it");
+    };
+    assert_eq!(
+        (
+            term_text(&arena, alone),
+            binds.iter().map(|&(run, _)| run).collect::<Vec<_>>()
+        ),
+        (
+            String::from("returned(bind(apply(force(#2),v0),apply(force(#1),v0)))"),
+            vec![inner]
+        ),
+        "a definition that is one pure run stands as that run's computation, with no bind"
+    );
+    let operator = arena.value_constant(ConstantIndex::from(0_usize));
+    let run = arena.value_run(computation);
+    let erased = arena.value_static_application(operator, run);
+    let returned = arena.computation_return(erased);
+    let subject = arena.value_thunk(returned);
+    let Ok(elaborated) = elaborate_nested_traced(
+        &mut arena,
+        subject,
+        &BTreeMap::from([
+            (run, Nesting::Run(Purity::Pure)),
+            (inner, Nesting::Run(Purity::Pure)),
+        ]),
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
+    else {
+        panic!("a pure written run needs no computation around it under static content");
+    };
+    assert_eq!(
+        term_text(&arena, elaborated),
+        "thunk(return(static(#0,returned(bind(apply(force(#2),v0),apply(force(#1),v0))))))",
+        "a written run decided pure stands as what it returns beneath static content"
+    );
+}
+
+#[test]
 fn a_decision_no_term_reaches_is_unenclosed()
 {
     let mut arena = CoreArena::new();
@@ -3497,7 +3593,7 @@ fn a_decision_no_term_reaches_is_unenclosed()
     );
     let returned = arena.computation_return(constructed);
     let subject = arena.value_thunk(returned);
-    for decided in [Nesting::Run, Nesting::Thunk] {
+    for decided in [Nesting::Run(Purity::Pure), Nesting::Thunk] {
         assert_eq!(
             elaborate_nested_traced(
                 &mut arena,
