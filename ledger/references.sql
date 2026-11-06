@@ -35,11 +35,13 @@ INSERT INTO reference VALUES('Cherubini-2024-foundation_synthetic_stone_duality'
 INSERT INTO reference VALUES('Cockx-2018-elaborating_dependent_copattern_matching','core-checker','solution','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-core','replay','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells::fusion','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ghrist-2022-cellular_sheaves_lattices_tarski_laplacian','theory-cellular-sheaves','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-discrete-morse','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Henry-2018-nonunital_polygraphs_form_presheaf_category','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','db60bc4ed0a81c61929941b9f01c0256c2af1168','2026-11-02','bb7ea16a861957dfc8f4ee999b33a4d61bed1863');
 INSERT INTO reference VALUES('Leclerc-2026-cellular_type_theory','theory-sites','ascent','background',NULL,NULL,NULL);
@@ -545,6 +547,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theor
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-diagnostics','obstruction','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-cellular-sheaves','','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-shapes','','anchor',NULL,NULL,NULL);

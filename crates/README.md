@@ -24,7 +24,7 @@ The category map is [`ledger/README.md` § Map](../ledger/README.md#map), and th
 
 ## Members
 
-One row per directory: the directory and what it is. The package name follows from the directory by the rule above.
+One row per directory: the directory and what it is.
 
 ```text
 # Rows sort lexicographically by directory; the dependency order is § Layering.
@@ -78,6 +78,7 @@ crates/
 ├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
 ├── theory-decomposition-spaces/   two-mode certificate composition, bounded backward pathway queries and borrowed canonical step fields
 ├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web and its linearizations, the flow projection, guarded-family prices
+├── theory-discrete-morse/         acyclic matchings: their check and the greedy matching
 ├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
 ├── theory-exact-reals/            canonical dyadics with directed rounding, oriented intervals with outward-rounded arithmetic, and the scoped plan DAG with its canonical bytes, beside the kernel and never inside it
 ├── theory-graded-posets/          graded posets with cells as data
@@ -119,7 +120,7 @@ _Projection_ is the compiler: it takes a _choreography_, one program over named 
 
 ## Storage and distribution
 
-The storage crates are one content-addressable memory, _the CAM_, and the runtime's stores location-addressable memories, _the LAMs_ (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`). Each world runs its own LAMs; all reach one logical CAM, addressed by digests of canonical bytes, one key space. A value crosses a world by `crossing::commit` and `crossing::deref` when its type is `mobile`, the authority, and `Open`, holding no location. A digest proves integrity; validity is the checker's and the kernel's. Dashed: not built yet.
+The storage crates are one content-addressable memory, _the CAM_, and the runtime's stores location-addressable memories, _the LAMs_ (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`). Each world runs its own LAMs; all reach one logical CAM, addressed by digests of canonical bytes, one key space. A value crosses a world by `crossing::commit` and `crossing::deref` when its type is `mobile`, the authority, and `Open`, holding no location. A digest proves integrity; validity is the checker's and the kernel's.
 
 ```mermaid
 flowchart LR

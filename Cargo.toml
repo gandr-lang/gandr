@@ -50,6 +50,7 @@ members = [
   "crates/theory-computads",
   "crates/theory-decomposition-spaces",
   "crates/theory-deep-inference",
+  "crates/theory-discrete-morse",
   "crates/theory-dynamic-graphs",
   "crates/theory-exact-reals",
   "crates/theory-graded-posets",
@@ -173,6 +174,7 @@ default-features = false
 # - theory-computads
 # - theory-decomposition-spaces
 # - theory-deep-inference
+# - theory-discrete-morse
 # - theory-dynamic-graphs
 # - theory-exact-reals
 # - theory-graded-posets
@@ -886,6 +888,16 @@ default-features = false
 [workspace.dependencies.gandr-theory-deep-inference]
 path = "crates/theory-deep-inference"
 
+# Discrete Morse theory on finite cell complexes: acyclic matchings and their
+# check, the greedy matching, and Brown's collapsing scheme.
+# features:
+# - none: alloc-only matchings over the caller's cells.
+# consumers:
+# - surface-lowering (dev)
+[workspace.dependencies.gandr-theory-discrete-morse]
+path = "crates/theory-discrete-morse"
+default-features = false
+
 # Standing insertion-only graph and offset-constraint maintenance.
 # features:
 # - none: alloc-only graph machinery.
@@ -910,6 +922,7 @@ path = "crates/theory-exact-reals"
 # - none: alloc-only posets over finite Stone duality's bit rows.
 # consumers:
 # - theory-cellular-sheaves
+# - theory-discrete-morse
 # - theory-shapes (dev)
 [workspace.dependencies.gandr-theory-graded-posets]
 path = "crates/theory-graded-posets"
@@ -1042,6 +1055,7 @@ path = "crates/theory-spec-combinators"
 # - none: alloc-only lattices, posets and maps.
 # consumers:
 # - theory-cellular-sheaves
+# - theory-discrete-morse
 # - theory-graded-posets
 # - theory-shapes
 [workspace.dependencies.gandr-theory-stone-duality]

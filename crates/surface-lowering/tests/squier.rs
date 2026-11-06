@@ -23,6 +23,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use core::convert::Infallible;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -42,6 +43,13 @@ use gandr_theory_coherent_resolutions::CellApp;
 use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_computads::EtaElaboration;
 use gandr_theory_computads::Term;
+use gandr_theory_discrete_morse::Budget;
+use gandr_theory_discrete_morse::Class;
+use gandr_theory_discrete_morse::Complex;
+use gandr_theory_discrete_morse::Faults;
+use gandr_theory_discrete_morse::Incidence;
+use gandr_theory_discrete_morse::Scheme;
+use gandr_theory_discrete_morse::Standing;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
@@ -163,18 +171,6 @@ struct BarCell(Vec<Word>);
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Coefficient(i64);
 
-/// What Brown's collapsing scheme makes of a cell.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum Class
-{
-    /// An Anick chain: the cell stays.
-    Essential,
-    /// Paired with the cell of one more entry that it is a face of.
-    Redundant(BarCell),
-    /// Paired with its face of one entry fewer.
-    Collapsible(BarCell),
-}
-
 /// The class of `cell` under the collapsing scheme of `strings`.
 ///
 /// The first entry must be a letter, else the cell is redundant and pairs with
@@ -190,12 +186,12 @@ enum Class
 fn class(
     strings: &Strings,
     cell: &BarCell,
-) -> Class
+) -> Class<BarCell>
 {
     let entries = &cell.0;
     let Some(first) = entries.first()
     else {
-        return Class::Essential;
+        return Class::Critical;
     };
     if first.0.len() >= 2 {
         let mut split = Vec::with_capacity(entries.len().saturating_add(1));
@@ -228,7 +224,7 @@ fn class(
             return Class::Redundant(BarCell(split));
         }
     }
-    Class::Essential
+    Class::Critical
 }
 
 /// The boundary of `cell` in the bar complex with trivial coefficients: the
@@ -271,6 +267,73 @@ fn boundary(
     );
     out.retain(|_, coefficient| coefficient.0 != 0);
     out
+}
+
+/// A unary block's bar complex under Brown's collapsing scheme, as the Morse
+/// crate reads it.
+struct Bar<'strings>
+{
+    /// The block's rules as a string rewriting system.
+    strings: &'strings Strings,
+}
+
+impl Complex for Bar<'_>
+{
+    type Cell = BarCell;
+    type Fault = Infallible;
+
+    /// Whether each entry of `cell` is a nonempty normal form.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(
+        &mut self,
+        cell: &BarCell,
+    ) -> Result<Standing, Infallible>
+    {
+        let normal = cell.0.iter().all(|word| {
+            !word.0.is_empty() && self.strings.reducibility(word) == Reducibility::Irreducible
+        });
+        Ok(if normal {
+            Standing::Inside
+        }
+        else {
+            Standing::Outside
+        })
+    }
+
+    /// The faces of `cell` in its boundary, each with its coefficient.
+    ///
+    /// # Specification
+    /// trivial.
+    fn faces(
+        &mut self,
+        cell: &BarCell,
+        faces: &mut Vec<(BarCell, Incidence)>,
+    ) -> Result<(), Infallible>
+    {
+        faces.extend(
+            boundary(self.strings, cell)
+                .into_iter()
+                .map(|(face, coefficient)| (face, Incidence::from(coefficient.0))),
+        );
+        Ok(())
+    }
+}
+
+impl Scheme for Bar<'_>
+{
+    /// The class of `cell` under Brown's collapsing scheme.
+    ///
+    /// # Specification
+    /// trivial.
+    fn class(
+        &mut self,
+        cell: &BarCell,
+    ) -> Result<Class<BarCell>, Infallible>
+    {
+        Ok(class(self.strings, cell))
+    }
 }
 
 /// Every cell of the bar complex of `strings` over `letters` letters, its
@@ -610,79 +673,6 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuleIndex(pub usize);
 
-/// Whether a graph has a cycle.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Acyclicity
-{
-    /// No cycle.
-    Acyclic,
-    /// A cycle.
-    Cyclic,
-}
-
-/// Whether the matching between the cells `lower` and the cells `upper`, one
-/// dimension above, is acyclic: each upper cell points at its faces, and each
-/// matched pair points the other way.
-///
-/// # Specification
-/// trivial.
-fn acyclicity(
-    strings: &Strings,
-    (lower, upper): (&[BarCell], &[BarCell]),
-    classes: &BTreeMap<BarCell, Class>,
-) -> Acyclicity
-{
-    let mut node: BTreeMap<&BarCell, usize> = BTreeMap::new();
-    for (index, cell) in lower.iter().chain(upper).enumerate() {
-        let _previous = node.insert(cell, index);
-    }
-    let mut edges: Vec<Vec<usize>> = vec![Vec::new(); node.len()];
-    for cell in upper {
-        let from = node[cell];
-        for face in boundary(strings, cell).keys() {
-            let Some(&to) = node.get(face)
-            else {
-                continue;
-            };
-            if classes.get(face) == Some(&Class::Redundant(cell.clone())) {
-                edges[to].push(from);
-            }
-            else {
-                edges[from].push(to);
-            }
-        }
-    }
-    // 0 unseen, 1 on the stack, 2 done.
-    let mut state = vec![0_u8; node.len()];
-    let mut stack: Vec<(usize, usize)> = Vec::new();
-    for start in 0 .. node.len() {
-        if state[start] != 0 {
-            continue;
-        }
-        stack.clear();
-        stack.push((start, 0));
-        state[start] = 1;
-        while let Some(&mut (at, ref mut next)) = stack.last_mut() {
-            if let Some(&to) = edges[at].get(*next) {
-                *next = next.saturating_add(1);
-                match state[to] {
-                    0 => {
-                        state[to] = 1;
-                        stack.push((to, 0));
-                    },
-                    1 => return Acyclicity::Cyclic,
-                    _ => {},
-                }
-            }
-            else {
-                state[at] = 2;
-                let _done = stack.pop();
-            }
-        }
-    }
-    Acyclicity::Acyclic
-}
-
 /// What Brown's collapsing scheme leaves on a unary block: the essential cells
 /// of dimension two as words, and those of dimension three as their peak, the
 /// left side at its start and the left side at its end.
@@ -698,10 +688,10 @@ struct Collapse
     cells: Vec<Rank>,
 }
 
-/// Collapse the bar complex of `strings`, checking that the scheme is a
-/// matching: each pair's partner names it back, the redundant cell has
-/// coefficient one or minus one in its partner's boundary, and the matching
-/// between each two dimensions is acyclic.
+/// Collapse the bar complex of `strings`. The Morse crate checks that the
+/// scheme is an acyclic matching: each pair's partner names it back, the
+/// redundant cell has the coefficient one or minus one in its partner's
+/// boundary, and the gradient has no cycle.
 ///
 /// # Specification
 /// trivial.
@@ -711,39 +701,6 @@ fn collapse(
 ) -> Collapse
 {
     let by_dimension = bar_cells(strings, letters);
-    let mut classes: BTreeMap<BarCell, Class> = BTreeMap::new();
-    for cell in by_dimension.iter().flatten() {
-        let _previous = classes.insert(cell.clone(), class(strings, cell));
-    }
-    for (cell, class) in &classes {
-        match *class {
-            Class::Redundant(ref partner) => {
-                if let Some(back) = classes.get(partner) {
-                    assert_eq!(
-                        back,
-                        &Class::Collapsible(cell.clone()),
-                        "{cell:?} and {partner:?}"
-                    );
-                    let coefficient = boundary(strings, partner)
-                        .get(cell)
-                        .copied()
-                        .unwrap_or_default();
-                    assert!(
-                        coefficient.0.abs() == 1,
-                        "{cell:?} in the boundary of {partner:?}: {coefficient:?}"
-                    );
-                }
-            },
-            Class::Collapsible(ref partner) => {
-                assert_eq!(
-                    classes.get(partner),
-                    Some(&Class::Redundant(cell.clone())),
-                    "{cell:?} and {partner:?}"
-                );
-            },
-            Class::Essential => {},
-        }
-    }
     let mut twice: BTreeMap<BarCell, Coefficient> = BTreeMap::new();
     for cell in by_dimension.iter().flatten() {
         twice.clear();
@@ -758,27 +715,28 @@ fn collapse(
             "the boundary of the boundary of {cell:?} is zero"
         );
     }
-    for pair in by_dimension.windows(2) {
-        let [ref lower, ref upper] = *pair
-        else {
-            continue;
-        };
-        assert_eq!(
-            acyclicity(strings, (lower, upper), &classes),
-            Acyclicity::Acyclic,
-            "the matching between dimensions {} and {} is acyclic",
-            lower.first().map_or(0, |cell| cell.0.len()),
-            upper.first().map_or(0, |cell| cell.0.len())
-        );
-    }
+    // A partner keeps the letters of its cell, so the walk stays inside the
+    // truncation and visits fewer cells than it holds.
+    let held = by_dimension
+        .iter()
+        .map(Vec::len)
+        .fold(0_usize, usize::saturating_add);
+    let done = gandr_theory_discrete_morse::collapse(
+        &mut Bar { strings },
+        by_dimension.iter().flatten(),
+        Budget::from(held),
+    )
+    .expect("the walk stays inside the truncation");
+    assert_eq!(
+        done.faults(),
+        Faults::default(),
+        "Brown's scheme is an acyclic matching"
+    );
     let mut out = Collapse {
         cells: by_dimension.iter().map(|cells| Rank(cells.len())).collect(),
         ..Collapse::default()
     };
-    for (cell, class) in &classes {
-        if *class != Class::Essential {
-            continue;
-        }
+    for cell in done.critical() {
         match *cell.0.as_slice() {
             [ref x, ref u] => {
                 let _new = out.rules.insert(x.then(u));
