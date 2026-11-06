@@ -1,0 +1,3 @@
+theory S where {
+  sort Nat : Type sort T : Type;
+}

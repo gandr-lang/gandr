@@ -5107,7 +5107,7 @@ mod tests
         // right after one only matches the whole stream when the first run's
         // window reads into the second run's tokens.
         let pbg = built()?;
-        let src = "def a : Type = List (Integer);\ndef b = Inl 1;\ndef c = match b { | Inl(x) => x | Inr(y) => y };\n";
+        let src = include_str!("mold/fixtures/runs-mold-as-the-whole-stream-src.gandr");
         let source = SourceText::from(src);
         let tokens = label(SourceFragment::from(src));
         let mut molder = Molder::new(&pbg);
@@ -5892,14 +5892,20 @@ mod tests
             ("def x : Integer ;", "def_value"),
             ("def f(y : Integer) -> -F Integer { return y }", "def_value"),
             (
-                "data Color : Type where {\n  | Red : Color\n}",
+                include_str!("mold/fixtures/an-attribute-block-is-a-form-of-its-own-1.gandr"),
                 "data_declaration",
             ),
         ];
         for count in 1_usize ..= 6 {
             let attributes = vec!["runs(\"1\")"; count].join(", ");
             for (declaration, expected) in declarations {
-                let source = alloc::format!("@[ {attributes} ]\n@[ checks ]\n{declaration}\n");
+                let source = alloc::format!(
+                    include_str!(
+                        "mold/unformatted/an-attribute-block-is-a-form-of-its-own-2.gandr"
+                    ),
+                    attributes = attributes,
+                    declaration = declaration
+                );
                 let parsed = crate::parse(&pbg, SourceText::from(source.as_str()))?;
                 assert_eq!(parsed.obligations(), &[], "{source:?} parses clean");
                 let tree = parsed.tree();

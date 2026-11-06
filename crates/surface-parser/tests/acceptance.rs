@@ -293,10 +293,9 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
 #[test]
 fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"def nth[A : Type, i : Fin(length(xs))](xs : List(A)) -> A {
-  pure xs
-}
-"#;
+    let source = include_str!(
+        "acceptance/fixtures/declaration-prefix-telescope-preserves-forward-reference-order.gandr"
+    );
     let result = parse(built(), SourceText::from(source))?;
     assert!(
         bool::from(result.is_clean()),
@@ -336,9 +335,9 @@ fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<()
 #[test]
 fn empty_prefix_does_not_change_ordinary_attribute_spelling() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"@[doc("d")]
-def tagged[](x : Type) -> Type { pure x }
-"#;
+    let source = include_str!(
+        "acceptance/unformatted/empty-prefix-does-not-change-ordinary-attribute-spelling.gandr"
+    );
     let result = parse(built(), SourceText::from(source))?;
     assert!(
         bool::from(result.is_clean()),
@@ -375,9 +374,9 @@ def tagged[](x : Type) -> Type { pure x }
 #[test]
 fn malformed_prefix_recovers_at_the_next_declaration() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"def bad[A : Type, broken](x : Type) -> Type { pure x }
-def good[B : Type](y : Type) -> Type { pure y }
-"#;
+    let source = include_str!(
+        "acceptance/unformatted/malformed-prefix-recovers-at-the-next-declaration.gandr"
+    );
     let result = parse(built(), SourceText::from(source))?;
     assert!(
         !bool::from(result.is_clean()),
@@ -521,45 +520,13 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases: &[&str] = &[
         // The congruence cell, members `;`-terminated.
-        r#"theory Nat where {
-  sort Nat : Type;
-  data Zero : Nat;
-  data Succ : Nat --> Nat;
-  oper add : (Nat, Nat) --> Nat;
-
-  rule cong2 : (
-    rule p : Nat ==> Nat,
-    rule q : Nat ==> Nat,
-    data x : Nat,
-    data y : Nat
-  ) ==> (z : Nat) {
-    node : p(x) ==> (x′);
-    node : q(y) ==> (y′);
-    node : add(x′, y′) --> (z);
-  };
-}
-"#,
+        include_str!("acceptance/fixtures/circuit-block-form-molds-zero-obligation-1.gandr"),
         // The first stateful wheel.
-        r#"oper accumulate : (stream : Stream(Nat)) --> (out2 : Stream(Nat)) {
-  node : zip(stream, state) --> (next, out2);
-  feed : (next) --> (state);
-}
-"#,
+        include_str!("acceptance/fixtures/circuit-block-form-molds-zero-obligation-2.gandr"),
         // The sugar ladder's named-port normal form, including `()` and `_`.
-        r#"theory N where {
-  sort Nat : Type;
-  data Zero : () --> (_ : Nat);
-  data Succ : (_ : Nat) --> (_ : Nat);
-}
-"#,
+        include_str!("acceptance/fixtures/circuit-block-form-molds-zero-obligation-3.gandr"),
         // Occurrence labels and the pinned-endpoint binder.
-        r#"theory L where {
-  rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
-    node w1 : p(x) ==> (m);
-    node w2 : step(m) --> (o);
-  };
-}
-"#,
+        include_str!("acceptance/fixtures/circuit-block-form-molds-zero-obligation-4.gandr"),
         // The invertible face, and the reserved reversible glyph.
         "theory I where { rule involutive : (b : Bit) <=> (c : Bit); }",
         "theory R where { oper negate : (b : Bit) <-> (c : Bit); }",
@@ -683,11 +650,7 @@ fn a_top_level_circuit_declaration_keeps_its_whole_signature() -> Result<(), Box
     let whole: &[&str] = &[
         "oper f : (a : A) --> (b : B)",
         "rule step : (x : Nat) ==> (y : Nat)",
-        r#"oper accumulate : (stream : Stream(Nat)) --> (out2 : Stream(Nat)) {
-  node : zip(stream, state) --> (next, out2);
-  feed : (next) --> (state);
-}
-"#,
+        include_str!("acceptance/fixtures/circuit-block-form-molds-zero-obligation-2.gandr"),
     ];
     for &src in whole {
         let result = parse(pbg, SourceText::from(src))?;
@@ -805,31 +768,14 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases: &[&str] = &[
         // The headline shape: one wire consumed twice in a redex line.
-        r#"theory Copy where {
-  sort Nat : Type;
-  oper add : (l : Nat, r : Nat) --> (s : Nat);
-  rule copy2 : (data x : Nat) ==> (z : Nat) {
-    node : add(x, x) --> (z);
-  };
-}
-"#,
+        include_str!(
+            "acceptance/fixtures/a-repeated-port-name-application-molds-clean-cases.gandr"
+        ),
         // The same reading with distinct names, and the sugar ladder's
         // unnamed-port rungs.
-        r#"theory Copy where {
-  sort Nat : Type;
-  oper add : (Nat, Nat) --> Nat;
-  rule copy2 : (data x : Nat, data y : Nat) ==> (z : Nat) {
-    node : add(x, y) --> (z);
-  };
-}
-"#,
+        include_str!("acceptance/fixtures/a-repeated-port-name-application-molds-clean-1.gandr"),
         // A body-less rule member ahead of the closing brace.
-        r#"theory B where {
-  sort Nat : Type;
-  oper add : (Nat, Nat) --> Nat;
-  rule copy2 : (data x : Nat) ==> (z : Nat);
-}
-"#,
+        include_str!("acceptance/fixtures/a-repeated-port-name-application-molds-clean-2.gandr"),
     ];
     for &src in cases {
         let result = parse(pbg, SourceText::from(src))?;
@@ -849,12 +795,9 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
     // column, so the two share a line here.
     let unterminated = parse(
         pbg,
-        SourceText::from(
-            r#"theory S where {
-  sort Nat : Type sort T : Type;
-}
-"#,
-        ),
+        SourceText::from(include_str!(
+            "acceptance/unformatted/a-repeated-port-name-application-molds-clean-unterminated.gandr"
+        )),
     )?;
     assert!(
         !bool::from(unterminated.is_clean()),
@@ -872,38 +815,18 @@ fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Er
 {
     let pbg = built();
     let cases: &[&str] = &[
-        r#"theory S where {
-  sort S : Type;
-
-}
-"#,
-        r#"theory S where {
-  sort S : Type;
-
-  sort T : Type;
-}
-"#,
-        r#"theory S where {
-  sort S : Type;
-
-  oper f : (S) --> S;
-
-  rule r : (data x : S) ==> (z : S) {
-    node : f(x) --> (z);
-  };
-}
-"#,
-        r#"theory S where {
-
-  sort S : Type;
-
-  // a comment between members
-
-  sort T : Type;
-
-}
-
-"#,
+        include_str!(
+            "acceptance/unformatted/a-blank-line-after-a-terminated-member-molds-clean-cases.gandr"
+        ),
+        include_str!(
+            "acceptance/unformatted/a-blank-line-after-a-terminated-member-molds-clean-1.gandr"
+        ),
+        include_str!(
+            "acceptance/unformatted/a-blank-line-after-a-terminated-member-molds-clean-2.gandr"
+        ),
+        include_str!(
+            "acceptance/unformatted/a-blank-line-after-a-terminated-member-molds-clean-3.gandr"
+        ),
     ];
     for &src in cases {
         let result = parse(pbg, SourceText::from(src))?;
@@ -930,18 +853,15 @@ fn a_theory_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Bo
 {
     let pbg = built();
     let cases: &[&str] = &[
-        r#"theory Unknown where {
-  sort Nat : Type;
-}
-"#,
-        r#"theory Boolean where {
-  sort Bit : Type;
-}
-"#,
-        r#"theory Any where {
-  sort Nat : Type;
-}
-"#,
+        include_str!(
+            "acceptance/fixtures/a-theory-block-may-be-named-with-a-primitive-type-spelling-cases.gandr"
+        ),
+        include_str!(
+            "acceptance/fixtures/a-theory-block-may-be-named-with-a-primitive-type-spelling-1.gandr"
+        ),
+        include_str!(
+            "acceptance/fixtures/a-theory-block-may-be-named-with-a-primitive-type-spelling-2.gandr"
+        ),
     ];
     for &src in cases {
         let result = parse(pbg, SourceText::from(src))?;
@@ -1214,7 +1134,9 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
 fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let written = "theory Magma where {\n    sort M : type;\n}";
+    let written = include_str!(
+        "acceptance/unformatted/a-keyword-in-a-classifier-slot-stands-there-unmolded-written.gandr"
+    );
     let result = parse(pbg, SourceText::from(written))?;
     let start = written.find("type").ok_or("the keyword is written")?;
     assert_eq!(
@@ -1247,7 +1169,9 @@ fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn 
     );
     let spelled = parse(
         pbg,
-        SourceText::from("theory Magma where {\n    sort M : Type;\n}"),
+        SourceText::from(include_str!(
+            "acceptance/unformatted/a-keyword-in-a-classifier-slot-stands-there-unmolded-spelled.gandr"
+        )),
     )?;
     assert!(
         bool::from(spelled.is_clean()),
@@ -1270,12 +1194,23 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
     let pbg = built();
     for keyword in ["mu", "drop", "dup", "send"] {
         for written in [
-            format!("def {keyword} : Integer ;\ndef ok = 2 ;"),
             format!(
-                "theory T where {{\n  sort Tm : Type;\n  oper {keyword} : (b : Tm) --> Tm;\n}}\ndef ok = 2 ;"
+                include_str!(
+                    "acceptance/unformatted/a-keyword-in-a-name-slot-stands-there-unmolded-722-1.gandr"
+                ),
+                keyword = keyword
             ),
             format!(
-                "theory T where {{\n  sort Tm : Type;\n  oper nil : () --> Tm;\n  rule {keyword} : nil() <=> nil();\n}}\ndef ok = 2 ;"
+                include_str!(
+                    "acceptance/unformatted/a-keyword-in-a-name-slot-stands-there-unmolded-722-2.gandr"
+                ),
+                keyword = keyword
+            ),
+            format!(
+                include_str!(
+                    "acceptance/unformatted/a-keyword-in-a-name-slot-stands-there-unmolded-722-3.gandr"
+                ),
+                keyword = keyword
             ),
         ] {
             let result = parse(pbg, SourceText::from(written.as_str()))?;
@@ -1312,7 +1247,12 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
             );
         }
     }
-    let named = parse(pbg, SourceText::from("def mux : Integer ;\ndef mux = 1 ;"))?;
+    let named = parse(
+        pbg,
+        SourceText::from(include_str!(
+            "acceptance/unformatted/a-keyword-in-a-name-slot-stands-there-unmolded-722-named.gandr"
+        )),
+    )?;
     assert!(
         bool::from(named.is_clean()),
         "a name that is no keyword owes nothing"
@@ -1328,7 +1268,9 @@ fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Er
 #[test]
 fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Error>>
 {
-    let source = "def swapped() -> -F Unit {\n  handle c : Proc {\n    handle e : Proc {\n      let d : Cap {exit} at e c ;\n      let f : Cap {exit} at c = e ;\n      return *{}\n    } with {\n      | pure(x) => return x\n      | oper exit(code, k) => return *{}\n    }\n  } with {\n    | pure(x) => return x\n    | oper exit(code, k) => return *{}\n  }\n}\n";
+    let source = include_str!(
+        "acceptance/fixtures/a-statement-keyword-starts-the-next-statement-1090.gandr"
+    );
     let result = parse(built(), SourceText::from(source))?;
     let next = source
         .find("let f")
@@ -1365,7 +1307,9 @@ fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Er
 #[test]
 fn unclosed_definition_delimiter_does_not_absorb_following_definition() -> Result<(), Box<dyn Error>>
 {
-    let source = "def bad = ( 1 ;\ndef good = 2;";
+    let source = include_str!(
+        "acceptance/unformatted/unclosed-definition-delimiter-does-not-absorb-following-definition.gandr"
+    );
     let result = parse(built(), SourceText::from(source))?;
     let significant = significant_children(result.tree(), result.tree().root());
     assert_eq!(
@@ -1455,7 +1399,12 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
         "theory Good where { }",
         "import \"good\" as good ;",
     ] {
-        let source = format!("def bad = ( 1 ;\n{survivor}");
+        let source = format!(
+            include_str!(
+                "acceptance/unformatted/an-unclosed-delimiter-yields-to-every-declaration-family.gandr"
+            ),
+            survivor = survivor
+        );
         let result = parse(built(), SourceText::from(source.as_str()))?;
         let significant = significant_children(result.tree(), result.tree().root());
         assert_eq!(
@@ -1495,7 +1444,9 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {
-    let source = "def bad = 1 ′ 2;\ndef good = 2;";
+    let source = include_str!(
+        "acceptance/unformatted/malformed-input-continues-into-a-later-definition.gandr"
+    );
     let first = parse(built(), SourceText::from(source))?;
     assert!(
         first

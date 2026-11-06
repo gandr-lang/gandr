@@ -1,0 +1,11 @@
+def a = 1;
+@[ doc("b") ] def b = 2;
+module M where {
+  def c = 3;
+  def d = 4;
+}
+data Bit : Type where {
+  | Off : Bit
+}
+1;
+def e = 5;

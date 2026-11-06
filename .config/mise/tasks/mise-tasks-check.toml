@@ -430,7 +430,6 @@ allowed = [
   "gandr-surface-dispatcher",
   "gandr-surface-lowering",
   "gandr-surface-lsp",
-  "gandr-surface-parser",
   "gandr-surface-session",
 ]
 '''

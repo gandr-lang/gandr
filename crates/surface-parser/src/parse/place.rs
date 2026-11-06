@@ -1285,11 +1285,18 @@ mod tests
                 .find(written)
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
-        let once = "def once(n : Integer -> -F Integer {\n  return n\n}\n";
-        let glued = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> \
-                     Int\n  rule : S (P x <=> x;\n}\n";
-        let head = "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n";
-        let open = "def once(n : Integer) -> -F Integer {\n  return n\n";
+        let once = include_str!(
+            "place/unformatted/a-closer-left-out-is-minted-where-the-rest-parses-2242-once.gandr"
+        );
+        let glued = include_str!(
+            "place/unformatted/a-closer-left-out-is-minted-where-the-rest-parses-2242-glued.gandr"
+        );
+        let head = include_str!(
+            "place/unformatted/a-closer-left-out-is-minted-where-the-rest-parses-2242-head.gandr"
+        );
+        let open = include_str!(
+            "place/unformatted/a-closer-left-out-is-minted-where-the-rest-parses-2242-open.gandr"
+        );
         for (source, at, first, class, why) in [
             (
                 once,
@@ -1383,12 +1390,21 @@ mod tests
                 .find(written)
                 .map_or(0_usize, |start| start.saturating_add(written.len()))
         };
-        let member = "data Circle : Type where {\n  | Base : Circle\n  | loop Base <-> Base\n}\n";
-        let arm = "def classify(n : Integer) -> -F Integer {\n  match n {\n    | ?branch  \
-                   return 1\n  }\n}\n";
-        let branch = "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n";
-        let last = "def twice : Integer ;\ndef twice = loop ∷ loop \n";
-        let binder = "data Stack : Type where {\n  | Empty : Stack\n  | Push : (x  Integer, rest : Stack) --> Stack\n}\n";
+        let member = include_str!(
+            "place/unformatted/a-tile-left-out-is-minted-where-the-rest-parses-2259-member.gandr"
+        );
+        let arm = include_str!(
+            "place/unformatted/a-tile-left-out-is-minted-where-the-rest-parses-2259-arm.gandr"
+        );
+        let branch = include_str!(
+            "place/unformatted/a-tile-left-out-is-minted-where-the-rest-parses-2259-branch.gandr"
+        );
+        let last = include_str!(
+            "place/unformatted/a-tile-left-out-is-minted-where-the-rest-parses-2259-last.gandr"
+        );
+        let binder = include_str!(
+            "place/unformatted/a-tile-left-out-is-minted-where-the-rest-parses-2259-binder.gandr"
+        );
         for (source, at, why) in [
             (
                 member,
@@ -1454,8 +1470,12 @@ mod tests
     fn a_declaration_keyword_left_out_is_minted_at_its_head_2440()
     {
         let pbg = built_in().unwrap();
-        let body = "f(x : Integer) -> -F Integer {\n  return x\n}\n";
-        let misspelled = "def1 f(x : Integer) -> -F Integer {\n  return x\n}\n";
+        let body = include_str!(
+            "place/unformatted/a-declaration-keyword-left-out-is-minted-at-its-head-2440-body.gandr"
+        );
+        let misspelled = include_str!(
+            "place/unformatted/a-declaration-keyword-left-out-is-minted-at-its-head-2440-misspelled.gandr"
+        );
         for (source, why) in [
             (
                 misspelled,
@@ -1579,11 +1599,21 @@ mod tests
         let mut repaired = 0_usize;
         let mut clean = 0_usize;
         for source in [
-            "def once(n : Integer) -> -F Integer {\n  return n\n}\n",
-            "def once(n : Integer -> -F Integer {\n  return n\n}\n",
-            "def once(n : Integer)) -> -F Integer {\n  return n\n}\n",
-            "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n",
-            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  rule S(P(x) <=> x;\n}\n",
+            include_str!(
+                "place/unformatted/a-try-stopped-at-its-first-repair-answers-as-a-whole-parse-1.gandr"
+            ),
+            include_str!(
+                "place/unformatted/a-closer-left-out-is-minted-where-the-rest-parses-2242-once.gandr"
+            ),
+            include_str!(
+                "place/unformatted/a-try-stopped-at-its-first-repair-answers-as-a-whole-parse-2.gandr"
+            ),
+            include_str!(
+                "place/unformatted/a-closer-left-out-is-minted-where-the-rest-parses-2242-head.gandr"
+            ),
+            include_str!(
+                "place/unformatted/a-try-stopped-at-its-first-repair-answers-as-a-whole-parse-3.gandr"
+            ),
             "def pair = f (x (#[y, z])) w ;\n",
         ] {
             for end in (0 ..= source.len()).filter(|&end| source.is_char_boundary(end)) {
@@ -1624,14 +1654,26 @@ mod tests
         let pbg = built_in().unwrap();
         let mut answers = [0_usize; 2];
         for source in [
-            "def once(n : Integer) -> -F Integer {\n  return n\n}\n",
-            "def once(n : Integer -> -F Integer {\n  return n\n}\n",
-            "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n",
-            "def1 f(x : Integer) -> -F Integer {\n  return x\n}\n",
-            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  rule S(P(x) <=> x;\n}\n",
-            "data Circle : Type where {\n  | Base : Circle\n  loop : Base <-> Base\n}\n",
-            "def classify(n : Integer) -> -F Integer {\n  match n {\n    ?branch  return 1\n  }\n}\n",
-            "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n",
+            include_str!(
+                "place/unformatted/a-try-stopped-at-its-first-repair-answers-as-a-whole-parse-1.gandr"
+            ),
+            include_str!(
+                "place/unformatted/a-closer-left-out-is-minted-where-the-rest-parses-2242-once.gandr"
+            ),
+            include_str!(
+                "place/unformatted/a-closer-left-out-is-minted-where-the-rest-parses-2242-head.gandr"
+            ),
+            include_str!(
+                "place/unformatted/a-declaration-keyword-left-out-is-minted-at-its-head-2440-misspelled.gandr"
+            ),
+            include_str!(
+                "place/unformatted/a-try-stopped-at-its-first-repair-answers-as-a-whole-parse-3.gandr"
+            ),
+            include_str!("place/unformatted/a-resumed-copy-answers-as-a-fresh-one-1.gandr"),
+            include_str!("place/unformatted/a-resumed-copy-answers-as-a-fresh-one-2.gandr"),
+            include_str!(
+                "place/unformatted/a-tile-left-out-is-minted-where-the-rest-parses-2259-branch.gandr"
+            ),
         ] {
             let text = SourceText::from(source);
             let mut shared = super::Shared::new(&pbg, text);

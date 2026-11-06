@@ -1340,7 +1340,8 @@ mod tests
     {
         let typed = <&str>::from(typed);
         let source = alloc::format!(
-            "def lcSyntax : *{{\n  con : Type,\n  empty : () -> con,\n{typed}\n  extendTm : con -> con,\n  law1 : (g : con) -> Path[.A = con](g, g)\n}} = *{{\n  N,\n  *{{\n    LCSyntax.empty,\n    LCSyntax.extendTm\n  }}\n}};\n\ndef next = 1;\n"
+            include_str!("gap/unformatted/record-owes.gandr"),
+            typed = typed
         );
         owed(SourceText::from(source.as_str()))
     }
@@ -1501,8 +1502,7 @@ mod tests
             None,
             "a declaration keyword is the head search's"
         );
-        let source =
-            "def head(n : Integer) -> -F Integer =\n  matc n { | 0 => return 1 | _ => return 0 }\n";
+        let source = include_str!("gap/unformatted/a-misspelt-keyword-owes-its-word-5433.gandr");
         let start = source.find("matc").unwrap_or_default();
         let parsed = parse(&pbg, SourceText::from(source))?;
         let tree = parsed.tree();
@@ -1548,7 +1548,9 @@ mod tests
             "a whole record owes nothing"
         );
         assert_eq!(
-            owed(SourceText::from("def f = g(\n  a\n  b\n);\n"))?,
+            owed(SourceText::from(include_str!(
+                "gap/fixtures/a-source-that-owes-nothing-keeps-its-parse-5433.gandr"
+            )))?,
             [],
             "an application across a line at its items' column owes nothing, so no place is tried"
         );
@@ -1558,7 +1560,9 @@ mod tests
     #[test]
     fn a_closer_deleted_inside_a_line_is_not_minted_at_its_end_5433() -> Result<(), Box<dyn Error>>
     {
-        let source = "def listed() -> -F Integer =\n  var xs : List(Integer = #[1, 2]\n  xs.#[0] += 1\n  return 0\n";
+        let source = include_str!(
+            "gap/unformatted/a-closer-deleted-inside-a-line-is-not-minted-at-its-end-5433.gandr"
+        );
         let end = source.find("]\n").map(|at| at.saturating_add(1));
         let pbg = built_in()?;
         let parsed = parse(&pbg, SourceText::from(source))?;
@@ -1660,7 +1664,12 @@ mod tests
                 }))
             };
         assert_eq!(
-            repaired("def two() -> Integer =\n  shortLength (#[7 8])\n", "7 8")?,
+            repaired(
+                include_str!(
+                    "gap/unformatted/a-head-that-is-no-function-names-what-separates-its-operand-5474-1.gandr"
+                ),
+                "7 8"
+            )?,
             Some((
                 Separation::Item,
                 String::from("def two() -> Integer =\n  shortLength (#[7, 8])\n")
@@ -1669,7 +1678,9 @@ mod tests
         );
         assert_eq!(
             repaired(
-                "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n   y\n  a\n",
+                include_str!(
+                    "gap/unformatted/a-head-that-is-no-function-names-what-separates-its-operand-5474-2.gandr"
+                ),
                 "x\n"
             )?,
             Some((
@@ -1682,14 +1693,21 @@ mod tests
         );
         assert_eq!(
             repaired(
-                "def g(x : Integer) -> Integer =\n  let a = x y\n  a\n",
+                include_str!(
+                    "gap/unformatted/a-head-that-is-no-function-names-what-separates-its-operand-5474-3.gandr"
+                ),
                 "x y"
             )?,
             None,
             "an operand on its head's line inside no group names nothing"
         );
         assert_eq!(
-            repaired("def g(x : Integer) -> Integer =\n  f (x\n   y)\n", "x\n")?,
+            repaired(
+                include_str!(
+                    "gap/unformatted/a-head-that-is-no-function-names-what-separates-its-operand-5474-4.gandr"
+                ),
+                "x\n"
+            )?,
             None,
             "an operand whose line a bracket continues names nothing"
         );
