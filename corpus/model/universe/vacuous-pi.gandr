@@ -8,6 +8,7 @@
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
+// The naturals.
 import "../data/data-base.gandr";
 
 /// The `always` family returns naturals.

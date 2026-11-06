@@ -6,8 +6,10 @@
 //!
 //! - see: Aczel's hierarchy
 
+// The type with no element.
 import "../data/empty.gandr";
 
+// The naturals and the two branches of a pair.
 import "../data/data-base.gandr";
 
 /// A set has a member type and a member function.

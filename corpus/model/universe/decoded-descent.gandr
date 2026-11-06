@@ -6,9 +6,14 @@
 //!
 //! - see: `pathological/universe/decoded-descent.gandr`
 
+// The naturals, their addition and the lists.
 import "../data/data-base.gandr";
 
+/// The `UL` universe and its `elL` decoder form one block. The field of the
+/// function code names the decoder.
 rec {
+  /// The `UL` codes name the naturals, the lists over a coded element, and the
+  /// dependent functions.
   @[ checks, form(explicit) ]
   pub data UL : Type where {
     | NatL : UL
@@ -16,6 +21,8 @@ rec {
     | PiL : (a : UL, b : +U (elL(a) -> -F UL)) --> UL
   }
 
+  /// The `elL` decoder returns the value type of each code. It recurses below
+  /// the code.
   @[ checks ]
   pub def rec elL(u : UL) -> -F Type =
     match u where
@@ -27,17 +34,23 @@ rec {
       | PiL(a, b) => return (+U ((x : elL[<](a)) -> -F elL[<](b(x))))
 }
 
+/// The `sumAt` function sums a list of decoded values through `f`. It recurses
+/// on the list with the element code and `f` fixed.
 def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List(elL(a))) -> Nat =
   match v where
     | Nil => Zero
     | Cons(h, t) => plus (f h) (sumAt[<] a f t)
 
+/// The `total` function sums the naturals in a decoded value. Its list arm
+/// passes the list to `sumAt` with the sum at the element code.
 def rec total(c : UL) -> +U (elL(c) -> -F Nat) =
   match c where
     | NatL => thunk { fun (v) { v } }
     | ListL(a) => thunk { fun (v) { sumAt a (total[<] a) v } }
     | PiL(a, b) => thunk { fun (f) { Zero } }
 
+/// The `countBeside` function counts a value beside its code. The arm of the
+/// natural code finds the value at `Nat`.
 @[ checks ]
 def rec countBeside(c : UL, v : elL(c)) -> Nat =
   match c where
@@ -45,9 +58,11 @@ def rec countBeside(c : UL, v : elL(c)) -> Nat =
     | ListL(a) => Zero
     | PiL(a, b) => Zero
 
+/// The `lists` value holds the list of one and the list of two.
 def lists : List(List(Nat));
 def lists = Cons (Cons (Succ Zero) Nil) (Cons (Cons two Nil) Nil);
 
+/// The `summed` run sums `lists` at the code of lists of lists. Its sum is three.
 @[ runs("Succ (Succ (Succ Zero))") ]
 def summed() -> Nat =
   let sum = total (ListL (ListL NatL))

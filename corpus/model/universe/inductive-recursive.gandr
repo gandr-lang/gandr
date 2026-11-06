@@ -6,15 +6,22 @@
 //!
 //! - see: #577 — `idNat`
 
+// The naturals.
 import "../data/data-base.gandr";
 
+/// The `UPi` universe and its `elPi` decoder form one block. A field of a code
+/// names the decoder.
 rec {
+  /// The `UPi` codes name the naturals and the dependent functions over a
+  /// decoded domain.
   @[ checks, form(explicit) ]
   data UPi : Type where {
     | NatC : UPi
     | PiC : (a : UPi, b : +U (elPi(a) -> -F UPi)) --> UPi
   }
 
+  /// The `elPi` decoder returns the value type of each code. Its function arm
+  /// decodes the codomain under a binder at the decoded domain.
   @[ checks ]
   def rec elPi(u : UPi) -> -F Type =
     match u where
@@ -22,27 +29,40 @@ rec {
       | PiC(a, b) => return (+U ((x : elPi[<](a)) -> -F elPi[<](b(x))))
 }
 
+/// The `toNat` family picks the natural code at each natural.
 @[ checks ]
 def toNat(x : Nat) -> -F UPi { return NatC }
 
+/// The `idDecoded` value is the identity at the decode of the function code from
+/// naturals to naturals. That decode runs to the dependent arrow between them.
 @[ checks ]
 def idDecoded : elPi(PiC(NatC, toNat));
 def idDecoded = thunk { fun (x) { return x } };
 
+/// The `appliedDecoded` run applies the identity at its decoded type.
 @[ runs("Succ Zero") ]
 def appliedDecoded() -> -F Nat { idDecoded (Succ Zero) }
 
+/// The `idNat` value uses the same identity at the plain arrow between naturals.
+/// The codomain `elPi(toNat(x))` runs to `Nat` and ignores its binder.
 @[ checks ]
 def idNat : +U (Nat -> -F Nat);
 def idNat = idDecoded;
 
+/// The `UM` universe and its `elM` decoder form one block at a level. A field of
+/// a code decodes the code before it, at the level of the field.
 rec {
+  /// The `UM` codes at each level name the naturals and the dependent functions.
   @[ checks ]
   data UM : Nat -> Type where {
+    /// The naturals, at each level.
     | NatM : (n : Nat) --> UM(n)
+    /// The dependent functions from a coded domain at a level.
     | PiM : (n : Nat, a : UM(n), b : +U (elM(n, a) -> -F UM(n))) --> UM(n)
   }
 
+  /// The `elM` decoder returns the value type of each code at each level. It
+  /// recurses below the code.
   @[ checks ]
   def rec elM(n : Nat, u : UM(n)) -> -F Type =
     match u where
@@ -50,10 +70,13 @@ rec {
       | PiM(m, a, b) => return (+U ((x : elM[<](m, a)) -> -F elM[<](m, b(x))))
 }
 
+/// The `natAtZero` code is the natural code at level zero.
 @[ checks ]
 def natAtZero : UM(Zero);
 def natAtZero = NatM Zero;
 
+/// The `zeroAtLevel` value is zero at the decode of the natural code at level
+/// zero.
 @[ checks ]
 def zeroAtLevel : elM(Zero, natAtZero);
 def zeroAtLevel = Zero;
