@@ -12,11 +12,11 @@
 //! is a variable or a later tuple is an identity. A degenerate cell counts
 //! zero.
 //!
-//! | Face | Chain |
-//! | --- | --- |
-//! | first | `Σⱼ occⱼ(u₁) [u₂ⱼ|u₃|…|uₙ]`, a term for each variable of `u₁`, counted by its occurrences |
-//! | inner, at `i` from 1 to `n − 1` | `(−1)ⁱ [u₁|…|uᵢ ∘ uᵢ₊₁|…|uₙ]`, the composite in normal form |
-//! | last | `(−1)ⁿ [u₁|…|uₙ₋₁]` |
+//! - The first face is `Σⱼ occⱼ(u₁) [u₂ⱼ|u₃|…|uₙ]`: one term for each variable
+//!   of `u₁`, counted by its occurrences.
+//! - The inner face at `i`, from 1 to `n − 1`, is `(−1)ⁱ [u₁|…|uᵢ ∘
+//!   uᵢ₊₁|…|uₙ]`, with the composite in normal form.
+//! - The last face is `(−1)ⁿ [u₁|…|uₙ₋₁]`.
 //!
 //! A cell of degree one has the boundary `(occ(u₁) − 1) []`. The first face
 //! counts occurrences. So the boundary of a boundary is zero only when each
