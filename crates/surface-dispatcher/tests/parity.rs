@@ -359,6 +359,9 @@ enum Spelled
     /// Its type, which the printer does not spell faithfully: the text it
     /// wrote.
     Unfaithful(String),
+    /// Its type, which a walk stopped at its visit budget spells no further:
+    /// the printer spells a shared type as its unshared tree (#5826).
+    PastTheBudget,
     /// No type: the lowering refused the declaration, so no form is in
     /// question.
     Untyped,
@@ -384,6 +387,17 @@ fn printed(
                 if ty.fidelity() == Fidelity::Faithful && ty.unspelled().is_empty() =>
             {
                 Spelled::Faithful(String::from(ty.as_ref()))
+            },
+            // A walk that stops at its visit budget spells a shared type no
+            // further (#5826), as the body parity holds it.
+            Maybe::Present(Declared::Typed(ty))
+                if !ty.unspelled().is_empty()
+                    && ty
+                        .unspelled()
+                        .iter()
+                        .all(|&reason| reason == Unspelled::OverBudget) =>
+            {
+                Spelled::PastTheBudget
             },
             Maybe::Present(Declared::Typed(ty)) => Spelled::Unfaithful(String::from(ty.as_ref())),
             Maybe::Present(Declared::Refused(_)) | Maybe::Absent(_) => Spelled::Untyped,
@@ -538,7 +552,7 @@ fn misses(
             (Spelled::Unfaithful(text), _) | (_, Spelled::Unfaithful(text)) => misses.push(format!(
                 "{name}: `{declaration}`: the printer does not spell its type faithfully: {text}"
             )),
-            (Spelled::Untyped, _) | (_, Spelled::Untyped) => {},
+            (Spelled::PastTheBudget | Spelled::Untyped, _) | (_, Spelled::PastTheBudget | Spelled::Untyped) => {},
         }
     }
     let printed = printed_whole;
