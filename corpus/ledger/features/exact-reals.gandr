@@ -6,6 +6,7 @@
 /// - see: `corpus/model/reals/sqrt-two.gandr` — the square root of two through `gandr run`
 /// - see: `corpus/model/reals/comparison.gandr` — a comparison that holds
 /// - see: `corpus/model/reals/resume.gandr` — a machine restored from its checkpoint
+/// - see: `corpus/model/reals/trigonometry.gandr` — π, the cosine and the angle of a point
 
 // The exact reals' host interface.
 import std.reals;

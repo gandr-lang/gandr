@@ -36,6 +36,10 @@
 //! - [`eliminate`], [`Elimination`] — cut elimination. A strict comparison that
 //!   reads a cut on one side becomes the lower or the upper cut of that cut at
 //!   the other side, so the machine encloses the other side alone.
+//! - [`pi`], [`cosine`], [`sine`], [`angle`] — the enclosure rules of the
+//!   builtin nodes. No plan of field operations and cuts defines a
+//!   transcendental real, so each builtin is a node with one rule. The
+//!   approximation pass, the checker and the machine read that rule.
 //!
 //! # References
 //!
@@ -53,8 +57,10 @@ pub mod bisection;
 pub mod cache;
 pub mod certificate;
 pub mod codec;
+pub mod compound;
 pub mod dovetail;
 pub mod dyadic;
+pub mod elementary;
 pub mod elimination;
 pub mod interval;
 pub mod plan;
@@ -111,6 +117,10 @@ pub use crate::dyadic::Precision;
 pub use crate::dyadic::Rounded;
 pub use crate::dyadic::Rounding;
 pub use crate::dyadic::Sign;
+pub use crate::elementary::angle;
+pub use crate::elementary::cosine;
+pub use crate::elementary::pi;
+pub use crate::elementary::sine;
 pub use crate::elimination::Elimination;
 pub use crate::elimination::EliminationError;
 pub use crate::elimination::eliminate;

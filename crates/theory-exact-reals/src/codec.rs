@@ -47,7 +47,10 @@
 //! | quotient | `0x06` | exists | `0x15` | | |
 //! | power | `0x07` | forall | `0x16` | | |
 //! | cut | `0x08` | lower cut | `0x17` | | |
-//! | | | upper cut | `0x18` | | |
+//! | π | `0x09` | upper cut | `0x18` | | |
+//! | cosine | `0x0a` | | | | |
+//! | sine | `0x0b` | | | | |
+//! | angle | `0x0c` | | | | |
 //!
 //! A certificate's layout stands on [`Certificate::encode`], and a
 //! checkpoint's on [`crate::dovetail::Dovetail::checkpoint`].
@@ -75,6 +78,7 @@ use crate::dyadic::DyadicError;
 use crate::dyadic::Exponent;
 use crate::dyadic::InlineMantissa;
 use crate::dyadic::MantissaView;
+use crate::dyadic::Precision;
 use crate::interval::Bound;
 use crate::interval::Closure;
 use crate::interval::Endpoint;
@@ -148,6 +152,14 @@ mod step_kind
     pub(super) const INSIDE: Kind = Kind(0x3d);
     /// An outside step.
     pub(super) const OUTSIDE: Kind = Kind(0x3e);
+    /// A π step.
+    pub(super) const PI: Kind = Kind(0x50);
+    /// A cosine step.
+    pub(super) const COSINE: Kind = Kind(0x51);
+    /// A sine step.
+    pub(super) const SINE: Kind = Kind(0x52);
+    /// An angle step.
+    pub(super) const ANGLE: Kind = Kind(0x53);
 }
 
 /// A one-byte kind: of a node, or of an interval's orientation, endpoint or
@@ -166,6 +178,10 @@ impl Kind
     const CONSTANT: Self = Self(0x02);
     /// A cut.
     const CUT: Self = Self(0x08);
+    /// The cosine of a real.
+    const COS: Self = Self(0x0a);
+    /// The angle of a point.
+    const ARG: Self = Self(0x0c);
     /// A quotient.
     const DIV: Self = Self(0x06);
     /// A bounded existential.
@@ -186,10 +202,14 @@ impl Kind
     const MUL: Self = Self(0x05);
     /// A natural power.
     const POWER: Self = Self(0x07);
+    /// π.
+    const PI: Self = Self(0x09);
     /// A product domain.
     const PRODUCT: Self = Self(0x21);
     /// A difference.
     const SUB: Self = Self(0x04);
+    /// The sine of a real.
+    const SIN: Self = Self(0x0b);
     /// A subdomain.
     const SUBDOMAIN: Self = Self(0x22);
     /// A sum.
@@ -673,6 +693,16 @@ impl Entry
                     self.child(cut.upper.node());
                     self.evidence(cut.laws);
                 },
+                Real::Pi => self.kind(Kind::PI),
+                Real::Cos(argument) => {
+                    self.kind(Kind::COS);
+                    self.child(argument.node());
+                },
+                Real::Sin(argument) => {
+                    self.kind(Kind::SIN);
+                    self.child(argument.node());
+                },
+                Real::Arg(x, y) => pair(self, Kind::ARG, x.node(), y.node()),
             },
             Node::Open(ref open) => match *open {
                 Open::Top => self.kind(Kind::TOP),
@@ -1023,13 +1053,20 @@ impl<'bytes> Reader<'bytes>
         let node = match kind {
             Kind::BOUND => Node::Real(Real::Bound(DeBruijn::from(self.word()?.0))),
             Kind::CONSTANT => Node::Real(Real::Constant(self.dyadic()?)),
-            Kind::SUM | Kind::SUB | Kind::MUL | Kind::LESS | Kind::LOWER_CUT | Kind::UPPER_CUT => {
+            Kind::SUM
+            | Kind::SUB
+            | Kind::MUL
+            | Kind::ARG
+            | Kind::LESS
+            | Kind::LOWER_CUT
+            | Kind::UPPER_CUT => {
                 let left = RealId::at(self.child(builder, Sort::Real)?);
                 let right = RealId::at(self.child(builder, Sort::Real)?);
                 match kind {
                     Kind::SUM => Node::Real(Real::Add(left, right)),
                     Kind::SUB => Node::Real(Real::Sub(left, right)),
                     Kind::MUL => Node::Real(Real::Mul(left, right)),
+                    Kind::ARG => Node::Real(Real::Arg(left, right)),
                     Kind::LOWER_CUT => Node::Open(Open::LowerCut(left, right)),
                     Kind::UPPER_CUT => Node::Open(Open::UpperCut(left, right)),
                     Kind(_) => Node::Open(Open::Less(left, right)),
@@ -1061,6 +1098,16 @@ impl<'bytes> Reader<'bytes>
                     upper,
                     laws,
                 }))
+            },
+            Kind::PI => Node::Real(Real::Pi),
+            Kind::COS | Kind::SIN => {
+                let argument = RealId::at(self.child(builder, Sort::Real)?);
+                if kind == Kind::COS {
+                    Node::Real(Real::Cos(argument))
+                }
+                else {
+                    Node::Real(Real::Sin(argument))
+                }
             },
             Kind::TOP => Node::Open(Open::Top),
             Kind::BOTTOM => Node::Open(Open::Bottom),
@@ -1537,6 +1584,40 @@ impl Entry
                 self.premise(point);
                 self.side(side);
             },
+            Step::Pi { real, precision } => {
+                self.kind(step_kind::PI);
+                self.child(real);
+                self.word(Word(u32::from(precision)));
+            },
+            Step::Cosine {
+                real,
+                argument,
+                precision,
+            }
+            | Step::Sine {
+                real,
+                argument,
+                precision,
+            } => {
+                self.kind(if matches!(*step, Step::Cosine { .. }) {
+                    step_kind::COSINE
+                }
+                else {
+                    step_kind::SINE
+                });
+                self.child(real);
+                self.premise(argument);
+                self.word(Word(u32::from(precision)));
+            },
+            Step::Angle {
+                real,
+                x,
+                y,
+                precision,
+            } => {
+                self.binary(step_kind::ANGLE, real, (x, y));
+                self.word(Word(u32::from(precision)));
+            },
         }
     }
 }
@@ -1579,6 +1660,9 @@ impl Reader<'_>
         };
         let operands = |reader: &mut Self| -> Result<(NodeId, StepId, StepId), DecodeError> {
             return Ok((node(reader)?, premise(reader)?, premise(reader)?));
+        };
+        let precision = |reader: &mut Self| -> Result<Precision, DecodeError> {
+            return Precision::try_from(reader.word()?.0).map_err(DecodeError::Dyadic);
         };
         return match self.kind()? {
             step_kind::WITNESSES => Ok(Step::Witnesses {
@@ -1650,6 +1734,29 @@ impl Reader<'_>
                 point: premise(self)?,
                 side: self.side()?,
             }),
+            step_kind::PI => Ok(Step::Pi {
+                real: node(self)?,
+                precision: precision(self)?,
+            }),
+            step_kind::COSINE => Ok(Step::Cosine {
+                real: node(self)?,
+                argument: premise(self)?,
+                precision: precision(self)?,
+            }),
+            step_kind::SINE => Ok(Step::Sine {
+                real: node(self)?,
+                argument: premise(self)?,
+                precision: precision(self)?,
+            }),
+            step_kind::ANGLE => {
+                let (real, x, y) = operands(self)?;
+                Ok(Step::Angle {
+                    real,
+                    x,
+                    y,
+                    precision: precision(self)?,
+                })
+            },
             _ => Err(DecodeError::UnknownKind),
         };
     }
@@ -1660,10 +1767,10 @@ impl Certificate
     /// The certificate's canonical bytes.
     ///
     /// The bytes open with the magic `GXRC`, the format as a `u16` and the step
-    /// count as a `u64`. Each step is its kind, then its fields: a node or a
-    /// premise as a `u32`, a dyadic as the plan layout writes it, a side as
-    /// `0x00` for the lower cut or `0x01` for the upper cut, and a list of
-    /// premises as its count as a `u64`, then each premise.
+    /// count as a `u64`. Each step is its kind, then its fields: a node, a
+    /// premise or a precision as a `u32`, a dyadic as the plan layout writes
+    /// it, a side as `0x00` for the lower cut or `0x01` for the upper cut, and
+    /// a list of premises as its count as a `u64`, then each premise.
     ///
     /// | Step | Byte | Fields |
     /// | ---- | ---- | ------ |
@@ -1680,6 +1787,12 @@ impl Certificate
     /// | cover | `0x3a` | the universal, the list of premises |
     /// | counterexample | `0x3b` | the universal, the premise |
     /// | refutation | `0x3c` | the existential, the list of premises |
+    /// | inside | `0x3d` | the open node, the premise, the side |
+    /// | outside | `0x3e` | the open node, the premise, the side |
+    /// | π | `0x50` | the π node, the precision |
+    /// | cosine | `0x51` | the cosine, the premise, the precision |
+    /// | sine | `0x52` | the sine, the premise, the precision |
+    /// | angle | `0x53` | the angle, the first premise, the second premise, the precision |
     ///
     /// # Specification
     /// - ensures: the magic, the format, the step count, then each step's kind
