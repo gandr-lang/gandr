@@ -2120,7 +2120,6 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
 fn a_type_application_is_written_juxtaposed_5708()
 {
     let grammar = grammar();
-    let data = "data Parcel(a : Type) : Type where\n  | Enclosed : (x : a) --> Parcel a\n\ndata Pair(a : Type, b : Type) : Type where\n  | Paired : (x : a, y : b) --> Pair a b\n\n";
     for (parameter, form, expected) in [
         ("Parcel(Integer)", Form::Sugared, "Parcel Integer"),
         ("Parcel(Integer)", Form::Explicit, "Parcel Integer"),
@@ -2165,10 +2164,18 @@ fn a_type_application_is_written_juxtaposed_5708()
             "+U (Integer -> -F (Pair (Parcel Integer) Integer))",
         ),
     ] {
-        let source = format!("{data}def taken(a : Type, x : {parameter}) -> Integer {{ 0 }}\n");
+        let source = format!(
+            include_str!("rewrite/unformatted/a-type-application-is-written-juxtaposed-5708.gandr"),
+            parameter = parameter
+        );
         assert_eq!(
             spelled(&grammar, source.as_str(), form, Selection::Every),
-            format!("{data}def taken(a : Type, x : {expected}) -> Integer {{ 0 }}\n"),
+            format!(
+                include_str!(
+                    "rewrite/unformatted/a-type-application-is-written-juxtaposed-5708.gandr"
+                ),
+                parameter = expected
+            ),
             "{parameter} as {form}"
         );
     }
