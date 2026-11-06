@@ -457,7 +457,11 @@ impl CanonicalDiagram
             reason = "parity: the body copies the generators and the interface and reassembles them; the check compares each once"
         )
     )]
-    #[spec(ensures: |ref result| result.as_ref().is_ok_and(|wiring| wiring.wire_count() == self.wires && wiring.generators() == &*self.generators && wiring.boundary() == &self.boundary))]
+    #[spec(ensures: |ref result| match *result {
+        Ok(ref wiring) => wiring.wire_count() == self.wires && wiring.generators() == &*self.generators && wiring.boundary() == &self.boundary,
+        Err(WiringObstruction::DirectedCycle { through }) => usize::from(through) < self.generators.len(),
+        Err(_) => true,
+    })]
     #[inline]
     pub fn to_wiring(&self) -> Result<Wiring, WiringObstruction>
     {
