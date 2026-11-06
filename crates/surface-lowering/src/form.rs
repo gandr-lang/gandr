@@ -405,6 +405,9 @@ impl FormName
     /// A capitalised name where a type is read: a telescope entry's key named
     /// as a type is, read as its label.
     pub const TYPE_IDENTIFIER: Self = Self("type_identifier");
+    /// A builtin type's name where a type is read. Spelled as a lowercase
+    /// word, `f32`, it is also a telescope entry's key, read as its label.
+    pub const PRIMITIVE_TYPE: Self = Self("primitive_type");
     /// A boolean literal standing as its own pattern.
     pub const BOOLEAN: Self = Self("boolean");
     /// A number standing as its own pattern.

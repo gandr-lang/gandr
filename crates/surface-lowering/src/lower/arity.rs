@@ -767,7 +767,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Read the entries of a type list up to `closer`: each a bare type, or
-    /// `k : T` whose key is a bare word, lowercase or named as a type is.
+    /// `k : T` whose key is a bare word, lowercase or named as a type is. A
+    /// builtin type's lowercase name, `f32`, is such a word.
     /// Several words before one `:` share its type, `m n : T`, and give one
     /// entry each, in written order.
     ///
@@ -788,10 +789,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — empty, positional and labelled lists, with and
     ///   without a trailing comma, a dependent arrow whose binder is named as a
-    ///   type is, and words that share one type, the type an earlier entry
-    ///   binds included.
+    ///   type is, keys that are builtin types' lowercase names, and words that
+    ///   share one type, the type an earlier entry binds included.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_dependent_arrow_binds_a_type_named_binder_2179`
+    /// - witness: `lower::arity::tests::a_builtin_type_s_lowercase_name_is_a_key_5561`
     /// - witness: `lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
     pub(super) fn type_entries(
@@ -847,9 +849,17 @@ impl<'source> Lowerer<'_, 'source>
                 let mut key = first;
                 loop {
                     match self.form_at(key)? {
+                        // A builtin type's lowercase name, `f32`, is a word
+                        // here, as it is where a parameter or a value's label
+                        // is read.
                         Some((name, _))
                             if name == FormName::TYPE_VARIABLE
-                                || name == FormName::TYPE_IDENTIFIER =>
+                                || name == FormName::TYPE_IDENTIFIER
+                                || (name == FormName::PRIMITIVE_TYPE
+                                    && self
+                                        .text_at(key)
+                                        .as_ref()
+                                        .starts_with(|first: char| first.is_ascii_lowercase())) =>
                         {
                             entries.push(Entry {
                                 key: Key::Label(self.name_at(key), key),
