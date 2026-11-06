@@ -1827,12 +1827,11 @@ fn a_natural_literal_crosses_by_the_reader_of_its_type_4528()
     );
 }
 
-/// #4806: a natural literal written as a definition's own value, at a type a
-/// reader answers, crosses by the reader, and the reader's call has no
-/// computation to run before: the refusal names the literal, as a crossing's
-/// run, and the pursuit stands at the literal.
+/// #4812: a natural literal written as a definition's own value, at a type a
+/// reader answers, crosses by the reader, and the reader's call is pure: the
+/// definition stands as the value the call returns, which the kernel types.
 #[test]
-fn a_literal_read_in_a_definition_s_own_value_is_refused_at_the_literal_4806()
+fn a_literal_read_in_a_definition_s_own_value_stands_as_its_reading_4812()
 {
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
@@ -1857,20 +1856,28 @@ fn a_literal_read_in_a_definition_s_own_value_is_refused_at_the_literal_4806()
             declaration(At(1), Maybe::Present(text), Maybe::Present(literal)),
         ])
     };
-    assert_eq!(
-        report.judged()[1].verdict(),
-        Verdict::Refused(CheckRefusal::UnenclosedRun {
-            at: literal,
-            source: crate::nested::RunSource::Crossing,
-        }),
-        "the reader's call stands in the definition's own value, and the refusal names the literal"
+    assert!(
+        matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+        "the reader's call stands in the definition's own value, and it is pure: {:?}",
+        report.judged()[1].verdict()
     );
-    assert_eq!(
-        report.failures()[&ConstantIndex::from(1_usize)]
-            .pursuit()
-            .at(),
-        CoreNode::Term(TermNode::Value(literal)),
-        "the pursuit stands at the literal, which the source wrote"
+    assert!(
+        matches!(
+            report
+                .definitions()
+                .get(&ConstantIndex::from(1_usize))
+                .and_then(|&body| arena.value(body)),
+            Some(&gandr_core_term::Value::Returned(_))
+        ),
+        "the definition is the value the reader's call returns"
+    );
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. } | crate::bridge::Outcome::Assumed { .. }
+        )),
+        "the kernel types the returned call: {readmission:?}"
     );
 }
 
@@ -3008,44 +3015,83 @@ fn a_computation_written_as_a_projected_record_runs_1106()
 }
 
 #[test]
-fn a_run_in_a_definition_s_own_value_is_unenclosed()
+fn a_run_in_a_definition_s_own_value_is_unenclosed_only_when_effectful_4812()
 {
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
     let mut arena = CoreArena::new();
     let (function, identity) = integer_function(&mut arena);
     let integer = arena.value_type_base(BaseType::Integer);
-    let zero = arena.value_literal(integer_literal());
-    let computation = call(&mut arena, ConstantIndex::from(0_usize), zero);
-    let nested = arena.value_nested(computation);
+    let interface = EffectSig::new("Ask".into(), [EffectOp {
+        name: OperationName::from("ask"),
+        payload: integer,
+        reply: integer,
+    }])
+    .expect("one operation");
+    let asks =
+        arena.comp_type_returner_with_effects(integer, EffectRow::singleton(interface.clone()));
+    let asking_arrow = arena.comp_type_arrow(integer, asks);
+    let asking_type = arena.value_type_thunk(asking_arrow);
+    let asking = {
+        let asked = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        );
+        let performed = arena.computation_perform(interface, OperationName::from("ask"), asked);
+        let lambda = arena.computation_lambda(performed);
+        arena.value_thunk(lambda)
+    };
+    let [pure, effectful] = [0_usize, 1].map(|callee| {
+        let zero = arena.value_literal(integer_literal());
+        let computation = call(&mut arena, ConstantIndex::from(callee), zero);
+        arena.value_nested(computation)
+    });
     let report = {
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         check_module(&mut context, &[
             declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
-            declaration(At(1), Maybe::Present(integer), Maybe::Present(nested)),
+            declaration(At(1), Maybe::Present(asking_type), Maybe::Present(asking)),
+            declaration(At(2), Maybe::Present(integer), Maybe::Present(pure)),
+            declaration(At(3), Maybe::Present(integer), Maybe::Present(effectful)),
         ])
     };
-    let refusal = CheckRefusal::UnenclosedRun {
-        at: nested,
-        source: crate::nested::RunSource::Written,
-    };
+    assert!(
+        matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "a pure call needs no computation around it: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(
+        matches!(
+            report
+                .definitions()
+                .get(&ConstantIndex::from(2_usize))
+                .and_then(|&body| arena.value(body)),
+            Some(&gandr_core_term::Value::Returned(_))
+        ),
+        "the definition is the value the call returns, which a read of it runs"
+    );
+    let refusal = CheckRefusal::UnenclosedRun { at: effectful };
     assert_eq!(
-        report.judged()[1].verdict(),
+        report.judged()[3].verdict(),
         Verdict::Refused(refusal),
-        "the call checks at the integer, but no computation encloses it to run before"
+        "the call checks at the integer, but no computation encloses its effect to run before"
     );
     assert_eq!(refusal.classify(), FailureClass::MalformedSource);
-    let failure = &report.failures()[&ConstantIndex::from(1_usize)];
+    let failure = &report.failures()[&ConstantIndex::from(3_usize)];
     assert!(
         failure.obligations().is_empty(),
         "no rule of the judgement is pending"
     );
     assert_eq!(
         failure.pursuit().at(),
-        CoreNode::Term(TermNode::Value(nested))
+        CoreNode::Term(TermNode::Value(effectful))
     );
     assert!(
         !report
             .definitions()
-            .contains_key(&ConstantIndex::from(1_usize)),
+            .contains_key(&ConstantIndex::from(3_usize)),
         "a refused body defines nothing"
     );
 }

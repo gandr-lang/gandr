@@ -1,0 +1,36 @@
+// A definition's own value that runs a pure call.
+//
+// A definition's own value has no computation around it to run a call
+// before. A pure call there stands as the value it returns. Each read of the
+// definition runs the call, and a type that reads the definition converts
+// through the call. An effectful call there is refused `UnenclosedRun`, in
+// `ledger/diagnostics/UnenclosedRun.gandr`.
+//
+// - see: #4812 — `odd`, `flipped`, `sameOdd`
+// - see: `basics/literal-in-value.gandr` — a literal a reader reads
+
+/// The two parities.
+data Parity : Type where
+  /// Even.
+  | Even : Parity
+  /// Odd.
+  | Odd : Parity
+
+/// The other parity.
+def flip(p : Parity) -> Parity =
+  match p
+    | Even => Odd
+    | Odd => Even
+
+/// A call as the definition's own value.
+@[ runs("Odd") ]
+def odd : Parity = flip Even;
+
+/// A pair of calls as the definition's own value: each call runs before the
+/// pair is built.
+@[ runs("*{Odd, Even}") ]
+def flipped : Parity * Parity = *{flip Even, flip Odd};
+
+/// The definition identified with the constructor its call computes.
+@[ checks ]
+def sameOdd : Path[.A = Parity](odd, Odd) = Path.here Odd;

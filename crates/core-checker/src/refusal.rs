@@ -1332,17 +1332,14 @@ pub enum CheckRefusal
         /// How it breaks.
         defect: crate::worlds::LocatedDefect,
     },
-    /// A computation written where a value is read and run there, with no
-    /// computation enclosing it to run before: one in a definition's own
-    /// value, or under static content. A crossing's call is refused at the
-    /// written value it carries.
+    /// A computation written where a value is read and run there, which
+    /// performs effects, with no computation enclosing it to run before: one
+    /// in a definition's own value, or under static content. A pure one there
+    /// runs before the value's return, or stands as the value it returns.
     UnenclosedRun
     {
-        /// The nested computation or written run, or the value a crossing
-        /// carries.
+        /// The nested computation or written run.
         at: ValueId,
-        /// Whether the source wrote the run or a crossing minted it.
-        source: crate::nested::RunSource,
     },
     /// A call omits an implicit that neither its arguments nor the type it is
     /// checked against determine: the solver bound no solution to the hole

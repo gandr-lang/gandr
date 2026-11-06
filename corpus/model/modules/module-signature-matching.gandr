@@ -6,9 +6,9 @@
 module Metrics : *{ type Ratio = Integer, base : Integer, double : Integer, scale : Ratio } where {
   /// A member the signature leaves out.
   def scratch = 2;
-  /// The scratch value tripled. An operator in a value runs before the
-  /// computation around it, and a definition's value has none.
-  @[ refuses("UnenclosedRun") ]
+  /// The scratch value tripled. The operator's call is pure, so the value
+  /// stands as what the call returns.
+  @[ checks ]
   def double = scratch * 3;
   /// The base.
   def base = 7;

@@ -161,7 +161,6 @@ INSERT INTO purpose VALUES('core-checker','module::elaborated_report','function'
 INSERT INTO purpose VALUES('core-checker','module::type_module','function','Judges declarations in order, as check_module does, keeping the type of every term each judged body judges and the refusal of every declaration refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','nested::NestedElaboration','struct','What elaborating one declaration''s body did: every decision the judgement made, every node the rebuild carried over from one it was built from, and every bind minted beside the run it was minted for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','nested::Nesting','enum','A nested computation''s nesting.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-checker','nested::RunSource','enum','Names whether an unenclosed run is written or a crossing''s, so its refusal names the written value and words the help.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::ArgumentPosition','struct','The position of an argument among a static application''s arguments, counted from zero at the argument nearest the head.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::CheckRefusal','enum','Why the judgement refused a term, a type or a declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::CheckingForm','enum','A checking-only form, met where a type had to be synthesised.',NULL,'fits','sound',NULL);

@@ -35,14 +35,14 @@
 //! thunk or a case arm; and the checker elaborates the accepted body, each
 //! run a bind at the nested call's span, and judges the result again. With no
 //! type expected anywhere else it is refused by name,
-//! [`CheckRefusal::NotSynthesisable`] with [`CheckingForm::Nested`], and a run
-//! no computation encloses is [`CheckRefusal::UnenclosedRun`]. The recorded
-//! decision was that the
-//! lowering inserts every bridge, which held while the checker answered
-//! verdicts rather than terms; whether a nested computation runs is the
-//! expected type's, which only the checker holds, so a verdict now carries
-//! the elaborated body and [`ModuleReport::nested_elaborations`] reports each
-//! [`Nesting`]. The `nested` module states the alternatives and the reversal.
+//! [`CheckRefusal::NotSynthesisable`] with [`CheckingForm::Nested`], and an
+//! effectful run no computation encloses is [`CheckRefusal::UnenclosedRun`].
+//! The recorded decision was that the lowering inserts every bridge, which
+//! held while the checker answered verdicts rather than terms; whether a
+//! nested computation runs is the expected type's, which only the checker
+//! holds, so a verdict now carries the elaborated body and
+//! [`ModuleReport::nested_elaborations`] reports each [`Nesting`]. The
+//! `nested` module states the alternatives and the reversal.
 //!
 //! **A type has one classifier.** Formation runs in the judgement's machine
 //! and answers each formed type's universe — its family's sort at its natural
@@ -699,7 +699,6 @@ pub use crate::module::type_module;
 pub use crate::module::unmarked;
 pub use crate::nested::NestedElaboration;
 pub use crate::nested::Nesting;
-pub use crate::nested::RunSource;
 pub use crate::refusal::ArgumentPosition;
 pub use crate::refusal::CheckRefusal;
 pub use crate::refusal::CheckingForm;

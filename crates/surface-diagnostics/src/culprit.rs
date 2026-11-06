@@ -433,7 +433,7 @@ fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::GeneratorFamilyUnsupported { .. } => {
             "a fill along a family with no filler yet"
         },
-        CheckRefusal::UnenclosedRun { .. } => "a run with no computation to run before",
+        CheckRefusal::UnenclosedRun { .. } => "an effectful run with no computation to run before",
         CheckRefusal::ImplicitUnsolved { .. } => "an implicit left unsolved",
         CheckRefusal::ModelUnanswered { .. } => "a model implicit no module answers",
         CheckRefusal::ModelAmbiguous { .. } => "a model implicit more than one module answers",

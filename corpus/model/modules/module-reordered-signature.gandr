@@ -8,15 +8,15 @@ module Ordered : *{ third : Integer, first : Integer, second : Integer } where {
   def first = 1;
   /// A member the signature leaves out.
   def hidden = 99;
-  /// One more than the first. An operator in a value runs before the
-  /// computation around it, and a definition's value has none.
-  @[ refuses("UnenclosedRun") ]
+  /// One more than the first. The operator's call is pure, so the value
+  /// stands as what the call returns.
+  @[ checks ]
   def second = first + 1;
-  /// One more than the second, refused for the same reason.
-  @[ refuses("UnenclosedRun") ]
+  /// One more than the second, for the same reason.
+  @[ checks ]
   def third = second + 1;
 }
 
-/// The three gathered in a record: it checks, each member typed by the
-/// signature, though the second and third are refused above.
+/// The three gathered in a record, each member typed by the signature.
+@[ checks ]
 def gathered = *{a = Ordered.first, b = Ordered.second, c = Ordered.third};

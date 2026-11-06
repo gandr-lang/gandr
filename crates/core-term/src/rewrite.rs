@@ -133,6 +133,7 @@ use crate::arena::ComputationId;
 use crate::arena::CoreArena;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
+use crate::effect::Purity;
 use crate::effect::capability::Region;
 use crate::effect::capability::RegionBinder;
 use crate::hole::HoleId;
@@ -1408,12 +1409,15 @@ impl<'arena> Engine<'arena>
         if rewrite == Rewrite::Elaborate
             && let (Node::Value(held), Node::Value(id)) = (node, rewritten)
             && let Some(&decided) = self.nesting.get(&held)
-            && let Some(&Value::Nested(nested)) = self.arena.value(id)
         {
-            match decided {
-                Nesting::Thunk => return Node::Value(self.arena.value_thunk(nested)),
-                Nesting::Returned => return Node::Value(self.arena.value_returned(nested)),
-                Nesting::Run | Nesting::Filled(_) => {},
+            match (decided, self.arena.value(id)) {
+                (Nesting::Thunk, Some(&Value::Nested(nested))) => {
+                    return Node::Value(self.arena.value_thunk(nested));
+                },
+                (Nesting::Returned, Some(&(Value::Nested(nested) | Value::Run(nested)))) => {
+                    return Node::Value(self.arena.value_returned(nested));
+                },
+                _ => {},
             }
         }
         // A force of a nested call the checker suspended is the call itself,
@@ -6512,8 +6516,10 @@ pub enum Nesting
     /// Expected at a thunk type, it is suspended, as a written thunk is.
     Thunk,
     /// Expected at any other type, it runs before its region and stands for
-    /// the value it returns.
-    Run,
+    /// the value it returns. A pure one in a definition's own value runs
+    /// before that value's return, and a pure one under static content stands
+    /// as the value it returns, `⟨c⟩`, as [`Self::Returned`] does.
+    Run(Purity),
     /// Run purely where a type after it reads it — a dependent pair's first
     /// component, a dependent function's argument — it stands as the value it
     /// returns, `⟨c⟩`, so that type reads the computation rather than a bound
@@ -6524,11 +6530,12 @@ pub enum Nesting
     Filled(ComputationId),
 }
 
-/// A run with no computation enclosing it to run before.
+/// An effectful run with no computation enclosing it to run before.
 ///
 /// It stands in a definition's own value, beneath a static lambda or a static
 /// application, which are erased before anything runs, or in a type, where
-/// nothing runs.
+/// nothing runs. A pure run there binds before the value's return, or, under
+/// static content, stands as the value it returns.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Unenclosed
@@ -6562,8 +6569,23 @@ enum Position
     Computation(ComputationId, Maybe<ComputationId, ()>),
 }
 
-/// Every run `subject` holds, grouped by the region it runs before, each
-/// region's in written order.
+/// What a survey finds: the runs grouped by the region they run before, and
+/// the pure runs that static content holds.
+struct Surveyed
+{
+    /// The region of the subject's own values: the return of the subject,
+    /// which the elaboration mints for the survey.
+    root: ComputationId,
+    /// Every run that binds, under its region, each region's in written
+    /// order.
+    regions: BTreeMap<ComputationId, Vec<(ValueId, ComputationId)>>,
+    /// Every pure run that static content holds, in written order: each
+    /// stands as the value it returns.
+    returned: Vec<ValueId>,
+}
+
+/// Every run the subject `root` returns holds, grouped by the region it runs
+/// before, each region's in written order.
 ///
 /// A run's region is the innermost computation whose values it stands in:
 /// an application's head shares its spine's region, so `f(g(x), h(y))` runs
@@ -6573,38 +6595,49 @@ enum Position
 /// order is the region's values read left to right, a head before its
 /// argument, a run before the runs nested in its own computation, which
 /// form that computation's region. A record's fields read in label order,
-/// the order the core holds them in.
+/// the order the core holds them in. A run in the subject's own values runs
+/// before `root` only when it is pure. A pure run that static content holds
+/// has no region; it stands as the value it returns.
 ///
 /// # Specification
-/// - requires: `subject` is live in `arena`.
+/// - requires: `root` is the return of the subject, live in `arena`.
 /// - ensures: every `Run`, and every `Nested` that `nesting` decides to run,
-///   reachable from `subject` through terms, listed once under its region
-///   beside its computation; types are not entered.
-/// - provides: the regions an elaboration hoists into.
+///   reachable from the subject through terms, listed once: under its region
+///   beside its computation, or, decided a pure run and held in static content,
+///   among the returned; types are not entered.
+/// - provides: the regions an elaboration hoists into, and the runs it returns
+///   in place.
 /// - fails: [`Unenclosed`] for the first run, in written order, that stands in
-///   no computation's values, and then for the first node `nesting` decides
-///   that no term of `subject` reaches — one standing in a type.
+///   the subject's own values or in static content and is not decided a pure
+///   run, and then for the first node `nesting` decides that no term of the
+///   subject reaches — one standing in a type.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — runs beside a thunk, in a case arm, in an application
-///   spine and in a definition's own value separate the region rule, the
-///   boundaries and the refusal; every former of the shared fixture, with no
-///   run beneath it, surveys to no region.
+///   spine, in a definition's own value and in static content separate the
+///   region rule, the boundaries, the root, the returned run and the refusal;
+///   every former of the shared fixture, with no run beneath it, surveys to no
+///   region.
 /// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
-/// - witness: `rewrite::tests::a_run_in_no_computation_is_unenclosed`
+/// - witness: `rewrite::tests::an_effectful_run_in_no_computation_is_unenclosed`
+/// - witness: `rewrite::tests::a_pure_run_in_no_computation_stands_as_what_it_returns_4812`
 /// - witness: `rewrite::tests::a_decision_no_term_reaches_is_unenclosed`
 /// - witness: `rewrite::tests::an_undecided_elaboration_keeps_every_former_but_the_run`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |regions| regions.values().all(|runs| !runs.is_empty())))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |surveyed| surveyed.regions.values().all(|runs| !runs.is_empty())))]
 fn survey(
     arena: &CoreArena,
-    subject: ValueId,
+    root: ComputationId,
     nesting: &BTreeMap<ValueId, Nesting>,
-) -> Result<BTreeMap<ComputationId, Vec<(ValueId, ComputationId)>>, Unenclosed>
+) -> Result<Surveyed, Unenclosed>
 {
-    let mut regions: BTreeMap<ComputationId, Vec<(ValueId, ComputationId)>> = BTreeMap::new();
+    let mut surveyed = Surveyed {
+        root,
+        regions: BTreeMap::new(),
+        returned: Vec::new(),
+    };
     let mut met = alloc::collections::BTreeSet::new();
-    let mut pending = alloc::vec![Position::Value(subject, Maybe::Absent(()))];
+    let mut pending = alloc::vec![Position::Computation(root, Maybe::Absent(()))];
     while let Some(position) = pending.pop() {
         let ready = pending.len();
         match position {
@@ -6621,7 +6654,7 @@ fn survey(
                 ) {
                     let _first = met.insert(id);
                 }
-                survey_value(value, id, region, nesting, &mut regions, &mut pending)?;
+                survey_value(value, (id, region), nesting, &mut surveyed, &mut pending)?;
             },
             Position::Computation(id, spine) => {
                 let Some(computation) = arena.computation(id)
@@ -6642,7 +6675,7 @@ fn survey(
     if let Some(&run) = nesting.keys().find(|decided| !met.contains(*decided)) {
         return Err(Unenclosed { run });
     }
-    Ok(regions)
+    Ok(surveyed)
 }
 
 /// Read one value for the survey: record it if it runs, and list its
@@ -6650,35 +6683,48 @@ fn survey(
 ///
 /// # Specification
 /// - requires: `value` is the node `id` names, standing in `region`'s values.
-/// - ensures: a run is appended to `region`'s list; `next` gains the value's
-///   term children, in order, a value child in `region` unless a static former
-///   erases it and a computation child heading its own region.
+/// - ensures: a run is appended to `region`'s list, or, decided a pure run with
+///   `region` absent, to the returned; `next` gains the value's term children,
+///   in order, a value child in `region` unless a static former erases it and a
+///   computation child heading its own region.
 /// - provides: the value half of the survey.
-/// - fails: [`Unenclosed`] when the value runs and `region` is absent.
+/// - fails: [`Unenclosed`] when the value runs, `region` is the survey's root
+///   or absent, and it is not decided a pure run.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`survey`].
 /// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
+/// - witness: `rewrite::tests::a_pure_run_in_no_computation_stands_as_what_it_returns_4812`
 #[spec(captures: before = next.len(), ensures: |ret| ret.is_err() || next.len() >= before)]
 fn survey_value(
     value: &Value,
-    id: ValueId,
-    region: Maybe<ComputationId, ()>,
+    (id, region): (ValueId, Maybe<ComputationId, ()>),
     nesting: &BTreeMap<ValueId, Nesting>,
-    regions: &mut BTreeMap<ComputationId, Vec<(ValueId, ComputationId)>>,
+    surveyed: &mut Surveyed,
     next: &mut Vec<Position>,
 ) -> Result<(), Unenclosed>
 {
     let own = Maybe::Absent(());
     match *value {
         Value::Nested(nested) | Value::Run(nested) => {
-            if matches!(*value, Value::Run(_)) || nesting.get(&id) == Some(&Nesting::Run) {
-                let Maybe::Present(enclosing) = region
-                else {
-                    return Err(Unenclosed { run: id });
-                };
-                regions.entry(enclosing).or_default().push((id, nested));
+            let decided = nesting.get(&id);
+            if matches!(*value, Value::Run(_)) || matches!(decided, Some(&Nesting::Run(_))) {
+                let pure = decided == Some(&Nesting::Run(Purity::Pure));
+                match region {
+                    Maybe::Present(enclosing) if enclosing == surveyed.root && !pure => {
+                        return Err(Unenclosed { run: id });
+                    },
+                    Maybe::Present(enclosing) => {
+                        surveyed
+                            .regions
+                            .entry(enclosing)
+                            .or_default()
+                            .push((id, nested));
+                    },
+                    Maybe::Absent(()) if pure => surveyed.returned.push(id),
+                    Maybe::Absent(()) => return Err(Unenclosed { run: id }),
+                }
             }
             next.push(Position::Computation(nested, own));
         },
@@ -7008,37 +7054,46 @@ fn survey_computation(
 /// A suspended one becomes the thunk of its elaborated computation. The runs
 /// of each region become binds wrapping it, the first written outermost,
 /// each over its elaborated computation, and each run stands as the variable
-/// its bind binds. A `Run` always runs. The order and the regions are
-/// [`survey`]'s.
+/// its bind binds. The pure runs in the subject's own values bind so around
+/// the subject's return, and the subject stands as the value that
+/// computation returns, `⟨x ← c; return v⟩`. A pure run that static content
+/// holds becomes the value its elaborated computation returns. A `Run`
+/// always runs. The order and the regions are [`survey`]'s.
 ///
 /// # Specification
 /// - requires: `subject` is live in `arena`; `nesting` decides every `Nested`
 ///   reachable from it through terms.
 /// - ensures: `subject` with every decided `Nested` and every `Run` reachable
-///   through terms elaborated; `subject` itself when it holds none; `carried`
-///   gains one pair per node the elaboration rebuilt, the nodes it was built
-///   from first, and `binds` one pair per run beside the bind minted for it.
+///   through terms elaborated, returned when a run stands in its own values;
+///   `subject` itself, with the arena at its entry mark, when it holds none;
+///   `carried` gains one pair per node the elaboration rebuilt, the nodes it
+///   was built from first, and `binds` one pair per run beside the bind minted
+///   for it.
 /// - provides: the elaborated body a checker answers, built once from the
 ///   decisions it recorded.
-/// - fails: [`Unenclosed`] when a run stands in no computation's values, or a
-///   decision names a node no term of `subject` reaches.
+/// - fails: [`Unenclosed`] when a run not decided pure stands in the subject's
+///   own values or in static content, or a decision names a node no term of
+///   `subject` reaches.
 /// - panics: none.
 ///
 /// # Errors
-/// [`Unenclosed`] for the first run, in written order, that stands in no
-/// computation's values, then for the first decided node no term reaches.
+/// [`Unenclosed`] for the first run, in written order, that stands in the
+/// subject's own values or in static content and is not decided a pure run,
+/// then for the first decided node no term reaches.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two runs in one spine, a suspension beside a run, a run
-///   in a thunk, a run in a case arm, a run nested in another's computation and
-///   a run in a definition's own value separate written order, the two
-///   decisions, the boundaries, nesting and the refusal; the suspension beside
-///   a run, which rebuilds the region before its splice, separates a report of
-///   every node minted from one that drops the region's closed body.
+///   in a thunk, a run in a case arm, a run nested in another's computation, a
+///   pure run and an effectful one in a definition's own value separate written
+///   order, the decisions, the boundaries, nesting, the returned run and the
+///   refusal; the suspension beside a run, which rebuilds the region before its
+///   splice, separates a report of every node minted from one that drops the
+///   region's closed body.
 /// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
 /// - witness: `rewrite::tests::an_elaboration_suspends_and_runs_as_decided`
 /// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
-/// - witness: `rewrite::tests::a_run_in_no_computation_is_unenclosed`
+/// - witness: `rewrite::tests::an_effectful_run_in_no_computation_is_unenclosed`
+/// - witness: `rewrite::tests::a_pure_run_in_no_computation_stands_as_what_it_returns_4812`
 /// - witness: `rewrite::tests::a_decision_no_term_reaches_is_unenclosed`
 /// - witness: `rewrite::tests::an_undecided_elaboration_keeps_every_former_but_the_run`
 #[spec(captures: [entry = arena.watermark(), held = carried.len(), minted = binds.len()],
@@ -7053,7 +7108,20 @@ pub fn elaborate_nested_traced(
     binds: &mut Vec<(ValueId, ComputationId)>,
 ) -> Result<ValueId, Unenclosed>
 {
-    let regions = survey(arena, subject, nesting)?;
+    let entry = arena.watermark();
+    let root = arena.computation_return(subject);
+    let surveyed = survey(arena, root, nesting);
+    // The return is minted for the survey alone unless a run stands in the
+    // subject's own values.
+    let held = surveyed
+        .as_ref()
+        .is_ok_and(|surveyed| surveyed.regions.contains_key(&root));
+    if !held {
+        arena.truncate_to(entry);
+    }
+    let Surveyed {
+        regions, returned, ..
+    } = surveyed?;
     let mut engine = Engine::new(arena);
     engine.slots = regions
         .values()
@@ -7064,19 +7132,35 @@ pub fn elaborate_nested_traced(
         })
         .collect();
     engine.nesting = nesting.clone();
+    engine
+        .nesting
+        .extend(returned.into_iter().map(|run| (run, Nesting::Returned)));
     engine.regions = regions;
-    let elaborated = engine.run(Node::Value(subject), Binders::NONE, Rewrite::Elaborate);
+    let start = if held {
+        Node::Computation(root)
+    }
+    else {
+        Node::Value(subject)
+    };
+    let elaborated = engine.run(start, Binders::NONE, Rewrite::Elaborate);
     // A region answered by its run's computation was not rebuilt: that node
     // stands for the run, and reporting it beside the region would carry it
-    // the region's origin, or record a node the elaboration did not mint.
+    // the region's origin, or record a node the elaboration did not mint. The
+    // minted return has no origin to carry.
     let mut reported = Vec::new();
     report(&engine.memo, &mut reported);
     carried.extend(reported.into_iter().filter(|&pair| {
-        !matches!(pair, Carried::Computation(region, _) if engine.returned.contains(&region))
+        !matches!(pair, Carried::Computation(region, _)
+            if held && region == root || engine.returned.contains(&region))
     }));
     carried.append(&mut engine.closings);
     binds.append(&mut engine.binds);
     match elaborated {
+        Node::Computation(ran) if held => {
+            let returned = arena.value_returned(ran);
+            carried.push(Carried::Value(subject, returned));
+            Ok(returned)
+        },
         Node::Value(id) => Ok(id),
         Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => Ok(subject),
     }

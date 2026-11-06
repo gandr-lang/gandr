@@ -47,13 +47,16 @@
 //! its region's, and a body type that would mention the bound value is a
 //! dependent bind — and the verdict carries the rebuilt body, which is what
 //! the context defines, the evaluator runs and the kernel re-derives: neither
-//! ever meets a nested computation. A run with no computation around it — in
-//! a definition's own value, or under static content — has nowhere to run and
-//! is refused as [`CheckRefusal::UnenclosedRun`]. Each minted bind is reported
-//! beside the run it was minted for, and every rebuilt node beside the node
-//! it was rebuilt from, so a consumer publishes a refusal of the second run at
-//! the written node that elaborated — the nested call's own span at its bind
-//! — and no diagnostic names the minted variable.
+//! ever meets a nested computation. A definition's own value has no
+//! computation around it. Its pure runs bind before its return, and the
+//! definition stands as the value that computation returns, `⟨x ← c; return
+//! v⟩`, which a read of the definition runs. A pure run under static content
+//! stands as the value it returns, `⟨c⟩`. An effectful run in either place has
+//! nowhere to run, and is refused as [`CheckRefusal::UnenclosedRun`]. Each
+//! minted bind is reported beside the run it was minted for, and every rebuilt
+//! node beside the node it was rebuilt from, so a consumer publishes a refusal
+//! of the second run at the written node that elaborated — the nested call's
+//! own span at its bind — and no diagnostic names the minted variable.
 //!
 //! **A reduct the bridge crossed by runs where it crossed.** A model the value
 //! bridge carried to a model of a theory its own includes stands, before the
@@ -120,7 +123,8 @@ pub enum Nesting
 {
     /// Checked against a thunk type, or the unknown type: suspended.
     Suspended,
-    /// Run before its region, its returner performing effects or none.
+    /// Run before its region, its returner performing effects or none. A pure
+    /// one in a definition's own value runs before that value's return.
     Ran(Purity),
     /// Run purely where a type after it reads it: it stands as the value it
     /// returns, `⟨c⟩`, rather than a bind's variable.
@@ -128,18 +132,6 @@ pub enum Nesting
     /// A fill: it stands as the value the induction filling its square
     /// returns, `⟨r⟩`.
     Filled(gandr_core_term::ComputationId),
-}
-
-/// What an unenclosed run is: one the source writes, or the call a crossing
-/// minted where the value bridge carried a value by a map (#4806).
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RunSource
-{
-    /// A nested computation or a run the source writes.
-    Written,
-    /// The call of a reduct, a forgetting map or a literal reader that a
-    /// crossing applies to the written value it carries.
-    Crossing,
 }
 
 /// What elaborating one declaration's body did: every decision the judgement
@@ -322,7 +314,7 @@ impl NestedElaboration
 ///   two elaborations and the refusal.
 /// - witness: `module::tests::a_nested_run_elaborates_into_a_bind_before_its_region`
 /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
-/// - witness: `module::tests::a_run_in_a_definition_s_own_value_is_unenclosed`
+/// - witness: `module::tests::a_run_in_a_definition_s_own_value_is_unenclosed_only_when_effectful_4812`
 #[spec(ensures: |ret| match ret {
     | Ok((_, ref elaboration)) => elaboration.decisions == *decisions,
     | Err(unenclosed) => decisions.contains_key(&unenclosed.run()),
@@ -338,7 +330,7 @@ pub fn elaborate(
         .map(|(&at, &decided)| {
             (at, match decided {
                 Nesting::Suspended => gandr_core_term::Nesting::Thunk,
-                Nesting::Ran(_) => gandr_core_term::Nesting::Run,
+                Nesting::Ran(purity) => gandr_core_term::Nesting::Run(purity),
                 Nesting::Returned => gandr_core_term::Nesting::Returned,
                 Nesting::Filled(realised) => gandr_core_term::Nesting::Filled(realised),
             })
@@ -364,35 +356,28 @@ pub fn elaborate(
 /// - requires: `body` is live in `arena`; `crossings` and `decisions` are what
 ///   the judgement recorded over it.
 /// - ensures: the rebuilt body, every node the rebuild carried over beside the
-///   node it was built from, `decisions` keyed by what each node stands as in
-///   the rebuilt body, with each run the rebuild minted decided a pure run, and
-///   each minted run beside the written value it crossed; `body`, nothing
-///   carried, `decisions` unchanged and no run when `crossings` names nothing
-///   it reaches.
+///   node it was built from, and `decisions` keyed by what each node stands as
+///   in the rebuilt body, with each run the rebuild minted decided a pure run;
+///   `body`, nothing carried and `decisions` unchanged when `crossings` names
+///   nothing it reaches.
 /// - provides: the body and decisions [`elaborate`] reads where the value
-///   bridge crossed by a map between models or a literal reader, and the
-///   written value a refusal of a minted run names (#4806).
+///   bridge crossed by a map between models or a literal reader.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a monoid's model passed where a semigroup's is asked,
 ///   beside a nested call, elaborates the reduct into a bind and keeps the
-///   call's decision; a literal read in a definition's own value is refused at
-///   the literal.
+///   call's decision; a literal read in a definition's own value stands as the
+///   value its reader returns.
 /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
-/// - witness: `module::tests::a_literal_read_in_a_definition_s_own_value_is_refused_at_the_literal_4806`
-#[spec(ensures: |ret| ret.2.len() >= decisions.len() && ret.3.keys().all(|run| ret.2.contains_key(run)))]
+/// - witness: `module::tests::a_literal_read_in_a_definition_s_own_value_stands_as_its_reading_4812`
+#[spec(ensures: |ret| ret.2.len() >= decisions.len())]
 pub fn cross(
     arena: &mut CoreArena,
     body: ValueId,
     crossings: &BTreeMap<ValueId, gandr_core_term::Crossing>,
     decisions: &BTreeMap<ValueId, Nesting>,
-) -> (
-    ValueId,
-    Vec<Carried>,
-    BTreeMap<ValueId, Nesting>,
-    BTreeMap<ValueId, ValueId>,
-)
+) -> (ValueId, Vec<Carried>, BTreeMap<ValueId, Nesting>)
 {
     let (mut carried, mut runs) = (Vec::new(), Vec::new());
     let crossed = gandr_core_term::cross_reducts(arena, body, crossings, &mut carried, &mut runs);
@@ -407,29 +392,9 @@ pub fn cross(
         .iter()
         .map(|(&at, &decided)| (rebuilt.get(&at).copied().unwrap_or(at), decided))
         .collect();
-    // A minted run is `run(r(x₁, …, xₙ, v))`: its last argument is what the
-    // crossed value stands as inside it, carried from the written value when
-    // the rebuild rewrote it.
-    let written: BTreeMap<ValueId, ValueId> =
-        rebuilt.iter().map(|(&from, &to)| (to, from)).collect();
-    let minted: BTreeMap<ValueId, ValueId> = runs
-        .iter()
-        .filter_map(|&run| {
-            let Some(&gandr_core_term::Value::Run(applied)) = arena.value(run)
-            else {
-                return None;
-            };
-            let Some(&gandr_core_term::Computation::Application(_, within)) =
-                arena.computation(applied)
-            else {
-                return None;
-            };
-            Some((run, written.get(&within).copied().unwrap_or(within)))
-        })
-        .collect();
     read.extend(
         runs.into_iter()
             .map(|run| (run, Nesting::Ran(Purity::Pure))),
     );
-    (crossed, carried, read, minted)
+    (crossed, carried, read)
 }

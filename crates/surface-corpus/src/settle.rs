@@ -3716,7 +3716,8 @@ data NatUnits : Type where {{
                 FailureClass::MalformedSource,
             ),
             (
-                r#"@[ refuses("UnenclosedRun") ] def a : Integer ; def a = 1 + 2 ;"#,
+                "def once(x : Integer) -> [Partial] Integer =\n  let y = loop { break(x) };\n  y\n\
+                 @[ refuses(\"UnenclosedRun\") ] def a : Integer ; def a = once 1 ;",
                 RefusalName::UnenclosedRun,
                 FailureClass::MalformedSource,
             ),

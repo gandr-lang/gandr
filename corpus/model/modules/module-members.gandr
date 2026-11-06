@@ -29,9 +29,9 @@ module Facts : *{ inner : *{answer : Integer}, total : Integer } where {
     def answer = base + 1;
   }
   /// The nested answer, one more: the nested module's member is named
-  /// through its name. An operator in a value runs before the computation
-  /// around it, and a definition's value has none.
-  @[ refuses("UnenclosedRun") ]
+  /// through its name. The operator's call is pure, so the value stands as
+  /// what the call returns.
+  @[ checks ]
   def total = inner.answer + 1;
 }
 
