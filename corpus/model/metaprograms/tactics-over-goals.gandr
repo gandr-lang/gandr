@@ -1,35 +1,30 @@
-// Tactics over goals: a splice `~t` stands where a value is read and runs
-// the tactic `t` at the goal the position holds, the binders in scope with
-// their types and the type the value is checked against. The checker
-// runs the tactic, judges the term it answers against the goal again and
-// fills the splice with it, so the kernel replays the filled declaration and
-// no tactic is trusted. Two tactics stand: `assumption`, the innermost binder
-// whose type is the goal's, and `intro(t)`, a function whose body is `t`'s
-// answer under the binder it introduces. What refuses is in
-// `../../pathological/metaprograms/tactics-over-goals.gandr`.
-//
-// - see: #2762
-
-/// The innermost integer in scope: `b`, which stands after `a`.
+//! `tactics-over-goals` models tactic splices in value positions.
+//!
+//! `assumption` returns the innermost binder whose type is the goal.
+//! `intro` builds a function from a tactic answer under an introduced binder.
+//! The pathological twin refuses a missing answer, a wrong goal, an untyped splice, an unknown tactic, and a computation splice.
+//!
+//! The checker runs each tactic, checks its answer against the goal, and fills the splice.
+//! The kernel replays the filled declaration.
+//!
+//! - see: #2762
+/// `pick` uses `assumption` to select the innermost integer binder.
 def pick(a : Integer, u : Unit, b : Integer) -> Integer { ~assumption }
 
-/// `pick` applied: its tactic answered `b`.
+/// `picked` applies `pick` and receives its `b` argument.
 @[ runs("3") ]
 def picked() -> Integer { pick 1 *{} 3 }
 
-/// The identity on integers, written by its tactic: one introduction, then
-/// the binder it introduced.
+/// `id` is the integer identity that `intro assumption` writes.
 def id : Integer -> Integer = ~intro assumption;
 
-/// The identity applied.
+/// `identity` applies `id` to five.
 @[ runs("5") ]
 def identity() -> Integer { id 5 }
 
-/// The polymorphic identity: the second introduction's binder has the type
-/// the first introduced, and the goal under both reads that type, so each new
-/// goal is stated under the binders before it.
+/// `poly` is the polymorphic identity that two introductions produce.
 def poly : (a : Type, a) -> a = ~intro (intro assumption);
 
-/// The polymorphic identity applied.
+/// `polyApplied` applies `poly` to an integer.
 @[ runs("7") ]
 def polyApplied() -> Integer { poly Integer 7 }

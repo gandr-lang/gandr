@@ -1,19 +1,20 @@
-//! A circuit rule in a `theory` block: a rule whose inputs are a rewrite and
-//! two data wires, and whose body wires two nodes. `Theory` codes no circuit
-//! rule yet, so the rule is kept beside the block's value rather than in it.
-//! The wiring follows Lafont's interaction nets [Lafont-1990-interaction_nets].
+//! `circuit-rule-block` models a circuit rule in a `theory` block.
+//!
+//! `cong1` routes a rewrite result and one data input through two nodes.
+//! The pathological circuit sources refuse cycles and invalid rule wiring.
+//!
+//! The current lowering keeps `cong1` beside the block value because `Theory` does not encode circuit rules.
 //!
 //! - cites: [Lafont-1990-interaction_nets]
 //!
 //! [Lafont-1990-interaction_nets]: https://doi.org/10.1145/96709.96718 "Lafont, Interaction Nets"
 
-/// A data family whose constructors are written with the circuit arrow.
+/// `Nat` defines data constructors with the circuit arrow.
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-/// Congruence in `add`'s first argument as a circuit: `p` rewrites `x`, then
-/// `add` takes the result and `y`. The block binds `NatSum : Theory`.
+/// `NatSum` binds `cong1`, which routes the rewrite of `x` through `add` with `y`.
 theory NatSum where
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;
