@@ -651,5 +651,43 @@
       "`check:landing` names `check:clippy-enforcing`, and no job runs it in a merge group on `landing`: run it in a blocking job, or take it off the list (#5439)",
       "no job is named `check Clippy wall`, the check that the ruleset of `landing` requires (#5439)"
     ]
+  },
+  {
+    "name": "the brake runs in a group on landing beside the blocking set, and a task that only starts with its name does not",
+    "input": {
+      "jobs": {
+        "clippy": {
+          "name": "check Clippy wall",
+          "if": "${{ !cancelled() && github.base_ref != 'landing' }}",
+          "steps": [
+            {
+              "run": "mise run check:clippy-plain-only"
+            }
+          ]
+        },
+        "brake": {
+          "name": "hold the landings while main lags",
+          "if": "${{ github.event_name == 'merge_group' && github.event.merge_group.base_ref == 'refs/heads/landing' }}",
+          "steps": [
+            {
+              "run": "mise run ci:brake"
+            }
+          ]
+        },
+        "report": {
+          "name": "report the brake",
+          "if": "${{ github.event_name == 'merge_group' }}",
+          "steps": [
+            {
+              "run": "mise run ci:brake-report"
+            }
+          ]
+        }
+      },
+      "landing": ["check:clippy-plain-only"]
+    },
+    "output": [
+      "`report` runs in a merge group on `landing` outside the blocking set: add `github.event.merge_group.base_ref != 'refs/heads/landing'` to its `if` (#5439)"
+    ]
   }
 ]

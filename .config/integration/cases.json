@@ -468,5 +468,107 @@
       "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.\n\n## The take\n\nThe tip of `landing`, `111111111111`, does not merge into `integration`. The fixer merges it on `integration` by hand.",
       "soundness": []
     }
+  },
+  {
+    "name": "a brake that holds stands in the list and pages no fixer under a pass",
+    "program": "known-red.jq",
+    "input": {
+      "verdict": {
+        "id": 7,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/7",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "success"
+      },
+      "conflict": null,
+      "brake": true,
+      "reports": [],
+      "jobs": [],
+      "soundness": []
+    },
+    "output": {
+      "page": false,
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.\n\n## The brake\n\nThe brake holds the landings (#5442). `main` lags `landing` past a limit of `.config/integration/brake.json`. A passing cycle moves `main`, and then the landings go on.",
+      "soundness": []
+    }
+  },
+  {
+    "name": "a main that holds landing lags by nothing, whatever the verdicts",
+    "program": "brake.jq",
+    "input": {
+      "now": 1000000,
+      "oldest": null,
+      "runs": [
+        { "status": "completed", "conclusion": "failure" },
+        { "status": "completed", "conclusion": "failure" },
+        { "status": "completed", "conclusion": "failure" }
+      ],
+      "limits": { "cycles": 2, "hours": 12 }
+    },
+    "output": {
+      "cycles": 0,
+      "hours": 0,
+      "on": false,
+      "line": "main lags landing: cycles 0 of at most 2, hours 0 of at most 12. The brake lets the landings go on."
+    }
+  },
+  {
+    "name": "verdicts after the newest pass count, and a cancelled run does not",
+    "program": "brake.jq",
+    "input": {
+      "now": 1000000,
+      "oldest": 996400,
+      "runs": [
+        { "status": "in_progress", "conclusion": "" },
+        { "status": "completed", "conclusion": "failure" },
+        { "status": "completed", "conclusion": "cancelled" },
+        { "status": "completed", "conclusion": "timed_out" },
+        { "status": "completed", "conclusion": "failure" },
+        { "status": "completed", "conclusion": "success" },
+        { "status": "completed", "conclusion": "failure" }
+      ],
+      "limits": { "cycles": 2, "hours": 12 }
+    },
+    "output": {
+      "cycles": 3,
+      "hours": 1,
+      "on": true,
+      "line": "main lags landing: cycles 3 of at most 2, hours 1 of at most 12. The brake holds the landings."
+    }
+  },
+  {
+    "name": "a lag at a limit lets the landings go on",
+    "program": "brake.jq",
+    "input": {
+      "now": 1000000,
+      "oldest": 956800,
+      "runs": [
+        { "status": "completed", "conclusion": "failure" },
+        { "status": "completed", "conclusion": "failure" },
+        { "status": "completed", "conclusion": "success" }
+      ],
+      "limits": { "cycles": 2, "hours": 12 }
+    },
+    "output": {
+      "cycles": 2,
+      "hours": 12,
+      "on": false,
+      "line": "main lags landing: cycles 2 of at most 2, hours 12 of at most 12. The brake lets the landings go on."
+    }
+  },
+  {
+    "name": "a lag past the hours holds the landings with no pass in the runs",
+    "program": "brake.jq",
+    "input": {
+      "now": 1000000,
+      "oldest": 956440,
+      "runs": [{ "status": "completed", "conclusion": "failure" }],
+      "limits": { "cycles": 2, "hours": 12 }
+    },
+    "output": {
+      "cycles": 1,
+      "hours": 12.1,
+      "on": true,
+      "line": "main lags landing: cycles 1 of at most 2, hours 12.1 of at most 12. The brake holds the landings."
+    }
   }
 ]

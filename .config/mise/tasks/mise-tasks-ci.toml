@@ -1385,7 +1385,12 @@ done < "$scratch/actions"
 # (`.config/integration/soundness.json`) gets an issue of its own,
 # `status:unsectioned` for its claiming seat. A new list that is red, or that
 # holds a conflict, sets the step output `page` to the list's issue, and the
-# workflow pages the fixer. Last, the step dispatches ci.yml on `integration`
+# workflow pages the fixer. The step also reads the brake (#5442,
+# `.config/integration/brake.bash`) from the runs it already read. The list
+# holds the section `## The brake` while the brake holds the landings. A
+# change of that state sets the step output `brake` to `on` or `off` and the
+# output `list` to the list's issue, and the workflow pages every lane and
+# the coordinator. Last, the step dispatches ci.yml on `integration`
 # with the input `cycle` when the tip needs a verdict. The workflow runs one
 # step at a time, and the next step starts on a new runner, so the
 # dispatched run shows before that step reads the runs. Without CYCLE_FILE
@@ -1403,6 +1408,7 @@ write=${CYCLE_FILE:-}
 root=$(git rev-parse --show-toplevel)
 here=$root/.config/integration
 source "$root/.config/issues/keep.bash"
+source "$here/brake.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 say() {
@@ -1411,7 +1417,7 @@ say() {
 }
 tip() { gh api "repos/$repo/git/ref/heads/$1" --jq .object.sha; }
 running() {
-  gh run list --repo "$repo" --workflow ci.yml --branch integration --event workflow_dispatch --limit 20 \
+  gh run list --repo "$repo" --workflow ci.yml --branch integration --event workflow_dispatch --limit 100 \
     --json databaseId,status,conclusion,headSha,url
 }
 landing=$(tip landing)
@@ -1420,9 +1426,11 @@ compare=$(gh api "repos/$repo/compare/$integration...$landing" --jq .status)
 running > "$scratch/runs.json"
 decision=$(jq -n -c --arg landing "$landing" --arg integration "$integration" --arg compare "$compare" \
   --slurpfile runs "$scratch/runs.json" '{landing: $landing, integration: $integration, compare: $compare, runs: $runs[0]}' \
-  | jq -c -f "$here/cycle.jq")
+  | jq -c -L "$here" -f "$here/cycle.jq")
 verdict=$(jq -c .verdict <<< "$decision")
 conclusion=$(jq -r '.conclusion // empty' <<< "$verdict")
+brake=$(brake_read "$scratch/runs.json")
+say "$(jq -r .line <<< "$brake")"
 
 if [[ $conclusion == success ]]; then
   sha=$(jq -r .sha <<< "$verdict")
@@ -1462,17 +1470,20 @@ if [[ -n $write ]]; then
   esac
 fi
 
-# The known-red list in step with the verdict and the take. A list that
-# names the verdict's run and holds the same take stands unread.
+# The known-red list in step with the verdict, the take and the brake. A
+# list that names the verdict's run and holds the same take and the same
+# brake stands unread.
 keep_list() {
-  local title="integration: the known-red list" found number current id held taken jobs='[]' known url own heading
+  local title="integration: the known-red list" found number current id held taken braked braking jobs='[]' known url own heading
   found=$(issue_found "$repo" "$title")
   number=$(jq -r '.number // empty' <<< "$found")
   current=$(jq -r '.body // empty' <<< "$found")
   id=$(jq -r '.id // empty' <<< "$verdict")
   held=$([[ $current == *"## The take"* ]] && echo true || echo false)
   taken=$([[ $conflict != null ]] && echo true || echo false)
-  if [[ -n $id && $current == *"/actions/runs/$id)"* && $held == "$taken" ]]; then
+  braked=$([[ $current == *"## The brake"* ]] && echo true || echo false)
+  braking=$(jq -r .on <<< "$brake")
+  if [[ -n $id && $current == *"/actions/runs/$id)"* && $held == "$taken" && $braked == "$braking" ]]; then
     say "The known-red list #$number stands: it reads run $id."
     return
   fi
@@ -1491,8 +1502,8 @@ keep_list() {
       | jq -R -s -c 'split("\n") | map(select(. != ""))')
   fi
   known=$(jq -n -c --argjson verdict "$verdict" --argjson conflict "$conflict" --argjson jobs "$jobs" \
-    --slurpfile reports "$scratch/reports.json" --slurpfile soundness "$here/soundness.json" \
-    '{verdict: $verdict, conflict: $conflict, reports: $reports[0], jobs: $jobs, soundness: $soundness[0]}' \
+    --argjson brake "$braking" --slurpfile reports "$scratch/reports.json" --slurpfile soundness "$here/soundness.json" \
+    '{verdict: $verdict, conflict: $conflict, brake: $brake, reports: $reports[0], jobs: $jobs, soundness: $soundness[0]}' \
     | jq -c -f "$here/known-red.jq")
   jq -r .body <<< "$known" > "$scratch/body.md"
   if [[ $current == "$(< "$scratch/body.md")" ]]; then
@@ -1503,6 +1514,7 @@ keep_list() {
     say "would rewrite the known-red list${number:+ #$number}:"
     cat "$scratch/body.md"
     jq -r '.soundness[] | "would file or update: \(.title)"' <<< "$known"
+    if [[ $braked != "$braking" ]]; then say "would page every lane: the brake turns $([[ $braking == true ]] && echo on || echo off)"; fi
     return
   fi
   if [[ -z $number ]]; then
@@ -1521,8 +1533,11 @@ keep_list() {
       gh issue create --repo "$repo" --title "$heading" --body-file "$scratch/own.md" --label kind:defect \
       --label "$(jq -r .area <<< "$own")" --label priority:high --label effort:unknown --label status:unsectioned
   done < <(jq -c '.soundness[]' <<< "$known")
-  if [[ $(jq -r .page <<< "$known") == true && -n ${GITHUB_OUTPUT:-} ]]; then
-    echo "page=$number" >> "$GITHUB_OUTPUT"
+  if [[ -n ${GITHUB_OUTPUT:-} ]]; then
+    if [[ $(jq -r .page <<< "$known") == true ]]; then echo "page=$number" >> "$GITHUB_OUTPUT"; fi
+    if [[ $braked != "$braking" ]]; then
+      printf 'brake=%s\nlist=%s\n' "$([[ $braking == true ]] && echo on || echo off)" "$number" >> "$GITHUB_OUTPUT"
+    fi
   fi
 }
 keep_list
@@ -1536,6 +1551,35 @@ if [[ $(jq -r .dispatch <<< "$decision") == true && $conflict == null ]]; then
   say "The cycle dispatches ci.yml on integration."
 fi
 {% endraw %}'''
+
+# The brake on `landing` (#5442): the check `hold the landings while main
+# lags` in a merge group on `landing`. It fails while `main` lags `landing`
+# past one of the limits in `.config/integration/brake.json`, so the queue
+# holds the landings. The limits are provisional until a day of cycles
+# gives their measure. `.config/integration/brake.bash` reads the lag in
+# hours from git, and this task reads the runs of the cycle in one call on
+# GH_TOKEN, the token of the cycle's App. A reading that fails fails the
+# check, so the brake also holds when it cannot read the lag. GH_REPO names
+# the repository.
+["ci:brake"]
+description = "Fail while main lags landing past the brake's limits"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+repo=${GH_REPO:?}
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/integration/brake.bash"
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+gh run list --repo "$repo" --workflow ci.yml --branch integration --event workflow_dispatch --limit 100 \
+  --json status,conclusion > "$scratch/runs.json"
+brake=$(brake_read "$scratch/runs.json")
+line=$(jq -r .line <<< "$brake")
+echo "$line"
+if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"; fi
+[[ $(jq -r .on <<< "$brake") == false ]]
+'''
 
 # A worktree is removed when its branch lands, mechanically: nothing else
 # removed one but a seat remembering to, and a `pr:watch` that dies with its

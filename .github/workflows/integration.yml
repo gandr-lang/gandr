@@ -19,7 +19,9 @@ name: integration
 # so a repeated event changes nothing, and the next event recovers a lost
 # one. There is no schedule: GitHub's scheduler ran this repository's
 # schedules hours late (landing.yml). The step checks out the default branch
-# and runs its script there. It runs none of the code on `integration`.
+# and runs its script there. It runs none of the code on `integration`. Each
+# step also reads the brake (#5442), and a brake that takes or lets go pages
+# every lane and the coordinator.
 #
 # Every call of the step runs on the cycle's own GitHub App, minted from
 # `GANDR_CYCLE_APP_ID` and `GANDR_CYCLE_APP_KEY`: the workflow's token has no
@@ -79,6 +81,8 @@ jobs:
       contents: read
     outputs:
       page: ${{ steps.step.outputs.page }}
+      brake: ${{ steps.step.outputs.brake }}
+      list: ${{ steps.step.outputs.list }}
     env:
       GANDR_CYCLE_APP_ID: ${{ secrets.GANDR_CYCLE_APP_ID }}
       # mise.toml pins neither tool: the task's own pins (`tools.jq`,
@@ -88,12 +92,15 @@ jobs:
       - name: say that the cycle waits for its App
         if: ${{ env.GANDR_CYCLE_APP_ID == '' }}
         run: echo "The cycle waits for its App, the secrets GANDR_CYCLE_APP_ID and GANDR_CYCLE_APP_KEY." >> "$GITHUB_STEP_SUMMARY"
+      # The brake (#5442) reads the lag of `main` behind `landing` from git:
+      # the commits of the whole history and the trees of one commit.
       - name: git checkout
         if: ${{ env.GANDR_CYCLE_APP_ID != '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
+          filter: tree:0
           ref: ${{ github.event.repository.default_branch }}
       - name: mint the cycle App's token
         id: app
@@ -123,19 +130,27 @@ jobs:
           CYCLE_FILE: "true"
         run: mise run ci:cycle
 
-  # A new list that is red, or that holds a conflict, pages the fixer. The
+  # A new list that is red, or that holds a conflict, pages the fixer. A
+  # brake that takes or lets go pages every lane and the coordinator. The
   # factory's own runner passes the list's issue number to one command,
-  # which pages the fixer's seat. No text of the issue reaches the runner,
-  # and the job holds no token.
+  # which pages the seats. No text of the issue reaches the runner, and the
+  # job holds no token.
   notify:
-    name: page the fixer
+    name: page the fixer and the lanes
     needs: cycle
-    if: ${{ needs.cycle.outputs.page != '' }}
+    if: ${{ needs.cycle.outputs.page != '' || needs.cycle.outputs.brake != '' }}
     runs-on: [self-hosted, factory] # zizmor: ignore[self-hosted-runner]
     timeout-minutes: 2
     permissions: {}
     steps:
       - name: page the fixer
+        if: ${{ needs.cycle.outputs.page != '' }}
         env:
           ISSUE: ${{ needs.cycle.outputs.page }}
         run: factory-notify integration-red "$ISSUE"
+      - name: page every lane and the coordinator
+        if: ${{ needs.cycle.outputs.brake == 'on' || needs.cycle.outputs.brake == 'off' }}
+        env:
+          BRAKE: ${{ needs.cycle.outputs.brake }}
+          ISSUE: ${{ needs.cycle.outputs.list }}
+        run: factory-notify "brake-$BRAKE" "$ISSUE"

@@ -10,11 +10,12 @@
 # commit past `landing`, and the merges API merges `landing` into it when it
 # holds the fixer's commits. A tip that moves is tested. A tip that stands is
 # tested once, when no verdict names it yet.
-def failed: . == "failure" or . == "timed_out" or . == "startup_failure";
+include "verdicts";
+
 def short: .[0:12];
 
 . as $in
-| ($in.runs | map(select(.status == "completed" and (.conclusion == "success" or (.conclusion | failed))))
+| ($in.runs | verdicts
   | first
   | if . == null then null else {id: .databaseId, url, sha: .headSha, conclusion} end) as $verdict
 | ($in.runs | any(.status != "completed")) as $running
