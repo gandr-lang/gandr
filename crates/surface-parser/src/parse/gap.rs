@@ -97,9 +97,12 @@ use super::ParseResult;
 use super::molded;
 use super::molded_moving;
 use super::spliced;
+use crate::label::Bracket;
 use crate::label::Lexeme;
 use crate::label::Move;
+use crate::label::SourceBytes;
 use crate::label::Token;
+use crate::label::bracket;
 use crate::label::cut_in;
 use crate::label::label;
 use crate::meld::Splice;
@@ -297,14 +300,16 @@ fn class(
             ..Class::default()
         },
         Lexeme::Punct => Class {
-            bracketing: match spelled {
-                ")" | "]" | "}" => Bracketing::Closes,
-                "{" => Bracketing::Opens(Kind::Block),
-                "*{" | "+{" | "&{" | "#{" => Bracketing::Opens(Kind::Group("}")),
-                _ if spelled.ends_with('{') => Bracketing::Opens(Kind::Opaque),
-                _ if spelled.ends_with('(') => Bracketing::Opens(Kind::Group(")")),
-                _ if spelled.ends_with('[') => Bracketing::Opens(Kind::Group("]")),
-                _ => Bracketing::Neither,
+            bracketing: match bracket(token, SourceBytes::from(<&str>::from(text).as_bytes())) {
+                Bracket::Open => Bracketing::Opens(match spelled {
+                    "{" => Kind::Block,
+                    "*{" | "+{" | "&{" | "#{" => Kind::Group("}"),
+                    _ if spelled.ends_with('{') => Kind::Opaque,
+                    _ if spelled.ends_with('(') => Kind::Group(")"),
+                    _ => Kind::Group("]"),
+                }),
+                Bracket::Close => Bracketing::Closes,
+                Bracket::Neither => Bracketing::Neither,
             },
             edge: match spelled {
                 ")" | "]" | "}" => Edge::Ends,
