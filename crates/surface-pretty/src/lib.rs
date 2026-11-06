@@ -1514,7 +1514,7 @@ pub fn present_whole(
                 },
                 Entry::Model { at, index } => {
                     if let (Some(slot), Some(sorts)) = (slots.get(index), fixed.get(index)) {
-                        for part in [slot.name.as_ref(), " : Model(", slot.theory.as_ref(), ")"] {
+                        for part in [slot.name.as_ref(), " : Model ", slot.theory.as_ref()] {
                             text.push_str(part);
                         }
                         for &(sort, ref typed) in sorts {

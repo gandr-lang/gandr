@@ -80,6 +80,7 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
         thunks: &thunks,
         reducts: &reducts,
         unreduced: &[],
+        called: &[],
     };
     let Respelled::Changed(sugared) = respell(&grammar, tree, form, &flat.leaves, rewrites)
     else {

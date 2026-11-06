@@ -47,11 +47,11 @@ def idAt(c : U, v : el(c)) -> -F el(c) { v }
 def kept() -> -F Nat { idAt NatC one }
 
 @[ checks ]
-def succ : el(Arrow(NatC, NatC));
+def succ : el(Arrow NatC NatC);
 def succ = thunk { fun (n) { Succ n } };
 
 @[ checks ]
-def applyAt(a : U, b : U, f : el(Arrow(a, b)), v : el(a)) -> -F el(b) { f v }
+def applyAt(a : U, b : U, f : el(Arrow a b), v : el(a)) -> -F el(b) { f v }
 
 @[ runs("Succ (Succ Zero)") ]
 def stepped() -> -F Nat { succ one }
@@ -60,7 +60,7 @@ def stepped() -> -F Nat { succ one }
 def applied() -> -F Nat { applyAt NatC NatC succ one }
 
 @[ checks ]
-def atOne : el(Arrow(Arrow(NatC, NatC), NatC));
+def atOne : el(Arrow (Arrow NatC NatC) NatC);
 def atOne = thunk { fun (g) { g one } };
 
 @[ runs("Succ (Succ Zero)") ]

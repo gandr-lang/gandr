@@ -27,7 +27,7 @@ rec {
       | PiL(a, b) => return (+U ((x : elL[<](a)) -> -F elL[<](b(x))))
 }
 
-def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List(elL(a))) -> Nat =
+def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List elL(a)) -> Nat =
   match v where
     | Nil => Zero
     | Cons(h, t) => plus (f h) (sumAt[<] a f t)
@@ -45,7 +45,7 @@ def rec countBeside(c : UL, v : elL(c)) -> Nat =
     | ListL(a) => Zero
     | PiL(a, b) => Zero
 
-def lists : List(List(Nat));
+def lists : List (List Nat);
 def lists = Cons (Cons (Succ Zero) Nil) (Cons (Cons two Nil) Nil);
 
 @[ runs("Succ (Succ (Succ Zero))") ]

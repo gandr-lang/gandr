@@ -1364,9 +1364,9 @@ pub enum Notation
     /// then its tree as nested brackets. The source writes a pasting only
     /// as a chain or a level-two shape.
     Tree,
-    /// A code a call builds, read as the type it codes inside an expression,
-    /// written juxtaposed, `-F (Maybe a)`: the type grammar reads no
-    /// juxtaposed application until #5200.
+    /// A path, a bridge or a homed type former inside an expression, written
+    /// juxtaposed, `Path d a`: no spelling of it reads back there until #5750
+    /// and #5753.
     TypeApplication,
 }
 

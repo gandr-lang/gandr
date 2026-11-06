@@ -26,7 +26,7 @@ rec {
 def toNat(x : Nat) -> -F UPi { return NatC }
 
 @[ checks ]
-def idDecoded : elPi(PiC(NatC, toNat));
+def idDecoded : elPi(PiC NatC toNat);
 def idDecoded = thunk { fun (x) { return x } };
 
 @[ runs("Succ Zero") ]
@@ -39,19 +39,19 @@ def idNat = idDecoded;
 rec {
   @[ checks ]
   data UM : Nat -> Type where {
-    | NatM : (n : Nat) --> UM(n)
-    | PiM : (n : Nat, a : UM(n), b : +U (elM(n, a) -> -F UM(n))) --> UM(n)
+    | NatM : (n : Nat) --> UM n
+    | PiM : (n : Nat, a : UM n, b : +U (elM(n, a) -> -F UM n)) --> UM n
   }
 
   @[ checks ]
-  def rec elM(n : Nat, u : UM(n)) -> -F Type =
+  def rec elM(n : Nat, u : UM n) -> -F Type =
     match u where
       | NatM(m) => return Nat
       | PiM(m, a, b) => return (+U ((x : elM[<](m, a)) -> -F elM[<](m, b(x))))
 }
 
 @[ checks ]
-def natAtZero : UM(Zero);
+def natAtZero : UM Zero;
 def natAtZero = NatM Zero;
 
 @[ checks ]
