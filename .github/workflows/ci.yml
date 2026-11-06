@@ -946,12 +946,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: mise run check:ledger
-      - name: check the tracking issues
-        if: *plain-gate
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: mise run check:tracking
       - *upload-test-report
       - *prune-build-state
       - *archive-build-state
@@ -2179,7 +2173,11 @@ jobs:
     needs: *rust-needs
     if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && github.event.merge_group.base_ref != 'refs/heads/landing' && (github.event_name != 'push' || needs.prepare.outputs.unbuilt == 'true') && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
     runs-on: *linux
-    permissions: *image-read-permissions
+    permissions:
+      contents: read
+      packages: read
+      # `check:tracking` reads the state of each issue a refusal names.
+      issues: read
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
       CI_FETCH_DEPTH: "0"
@@ -2229,6 +2227,14 @@ jobs:
       # shape; a seat's local run resolves them.
       - name: check the references ledger
         run: mise run check:references
+      # The tracking check judges a completed issue by the commits that close
+      # it, so it runs here, where the checkout holds the whole history
+      # (#5778).
+      - name: check the tracking issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run check:tracking
       # One commitlint run per non-merge commit, so the agent-commit rules see
       # that commit's own author: the config resolves it from
       # COMMITLINT_COMMIT. A root commit has no parent to range from; its

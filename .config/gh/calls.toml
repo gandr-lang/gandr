@@ -75,7 +75,7 @@ site = [
 
   # The check tasks.
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "check:tracking", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "check:tracking in a seat's gate: one aliased batch" },
-  { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "check:tracking", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 24, trigger = "check:tracking in each pull request's CI run" },
+  { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "check:tracking", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 24, trigger = "check:tracking in the format gate of each pull request's CI run, each merge group on main and each push to main that no group built (#5778); git reads the history, no call" },
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "evidence:base", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "evidence:obligations, pr:open and pr:land: the open pulls, one page" },
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "evidence:obligations", api = "rest", identity = "read", calls = 3, points = 4, measured = "rest", hour = 16, trigger = "a seat's evidence run: each issue's labels, about two, and a head's checks" },
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "evidence:obligations", api = "rest", identity = "actions", calls = 3, points = 3, measured = "rest", hour = 24, trigger = "the obligations job of each pull request's CI run: each issue's labels, about two, and the head's checks; the event names the head" },
