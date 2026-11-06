@@ -1,13 +1,20 @@
 ## The shape
 
-# {{pr}} stands as a `{{kind}}` stall in the `{{lane}}` lane. No seat holds that lane. `stall:watch` pages the coordinator and files this report
+The table gives each act that ends the stall and its actor.
 
-- The coordinator routes it. A seat takes the lane, or the coordinator acts on the pull request. It moves it to a held lane, drafts it with its reason (`pr:hold`) or closes it.
-- `stall:watch` closes this report itself once no reading finds the stall. Its comment names what clears it: #{{pr}} merges, closes unmerged, or stops its stall.
+| Act | Actor |
+| --- | ----- |
+| takes the `{{lane}}` lane | a seat |
+| moves #{{pr}} to a held lane | the coordinator |
+| drafts #{{pr}} with its reason (`pr:hold`) | the coordinator |
+| closes #{{pr}} | the coordinator |
+| closes this report once no reading finds the stall | `stall:watch` |
+
+The closing comment of `stall:watch` names the event that ends the stall: the merge of #{{pr}}, its close unmerged, or the end of its stall.
 
 ## Try first
 
-`mise run stall:check` reads the stall again: the `{{kind}}` line on #{{pr}} still stands, or the event is over.
+`mise run stall:check` reads the stall again. Its `{{kind}}` line on #{{pr}} shows that the stall stands.
 
 ## Sources
 
@@ -15,15 +22,15 @@
 | ------ | ---- | ------------- |
 | `#{{pr}}` | primary | the stalled pull request |
 | `.config/stall/detect.jq` | primary | the `{{kind}}` finding, its threshold and its line |
-| `docs/agents/coordinator.md` | secondary | who routes a lane no seat holds |
+| `docs/agents/coordinator.md` | secondary | the seat that routes a lane with no seat |
 
 ## Readings
 
 | Family | Axis | Selected |
 | ------ | ---- | -------- |
-| Identity | `univalent` | no — a routing event of the landing workflow; no construction of the language |
-| Locality | `oracle` | no — nothing is replayed; the detector reads the pull requests and decides |
-| Locality | `descent` | no — one pull request's stall, routed whole |
+| Identity | `univalent` | no — a routing event of the landing workflow, with no construction of the language |
+| Locality | `oracle` | no — nothing is replayed. The detector reads the pull requests and decides |
+| Locality | `descent` | no — the stall of one pull request, routed whole |
 | Place | `located` | no — one repository |
 | Place | `resident` | no — no representation |
 | Dimension | `rewriting` | no — no rule |
@@ -44,12 +51,12 @@
 
 | Row | Bound |
 | --- | ----- |
-| change | n/a — a routing event; no code path changes |
+| change | n/a — a routing event, with no change to a code path |
 | complexity | n/a — the detector reads one pull request whole |
-| latency | n/a — the coordinator routes the stall; no tool path changes |
-| parallelism | n/a — one report per stall |
-| memory | n/a — no code path changes |
-| failure | `stall:watch` reads the stall again on its next run, so a lost page repeats |
+| latency | n/a — the coordinator routes the stall, and no tool path changes |
+| parallelism | n/a — one report for each stall |
+| memory | n/a — no change to a code path |
+| failure | `stall:watch` reads the stall again on its next run, so a lost page comes again |
 
 ## Ledger
 
@@ -61,4 +68,4 @@ none
 
 ## Not in this slice
 
-The detector's thresholds and lanes, and a seat for the `{{lane}}` lane: both are the coordinator's configuration, never this report's.
+The thresholds and lanes of the detector, and a seat for the `{{lane}}` lane. Both are the configuration of the coordinator, never of this report.

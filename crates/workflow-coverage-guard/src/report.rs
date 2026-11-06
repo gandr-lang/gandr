@@ -487,8 +487,9 @@ impl Unprocessed
 
 impl fmt::Display for Unprocessed
 {
-    /// Writes the issue's body: one line per unprocessed upload, then the
-    /// upload compared instead.
+    /// Writes the issue's body: the sentence that says what the issue is, a
+    /// table of the unprocessed uploads under its lead, then the upload
+    /// compared instead.
     ///
     /// # Specification
     /// trivial.
@@ -498,12 +499,19 @@ impl fmt::Display for Unprocessed
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
+        writeln!(
+            f,
+            "This issue lists the uploads of `main` that Codecov leaves unprocessed.\n\nThe \
+             table gives each upload, newest first, and its state at Codecov.\n\n| Upload | \
+             State |\n| --- | --- |"
+        )?;
         for skipped in &self.skipped {
-            writeln!(f, "- {skipped}")?;
+            writeln!(f, "{}", skipped.row())?;
         }
         writeln!(
             f,
-            "\nThe guard compares main's newest processed upload, {}, in their place, until Codecov processes a newer one.",
+            "\nThe guard compares the newest processed upload of `main`, {}, in their place. It \
+             does so until Codecov processes a newer upload.",
             self.compared
         )
     }
@@ -580,17 +588,18 @@ impl fmt::Display for Fate
 
 impl fmt::Display for Comparison
 {
-    /// Writes the report as Markdown: the movement, the file counts, the
-    /// verdict, and one table row per crate that moved, collapsed under a
-    /// summary.
+    /// Writes the report as Markdown: the sentence that says what the report
+    /// is, the two uploads in a table, the change, the verdict, and one table
+    /// row per crate that moved, collapsed under a summary.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a sentence naming both coverages, both commits linked to
-    ///   Codecov, the change and the threshold; a sentence naming both file
-    ///   counts; the verdict; the table inside a `<details>` block whose
-    ///   summary counts the crates that moved and repeats the verdict, or a
-    ///   line saying no crate moved.
+    /// - ensures: the sentence that says what the report is; a table under its
+    ///   lead of both uploads, each commit linked to Codecov, with its coverage
+    ///   and its file count; a sentence naming the change and the threshold;
+    ///   the verdict; the crates' table under its lead inside a `<details>`
+    ///   block whose summary counts the crates that moved and repeats the
+    ///   verdict, or a line saying no crate moves.
     /// - provides: the job summary and the issue's body.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
@@ -617,28 +626,42 @@ impl fmt::Display for Comparison
         };
         writeln!(
             f,
-            "Main's coverage moved from {} % at {} to {} % at {}: {} points, against a threshold of {}.",
-            overall(&self.before),
-            commit(&self.before),
-            overall(&self.after),
-            commit(&self.after),
-            self.change,
-            self.threshold
+            "This report compares the coverage of two uploads of `main`.\n\nThe table gives each \
+             upload, its coverage and its files.\n\n| Upload | Commit | Coverage | Files |\n| --- \
+             | --- | ---: | ---: |"
         )?;
         writeln!(
             f,
-            "The upload covers {} files; the one before covered {}.\n",
-            self.after.totals.files, self.before.totals.files
+            "| before | {} | {} % | {} |",
+            commit(&self.before),
+            overall(&self.before),
+            self.before.totals.files
+        )?;
+        writeln!(
+            f,
+            "| after | {} | {} % | {} |\n",
+            commit(&self.after),
+            overall(&self.after),
+            self.after.totals.files
+        )?;
+        writeln!(
+            f,
+            "The change is {} points, against a threshold of {}.\n",
+            self.change, self.threshold
         )?;
         match self.standing() {
             Standing::Dropped => writeln!(
                 f,
-                "**Dropped**: a fall over the threshold or fewer files. A second drop updates this issue.\n"
+                "The verdict is **dropped**: a fall past the threshold, or fewer files. A second \
+                 drop updates this issue.\n"
             )?,
-            Standing::Steady => writeln!(f, "Steady: within the threshold, no file lost.\n")?,
+            Standing::Steady => writeln!(
+                f,
+                "The verdict is steady: a change within the threshold, with no file lost.\n"
+            )?,
         }
         if self.rows.is_empty() {
-            return writeln!(f, "No crate's coverage moved.");
+            return writeln!(f, "The coverage of no crate moves.");
         }
         let verdict = match self.standing() {
             Standing::Dropped => "dropped",
@@ -650,6 +673,7 @@ impl fmt::Display for Comparison
         else {
             "crates"
         };
+        writeln!(f, "The table gives each crate whose coverage moves.\n")?;
         writeln!(
             f,
             "<details><summary>{} {crates} moved — {verdict}</summary>\n",

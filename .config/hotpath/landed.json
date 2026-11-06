@@ -1,0 +1,21 @@
+[
+  {
+    "name": "#3596: the first landing with a red row opens the ledger with the sentence that says what it is, the lead and the row",
+    "input": {
+      "body": null,
+      "rows": ["| 0a1b2c3d | #5000 | gandr | ⚠️ 1 regression | #1545 |"]
+    },
+    "output": "This issue lists the landings whose hotpath checks regress, or improve past the band of their policy.\n\nThe table gives one row for each red `hotpath / <benchmark>` check of a landing, and one row for each report that improves past its band. `mise run ci:hotpath-landed` adds the rows on the push to `main`. A red row links the issues of the functions that it regresses. A fix or a stated acceptance settles the row of the pull request there.\n\n<details><summary>1 row — 1 regressed, 0 improved</summary>\n\n| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n| 0a1b2c3d | #5000 | gandr | ⚠️ 1 regression | #1545 |\n\n</details>"
+  },
+  {
+    "name": "a filed ledger keeps its prose and its rows, a row of a pull request and benchmark it holds joins nothing, and a new one joins",
+    "input": {
+      "body": "Every landing whose `hotpath / <benchmark>` check is red, or whose report improves past its policy's band, is one row here.\r\n\r\n<details><summary>1 row — 0 regressed, 1 improved</summary>\r\n\r\n| Commit | PR | Benchmark | Verdict | Issue |\r\n| --- | --- | --- | --- | --- |\r\n| 9f8e7d6c | #4000 | gandr-timing | ✅ improved 12 % | — |\r\n\r\n</details>\r\n",
+      "rows": [
+        "| 1a2b3c4d | #4000 | gandr-timing | ✅ improved 12 % | — |",
+        "| 5e6f7a8b | #5001 | store | ⚠️ 2 regressions | #1666 |"
+      ]
+    },
+    "output": "Every landing whose `hotpath / <benchmark>` check is red, or whose report improves past its policy's band, is one row here.\n\n<details><summary>2 rows — 1 regressed, 1 improved</summary>\n\n| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n| 9f8e7d6c | #4000 | gandr-timing | ✅ improved 12 % | — |\n| 5e6f7a8b | #5001 | store | ⚠️ 2 regressions | #1666 |\n\n</details>"
+  }
+]

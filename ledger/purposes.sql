@@ -4376,6 +4376,7 @@ INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::Newest','struct',
 INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::Repository','struct','A repository on GitHub, `OWNER/NAME`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::ShortSha','struct','A commit written by its first seven digits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::Skipped','struct','One upload of `main` Codecov has not processed: its commit and the state Codecov lists it in.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::SkippedRow','struct','A skipped upload''s row of the unprocessed uploads'' table: its commit and its state.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::Totals','struct','An upload''s totals as Codecov states them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::Upload','struct','One processed upload of the repository: its commit and its totals.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::Wait','struct','How long to wait for Codecov to finish processing an upload.',NULL,'fits','sound',NULL);
