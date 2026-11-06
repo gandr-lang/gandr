@@ -782,11 +782,29 @@ pub(super) struct Decoded(pub bool);
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct Alone(pub bool);
 
-/// Whether a constructor's field holds a value that is no code: its type is
-/// no universe, so a telescope type written in it reads as a tuple (#5208).
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct HoldsValue(bool);
+/// What a place inside a type holds, by the type the place states: a code,
+/// or a value that is no code. A telescope type written at a place that holds
+/// a value reads as a tuple (#5208, #5500).
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `Code` for a place whose type is a universe, or that states no
+///   type the walk reads; `Value` for any other place, with the type the place
+///   writes when it writes one.
+/// - executable: none — the record holds no place to check against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::held_at`].
+/// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Holds
+{
+    /// A code: the place's type is a universe.
+    Code,
+    /// A value that is no code, of the written type when the place writes
+    /// one.
+    Value(Option<NodeIndex>),
+}
 
 /// Whether a type application writes a recursive function's descent where a
 /// type is read, `own[<](…)`.
@@ -3471,8 +3489,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   over its own parameters takes the constructor's classifier, and one
     ///   typed by a parameter the argument a written classifier gives it. A
     ///   telescope type written in a field whose type is no universe
-    ///   ([`Self::field_holds_value`]) is filed among the valued telescopes, so
-    ///   it reads as the tuple of its entries.
+    ///   ([`Self::field_holds`]), bare or inside parentheses, is filed among
+    ///   the valued telescopes with the field's written type, so it reads as
+    ///   the tuple of its entries.
     /// - provides: constructor application, bare and called.
     /// - fails: yields the arity refusal for a field count other than the
     ///   constructor's; the wrong-sort refusal outside value position; the
@@ -3498,7 +3517,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   answering a definition's application, written as `= e` or as a
     ///   function tail, and one a declared constant's; a telescope type inside
     ///   a type, in a field of type `Unit`, of a product type and of type
-    ///   `Type`.
+    ///   `Type`, bare and inside parentheses.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
@@ -3508,6 +3527,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_constructor_answers_a_function_tail_s_application_3665`
     /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
     /// - witness: `lower::tests::a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208`
+    /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
     pub(super) fn construct(
         &mut self,
@@ -3599,9 +3619,13 @@ impl<'source> Lowerer<'_, 'source>
                 });
                 // A telescope type in a field that holds no code spells the
                 // tuple of its entries, as a telescope value does (#5208).
-                if former == Some(Former::TelescopeType)
-                    && let Generators::Written(form) = constructor.form
-                    && self.field_holds_value(
+                // Parentheses around it only group it (#5500).
+                if matches!(
+                    former,
+                    Some(Former::TelescopeType | Former::ParenthesizedType)
+                ) && let Generators::Written(form) = constructor.form
+                    && let Some(telescope) = self.written_telescope(field)?
+                    && let Holds::Value(stated) = self.field_holds(
                         FieldAt {
                             form,
                             tag: constructor.tag,
@@ -3609,9 +3633,9 @@ impl<'source> Lowerer<'_, 'source>
                         },
                         classifier,
                         site.at.node,
-                    )? == HoldsValue(true)
+                    )?
                 {
-                    let _first = self.valued_telescopes.insert(field);
+                    let _first = self.valued_telescopes.insert(telescope, stated);
                 }
                 // Only a constructor written in the field, bare or applied,
                 // reads the classifier the field gives. A classifier read off
@@ -4089,17 +4113,18 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// Whether the field `at` of the constructor written at `around` holds a
-    /// value that is no code: whether its type, as [`Self::field_classifier`]
+    /// What the field `at` of the constructor written at `around` holds: a
+    /// value that is no code when its type, as [`Self::field_classifier`]
     /// reads it from `classifier`, is no universe.
     ///
     /// # Specification
     /// - requires: as [`Self::field_classifier`].
     /// - ensures: a value held when the field's type, its parentheses stripped,
-    ///   is no universe, also for a field typed by the family itself; for a
-    ///   field typed by a parameter of the family, the argument a written
-    ///   classifier gives the parameter stands for that type. No value held
-    ///   when `at` names no field.
+    ///   is no universe, as [`Self::held_at`] reads it, with that written type;
+    ///   a value of no written type for a field typed by the family itself; for
+    ///   a field typed by a parameter of the family, the argument a written
+    ///   classifier gives the parameter stands for that type. A code held when
+    ///   `at` names no field.
     /// - provides: the reading of a telescope type written in the field.
     /// - fails: as [`Self::field_classifier`] and [`Self::unwrapped`].
     /// - panics: none.
@@ -4114,12 +4139,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   `Unit`, of a product type and of type `Type`, each asserted as the
     ///   exact core value.
     /// - witness: `lower::tests::a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208`
-    fn field_holds_value(
+    /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
+    fn field_holds(
         &mut self,
         at: FieldAt,
         classifier: Classifier,
         around: NodeIndex,
-    ) -> Result<HoldsValue, LoweringRefusal<'source>>
+    ) -> Result<Holds, LoweringRefusal<'source>>
     {
         let stated = match self.field_classifier(at, classifier, around)? {
             Maybe::Present(Classifier::Written(stated)) => stated,
@@ -4132,16 +4158,96 @@ impl<'source> Lowerer<'_, 'source>
                 | Classifier::Stated(_)
                 | Classifier::Resulted(_)
                 | Classifier::Inserted,
-            ) => return Ok(HoldsValue(true)),
-            Maybe::Absent(_) => return Ok(HoldsValue(false)),
+            ) => return Ok(Holds::Value(None)),
+            Maybe::Absent(_) => return Ok(Holds::Code),
         };
-        Ok(HoldsValue(!matches!(
-            self.unwrapped(stated)?,
+        self.held_at(stated)
+    }
+
+    /// What a place inside a type whose written type is `stated` holds: a
+    /// code when that type is a universe, and a value of it otherwise.
+    ///
+    /// # Specification
+    /// - requires: `stated` is a type's syntax node.
+    /// - ensures: a code held when `stated`, its parentheses stripped as
+    ///   [`Self::unwrapped`] strips them, is a universe; a value of `stated`
+    ///   held otherwise, also for a node that writes no form.
+    /// - provides: the one reading of a field's, a parameter's and a
+    ///   component's written type that decides how a telescope type written
+    ///   there reads.
+    /// - fails: as [`Self::unwrapped`].
+    /// - panics: none.
+    /// - executable: none — the answer is a reading of the type's syntax; a
+    ///   predicate restating it would read the syntax again.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a unit telescope at a component of type `Unit` and at
+    ///   one of type `Type`, each asserted as the exact core value.
+    /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
+    pub(super) fn held_at(
+        &mut self,
+        stated: NodeIndex,
+    ) -> Result<Holds, LoweringRefusal<'source>>
+    {
+        Ok(match self.unwrapped(stated)? {
             Maybe::Present(Unwrapped {
                 former: Former::Universe,
                 ..
-            })
-        )))
+            }) => Holds::Code,
+            Maybe::Present(_) | Maybe::Absent(_) => Holds::Value(Some(stated)),
+        })
+    }
+
+    /// The telescope type `node` writes, read through parentheses.
+    ///
+    /// # Specification
+    /// - requires: nothing; a node the tree does not hold writes none.
+    /// - ensures: `node` itself when it is a telescope type; the telescope type
+    ///   that parentheses around one operand hold, as [`Self::unwrapped`]
+    ///   strips them; nothing for any other node.
+    /// - provides: the one place a telescope type written where a value is read
+    ///   inside a type is found.
+    /// - fails: as [`Self::unwrapped`].
+    /// - panics: none.
+    /// - executable: none — the answer is a reading of the node's syntax; a
+    ///   predicate restating it would read the syntax again.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a telescope type bare and inside parentheses, at a
+    ///   constructor's field, at a call's parameter and at a tuple's component,
+    ///   each asserted as the exact core value.
+    /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
+    pub(super) fn written_telescope(
+        &mut self,
+        node: NodeIndex,
+    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
+    {
+        let former =
+            self.tree
+                .node(node)
+                .and_then(|tree_node| match shape_of(self.pbg, tree_node) {
+                    Ok(Shape::Form { former, .. }) => Some(former),
+                    Ok(_) | Err(_) => None,
+                });
+        Ok(match former {
+            Some(Former::TelescopeType) => Some(node),
+            // Only parentheses around one operand group it.
+            Some(Former::ParenthesizedType) => match self.unwrapped(node)? {
+                Maybe::Present(Unwrapped {
+                    node: inner,
+                    former: Former::TelescopeType,
+                    ..
+                }) => Some(inner),
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            },
+            Some(_) | None => None,
+        })
     }
 
     /// Give each definition its signature as the type its constructors are
@@ -11663,7 +11769,7 @@ impl<'source> Lowerer<'_, 'source>
                 Built::Constructed { family, tag, arity } => {
                     let from = values.len().checked_sub(arity)?;
                     let fields = values.drain(from ..).rev().collect();
-                    values.push(constructed(arena, family, tag, fields));
+                    values.push(arena.value_constructor_of(family, Vec::new(), tag, fields));
                 },
             }
         }
@@ -12522,8 +12628,12 @@ fn tracked_motives(
                                 .rev()
                                 .map(|field| variable(arena, Depth(field)))
                                 .collect();
-                            let at_constructor =
-                                constructed(arena, family, ConstructorTag::from(tag), fields);
+                            let at_constructor = arena.value_constructor_of(
+                                family,
+                                Vec::new(),
+                                ConstructorTag::from(tag),
+                                fields,
+                            );
                             gandr_core_term::instantiate_comp_type(arena, lifted, at_constructor)
                         },
                         Maybe::Present(_) | Maybe::Absent(_) => {
@@ -13117,7 +13227,7 @@ fn level_read(
             Maybe::Present(branch) if branch.depth.0 >= at.0 => {
                 let from = values.len().saturating_sub(branch.arity);
                 let fields = values.drain(from ..).rev().collect();
-                constructed(arena, branch.family, branch.tag, fields)
+                arena.value_constructor_of(branch.family, Vec::new(), branch.tag, fields)
             },
             Maybe::Present(_) | Maybe::Absent(_) => level_value(arena, scrutinised, depth, at),
         };
@@ -13253,21 +13363,6 @@ fn arm_read(
         }
     }
     Maybe::Present(read)
-}
-
-/// The constructor `tag` of the parameterless family `family` over `fields`.
-///
-/// # Specification
-/// trivial.
-pub(super) fn constructed(
-    arena: &mut CoreArena,
-    family: ConstantIndex,
-    tag: ConstructorTag,
-    fields: Vec<ValueId>,
-) -> ValueId
-{
-    let classifier = arena.value_type_data(family, Vec::new());
-    arena.value_constructor(family, classifier, tag, fields)
 }
 
 /// The closed constructor term the prefix-ordered `point` spells over

@@ -28,7 +28,6 @@ use super::super::Frame;
 use super::super::Lowerer;
 use super::super::Plan;
 use super::super::Reading;
-use super::super::Resolved;
 use super::super::Site;
 use super::super::Statement;
 use super::super::StatementBinding;
@@ -149,20 +148,7 @@ impl<'source> Lowerer<'_, 'source>
             span: opened.span,
             name: self.name_at(opened),
         };
-        if !matches!(self.form_at(opened)?, Some((_, Former::Name))) {
-            return Err(refused);
-        }
-        let named = Site {
-            at: opened,
-            name: FormName::IDENTIFIER,
-            reading: Reading::Value(frame),
-        };
-        let declared = match self.resolve_name(named, frame, self.name_at(opened))? {
-            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-            Maybe::Absent(_) => return Err(refused),
-        };
-        match declared {
+        match self.name_type(frame, opened)? {
             Maybe::Present(stated) => Ok(stated),
             Maybe::Absent(_) => Err(refused),
         }

@@ -3892,10 +3892,11 @@ struct Lowerer<'run, 'source>
     /// argument, and its own operands in turn — whose quote stays in the
     /// enclosing type's telescope rather than carried into a term's context.
     type_read: BTreeSet<NodeIndex>,
-    /// Each telescope type written as an operand of a constructor at a field
-    /// whose type is no universe: where a value is read, it is the tuple of
-    /// its entries, not the quote of their product (#5208).
-    valued_telescopes: BTreeSet<NodeIndex>,
+    /// Each telescope type written where a value is read inside a type, at a
+    /// constructor's field, a call's parameter or a tuple's component whose
+    /// type is no universe, with that type when it is written: it is the
+    /// tuple of its entries, not the quote of their product (#5208, #5500).
+    valued_telescopes: BTreeMap<NodeIndex, Option<NodeIndex>>,
     /// Each head of a call of no arguments, beside the call: such a call is
     /// its head's force, so the force carries the call's origin.
     nullary: BTreeMap<NodeIndex, NodeIndex>,
@@ -5751,7 +5752,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             sibling_calls: Vec::new(),
             reader: Reading::Unread,
             type_read: BTreeSet::new(),
-            valued_telescopes: BTreeSet::new(),
+            valued_telescopes: BTreeMap::new(),
             nullary: BTreeMap::new(),
             typed_heads: BTreeMap::new(),
             supplied: BTreeSet::new(),
@@ -17693,14 +17694,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `arguments` holds positions of the operand store, the call's
     ///   arguments from left to right, its first list's before its second's.
-    /// - ensures: an argument written as a telescope type joins
-    ///   [`Self::valued_telescopes`] when the parameter it meets has a written
-    ///   type that is no universe once its parentheses are stripped. The
-    ///   parameters are, in order, those [`Self::listed_parameters`] reads and
-    ///   then the domains of each arrow of the type after them. An argument
-    ///   past the parameters the walk reads, or at a parameter written with no
-    ///   type, stays as it is. No walk runs when no argument is a telescope
-    ///   type.
+    /// - ensures: an argument written as a telescope type, bare or inside
+    ///   parentheses as [`Self::written_telescope`] reads it, joins
+    ///   [`Self::valued_telescopes`] with the parameter's written type when
+    ///   that type holds a value, as [`Self::held_at`] reads it. The parameters
+    ///   are, in order, those [`Self::listed_parameters`] reads and then the
+    ///   domains of each arrow of the type after them. An argument past the
+    ///   parameters the walk reads, or at a parameter written with no type,
+    ///   stays as it is. No walk runs when no argument is a telescope type or a
+    ///   parenthesised type.
     /// - provides: the reading of a telescope type written as an argument of a
     ///   call in a type.
     /// - fails: as [`Self::unwrapped`].
@@ -17716,9 +17718,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a telescope argument at a product parameter, at a
-    ///   `Type` parameter and at the domain of a function's result, each
-    ///   asserted as the exact core value.
+    ///   `Type` parameter and at the domain of a function's result, and one
+    ///   inside parentheses, each asserted as the exact core value.
     /// - witness: `lower::tests::a_telescope_argument_of_a_call_in_a_type_reads_by_its_parameter_5390`
+    /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
     #[spec(
         captures: before = self.valued_telescopes.len(),
         ensures: |ret| ret.is_err() || self.valued_telescopes.len() >= before,
@@ -17729,23 +17732,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
         arguments: Stretch,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let telescope = |lowerer: &Self, position: usize| {
+        // Only a telescope type or parentheses around one write a telescope.
+        let written = |lowerer: &Self, position: usize| {
             lowerer
                 .operands
                 .get(position)
-                .and_then(|&argument| lowerer.tree.node(argument).map(|node| (argument, node)))
-                .filter(|&(_, node)| {
+                .and_then(|&argument| lowerer.tree.node(argument))
+                .is_some_and(|node| {
                     matches!(
                         shape_of(lowerer.pbg, node),
                         Ok(Shape::Form {
-                            former: Former::TelescopeType,
+                            former: Former::TelescopeType | Former::ParenthesizedType,
                             ..
                         })
                     )
                 })
-                .map(|(argument, _)| argument)
         };
-        if !(arguments.start .. arguments.end).any(|position| telescope(self, position).is_some()) {
+        if !(arguments.start .. arguments.end).any(|position| written(self, position)) {
             return Ok(());
         }
         let (listed, mut rest) = self.listed_parameters(resolved)?;
@@ -17783,17 +17786,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 domain = domain.saturating_add(1_usize);
                 parameter
             };
-            if let Some(argument) = telescope(self, position)
+            if written(self, position)
+                && let Some(&argument) = self.operands.get(position)
+                && let Some(telescope) = self.written_telescope(argument)?
                 && let Some(parameter) = parameter
-                && !matches!(
-                    self.unwrapped(parameter)?,
-                    Maybe::Present(native::Unwrapped {
-                        former: Former::Universe,
-                        ..
-                    })
-                )
+                && let native::Holds::Value(stated) = self.held_at(parameter)?
             {
-                let _first = self.valued_telescopes.insert(argument);
+                let _first = self.valued_telescopes.insert(telescope, stated);
             }
         }
 
@@ -28015,6 +28014,90 @@ mod tests
         assert!(
             matches!(arena.value(argument(&arena, 4)), Some(&Value::Quote(_))),
             "`*{{Integer, Bool}}` at a parameter of type `Type` is the product's code"
+        );
+    }
+
+    /// #5500: a telescope written inside parentheses at a constructor's field
+    /// or at a call's parameter, and one written as an entry of a telescope
+    /// that reads as a tuple, reads as a value where its place's type is no
+    /// universe, and as a code where that type is a universe.
+    #[test]
+    fn a_parenthesised_or_nested_telescope_reads_by_its_place_5500()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "data Box : Type where { | Done : (u : Unit) --> Box | Nested : (p : Unit * \
+                 Integer) --> Box | Coded : (p : Type * Integer) --> Box } def holds(b : Box) \
+                 -> -F Type { return Integer } def pairs(p : Integer * Bool) -> -F Type { \
+                 return Integer } def parenthesised : holds(Done((*{}))) ; def nested : \
+                 holds(Nested(*{*{}, 1})) ; def grouped : holds(Nested(*{(*{}), 1})) ; def \
+                 coded : holds(Coded(*{*{}, 1})) ; def argued : pairs((*{3, true})) ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let argument = |arena: &CoreArena, declaration: usize| {
+            let Some(&ValueType::Element { code, .. }) =
+                arena.value_type(declared_of(lowered[declaration]))
+            else {
+                panic!("the call in a type is a decode: {:?}", lowered[declaration]);
+            };
+            let Some(&Value::Returned(call)) = arena.value(code)
+            else {
+                panic!("of the call's returned code");
+            };
+            let Some(&Computation::Application(_, argument)) = arena.computation(call)
+            else {
+                panic!("the call applied: {:?}", arena.computation(call));
+            };
+            argument
+        };
+        let field = |arena: &CoreArena, declaration: usize| {
+            let Some(&Value::Constructor { ref fields, .. }) =
+                arena.value(argument(arena, declaration))
+            else {
+                panic!("`holds` applied to a constructor value");
+            };
+            let [field] = **fields
+            else {
+                panic!("of one field");
+            };
+            field
+        };
+        let members = |arena: &CoreArena, value| match arena.value(value) {
+            Some(&Value::Tuple(ref members)) => members
+                .iter()
+                .map(|&member| arena.value(member).cloned())
+                .collect::<Vec<_>>(),
+            other => panic!("the value is a tuple: {other:?}"),
+        };
+
+        let parenthesised = members(&arena, field(&arena, 3));
+        assert!(
+            parenthesised.is_empty(),
+            "`(*{{}})` at a field of type `Unit` is the unit value: {parenthesised:?}"
+        );
+        for (declaration, what) in [(4_usize, "`*{{*{{}}, 1}}`"), (5_usize, "`*{{(*{{}}), 1}}`")] {
+            let tuple = members(&arena, field(&arena, declaration));
+            assert!(
+                matches!(*tuple.as_slice(), [Some(Value::Tuple(ref unit)), Some(Value::Literal(_))] if unit.is_empty()),
+                "{what} at a field of type `Unit * Integer` is the unit value and a number: \
+                 {tuple:?}"
+            );
+        }
+        let coded = members(&arena, field(&arena, 6));
+        assert!(
+            matches!(*coded.as_slice(), [
+                Some(Value::Quote(_)),
+                Some(Value::Literal(_))
+            ]),
+            "`*{{}}` at a component of type `Type` is the code `Unit`: {coded:?}"
+        );
+        let argued = members(&arena, argument(&arena, 7));
+        assert!(
+            matches!(*argued.as_slice(), [Some(Value::Literal(_)), Some(ref flag)] if !matches!(flag, Value::Quote(_))),
+            "`(*{{3, true}})` at a parameter of type `Integer * Bool` is a tuple: {argued:?}"
         );
     }
 
