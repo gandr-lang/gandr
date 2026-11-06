@@ -46,6 +46,7 @@ use gandr_surface_dispatcher::judge_module;
 use gandr_surface_dispatcher::lower_source;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::ENTRY;
 use gandr_surface_lowering::Role;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -749,7 +750,8 @@ fn focusing_is_total_on_the_pathological_corpus()
 /// so neither is counted; a module member is reached through its module's
 /// name; a name the lowering mints for a form — the `Theory` code type a
 /// signature block declares — is spelled by no source, so it is not
-/// counted.
+/// counted. Each program declares its entry under [`ENTRY`], so the entry
+/// belongs to its program and is not counted.
 ///
 /// # Specification
 /// trivial.
@@ -779,6 +781,7 @@ fn exported(
                 .any(|word| word == name)
                 .then_some(name)
         })
+        .filter(|name| name != ENTRY)
         .collect()
 }
 
