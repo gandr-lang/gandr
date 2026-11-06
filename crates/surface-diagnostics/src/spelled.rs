@@ -729,6 +729,15 @@ fn spell<'failure>(
         })
         .collect();
     models.sort_by_key(|&(modelled, _)| modelled);
+    let mut members: Vec<(ValueTypeId, Name<'_>)> = written_names(
+        origins
+            .members()
+            .iter()
+            .map(|&(member, origin)| (member, origin.span())),
+        text,
+    )
+    .collect();
+    members.sort_by_key(|&(member, _)| member);
     let implicits = telescopes(module);
     let slots = model_slots(module);
     let sources: Vec<CoreSource<'_>> = names
@@ -743,6 +752,7 @@ fn spell<'failure>(
                 .naming_entries(&sum_labels, &with_labels)
                 .relating(&relations)
                 .modeling(&models)
+                .naming_members(&members)
                 .naming_implicits(&implicits)
                 .flattening(&slots)
         })

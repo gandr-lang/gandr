@@ -1,6 +1,6 @@
 module M where {
   def give_up() -> -F Unit {
     var c = 0;
-    access c as v { abort(v) }}
+    access c as v { abort v }}
   }
 }

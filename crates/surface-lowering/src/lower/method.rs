@@ -16,7 +16,7 @@
 //! | mode | `s.f(a)` lowers to |
 //! |---|---|
 //! | `self : shared T` | `access shared s as v { f(v, a) }` |
-//! | `self : T` | `access s as v { (t, r) <- f(v, a) ; resume(v, t) ; pure r }` |
+//! | `self : T` | `access s as v { (t, r) <- f(v, a) ; resume v t ; pure r }` |
 //! | `self : consumed T` | `x <- consume(s) ; f(x, a)` |
 //!
 //! A receiver that is no held slot is passed as the first argument when the

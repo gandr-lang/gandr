@@ -46,7 +46,8 @@
 //! | product | `0x05` | join | `0x14` | | |
 //! | quotient | `0x06` | exists | `0x15` | | |
 //! | power | `0x07` | forall | `0x16` | | |
-//! | cut | `0x08` | | | | |
+//! | cut | `0x08` | lower cut | `0x17` | | |
+//! | | | upper cut | `0x18` | | |
 //!
 //! A certificate's layout stands on [`Certificate::encode`], and a
 //! checkpoint's on [`crate::dovetail::Dovetail::checkpoint`].
@@ -143,6 +144,10 @@ mod step_kind
     pub(super) const COUNTEREXAMPLE: Kind = Kind(0x3b);
     /// A refutation step.
     pub(super) const REFUTATION: Kind = Kind(0x3c);
+    /// An inside step.
+    pub(super) const INSIDE: Kind = Kind(0x3d);
+    /// An outside step.
+    pub(super) const OUTSIDE: Kind = Kind(0x3e);
 }
 
 /// A one-byte kind: of a node, or of an interval's orientation, endpoint or
@@ -173,6 +178,8 @@ impl Kind
     const JOIN: Self = Self(0x14);
     /// A strict comparison.
     const LESS: Self = Self(0x12);
+    /// A point in the lower cut of a cut.
+    const LOWER_CUT: Self = Self(0x17);
     /// A finite meet.
     const MEET: Self = Self(0x13);
     /// A product of reals.
@@ -189,6 +196,8 @@ impl Kind
     const SUM: Self = Self(0x03);
     /// The top proposition.
     const TOP: Self = Self(0x10);
+    /// A point in the upper cut of a cut.
+    const UPPER_CUT: Self = Self(0x18);
 }
 
 /// The byte of a proper interval, a negative infinity, a closed bound or an
@@ -669,6 +678,12 @@ impl Entry
                 Open::Top => self.kind(Kind::TOP),
                 Open::Bottom => self.kind(Kind::BOTTOM),
                 Open::Less(left, right) => pair(self, Kind::LESS, left.node(), right.node()),
+                Open::LowerCut(cut, point) => {
+                    pair(self, Kind::LOWER_CUT, cut.node(), point.node());
+                },
+                Open::UpperCut(cut, point) => {
+                    pair(self, Kind::UPPER_CUT, cut.node(), point.node());
+                },
                 Open::Meet(left, right) => pair(self, Kind::MEET, left.node(), right.node()),
                 Open::Join(left, right) => pair(self, Kind::JOIN, left.node(), right.node()),
                 Open::Exists(quantifier) => {
@@ -1008,13 +1023,15 @@ impl<'bytes> Reader<'bytes>
         let node = match kind {
             Kind::BOUND => Node::Real(Real::Bound(DeBruijn::from(self.word()?.0))),
             Kind::CONSTANT => Node::Real(Real::Constant(self.dyadic()?)),
-            Kind::SUM | Kind::SUB | Kind::MUL | Kind::LESS => {
+            Kind::SUM | Kind::SUB | Kind::MUL | Kind::LESS | Kind::LOWER_CUT | Kind::UPPER_CUT => {
                 let left = RealId::at(self.child(builder, Sort::Real)?);
                 let right = RealId::at(self.child(builder, Sort::Real)?);
                 match kind {
                     Kind::SUM => Node::Real(Real::Add(left, right)),
                     Kind::SUB => Node::Real(Real::Sub(left, right)),
                     Kind::MUL => Node::Real(Real::Mul(left, right)),
+                    Kind::LOWER_CUT => Node::Open(Open::LowerCut(left, right)),
+                    Kind::UPPER_CUT => Node::Open(Open::UpperCut(left, right)),
                     Kind(_) => Node::Open(Open::Less(left, right)),
                 }
             },
@@ -1390,6 +1407,23 @@ impl Entry
         self.premise(right);
     }
 
+    /// Write the side of a cut: `0x00` for the lower cut, `0x01` for the
+    /// upper cut.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn side(
+        &mut self,
+        side: Side,
+    )
+    {
+        self.kind(match side {
+            Side::Lower => FIRST,
+            Side::Upper => SECOND,
+        });
+    }
+
     /// Write one certificate step: its kind, then its fields.
     ///
     /// # Specification
@@ -1426,10 +1460,7 @@ impl Entry
                 self.kind(step_kind::SPLIT);
                 self.premise(premise);
                 self.dyadic(point);
-                self.kind(match side {
-                    Side::Lower => FIRST,
-                    Side::Upper => SECOND,
-                });
+                self.side(side);
             },
             Step::Constant { real } => {
                 self.kind(step_kind::CONSTANT);
@@ -1495,6 +1526,17 @@ impl Entry
                     self.premise(premise);
                 }
             },
+            Step::Inside { open, point, side } | Step::Outside { open, point, side } => {
+                self.kind(if matches!(*step, Step::Inside { .. }) {
+                    step_kind::INSIDE
+                }
+                else {
+                    step_kind::OUTSIDE
+                });
+                self.child(open);
+                self.premise(point);
+                self.side(side);
+            },
         }
     }
 }
@@ -1547,11 +1589,7 @@ impl Reader<'_>
             step_kind::SPLIT => {
                 let premise = premise(self)?;
                 let point = self.dyadic()?;
-                let side = match self.kind()? {
-                    FIRST => Side::Lower,
-                    SECOND => Side::Upper,
-                    _ => return Err(DecodeError::UnknownKind),
-                };
+                let side = self.side()?;
                 Ok(Step::Split {
                     premise,
                     point,
@@ -1601,6 +1639,16 @@ impl Reader<'_>
             step_kind::REFUTATION => Ok(Step::Refutation {
                 exists: node(self)?,
                 premises: premises(self)?,
+            }),
+            step_kind::INSIDE => Ok(Step::Inside {
+                open: node(self)?,
+                point: premise(self)?,
+                side: self.side()?,
+            }),
+            step_kind::OUTSIDE => Ok(Step::Outside {
+                open: node(self)?,
+                point: premise(self)?,
+                side: self.side()?,
             }),
             _ => Err(DecodeError::UnknownKind),
         };
@@ -1932,6 +1980,20 @@ impl Reader<'_>
             .ok_or(DecodeError::Truncated)?;
         self.rest = rest;
         return Ok(Wide(u64::from_le_bytes(wide)));
+    }
+
+    /// Read a side: the lower cut or the upper cut.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn side(&mut self) -> Result<Side, DecodeError>
+    {
+        return match self.kind()? {
+            FIRST => Ok(Side::Lower),
+            SECOND => Ok(Side::Upper),
+            Kind(_) => Err(DecodeError::UnknownKind),
+        };
     }
 
     /// Read a demand.

@@ -2628,6 +2628,7 @@ enum Agreement
                 ContentNode::Constructor {family:ref left,tag,ref fields,..} => matches!(*new,ContentNode::Constructor {family:ref right,tag:other,fields:ref theirs,..} if left == right && tag == other && fields.len() == theirs.len()),
                 ContentNode::Record(ref fields) => matches!(*new,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
                 ContentNode::RecordType(ref fields) => matches!(*new,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
+                ContentNode::Patched { ref fixed, .. } => matches!(*new,ContentNode::Patched { fixed: ref other, .. } if fixed.keys().eq(other.keys())),
                 ContentNode::DataCase {ref branches,..} => matches!(*new,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
                 ContentNode::RecordProjection(_,ref label) => matches!(*new,ContentNode::RecordProjection(_,ref other) if label == other),
                 ContentNode::TupleProjection(_,component) => matches!(*new,ContentNode::TupleProjection(_,other) if component == other),
@@ -2882,9 +2883,15 @@ fn agreement(
             },
         ) => first == second && a == b && left.len() == right.len(),
         (&ContentNode::Record(ref left), &ContentNode::Record(ref right))
-        | (&ContentNode::RecordType(ref left), &ContentNode::RecordType(ref right)) => {
-            left.keys().eq(right.keys())
-        },
+        | (&ContentNode::RecordType(ref left), &ContentNode::RecordType(ref right))
+        | (
+            &ContentNode::Patched {
+                fixed: ref left, ..
+            },
+            &ContentNode::Patched {
+                fixed: ref right, ..
+            },
+        ) => left.keys().eq(right.keys()),
         (
             &ContentNode::DataCase {
                 branches: ref left,
@@ -3914,6 +3921,7 @@ where
             |node| match *node {
                 ValueType::Data {declaration,ref arguments} => matches!(ret,ContentNode::Data {declaration:ref found,arguments:ref other} if *found == program.resolve(declaration) && arguments.len() == other.len()),
                 ValueType::Record(ref fields) => matches!(ret,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
+                ValueType::Patched { ref fixed, .. } => matches!(ret,ContentNode::Patched { fixed: ref other, .. } if fixed.keys().eq(other.keys())),
                 ValueType::Stack { .. } => matches!(ret, ContentNode::Stack { .. }),
                 ValueType::Capability { grade, region, .. } => matches!(ret, ContentNode::Capability { grade: found_grade, region: found_region, .. } if found_grade == grade && found_region == region),
                 ValueType::PathUniverse(..) => {
@@ -3970,7 +3978,7 @@ where
                 ValueType::Buffer => ret == ContentNode::BufferType,
                 ValueType::Row => ret == ContentNode::RowKind,
                 ValueType::RowTail(_) => matches!(ret, ContentNode::RowTail(_)),
-                ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. } => ret == ContentNode::Unresolved(Sort::ValueType),
+                ValueType::Staged { .. } | ValueType::World(_) => ret == ContentNode::Unresolved(Sort::ValueType),
             },
         )
 },
@@ -4000,6 +4008,13 @@ where
                 .map(|(label, &field)| (label.clone(), child(Root::ValueType(field))))
                 .collect(),
         ),
+        Some(&ValueType::Patched { base, ref fixed }) => ContentNode::Patched {
+            base: child(Root::ValueType(base)),
+            fixed: fixed
+                .iter()
+                .map(|(label, &value)| (label.clone(), child(Root::Value(value))))
+                .collect(),
+        },
         Some(&ValueType::Stack { input, output }) => ContentNode::Stack {
             input: child(Root::CompType(input)),
             output: child(Root::CompType(output)),
@@ -4117,8 +4132,9 @@ where
         Some(&ValueType::Buffer) => ContentNode::BufferType,
         Some(&ValueType::Row) => ContentNode::RowKind,
         Some(&ValueType::RowTail(code)) => ContentNode::RowTail(child(Root::Value(code))),
-        Some(&(ValueType::Staged { .. } | ValueType::World(_) | ValueType::Patched { .. }))
-        | None => ContentNode::Unresolved(Sort::ValueType),
+        Some(&(ValueType::Staged { .. } | ValueType::World(_))) | None => {
+            ContentNode::Unresolved(Sort::ValueType)
+        },
     }
 }
 

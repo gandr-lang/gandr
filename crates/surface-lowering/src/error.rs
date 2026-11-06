@@ -337,7 +337,7 @@ pub enum FragmentBoundary
     /// binds can be ended.
     View,
     /// The form is a receive or a fork standing anywhere but where a `let`
-    /// binds its one linear end to a name: `let x = recv(c);` and
+    /// binds its one linear end to a name: `let x = recv c;` and
     /// `let d = fork (c : S) t;`.
     Unbound,
     /// The form is a box whose output is an arrow written without

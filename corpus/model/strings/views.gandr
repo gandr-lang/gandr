@@ -30,7 +30,7 @@ import std.process;
 @[ runs("3") ]
 def readThrough() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  access s as v { resume(v, v) };
+  access s as v { resume v v };
   count (bytes s)
 
 /// `writeThrough` appends `!` through a view.
@@ -38,7 +38,7 @@ def readThrough() -> Integer =
 @[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))") ]
 def writeThrough() -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  access s as v { let w = push v 33; let t = written w; resume(v, t) };
+  access s as v { let w = push v 33; let t = written w; resume v t };
   bytes s
 
 /// An access that aborts writes nothing back: the held string's bytes are as
@@ -46,7 +46,7 @@ def writeThrough() -> List(Integer) =
 @[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def abandoned() -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  access s as v { abort(v) } unwind { pure *{} };
+  access s as v { abort v } unwind { pure *{} };
   bytes s
 
 /// `twiceThrough` performs two accesses in sequence.
@@ -54,8 +54,8 @@ def abandoned() -> List(Integer) =
 @[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 33 (Cons 0 Nil))))") ]
 def twiceThrough() -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  access s as v { let w = push v 33; let t = written w; resume(v, t) };
-  access s as v { let w = push v 33; let t = written w; resume(v, t) };
+  access s as v { let w = push v 33; let t = written w; resume v t };
+  access s as v { let w = push v 33; let t = written w; resume v t };
   bytes s
 
 /// `keptInRegion` retains a view in the enclosing region.

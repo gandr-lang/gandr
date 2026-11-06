@@ -14,7 +14,7 @@ def dangling() -> Integer =
   let r : Integer = handle c : std.process.Exit.Eff {
     let k = access x as v {
       c.exit 1;
-      resume(v, v + 7);
+      resume v (v + 7);
       pure thunk { pure v }
     };
     force k

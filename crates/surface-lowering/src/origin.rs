@@ -778,6 +778,10 @@ pub struct OriginTable
     /// Each model type written `Model(T)`, or `Model(T) with sort C = A …`,
     /// with the record it lowers to, in the order lowered.
     models: Vec<(ValueTypeId, WrittenModel)>,
+    /// Each record type a patched type's base writes by the name of a type
+    /// member, with where the name is written, in the order lowered. The
+    /// core holds the member's record, and the printer writes the name.
+    members: Vec<(ValueTypeId, Origin)>,
     /// Each capability scope over a theory, `handle c : T with sort C = A …
     /// { … }`, with the theory and the sorts its manifest fixes as written,
     /// in the order lowered. The scope's signature holds the carriers
@@ -2549,6 +2553,45 @@ impl OriginTable
     pub fn models(&self) -> &[(ValueTypeId, WrittenModel)]
     {
         &self.models
+    }
+
+    /// Record that the source writes the record type `ty` by the name of the
+    /// type member written at `name`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pair is appended, so [`Self::members`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a base written by a type member's name answers at the
+    ///   record it lowers to, and a record written in place answers at none.
+    /// - witness: `lower::patched::tests::a_base_named_by_a_type_member_keeps_the_name`
+    #[spec(
+        captures: before = self.members.len(),
+        ensures: self.members.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_member(
+        &mut self,
+        ty: ValueTypeId,
+        name: Origin,
+    )
+    {
+        self.members.push((ty, name));
+    }
+
+    /// Each record type written by the name of a type member, with where the
+    /// name is written, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn members(&self) -> &[(ValueTypeId, Origin)]
+    {
+        &self.members
     }
 
     /// Record that the capability scope `scope` handles the theory `model`

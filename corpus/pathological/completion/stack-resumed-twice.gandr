@@ -21,14 +21,14 @@ import std.process;
 def resumedTwice() -> Unit =
   handle c : std.process.Exit.Eff {
     let ring = fork (kernel : Ring.Submission) {
-      let sqe = recv(kernel);
-      send(kernel, Ring.done);
-      close(kernel)
+      let sqe = recv kernel;
+      send kernel Ring.done;
+      close kernel
     };
-    send(ring, Ring.read);
+    send ring Ring.read;
     c.exit 1;
-    let cqe = recv(ring);
-    close(ring)
+    let cqe = recv ring;
+    close ring
   } with {
     | pure(x) => pure x
     | oper exit(code, k) => { let first = k *{}; k *{} }

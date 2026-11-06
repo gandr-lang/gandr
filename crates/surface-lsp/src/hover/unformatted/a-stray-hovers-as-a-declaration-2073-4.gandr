@@ -1,2 +1,2 @@
-$0release x ;
+$0| x => 1 ;
 def answer = 42 ;

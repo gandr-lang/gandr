@@ -277,8 +277,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is a staged type read as a value type under `frame`;
     ///   `fixed` is its bracket's field form.
     /// - ensures: the base is read as a value type and each fixed value as a
-    ///   value, both under `frame`; the type is planned over the base's fields
-    ///   and the value each entry of `fixed` writes.
+    ///   value, both under `frame`; the type is planned over the base's fields,
+    ///   the value each entry of `fixed` writes, and the base's name when the
+    ///   base names a type member.
     /// - fails: as [`Self::base_fields`].
     /// - panics: none.
     ///
@@ -299,7 +300,7 @@ impl<'source> Lowerer<'_, 'source>
         fixed: &[Entry<'source>],
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let (entries, _) = self.base_record(site, frame, base)?;
+        let (entries, held) = self.base_record(site, frame, base)?;
         let labels = fixed
             .iter()
             .filter_map(|entry| match entry.key {
@@ -313,7 +314,12 @@ impl<'source> Lowerer<'_, 'source>
             self.read(entry.held.at().node, Reading::Value(frame));
         }
         let fixed = fixed_values(fixed);
-        self.plan(site, Plan::Patched { fields, fixed });
+        let member = held.map(|_| base.node);
+        self.plan(site, Plan::Patched {
+            fields,
+            fixed,
+            member,
+        });
 
         Ok(())
     }
@@ -328,8 +334,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: for a face the base's type member names, whose value is a
     ///   record written in place over exactly the face's labels: the base is
     ///   read as a value type and each of the record's values as a value, all
-    ///   under `frame`, and the type is planned over the base's fields and the
-    ///   value the record writes for each of the face's labels.
+    ///   under `frame`, and the type is planned over the base's fields, the
+    ///   value the record writes for each of the face's labels, and the base's
+    ///   name.
     /// - fails: the unresolved-name refusal for a face the type member does not
     ///   name, a base that is no type member, and a label of the value the face
     ///   does not hold; a form fault for a value that omits a label of the
@@ -408,7 +415,11 @@ impl<'source> Lowerer<'_, 'source>
             self.read(entry.held.at().node, Reading::Value(frame));
         }
         let fixed = fixed_values(&written);
-        self.plan(site, Plan::Patched { fields, fixed });
+        self.plan(site, Plan::Patched {
+            fields,
+            fixed,
+            member: Some(base.node),
+        });
 
         Ok(())
     }
@@ -526,26 +537,30 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Mint a patched type over the record of `fields`, fixing each label of
-    /// `fixed` at its value.
+    /// `fixed` at its value, the record written by the type member's name at
+    /// `member` when there is one.
     ///
     /// # Specification
     /// - requires: every field type and every fixed value is already minted or
     ///   absent.
     /// - ensures: the patched type of the record of `fields` at the values of
-    ///   `fixed`, the record and the patched type each with the written origin;
-    ///   nothing when a field or a value did not lower.
+    ///   `fixed`, the record and the patched type each with the written origin,
+    ///   and the record with the name written at `member`; nothing when a field
+    ///   or a value did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a type member's record patched at two of three
-    ///   fields.
+    ///   fields, and a base written by a type member's name and in place.
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
+    /// - witness: `lower::patched::tests::a_base_named_by_a_type_member_keeps_the_name`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     pub(super) fn mint_patched_type(
         &self,
         fields: &BTreeMap<FieldLabel, NodeIndex>,
         fixed: &BTreeMap<FieldLabel, NodeIndex>,
+        member: Option<NodeIndex>,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -554,6 +569,11 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(Lowered::ValueType(base)) => base,
             minted @ (Maybe::Present(_) | Maybe::Absent(_)) => return minted,
         };
+        if let Some(member) = member
+            && let Maybe::Present(name) = self.origin_at(member)
+        {
+            sink.origins.record_member(base, name);
+        }
         let mut values = BTreeMap::new();
         for (label, &value) in fixed {
             match self.value_at(value) {

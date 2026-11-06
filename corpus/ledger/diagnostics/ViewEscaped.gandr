@@ -2,5 +2,5 @@
 @[ refuses("ViewEscaped") ]
 def leak() -> -F Integer =
   var c = 0
-  access c as v { force thunk { resume(v, 1) } };
+  access c as v { force thunk { resume v 1 } };
   pure c

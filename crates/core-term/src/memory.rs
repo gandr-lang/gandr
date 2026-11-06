@@ -18,8 +18,8 @@
 //! |access|`access x as w { t } unwind { u }`|the view `w`, a linear slot, over `t`|
 //! |shared access|`access shared x as w { t }`|the view `w`, a linear slot, over `t`|
 //! |access at a place|`access x.#[i] as w { t } unwind { u }`, `access shared x.#[i] as w { t }`|the view `w`, a linear slot, over `t`|
-//! |resume|`resume(w, v)`|nothing; writes `v` back through `w`|
-//! |abort|`abort(w)`|nothing; ends `w` with nothing written|
+//! |resume|`resume w v`|nothing; writes `v` back through `w`|
+//! |abort|`abort w`|nothing; ends `w` with nothing written|
 //! |consume|`s.f(a)`, `f`'s receiver consumed|nothing; moves the value `x` holds out|
 //!
 //! [`MemoryForm::Hold`] opens a slot of the linear zone `Σ` holding a value at
@@ -229,9 +229,9 @@ pub enum MemoryKind
     Hold,
     /// `access x as w { t } unwind { u }` or `access shared x as w { t }`.
     Access,
-    /// `resume(w, v)`.
+    /// `resume w v`.
     Resume,
-    /// `abort(w)`.
+    /// `abort w`.
     Abort,
     /// The hold's end at a consuming read.
     Consume,
@@ -268,7 +268,7 @@ pub enum MemoryForm<V = ValueId, C = ComputationId>
         /// The body, under the view's linear binder.
         body: C,
     },
-    /// `resume(w, v)`: end the view `view`, writing `value` back, returning
+    /// `resume w v`: end the view `view`, writing `value` back, returning
     /// the unit.
     Resume
     {
@@ -277,7 +277,7 @@ pub enum MemoryForm<V = ValueId, C = ComputationId>
         /// The value written back.
         value: V,
     },
-    /// `abort(w)`: end the view `view` with nothing written, returning the
+    /// `abort w`: end the view `view` with nothing written, returning the
     /// unit.
     Abort
     {

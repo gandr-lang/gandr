@@ -3,5 +3,5 @@
 def writtenWhileKept() -> -F Integer =
   var s = 3
   let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } } ;
-  access s as v { resume(v, 4) };
+  access s as v { resume v 4 };
   force k

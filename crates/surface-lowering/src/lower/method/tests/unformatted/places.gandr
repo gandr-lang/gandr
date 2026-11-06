@@ -6,5 +6,5 @@ module Places where {
 }
 def head() -> -F Integer { var xs = pair; let h = xs.first (); pure h }
 def doubled() -> -F Integer { var xs = pair; (xs.first ()) as w { pure w + w } }
-def raised() -> -F Integer { var xs = pair; (xs.nth 1) as w { resume(w, w + 3) }; pure 0 }
-def untouched() -> -F Integer { var xs = pair; (xs.first ()) as w { abort(w) }; pure 0 }
+def raised() -> -F Integer { var xs = pair; (xs.nth 1) as w { resume w (w + 3) }; pure 0 }
+def untouched() -> -F Integer { var xs = pair; (xs.first ()) as w { abort w }; pure 0 }

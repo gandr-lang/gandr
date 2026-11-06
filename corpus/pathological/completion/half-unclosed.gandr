@@ -11,17 +11,17 @@ import "../../model/completion/ring-base.gandr";
 @[ refuses("LinearResidue") ]
 def halfUnclosed() -> Unit =
   let pending = fork (target : Ring.Submission) {
-    let sqe = recv(target);
-    send(target, Ring.done);
+    let sqe = recv target;
+    send target Ring.done;
   };
   let cancel = fork (canceller : Ring.Submission) {
-    let sqe = recv(canceller);
-    send(canceller, Ring.done);
-    close(canceller)
+    let sqe = recv canceller;
+    send canceller Ring.done;
+    close canceller
   };
-  send(pending, Ring.read)
-  send(cancel, Ring.read)
-  let first = recv(pending)
-  let second = recv(cancel)
-  close(pending)
-  close(cancel)
+  send pending Ring.read
+  send cancel Ring.read
+  let first = recv pending
+  let second = recv cancel
+  close pending
+  close cancel

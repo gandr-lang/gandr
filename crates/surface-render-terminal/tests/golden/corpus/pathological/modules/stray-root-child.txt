@@ -1,34 +1,34 @@
-error[OutOfFragment.WrongSort.declaration]: a release expression cannot stand where a declaration is expected
-   ╭▸ corpus/pathological/modules/stray-root-child.gandr:14:1
+error[OutOfFragment.WrongSort.declaration]: a lambda expression cannot stand where a declaration is expected
+   ╭▸ corpus/pathological/modules/stray-root-child.gandr:13:1
    │
-14 │ release x ;
-   │ ━━━━━━━━━━━ a form of another sort than this position takes
+13 │ | x => 1 ;
+   │ ━━━━━━━━━━ a form of another sort than this position takes
    │
-   ├ note: `release` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
+   ├ note: `|` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
    ╰ help: write a declaration in this position
 
 error[OutOfFragment.TopLevel]: a binary expression cannot stand at a source's top level, where only declarations stand; a program runs the `main` it declares, so write it in `def main() -> Unit { … }`, or name it with a definition
-   ╭▸ corpus/pathological/modules/stray-root-child.gandr:19:1
+   ╭▸ corpus/pathological/modules/stray-root-child.gandr:18:1
    │
-19 │ 1 + 2
+18 │ 1 + 2
    │ ━━━━━ an expression where only declarations stand
    │
    ├ note: `1` is refused with OutOfFragment.TopLevel, as its expectation states
    ╰ help: write the expression in a declaration
 
 error[MalformedForm]: `mu` is a keyword and cannot stand here in this def value
-   ╭▸ corpus/pathological/modules/stray-root-child.gandr:23:5
+   ╭▸ corpus/pathological/modules/stray-root-child.gandr:22:5
    │
-23 │ def mu = 1 ;
+22 │ def mu = 1 ;
    │     ━━ a keyword where a term belongs
    │
    ├ note: `def` is refused with MalformedForm, as its expectation states
    ╰ help: write a term in place of `mu`
 
 error[MalformedForm]: a term is missing in this source file
-   ╭▸ corpus/pathological/modules/stray-root-child.gandr:30:1
+   ╭▸ corpus/pathological/modules/stray-root-child.gandr:29:1
    │
-30 │ ␁
+29 │ ␁
    │ ━ a term is missing here
    │
    ├ note: `` is refused with MalformedForm, as its expectation states

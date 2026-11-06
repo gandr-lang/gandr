@@ -680,3 +680,20 @@ fn a_retyped_definition_dirties_its_reader_and_nothing_else()
         Adoption::Adopted
     ]);
 }
+
+#[test]
+fn a_patched_signature_is_adopted_across_an_unrelated_edit()
+{
+    assert_eq!(
+        gate(
+            include_str!(
+                "incremental/fixtures/a-patched-signature-is-adopted-across-an-unrelated-edit-1.gandr"
+            ),
+            include_str!(
+                "incremental/fixtures/a-patched-signature-is-adopted-across-an-unrelated-edit-2.gandr"
+            )
+        ),
+        vec![Adoption::Adopted, Adoption::Judged],
+        "the definition at the patched type has content, so the store answers it"
+    );
+}

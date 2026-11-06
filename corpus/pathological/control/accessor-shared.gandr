@@ -3,19 +3,19 @@
 @[ refuses("HeldLent") ]
 def frozen() -> Unit =
   var c = 0
-  access shared c as w { access c as v { resume(v, w) } }
+  access shared c as w { access c as v { resume v w } }
 
 /// A resume through a shared view: a shared view is read-only.
 @[ refuses("ViewReadOnly") ]
 def written() -> Unit =
   var c = 0
-  access shared c as w { resume(w, 1) }
+  access shared c as w { resume w 1 }
 
 /// An abort through a shared view: a shared view ends with its body.
 @[ refuses("ViewReadOnly") ]
 def aborted() -> Unit =
   var c = 0
-  access shared c as w { abort(w) }
+  access shared c as w { abort w }
 
 /// An unwind on a shared access: only an exclusive access is aborted, so only
 /// it runs an unwind.

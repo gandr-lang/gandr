@@ -19,10 +19,10 @@
 //! obligation asks for it and the certificate replays.
 //!
 //! The machine has rules for constants, registered cuts, strict comparisons of
-//! such reals, and bounded quantifiers over intervals whose body compares
-//! polynomials in the bound variable. The search of a quantifier is
-//! `crate::bisection`. An obligation on any other form suspends with
-//! [`SuspendReason::NoRule`] until its rule lands.
+//! such reals, the lower and upper cuts of a registered cut, and bounded
+//! quantifiers over intervals whose body compares polynomials in the bound
+//! variable. The search of a quantifier is `crate::bisection`. Any other form
+//! suspends with [`SuspendReason::NoRule`].
 
 use alloc::vec::Vec;
 
@@ -35,6 +35,7 @@ use crate::certificate::Certificate;
 use crate::certificate::CertificateCheck;
 use crate::certificate::CheckerQuotas;
 use crate::certificate::FormatVersion;
+use crate::certificate::Side;
 use crate::certificate::Step;
 use crate::certificate::StepId;
 use crate::certificate::replay_prefix;
@@ -48,7 +49,9 @@ use crate::plan::Open;
 use crate::plan::Plan;
 use crate::plan::PlanError;
 use crate::plan::Real;
+use crate::schema::Membership;
 use crate::schema::Refinement;
+use crate::schema::membership;
 use crate::schema::radicand;
 use crate::validate::ValidatedPlan;
 
@@ -287,6 +290,15 @@ enum State
         /// operands share the first chain when they are one node.
         right: Option<Chain>,
     },
+    /// The membership of a real operand in the lower or the upper cut of a
+    /// registered cut.
+    Cutting
+    {
+        /// The lower or the upper cut.
+        open: NodeId,
+        /// The operand, once its first step is written.
+        point: Option<Chain>,
+    },
     /// The search of a bounded quantifier's domain.
     Searching(Search),
     /// The certificate of the evidence asked for.
@@ -445,9 +457,11 @@ impl Progress
         return match self.state {
             State::Certified(ref certificate) => Some(Outcome::Certified(certificate)),
             State::Suspended(reason) => Some(Outcome::Suspended(reason)),
-            State::Fresh | State::Enclosing(_) | State::Comparing { .. } | State::Searching(_) => {
-                None
-            },
+            State::Fresh
+            | State::Enclosing(_)
+            | State::Comparing { .. }
+            | State::Cutting { .. }
+            | State::Searching(_) => None,
         };
     }
 
@@ -462,6 +476,7 @@ impl Progress
             State::Fresh
             | State::Enclosing(_)
             | State::Comparing { .. }
+            | State::Cutting { .. }
             | State::Searching(_)
             | State::Certified(_)
             | State::Suspended(_) => None,
@@ -548,6 +563,7 @@ impl Progress
             State::Comparing { less, left, right } => {
                 self.compare(plan, less, (left, right), quotas)
             },
+            State::Cutting { open, point } => self.cutting(plan, open, point, quotas),
             State::Searching(search) => self.search(plan, search, quotas),
             settled @ (State::Certified(_) | State::Suspended(_)) => (settled, Unit::Stopped),
         };
@@ -580,6 +596,12 @@ impl Progress
                 if chainable(plan, first.node()).0 && chainable(plan, second.node()).0 =>
             {
                 self.compare(plan, node, (None, None), quotas)
+            },
+            (
+                Ok(&Node::Open(Open::LowerCut(cut, point) | Open::UpperCut(cut, point))),
+                Demand::Holds | Demand::Fails,
+            ) if radicand(plan, cut.node()).is_ok() && chainable(plan, point.node()).0 => {
+                self.cutting(plan, node, None, quotas)
             },
             (Ok(&Node::Open(Open::Exists(_) | Open::Forall(_))), Demand::Holds | Demand::Fails) => {
                 match Search::new(plan, node, self.obligation.demand) {
@@ -838,6 +860,98 @@ impl Progress
         };
     }
 
+    /// One unit of work on the lower or the upper cut `open`: write the first
+    /// step of its operand, conclude, or halve the operand.
+    ///
+    /// # Specification
+    /// - ensures: concludes the asked pole as soon as the end of the operand's
+    ///   enclosure toward the cut's value lies on the cut's side, or the end
+    ///   away from it lies off that side. Suspends with
+    ///   [`SuspendReason::Opposed`] as soon as the other pole concludes.
+    /// - panics: none.
+    /// - executable: none — the clause speaks of the order in which the
+    ///   enclosure leaves the cut's value.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each pole on a cut that holds, that fails and that
+    ///   never separates.
+    /// - witness: `tests::elimination::the_machine_settles_each_cut_by_its_operand_alone`
+    fn cutting(
+        &mut self,
+        plan: &Plan,
+        open: NodeId,
+        point: Option<Chain>,
+        quotas: &CheckerQuotas,
+    ) -> (State, Unit)
+    {
+        let (cut, operand, side) = match plan.node(open) {
+            Ok(&Node::Open(Open::LowerCut(cut, operand))) => (cut, operand, Side::Lower),
+            Ok(&Node::Open(Open::UpperCut(cut, operand))) => (cut, operand, Side::Upper),
+            Ok(_) | Err(_) => return (State::Suspended(SuspendReason::NoRule), Unit::Stopped),
+        };
+        let Some(chain) = point
+        else {
+            return match self.chain(plan, operand.node(), quotas) {
+                Ok(chain) => (
+                    State::Cutting {
+                        open,
+                        point: Some(chain),
+                    },
+                    Unit::Stepped,
+                ),
+                Err(reason) => (State::Suspended(reason), Unit::Stopped),
+            };
+        };
+        let radicand = match radicand(plan, cut.node()) {
+            Ok(radicand) => radicand,
+            Err(check) => return (State::Suspended(suspension(check)), Unit::Stopped),
+        };
+        // The step that concludes reads the end of the enclosure toward the
+        // cut's value to hold, and the end away from it to fail.
+        let (toward, away, wanted) = match side {
+            Side::Lower => (chain.upper(), chain.lower(), Membership::Lower),
+            Side::Upper => (chain.lower(), chain.upper(), Membership::Upper),
+        };
+        let (inside, outside) = match (membership(toward, &radicand), membership(away, &radicand)) {
+            (Ok(toward), Ok(away)) => (toward == wanted, away != wanted),
+            (Err(check), _) | (_, Err(check)) => {
+                return (State::Suspended(suspension(check)), Unit::Stopped);
+            },
+        };
+        let holds = self.obligation.demand == Demand::Holds;
+        if (holds && outside) || (!holds && inside) {
+            return (State::Suspended(SuspendReason::Opposed), Unit::Stopped);
+        }
+        if (holds && inside) || (!holds && outside) {
+            if let Err(reason) = self.next(quotas) {
+                return (State::Suspended(reason), Unit::Stopped);
+            }
+            let point = chain.step();
+            self.steps.push(if holds {
+                Step::Inside { open, point, side }
+            }
+            else {
+                Step::Outside { open, point, side }
+            });
+            return (self.certified(), Unit::Concluded);
+        }
+        // Neither pole concludes yet: halve the operand, and keep room for the
+        // step that concludes.
+        if self.steps.len().saturating_add(2) > usize::from(quotas.steps) {
+            return (State::Suspended(SuspendReason::Quota), Unit::Stopped);
+        }
+        return match self.halve(chain, quotas) {
+            Ok(chain) => (
+                State::Cutting {
+                    open,
+                    point: Some(chain),
+                },
+                Unit::Stepped,
+            ),
+            Err(reason) => (State::Suspended(reason), Unit::Stopped),
+        };
+    }
+
     /// One unit of work on a quantifier: one step of its search.
     ///
     /// # Specification
@@ -886,6 +1000,7 @@ pub(crate) const fn suspension(check: CertificateCheck) -> SuspendReason
         | CertificateCheck::ForgedCut
         | CertificateCheck::NotLower
         | CertificateCheck::NotUpper
+        | CertificateCheck::InsideCut
         | CertificateCheck::OutsideEnclosure
         | CertificateCheck::NotSeparated
         | CertificateCheck::Reversed
@@ -975,6 +1090,8 @@ fn rebuilt(
             },
             Step::Below { .. }
             | Step::NotBelow { .. }
+            | Step::Inside { .. }
+            | Step::Outside { .. }
             | Step::Variable { .. }
             | Step::Sum { .. }
             | Step::Difference { .. }
@@ -1014,6 +1131,15 @@ fn rebuilt(
                 right: right_chain,
             })
         },
+        (
+            Ok(&Node::Open(Open::LowerCut(_, operand) | Open::UpperCut(_, operand))),
+            Demand::Holds | Demand::Fails,
+            Some((one, chain)),
+            None,
+        ) if one == operand.node() => Ok(State::Cutting {
+            open: node,
+            point: Some(chain),
+        }),
         (Ok(_) | Err(_), ..) => Err(ResumeError::Steps),
     };
 }

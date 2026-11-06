@@ -35,7 +35,7 @@ error[HeldCopied]: a value held with `var[1]` is never copied: read it once thro
 20 │ ┌ def read_twice() -> Unit =
 21 │ │   var[1] c = 3
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-22 │ │   access c as v { resume(v, v + v) }
+22 │ │   access c as v { resume v (v + v) }
    │ │   ┬───────────────┬─────────┬───┯──│
    │ └───│───────────────│─────────│───│──┤
    │     │               │         │   │  checked against `() -> Unit`; while checking the body of this thunk
@@ -70,10 +70,10 @@ error[ViewMoved]: the view's value was read out, so the view ends with `resume`,
 33 │ ┌ def moved_then_aborted() -> Integer =
 34 │ │   var[1] c = 0
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-35 │ │   access c as v { let n = succ v; abort(v); pure n } unwind { pure *{} }
-   │ │   ┬───────────────┬───────────────┯━━━━━━━─────────────────────────────│
-   │ └───│───────────────│───────────────│────────────────────────────────────┤
-   │     │               │               │                                    checked against `() -> Integer`; while checking the body of this thunk
+35 │ │   access c as v { let n = succ v; abort v; pure n } unwind { pure *{} }
+   │ │   ┬───────────────┬───────────────┯━━━━━━─────────────────────────────│
+   │ └───│───────────────│───────────────│───────────────────────────────────┤
+   │     │               │               │                                   checked against `() -> Integer`; while checking the body of this thunk
    │     │               │               an abort after the value was moved out
    │     │               checked against `-F Integer`; while checking the body under this binding; binds n : Integer
    │     checked against `-F Integer`; while checking the body of this access

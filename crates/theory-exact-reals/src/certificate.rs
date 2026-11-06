@@ -22,17 +22,19 @@
 //!
 //! |Rule|Evidence|Conclusion|
 //! |---|---|---|
-//! |`Witnesses`|a registered cut, a point of its lower cut and a point of its upper cut|the cut's value lies strictly between the two points|
-//! |`Split`|an earlier enclosure of a registered cut, a point strictly inside it, and the side whose cut holds of the point|the enclosure with that side's end moved to the point|
+//! |`Witnesses`|a registered cut and a point of each of its two cuts|the cut's value lies strictly between the points|
+//! |`Split`|an enclosure of a cut, a point inside it, and the side whose cut holds of it|the enclosure with that side's end at the point|
 //! |`Constant`|a constant node|the constant's closed point|
-//! |`Below`|a comparison and earlier enclosures of its two operands, the first strictly below the second|the comparison holds|
-//! |`NotBelow`|a comparison and earlier enclosures of its two operands, the first at or above the second|the comparison fails|
-//! |`Variable`|the variable at index zero and a closed interval|the variable lies in the interval, under that hypothesis|
-//! |`Sum`, `Difference`, `Product`|a sum, a difference or a product, and earlier enclosures of its two operands|the exact sum, difference or product of the enclosures|
-//! |`Witness`|an existential over an interval domain, and its body holding under a hypothesis inside the domain|the existential holds|
-//! |`Cover`|a universal over a closed interval domain, and its body holding under hypotheses that tile the domain in order|the universal holds|
-//! |`Counterexample`|a universal with evidence of overtness, and its body failing under a hypothesis inside the domain|the universal fails|
-//! |`Refutation`|an existential with evidence of compactness, and its body failing under hypotheses that tile the domain in order|the existential fails|
+//! |`Below`|a comparison and enclosures of its operands, the first strictly below the second|the comparison holds|
+//! |`NotBelow`|a comparison and enclosures of its operands, the first at or above the second|the comparison fails|
+//! |`Inside`|a lower or an upper cut at a point, or the comparison it replaces, and an enclosure of the point whose end toward the cut's value lies in that cut|the open node holds|
+//! |`Outside`|the same node, and an enclosure of the point whose end toward the cut's value lies outside that cut|the open node fails|
+//! |`Variable`|the variable at index zero and a closed interval|the variable lies in it, under that hypothesis|
+//! |`Sum`, `Difference`, `Product`|the node, and enclosures of its operands|the exact result on them|
+//! |`Witness`|an existential over an interval, and its body holding under a hypothesis inside it|the existential holds|
+//! |`Cover`|a universal over a closed interval, and its body holding under hypotheses that tile it in order|the universal holds|
+//! |`Counterexample`|an overt universal, and its body failing under a hypothesis inside its domain|the universal fails|
+//! |`Refutation`|a compact existential, and its body failing under hypotheses that tile its domain in order|the existential fails|
 //!
 //! The checker's work is bounded. [`CheckerQuotas`] bounds the steps of a
 //! certificate and the width of each dyadic in it, and the checker refuses a
@@ -367,6 +369,31 @@ pub enum Step
         /// of the domain, from its lower end to its upper end.
         premises: Vec<StepId>,
     },
+    /// The end of a point's enclosure lies in the cut of `side` of a
+    /// registered cut, so the point lies in that cut and the open node holds.
+    Inside
+    {
+        /// The cut node of `side` at the point, or the comparison of the point
+        /// with the cut that it replaces.
+        open: NodeId,
+        /// The step that encloses the point.
+        point: StepId,
+        /// The cut that the point lies in.
+        side: Side,
+    },
+    /// The end of a point's enclosure lies outside the cut of `side` of a
+    /// registered cut, so the point lies outside that cut and the open node
+    /// fails.
+    Outside
+    {
+        /// The cut node of `side` at the point, or the comparison of the point
+        /// with the cut that it replaces.
+        open: NodeId,
+        /// The step that encloses the point.
+        point: StepId,
+        /// The cut that the point lies outside.
+        side: Side,
+    },
 }
 
 impl Step
@@ -472,6 +499,16 @@ impl Step
             } => Self::Refutation {
                 exists: rename(exists)?,
                 premises: premises.clone(),
+            },
+            Self::Inside { open, point, side } => Self::Inside {
+                open: rename(open)?,
+                point,
+                side,
+            },
+            Self::Outside { open, point, side } => Self::Outside {
+                open: rename(open)?,
+                point,
+                side,
             },
         });
     }
@@ -615,6 +652,9 @@ pub enum CertificateCheck
     NotLower,
     /// A point does not lie in the upper cut.
     NotUpper,
+    /// An end of an enclosure lies in the cut that the rule states the point
+    /// lies outside.
+    InsideCut,
     /// A split point does not lie strictly inside its enclosure.
     OutsideEnclosure,
     /// Two enclosures do not separate as the rule states.
@@ -669,6 +709,7 @@ impl fmt::Display for CertificateCheck
             Self::PremiseConclusion => "a premise proves another judgement than the rule takes",
             Self::NotLower => "a point does not lie in the lower cut",
             Self::NotUpper => "a point does not lie in the upper cut",
+            Self::InsideCut => "an enclosure reaches into the cut that the point lies outside",
             Self::OutsideEnclosure => "a split point does not lie strictly inside its enclosure",
             Self::NotSeparated => "the enclosures do not separate as the rule states",
             Self::Reversed => "a hypothesis has its lower end above its upper end",
@@ -1112,6 +1153,52 @@ fn derive(
             Ok(Derived {
                 conclusion,
                 hypothesis,
+            })
+        },
+        Step::Inside { open, point, side } | Step::Outside { open, point, side } => {
+            let (cut, operand) = match (node(open)?, side) {
+                (
+                    &Node::Open(Open::LowerCut(cut, operand) | Open::Less(operand, cut)),
+                    Side::Lower,
+                )
+                | (
+                    &Node::Open(Open::UpperCut(cut, operand) | Open::Less(cut, operand)),
+                    Side::Upper,
+                ) => (cut, operand),
+                (&(Node::Real(_) | Node::Open(_) | Node::Domain(_)), Side::Lower | Side::Upper) => {
+                    return Err(CertificateCheck::WrongNode);
+                },
+            };
+            let radicand = radicand(plan, cut.node())?;
+            let (interval, hypothesis) = enclosure(point, operand.node())?;
+            let inside = matches!(*step, Step::Inside { .. });
+            // The lower cut holds of every point below a point of it, and the
+            // upper cut of every point above a point of it. So each rule reads
+            // the end of the enclosure toward the cut's value.
+            let (end, wanted) = match (side, inside) {
+                (Side::Lower, true) => (interval.upper(), Membership::Lower),
+                (Side::Lower, false) => (interval.lower(), Membership::Lower),
+                (Side::Upper, true) => (interval.lower(), Membership::Upper),
+                (Side::Upper, false) => (interval.upper(), Membership::Upper),
+            };
+            let found = match end.endpoint {
+                Endpoint::Finite(ref value) => {
+                    bounded(value)?;
+                    membership(value, &radicand)?
+                },
+                Endpoint::NegInf => Membership::Lower,
+                Endpoint::PosInf => Membership::Upper,
+            };
+            let conclusion = match (inside, found == wanted, side) {
+                (true, true, _) => Conclusion::Holds { open },
+                (false, false, _) => Conclusion::Fails { open },
+                (true, false, Side::Lower) => return Err(CertificateCheck::NotLower),
+                (true, false, Side::Upper) => return Err(CertificateCheck::NotUpper),
+                (false, true, _) => return Err(CertificateCheck::InsideCut),
+            };
+            Ok(Derived {
+                conclusion,
+                hypothesis: hypothesis.cloned(),
             })
         },
         Step::Variable {

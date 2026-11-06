@@ -1048,12 +1048,12 @@ fn a_fork_and_an_offer_keep_the_exits_they_end_in_815()
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(returned)),
-        faithful(Written("let a = fork (a : end) { pure *{} } ; close(a)"))
+        faithful(Written("let a = fork (a : end) { pure *{} } ; close a"))
     );
     assert_eq!(
         spelled(&source, body(offering)),
         faithful(Written(
-            "let a = fork (a : end) { offer(a) { | next => close(a) | retire => pure *{} } } ; close(a)"
+            "let a = fork (a : end) { offer a { | next => close a | retire => pure *{} } } ; close a"
         ))
     );
     for fork in [returned, offering] {
@@ -6839,7 +6839,7 @@ fn a_loop_arm_is_written_under_its_loop_813()
 }
 
 /// What an endpoint receives is bound as the surface reads a receive,
-/// `let x = recv(e); rest`, the rest under the payload's linear binder: under
+/// `let x = recv e; rest`, the rest under the payload's linear binder: under
 /// `let x = …` a receive reads as a statement that cannot stand there, and
 /// the source does not parse (#815).
 #[test]
@@ -6856,7 +6856,7 @@ fn a_received_payload_is_bound_as_the_surface_reads_it_815()
     agrees(&core, &[], CoreNode::Computation(received));
     let (text, _fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(received)));
     assert!(
-        text.starts_with("let a = recv(") && text.ends_with(") ; a") && !text.contains("<-"),
+        text.starts_with("let a = recv ") && text.ends_with(" ; a") && !text.contains("<-"),
         "a `let` binds the receive's payload, and the rest reads it: {text}"
     );
 }
@@ -8088,7 +8088,7 @@ fn a_continuation_is_resumed_by_its_call_941()
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(noted))),
         approximate(Written(
-            "handle a : std.process.Exit.Eff { *{} } with { | pure(a) => a | oper exit(a, b) => resume(b, force a\n                                               ) }"
+            "handle a : std.process.Exit.Eff { *{} } with { | pure(a) => a | oper exit(a, b) => resume b\n                                                 (force a) }"
         )),
         "a resumption with any other computation keeps the notation"
     );
@@ -8618,8 +8618,8 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
 }
 
 /// A parameter placed as an endpoint is written by the parameter's name, the
-/// placement unwritten: whole, `def down(a : end) -> Unit { close(a) }`, its
-/// name taken from the header, and as a body, `fun (a) { close(a) }` (#1862).
+/// placement unwritten: whole, `def down(a : end) -> Unit { close a }`, its
+/// name taken from the header, and as a body, `fun (a) { close a }` (#1862).
 #[test]
 fn a_placed_endpoint_is_written_by_its_parameter_s_name_1862()
 {
@@ -8658,13 +8658,13 @@ fn a_placed_endpoint_is_written_by_its_parameter_s_name_1862()
     assert_eq!(
         declared_whole(&source, (declared, defined), PageWidth::from(100_u32)),
         Maybe::Present((
-            String::from("def down(a : end) -> Unit {\n  close(a)\n}"),
+            String::from("def down(a : end) -> Unit {\n  close a\n}"),
             Fidelity::Faithful
         ))
     );
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(function))),
-        faithful(Written("fun (a) { close(a) }"))
+        faithful(Written("fun (a) { close a }"))
     );
 }
 

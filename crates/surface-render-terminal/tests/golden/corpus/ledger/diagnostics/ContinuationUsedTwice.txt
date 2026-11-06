@@ -4,8 +4,8 @@ error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second 
 30 │ ┌  def resumedTwice() -> -F Unit =
 31 │ │┌   handle c : std.process.Exit.Eff {
 32 │ ││     let ring = fork (kernel : Ring.Submission) {
-33 │ ││       let sqe = recv(kernel);
-34 │ ││       send(kernel, Ring.done);
+33 │ ││       let sqe = recv kernel;
+34 │ ││       send kernel Ring.done;
    ┆ ┆┆
 43 │ ││     | oper exit(code, k) => { let first = k *{} ; k *{} }
    │ ││                               ┬──                 ━━━━━ a continuation already ended

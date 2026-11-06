@@ -24,14 +24,14 @@ import std.process;
 def parked() -> Integer =
   handle c : std.process.Exit.Eff {
     let found = fork (peer : !Integer. ?Integer. end) {
-      send(peer, 1);
-      let x = recv(peer);
-      close(peer)
+      send peer 1;
+      let x = recv peer;
+      close peer
     };
-    let first = recv(found);
+    let first = recv found;
     c.exit 1;
-    send(found, 2);
-    close(found);
+    send found 2;
+    close found;
     pure first
   } with {
     | pure(y) => pure y
@@ -44,12 +44,12 @@ def parked() -> Integer =
 def late() -> Integer =
   handle c : std.process.Exit.Eff {
     let found = fork (peer : ?Integer. end) {
-      let x = recv(peer);
-      close(peer)
+      let x = recv peer;
+      close peer
     };
     c.exit 1;
-    send(found, 2);
-    close(found);
+    send found 2;
+    close found;
     pure 1
   } with {
     | pure(y) => pure y
@@ -64,23 +64,23 @@ def forwarded() -> Integer =
   handle c : std.process.Exit.Eff {
     let r = fork (relay : !(!Integer. end). end) {
       let w = fork (worker : ?Integer. end) {
-        let n = recv(worker);
-        close(worker)
+        let n = recv worker;
+        close worker
       };
-      send(relay, w);
-      close(relay)
+      send relay w;
+      close relay
     };
     let t = fork (tick : !Integer. end) {
-      send(tick, 1);
-      close(tick)
+      send tick 1;
+      close tick
     };
-    let one = recv(t);
-    close(t);
+    let one = recv t;
+    close t;
     c.exit 1;
-    let held = recv(r);
-    send(held, 3);
-    close(held);
-    close(r);
+    let held = recv r;
+    send held 3;
+    close held;
+    close r;
     pure one
   } with {
     | pure(y) => pure y

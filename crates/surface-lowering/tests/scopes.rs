@@ -267,7 +267,7 @@ fn a_use_inside_a_refused_form_keeps_its_referent_1265()
         "scopes/fixtures/a-use-inside-a-refused-form-keeps-its-referent-1265-parameter.gandr"
     );
     assert_eq!(
-        resolved(SourceText::from(parameter), SourceText::from("drop(")),
+        resolved(SourceText::from(parameter), SourceText::from("drop seat")),
         [(String::from("seat"), String::from("seat"))],
         "the parameter used inside the refused `drop` names its binder"
     );
@@ -275,7 +275,7 @@ fn a_use_inside_a_refused_form_keeps_its_referent_1265()
         "scopes/fixtures/a-use-inside-a-refused-form-keeps-its-referent-1265-endpoint.gandr"
     );
     assert_eq!(
-        resolved(SourceText::from(endpoint), SourceText::from("dup(")),
+        resolved(SourceText::from(endpoint), SourceText::from("dup desk")),
         [(String::from("desk"), String::from("desk"))],
         "the endpoint a `fork` binds, used inside the refused `dup`, names its binder"
     );

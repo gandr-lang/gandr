@@ -1,7 +1,7 @@
 module Counter where {
   def read(self : shared Integer) -> -F Integer { pure self }
   def bump(self : Integer, by : Integer) -> -F Unit {
-    access self as v { resume(v, v + by) }
+    access self as v { resume v (v + by) }
   }
   def spend(self : consumed Integer) -> -F Integer { pure self + 1 }
 }

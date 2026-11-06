@@ -42,6 +42,9 @@
 //! to; the lowering keeps which call nominated each hole, and for which
 //! implicit ([`Nomination`]), so a refusal names it.
 //!
+//! A module path heads a call as a name does: `P.inv(p)` omits the implicits
+//! of the member `inv` of `P`, as `inv(p)` omits those of `inv`.
+//!
 //! A wildcard `_` written where a value is read is the same hole the text
 //! asks for: the lowering nominates one for it, recorded as a wildcard, and
 //! the checker solves it as it solves an omitted implicit, from the
@@ -113,6 +116,7 @@ use super::Stretch;
 use super::arguments;
 use super::arity;
 use super::model;
+use super::named;
 use super::stated;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -121,6 +125,7 @@ use crate::form::Cursor;
 use crate::form::FormName;
 use crate::form::Former;
 use crate::form::Piece;
+use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Run;
 use crate::form::Shape;
@@ -131,6 +136,10 @@ use crate::module::Plicity;
 use crate::module::SlotIndex;
 use crate::module::TelescopeEntry;
 use crate::module::merged;
+use crate::namespace::NamePath;
+use crate::namespace::PathResolution;
+use crate::namespace::Recognized;
+use crate::namespace::Segment;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
@@ -673,13 +682,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is a call read as a computation under `frame`;
     ///   `cursor` stands at its head.
-    /// - ensures: [`arity::Planned`] true exactly when the head is a bare name
-    ///   or an instantiation of a declaration with implicits, instances or
-    ///   stage binders, every resident `a = e` naming one, the call then
-    ///   planned as the declaration applied to one argument per merged entry,
-    ///   an implicit's the resident naming it or, where none does, the hole the
-    ///   call nominates for it ([`Self::nominate`]), an instance's the resident
-    ///   naming it or, where none does, the instance handled in scope
+    /// - ensures: [`arity::Planned`] true exactly when the head is a bare name,
+    ///   a module path to a member ([`Self::path_member`]) or an instantiation
+    ///   of a declaration with implicits, instances or stage binders, every
+    ///   resident `a = e` naming one, the call then planned as the declaration
+    ///   applied to one argument per merged entry, an implicit's the resident
+    ///   naming it or, where none does, the hole the call nominates for it
+    ///   ([`Self::nominate`]), an instance's the resident naming it or, where
+    ///   none does, the instance handled in scope
     ///   ([`Self::resolved_instance`]), and an explicit one's the next written
     ///   argument, each written argument read as a value under `frame` and the
     ///   declaration's name as the head; a resident naming a stage binder is no
@@ -798,9 +808,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `head` is the call's head or, standing, `site` itself.
     /// - ensures: as [`Self::supplied_call`] for [`Use::Called`] and
-    ///   [`Self::supplied_value`] for [`Use::Standing`]; each positional
-    ///   resident supplies the implicit at its place in the declaration's
-    ///   written block, and `_` omits it.
+    ///   [`Self::supplied_value`] for [`Use::Standing`]; a called module path
+    ///   names its member as a bare name does; each positional resident
+    ///   supplies the implicit at its place in the declaration's written block,
+    ///   and `_` omits it.
     /// - fails: as theirs; the positional faults of the module's boundaries at
     ///   the resident.
     /// - panics: none.
@@ -847,12 +858,15 @@ impl<'source> Lowerer<'_, 'source>
         self.scratch = scratch;
         read?;
         let called = matches!(used, Use::Called(_));
+        // A module path, `P.inv`, heads a call as a name does: the member's
+        // implicits are omitted, as those of `inv` are.
         let (inner, residents) = match (former, pieces.as_slice()) {
             (Some(Former::Instantiation), &[Piece::Operand(inner), ref rest @ ..]) => (inner, rest),
-            (Some(Former::Name), _) if called => (head, &[][..]),
+            (Some(Former::Name | Former::Projection), _) if called => (head, &[][..]),
             (Some(_) | None, _) => return Ok(arity::Planned(false)),
         };
-        if former_of(inner.node) != Some(Former::Name) {
+        let path = former == Some(Former::Projection);
+        if !path && former_of(inner.node) != Some(Former::Name) {
             return Ok(arity::Planned(false));
         }
         // The head and its residents are never read as forms of their own:
@@ -952,17 +966,26 @@ impl<'source> Lowerer<'_, 'source>
         if outcome? == arity::Planned(false) {
             return Ok(arity::Planned(false));
         }
-        let name = self.name_at(inner);
-        if let Maybe::Present(_) = self.scope.resolve(frame, name, &mut self.fuel)? {
-            return Ok(arity::Planned(false));
+        let (slot, name) = if path {
+            let Maybe::Present(member) = self.path_member(site, frame, (inner, &pieces))?
+            else {
+                return Ok(arity::Planned(false));
+            };
+            member
         }
-        let named_site = Site { at: inner, ..site };
-        let resolved = self.resolve_name(named_site, frame, name)?;
-        let Maybe::Present(Resolved::Declaration { constant, .. }) = resolved
         else {
-            return Ok(arity::Planned(false));
+            let name = self.name_at(inner);
+            if let Maybe::Present(_) = self.scope.resolve(frame, name, &mut self.fuel)? {
+                return Ok(arity::Planned(false));
+            }
+            let named_site = Site { at: inner, ..site };
+            let resolved = self.resolve_name(named_site, frame, name)?;
+            let Maybe::Present(Resolved::Declaration { constant, .. }) = resolved
+            else {
+                return Ok(arity::Planned(false));
+            };
+            (SlotIndex::from(usize::from(constant)), name)
         };
-        let slot = SlotIndex::from(usize::from(constant));
         if !positional.is_empty() {
             let Some(block) = self.collected.written_implicits.get(&slot)
             else {
@@ -993,6 +1016,102 @@ impl<'source> Lowerer<'_, 'source>
             self.positional_atom(atom, frame)?;
         }
         self.supply_declared(site, frame, (inner, name), slot, supplied, used)
+    }
+
+    /// The member that the module path `head`, read as `pieces`, names at the
+    /// call `site` under `frame`, with the member's name.
+    ///
+    /// # Specification
+    /// - requires: `head` is a projection, and `pieces` is its reading.
+    /// - ensures: the slot and the name of the member that the last link
+    ///   selects, when each link selects by a name and the root names a module
+    ///   that no binder in scope shadows. A module that encloses the
+    ///   declaration owning `site` declares that root, as
+    ///   [`Self::enclosed_member`] reads it, or the root heads a path whose
+    ///   member is an exported value. The unresolved absence otherwise: a
+    ///   record's field, a family's constructor, a builtin namespace's member
+    ///   and a link that no module exports are among them, and each keeps the
+    ///   reading of [`Self::projection`].
+    /// - fails: the budget refusal once the walk outruns the allowance; the
+    ///   refusals that a link's pieces give.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// The walk visits each link of the path once and spends one step of the
+    /// allowance on each.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member of a top-level module, a member of a module
+    ///   nested in it, and a member named from inside the enclosing module.
+    /// - witness: `lower::implicit::tests::a_path_call_omits_its_member_s_implicits_5520`
+    #[spec(
+        ensures: |ret| match ret {
+            Ok(Maybe::Present((slot, _))) => self.collected.slots.get(usize::from(slot)).is_some(),
+            Ok(Maybe::Absent(_)) | Err(_) => true,
+        },
+    )]
+    fn path_member(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        (head, pieces): (Placed, &[Piece]),
+    ) -> Result<Maybe<(SlotIndex, SurfaceName<'source>), named::Absent>, LoweringRefusal<'source>>
+    {
+        let unresolved = Maybe::Absent(named::Absent::Unresolved);
+        let Ok((mut target, selected)) = Self::link(site, pieces, head.span)
+        else {
+            return Ok(unresolved);
+        };
+        let member = self.name_at(selected);
+        let mut links = Vec::from([(target, selected)]);
+        let mut chain = Pieces::new();
+        let root = loop {
+            self.fuel.spend()?;
+            match self.form_at(target)? {
+                Some((_, Former::Projection)) => {
+                    read_pieces(self.pbg, self.tree, target.node, &mut chain)?;
+                    if let Maybe::Present(_) = chain.repair {
+                        return Ok(unresolved);
+                    }
+                    let Ok((inner, selected)) = Self::link(site, &chain.pieces, target.span)
+                    else {
+                        return Ok(unresolved);
+                    };
+                    links.push((inner, selected));
+                    target = inner;
+                },
+                Some((_, Former::Constructor | Former::Name)) => break target,
+                Some(_) | None => return Ok(unresolved),
+            }
+        };
+        let module = self.name_at(root);
+        if let Maybe::Present(_) = self.scope.resolve(frame, module, &mut self.fuel)? {
+            return Ok(unresolved);
+        }
+        // A refusal here is the reading of the head too, which gives it.
+        if let Ok(Maybe::Present(slot)) = self.enclosed_member(site, root, &links) {
+            return Ok(Maybe::Present((slot, member)));
+        }
+        let mut segments = Vec::with_capacity(links.len().saturating_add(1_usize));
+        segments.push(Segment::from(self.text_at(root).as_ref()));
+        for &(_, selected) in links.iter().rev() {
+            segments.push(Segment::from(self.text_at(selected).as_ref()));
+        }
+        let path = NamePath::from(segments);
+        self.see_module(site, module);
+        if !matches!(
+            self.recognition.resolve_path(&path),
+            PathResolution::Complete(Recognized::ModuleComponent)
+        ) {
+            return Ok(unresolved);
+        }
+        Ok(self
+            .exported
+            .get(&path)
+            .map_or(unresolved, |&slot| Maybe::Present((slot, member))))
     }
 
     /// Plan the comparison `a ⊙ b` at `site`, read under `frame`, whose

@@ -6,4 +6,4 @@ def succ(n : Integer) -> -F Integer =
 @[ refuses("ViewMoved") ]
 def moved_then_aborted() -> -F Integer =
   var[1] c = 0
-  access c as v { let n = succ v ; abort(v) ; pure n } unwind { pure *{} }
+  access c as v { let n = succ v ; abort v ; pure n } unwind { pure *{} }

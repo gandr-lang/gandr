@@ -25,7 +25,7 @@ def later : Integer -> Unit;
 def unwound() -> Integer =
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { let _ = c.exit 1; resume(v, 5) } unwind { later 1 };
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { later 1 };
     pure 0
   } with {
     | pure(y) => pure y
@@ -44,7 +44,7 @@ def unwound_kept() -> List(Integer) =
   let ys = built 1
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { let _ = c.exit 1; resume(v, 5) } unwind { let _ = ys; pure *{} };
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { let _ = ys; pure *{} };
     pure 0
   } with {
     | pure(y) => pure y

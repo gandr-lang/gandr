@@ -210,8 +210,8 @@
 //! () in rest`, at the origin of `c`: the split types the value as the unit, so
 //! the checker refuses a discarded result of any other type at the statement,
 //! and the lowering needs no annotation of its own. A block with no last
-//! computation is refused at the block as `Arity` with zero. `let x = recv(c);`
-//! binds what `recv(c)` returns as any `let` of a computation does,
+//! computation is refused at the block as `Arity` with zero. `let x = recv c;`
+//! binds what `recv c` returns as any `let` of a computation does,
 //! `let d = fork (c : S) t;` runs `t` beside the rest of the block (the
 //! `lower::session` module), `var x = e;` holds `e` for the rest of the block
 //! (the `lower::access` module), and `let x at w = v;` opens the handle `v`
@@ -1911,7 +1911,7 @@ enum StatementBinding
         /// The name `c` the child's end binds.
         end: NodeIndex,
     },
-    /// `let x = recv(c);` receives on `c` into `x`'s linear binder, over the
+    /// `let x = recv c;` receives on `c` into `x`'s linear binder, over the
     /// rest of the block.
     Received
     {
@@ -3005,6 +3005,9 @@ enum Plan
         fields: BTreeMap<FieldLabel, NodeIndex>,
         /// The fixed values, by label.
         fixed: BTreeMap<FieldLabel, NodeIndex>,
+        /// Where the base is written as the name of a type member, when it
+        /// is: the printer writes the name for the base's record.
+        member: Option<NodeIndex>,
     },
     /// A value type kept in a region: the type and the region, a capability
     /// scope's or a hold's by its depth, or the definition's region binder.
@@ -6859,14 +6862,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// Hand `position`'s records to its children and classify it, offering a
-    /// refusal to its declaration.
+    /// refusal to its declaration, its frames pushed into its form.
     ///
     /// # Specification
     /// - requires: `position` is reached in ascending arena order, or asked
     ///   ahead by the form it stands under, so the records the sweep hands down
     ///   have reached it.
     /// - ensures: `position`'s children carry its records, and it is planned or
-    ///   its refusal offered to it.
+    ///   its refusal offered to it; every frame it pushes takes its place in
+    ///   [`Self::form_of`] `position`.
     /// - provides: the per-position step of [`Self::classify`].
     /// - fails: an engine fault, on which [`Self::classify`] aborts.
     /// - panics: none.
@@ -6888,6 +6892,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         position: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        self.scope.enter(self.form_of(position));
         self.inherit_owner(position);
         self.inherit_payload(position);
         self.inherit_scope(position);
@@ -6904,6 +6909,35 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         Ok(())
+    }
+
+    /// The block naming the form `position` belongs to: its descendants' block
+    /// for a top-level form, and its own block for any other node.
+    ///
+    /// # Specification
+    /// - requires: nothing — a position the tree does not hold is admissible.
+    /// - ensures: for a top-level form with descendants, the block they lie in;
+    ///   otherwise `position`'s own block, which is its form's block for a node
+    ///   below a top-level form.
+    /// - provides: the form a frame is numbered in ([`Scope::enter`]).
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one read of the tree's form index.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module's frames keep their coordinates when one
+    ///   form before them takes another binder.
+    /// - witness: `resolve::tests::a_form_s_frames_keep_their_coordinates_when_another_form_changes_4457`
+    #[spec(ensures: |ret| self.tree.descendants(position).is_some() || ret == position.block())]
+    fn form_of(
+        &self,
+        position: NodeIndex,
+    ) -> LayoutBlock
+    {
+        self.tree
+            .descendants(position)
+            .and_then(|mut descendants| descendants.next())
+            .map_or_else(|| position.block(), NodeIndex::block)
     }
 
     /// Give every child of `position` the match on a recursive function's
@@ -11587,7 +11621,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   piece closes.
     /// - ensures: each `let x = c ;` statement reads its computation under the
     ///   frame the statements before it extended and binds `x` in a frame
-    ///   extending that one; `let x = recv(c);` binds `x` the same way, and
+    ///   extending that one; `let x = recv c;` binds `x` the same way, and
     ///   `fork (c : S) t as d ;` binds `d` and `var x = e ;` binds `x` linearly
     ///   over the rest of the block; the last computation, written bare or as a
     ///   statement `c ;` before the closing `}` and then recorded as stated,
@@ -16533,29 +16567,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 classifier = codomain;
             }
         }
-        let read = again.map_or(applied.start .. applied.end, |again| {
-            applied.start .. again.end
-        });
-        self.valued_arguments(resolved, Stretch {
-            start: read.start,
-            end: read.end,
-        })?;
-        for position in read.clone() {
-            if let Some(&argument) = self.operands.get(position) {
-                self.read(argument, Reading::Value(frame));
-            }
-        }
-        // Each argument of a decode or an unquote is a value the type reads:
-        // it counts in that type's telescope, as a family's arguments do.
-        if matches!(
-            plan,
-            Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..)
-        ) {
-            self.in_type
-                .extend(self.operands.get(read).unwrap_or_default().iter().copied());
-        }
-
-        self.plan(site, plan);
+        let read = Stretch {
+            start: applied.start,
+            end: again.map_or(applied.end, |again| again.end),
+        };
+        self.valued_arguments(resolved, read)?;
+        self.plan_applied(site, plan, read, frame);
 
         Ok(())
     }
@@ -18211,6 +18228,54 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
+    /// Plan the form at `site` as `plan`, a head applied to the arguments
+    /// `read` holds, each read as a value in `frame`.
+    ///
+    /// A decode, an unquote and a reapplication read their arguments inside
+    /// the type they make, so each argument counts in that type's telescope,
+    /// as a family's arguments do. A lambda among them reads its body inside
+    /// the type too. Each planner of an application marks its arguments here.
+    ///
+    /// # Specification
+    /// - requires: `read` holds the arguments of `plan` in the operand store.
+    /// - ensures: each argument of `read` is read as a value in `frame`, and
+    ///   counts among the values a type reads when `plan` is a decode, an
+    ///   unquote or a reapplication; `site` takes `plan`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses restate [`Self::read`] and
+    ///   [`Self::plan`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function to a universe unquoted where a type is
+    ///   read, a lambda in a type-valued call's argument and a descent's
+    ///   unquote each read their arguments inside the type.
+    /// - witness: `lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
+    /// - witness: `lower::tests::a_lambda_in_a_type_valued_call_reads_outer_variables_at_their_indices_3616`
+    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
+    fn plan_applied(
+        &mut self,
+        site: Site,
+        plan: Plan,
+        read: Stretch,
+        frame: Frame,
+    )
+    {
+        for position in read.start .. read.end {
+            if let Some(&argument) = self.operands.get(position) {
+                self.read(argument, Reading::Value(frame));
+            }
+        }
+        if matches!(
+            plan,
+            Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..)
+        ) {
+            self.in_type
+                .extend(stretch(&self.operands, read).iter().copied());
+        }
+        self.plan(site, plan);
+    }
+
     /// The source text of `placed`.
     ///
     /// # Specification
@@ -19763,7 +19828,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Patched {
                 ref fields,
                 ref fixed,
-            } => self.mint_patched_type(fields, fixed, sink, origin),
+                member,
+            } => self.mint_patched_type(fields, fixed, member, sink, origin),
             Plan::Kept(inner, region) => self.value_type_at(inner).map(|inner| {
                 let id = sink.arena.value_type_kept(inner, region);
                 sink.origins.record_value_type(id, origin);
@@ -31773,7 +31839,7 @@ mod tests
         assert_eq!(
             refusal_in(&pbg, &tree),
             LoweringRefusal::MalformedForm {
-                span: at(after("(xs"), after("2) }")),
+                span: at(after("(xs"), after("2 }")),
                 form: FormName::from(NamedKind("parenthesized_expression")),
                 fault: FormFault::Repaired(Repair::GhostClose(
                     gandr_surface_syntax::ClosingClass::Paren,

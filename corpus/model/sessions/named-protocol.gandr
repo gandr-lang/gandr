@@ -22,26 +22,26 @@ type Report = Tell;
 
 /// A desk that hears one number on the endpoint a module's protocol names.
 def hearsOne(operator : Desk.Ask) -> Integer =
-  let heard = recv(operator)
-  close(operator)
+  let heard = recv operator
+  close operator
   pure heard
 
 /// A seat that tells one number on the endpoint a name for a name types.
 def tellsOne(seat : Report) -> Unit =
-  send(seat, 2)
-  close(seat)
+  send seat 2
+  close seat
 
 /// A fork at the module's protocol, whose child hears one number.
 @[ runs("*{}") ]
 def forkedAtModule() -> Unit =
   let seat = fork (operator : Desk.Ask) { let heard = hearsOne operator; pure *{} };
-  send(seat, 1)
-  close(seat)
+  send seat 1
+  close seat
 
 /// A fork at the top-level protocol, whose child tells its parent one number.
 @[ runs("2") ]
 def forkedAtName() -> Integer =
   let desk = fork (seat : Tell) { tellsOne seat };
-  let heard = recv(desk)
-  close(desk)
+  let heard = recv desk
+  close desk
   pure heard

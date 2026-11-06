@@ -15917,22 +15917,12 @@ impl<'source> Lowerer<'_, 'source>
         };
         let frame = self.require(site, produced)?;
         let telescope = self.name_in_type(site.at.node, bound.binder);
-        for position in applied.start .. applied.end {
-            if let Some(&argument) = self.operands.get(position) {
-                self.read(argument, Reading::Value(frame));
-            }
-        }
-        // Each argument is a value the type reads, as a decode's arguments
-        // are. It counts in the type's telescope. A lambda among them reads
-        // its body inside the type too.
-        self.in_type
-            .extend(stretch(&self.operands, applied).iter().copied());
         let code = Code::Bound {
             from,
             binder: bound.binder,
             telescope,
         };
-        self.plan(site, Plan::Unquote(code, applied, universe));
+        self.plan_applied(site, Plan::Unquote(code, applied, universe), applied, frame);
 
         Ok(())
     }

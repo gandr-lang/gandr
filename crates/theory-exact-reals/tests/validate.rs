@@ -476,6 +476,13 @@ proptest! {
         );
         let exists = position(&plan, |node| matches!(*node, Node::Open(Open::Exists(quantifier)) if stated(quantifier)));
         prop_assert_eq!(refused(plan), at(exists, Check::DomainEvidence));
+        // A lower cut whose first operand is a constant, not a cut.
+        let plan = beside(&parts, |builder, _| {
+            let one = builder.real(Real::Constant(Dyadic::ONE)).unwrap();
+            builder.open(Open::LowerCut(one, one)).unwrap()
+        });
+        let lower = position(&plan, |node| matches!(*node, Node::Open(Open::LowerCut(..))));
+        prop_assert_eq!(refused(plan), at(lower, Check::CutOperand));
         // A quota one below what the plan needs, at the input or at a node.
         let plan = parts.builder.clone().finish(Root::Open(parts.root)).unwrap();
         let fewer = Quotas { nodes: NodeCount::from(usize::from(plan.node_count()).checked_sub(1).unwrap()), ..quotas };
@@ -673,6 +680,7 @@ fn refusals_render_distinct_phrases()
             found: Judgement::NonZero,
         },
         Check::DomainEvidence,
+        Check::CutOperand,
     ];
     distinct_lines(&checks.map(|check| check.to_string()));
     distinct_lines(

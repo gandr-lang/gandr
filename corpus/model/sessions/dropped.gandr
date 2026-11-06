@@ -1,5 +1,5 @@
-// An endpoint at `end` is dropped as it is closed: `drop(c)` is the end
-// action `close(c)` writes, admitted exactly where the endpoint's protocol
+// An endpoint at `end` is dropped as it is closed: `drop c` is the end
+// action `close c` writes, admitted exactly where the endpoint's protocol
 // has ended.
 //
 // - see: #1054
@@ -14,12 +14,12 @@
     (series (event left 0) (parallel (event left 1) (series (event right 0) (event right 1)))))
 ]
 def finished() -> Unit =
-  let desk = fork (seat : +{done : end}) { select(seat, done); drop(seat) };
-  offer(desk) { | done => drop(desk) }
+  let desk = fork (seat : +{done : end}) { select seat done; drop seat };
+  offer desk { | done => drop desk }
 
 /// A drop at one end of a fork and a close at the other, each ending its end
 /// beside the other.
 @[ runs("*{}"), traces(decomposes seat (parallel (event left 0) (event right 0))) ]
 def mixed() -> Unit =
-  let desk = fork (seat : end) { close(seat) };
-  drop(desk)
+  let desk = fork (seat : end) { close seat };
+  drop desk

@@ -1,5 +1,6 @@
 //! Fixtures the unit tests share: scratch directories and small programs.
 
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -743,6 +744,21 @@ pub fn every_former(noise: Noise) -> Program
     let width_type = arena.value_type_base(BaseType::Fixed(gandr_kernel_term::IntegerWidth::I64));
     let least = arena.value_literal(Literal::Fixed(FixedInteger::I64(i64::MIN)));
     push("width", Maybe::Present(width_type), Maybe::Present(least));
+
+    // A record type patched at one field, checked by the record of its free
+    // field.
+    let label = |name: &str| gandr_core_term::FieldLabel::from(String::from(name));
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let string_type = arena.value_type_base(BaseType::String);
+    let record = arena.value_type_record(BTreeMap::from([
+        (label("host"), string_type),
+        (label("port"), integer_type),
+    ]));
+    let port = arena.value_literal(integer(Digits("443")));
+    let patched = arena.value_type_patched(record, BTreeMap::from([(label("port"), port)]));
+    let host = arena.value_literal(Literal::Text(StringLiteral::new(String::from("localhost"))));
+    let free = arena.value_record(BTreeMap::from([(label("host"), host)]));
+    push("patched", Maybe::Present(patched), Maybe::Present(free));
 
     Program::new(arena, items).expect("positions ascend")
 }

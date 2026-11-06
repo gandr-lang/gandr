@@ -106,6 +106,9 @@ pub struct Naming
     /// Each type written as a model type, `Model(T)` or `Model(T) with sort
     /// C = A …`, with the theory and sorts written, ascending by id.
     models: Vec<(ValueTypeId, WrittenModel)>,
+    /// Each record type written by the name of a type member, with where
+    /// the name is written, ascending by id.
+    members: Vec<(ValueTypeId, ByteSpan)>,
     /// Each written use of a variable with where a name for its binder is
     /// written: first where the origin table records the binder a use
     /// resolves to, then the use itself, which a type's variables have and no
@@ -232,6 +235,12 @@ impl Naming
         relations.sort_by_key(|&(related, _)| related);
         let mut models = origins.models().to_vec();
         models.sort_by_key(|&(modelled, _)| modelled);
+        let mut members: Vec<(ValueTypeId, ByteSpan)> = origins
+            .members()
+            .iter()
+            .map(|&(member, origin)| (member, origin.span()))
+            .collect();
+        members.sort_by_key(|&(member, _)| member);
         let qualified = roots
             .iter()
             .filter_map(|&(constant, _)| {
@@ -264,6 +273,7 @@ impl Naming
             with_labels,
             relations,
             models,
+            members,
             uses,
             qualified,
         }
@@ -408,14 +418,27 @@ impl Naming
         &self.models
     }
 
+    /// Each record type written by the name of a type member, with where the
+    /// name is written, ascending by type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn members(&self) -> &[(ValueTypeId, ByteSpan)]
+    {
+        &self.members
+    }
+
     /// This record with each node in `carried` named as the node it copies:
     /// the copies a typed run's settling minted, which no origin records.
     ///
     /// # Specification
     /// - requires: `carried` is in the order its copies were minted.
     /// - ensures: every list stays ascending by its key; each copy whose source
-    ///   is a written arrow, pair, labelled sum or lazy product, relation or
-    ///   model type is kept as that source, as [`carry_labels`] reads it.
+    ///   is a written arrow, pair, labelled sum or lazy product, relation,
+    ///   model type or type member's record is kept as that source, as
+    ///   [`carry_labels`] reads it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -441,6 +464,7 @@ impl Naming
             with_labels: &mut self.with_labels,
             relations: &mut self.relations,
             models: &mut self.models,
+            members: &mut self.members,
         });
         self.arrows.sort_by_key(|&(arrow, _)| arrow);
         self.pairs.sort_by_key(|&(pair, _)| pair);
@@ -449,6 +473,7 @@ impl Naming
         self.with_labels.sort_by_key(|&(with, _)| with);
         self.relations.sort_by_key(|&(related, _)| related);
         self.models.sort_by_key(|&(modelled, _)| modelled);
+        self.members.sort_by_key(|&(member, _)| member);
     }
 
     /// The binders of one declaration, whose declared type and body are
@@ -745,11 +770,11 @@ where
 }
 
 /// The lists a reader names written arrows, pairs, labelled types,
-/// relations and model types by.
+/// relations, model types and type members' records by.
 ///
 /// Each list holds its entries beside their ids: an arrow's binder name as
-/// `Arrow`, and a pair's label, its second component's and each label of a
-/// sum or a lazy product as `Label`.
+/// `Arrow`, and a pair's label, its second component's, each label of a sum
+/// or a lazy product and a type member's name as `Label`.
 #[derive(Debug)]
 pub struct WrittenLabels<'lists, Arrow, Label>
 {
@@ -768,6 +793,8 @@ pub struct WrittenLabels<'lists, Arrow, Label>
     pub relations: &'lists mut Vec<(ValueTypeId, Relation)>,
     /// Each type written as a model type, with the theory and sorts written.
     pub models: &'lists mut Vec<(ValueTypeId, WrittenModel)>,
+    /// Each record type written by the name of a type member, with the name.
+    pub members: &'lists mut Vec<(ValueTypeId, Label)>,
 }
 
 /// Give each node `carried` copied the name its source has in `labelled`.
@@ -810,6 +837,7 @@ pub fn carry_labels<Copies, Arrow, Label>(
         ref mut with_labels,
         ref mut relations,
         ref mut models,
+        ref mut members,
     } = *labelled;
     let mut named = firsts(arrows);
     let mut binders = firsts(pairs);
@@ -818,6 +846,7 @@ pub fn carry_labels<Copies, Arrow, Label>(
     let mut entered = firsts(with_labels);
     let mut related = firsts(relations);
     let mut modelled = firsts(models);
+    let mut named_members = firsts(members);
     let mut latest: BTreeMap<ValueTypeId, ValueTypeId> = BTreeMap::new();
     for copy in carried {
         match copy {
@@ -830,6 +859,7 @@ pub fn carry_labels<Copies, Arrow, Label>(
                 copied(seconds, &mut labels, (source, image), Clone::clone);
                 copied(sum_labels, &mut summed, (source, image), Clone::clone);
                 copied(relations, &mut related, (source, image), Clone::clone);
+                copied(members, &mut named_members, (source, image), Clone::clone);
                 copied(models, &mut modelled, (source, image), |model| {
                     WrittenModel {
                         theory: model.theory.clone(),
@@ -1210,6 +1240,7 @@ mod tests
         let mut with_labels = Vec::from([(arrow, Vec::from(["get", "put"]))]);
         let mut relations = Vec::new();
         let mut models = Vec::new();
+        let mut members = Vec::new();
         carry_labels(
             [
                 Carried::ValueType(written, copy),
@@ -1226,6 +1257,7 @@ mod tests
                 with_labels: &mut with_labels,
                 relations: &mut relations,
                 models: &mut models,
+                members: &mut members,
             },
         );
         assert_eq!(

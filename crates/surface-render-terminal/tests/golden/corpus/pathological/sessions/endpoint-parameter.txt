@@ -17,14 +17,14 @@ error[UsedAfterClose]: the endpoint is used after `close`
    ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:34:47
    │
 33 │ ┌ def reused() -> Unit =
-34 │ │   let desk = fork (seat : end) { finish seat; close(seat) };
-   │ │   ┬──                            ┬──────────  ━━━━━━━━━━━ an endpoint already closed
+34 │ │   let desk = fork (seat : end) { finish seat; close seat };
+   │ │   ┬──                            ┬──────────  ━━━━━━━━━━ an endpoint already closed
    │ │   │                              │
    │ │   │                              checked against `-F Unit`; while checking the body of this split; binds _ : Unit
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the child this forks
-35 │ │   close(desk)
-   │ └─────────────┘ checked against `() -> Unit`; while checking the body of this thunk
+35 │ │   close desk
+   │ └────────────┘ checked against `() -> Unit`; while checking the body of this thunk
    │
    ├ note: `reused` is refused with UsedAfterClose, as its expectation states
    ╰ help: move the action before the `close`, or delete it
@@ -33,7 +33,7 @@ error[EndpointAsValue]: an endpoint can be used only by a session action
    ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:40:54
    │
 39 │ ┌ def miscounted() -> Unit =
-40 │ │   let desk = fork (seat : end) { let total = counted seat; close(seat) };
+40 │ │   let desk = fork (seat : end) { let total = counted seat; close seat };
    │ │   ┬──                            ┬──         ┬───────┯━━━
    │ │   │                              │           │       │
    │ │   │                              │           │       an endpoint read as a value
@@ -41,27 +41,27 @@ error[EndpointAsValue]: an endpoint can be used only by a session action
    │ │   │                              checked against `-F Unit`; while synthesising the computation this runs where a value is read
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the child this forks
-41 │ │   close(desk)
-   │ └─────────────┘ checked against `() -> Unit`; while checking the body of this thunk
+41 │ │   close desk
+   │ └────────────┘ checked against `() -> Unit`; while checking the body of this thunk
    │
    ├ note: `miscounted` is refused with EndpointAsValue, as its expectation states
    ╰ help: use the endpoint only in a session action
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:47:63
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:47:62
    │
 45 │    def rec follow(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> Unit =
    │    │              ──────── checked against `(rec t => &{report : ?Integer >> t, retire : ?Integer >> end}) -> -F Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : ?Integer >> t, retire : ?Integer >> end}
    │ ┌──┘
    │ │
-46 │ │┌   offer(operator) {
-47 │ ││     | report => { let next = recv(operator); become follow[<] operator }
-   │ ││                   ┬──                               ┬─────────┯━━━━━━━
-   │ ││                   │                                 │         │
-   │ ││                   │                                 │         not below the stage its recursion wants
-   │ ││                   │                                 checked against `-F Unit`; while synthesising the function this applies
+46 │ │┌   offer operator {
+47 │ ││     | report => { let next = recv operator; become follow[<] operator }
+   │ ││                   ┬──                              ┬─────────┯━━━━━━━
+   │ ││                   │                                │         │
+   │ ││                   │                                │         not below the stage its recursion wants
+   │ ││                   │                                checked against `-F Unit`; while synthesising the function this applies
    │ ││                   checked against `-F Unit`; while checking the rest of this receive's block
-48 │ ││     | retire => { let last = recv(operator); close(operator) }
+48 │ ││     | retire => { let last = recv operator; close operator }
 49 │ ││   }
    │ ││   │
    │ └│───│

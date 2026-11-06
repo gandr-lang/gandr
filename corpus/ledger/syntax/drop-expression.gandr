@@ -2,5 +2,5 @@
 /// `close` writes at the fork's other end.
 @[ checks ]
 def dropped() -> -F Unit =
-  let desk = fork (seat : end) { close(seat) };
-  drop(desk)
+  let desk = fork (seat : end) { close seat };
+  drop desk

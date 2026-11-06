@@ -22,7 +22,7 @@ def leaky(seat : end) -> Unit =
 
 /// A parameter at `end` that closes it.
 def finish(seat : end) -> Unit =
-  close(seat)
+  close seat
 
 /// A parameter at a number, which an endpoint never is.
 def counted(amount : Integer) -> Integer =
@@ -31,19 +31,19 @@ def counted(amount : Integer) -> Integer =
 /// A fork's child that closes its end once `finish` holds it.
 @[ refuses("UsedAfterClose") ]
 def reused() -> Unit =
-  let desk = fork (seat : end) { finish seat; close(seat) };
-  close(desk)
+  let desk = fork (seat : end) { finish seat; close seat };
+  close desk
 
 /// A fork's child that hands its end where a number stands.
 @[ refuses("EndpointAsValue") ]
 def miscounted() -> Unit =
-  let desk = fork (seat : end) { let total = counted seat; close(seat) };
-  close(desk)
+  let desk = fork (seat : end) { let total = counted seat; close seat };
+  close desk
 
 /// A recursive protocol followed by calling itself on the same endpoint.
 @[ refuses("StageNotBelow") ]
 def rec follow(operator : mu open. &{report : ?Integer. open, retire : ?Integer. end}) -> Unit =
-  offer(operator) {
-    | report => { let next = recv(operator); become follow[<] operator }
-    | retire => { let last = recv(operator); close(operator) }
+  offer operator {
+    | report => { let next = recv operator; become follow[<] operator }
+    | retire => { let last = recv operator; close operator }
   }

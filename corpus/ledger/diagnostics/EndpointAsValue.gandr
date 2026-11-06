@@ -2,4 +2,4 @@
 @[ refuses("EndpointAsValue") ]
 def seat_returned() -> -F Unit =
   let desk = fork (seat : end) { pure seat };
-  close(desk)
+  close desk

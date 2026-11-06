@@ -29,7 +29,7 @@ pub module Str where
   /// `push` writes `b` before the terminating zero.
   /// It writes the receiver back.
   def push(self : Repr, b : Integer) -> Unit =
-    access self as v { let w = pushInPlace v b; let t = written w; resume(v, t) }
+    access self as v { let w = pushInPlace v b; let t = written w; resume v t }
   /// `bytes` takes a string and returns its bytes.
   /// No code reads that string later.
   def bytes(self : consumed Repr) -> List(Integer) =

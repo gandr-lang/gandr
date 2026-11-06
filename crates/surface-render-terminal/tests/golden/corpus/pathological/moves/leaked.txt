@@ -2,7 +2,7 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
    ╭▸ corpus/pathological/moves/leaked.gandr:16:3
    │
 15 │ ┌ def leaked() -> Unit =
-16 │ │   let file = fork (owner : File.Handle) { close(owner) };
+16 │ │   let file = fork (owner : File.Handle) { close owner };
    │ │   ┯━━
    │ │   │
    │ │   an endpoint left unconsumed: found `end`

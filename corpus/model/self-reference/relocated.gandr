@@ -14,7 +14,7 @@ import std.process;
 def relocated() -> Integer =
   var x = 5
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { c.exit 1; resume(v, v + 7) };
+    access x as v { c.exit 1; resume v (v + 7) };
     pure 0
   } with {
     | pure(y) => pure y

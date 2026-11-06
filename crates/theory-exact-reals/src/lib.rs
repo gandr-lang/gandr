@@ -33,6 +33,9 @@
 //! - [`Cache`] — the certificates that runs write, under the canonical bytes of
 //!   the plan that each node roots. The checker replays each hit before the
 //!   machine uses it.
+//! - [`eliminate`], [`Elimination`] — cut elimination. A strict comparison that
+//!   reads a cut on one side becomes the lower or the upper cut of that cut at
+//!   the other side, so the machine encloses the other side alone.
 //!
 //! # References
 //!
@@ -52,6 +55,7 @@ pub mod certificate;
 pub mod codec;
 pub mod dovetail;
 pub mod dyadic;
+pub mod elimination;
 pub mod interval;
 pub mod plan;
 pub mod schema;
@@ -107,6 +111,9 @@ pub use crate::dyadic::Precision;
 pub use crate::dyadic::Rounded;
 pub use crate::dyadic::Rounding;
 pub use crate::dyadic::Sign;
+pub use crate::elimination::Elimination;
+pub use crate::elimination::EliminationError;
+pub use crate::elimination::eliminate;
 pub use crate::interval::Bound;
 pub use crate::interval::Closure;
 pub use crate::interval::Containment;

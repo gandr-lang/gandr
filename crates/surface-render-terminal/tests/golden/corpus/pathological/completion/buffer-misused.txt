@@ -96,7 +96,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    ┆ ┆┆
 80 │ ││       let ring = fork (kernel : ?Buf. end) {
    │ ││       ─── checked against `-F Unit`; while checking the child this forks
-81 │ ││         let held = recv(kernel);
+81 │ ││         let held = recv kernel;
    │ ││         ━━━ a buffer never handed back
    ┆ ┆┆
 87 │ ││     | oper free(b, k) => k *{}
@@ -110,7 +110,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    ╰ help: hand the buffer back with a `send`, an operation or a resumption before the body ends
 
 error[BufferReturnedTwice]: the buffer is handed back a second time
-    ╭▸ corpus/pathological/completion/buffer-misused.gandr:102:22
+    ╭▸ corpus/pathological/completion/buffer-misused.gandr:102:21
     │
  92 │ ┌  def receivedReturnedTwice() -> Unit =
  93 │ │┌   handle r : std.io.Ring.Eff {
@@ -120,14 +120,14 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
     ┆ ┆┆
  99 │ ││       let ring = fork (kernel : ?Buf. !Buf. !Buf. end) {
     │ ││       ─── checked against `-F Unit`; while checking the child this forks
-100 │ ││         let held = recv(kernel);
+100 │ ││         let held = recv kernel;
     │ ││         ─── checked against `-F Unit`; while checking the rest of this receive's block
-101 │ ││         send(kernel, held);
-    │ ││         ────────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
-102 │ ││         send(kernel, held);
-    │ ││         ┬────────────┯━━━─
-    │ ││         │            │
-    │ ││         │            a buffer already handed back
+101 │ ││         send kernel held;
+    │ ││         ──────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
+102 │ ││         send kernel held;
+    │ ││         ┬───────────┯━━━
+    │ ││         │           │
+    │ ││         │           a buffer already handed back
     │ ││         checked against `-F Unit`; while synthesising the computation this binds
     ┆ ┆┆
 111 │ ││     | oper free(b, k) => k *{}

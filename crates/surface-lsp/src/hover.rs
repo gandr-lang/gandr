@@ -3418,8 +3418,8 @@ mod tests
 
     /// A stray answers as a declaration the outline holds: its refusal at
     /// every tile, at its `;` and at the attributes before it. An expression
-    /// at the top level, the last one too, is refused there, and a block's
-    /// statement is of the wrong sort (#2073, #2572).
+    /// at the top level, the last one too, is refused there, and an arm
+    /// outside any match is of the wrong sort (#2073, #2572).
     #[test]
     fn a_stray_hovers_as_a_declaration_2073()
     {
@@ -3451,12 +3451,12 @@ mod tests
                 ),
             ),
             (
-                "a block's statement",
+                "an arm outside any match",
                 include_str!("hover/unformatted/a-stray-hovers-as-a-declaration-2073-4.gandr"),
                 format!(
-                    "{}\n\nrefused: `release_expression`, read as a declaration, is not a former \
+                    "{}\n\nrefused: `lambda_expression`, read as a declaration, is not a former \
                      of this sort",
-                    fenced(SourceText::from("release x"))
+                    fenced(SourceText::from("| x => 1"))
                 ),
             ),
             (

@@ -239,6 +239,12 @@ fn evaluated(plan: &Plan) -> Vec<Exact>
                     Open::Less(left, right) => real(left)
                         .zip(real(right))
                         .map(|(x, y)| x.order(&y) == Ordering::Less),
+                    Open::LowerCut(cut, point) => real(point)
+                        .zip(real(cut))
+                        .map(|(x, y)| x.order(&y) == Ordering::Less),
+                    Open::UpperCut(cut, point) => real(cut)
+                        .zip(real(point))
+                        .map(|(x, y)| x.order(&y) == Ordering::Less),
                     Open::Meet(left, right) => truth(left).zip(truth(right)).map(|(x, y)| x && y),
                     Open::Join(left, right) => truth(left).zip(truth(right)).map(|(x, y)| x || y),
                     Open::Exists(_) | Open::Forall(_) => None,

@@ -308,7 +308,7 @@ impl FormName
     pub const PARAMETERS: Self = Self("parameters");
     /// The projection `e.1` or `e.field`.
     pub const PROJECTION: Self = Self("projection_expression");
-    /// The receive `recv(c)`, whose message a `let` binds.
+    /// The receive `recv c`, whose message a `let` binds.
     pub const RECV_EXPRESSION: Self = Self("recv_expression");
     /// The source root, which holds a module's declarations.
     pub const ROOT: Self = Self("source_file");
@@ -413,13 +413,25 @@ impl FormName
     pub const STRING: Self = Self("string");
     /// A character literal.
     pub const CHARACTER: Self = Self("character");
-    /// The endpoint drop `drop(e)`.
+    /// The endpoint drop `drop e`.
     pub const DROP: Self = Self("drop_expression");
+    /// The send `send c v`.
+    pub const SEND: Self = Self("send_expression");
+    /// The selection `select c l`.
+    pub const SELECT: Self = Self("select_expression");
+    /// The close `close c`.
+    pub const CLOSE: Self = Self("close_expression");
+    /// The offer `offer c { l => t, … }`.
+    pub const OFFER: Self = Self("offer_expression");
+    /// The view's end `resume v e`, which writes `e` back.
+    pub const RESUME: Self = Self("resume_expression");
+    /// The view's end `abort v`, which writes nothing back.
+    pub const ABORT: Self = Self("abort_expression");
     /// The union type `A | B`.
     pub const UNION_TYPE: Self = Self("union_type");
     /// The extern block `extern "c" from "library" { … }`.
     pub const EXTERN_BLOCK: Self = Self("extern_block");
-    /// The reserved endpoint copy `dup(e)`.
+    /// The reserved endpoint copy `dup e`.
     pub const DUP: Self = Self("dup_expression");
     /// A type at a stage, `T[i]`.
     pub const STAGED_TYPE: Self = Self("staged_type");
@@ -1030,10 +1042,10 @@ pub enum Former
     /// S`: the outermost form of a protocol, read whole down its
     /// continuations.
     SessionType,
-    /// An action on an endpoint returning the unit: `send(c, v)`,
-    /// `select(c, l)` or `close(c)`.
+    /// An action on an endpoint returning the unit: `send c v`,
+    /// `select c l` or `close c`.
     Action,
-    /// The offer `offer(c) { l => t, … }`: the arm of the label the peer
+    /// The offer `offer c { l => t, … }`: the arm of the label the peer
     /// chose.
     Offer,
     /// Temporary access to a held value: the access `access x as v { t }

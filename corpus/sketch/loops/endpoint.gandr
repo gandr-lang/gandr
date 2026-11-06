@@ -18,9 +18,9 @@ type Reports = mu open. &{report : ?Integer. open, retire : ?Integer. end};
 /// and the retirement closes the endpoint and leaves the loop.
 def follow(operator : Reports) -> Unit =
   loop over (operator : Reports) =
-    offer(operator) {
-      | report => { recv(operator) as next; continue },
-      retire => { recv(operator) as last; close(operator); break }
+    offer operator {
+      | report => { recv operator as next; continue },
+      retire => { recv operator as last; close operator; break }
     }
 
 /// A desk counts the reports beside the endpoint. The head carries both the
@@ -28,9 +28,9 @@ def follow(operator : Reports) -> Unit =
 def tally(operator : Reports) -> Integer =
   var seen = 0
   loop over (operator : Reports) {
-    offer(operator) {
-      | report => { recv(operator) as next; seen += 1; continue },
-      retire => { recv(operator) as last; close(operator); break }
+    offer operator {
+      | report => { recv operator as next; seen += 1; continue },
+      retire => { recv operator as last; close operator; break }
     }
   }
   seen

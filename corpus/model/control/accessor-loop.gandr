@@ -15,7 +15,7 @@
 @[ runs("0") ]
 def countdown() -> [Partial] Integer =
   var n = 3
-  while n > 0 { access n as v { resume(v, v - 1) } };
+  while n > 0 { access n as v { resume v (v - 1) } };
   pure n
 
 /// Two slots carried together, each keeping its own: the first counts down
@@ -25,8 +25,8 @@ def opposed() -> [Partial] Integer =
   var a = 10
   var b = 1
   while b < 4 {
-    access b as v { resume(v, v + 1) };
-    access a as w { resume(w, w - 1) }
+    access b as v { resume v (v + 1) };
+    access a as w { resume w (w - 1) }
   };
   pure a * 100 + b
 
@@ -37,8 +37,8 @@ def sum() -> [Partial] Integer =
   var i = 3
   var total = 0
   while i > 0 {
-    access total as t { resume(t, t + i) };
-    access i as v { resume(v, v - 1) }
+    access total as t { resume t (t + i) };
+    access i as v { resume v (v - 1) }
   };
   pure total
 
@@ -48,7 +48,7 @@ def sum() -> [Partial] Integer =
 def beside() -> [Partial] Integer =
   var a = 4
   var b = 3
-  while b > 0 { access b as v { resume(v, v - 1) } };
+  while b > 0 { access b as v { resume v (v - 1) } };
   pure a + 3
 
 /// A pass ending in `continue` hands the next pass the slot as it left it.
@@ -56,7 +56,7 @@ def beside() -> [Partial] Integer =
 def skipping() -> [Partial] Integer =
   var n = 3
   while n > 0 {
-    access n as v { resume(v, v - 1) };
+    access n as v { resume v (v - 1) };
     continue
   };
   pure n
@@ -67,7 +67,7 @@ def skipping() -> [Partial] Integer =
 def climb() -> [Partial] Integer =
   var n = 0
   let m = loop {
-    access n as v { resume(v, v + 1) };
+    access n as v { resume v (v + 1) };
     let done = n >= 5;
     match done
       | true => break(n)
@@ -80,7 +80,7 @@ def climb() -> [Partial] Integer =
 def stride() -> [Partial] Integer =
   var n = 0
   loop {
-    access n as v { resume(v, v + 2) };
+    access n as v { resume v (v + 2) };
     let done = n >= 4;
     match done
       | true => break

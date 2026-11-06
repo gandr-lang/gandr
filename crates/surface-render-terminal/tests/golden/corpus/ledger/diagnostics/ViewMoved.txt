@@ -4,10 +4,10 @@ error[ViewMoved]: the view's value was read out, so the view ends with `resume`,
 7 │ ┌ def moved_then_aborted() -> -F Integer =
 8 │ │   var[1] c = 0
   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-9 │ │   access c as v { let n = succ v ; abort(v) ; pure n } unwind { pure *{} }
-  │ │   ┬───────────────┬────────────────┯━━━━━━━──────────────────────────────│
-  │ └───│───────────────│────────────────│─────────────────────────────────────┤
-  │     │               │                │                                     checked against `() -> Integer`; while checking the body of this thunk
+9 │ │   access c as v { let n = succ v ; abort v ; pure n } unwind { pure *{} }
+  │ │   ┬───────────────┬────────────────┯━━━━━━──────────────────────────────│
+  │ └───│───────────────│────────────────│────────────────────────────────────┤
+  │     │               │                │                                    checked against `() -> Integer`; while checking the body of this thunk
   │     │               │                an abort after the value was moved out
   │     │               checked against `-F Integer`; while checking the body under this binding; binds n : Integer
   │     checked against `-F Integer`; while checking the body of this access

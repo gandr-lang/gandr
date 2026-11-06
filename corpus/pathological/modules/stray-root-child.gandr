@@ -8,10 +8,9 @@
 /// A declaration before every stray, which checks.
 def before : Integer = 1;
 
-/// A statement keyword outside any block: a block's statement, not a
-/// declaration.
+/// An arm outside any match: a form of the arm's sort, not a declaration.
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
-release x ;
+| x => 1 ;
 
 /// An expression standing where a declaration belongs, refused at the top
 /// level.

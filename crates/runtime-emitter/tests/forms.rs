@@ -375,7 +375,7 @@ fn forms() -> Vec<Form>
             ends: Ends::Shows("⟨1180591620717411303425 |+ ★⟩"),
         },
         Form {
-            what: "hold x = [1, 2, 3]; access x.#[1] as w { resume(w, 20) }; consume x",
+            what: "hold x = [1, 2, 3]; access x.#[1] as w { resume w 20 }; consume x",
             build: |core| written_at(core, Integer(1)),
             ends: Ends::Shows("⟨cons(1, cons(20, cons(3, nil()))) |+ ★⟩"),
         },
@@ -396,7 +396,7 @@ fn forms() -> Vec<Form>
             ends: Ends::Shows("⟨5 |+ ★⟩"),
         },
         Form {
-            what: "hold[1] x = 5; access x as w { abort(w) } unwind { () }; consume x",
+            what: "hold[1] x = 5; access x as w { abort w } unwind { () }; consume x",
             build: |core| {
                 let five = integer(core, Integer(5));
                 let unit = core.value_unit();
@@ -467,7 +467,7 @@ fn forms() -> Vec<Form>
             }),
         },
         Form {
-            what: "hold x = [1, 2, 3]; access x.#[5] as w { resume(w, 20) }; consume x",
+            what: "hold x = [1, 2, 3]; access x.#[5] as w { resume w 20 }; consume x",
             build: |core| written_at(core, Integer(5)),
             ends: Ends::Stuck(|stuck| matches!(*stuck, Stuck::Outside(_))),
         },

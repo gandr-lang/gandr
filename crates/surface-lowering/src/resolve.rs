@@ -62,7 +62,7 @@
 //! `unit`, which a declaration could shadow. Reversal: none while `*{}`
 //! spells the nullary product.
 //!
-//! Binder predicates check backward parent links, fresh frame positions, exact
+//! Binder predicates check backward parent links, fresh frames, exact
 //! successful lookup and mention-filtered telescope counts. `ScopeId` is a
 //! scope-relative coordinate, not an ownership certificate: an equal coordinate
 //! from another scope addresses the receiving scope's frame, while an
@@ -100,6 +100,21 @@
 //! shadowing between the two; the reversal is a core context whose zones
 //! share one index space. Witness:
 //! `tests::a_linear_binder_counts_apart_from_intuitionistic_ones`.
+//!
+//! # A frame takes its place within its form
+//!
+//! A frame's identity is the form whose classification pushed it and its place
+//! among that form's frames. The layout block of a form's descendants names
+//! the form, as a block and an offset name a node ([`NodeIndex`]). An edit to
+//! one form renumbers that form's frames only. Thus a lowered segment kept
+//! across an edit to another form keeps its frames' identities (#4373). The
+//! frames stay in one vector in push order. The classification sweep pushes
+//! the top-level forms' own frames first, and each form's descendants' frames
+//! after them. So a form's frames lie in a few runs of the vector, and a
+//! lookup walks the form's runs. The alternative was one vector per form,
+//! which allocates once per form at least. The reversal is a sweep that pushes
+//! each form's frames in one run, which makes each lookup one read. Witness:
+//! `tests::a_frame_keeps_its_identity_whatever_another_form_pushes`.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -110,6 +125,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::LayoutBlock;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
@@ -772,24 +788,307 @@ pub fn homed_formers() -> impl Iterator<Item = (SurfaceName<'static>, SurfaceNam
         .map(|(home, spelling, _)| (SurfaceName::from(home), SurfaceName::from(spelling)))
 }
 
-/// The identity of one binder frame inside a [`Scope`].
+/// The identity of one binder frame inside a [`Scope`]: the form whose
+/// classification pushed the frame, and the frame's place among that form's
+/// frames.
+///
+/// The layout block of a form's descendants names the form. Thus a frame keeps
+/// its identity whatever another form pushes (#4457).
 ///
 /// # Specification
 /// - requires: an interpreting scope accompanies the position.
 /// - ensures: the coordinate names one frame only relative to that scope; it
 ///   does not authenticate where it was minted.
-/// - provides: stable positions in an append-only binder arena.
+/// - provides: stable positions in an append-only binder arena, numbered within
+///   each form.
 /// - executable: none — a coordinate does not hold the arena needed to check
 ///   bounds or provenance.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — sibling extensions preserve earlier positions; equal
-///   positions from distinct scopes refer to the receiving scope's frames.
+///   positions from distinct scopes refer to the receiving scope's frames; a
+///   frame keeps its coordinate whatever another form pushes.
 /// - witness: `resolve::tests::sibling_extensions_of_one_scope_are_independent`
 /// - witness: `resolve::tests::binder_positions_do_not_authenticate_their_minting_scope`
-#[repr(transparent)]
+/// - witness: `resolve::tests::a_frame_keeps_its_identity_whatever_another_form_pushes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ScopeId(usize);
+pub struct ScopeId
+{
+    /// The layout block of the form that pushed the frame.
+    form: LayoutBlock,
+    /// The frame's place among its form's frames, in push order.
+    place: u32,
+}
+
+/// Entries numbered within the form that pushed each, kept in one vector in
+/// push order.
+///
+/// Each form keeps its count and its first and last run of the vector, and
+/// each run names the next. A push extends its form's last run when that run
+/// ends the vector, and starts a run otherwise. A lookup walks its form's
+/// runs. No form allocates a vector of its own.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an entry pushed into a form answers at its place among that
+///   form's entries, whatever other forms push before or after it.
+/// - provides: the frames of a [`Scope`] and of an [`InScope`].
+/// - executable: none — a carrier; [`Self::push`] and [`Self::get`] carry the
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two forms that push in turn keep each entry at its own
+///   coordinate.
+/// - witness: `resolve::tests::a_frame_keeps_its_identity_whatever_another_form_pushes`
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ByForm<Entry>
+{
+    /// The entries, in push order.
+    entries: Vec<Entry>,
+    /// Each form's entries, by the form's block.
+    forms: Vec<Segment>,
+    /// The runs of `entries` that the forms' entries lie in.
+    runs: Vec<Run>,
+}
+
+/// One form's entries in a [`ByForm`]: how many, and the first and the last
+/// run they lie in.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Segment
+{
+    /// How many entries the form holds.
+    count: u32,
+    /// The form's first run and its last, when it holds an entry.
+    runs: Option<(At, At)>,
+}
+
+/// Consecutive entries of one form in a [`ByForm`].
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Run
+{
+    /// The position of the run's first entry.
+    start: At,
+    /// How many entries the run holds.
+    length: u32,
+    /// The form's next run, when the form holds one.
+    next: Option<At>,
+}
+
+impl<Entry> ByForm<Entry>
+{
+    /// A store holding no entries.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn new() -> Self
+    {
+        Self {
+            entries: Vec::new(),
+            forms: Vec::new(),
+            runs: Vec::new(),
+        }
+    }
+
+    /// Push `entry` into `form`, after every entry `form` holds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the store holds one more entry, and the coordinate returned
+    ///   names `form` and the count of entries `form` held before; every
+    ///   earlier coordinate answers its entry as before.
+    /// - provides: the one place a frame takes its coordinate.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one write to `form`'s count and one to its last run, or one
+    ///   run pushed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the type.
+    /// - witness: `resolve::tests::a_frame_keeps_its_identity_whatever_another_form_pushes`
+    #[spec(
+        captures: before = (self.entries.len(), self.forms.get(usize::from(form)).map_or(0_u32, |segment| segment.count)),
+        ensures: |ret| self.entries.len() == before.0.saturating_add(1) && ret == (ScopeId { form, place: before.1 }),
+    )]
+    fn push(
+        &mut self,
+        form: LayoutBlock,
+        entry: Entry,
+    ) -> ScopeId
+    {
+        let at = usize::from(form);
+        if self.forms.len() <= at {
+            self.forms.resize(at.saturating_add(1), Segment::default());
+        }
+        let start = At::from(self.entries.len());
+        let fresh = At::from(self.runs.len());
+        let mut place = 0_u32;
+        if let Some(segment) = self.forms.get_mut(at) {
+            place = segment.count;
+            segment.count = place.saturating_add(1);
+            let last = segment.runs.and_then(|(first, last)| {
+                let run = self.runs.get_mut(usize::from(last))?;
+                Some((first, run))
+            });
+            match last {
+                Some((_, run)) if At(run.start.0.saturating_add(run.length)) == start => {
+                    run.length = run.length.saturating_add(1);
+                },
+                Some((first, run)) => {
+                    run.next = Some(fresh);
+                    segment.runs = Some((first, fresh));
+                    self.runs.push(Run {
+                        start,
+                        length: 1,
+                        next: None,
+                    });
+                },
+                None => {
+                    segment.runs = Some((fresh, fresh));
+                    self.runs.push(Run {
+                        start,
+                        length: 1,
+                        next: None,
+                    });
+                },
+            }
+        }
+        self.entries.push(entry);
+
+        ScopeId { form, place }
+    }
+
+    /// Where the entry `id` names lies in the vector, or nothing for a
+    /// coordinate the store does not hold.
+    ///
+    /// # Specification
+    /// - requires: nothing — any coordinate is admissible.
+    /// - ensures: for a coordinate [`Self::push`] returned, the position of its
+    ///   entry; nothing for a form or a place the store does not hold.
+    /// - provides: the lookup every read of an entry makes.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one read of the form, then one step per run before the
+    ///   entry's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the type.
+    /// - witness: `resolve::tests::a_frame_keeps_its_identity_whatever_another_form_pushes`
+    #[spec(ensures: |ret| ret.is_none_or(|at| usize::from(at) < self.entries.len()))]
+    fn position(
+        &self,
+        id: ScopeId,
+    ) -> Option<At>
+    {
+        let (first, _) = self.forms.get(usize::from(id.form))?.runs?;
+        let mut place = id.place;
+        let mut at = Some(first);
+        while let Some(run) = at.and_then(|run| self.runs.get(usize::from(run))) {
+            if place < run.length {
+                let found = At(run.start.0.saturating_add(place));
+                return (usize::from(found) < self.entries.len()).then_some(found);
+            }
+            place = place.saturating_sub(run.length);
+            at = run.next;
+        }
+        None
+    }
+
+    /// The entry `id` names, or nothing for a coordinate the store does not
+    /// hold.
+    ///
+    /// # Specification
+    /// trivial.
+    fn get(
+        &self,
+        id: ScopeId,
+    ) -> Option<&Entry>
+    {
+        self.entries.get(usize::from(self.position(id)?))
+    }
+
+    /// The entry `id` names, to change, or nothing for a coordinate the store
+    /// does not hold.
+    ///
+    /// # Specification
+    /// trivial.
+    fn get_mut(
+        &mut self,
+        id: ScopeId,
+    ) -> Option<&mut Entry>
+    {
+        let at = self.position(id)?;
+        self.entries.get_mut(usize::from(at))
+    }
+
+    /// The store with each entry read through `read`, every coordinate kept.
+    ///
+    /// # Specification
+    /// trivial.
+    fn map<Other>(
+        &self,
+        read: impl FnMut(&Entry) -> Other,
+    ) -> ByForm<Other>
+    {
+        ByForm {
+            entries: self.entries.iter().map(read).collect(),
+            forms: self.forms.clone(),
+            runs: self.runs.clone(),
+        }
+    }
+}
+
+impl<Entry> Default for ByForm<Entry>
+{
+    /// A store holding no entries.
+    ///
+    /// # Specification
+    /// trivial.
+    fn default() -> Self
+    {
+        Self::new()
+    }
+}
+
+/// A position in a [`ByForm`]'s entries or in its runs.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+struct At(u32);
+
+impl From<usize> for At
+{
+    /// Read a vector's length as the position after its last entry,
+    /// saturating past `u32::MAX`, beyond any scope a lowering builds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(at: usize) -> Self
+    {
+        Self(u32::try_from(at).unwrap_or(u32::MAX))
+    }
+}
+
+impl From<At> for usize
+{
+    /// Read the position back as an index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(at: At) -> Self
+    {
+        Self::try_from(at.0).unwrap_or(Self::MAX)
+    }
+}
 
 /// The binder frame a term is read under.
 ///
@@ -948,12 +1247,13 @@ pub struct Bound
 /// Every binder frame one lowering minted, as a persistent chain.
 ///
 /// The chain is flat and id-addressed rather than pointer-linked: a frame names
-/// its parent by position in this vector, so a scope is shared by every node
-/// under one binder without being copied and without a drop that walks depth.
+/// its parent by its coordinate, so a scope is shared by every node under one
+/// binder without being copied and without a drop that walks depth. A frame
+/// takes its coordinate in the form [`Self::enter`] names last.
 ///
 /// # Specification
-/// - requires: extensions use an outermost parent or an existing frame position
-///   in the intended scope.
+/// - requires: extensions use an outermost parent or an existing frame
+///   coordinate in the intended scope.
 /// - ensures: frames are append-only and parent links point backward;
 ///   independent sibling chains share prefixes without changing each other.
 /// - provides: iterative lexical lookup and mention-filtered telescope indices.
@@ -968,17 +1268,19 @@ pub struct Bound
 /// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
 /// - witness: `resolve::tests::lookup_spends_one_charge_per_visited_binder`
 /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
-#[repr(transparent)]
 #[derive(Clone, Debug, Default)]
 pub struct Scope<'source>
 {
-    /// The frames, in the order the binders were entered.
-    frames: Vec<ScopeFrame<'source>>,
+    /// The frames, numbered within the form that pushed each.
+    frames: ByForm<ScopeFrame<'source>>,
+    /// The form the next frame is pushed into.
+    form: LayoutBlock,
 }
 
 impl<'source> Scope<'source>
 {
-    /// A scope holding no binders.
+    /// A scope holding no binders, its frames pushed into the first block's
+    /// form until [`Self::enter`] names another.
     ///
     /// # Specification
     /// trivial.
@@ -986,7 +1288,24 @@ impl<'source> Scope<'source>
     #[must_use]
     pub fn new() -> Self
     {
-        Self { frames: Vec::new() }
+        Self {
+            frames: ByForm::new(),
+            form: LayoutBlock::default(),
+        }
+    }
+
+    /// Push the frames after this into `form`, the layout block of the form
+    /// whose node the lowering reads now.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn enter(
+        &mut self,
+        form: LayoutBlock,
+    )
+    {
+        self.form = form;
     }
 
     /// The frame that extends `parent` with an untyped binder for `name`,
@@ -1014,13 +1333,12 @@ impl<'source> Scope<'source>
     #[spec(
         requires: match parent {
             | Frame::Outermost => true,
-            | Frame::Inner(id) => id.0 < self.frames.len(),
+            | Frame::Inner(id) => self.frames.get(id).is_some(),
         },
-        captures: before = self.frames.len(),
+        captures: before = self.frames.entries.len(),
         ensures: |ret| {
-            ret.0 == before
-                && self.frames.len() == before.saturating_add(1)
-                && self.frames.get(ret.0).is_some_and(|entry| {
+            self.frames.entries.len() == before.saturating_add(1)
+                && self.frames.get(ret).is_some_and(|entry| {
                     entry.parent == parent
                         && entry.name == name
                         && entry.declared == Maybe::Absent(binder_type::Absent::Untyped)
@@ -1065,12 +1383,12 @@ impl<'source> Scope<'source>
     #[spec(
         requires: match parent {
             | Frame::Outermost => true,
-            | Frame::Inner(id) => id.0 < self.frames.len(),
+            | Frame::Inner(id) => self.frames.get(id).is_some(),
         },
-        captures: before = self.frames.len(),
+        captures: before = self.frames.entries.len(),
         ensures: |ret| {
-            ret.0 == before
-                && self.frames.get(ret.0).is_some_and(|entry| {
+            self.frames.entries.len() == before.saturating_add(1)
+                && self.frames.get(ret).is_some_and(|entry| {
                     entry.parent == parent
                         && entry.declared == Maybe::Absent(binder_type::Absent::Operand)
                 })
@@ -1114,12 +1432,12 @@ impl<'source> Scope<'source>
     #[spec(
         requires: match parent {
             | Frame::Outermost => true,
-            | Frame::Inner(id) => id.0 < self.frames.len(),
+            | Frame::Inner(id) => self.frames.get(id).is_some(),
         },
-        captures: before = self.frames.len(),
+        captures: before = self.frames.entries.len(),
         ensures: |ret| {
-            ret.0 == before
-                && self.frames.get(ret.0).is_some_and(|entry| {
+            self.frames.entries.len() == before.saturating_add(1)
+                && self.frames.get(ret).is_some_and(|entry| {
                     entry.parent == parent
                         && entry.declared == Maybe::Absent(binder_type::Absent::Instance)
                         && !entry.mentioned.0
@@ -1163,13 +1481,12 @@ impl<'source> Scope<'source>
     #[spec(
         requires: match parent {
             | Frame::Outermost => true,
-            | Frame::Inner(id) => id.0 < self.frames.len(),
+            | Frame::Inner(id) => self.frames.get(id).is_some(),
         },
-        captures: before = self.frames.len(),
+        captures: before = self.frames.entries.len(),
         ensures: |ret| {
-            ret.0 == before
-                && self.frames.len() == before.saturating_add(1)
-                && self.frames.get(ret.0).is_some_and(|entry| {
+            self.frames.entries.len() == before.saturating_add(1)
+                && self.frames.get(ret).is_some_and(|entry| {
                     entry.parent == parent
                         && entry.name == name
                         && entry.declared == Maybe::Present(declared)
@@ -1215,13 +1532,12 @@ impl<'source> Scope<'source>
     #[spec(
         requires: match parent {
             | Frame::Outermost => true,
-            | Frame::Inner(id) => id.0 < self.frames.len(),
+            | Frame::Inner(id) => self.frames.get(id).is_some(),
         },
-        captures: before = self.frames.len(),
+        captures: before = self.frames.entries.len(),
         ensures: |ret| {
-            ret.0 == before
-                && self.frames.len() == before.saturating_add(1)
-                && self.frames.get(ret.0).is_some_and(|entry| {
+            self.frames.entries.len() == before.saturating_add(1)
+                && self.frames.get(ret).is_some_and(|entry| {
                     entry.parent == parent
                         && entry.name == name
                         && entry.declared == Maybe::Absent(binder_type::Absent::Untyped)
@@ -1267,13 +1583,12 @@ impl<'source> Scope<'source>
     #[spec(
         requires: match parent {
             | Frame::Outermost => true,
-            | Frame::Inner(id) => id.0 < self.frames.len(),
+            | Frame::Inner(id) => self.frames.get(id).is_some(),
         },
-        captures: before = self.frames.len(),
+        captures: before = self.frames.entries.len(),
         ensures: |ret| {
-            ret.0 == before
-                && self.frames.len() == before.saturating_add(1)
-                && self.frames.get(ret.0).is_some_and(|entry| {
+            self.frames.entries.len() == before.saturating_add(1)
+                && self.frames.get(ret).is_some_and(|entry| {
                     entry.parent == parent
                         && entry.name == name
                         && entry.declared == declared
@@ -1292,8 +1607,7 @@ impl<'source> Scope<'source>
         zone: Zone,
     ) -> ScopeId
     {
-        let minted = ScopeId(self.frames.len());
-        self.frames.push(ScopeFrame {
+        self.frames.push(self.form, ScopeFrame {
             name,
             parent,
             declared,
@@ -1301,9 +1615,7 @@ impl<'source> Scope<'source>
             quoted: Mentioned(false),
             site,
             zone,
-        });
-
-        minted
+        })
     }
 
     /// Where the binder that introduced `binder` was written.
@@ -1318,7 +1630,7 @@ impl<'source> Scope<'source>
     /// - hypothesis: L3 — a written binder, an unwritten frame and an
     ///   out-of-range coordinate answer their exact sites.
     /// - witness: `resolve::tests::a_frame_keeps_its_binder_s_span`
-    #[spec(ensures: |ret| ret == self.frames.get(binder.0)
+    #[spec(ensures: |ret| ret == self.frames.get(binder)
         .map_or(Maybe::Absent(binder_site::Absent::Unwritten), |entry| entry.site))]
     #[inline]
     pub fn site(
@@ -1327,7 +1639,7 @@ impl<'source> Scope<'source>
     ) -> Maybe<ByteSpan, binder_site::Absent>
     {
         self.frames
-            .get(binder.0)
+            .get(binder)
             .map_or(Maybe::Absent(binder_site::Absent::Unwritten), |entry| {
                 entry.site
             })
@@ -1346,7 +1658,7 @@ impl<'source> Scope<'source>
     /// - hypothesis: L3 — a linear and an intuitionistic frame of one chain
     ///   answer their own zones.
     /// - witness: `resolve::tests::a_linear_binder_counts_apart_from_intuitionistic_ones`
-    #[spec(ensures: |ret| ret == self.frames.get(binder.0).map_or(Zone::Intuitionistic, |entry| entry.zone))]
+    #[spec(ensures: |ret| ret == self.frames.get(binder).map_or(Zone::Intuitionistic, |entry| entry.zone))]
     #[inline]
     #[must_use]
     pub fn zone(
@@ -1355,7 +1667,7 @@ impl<'source> Scope<'source>
     ) -> Zone
     {
         self.frames
-            .get(binder.0)
+            .get(binder)
             .map_or(Zone::Intuitionistic, |entry| entry.zone)
     }
 
@@ -1373,7 +1685,7 @@ impl<'source> Scope<'source>
     /// - hypothesis: L3 — a typed and an untyped frame of one chain answer
     ///   their own written types.
     /// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
-    #[spec(ensures: |ret| ret == self.frames.get(binder.0)
+    #[spec(ensures: |ret| ret == self.frames.get(binder)
         .map_or(Maybe::Absent(binder_type::Absent::Untyped), |entry| entry.declared))]
     #[inline]
     pub fn declared(
@@ -1382,7 +1694,7 @@ impl<'source> Scope<'source>
     ) -> Maybe<NodeIndex, binder_type::Absent>
     {
         self.frames
-            .get(binder.0)
+            .get(binder)
             .map_or(Maybe::Absent(binder_type::Absent::Untyped), |entry| {
                 entry.declared
             })
@@ -1405,7 +1717,7 @@ impl<'source> Scope<'source>
     ///   off the chain answered absent.
     /// - witness: `resolve::tests::a_linear_binder_is_found_by_its_coordinate`
     #[spec(ensures: |ret| match ret {
-        | Maybe::Present(index) => usize::try_from(u32::from(index)).is_ok_and(|depth| depth < self.frames.len()),
+        | Maybe::Present(index) => usize::try_from(u32::from(index)).is_ok_and(|depth| depth < self.frames.entries.len()),
         | Maybe::Absent(binder::Absent::Unbound) => true,
     })]
     #[inline]
@@ -1455,11 +1767,11 @@ impl<'source> Scope<'source>
     #[spec(
         requires: match frame {
             | Frame::Outermost => true,
-            | Frame::Inner(id) => id.0 < self.frames.len(),
+            | Frame::Inner(id) => self.frames.get(id).is_some(),
         },
         ensures: |ret| match ret {
             | Ok(Maybe::Present(index)) => {
-                usize::try_from(u32::from(index)).is_ok_and(|depth| depth < self.frames.len())
+                usize::try_from(u32::from(index)).is_ok_and(|depth| depth < self.frames.entries.len())
             },
             | Ok(Maybe::Absent(binder::Absent::Unbound)) => true,
             | Err(LoweringRefusal::BudgetExceeded { .. }) => matches!(frame, Frame::Inner(_)),
@@ -1510,7 +1822,7 @@ impl<'source> Scope<'source>
     #[spec(
         requires: match frame {
             | Frame::Outermost => true,
-            | Frame::Inner(id) => id.0 < self.frames.len(),
+            | Frame::Inner(id) => self.frames.get(id).is_some(),
         },
         ensures: |ret| match ret {
             | Ok(answer) => {
@@ -1523,10 +1835,10 @@ impl<'source> Scope<'source>
                     else {
                         break Maybe::Absent(binder::Absent::Unbound);
                     };
-                    if walked >= self.frames.len() {
+                    if walked >= self.frames.entries.len() {
                         return false;
                     }
-                    let Some(entry) = self.frames.get(id.0)
+                    let Some(entry) = self.frames.get(id)
                     else {
                         return false;
                     };
@@ -1566,9 +1878,9 @@ impl<'source> Scope<'source>
         let mut current = frame;
         let mut linear = 0_usize;
         let mut intuitionistic = 0_usize;
-        while let Frame::Inner(ScopeId(position)) = current {
+        while let Frame::Inner(id) = current {
             fuel.spend()?;
-            let Some(entry) = self.frames.get(position)
+            let Some(entry) = self.frames.get(id)
             else {
                 break;
             };
@@ -1581,7 +1893,7 @@ impl<'source> Scope<'source>
 
                 return Ok(Maybe::Present(Bound {
                     index: DeBruijnIndex::from(index),
-                    binder: ScopeId(position),
+                    binder: id,
                     declared: entry.declared,
                     zone: entry.zone,
                 }));
@@ -1626,7 +1938,7 @@ impl<'source> Scope<'source>
             else {
                 return None;
             };
-            let entry = self.frames.get(id.0)?;
+            let entry = self.frames.get(id)?;
             let depth = match entry.zone {
                 Zone::Linear => &mut linear,
                 Zone::Intuitionistic => &mut intuitionistic,
@@ -1661,11 +1973,11 @@ impl<'source> Scope<'source>
     /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
     /// - witness: `resolve::tests::binder_positions_do_not_authenticate_their_minting_scope`
     #[spec(
-        captures: before = self.frames.len(),
-        ensures: self.frames.len() == before
+        captures: before = self.frames.entries.len(),
+        ensures: self.frames.entries.len() == before
             && self
                 .frames
-                .get(binder.0)
+                .get(binder)
                 .is_none_or(|entry| entry.mentioned.0),
     )]
     #[inline]
@@ -1674,7 +1986,7 @@ impl<'source> Scope<'source>
         binder: ScopeId,
     )
     {
-        if let Some(entry) = self.frames.get_mut(binder.0) {
+        if let Some(entry) = self.frames.get_mut(binder) {
             entry.mentioned = Mentioned(true);
         }
     }
@@ -1696,12 +2008,12 @@ impl<'source> Scope<'source>
     ///   not in the signature's.
     /// - witness: `resolve::tests::a_quoted_binder_binds_only_in_a_body_quote_s_telescope`
     #[spec(
-        captures: before = (self.frames.len(), self.mentioned(binder)),
-        ensures: self.frames.len() == before.0
+        captures: before = (self.frames.entries.len(), self.mentioned(binder)),
+        ensures: self.frames.entries.len() == before.0
             && self.mentioned(binder) == before.1
             && self
                 .frames
-                .get(binder.0)
+                .get(binder)
                 .is_none_or(|entry| entry.quoted.0),
     )]
     #[inline]
@@ -1710,7 +2022,7 @@ impl<'source> Scope<'source>
         binder: ScopeId,
     )
     {
-        if let Some(entry) = self.frames.get_mut(binder.0) {
+        if let Some(entry) = self.frames.get_mut(binder) {
             entry.quoted = Mentioned(true);
         }
     }
@@ -1734,7 +2046,7 @@ impl<'source> Scope<'source>
             ret.0
                 == self
                     .frames
-                    .get(binder.0)
+                    .get(binder)
                     .is_some_and(|entry| entry.mentioned.0)
         },
     )]
@@ -1746,7 +2058,7 @@ impl<'source> Scope<'source>
     ) -> Mentioned
     {
         self.frames
-            .get(binder.0)
+            .get(binder)
             .map_or(Mentioned(false), |entry| entry.mentioned)
     }
 
@@ -1769,7 +2081,7 @@ impl<'source> Scope<'source>
             ret.0
                 == self
                     .frames
-                    .get(binder.0)
+                    .get(binder)
                     .is_some_and(|entry| entry.binds_in(telescope).0)
         },
     )]
@@ -1782,7 +2094,7 @@ impl<'source> Scope<'source>
     ) -> Mentioned
     {
         self.frames
-            .get(binder.0)
+            .get(binder)
             .map_or(Mentioned(false), |entry| entry.binds_in(telescope))
     }
 
@@ -1842,7 +2154,7 @@ impl<'source> Scope<'source>
     #[spec(
         requires: match from {
             | Frame::Outermost => true,
-            | Frame::Inner(id) => id.0 < self.frames.len(),
+            | Frame::Inner(id) => self.frames.get(id).is_some(),
         },
         ensures: |ret| {
             let mut current = from;
@@ -1852,10 +2164,10 @@ impl<'source> Scope<'source>
                 if id == binder {
                     break;
                 }
-                if visited >= self.frames.len() {
+                if visited >= self.frames.entries.len() {
                     return false;
                 }
-                let Some(entry) = self.frames.get(id.0)
+                let Some(entry) = self.frames.get(id)
                 else {
                     return false;
                 };
@@ -1882,7 +2194,7 @@ impl<'source> Scope<'source>
         while let Frame::Inner(here) = current
             && here != binder
         {
-            let Some(entry) = self.frames.get(here.0)
+            let Some(entry) = self.frames.get(here)
             else {
                 break;
             };
@@ -1957,11 +2269,11 @@ impl<'source> Scope<'source>
             Frame::Inner(id) => Some(id),
             Frame::Outermost => None,
         };
-        core::iter::successors(first, |id| match self.frames.get(id.0)?.parent {
+        core::iter::successors(first, |&id| match self.frames.get(id)?.parent {
             Frame::Inner(parent) => Some(parent),
             Frame::Outermost => None,
         })
-        .filter_map(move |id| match self.frames.get(id.0) {
+        .filter_map(move |id| match self.frames.get(id) {
             Some(entry) if entry.zone == Zone::Linear => None,
             Some(entry) => Some(entry.binds_in(telescope).0),
             None => Some(true),
@@ -1994,7 +2306,7 @@ impl<'source> Scope<'source>
             Frame::Inner(id) => Some(id),
             Frame::Outermost => None,
         };
-        core::iter::successors(first, |id| match self.frames.get(id.0)?.parent {
+        core::iter::successors(first, |&id| match self.frames.get(id)?.parent {
             Frame::Inner(parent) => Some(parent),
             Frame::Outermost => None,
         })
@@ -2032,12 +2344,12 @@ impl<'source> Scope<'source>
             Frame::Outermost => None,
         };
         let mut names: Vec<SurfaceName<'source>> =
-            core::iter::successors(first, |id| match self.frames.get(id.0)?.parent {
+            core::iter::successors(first, |&id| match self.frames.get(id)?.parent {
                 Frame::Inner(parent) => Some(parent),
                 Frame::Outermost => None,
             })
             .filter_map(|id| {
-                let entry = self.frames.get(id.0)?;
+                let entry = self.frames.get(id)?;
                 entry.binds_in(telescope).0.then_some(entry.name)
             })
             .collect();
@@ -2051,10 +2363,10 @@ impl<'source> Scope<'source>
     /// was read under.
     ///
     /// # Specification
-    /// - requires: every frame of `read` is a position of this scope.
-    /// - ensures: one frame per frame of this scope, in order, keeping its site
-    ///   and parent; `read` ascending by start then end, duplicates dropped;
-    ///   the widest read span's width.
+    /// - requires: every frame of `read` is a coordinate of this scope.
+    /// - ensures: one frame per frame of this scope, at its coordinate, keeping
+    ///   its site and parent; `read` ascending by start then end, duplicates
+    ///   dropped; the widest read span's width.
     /// - provides: the table [`InScope::binders_at`] answers from, built once
     ///   per lowering.
     /// - fails: never.
@@ -2064,7 +2376,7 @@ impl<'source> Scope<'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`InScope::binders_at`].
     /// - witness: `tests::scopes::the_binders_in_scope_are_the_innermost_reading_s_chain`
-    #[spec(ensures: |ret| ret.frames.len() == self.frames.len()
+    #[spec(ensures: |ret| ret.frames.entries.len() == self.frames.entries.len()
         && ret.read.windows(2).all(|pair| matches!(*pair, [(first, _), (second, _)] if (first.start(), first.end()) < (second.start(), second.end()) || (first.start(), first.end()) == (second.start(), second.end()))))]
     #[inline]
     #[must_use]
@@ -2081,11 +2393,7 @@ impl<'source> Scope<'source>
             .max()
             .unwrap_or(0_usize);
         InScope {
-            frames: self
-                .frames
-                .iter()
-                .map(|frame| (frame.site, frame.parent))
-                .collect(),
+            frames: self.frames.map(|frame| (frame.site, frame.parent)),
             read,
             widest,
         }
@@ -2096,11 +2404,11 @@ impl<'source> Scope<'source>
     /// and every span of `read` follows each of `prior`'s.
     ///
     /// # Specification
-    /// - requires: every frame of `read` is a position of this scope; every
+    /// - requires: every frame of `read` is a coordinate of this scope; every
     ///   span of `read` starts at or after the end of each of `prior`'s.
-    /// - ensures: one frame per frame of this scope, in order, keeping its site
-    ///   and parent; `prior`'s read spans then `read`'s, ascending by start
-    ///   then end, duplicates dropped; the widest of both.
+    /// - ensures: one frame per frame of this scope, at its coordinate, keeping
+    ///   its site and parent; `prior`'s read spans then `read`'s, ascending by
+    ///   start then end, duplicates dropped; the widest of both.
     /// - provides: the table of a lowering resumed after a closure's, built in
     ///   the size of the spans read after it.
     /// - fails: never.
@@ -2115,7 +2423,7 @@ impl<'source> Scope<'source>
     #[spec(
         requires: prior.read.last().is_none_or(|&(last, _)| read.iter().all(|&(span, _)| span.start() >= last.end())),
         captures: added = read.len(),
-        ensures: |ret| ret.frames.len() == self.frames.len()
+        ensures: |ret| ret.frames.entries.len() == self.frames.entries.len()
             && ret.read.len() <= prior.read.len().saturating_add(added),
     )]
     #[must_use]
@@ -2150,9 +2458,9 @@ impl<'source> Scope<'source>
 ///
 /// # Specification
 /// - requires: built by [`Scope::in_scope`].
-/// - ensures: every frame of `read` is a position of `frames`, every parent an
-///   earlier one; `read` ascends by start then end; `widest` is at least every
-///   read span's width.
+/// - ensures: every frame of `read` is a coordinate of `frames`, every parent
+///   an earlier one; `read` ascends by start then end; `widest` is at least
+///   every read span's width.
 /// - provides: the binders a name written at an offset would resolve to.
 /// - executable: none — a carrier; [`Scope::in_scope`] and
 ///   [`InScope::binders_at`] carry the predicates.
@@ -2163,9 +2471,9 @@ impl<'source> Scope<'source>
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InScope
 {
-    /// Each frame, by position: its binder's written name, when written, and
-    /// the frame it extends.
-    frames: Vec<(Maybe<ByteSpan, binder_site::Absent>, Frame)>,
+    /// Each frame, by its coordinate: its binder's written name, when written,
+    /// and the frame it extends.
+    frames: ByForm<(Maybe<ByteSpan, binder_site::Absent>, Frame)>,
     /// Each span read under a binder, with the innermost frame it was read
     /// under, ascending by start then end.
     read: Vec<(ByteSpan, ScopeId)>,
@@ -2221,12 +2529,12 @@ impl InScope
             }
         }
         core::iter::successors(innermost.map(|(_, frame)| frame), |frame| {
-            match self.frames.get(frame.0)?.1 {
+            match self.frames.get(*frame)?.1 {
                 Frame::Inner(parent) => Some(parent),
                 Frame::Outermost => None,
             }
         })
-        .filter_map(|frame| match self.frames.get(frame.0)?.0 {
+        .filter_map(|frame| match self.frames.get(frame)?.0 {
             Maybe::Present(site) => Some(site),
             Maybe::Absent(_) => None,
         })
@@ -2261,10 +2569,15 @@ pub enum Resolution
 #[cfg(test)]
 mod tests
 {
+    use alloc::vec::Vec;
+
+    use gandr_core_term::CoreArena;
     use gandr_core_term::Zone;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::LayoutBlock;
+    use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
     use super::Bound;
@@ -2365,6 +2678,97 @@ mod tests
                 &mut tank()
             ),
             Ok(Maybe::Absent(binder::Absent::Unbound))
+        );
+    }
+
+    #[test]
+    fn a_frame_keeps_its_identity_whatever_another_form_pushes()
+    {
+        let (first, second) = (LayoutBlock::from(1_usize), LayoutBlock::from(2_usize));
+        let mut alone = Scope::new();
+        alone.enter(first);
+        let outer = alone.extend(Frame::Outermost, SurfaceName::from("a"), UNWRITTEN);
+        let inner = alone.extend(Frame::Inner(outer), SurfaceName::from("c"), UNWRITTEN);
+        let mut between = Scope::new();
+        between.enter(first);
+        let held = between.extend(Frame::Outermost, SurfaceName::from("a"), UNWRITTEN);
+        between.enter(second);
+        let other = between.extend(Frame::Outermost, SurfaceName::from("b"), UNWRITTEN);
+        let _more = between.extend(Frame::Inner(other), SurfaceName::from("d"), UNWRITTEN);
+        between.enter(first);
+        let resumed = between.extend(Frame::Inner(held), SurfaceName::from("c"), UNWRITTEN);
+        assert_eq!(
+            (held, resumed),
+            (outer, inner),
+            "a form's frames take the places they take alone, whatever another form pushes between them"
+        );
+        assert_eq!(
+            other,
+            ScopeId {
+                form: second,
+                place: 0,
+            },
+            "another form numbers its frames from its own first"
+        );
+        for (name, expected) in [
+            ("a", Maybe::Present((DeBruijnIndex::from(1_u32), held))),
+            ("c", Maybe::Present((DeBruijnIndex::from(0_u32), resumed))),
+            ("b", Maybe::Absent(binder::Absent::Unbound)),
+        ] {
+            assert_eq!(
+                between
+                    .resolve(Frame::Inner(resumed), SurfaceName::from(name), &mut tank())
+                    .map(|answer| answer.map(|bound| (bound.index, bound.binder))),
+                Ok(expected),
+                "a chain across two runs of its form resolves `{name}` as one chain does"
+            );
+        }
+    }
+
+    /// The coordinate of each frame a name of `source` is read under, from
+    /// its form `two` on, in written order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn second_form_reads(source: SourceText<'static>) -> Vec<ScopeId>
+    {
+        let pbg = crate::fixture::grammar();
+        let tree = crate::fixture::parsed(&pbg, source);
+        let text = <&str>::from(source);
+        let start = ByteOffset::from(text.find("def two").expect("the source writes `def two`"));
+        let module = crate::lower_module(
+            &pbg,
+            &tree,
+            &mut CoreArena::new(),
+            LoweringBudget::DEFAULT,
+            crate::namespace::Recognition::default(),
+        )
+        .expect("the module lowers");
+        module
+            .in_scope()
+            .read
+            .iter()
+            .filter(|&&(span, _)| span.start() >= start)
+            .map(|&(_, frame)| frame)
+            .collect()
+    }
+
+    #[test]
+    fn a_form_s_frames_keep_their_coordinates_when_another_form_changes_4457()
+    {
+        let narrow = second_form_reads(SourceText::from(include_str!(
+            "resolve/unformatted/a-form-s-frames-keep-their-coordinates-when-another-form-changes-4457-narrow.gandr"
+        )));
+        let wide = second_form_reads(SourceText::from(include_str!(
+            "resolve/unformatted/a-form-s-frames-keep-their-coordinates-when-another-form-changes-4457-wide.gandr"
+        )));
+        assert!(
+            !narrow.is_empty(),
+            "the second form reads a name under a binder"
+        );
+        assert_eq!(
+            wide, narrow,
+            "two binders more in the first form leave the second form's frames where they were"
         );
     }
 
@@ -2764,7 +3168,10 @@ mod tests
             (
                 scope.declared(typed),
                 scope.declared(untyped),
-                scope.declared(ScopeId(9)),
+                scope.declared(ScopeId {
+                    form: LayoutBlock::default(),
+                    place: 9,
+                }),
             ),
             (
                 Maybe::Present(crate::fixture::node(7_usize)),

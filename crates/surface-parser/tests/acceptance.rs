@@ -925,7 +925,8 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
     ("fixture/pathological/modules/stray-root-child.gandr", &[
         (Oblig::UnmoldedTok, "mu"),
         (Oblig::UnmoldedTok, "\u{1}"),
-        (Oblig::MissingTile, "release"),
+        (Oblig::MissingTile, "|"),
+        (Oblig::MissingTile, "=>"),
         (Oblig::MissingTile, "def"),
         (Oblig::MissingTile, "="),
         (Oblig::MissingTile, ";"),

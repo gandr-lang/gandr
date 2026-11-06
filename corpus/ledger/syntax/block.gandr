@@ -33,7 +33,7 @@ def doubled() -> -F Integer =
 @[ checks ]
 def counted() -> -F Integer =
   var c = 1
-  access c as v { resume(v, v + 1) };
+  access c as v { resume v (v + 1) };
   pure c
 
 /// An assignment writes a held place. `=` writes the right side's value, and
@@ -61,5 +61,5 @@ def looped() -> -F [Partial] Integer =
   var n = 0
   while n < 3 { n += 1; }
   if n == 3 { n += 10; } else { n -= 1; }
-  access n as v { resume(v, v * 2) }
+  access n as v { resume v (v * 2) }
   return n
