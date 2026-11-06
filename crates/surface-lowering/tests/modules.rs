@@ -2748,6 +2748,46 @@ fn a_family_s_parameter_under_a_data_type_answers_at_its_kind_3142()
 }
 
 #[test]
+fn a_type_member_names_a_computation_member_or_application_3089()
+{
+    let source =
+        include_str!("modules/fixtures/a-type-member-names-a-computation-member-3089.gandr");
+    let mut lowered = lower(source);
+    assert_eq!(
+        rows(&lowered),
+        [
+            row("Named.one", Role::Declared, Amounts::Completed),
+            row("Applied.one", Role::Declared, Amounts::Completed),
+        ],
+        "a type member names an earlier computation member or its application"
+    );
+    assert_eq!(
+        verdicts(&mut lowered),
+        [
+            judged(2_usize, Judgement::Checked),
+            judged(5_usize, Judgement::Checked),
+        ],
+        "each declaration checks at the computation type it names"
+    );
+
+    let early =
+        "module Forward where { type E = C; type C = -F Integer; def one() -> E { return 1 } }";
+    let fault = Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
+        span: span_of(early, "C", 0_usize),
+        name: name("C"),
+        arity: gandr_surface_lowering::HeadArity::Nullary,
+    });
+    assert_eq!(
+        rows(&lower(early)),
+        [
+            row("Forward.E", Role::Held, fault),
+            row("Forward.one", Role::Declared, fault),
+        ],
+        "a member cannot see a computation member written after it"
+    );
+}
+
+#[test]
 fn a_type_member_is_named_only_after_it_is_written()
 {
     let source = "module M where { type T = Integer; def value : T; def value = 1; module N where { def \
