@@ -519,6 +519,29 @@ impl CompTypeMismatch
     }
 }
 
+/// Why the kernel refuses the value of a record's field or a restriction's
+/// fixed value, beside the field's label in [`KernelError::FieldRefused`].
+///
+/// Each cause keeps the payload of the refusal that the check of the value
+/// raised. A refusal deeper inside the value names its own content, and no
+/// field holds it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FieldCause
+{
+    /// The value has another shape than the field's type requires.
+    Shape
+    {
+        /// The shape that the field's type requires.
+        expected: ExpectedValueShape,
+        /// The type that the value has.
+        actual: ValueTypeWitness,
+    },
+    /// The value's type does not convert with the field's type.
+    Type(ValueTypeMismatch),
+    /// The value is a form that checks only, where its type must synthesize.
+    NotInferable(NonInferableForm),
+}
+
 /// Every way the kernel refuses a declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KernelError
@@ -697,6 +720,13 @@ pub enum KernelError
     KeptRecordField
     {
         label: gandr_kernel_term::FieldLabel,
+    },
+    /// The value of a record's field, or a restriction's fixed value, does
+    /// not check: the cause, named by the field's label.
+    FieldRefused
+    {
+        label: gandr_kernel_term::FieldLabel,
+        cause: alloc::boxed::Box<FieldCause>,
     },
     /// A tuple projection names a component past the product's last, or a
     /// lazy projection one past the lazy product's last.
@@ -1048,6 +1078,7 @@ impl core::fmt::Display for KernelError
             Self::KeptRecordField { .. } => {
                 f.write_str("a restriction kept a field that the record type does not hold")
             },
+            Self::FieldRefused { .. } => f.write_str("the value of a record field was refused"),
             Self::AbsentTupleComponent { .. } => {
                 f.write_str("a projection named a component the product does not have")
             },
@@ -1419,6 +1450,12 @@ mod tests
             },
             KernelError::KeptRecordField {
                 label: FieldLabel::from(String::from("a")),
+            },
+            KernelError::FieldRefused {
+                label: FieldLabel::from(String::from("a")),
+                cause: alloc::boxed::Box::new(crate::error::FieldCause::NotInferable(
+                    NonInferableForm::Injection,
+                )),
             },
             KernelError::AbsentTupleComponent {
                 component: gandr_kernel_term::Component::from(0_usize),

@@ -163,8 +163,11 @@ fn refusals() -> Vec<Refusal>
             },
             refused: |error| {
                 *error
-                    == KernelError::NotInferable {
-                        form: NonInferableForm::List,
+                    == KernelError::FieldRefused {
+                        label: label(&Name("y")),
+                        cause: Box::new(gandr_kernel_core::FieldCause::NotInferable(
+                            NonInferableForm::List,
+                        )),
                     }
             },
         },
@@ -179,8 +182,11 @@ fn refusals() -> Vec<Refusal>
             },
             refused: |error| {
                 *error
-                    == KernelError::NotInferable {
-                        form: NonInferableForm::Injection,
+                    == KernelError::FieldRefused {
+                        label: label(&Name("y")),
+                        cause: Box::new(gandr_kernel_core::FieldCause::NotInferable(
+                            NonInferableForm::Injection,
+                        )),
                     }
             },
         },

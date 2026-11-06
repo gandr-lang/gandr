@@ -1,13 +1,15 @@
-// A definition's own value that runs a pure call.
+// This source shows pure calls in definition values.
 //
-// A definition's own value has no computation around it to run a call
-// before. A pure call there stands as the value it returns. Each read of the
-// definition runs the call, and a type that reads the definition converts
-// through the call. An effectful call there is refused `UnenclosedRun`, in
-// `ledger/diagnostics/UnenclosedRun.gandr`.
+// A definition value has no computation around a call.
+// A pure call remains its returned value.
+// Each read runs the call.
+// Types convert through the call.
+//
+// The checker refuses an effectful definition-value call.
 //
 // - see: #4812 — `odd`, `flipped`, `sameOdd`
 // - see: `basics/literal-in-value.gandr` — a literal a reader reads
+// - see: `ledger/diagnostics/UnenclosedRun.gandr` — effectful-call refusal.
 
 /// The two parities.
 data Parity : Type where
@@ -26,8 +28,8 @@ def flip(p : Parity) -> Parity =
 @[ runs("Odd") ]
 def odd : Parity = flip Even;
 
-/// A pair of calls as the definition's own value: each call runs before the
-/// pair is built.
+/// This definition value pairs two calls.
+/// Each call runs before the pair.
 @[ runs("*{Odd, Even}") ]
 def flipped : Parity * Parity = *{flip Even, flip Odd};
 

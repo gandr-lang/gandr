@@ -1,0 +1,25 @@
+//! This source models a railway signal.
+//!
+//! The `Red` of a signal shares its name with a lamp's and a paint's in
+//! `constructor-shared-name.gandr`. A source that imports both reads the name.
+//!
+//! `passes` matches each aspect through its family.
+//!
+//! - see: #2713
+
+/// A signal's aspect.
+pub data Signal : Type where
+  /// The aspect that holds a train.
+  | Red : Signal
+  /// The aspect that lets a train pass.
+  | Clear : Signal
+
+/// Whether a train may pass, read through the signal's family.
+pub def passes(s : Signal) -> Integer =
+  match s where
+    | Signal.Red => 0
+    | Signal.Clear => 1
+
+/// A clear signal passes.
+@[ runs("1") ]
+def cleared() -> Integer { passes Signal.Clear }

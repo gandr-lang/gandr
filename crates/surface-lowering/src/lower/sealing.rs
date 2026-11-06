@@ -11,12 +11,12 @@ use quenchant_shape::shape::Maybe;
 
 use super::Lowerer;
 use super::Sink;
-use super::Universe;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
 use crate::form::Placed;
 use crate::form::Shape;
+use crate::form::Universe;
 use crate::form::shape_of;
 use crate::module::Role;
 use crate::module::Sealing;

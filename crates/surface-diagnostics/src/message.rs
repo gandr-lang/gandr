@@ -755,6 +755,28 @@ fn lowered(
                 )
             }
         },
+        LoweringRefusal::AmbiguousConstructor {
+            name,
+            first,
+            second,
+            more,
+            ..
+        } => {
+            if usize::from(more) == 0_usize {
+                write!(
+                    f,
+                    "`{name}` is a constructor of both `{first}` and `{second}`; a bare name \
+                     selects exactly one"
+                )
+            }
+            else {
+                write!(
+                    f,
+                    "`{name}` is a constructor of `{first}`, `{second}` and {more} more \
+                     families; a bare name selects exactly one"
+                )
+            }
+        },
         LoweringRefusal::ViewNotPlace { .. } => f.write_str(
             "a method whose receiver's mode is a variable answers a place of its receiver: write \
              its result `-F View[m](a)` at that mode and its body as the place, `{ self.#[i] }`",
@@ -2114,6 +2136,13 @@ pub mod tests
             LoweringRefusal::AmbiguousMethod {
                 span,
                 method: name,
+                first: name,
+                second: name,
+                more: CandidateCount::from(0_usize),
+            },
+            LoweringRefusal::AmbiguousConstructor {
+                span,
+                name,
                 first: name,
                 second: name,
                 more: CandidateCount::from(0_usize),

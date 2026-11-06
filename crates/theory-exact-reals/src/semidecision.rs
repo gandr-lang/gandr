@@ -34,6 +34,7 @@ use crate::bisection::Turn;
 use crate::certificate::Certificate;
 use crate::certificate::CertificateCheck;
 use crate::certificate::CheckerQuotas;
+use crate::certificate::Conclusion;
 use crate::certificate::FormatVersion;
 use crate::certificate::Side;
 use crate::certificate::Step;
@@ -43,6 +44,11 @@ use crate::dovetail::ResumeError;
 use crate::dovetail::Steps;
 use crate::dyadic::Dyadic;
 use crate::dyadic::Exponent;
+use crate::dyadic::Precision;
+use crate::dyadic::Rounded;
+use crate::dyadic::Rounding;
+use crate::interval::Endpoint;
+use crate::interval::NumericInterval;
 use crate::plan::Node;
 use crate::plan::NodeId;
 use crate::plan::Open;
@@ -144,6 +150,82 @@ impl Obligation
     {
         return self.demand;
     }
+
+    /// Whether `conclusion` is the evidence that the obligation asks for: its
+    /// node holds or fails as asked, or an enclosure of its node is no wider
+    /// than `2^width`.
+    ///
+    /// # Specification
+    /// - ensures: [`Answer::Answers`] exactly for a conclusion about the
+    ///   obligation's node of the kind that its demand asks, and, for an
+    ///   enclosure, both ends finite and the exact width at most `2^width`.
+    /// - panics: none.
+    /// - executable: none — the clause restates the test.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a certificate of each demand, one of another node,
+    ///   and one that a narrower quota refuses, through the cache that reads
+    ///   each before it stores or gives a certificate.
+    /// - witness: `tests::cache::an_entry_that_does_not_replay_leaves_by_name`
+    /// - witness: `tests::cache::the_corpus_answers_alike_cached_and_uncached`
+    #[inline]
+    #[must_use]
+    pub fn answered_by(
+        &self,
+        conclusion: &Conclusion,
+    ) -> Answer
+    {
+        let answers = match (conclusion, self.demand) {
+            (&Conclusion::Holds { open }, Demand::Holds)
+            | (&Conclusion::Fails { open }, Demand::Fails) => open == self.node,
+            (&Conclusion::Encloses { real, ref interval }, Demand::Encloses { width }) => {
+                real == self.node
+                    && gap(interval)
+                        .zip(Dyadic::new(BigInt::from(1_u8), width).ok())
+                        .is_some_and(|(gap, target)| gap <= target)
+            },
+            (
+                &(Conclusion::Holds { .. }
+                | Conclusion::Fails { .. }
+                | Conclusion::Encloses { .. }),
+                _,
+            ) => false,
+        };
+        return if answers {
+            Answer::Answers
+        }
+        else {
+            Answer::Misses
+        };
+    }
+}
+
+/// Whether a conclusion is the evidence that an obligation asks for.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Answer
+{
+    /// The conclusion is the evidence asked for.
+    Answers,
+    /// The conclusion is about another node, of another kind, or wider than
+    /// the width asked.
+    Misses,
+}
+
+/// The exact width of `interval`, or `None` for an infinite end.
+///
+/// # Specification
+/// trivial.
+fn gap(interval: &NumericInterval) -> Option<Dyadic>
+{
+    let (&Endpoint::Finite(ref lower), &Endpoint::Finite(ref upper)) =
+        (&interval.lower().endpoint, &interval.upper().endpoint)
+    else {
+        return None;
+    };
+    return upper
+        .sub(lower, Precision::MAX, Rounding::Ceiling)
+        .ok()
+        .map(Rounded::into_value);
 }
 
 /// Why the machine cannot go on with an obligation.

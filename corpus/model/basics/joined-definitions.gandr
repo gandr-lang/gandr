@@ -1,8 +1,10 @@
-// A signature joined with its definition, `def x : T = e;`, is one item
-// declaring both: the value is checked against the type, as it is when the
-// two are written apart. The sugared form joins a signature with the
-// definition directly after it; a comment or another item between them keeps
-// the two.
+// This source shows joined definitions.
+//
+// A joined item contains a signature and its definition.
+// The checker checks its value against the signature type.
+//
+// The sugared form joins directly adjacent parts.
+// A comment or another item keeps the parts apart.
 //
 // - see: #2228
 
@@ -17,11 +19,11 @@ def apartFour = 4;
 /// Five, apart: the item between its halves keeps them so.
 def apartFive : Integer;
 
-/// Six, joined, between five's halves.
+/// `joinedSix` sits between the parts of `apartFive`.
 def joinedSix : Integer = 6;
 /// Five's value, after the item between.
 def apartFive = 5;
 
-/// Each value, joined or apart, read where a value is asked.
+/// The checker reads each joined or separate value where it expects a value.
 @[ runs("18") ]
 def joinedSum() -> Integer { joinedThree + apartFour + apartFive + joinedSix }

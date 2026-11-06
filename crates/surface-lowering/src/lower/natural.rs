@@ -35,6 +35,7 @@ use super::Sink;
 use super::Site;
 use crate::error::LoweringRefusal;
 use crate::form::Placed;
+use crate::module::Bare;
 use crate::module::Container;
 use crate::origin::Insertion;
 use crate::origin::Origin;
@@ -198,10 +199,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Naturals, numeral::Absent>
     {
         let generator = |name: &'static str| {
-            let constructor = self
-                .collected
-                .constructors
-                .get(&(prelude, SurfaceName::from(name)))?;
+            let Some(Bare::One(constructor)) =
+                self.collected
+                    .bare_constructor(prelude, SurfaceName::from(name), |_| true)
+            else {
+                return None;
+            };
             let family = self.collected.slots.get(usize::from(constructor.family))?;
             Some(Generator {
                 family: family.constant,

@@ -1,11 +1,12 @@
-// A cancellation posts its own completion, and the target's is still owed, in
-// either order (io_uring_prep_cancel(3), io_uring_cancelation(7)). The two are
-// independent pending completions, not one sequence, so a program may reap
-// them in either order. In the first two each is served by its own mock
-// kernel; in the last two the cancellation takes the target's pending
-// completion over its session and reaps it.
-//
-// - see: #1229 — `cancelWrittenOut`
+//! `cancel-orders` reaps a target and cancellation completion in either order.
+//!
+//! Cancellation and its target owe independent completions. Cancellation can
+//! also take and reap the target's pending completion.
+//!
+//! The checker tracks each completion as a separate endpoint. `cancelConsumes`
+//! transfers the pending endpoint to cancellation.
+//!
+//! - see: #1229
 
 // The ring's protocol and its entries.
 import "./ring-base.gandr";

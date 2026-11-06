@@ -1416,6 +1416,24 @@ jobs:
       - name: document the workspace for the obligations report
         continue-on-error: true
         run: mise run evidence:rustdoc
+      # The dead-weight report (#2891) reads the records of a landed tree, so
+      # the merge group keeps them as `evidence-records`. The records of the
+      # targets the workspace no longer has go first, and the build state
+      # below then carries the pruned records too. A record set is about
+      # 12 MB once compressed, and two days cover a night with no Rust
+      # landing.
+      - name: prune the evidence records
+        id: evidence-prune
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' }}
+        run: mise run evidence:prune
+      - name: keep the evidence records for the dead-weight report
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.evidence-prune.outcome == 'success' }}
+        uses: *upload-artifact
+        with:
+          name: evidence-records
+          path: target/evidence/records
+          if-no-files-found: error
+          retention-days: 2
       # This lane hands over its policy caches, not the dependency cache.
       - name: archive the policy state and gate binary
         id: build-state-archive

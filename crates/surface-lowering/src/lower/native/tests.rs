@@ -2427,28 +2427,105 @@ fn an_attribute_block_decorates_the_data_declaration_after_it()
 }
 
 #[test]
-fn a_constructor_named_twice_is_refused()
+fn a_constructor_named_twice_in_one_family_is_refused()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(include_str!(
-            "tests/fixtures/a-constructor-named-twice-is-refused-module.gandr"
+            "tests/fixtures/a-constructor-named-twice-in-one-family-is-refused-module.gandr"
         )),
         &mut arena,
     );
-    assert!(matches!(
-        outcome_of(&module, SurfaceName::from("A")),
-        DeclarationOutcome::Data(_)
-    ));
-    for name in ["B", "C"].map(SurfaceName::from) {
+    for name in ["A", "B"].map(SurfaceName::from) {
         assert!(
-            matches!(
-                refusal_of(&module, name),
-                LoweringRefusal::DuplicateDefinition { .. }
-            ),
-            "`{name}` reuses a constructor name"
+            matches!(outcome_of(&module, name), DeclarationOutcome::Data(_)),
+            "`{name}` declares its own constructors, `X` among them"
         );
     }
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("C")),
+            LoweringRefusal::DuplicateDefinition { .. }
+        ),
+        "`C` repeats a constructor name of its own"
+    );
+}
+
+/// Two families of one source each declare `Red` (#2713). A source names each
+/// `Red` through its family, as a value and as a pattern, and a printer writes
+/// both so; a bare `Red` selects neither, as a value or as a pattern, and is
+/// refused naming both families.
+#[test]
+fn a_bare_name_two_families_declare_is_refused_naming_both_2713()
+{
+    let source = include_str!(
+        "tests/fixtures/a-bare-name-two-families-declare-is-refused-naming-both-2713-module.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let constant = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .map(crate::module::LoweredDeclaration::constant)
+            .expect("the declaration is lowered")
+    };
+    let (color, light) = (constant("Color"), constant("Light"));
+    let built = |name: &str| match arena.value(body_named(&module, SurfaceName::from(name))) {
+        Some(&Value::Constructor { datatype, tag, .. }) => match arena.value_type(datatype) {
+            Some(&ValueType::Data { declaration, .. }) => (declaration, tag),
+            other => panic!("`{name}` is built at a family: {other:?}"),
+        },
+        other => panic!("`{name}` is a constructor value: {other:?}"),
+    };
+    assert_eq!(built("paint"), (color, ConstructorTag::from(0_usize)));
+    assert_eq!(built("warm"), (light, ConstructorTag::from(0_usize)));
+    assert!(
+        !matches!(
+            outcome_of(&module, SurfaceName::from("lit")),
+            DeclarationOutcome::Refused(_)
+        ),
+        "`Light.Red` names a pattern of `Light`"
+    );
+    let at = |written: &str, before: usize| {
+        let start = source
+            .find(written)
+            .expect("the fixture writes it")
+            .saturating_add(before);
+        crate::fixture::span(
+            gandr_surface_syntax::ByteOffset::from(start),
+            gandr_surface_syntax::ByteOffset::from(start.saturating_add("Red".len())),
+        )
+    };
+    for (name, span) in [
+        ("stray", at("stray : Light = Red", "stray : Light = ".len())),
+        ("guessed", at("| Red =>", "| ".len())),
+    ] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::AmbiguousConstructor {
+                span,
+                name: SurfaceName::from("Red"),
+                first: SurfaceName::from("Color"),
+                second: SurfaceName::from("Light"),
+                more: crate::CandidateCount::from(0_usize),
+            },
+            "`{name}` writes a bare `Red`, which both families declare"
+        );
+    }
+    for family in [color, light] {
+        assert_eq!(
+            module.constructor_spelling(family, SurfaceName::from("Red")),
+            crate::ConstructorSpelling::Qualified,
+            "a `Red` that two families share is written through its family"
+        );
+    }
+    assert_eq!(
+        module.constructor_spelling(color, SurfaceName::from("Green")),
+        crate::ConstructorSpelling::Bare,
+        "a name one family declares is written bare"
+    );
 }
 
 #[test]

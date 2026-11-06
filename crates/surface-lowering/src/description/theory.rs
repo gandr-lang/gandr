@@ -184,6 +184,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Attrs;
@@ -271,6 +272,8 @@ use crate::circuit::OutputCount;
 use crate::circuit::SignatureFault;
 use crate::description::DescribedDeclaration as Earlier;
 use crate::description::Visible;
+use crate::form::Cursor;
+use crate::form::Misspelt;
 use crate::form::Piece;
 use crate::form::Placed;
 use crate::form::TileName;
@@ -1299,32 +1302,23 @@ impl Reader<'_, '_>
         }
         let no_universe = || member.fault(DescriptionFault::NoUniverse);
         let pieces = self.pieces(classifier).map_err(|_unread| no_universe())?;
-        let mut universe = Run::new(&pieces, classifier.span);
-        if !(universe.eat(Spelling("Type")).0 && universe.eat(Spelling("[")).0) {
+        let mut universe = Cursor::new(&pieces, classifier.span);
+        let read = universe
+            .universe(self.tree)
+            .map_err(|misspelt| match misspelt {
+                Misspelt::Misplaced(_) => no_universe(),
+                Misspelt::NoneAbove(_) => member.fault(DescriptionFault::TypeShape),
+            })?;
+        if !universe.remaining().is_empty() {
             return Err(no_universe());
         }
-        let representability = if universe.eat(Spelling("+")).0 {
-            Representability::Ordinary
+        if read.level != LevelConstant::ZERO {
+            return Err(member.fault(DescriptionFault::TypeShape));
         }
-        else if universe.eat(Spelling("-")).0 {
-            Representability::Computation
-        }
-        else {
-            return Err(no_universe());
-        };
-        if universe.eat(Spelling(",")).0 {
-            if !universe.at(Spelling("number")).0 {
-                return Err(no_universe());
-            }
-            let level = universe.take()?;
-            if self.text(level).0.parse::<u64>() != Ok(0) {
-                return Err(member.fault(DescriptionFault::TypeShape));
-            }
-        }
-        if !universe.eat(Spelling("]")).0 || !universe.remaining().is_empty() {
-            return Err(no_universe());
-        }
-        Ok(representability)
+        Ok(match read.sort {
+            GroundSort::Value => Representability::Ordinary,
+            GroundSort::Computation => Representability::Computation,
+        })
     }
 
     /// Read a `boundary` member after its keyword, `Square { tl, tr, bl, br }`:

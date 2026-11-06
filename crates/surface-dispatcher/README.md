@@ -28,9 +28,9 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `lower_source`, `lower_parsed`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts; `lower_parsed` lowers a parse the caller made.
 - `lay_out`, `Laid`, `laid::Absent`, `lower_unit_source`, `lower_parsed_unit` and `judge_member`: one source composed over its import closure. `lower_closure`, `lower_resumed_unit`, `Unheld`, `JudgedClosure`, `lower_onto_closure`, `judge_member_after` and `Checking`: a closure lowered and judged once for every document laid after it. `Recorded` and `Recording`: a revision that moves no lowered node takes the verdicts of the one before ([`compose`](src/compose.rs)).
 - `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`, for a caller that renders the report before the kernel is offered the module; `Admission::admit_resuming` and `Resumption` resume its leading declarations from an earlier readmission's record; `install_verdict_cache` keeps kernel verdicts in `StoredVerdicts` ([`verdicts`](src/verdicts.rs), [`receipts`](src/receipts.rs)). `install_admission_policy` and `admitted_tally`: the admission policy ([`tier`](src/tier.rs)).
-- `spellings` and `failures` on `Composed::Settled`: the diagnostics model's `TypeSpellings` of the types a module's checker refusals compare and its failures name, spelled while its arena was at hand, and the `Failures` the checking machine kept for each refused body, by admission position.
+- `spellings` and `failures` on `Composed::Settled`: the `TypeSpellings` and the `Failures` that a face reads each checker refusal through ([`compose`](src/compose.rs)).
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds — refusals, unsettled declarations, goals, shadowing warnings, lint findings and ledger lines.
-- `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables; a lint reaches every source when enabled, and otherwise only the declarations and modules whose attribute asks for it, `Lints::asking_effects` narrowing `explicit-runs` to the runs that perform an effect. `inferred` on `Composed::Settled` holds the exits the lowering inferred, which the `explicit-exits` lint reports, and `runs` the runs the checker inferred, which the `explicit-runs` lint reports.
+- `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables and where each reaches ([`report`](src/report.rs)). `inferred` and `runs` on `Composed::Settled` hold what `explicit-exits` and `explicit-runs` report ([`compose`](src/compose.rs)).
 - `shadowed` on `Composed::Settled`: every builtin the source's declarations and binders shadowed under the warn-and-allow policy, in the order shadowed, copied out of the lowered module's `Recognition` before its origin table moves; a face reports each as a warning.
 - `adapt`: the lowering's module as checker declaration input.
 - `TypeTable`, `TypedSpan`, `Subject`, `Declared`, `typing::Absent` and `checked_against::Absent`: the type of every node of one source a face can point at, from one typed run of the checker. `TypeTable::of_parsed`, `of_parsed_unit` and `of_parsed_after` type a parse the caller holds ([`typed`](src/typed.rs)).
@@ -128,6 +128,8 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes.
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
 - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the shared and unshared sizes of one table.
+- `vault:01a178aa-a419-7ab1-82e7-40a4f95938c6` — anchor: the first adapter of exact reals, a handle to a plan the host holds.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: § presented-spaces-crates puts the adapter of stage C here.
 
 ## License
 

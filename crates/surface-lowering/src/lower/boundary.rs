@@ -54,6 +54,7 @@ use crate::error::LoweringRefusal;
 use crate::form::FormName;
 use crate::form::Placed;
 use crate::import::ImportResolution;
+use crate::module::Bare;
 use crate::module::BoundarySlot;
 use crate::module::Container;
 use crate::module::ForeignType;
@@ -444,7 +445,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Home::Reached`] the one the home declares, or else the one its
     ///   imports answer, the import the walk starts at marked reached.
     /// - fails: [`LoweringRefusal::UnresolvedName`] at `site` when `name` names
-    ///   no constructor there.
+    ///   no constructor there; [`LoweringRefusal::AmbiguousConstructor`] when
+    ///   more than one family there declares it, and
+    ///   [`LoweringRefusal::ImportShadows`] when two imports bind it.
     /// - panics: none.
     /// - executable: none — the value is nodes of the arena, which the checker
     ///   reads at the family's type.
@@ -472,16 +475,40 @@ impl<'source> Lowerer<'_, 'source>
             name,
         };
         let found = match home {
-            Home::Own => match self.constructor_named(site, name) {
+            Home::Own => match self.named_constructor(site, name)? {
                 Maybe::Present(found) => found,
                 Maybe::Absent(_) => return Err(unresolved),
             },
             Home::Reached { source, import } => {
-                let found = match self.collected.constructors.get(&(source, name)) {
-                    Some(&found) => found,
+                let bare = match self.collected.bare_constructor(source, name, |_| true) {
+                    Some(bare) => bare,
                     None => match self.collected.imported_constructor(source, name) {
-                        Ok(Maybe::Present((found, _))) => found,
-                        Ok(Maybe::Absent(_)) | Err(_) => return Err(unresolved),
+                        Ok(Maybe::Present((bare, _))) => bare,
+                        Ok(Maybe::Absent(_)) => return Err(unresolved),
+                        Err(ambiguity) => {
+                            return Err(LoweringRefusal::ImportShadows {
+                                span: site.at.span,
+                                name,
+                                import: ambiguity.import,
+                                other: ambiguity.other,
+                            });
+                        },
+                    },
+                };
+                let found = match bare {
+                    Bare::One(found) => found,
+                    Bare::Several {
+                        first,
+                        second,
+                        more,
+                    } => {
+                        return Err(self.ambiguous_constructor(
+                            site.at.span,
+                            name,
+                            first,
+                            second,
+                            more,
+                        ));
                     },
                 };
                 self.collected.reach(import);

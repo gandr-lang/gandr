@@ -1661,6 +1661,131 @@ fn a_system_of_faces_is_formed_where_its_faces_agree_on_their_meet_5106()
     );
 }
 
+/// #5663: the kernel replays the formation of a patched type and the meets of
+/// its faces. Each crossing admits a record of the fixed fields at their
+/// field's types and that record's restriction at the glued values, so a meet
+/// costs one kernel conversion. A crossing whose meet value differs from the
+/// glued value, or whose glued value has another type, is refused by `port`.
+#[test]
+fn a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let integer = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_literal(integer_literal());
+    let also_zero = arena.value_literal(integer_literal());
+    let eighty = arena.value_literal(gandr_kernel_term::Literal::Integer(
+        gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("80"))
+                .expect("decimal digits"),
+        ),
+    ));
+    let unit = arena.value_unit();
+    let truth = arena.value_injection(gandr_core_term::Summand::from(1_usize), unit);
+    // `*{host, port, tls, mode : Integer}[secure ↦ {port, tls}, addr ↦ {host,
+    // port}]`, whose faces agree on `port`.
+    let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (label("host"), integer),
+        (label("mode"), integer),
+        (label("port"), integer),
+        (label("tls"), integer),
+    ]));
+    let fixed = alloc::collections::BTreeMap::from([
+        (label("host"), zero),
+        (label("port"), zero),
+        (label("tls"), zero),
+    ]);
+    let agreeing = arena.value_type_system(record_type, fixed.clone(), alloc::vec![(
+        label("port"),
+        also_zero
+    )]);
+    let free = arena.value_record(alloc::collections::BTreeMap::from([(label("mode"), zero)]));
+    let mut report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[declaration(
+            At(0),
+            Maybe::Present(agreeing),
+            Maybe::Present(free),
+        )])
+    };
+    let Verdict::Checked { body, evidence, .. } = report.judged()[0].verdict()
+    else {
+        panic!(
+            "faces that agree on their meet form a type: {:?}",
+            report.judged()[0].verdict()
+        );
+    };
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    let crate::bridge::Outcome::Defined { admitted, .. } = *readmission.readmitted()[0].outcome()
+    else {
+        panic!(
+            "the kernel admits the declaration after its formation: {:?}",
+            readmission.readmitted()[0].outcome()
+        );
+    };
+    let environment = readmission.environment();
+    let restriction = usize::from(admitted.position())
+        .checked_sub(1)
+        .and_then(|at| environment.entries().get(at))
+        .expect("the formation's restriction crosses just before the declaration");
+    let gandr_kernel_term::DeclarationContent::Def { body: crossed, .. } =
+        *restriction.declaration().content()
+    else {
+        panic!("the meet crosses as a definition");
+    };
+    assert!(
+        matches!(environment.arena().value(crossed), Some(gandr_kernel_term::Value::Restrict { fixed, .. })
+            if fixed.keys().eq([&label("port")])),
+        "the meet crosses as the restriction at `port` alone, one conversion for its one meet \
+         field: {:?}",
+        environment.arena().value(crossed)
+    );
+    // A crossing whose later face holds 80 at the meet: the kernel converts
+    // it with the glued 0 and refuses it by `port`.
+    let differing = arena.value_type_system(record_type, fixed.clone(), alloc::vec![(
+        label("port"),
+        eighty
+    )]);
+    report.judged[0].verdict = Verdict::Checked {
+        declared: crate::formation::FormedValueType::derived(differing),
+        body,
+        evidence,
+    };
+    assert_eq!(
+        crate::bridge::readmit(&mut arena, &report).readmitted()[0].outcome(),
+        &crate::bridge::Outcome::Rejected(gandr_kernel_core::KernelError::FixedFieldDiffers {
+            label: label("port"),
+        }),
+        "a meet value that does not convert with the glued value is refused by its label"
+    );
+    // A crossing whose glued value at `port` is `true`, of another type
+    // than the port's: the kernel refuses it at `port`.
+    let mut mistyped = fixed;
+    mistyped.insert(label("port"), truth);
+    let mistyped = arena.value_type_system(record_type, mistyped, alloc::vec![(
+        label("port"),
+        also_zero
+    )]);
+    report.judged[0].verdict = Verdict::Checked {
+        declared: crate::formation::FormedValueType::derived(mistyped),
+        body,
+        evidence,
+    };
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        matches!(
+            readmission.readmitted()[0].outcome(),
+            crate::bridge::Outcome::Rejected(gandr_kernel_core::KernelError::FieldRefused {
+                label: refused,
+                ..
+            }) if *refused == label("port")
+        ),
+        "a glued value of another type than its field's is refused at its label: {:?}",
+        readmission.readmitted()[0].outcome()
+    );
+}
+
 /// #5579: an element of a patched type stands at its base by the coercion out,
 /// as the record of its free fields beside the values the type fixes; a
 /// selection of a fixed field reads the fixed value. A nested computation

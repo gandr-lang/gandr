@@ -1,0 +1,4 @@
+# The items the dead-weight report keeps by a decision (#2891), one for each
+# line: the item's path as the evidence records spell it, a tab, and the
+# decision that keeps it, such as a public API by design. The report skips a
+# kept item by its path. A line that starts with `#` is a comment.

@@ -1,10 +1,9 @@
 /// `extension-types`: Extension types as face-theory signatures.
-/// Implemented: an extension type as a face-theory signature, a static bracket `T[.l = v]`, `T[f ↦ v]` or a system of faces `T[f ↦ v, g ↦ w]`, and its coercions to and from the base.
-/// Not implemented: the kernel's replay of a system's meets, and every other case.
+/// Implemented: an extension type as a face-theory signature, a static bracket `T[.l = v]`, `T[f ↦ v]` or a system of faces `T[f ↦ v, g ↦ w]`, its coercions to and from the base, and the kernel's replay of its formation and of a system's meets.
+/// Not implemented: every other case.
 ///
 /// - owes: #641
 /// - owes: #5536
-/// - owes: #5663
 //! An extension type stated as the signature the face theory generates for it.
 //! `ext Val on left is zero` over the two points of `Two` is the type of cells
 //! fixed to `zero` on the face `left`: a cell holds its value off the face,

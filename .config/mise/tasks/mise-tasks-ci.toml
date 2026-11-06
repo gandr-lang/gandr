@@ -2091,7 +2091,7 @@ flag "--fix" help="set each GitHub dependency the issue owes before checking"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
-#!/usr/bin/env bash
+{% raw %}#!/usr/bin/env bash
 set -euo pipefail
 issue=${usage_issue:?}
 [[ $issue =~ ^[0-9]+$ ]] || { echo "unit:check takes an issue number, not \`$issue\`" >&2; exit 2; }
@@ -2100,8 +2100,16 @@ claims=$root/.config/claims
 source "$root/.config/references/vault.bash"
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id, issue FROM concern ORDER BY id;')
 source "$claims/deps.bash"
-repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
-issued=$(gh api "repos/$repo/issues/$issue" --jq '{number, title, labels: [.labels[].name], body: (.body // "")}')
+# gh fills `{owner}` and `{repo}` from the checkout's remote, so the
+# repository's name costs no read.
+repo='{owner}/{repo}'
+# The issue, its dependencies, its parent and its sub-issues in one query
+# (#5709). The issues it names are read in a second query, only when one
+# must be read.
+read=$(deps_issues "$repo" body "$issue")
+mine=$(jq -c --arg n "$issue" '.[$n] // empty' <<< "$read")
+[[ -n $mine ]] || { echo "unit:check: #$issue is no issue" >&2; exit 2; }
+issued=$(jq -c '{number, title, labels, body}' <<< "$mine")
 body=$(jq -r .body <<< "$issued")
 cutoff=$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")
 findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(jq -c .labels <<< "$issued")" --argjson cutoff "$cutoff" --argjson number "$issue" -f "$claims/unit.jq" <<< "$body")
@@ -2112,15 +2120,34 @@ if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > 
 fi
 subs='[]'
 if jq -e '.labels | index("kind:epic")' <<< "$issued" > /dev/null; then
-  subs=$(deps_sub_issues "$repo" "$issue")
+  subs=$(jq -c .sub_issues <<< "$mine")
 fi
-plan=$(jq -n --argjson issued "$issued" --argjson blocked "$(deps_blocked_by "$repo" "$issue")" --argjson subs "$subs" \
+plan=$(jq -n --argjson issued "$issued" --argjson blocked "$(jq -c .blocked_by <<< "$mine")" --argjson subs "$subs" \
   '$issued + {blocked_by: $blocked, sub_issues: $subs}' | jq -r -L "$claims" -f "$claims/deps.jq")
+# Each epic the body names as its own and the issue does not block yet. Each
+# operation the unit's `## Embedding owes` names (#3964) blocks the unit's
+# epic, so the epic closes on its operation set. The owed issue keeps its own
+# parent: only the `blocked by` is set.
+mapfile -t named < <(jq -R -s -r -L "$claims" 'include "sections"; epic_refs[]' <<< "$body" \
+  | jq -r --argjson mine "$mine" 'select(. != $mine.number and (IN($mine.blocking[].number) | not))' | sort -nu)
+owed=$(jq -R -s -r -L "$claims" 'include "sections"; (owes // {numbers: []}).numbers[]' <<< "$body")
+parent=$(jq -r '.parent // empty' <<< "$mine")
+# The second query: the named epics, the parent when the body owes
+# operations, and under `--fix` each issue whose REST id a write takes.
+wanted=("${named[@]}")
+if [[ -n $owed && -n $parent ]]; then wanted+=("$parent"); fi
+if [[ ${usage_fix:-false} == true ]]; then
+  mapfile -t -O "${#wanted[@]}" wanted < <(awk -F'\t' '$1 == "set" { print $2 }' <<< "$plan")
+  if [[ -n $owed && -n $parent ]]; then mapfile -t -O "${#wanted[@]}" wanted <<< "$owed"; fi
+fi
+others='{}'
+if (( ${#wanted[@]} > 0 )); then others=$(deps_issues "$repo" - "${wanted[@]}"); fi
+id_of() { jq -r --arg n "$1" '.[$n].id // empty' <<< "$others"; }
 while IFS=$'\t' read -r verb blocker why; do
   case "$verb" in
     set)
       if [[ ${usage_fix:-false} == true ]]; then
-        deps_block "$repo" "$issue" "$blocker"
+        deps_set_block "$repo" "$issue" "$blocker" "$(id_of "$blocker")"
       else
         findings=$(printf '%s\n%s\n' "$findings" "#$blocker is not set as a \`blocked by\` dependency on GitHub, and $why: run \`mise run unit:check --fix $issue\`" | awk 'NF')
       fi
@@ -2128,30 +2155,23 @@ while IFS=$'\t' read -r verb blocker why; do
     extra) echo "note: #$issue is blocked by #$blocker on GitHub, and its \`## After\` does not list it" ;;
   esac
 done <<< "$plan"
-blocking=$(deps_blocking "$repo" "$issue")
-for epic in $(deps_named_epics "$repo" "$body"); do
-  [[ $epic != "$issue" ]] || continue
-  jq -e --argjson n "$epic" 'any(.[]; .number == $n)' <<< "$blocking" > /dev/null && continue
+for epic in "${named[@]}"; do
+  jq -e --arg n "$epic" '.[$n] | . != null and .state == "open" and (.labels | index("kind:epic") != null)' <<< "$others" > /dev/null || continue
   if [[ ${usage_fix:-false} == true ]]; then
-    deps_set_block "$repo" "$epic" "$issue"
+    deps_set_block "$repo" "$epic" "$issue" "$(jq -r .id <<< "$mine")"
   else
     findings=$(printf '%s\n%s\n' "$findings" "#$epic, the epic the body names, is not set \`blocked by\` #$issue on GitHub, so it would close with #$issue open: run \`mise run unit:check --fix $issue\`" | awk 'NF')
   fi
 done
-# Each operation the unit's `## Embedding owes` names (#3964) blocks the
-# unit's epic, so the epic closes on its operation set. The owed issue keeps
-# its own parent: only the `blocked by` is set.
-owed=$(jq -R -s -r -L "$claims" 'include "sections"; (owes // {numbers: []}).numbers[]' <<< "$body")
 if [[ -n $owed ]]; then
-  parent=$(gh api "repos/$repo/issues/$issue" --jq '.parent_issue_url // "" | sub(".*/"; "")')
   if [[ -z $parent ]]; then
     findings=$(printf '%s\n%s\n' "$findings" "#$issue owes operations in \`## Embedding owes\` and sits under no epic: link it under its programme's epic, so the epic closes on its operation set" | awk 'NF')
   else
-    epic_blockers=$(deps_blocked_by "$repo" "$parent")
+    epic_blockers=$(jq -c --arg n "$parent" '.[$n].blocked_by // []' <<< "$others")
     for n in $owed; do
       jq -e --argjson n "$n" 'any(.[]; .number == $n)' <<< "$epic_blockers" > /dev/null && continue
       if [[ ${usage_fix:-false} == true ]]; then
-        deps_set_block "$repo" "$parent" "$n"
+        deps_set_block "$repo" "$parent" "$n" "$(id_of "$n")"
       else
         findings=$(printf '%s\n%s\n' "$findings" "#$parent, the epic of #$issue, is not set \`blocked by\` #$n, an operation #$issue owes, so it would close with the operation unbuilt: run \`mise run unit:check --fix $issue\`" | awk 'NF')
       fi
@@ -2181,7 +2201,7 @@ if [[ -n "$shown" ]]; then
   echo "its vault pages, read against the vault \$XDG_CONFIG_HOME/gandr/references names:"
   printf '%s\n' "$shown"
 fi
-'''
+{% endraw %}'''
 
 # A seat claims its own next item, in the order `tracker.md` § tracker-claims
 # states, without asking (#2533). `claim:next <lane>` reads the lane's areas
@@ -2778,10 +2798,20 @@ while IFS=$'\t' read -r verb label; do
       ;;
   esac
 done <<< "$plan"
-repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+# gh fills `{owner}` and `{repo}` from the checkout's remote, so the
+# repository's name costs no read.
+repo='{owner}/{repo}'
+# One query before the filing reads the epic and each epic the body names as
+# its own (#5709). A second query after the filing reads the new issue's
+# REST id, only when a link or a block is written. A new issue has no parent
+# and blocks nothing, so its links are written unread.
+mapfile -t named < <(jq -R -s -r -L "$claims" 'include "sections"; epic_refs[]' "$body" | sort -nu)
+read='{}'
+if [[ -n $epic || ${#named[@]} -gt 0 ]]; then read=$(deps_issues "$repo" - ${epic:+"$epic"} "${named[@]}"); fi
 full=false
 if [[ -n $epic ]]; then
-  held=$(deps_sub_issues "$repo" "$epic" | jq length)
+  jq -e --arg n "$epic" 'has($n)' <<< "$read" > /dev/null || { echo "issue:file: --epic #$epic is no issue" >&2; exit 2; }
+  held=$(jq --arg n "$epic" '.[$n].sub_issues | length' <<< "$read")
   if (( held >= 100 )); then
     full=true
     filed=$(mktemp)
@@ -2790,16 +2820,29 @@ if [[ -n $epic ]]; then
     body=$filed
   fi
 fi
+# Each open epic the body names as its own is blocked by the new issue
+# (#3398), unless the link sets it.
+blocks=()
+for named_epic in "${named[@]}"; do
+  [[ $full == true || $named_epic != "$epic" ]] || continue
+  jq -e --arg n "$named_epic" '.[$n] | . != null and .state == "open" and (.labels | index("kind:epic") != null)' <<< "$read" > /dev/null || continue
+  blocks+=("$named_epic")
+done
 flags=()
 for label in "${labels[@]}"; do flags+=(--label "$label"); done
 url=$(gh issue create --title "$usage_title" --body-file "$body" "${flags[@]}")
 number=${url##*/}
+if [[ -n $epic && $full != true ]] || (( ${#blocks[@]} > 0 )); then
+  id=$(deps_issues "$repo" - "$number" | jq -r --arg n "$number" '.[$n].id')
+fi
 if [[ $full == true ]]; then
   echo "issue:file: #$epic holds $held sub-issues, GitHub's limit, so #$number is filed under no epic; its body names #$epic" >&2
 elif [[ -n $epic ]]; then
-  deps_link "$repo" "$epic" "$number" >&2
+  deps_link_filed "$repo" "$epic" "$number" "$id" >&2
 fi
-deps_block_named_epics "$repo" "$number" "$(< "$body")" >&2
+for blocked in "${blocks[@]}"; do
+  deps_set_block "$repo" "$blocked" "$number" "$id" >&2
+done
 if [[ $unit == true ]]; then
   mise run --quiet unit:check --fix "$number" >&2
 fi
@@ -3357,6 +3400,160 @@ fi
 issue_keep "$repo" "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body.md" \
   gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
   --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
+{% endraw %}'''
+
+# The dead-weight report (#2891): each crate's items that no code outside
+# tests names, and its exported items that no other crate names, from the
+# compiler's evidence records. The merge group's policy job keeps its
+# records as the `evidence-records` artifact, so the report builds nothing.
+# It reads the newest artifact whose commit has landed on the checked-out
+# trunk, and blames each item's lines at that commit. So the job that runs it
+# checks out the whole history. `.config/dead-weight/facts.jq` reduces each
+# unit's records, in parallel, `verdicts.jq` joins them, `blame.jq` dates each
+# item, and `render.jq` writes each crate's body. Their cases are
+# `check:dead-weight`'s.
+#
+# With REPORT_FILE set, each crate keeps one issue, `refactor(<crate>): dead
+# weight`: a changed table rewrites it, an unchanged one writes nothing, and
+# a crate with no row left closes it. A night writes at most 20 issues and
+# opens at most five of them, the closings first and then the crates with
+# the most rows, so the actions identity stays within its GraphQL hour
+# (`.config/gh/calls.toml`) and the board takes the first report over some
+# nights. Without REPORT_FILE, or with `--crate`, the task prints the bodies
+# and writes nothing. GH_REPO names the repository.
+["report:dead-weight"]
+description = "Report each crate's items with no caller outside tests and its exported items with no use in another crate, on one issue per crate"
+tools.jq = "1.8.1"
+usage = '''
+flag "--records <dir>" help="the evidence records read, of the checked-out tree; the newest landed evidence-records artifact by default"
+flag "--crate <dir>" help="print the body of one crate, its directory under crates/, with every row, and write nothing"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+rules=$root/.config/dead-weight
+source "$root/.config/issues/keep.bash"
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+write=${REPORT_FILE:-}
+grace=14
+budget=28000
+opening=5
+writes=20
+if [[ -n ${usage_crate:-} ]]; then write= budget=null; fi
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+# The records and the commit they describe: a directory named by
+# `--records` describes the working tree, and an artifact its run's head.
+if [[ -n ${usage_records:-} ]]; then
+  records=$usage_records
+  commit=$(git rev-parse HEAD)
+  rev=
+else
+  gh api "repos/$repo/actions/artifacts?name=evidence-records&per_page=20" \
+    --jq '.artifacts[] | select(.expired | not) | [.workflow_run.id, .workflow_run.head_sha] | @tsv' > "$scratch/artifacts.tsv"
+  run=
+  while IFS=$'\t' read -r id sha; do
+    if git merge-base --is-ancestor "$sha" HEAD 2> /dev/null; then run=$id commit=$sha; break; fi
+  done < "$scratch/artifacts.tsv"
+  # An artifact keeps for two days, and a merge group keeps one when it
+  # lints Rust. So none means no Rust landed in that time, and each table
+  # still holds. A failed upload fails its merge group's step.
+  if [[ -z $run ]]; then
+    echo "report:dead-weight: no unexpired evidence-records artifact of a landed commit; no Rust landed, and the tables stand"
+    exit 0
+  fi
+  records=$scratch/records
+  gh run download "$run" --repo "$repo" --name evidence-records --dir "$records"
+  rev=$commit
+fi
+shopt -s nullglob
+units=("$records"/*.jsonl)
+if (( ${#units[@]} == 0 )); then
+  echo "report:dead-weight: $records holds no evidence record" >&2
+  exit 1
+fi
+mkdir "$scratch/facts" "$scratch/dates"
+# xargs gives each file after the fixed arguments: `$1` the rules, `$2` the
+# directory written, `$3` the file.
+printf '%s\0' "${units[@]}" | xargs -0 -P "$(nproc)" -n 1 bash -c '
+  unit=$(basename "$3" .jsonl)
+  jq -s -c --arg unit "$unit" -f "$1/facts.jq" "$3" > "$2/$unit.json"' _ "$rules" "$scratch/facts"
+jq -n -c --rawfile kept "$rules/kept.txt" '{units: [inputs], kept: $kept}' "$scratch"/facts/*.json \
+  | jq -c -f "$rules/verdicts.jq" \
+  | jq -c --arg crate "${usage_crate:-}" 'map(select($crate == "" or .crate == $crate))' > "$scratch/verdicts.json"
+# One blame for each file, over the ranges of its items: `$1` the rules, `$2`
+# the directory written, `$3` the revision or nothing, `$4` the file and `$5`
+# its ranges.
+jq -r 'group_by(.file)[] | [.[0].file, (map([.start, .end]) | unique | tojson)] | @tsv' "$scratch/verdicts.json" \
+  | while IFS=$'\t' read -r file ranges; do printf '%s\0%s\0' "$file" "$ranges"; done \
+  | xargs -0 -r -P "$(nproc)" -n 2 bash -c '
+      mapfile -t flags < <(jq -r ".[] | \"-L\", \"\(.[0]),\(.[1])\"" <<< "$5")
+      git blame --porcelain ${3:+"$3"} "${flags[@]}" -- "$4" > "$2/$$.porcelain"
+      jq -n -c --rawfile porcelain "$2/$$.porcelain" --argjson ranges "$5" "{porcelain: \$porcelain, ranges: \$ranges}" \
+        | jq -c -f "$1/blame.jq" | jq -c --arg file "$4" "with_entries(.key = \"\(\$file):\(.key)\")" > "$2/$$.json"
+      rm -- "$2/$$.porcelain"' _ "$rules" "$scratch/dates" "$rev"
+jq -s -c 'add // {}' "$scratch"/dates/*.json < /dev/null > "$scratch/dates.json"
+jq -n -c --slurpfile items "$scratch/verdicts.json" --slurpfile dates "$scratch/dates.json" --arg today "$(date -u +%F)" \
+  --argjson grace "$grace" --argjson budget "$budget" --arg repository "$repo" --arg commit "$commit" \
+  '{items: $items[0], dates: $dates[0], today: $today, grace: $grace, budget: $budget, repository: $repository, commit: $commit}' \
+  | jq -c -f "$rules/render.jq" > "$scratch/bodies.json"
+rows=$(jq 'map(.count) | add // 0' "$scratch/bodies.json")
+if [[ -z $write ]]; then
+  jq -r '.[] | "# \(.title)\n\n\(.body)\n"' "$scratch/bodies.json"
+  echo "report:dead-weight: $(jq length "$scratch/bodies.json") crates, $rows rows at ${commit::9}; nothing written" >&2
+  exit 0
+fi
+gh issue list --repo "$repo" --state all --label kind:refactor --search '"dead weight" in:title' --limit 500 \
+  --json number,title,state,body > "$scratch/filed.json"
+written=0
+opened=0
+# The night's write bound: `$1` the title. A crate past it waits for a later
+# night, and its table stays as filed until then.
+room() {
+  if (( written >= writes )); then
+    echo "report:dead-weight: $1 waits for a later night; $writes issues written tonight"
+    return 1
+  fi
+  written=$((written + 1))
+}
+# A crate with no row left closes its open issue, first.
+while IFS=$'\t' read -r title crate; do
+  room "$title" || continue
+  found=$(jq -c --arg title "$title" '[.[] | select(.title == $title) | {number, state, body}] | first' "$scratch/filed.json")
+  printf 'No item of `%s` lacks a caller outside tests or a use in another crate at `%s` (#2891).\n' "$crate" "${commit::9}" > "$scratch/body.md"
+  issue_keep "$repo" "$title" "$found" 0 "$scratch/body.md" true
+done < <(jq -r --slurpfile bodies "$scratch/bodies.json" '($bodies[0] | map(.title)) as $kept
+  | .[] | select(.state == "OPEN") | .title | select(test("^refactor\\(.+\\): dead weight$")) | select(. as $t | $kept | index($t) | not)
+  | [., capture("^refactor\\((?<crate>.+)\\)").crate] | @tsv' "$scratch/filed.json")
+while IFS= read -r crate; do
+  jq -c --arg crate "$crate" '.[] | select(.crate == $crate)' "$scratch/bodies.json" > "$scratch/this.json"
+  title=$(jq -r .title "$scratch/this.json")
+  jq -r .body "$scratch/this.json" > "$scratch/body.md"
+  found=$(jq -c --arg title "$title" '[.[] | select(.title == $title) | {number, state, body}] | first' "$scratch/filed.json")
+  # A body names the commit of its records, which moves each night. So a
+  # body is the same as the filed one when they differ only in that commit,
+  # and an unchanged table writes nothing.
+  if [[ $(jq -r '.state // empty' <<< "$found") == OPEN ]] \
+    && jq -e --rawfile body "$scratch/body.md" '
+      def plain: gsub("\r"; "") | rtrimstr("\n") | gsub("blob/[0-9a-f]{40}/"; "blob/") | gsub("`[0-9a-f]{9}`"; "``");
+      (.body | plain) == ($body | plain)' <<< "$found" > /dev/null; then
+    continue
+  fi
+  if [[ $found == null ]]; then
+    if (( opened >= opening )); then
+      echo "report:dead-weight: $title waits for a later night; $opening issues opened tonight"
+      continue
+    fi
+    room "$title" || continue
+    opened=$((opened + 1))
+  else
+    room "$title" || continue
+  fi
+  issue_keep "$repo" "$title" "$found" "$(jq .count "$scratch/this.json")" "$scratch/body.md" \
+    gh issue create --repo "$repo" --title "$title" --label kind:refactor --label collector \
+    --label "area:$(jq -r .area "$scratch/this.json")" --label priority:backlog --label effort:easy --body-file "$scratch/body.md"
+done < <(jq -r 'sort_by(-.count, .crate)[].crate' "$scratch/bodies.json")
 {% endraw %}'''
 
 # The threads outside the pool (#3610): every site that states

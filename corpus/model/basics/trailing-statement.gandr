@@ -1,20 +1,24 @@
-// A block whose last statement ends in `;` runs it, discards its result and
-// returns the unit, as `{ e; }` is `()` in Rust.
+// This source shows blocks with trailing statements.
+//
+// A trailing semicolon runs the final statement.
+// It discards the result and returns `Unit`.
+// `{ e; }` equals `()` in Rust.
+//
+// The evaluator returns `Unit` after a trailing statement.
 //
 // - see: #1205
 
-/// A body of one statement: `pure unit` runs and the unit is returned.
+/// This body runs `pure unit` and returns `Unit`.
 def plain() -> Unit =
   pure *{};
 
-/// A statement after a bind: the bind runs, then the statement, then the
-/// unit is returned.
+/// This body runs a bind and then a statement.
+/// It returns `Unit`.
 def after(n : Integer) -> Unit =
   let m : Integer = (n + 1)
   pure *{};
 
-/// A match written as the last statement, each arm falling through to the
-/// unit the block returns.
+/// This final match lets each arm fall through to `Unit`.
 def armed(b : Bool) -> Unit =
   match b {
     | true => pure *{}
@@ -29,8 +33,8 @@ def left(b : Bool) -> Integer =
     | false => return 2
   };
 
-/// A match written as the last statement, one arm leaving and the other
-/// falling through to the unit.
+/// This final match lets one arm leave.
+/// The other arm falls through to `Unit`.
 def some(b : Bool) -> Unit =
   match b {
     | true => return *{}

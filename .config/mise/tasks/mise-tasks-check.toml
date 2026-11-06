@@ -683,6 +683,35 @@ if [[ -n $carried ]]; then echo "measuring from #$carried's head, which HEAD car
 printf '%s\n' "$base"
 '''
 
+# The policy state is restored from main's cache and saved again, so a target
+# removed or renamed since leaves its records and rustdoc JSON behind, and a
+# reader reads every file in both directories (#2479). `evidence:prune`
+# removes them: a record is kept while a workspace target's root source, `/`
+# and `.` written as `_`, names it; a rustdoc file while a target's crate
+# name does. `evidence:obligations` runs it before it reads the records, and
+# the policy job before it keeps them for the dead-weight report (#2891).
+["evidence:prune"]
+description = "Remove the evidence records and rustdoc JSON of the targets the workspace no longer has"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+metadata=$(cargo metadata --no-deps --format-version 1 --locked)
+declare -A written=()
+while IFS= read -r kept; do written[$kept]=1; done < <(jq -r '
+  (.workspace_root + "/") as $root
+  | .packages[].targets[]
+  | "records/" + (.src_path | ltrimstr($root) | gsub("[/.]"; "_")),
+    "doc/" + (.name | gsub("-"; "_"))' <<< "$metadata")
+for left in target/evidence/records/*.jsonl target/evidence/doc/*.json; do
+  [[ -e $left ]] || continue
+  file=${left#target/evidence/}
+  directory=${file%%/*}
+  name=${file#*/}
+  [[ -n ${written[$directory/${name%%.*}]:-} ]] || rm -- "$left"
+done
+'''
+
 # Lists the changed items against the base, the obligations they raise and the
 # witnesses to rerun, and writes the pull-request comment (the witnesses) and
 # the witness selection beside the records. The base defaults to
@@ -784,25 +813,7 @@ if [[ -n ${usage_pr:-} ]]; then
 fi
 status=0
 if [[ $rust == true ]]; then
-  # The policy state is restored from main's cache and saved again, so a
-  # target removed or renamed since leaves its records and rustdoc JSON
-  # behind, and the report reads every file in both directories (#2479). A
-  # record is kept while a workspace target's root source, `/` and `.`
-  # written as `_`, names it; a rustdoc file while a target's crate name does.
-  metadata=$(cargo metadata --no-deps --format-version 1 --locked)
-  declare -A written=()
-  while IFS= read -r kept; do written[$kept]=1; done < <(jq -r '
-    (.workspace_root + "/") as $root
-    | .packages[].targets[]
-    | "records/" + (.src_path | ltrimstr($root) | gsub("[/.]"; "_")),
-      "doc/" + (.name | gsub("-"; "_"))' <<< "$metadata")
-  for left in target/evidence/records/*.jsonl target/evidence/doc/*.json; do
-    [[ -e $left ]] || continue
-    file=${left#target/evidence/}
-    directory=${file%%/*}
-    name=${file#*/}
-    [[ -n ${written[$directory/${name%%.*}]:-} ]] || rm -- "$left"
-  done
+  mise run --quiet evidence:prune
   quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
     --records target/evidence/records --rustdoc target/evidence/doc "${extra[@]}" \
     --comment target/evidence/comment.md --selection target/evidence/selection || status=$?
@@ -2600,6 +2611,22 @@ run = '''
 set -euo pipefail
 .config/cases/run.bash mutants .config/mutants/cases.json --programs .config/mutants --mode c --raw landed.jq --raw unwitnessed.jq
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
+'''
+
+# The dead-weight report's readings (#2891): `facts.jq` reduces one unit's
+# evidence records, `verdicts.jq` joins every unit into the items with no
+# caller outside tests and the exported items with no use in another crate,
+# `blame.jq` dates each item's lines, and `render.jq` writes each crate's
+# body. Each case in `.config/dead-weight/cases.json` names its program, its
+# input and the compact JSON it must give.
+["check:dead-weight"]
+description = "The dead-weight report's stages give each recorded case its facts, verdicts, dates or bodies"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash dead-weight .config/dead-weight/cases.json --programs .config/dead-weight --mode c
+echo "dead-weight check OK: $(jq length .config/dead-weight/cases.json) cases read as recorded"
 '''
 
 # The bench harness's readings (#3930). A run past the host's bound is recorded

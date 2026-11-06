@@ -58,6 +58,8 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_kernel_strata::LevelConstant;
+use gandr_kernel_term::GroundSort;
 use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::NamedKind;
@@ -4434,6 +4436,75 @@ impl WrittenPath
     }
 }
 
+/// A universe as the source wrote it: its sort and its level, each defaulted
+/// when left off.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the ground sort and the level stay apart after an explicit or a
+///   positional default.
+/// - provides: the universe that a source type or code reads at, for the
+///   lowering and for the description reader alike.
+/// - fails: none as a data value; its consumers interpret it.
+/// - panics: none as a data value.
+/// - executable: none — the spelling and the reading position are absent;
+///   [`Cursor::universe`] and the lowering's `positional_universe` state their
+///   defaults.
+///
+/// # Adequacy
+/// - hypothesis: L3 — bare, explicitly sorted and explicitly levelled spellings
+///   keep their universes, including the universe of a decoded bound code.
+/// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
+/// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Universe
+{
+    /// The sort, `+` for the value types and `-` for the computation types.
+    pub sort: GroundSort,
+    /// The level.
+    pub level: LevelConstant,
+}
+
+impl Universe
+{
+    /// The universe a bare `Type` names and an unwritten one defaults to:
+    /// the value types at the fuss-free level.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the value sort at level zero, not the computation sort.
+    /// - provides: the universe of a bare `Type` and the context-free default.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the specification attribute does not accept
+    ///   constant items; [`Cursor::universe`] checks the resulting sort and
+    ///   level.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — bare and explicitly sorted universe spellings
+    ///   distinguish the value default from a computation universe.
+    /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
+    pub(crate) const FUSS_FREE: Self = Self {
+        sort: GroundSort::Value,
+        level: LevelConstant::ZERO,
+    };
+}
+
+/// Why the tiles at a cursor spell no universe.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Misspelt
+{
+    /// A tile out of its place, or no tile where the spelling needs one: the
+    /// bytes of that piece, or the gap.
+    Misplaced(ByteSpan),
+    /// A level numeral with no universe above it: past the level constants,
+    /// or at the greatest.
+    NoneAbove(Placed),
+}
+
 /// The path a type operand spells. The operand is a dotted path that opens
 /// with a package's lowercase name, `std.io.Console.Eff`, read link by link
 /// from its head out. Or the operand is one capitalised name alone, `State`,
@@ -5156,6 +5227,73 @@ impl<'pieces> Cursor<'pieces>
         }
 
         Maybe::Present(WrittenPath { prefix, last })
+    }
+
+    /// Read a universe, `Type`, `Type[+]` or `Type[-, 1]`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the universe the keyword and its bracket spell, with the
+    ///   cursor past the last tile. A bare `Type` is [`Universe::FUSS_FREE`],
+    ///   and a bracket that writes no level is at level zero.
+    /// - provides: the one reading of a universe's tiles, for the lowering's
+    ///   universe form and path carrier and for a theory sort's classifier.
+    /// - fails: [`Misspelt::Misplaced`] at the first piece out of its place, or
+    ///   at the gap where a tile is missing; [`Misspelt::NoneAbove`] at a level
+    ///   numeral past the level constants or at the greatest.
+    /// - panics: none.
+    /// - executable: none — the answer is the tiles the cursor walks, which
+    ///   restating reads again.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each universe spelling lowers to its universe and
+    ///   classifies a theory sort; a level at or past the greatest has none
+    ///   above it.
+    /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
+    /// - witness: `lower::tests::a_universe_level_at_or_past_the_greatest_has_none_above_2653`
+    /// - witness: `description::theory::tests::each_universe_at_level_zero_classifies_a_sort_2664`
+    pub(crate) fn universe(
+        &mut self,
+        tree: &SyntaxTree<'_>,
+    ) -> Result<Universe, Misspelt>
+    {
+        if let Maybe::Absent(_) = self.tile(TileName::UNIVERSE) {
+            return Err(Misspelt::Misplaced(self.here()));
+        }
+        if let Maybe::Absent(_) = self.tile(TileName::BRACKET_OPEN) {
+            return Ok(Universe::FUSS_FREE);
+        }
+        let sort = if let Maybe::Present(_) = self.tile(TileName::PLUS) {
+            GroundSort::Value
+        }
+        else if let Maybe::Present(_) = self.tile(TileName::MINUS) {
+            GroundSort::Computation
+        }
+        else {
+            return Err(Misspelt::Misplaced(self.here()));
+        };
+        let level = match self.tile(TileName::COMMA) {
+            Maybe::Present(_) => {
+                let Maybe::Present(numeral) = self.tile(TileName::NUMBER)
+                else {
+                    return Err(Misspelt::Misplaced(self.here()));
+                };
+                tree.fragment(numeral.node)
+                    .and_then(|spelled| AsRef::<str>::as_ref(&spelled).parse::<u64>().ok())
+                    .map(LevelConstant::from)
+                    .filter(|level| level.succ().is_ok())
+                    .ok_or(Misspelt::NoneAbove(numeral))?
+            },
+            Maybe::Absent(_) => LevelConstant::ZERO,
+        };
+        if let Maybe::Absent(_) = self.tile(TileName::BRACKET_CLOSE) {
+            return Err(Misspelt::Misplaced(self.here()));
+        }
+
+        Ok(Universe { sort, level })
     }
 
     /// Read the names after a parameter's first that share its type: `n` in

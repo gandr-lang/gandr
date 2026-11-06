@@ -1,5 +1,9 @@
-// A function is a computation over its parameters, and one function calls
-// another by running it and becoming the next call.
+// This source shows calls between functions.
+//
+// A function computes over its parameters.
+// One call runs before the next tail call.
+//
+// The lowering puts the continuation after a nested call in one region.
 //
 // - see: #1856 — `chained`
 
@@ -11,9 +15,8 @@ def inc(x : Integer) -> Integer =
 def twice(x : Integer) -> Integer =
   inc (inc x)
 
-/// A call nested in an argument, then sixteen calls each on what the last
-/// returned: what follows the nested call lowers once, so the run fits its
-/// region.
+/// This call nests an argument and then makes sixteen calls.
+/// The lowering runs the remainder in one region.
 @[ runs("18") ]
 def chained() -> Integer =
   let a = inc (inc 0)

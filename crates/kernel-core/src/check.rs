@@ -262,6 +262,13 @@
 //! `native_list_fold_reduces_without_capturing_outer_variables` witnesses
 //! exercise native typing, refusals and reduction; `gandr-kernel-term`'s tag
 //! table assigns the persisted syntax.
+//!
+//! # References
+//!
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the
+//!   presented-spaces plan (§ presented-spaces-crates) — the field label on
+//!   each refusal of a record field's value or a restriction's fixed value, for
+//!   the replay of a patched type's formation and of its meets.
 
 use alloc::vec::Vec;
 
@@ -2481,6 +2488,19 @@ enum Frame
 {
     /// Discharge the remaining ordered goals, then yield their promised result.
     Pending(Vec<Goal>, Produced),
+    /// Discharge the remaining goals of a record's fields, or of a
+    /// restriction's fixed values, in order, then yield the checked answer.
+    /// A refusal raised under this frame names the field at `index` among the
+    /// labels of `holder` ([`run`]).
+    Fields
+    {
+        /// The goals still to discharge, the next last.
+        remaining: Vec<Goal>,
+        /// The record literal or the restriction whose fields these are.
+        holder: ValueId,
+        /// The position, among the holder's labels, of the field checked now.
+        index: usize,
+    },
     /// Accumulate inferred record field types without recursive checking.
     RecordField
     {
@@ -3407,14 +3427,16 @@ fn admitted_unfoldings(
     .ruling(arena, judgement.entries)
 }
 
-/// Run the checker machine from an initial goal and context to a verdict,
-/// minting synthesized types into `arena`.
+/// The checker machine that [`run`] drives: from an initial goal and context
+/// to a verdict, minting synthesized types into `arena`, over the frame stack
+/// `frames` that the caller holds.
 ///
 /// # Specification
 /// - requires: `context` is the initial typing context, empty for a
 ///   declaration's body; its types and the admission log belong to this arena.
 ///   `stages` is the order the goal was owed under, empty unless the goal is a
 ///   drained obligation. The memo and session hold only this call's history.
+///   `frames` is empty, and the caller reads it after a refusal.
 /// - ensures: `Ok(produced)` — a synthesized type for a synthesis goal, or the
 ///   checked answer for a checking goal — exactly when the term checks or
 ///   synthesizes under this subset's rules. The walk is iterative over a heap
@@ -3464,13 +3486,14 @@ fn admitted_unfoldings(
             (Goal::CheckValue(_, _) | Goal::CheckComp(_, _), &Ok(Produced::Checked)) | (_, &Err(_)) => true,
             _ => false,
         })]
-fn run<M>(
+fn machine<M>(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
     mut context: Vec<ValueTypeId>,
     initial: Goal,
     mut stages: StageOrder,
     recording: Recording<'_, M>,
+    frames: &mut Vec<Frame>,
 ) -> Result<Produced, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
@@ -3482,7 +3505,6 @@ where
         owed,
     } = recording;
     let first_owed = owed.len();
-    let mut frames: Vec<Frame> = Vec::new();
     // The barriers opened where the machine swapped its context, innermost
     // last; empty when the memo is inactive.
     let mut barriers: Vec<Opened> = Vec::new();
@@ -4229,7 +4251,11 @@ where
                             })
                             .collect::<Vec<_>>();
                         if let Some(next) = goals.pop() {
-                            frames.push(Frame::Pending(goals, Produced::Checked));
+                            frames.push(Frame::Fields {
+                                remaining: goals,
+                                holder: id,
+                                index: 0,
+                            });
                             goal = next;
                             continue 'expand;
                         }
@@ -5061,6 +5087,22 @@ where
                         continue 'expand;
                     }
                     produced = result;
+                },
+                Frame::Fields {
+                    mut remaining,
+                    holder,
+                    index,
+                } => {
+                    if let Some(next) = remaining.pop() {
+                        frames.push(Frame::Fields {
+                            remaining,
+                            holder,
+                            index: index.saturating_add(1),
+                        });
+                        goal = next;
+                        continue 'expand;
+                    }
+                    produced = Produced::Checked;
                 },
                 Frame::RecordField {
                     label,
@@ -6407,7 +6449,11 @@ where
                     let kept = arena.value_type_record(kept);
                     frames.push(Frame::RestrictConverts { restriction, kept });
                     if let Some(next) = goals.pop() {
-                        frames.push(Frame::Pending(goals, Produced::Checked));
+                        frames.push(Frame::Fields {
+                            remaining: goals,
+                            holder: restriction,
+                            index: 0,
+                        });
                         goal = next;
                         continue 'expand;
                     }
@@ -6907,6 +6953,107 @@ where
             }
         }
     }
+}
+
+/// Run the checker machine from an initial goal and context to a verdict, and
+/// name the field whose value a refusal is about.
+///
+/// # Specification
+/// - requires: as [`machine`], whose frame stack this call holds.
+/// - ensures: [`machine`]'s verdict, except that [`field_refused`] names the
+///   refusal of a field's value by the field's label. A refusal deeper inside
+///   the value, or outside every field, stays as the machine raised it.
+/// - fails: any [`KernelError`] a rule surfaces.
+/// - panics: none.
+/// - executable: none — [`machine`]'s and [`field_refused`]'s attributes check
+///   the verdict and its naming.
+///
+/// # Errors
+/// Any [`KernelError`] a rule surfaces, named by its field where the refusal
+/// is about a field's value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`field_refused`].
+/// - witness: `check::tests::a_record_field_of_another_type_is_refused_by_its_label`
+/// - witness: `check::tests::a_fixed_value_of_another_type_is_refused_by_its_label`
+fn run<M>(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    context: Vec<ValueTypeId>,
+    initial: Goal,
+    stages: StageOrder,
+    recording: Recording<'_, M>,
+) -> Result<Produced, KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    let mut frames = Vec::new();
+    machine(
+        arena,
+        judgement,
+        context,
+        initial,
+        stages,
+        recording,
+        &mut frames,
+    )
+    .map_err(|refusal| field_refused(arena, &frames, refusal))
+}
+
+/// `refusal`, named by the innermost field frame of `frames` when it is about
+/// the value of that field: the value's shape, its type, or its inference.
+///
+/// # Specification
+/// - ensures: [`KernelError::FieldRefused`] at the field's label, holding the
+///   refusal's payload as its cause, when a field frame is open, its holder
+///   names the field, and the refusal is a shape mismatch, a type mismatch or a
+///   form that does not synthesize. Otherwise `refusal` as it is.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refusal at a record's field, one at a restriction's
+///   fixed value and one outside any field separate the arms.
+/// - witness: `check::tests::a_record_field_of_another_type_is_refused_by_its_label`
+/// - witness: `check::tests::a_fixed_value_of_another_type_is_refused_by_its_label`
+#[spec(captures: given = refusal.clone(), ensures: |ref ret| *ret == given || matches!((ret, &given), (&KernelError::FieldRefused { .. }, &(KernelError::ValueShapeMismatch { .. } | KernelError::ValueTypeMismatch(_) | KernelError::NotInferable { .. }))))]
+fn field_refused(
+    arena: &TermArena,
+    frames: &[Frame],
+    refusal: KernelError,
+) -> KernelError
+{
+    let cause = if let KernelError::ValueShapeMismatch { expected, actual } = refusal {
+        crate::error::FieldCause::Shape { expected, actual }
+    }
+    else if let KernelError::ValueTypeMismatch(mismatch) = refusal {
+        crate::error::FieldCause::Type(mismatch)
+    }
+    else if let KernelError::NotInferable { form } = refusal {
+        crate::error::FieldCause::NotInferable(form)
+    }
+    else {
+        return refusal;
+    };
+    let Some((holder, index)) = frames.iter().rev().find_map(|frame| {
+        if let Frame::Fields { holder, index, .. } = *frame {
+            Some((holder, index))
+        }
+        else {
+            None
+        }
+    })
+    else {
+        return refusal;
+    };
+    let label = match arena.value(holder) {
+        Some(&Value::Record(ref fields)) => fields.keys().nth(index),
+        Some(&Value::Restrict { ref fixed, .. }) => fixed.keys().nth(index),
+        Some(_) | None => None,
+    };
+    label.map_or(refusal, |label| KernelError::FieldRefused {
+        label: label.clone(),
+        cause: alloc::boxed::Box::new(cause),
+    })
 }
 
 /// Check a declaration's sealing provenance against its declared type.
@@ -8735,6 +8882,104 @@ mod tests
                 })
             ),
             "and the same pair does not synthesize, since nothing tells the injection its sum"
+        );
+    }
+
+    #[test]
+    fn a_record_field_of_another_type_is_refused_by_its_label()
+    {
+        let mut arena = TermArena::new();
+        let label =
+            |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let injection = arena.value_injection(Side::Left.into(), unit);
+        // `*{.host = (), .port = inj₀ ()}` at `*{host : (), port : Integer}`.
+        let record = arena.value_record(alloc::collections::BTreeMap::from([
+            (label("host"), unit),
+            (label("port"), injection),
+        ]));
+        let expected = arena.value_type_record(alloc::collections::BTreeMap::from([
+            (label("host"), unit_type),
+            (label("port"), integer),
+        ]));
+        let refused = check_value(&mut arena, Vec::new(), record, expected);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::FieldRefused { ref label, ref cause })
+                    if label.as_ref() == "port"
+                        && matches!(**cause, crate::error::FieldCause::Shape {
+                            expected: ExpectedValueShape::Sum,
+                            ..
+                        })
+            ),
+            "a field whose value has another type is refused by its label, beside the refusal \
+             of its value: {refused:?}"
+        );
+        let right = arena.value_record(alloc::collections::BTreeMap::from([
+            (label("host"), unit),
+            (label("port"), injection),
+        ]));
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), injection, integer),
+                Err(KernelError::ValueShapeMismatch { .. })
+            ),
+            "and the same value checked outside a record names no field"
+        );
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), right, unit_type),
+                Err(KernelError::ValueShapeMismatch { .. })
+            ),
+            "and a record checked at another former is refused as a whole, by no field"
+        );
+    }
+
+    #[test]
+    fn a_fixed_value_of_another_type_is_refused_by_its_label()
+    {
+        let mut arena = TermArena::new();
+        let label =
+            |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+        let unit = arena.value_unit();
+        let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
+            gandr_kernel_term::IntegerLiteral::new(
+                gandr_kernel_term::Sign::NonNegative,
+                gandr_kernel_term::Magnitude::zero(),
+            ),
+        ));
+        let injection = arena.value_injection(Side::Left.into(), unit);
+        // `*{.host = 0, .port = 0}` restricted at `.port = inj₀ ()`: the fixed
+        // value has another type than the field it fixes.
+        let record = arena.value_record(alloc::collections::BTreeMap::from([
+            (label("host"), zero),
+            (label("port"), zero),
+        ]));
+        let restriction = arena.value_restrict(
+            record,
+            alloc::collections::BTreeMap::from([(label("port"), injection)]),
+        );
+        let refused = synth_value(&mut arena, Vec::new(), restriction);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::FieldRefused { ref label, ref cause })
+                    if label.as_ref() == "port"
+                        && matches!(**cause, crate::error::FieldCause::Shape { .. })
+            ),
+            "a restriction fixing a field at a value of another type is refused by the field's \
+             label: {refused:?}"
+        );
+        let restriction = arena.value_restrict(
+            record,
+            alloc::collections::BTreeMap::from([(label("port"), zero)]),
+        );
+        assert!(
+            synth_value(&mut arena, Vec::new(), restriction).is_ok(),
+            "and the same restriction at the field's own value synthesizes"
         );
     }
 

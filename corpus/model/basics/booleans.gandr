@@ -1,18 +1,21 @@
-// Booleans as values: `true` and `false` stand where a value of `Bool` is
-// read, the left and the right unit of the binary sum `Bool` is, as they
-// already stand as patterns.
+// This source shows Boolean values.
+//
+// `true` and `false` provide the two units of `Bool`.
+// They also stand as patterns.
+//
+// The checker reads them where it reads `Bool` values.
 //
 // - see: #1831 — `banded`
 
-/// Whether a band's bounds stand low below high, the high one at most
-/// one, in millionths; `false` stands as the answer of an arm.
+/// `banded` accepts low bounds below high with high at most one million.
+/// It returns `false` when the test fails.
 def banded(low : Integer, high : Integer) -> Bool =
   let below = low < high
   match below where
     | true => high <= 1000000
     | false => false
 
-/// A band whose bounds are inverted is not one.
+/// This band reverses its bounds. `banded` returns `false`.
 @[ runs("+{.1 = *{}}") ]
 def inverted() -> Bool { banded 750000 250000 }
 
@@ -23,6 +26,6 @@ def ordered() -> Bool { banded 200000 800000 }
 /// `true` at a stated `Bool`.
 def truth : Bool = true;
 
-/// Both literals in a pair, each checked against its component.
+/// This pair checks each Boolean literal against its component.
 @[ runs("*{+{.0 = *{}}, +{.1 = *{}}}") ]
 def both() -> Bool * Bool { *{truth, false} }

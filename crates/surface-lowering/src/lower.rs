@@ -619,6 +619,7 @@ use crate::form::Cursor;
 use crate::form::FormName;
 use crate::form::Former;
 use crate::form::KeywordOpening;
+use crate::form::Misspelt;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
@@ -627,6 +628,7 @@ use crate::form::Run;
 use crate::form::RunReading;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::Universe;
 use crate::form::applied_word;
 use crate::form::bare_bracket;
 use crate::form::declined_feature;
@@ -1702,7 +1704,7 @@ pub struct AsType(pub bool);
 /// of the type family, a name or a constructor, which stands there as a type
 /// head, or a call the expression grammar molds, which stands there as the
 /// type application it spells. Where a type is read, the lowering refuses
-/// every other form as of the wrong sort.
+/// every other form for its wrong sort.
 ///
 /// # Specification
 /// trivial.
@@ -2136,59 +2138,6 @@ enum LabelRead
     Term,
 }
 
-/// A universe as the source wrote it: its sort and its level, each defaulted
-/// when left off.
-///
-/// # Specification
-/// - requires: coordinates, when present, are interpreted in their originating
-///   run.
-/// - ensures: The ground sort and nonnegative level are retained independently
-///   after explicit or positional defaulting.
-/// - provides: The universe at which a source type or code is read.
-/// - fails: none as a data value; interpretation belongs to its consumers.
-/// - panics: none as a data value.
-/// - executable: none — The spelling and reading position are absent;
-///   `universe_of` and `positional_universe` state their distinct defaulting
-///   rules.
-///
-/// # Adequacy
-/// - hypothesis: L3 — bare, explicitly sorted and explicitly levelled spellings
-///   keep their universes, including the universe of a decoded bound code.
-/// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
-/// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Universe
-{
-    /// The sort, `+` for the value types and `-` for the computation types.
-    sort: GroundSort,
-    /// The level.
-    level: LevelConstant,
-}
-
-impl Universe
-{
-    /// The universe a bare `Type` names and an unwritten one defaults to:
-    /// the value types at the fuss-free level.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the value sort at level zero, not the computation sort.
-    /// - provides: the universe of a bare `Type` and the context-free default.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the specification attribute does not accept
-    ///   constant items; `universe_of` checks the resulting sort and level.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — bare and explicitly sorted universe spellings
-    ///   distinguish the value default from a computation universe.
-    /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
-    const FUSS_FREE: Self = Self {
-        sort: GroundSort::Value,
-        level: LevelConstant::ZERO,
-    };
-}
-
 /// What a path-shaped type's carrier is written as.
 ///
 /// # Specification
@@ -2443,7 +2392,7 @@ impl<'source> LinkNames<'source>
         names.constructors = collected
             .constructors
             .keys()
-            .map(|&(_, name)| name)
+            .map(|&(_, name, _)| name)
             .collect();
         names
     }
@@ -6103,9 +6052,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .and_then(named_at)
                     .or_else(|| {
                         collected
-                            .constructors
-                            .get(&(imported, name))
-                            .filter(|constructor| {
+                            .constructors_in(imported, name)
+                            .find(|constructor| {
                                 collected.slot_visibility(constructor.family) == Visibility::Public
                             })
                             .map(|constructor| constructor.named.span)
@@ -6164,11 +6112,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }));
                 }
             }
-            for (&(owner, name), constructor) in &collected.constructors {
+            for (&(owner, name, family), constructor) in &collected.constructors {
                 if owner != source {
                     continue;
                 }
-                let entered = collected.constructors.get(&(imported, name)) == Some(constructor);
+                let entered =
+                    collected.constructors.get(&(imported, name, family)) == Some(constructor);
                 if !entered && let Some(other) = bound_in_import(name) {
                     refusals.push((constructor.family, LoweringRefusal::ImportShadows {
                         span: constructor.named.span,
@@ -9588,7 +9537,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let name = self.name_at(site.at);
-        if let Maybe::Present(constructor) = self.constructor_named(site, name) {
+        if let Maybe::Present(constructor) = self.named_constructor(site, name)? {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
                 start: self.operands.entries().len(),
@@ -14407,7 +14356,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let name = self.name_at(site.at);
         if let Reading::Value(_) = site.reading
-            && let Maybe::Present(constructor) = self.constructor_named(site, name)
+            && let Maybe::Present(constructor) = self.named_constructor(site, name)?
         {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
@@ -15590,8 +15539,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `cursor` stands at a `Type` tile.
-    /// - ensures: as [`Self::universe_of`], the cursor left past the universe's
-    ///   last tile rather than required at the form's end.
+    /// - ensures: as [`Cursor::universe`], the cursor left past the universe's
+    ///   last tile rather than required at the form's end. A misplaced tile is
+    ///   refused as `MisplacedTile`, and a level with no universe above it as
+    ///   `NoUniverseAbove` at its numeral.
     /// - provides: the universe a path type's carrier spells inline.
     /// - fails: as [`Self::universe_of`].
     /// - panics: none.
@@ -15615,43 +15566,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         cursor: &mut Cursor<'_>,
     ) -> Result<Universe, LoweringRefusal<'source>>
     {
-        let _keyword = cursor.tile(TileName::UNIVERSE);
-        if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
-            return Ok(Universe::FUSS_FREE);
-        }
-        let sort = match (cursor.tile(TileName::PLUS), cursor.tile(TileName::MINUS)) {
-            (Maybe::Present(_), _) => GroundSort::Value,
-            (Maybe::Absent(_), Maybe::Present(_)) => GroundSort::Computation,
-            (Maybe::Absent(_), Maybe::Absent(_)) => {
-                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-            },
-        };
-        let level = match cursor.tile(TileName::COMMA) {
-            Maybe::Present(_) => {
-                let Maybe::Present(numeral) = cursor.tile(TileName::NUMBER)
-                else {
-                    return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-                };
-                let text = self.text_at(numeral);
-                let spelled: &str = text.as_ref();
-                let Some(level) = spelled
-                    .parse::<u64>()
-                    .ok()
-                    .map(LevelConstant::from)
-                    .filter(|level| level.succ().is_ok())
-                else {
-                    return Err(LoweringRefusal::NoUniverseAbove {
-                        span: numeral.span,
-                        level: self.name_at(numeral),
-                    });
-                };
-                level
-            },
-            Maybe::Absent(_) => LevelConstant::ZERO,
-        };
-        closed(site, cursor, TileName::BRACKET_CLOSE)?;
-
-        Ok(Universe { sort, level })
+        cursor
+            .universe(self.tree)
+            .map_err(|misspelt| match misspelt {
+                Misspelt::Misplaced(span) => site.fault(span, FormFault::MisplacedTile),
+                Misspelt::NoneAbove(numeral) => LoweringRefusal::NoUniverseAbove {
+                    span: numeral.span,
+                    level: self.name_at(numeral),
+                },
+            })
     }
 
     /// The universe a code of the type at `declared`, applied statically to
@@ -15847,7 +15770,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .first()
             .map(|&(sort, _)| site.fault(sort.span, FormFault::MisplacedTile));
         if let (Ok(()), Reading::Value(_)) = (read, site.reading)
-            && let Maybe::Present(constructor) = self.constructor_named(site, name)
+            && let Maybe::Present(constructor) = self
+                .named_constructor(site, name)
+                .inspect_err(|_| self.operands.truncate(At::from(start)))?
         {
             if let Some(refusal) = unmanifest.or_else(|| alone(again).err()) {
                 self.operands.truncate(At::from(start));

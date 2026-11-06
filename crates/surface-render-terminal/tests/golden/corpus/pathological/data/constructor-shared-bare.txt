@@ -1,0 +1,17 @@
+error[AmbiguousConstructor]: `Red` is a constructor of both `Color` and `Light`; a bare name selects exactly one
+   ╭▸ corpus/pathological/data/constructor-shared-bare.gandr:27:20
+   │
+27 │ def lamp : Light = Red;
+   │                    ━━━ a constructor of several families
+   │
+   ├ note: `lamp` is refused with AmbiguousConstructor, as its expectation states
+   ╰ help: write the constructor through the family you mean, `Family.Name`
+
+error[AmbiguousConstructor]: `Red` is a constructor of both `Color` and `Light`; a bare name selects exactly one
+   ╭▸ corpus/pathological/data/constructor-shared-bare.gandr:33:7
+   │
+33 │     | Red => 2
+   │       ━━━ a constructor of several families
+   │
+   ├ note: `pause` is refused with AmbiguousConstructor, as its expectation states
+   ╰ help: write the constructor through the family you mean, `Family.Name`

@@ -1,5 +1,11 @@
-// A definition names a value, and another definition may name it again: both
-// run to the value the first names.
+// This source shows definitions that name values.
+//
+// A definition can name a value.
+// Another definition can name that value again.
+//
+// The evaluator resolves each name to its value.
+//
+// - see: `greeting`, `shown` — definition lookup.
 
 /// A string, named.
 def greeting = "the value zone";

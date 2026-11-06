@@ -3,7 +3,8 @@
 # for every run of a case, kept in the directory `$STUB_GH`. The epic #4481
 # holds `$STUB_SUBS` sub-issues. Above 99 it refuses a link as GitHub does,
 # after the issue exists. The board of refactor issues is `board.json`, and
-# each create adds its issue to it. The first two board reads wait for each
+# each create adds its issue to it. `deps_issues`' query (#5709) is answered
+# from the board and the epic. The first two board reads wait for each
 # other, so two runs both read the board before either one creates. Every call
 # is a line of `calls`.
 set -euo pipefail
@@ -21,7 +22,30 @@ locked() {
 case "$*" in
   "auth token"*) exit 1 ;;
   "repo view"*) echo case/case ;;
-  "api graphql"*) cat "$dir/pr.json" ;;
+  "api graphql"*)
+    query=
+    for arg in "$@"; do
+      [[ $arg != query=* ]] || query=${arg#query=}
+    done
+    if [[ $query != *issueOrPullRequest* ]]; then
+      cat "$dir/pr.json"
+      exit 0
+    fi
+    # Each issue the query names: #4481 is an open epic whose page holds at
+    # most 100 of its sub-issues, as GitHub's does. A number on no board is
+    # null, as a pull request is.
+    locked
+    jq -c --arg query "$query" --argjson subs "${STUB_SUBS:?}" '
+      def listed($total): {totalCount: $total, nodes: [range([$total, 100] | min) | {number: (. + 1), state: "OPEN"}]};
+      . as $board
+      | {data: {repository: ([$query | scan("i([0-9]+): issueOrPullRequest") | .[0] | tonumber]
+        | map(. as $n | {key: "i\($n)", value: (
+            if $n == 4481 then {number: $n, state: "OPEN", title: "epic", labels: {nodes: [{name: "kind:epic"}]}, subIssues: listed($subs)}
+            else first($board[] | select(.number == $n) | {number: $n, state, title, labels: {nodes: []}, subIssues: listed(0)}) // null
+            end
+            | if . == null then null else . + {fullDatabaseId: "\($n)", parent: null, blockedBy: listed(0), blocking: listed(0)} end)})
+        | from_entries)}}' "$board"
+    ;;
   "api repos/{owner}/{repo} --jq .full_name") echo case/case ;;
   "issue list"*)
     locked
@@ -55,10 +79,7 @@ case "$*" in
     jq --argjson n "$3" 'map(if .number == $n then .state = "CLOSED" else . end)' "$board" > "$board.new"
     mv "$board.new" "$board"
     ;;
-  "api --paginate repos/case/case/issues/4481/sub_issues?per_page=100"*)
-    jq -cn --argjson n "${STUB_SUBS:?}" '[range($n) | {number: (. + 1), state: "OPEN"}]'
-    ;;
-  "api -X POST repos/case/case/issues/4481/sub_issues"*)
+  "api -X POST repos/{owner}/{repo}/issues/4481/sub_issues"*)
     if ((STUB_SUBS >= 100)); then
       echo 'gh: Parent cannot have more than 100 sub-issues (HTTP 422)' >&2
       exit 1
@@ -66,9 +87,6 @@ case "$*" in
     echo '{}'
     ;;
   "api -X POST "*) echo '{}' ;;
-  "api repos/case/case/issues/"*"--jq .parent_issue_url"*) echo "" ;;
-  "api repos/case/case/issues/"*"/dependencies/blocked_by"*) echo '[]' ;;
-  "api repos/case/case/issues/"*"--jq .id"*) echo 1 ;;
   *)
     echo "filed-once-gh: no answer for: $*" >&2
     exit 1

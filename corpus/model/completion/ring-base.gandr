@@ -1,16 +1,14 @@
-//! The completion subject's shared declarations, written once and imported by
-//! every source that reads them (`import "./ring-base.gandr";`): a mock
-//! kernel's submission protocol after io_uring, whose manual states that there
-//! is "exactly one matching CQE for every SQE" (io_uring(7)). A submission
-//! queue entry is received and one completion queue entry is posted; on the
-//! submitter's side, what remains after a submit is the pending completion it
-//! must reap. The buffer a read fills is moved into its submission and handed
-//! back with its completion, because the kernel owns it while the operation is
-//! in flight [boats-2020-notes_on_io_uring].
+//! `ring-base` defines the mock ring protocols and entries.
 //!
-//! - cites: [boats-2020-notes_on_io_uring]
+//! Each submission owes one completion. The pathological twins refuse a
+//! completion left pending and a buffer reused before its completion.
 //!
-//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
+//! The checker gives the submitter a pending completion after it sends `read`.
+//! The imported declarations give every completion source one protocol.
+//!
+//! - see: corpus/pathological/completion/pending-dropped.gandr
+//! - see: corpus/pathological/completion/buffer-touched.gandr
+//! - see: https://without.boats/blog/io-uring/
 
 /// A ring: its entries sealed behind the interface, the protocol of one
 /// submission as the kernel serves it, the buffer and the pending completion

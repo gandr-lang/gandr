@@ -352,6 +352,10 @@
 //!   design (§ The formers, and where each stands) — `Terms(S, Γ ⊢ s)` is a
 //!   theory's initial model, its operations the constructors and its rules the
 //!   oriented theory.
+//! - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — anchor: the syntax bikeshed
+//!   (§ Constructor names) — a bare constructor name that more than one family
+//!   declares is refused, naming each family
+//!   (`Lowerer::ambiguous_constructor`).
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -435,6 +439,7 @@ use super::lowered;
 use super::parse_literal;
 use super::recursion;
 use super::stretch;
+use crate::CandidateCount;
 use crate::by_form::At;
 use crate::by_form::FormPlace;
 use crate::by_form::FormStretch;
@@ -451,6 +456,8 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::module::Ambiguity;
+use crate::module::Bare;
 use crate::module::Collected;
 use crate::module::Constructor;
 use crate::module::Container;
@@ -568,6 +575,11 @@ quenchant_shape::reason_enum! {
             /// The name stands at a place its data family declares a universe,
             /// where it names a type.
             TypePlace,
+            /// More than one family the site sees declares a constructor so
+            /// named, so the bare name selects none.
+            Several,
+            /// Two imports bind the name to two constructors.
+            Shadowed,
         }
     }
 }
@@ -2699,30 +2711,30 @@ impl<'source> Lowerer<'_, 'source>
     /// declares a universe names no constructor: no constructor is a value of
     /// a universe, so the name there is a type's. A family a module body
     /// declares lends its bare constructors only to declarations inside that
-    /// module; outside it, `M.B` names them.
+    /// module; outside it, `M.B` names them. A name that more than one family
+    /// the site sees declares names none of them bare.
     ///
     /// # Specification
     /// - requires: `site` is the name's node or the form holding it.
-    /// - ensures: the type-place absence when `site` is a data family's
-    ///   argument at a parameter or index the family declares a universe;
-    ///   otherwise the constructor entered under `name` in the site's source,
-    ///   or else the one its unqualified imports answer, when its family's
-    ///   admission position is strictly earlier than the site's declaration's
-    ///   and its family stands in a container enclosing the site's declaration;
-    ///   otherwise the unnamed absence, two imports answering included.
+    /// - ensures: the one constructor [`Self::bare_named`] answers, its import
+    ///   reached; the several absence when it answers more than one, and the
+    ///   shadowed absence when two imports bind the name; otherwise the absence
+    ///   it answers.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor of an earlier family resolves, a name
     ///   no family declares does not, an imported family's constructor resolves
-    ///   in its importer, and a type sharing its constructor's name is read as
-    ///   the type at a family's type place.
+    ///   in its importer, a type sharing its constructor's name is read as the
+    ///   type at a family's type place, and a name two families share resolves
+    ///   to neither.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     /// - witness: `lower::native::tests::a_constructor_is_no_value_inside_its_own_family`
     /// - witness: `lower::native::tests::a_type_argument_names_the_type_its_constructor_shares_a_name_with_1855`
     /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => matches!(
             self.collected.owner_of(site.at.node),
@@ -2736,9 +2748,95 @@ impl<'source> Lowerer<'_, 'source>
         name: SurfaceName<'source>,
     ) -> Maybe<Constructor, constructed::Absent>
     {
+        match self.bare_named(site, name) {
+            Ok(Maybe::Present((Bare::One(found), import))) => {
+                if let Some(import) = import {
+                    self.collected.reach(import);
+                }
+                Maybe::Present(found)
+            },
+            Ok(Maybe::Present((Bare::Several { .. }, _))) => {
+                Maybe::Absent(constructed::Absent::Several)
+            },
+            Ok(Maybe::Absent(absent)) => Maybe::Absent(absent),
+            Err(_) => Maybe::Absent(constructed::Absent::Shadowed),
+        }
+    }
+
+    /// The constructor `name`, written at `site`, names, as
+    /// [`Self::constructor_named`] reads it, where a name that selects none
+    /// of several constructors is refused.
+    ///
+    /// # Specification
+    /// - requires: `site` is the name's node or the form holding it.
+    /// - ensures: what [`Self::constructor_named`] answers, but for its several
+    ///   and shadowed absences.
+    /// - fails: [`Self::unselected`]'s refusal at the name for those two
+    ///   absences.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::AmbiguousConstructor`] and
+    /// [`LoweringRefusal::ImportShadows`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name two families share and a name two imports bind
+    ///   are each refused at a value.
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    /// - witness: `tests::namespace::a_constructor_two_imports_bind_is_refused_at_its_use_2713`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Absent(constructed::Absent::Several | constructed::Absent::Shadowed))))]
+    pub(super) fn named_constructor(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        match self.constructor_named(site, name) {
+            Maybe::Absent(constructed::Absent::Several | constructed::Absent::Shadowed) => {
+                Err(self.unselected(site, site.at.span, name))
+            },
+            found @ (Maybe::Present(_)
+            | Maybe::Absent(
+                constructed::Absent::Unnamed | constructed::Absent::TypePlace,
+            )) => Ok(found),
+        }
+    }
+
+    /// What the bare name `name`, written at `site`, answers among the
+    /// constructors the site sees, and the import that answers it.
+    ///
+    /// # Specification
+    /// - requires: `site` is the name's node or the form holding it.
+    /// - ensures: the type-place absence when `site` is a data family's
+    ///   argument at a parameter or index the family declares a universe;
+    ///   otherwise, when the site's source declares the name, what
+    ///   [`Collected::bare_constructor`] answers among its constructors whose
+    ///   family is admitted strictly before the site's declaration and stands
+    ///   in a container enclosing it; else what the source's unqualified
+    ///   imports answer, with the import, under the same test; the unnamed
+    ///   absence when nothing answers.
+    /// - fails: [`Ambiguity`] for two imports binding the name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name one family declares answers its constructor, a
+    ///   name two families declare answers both, and a name two imports bind is
+    ///   their ambiguity.
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    /// - witness: `tests::namespace::a_constructor_two_imports_bind_is_refused_at_its_use_2713`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present((Bare::Several { first, second, .. }, _))) if first.family >= second.family))]
+    fn bare_named(
+        &self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<(Bare, Option<ByteSpan>), constructed::Absent>, Ambiguity>
+    {
         let Maybe::Present(own) = self.collected.owner_of(site.at.node)
         else {
-            return Maybe::Absent(constructed::Absent::Unnamed);
+            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
         };
         // No constructor is a value of a universe, so an argument at a place
         // its data family declares one names a type.
@@ -2762,25 +2860,136 @@ impl<'source> Lowerer<'_, 'source>
                 )
             })
         {
-            return Maybe::Absent(constructed::Absent::TypePlace);
+            return Ok(Maybe::Absent(constructed::Absent::TypePlace));
         }
         let source = self.collected.unit.source_at(site.at.span.start());
-        let (found, import) = match self.collected.constructors.get(&(source, name)) {
-            Some(&found) => (found, None),
-            None => match self.collected.imported_constructor(source, name) {
-                Ok(Maybe::Present((found, import))) => (found, Some(import)),
-                Ok(Maybe::Absent(_)) | Err(_) => {
-                    return Maybe::Absent(constructed::Absent::Unnamed);
-                },
-            },
+        let seen = |found: &Constructor| {
+            found.family < own && self.encloses(found.family, own) != Encloses(false)
         };
-        if found.family >= own || self.encloses(found.family, own) == Encloses(false) {
-            return Maybe::Absent(constructed::Absent::Unnamed);
+        if self
+            .collected
+            .constructors_in(source, name)
+            .next()
+            .is_some()
+        {
+            return Ok(self
+                .collected
+                .bare_constructor(source, name, seen)
+                .map_or(Maybe::Absent(constructed::Absent::Unnamed), |bare| {
+                    Maybe::Present((bare, None))
+                }));
         }
-        if let Some(import) = import {
-            self.collected.reach(import);
+        let Maybe::Present((bare, import)) = self.collected.imported_constructor(source, name)?
+        else {
+            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        };
+        let shown = match bare {
+            Bare::One(found) => seen(&found),
+            Bare::Several { first, second, .. } => seen(&first) && seen(&second),
+        };
+        Ok(if shown {
+            Maybe::Present((bare, Some(import)))
         }
-        Maybe::Present(found)
+        else {
+            Maybe::Absent(constructed::Absent::Unnamed)
+        })
+    }
+
+    /// The refusal of the bare constructor name `name`, written at `span`
+    /// inside `site`, that selects no one constructor.
+    ///
+    /// # Specification
+    /// - requires: `site` is the name's node or the form holding it.
+    /// - ensures: [`LoweringRefusal::AmbiguousConstructor`] at `span`, naming
+    ///   the first two families and the count of the rest, when
+    ///   [`Self::bare_named`] answers several;
+    ///   [`LoweringRefusal::ImportShadows`] at `span`, naming both imports,
+    ///   when two imports bind the name; [`LoweringRefusal::UnresolvedName`] at
+    ///   `span` otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name two families share is refused naming both, and
+    ///   a name two imports bind is refused naming both imports.
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    /// - witness: `tests::namespace::a_constructor_two_imports_bind_is_refused_at_its_use_2713`
+    #[spec(ensures: |ret| matches!(ret,
+        LoweringRefusal::AmbiguousConstructor { span: at, .. }
+        | LoweringRefusal::ImportShadows { span: at, .. }
+        | LoweringRefusal::UnresolvedName { span: at, .. } if at == span))]
+    pub(super) fn unselected(
+        &self,
+        site: Site,
+        span: ByteSpan,
+        name: SurfaceName<'source>,
+    ) -> LoweringRefusal<'source>
+    {
+        match self.bare_named(site, name) {
+            Ok(Maybe::Present((
+                Bare::Several {
+                    first,
+                    second,
+                    more,
+                },
+                _,
+            ))) => self.ambiguous_constructor(span, name, first, second, more),
+            Err(ambiguity) => LoweringRefusal::ImportShadows {
+                span,
+                name,
+                import: ambiguity.import,
+                other: ambiguity.other,
+            },
+            Ok(Maybe::Present((Bare::One(_), _)) | Maybe::Absent(_)) => {
+                LoweringRefusal::UnresolvedName { span, name }
+            },
+        }
+    }
+
+    /// The refusal of the bare constructor name `name` at `span`, which the
+    /// families of `first` and `second` declare, and `more` families after
+    /// them.
+    ///
+    /// # Specification
+    /// - requires: `first`'s family's slot precedes `second`'s.
+    /// - ensures: [`LoweringRefusal::AmbiguousConstructor`] at `span`, naming
+    ///   the two families and the count of the rest;
+    ///   [`LoweringRefusal::UnresolvedName`] at `span` when the collection
+    ///   holds no slot for either family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name two families share is refused naming both.
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    #[spec(ensures: |ret| matches!(ret,
+        LoweringRefusal::AmbiguousConstructor { span: at, .. }
+        | LoweringRefusal::UnresolvedName { span: at, .. } if at == span))]
+    pub(super) fn ambiguous_constructor(
+        &self,
+        span: ByteSpan,
+        name: SurfaceName<'source>,
+        first: Constructor,
+        second: Constructor,
+        more: CandidateCount,
+    ) -> LoweringRefusal<'source>
+    {
+        let family = |found: Constructor| {
+            self.collected
+                .slots
+                .get(usize::from(found.family))
+                .map(|entry| entry.name)
+        };
+        match (family(first), family(second)) {
+            (Some(first), Some(second)) => LoweringRefusal::AmbiguousConstructor {
+                span,
+                name,
+                first,
+                second,
+                more,
+            },
+            (None, _) | (_, None) => LoweringRefusal::UnresolvedName { span, name },
+        }
     }
 
     /// Whether the container the slot `family` stands in encloses the
@@ -4814,9 +5023,8 @@ impl<'source> Lowerer<'_, 'source>
             let source = self.collected.unit.source_at(declared.named.span.start());
             let tag_of = |name: SourceFragment<'source>| {
                 self.collected
-                    .constructors
-                    .get(&(source, SurfaceName::from(name)))
-                    .filter(|constructor| constructor.form == family)
+                    .constructors_in(source, SurfaceName::from(name))
+                    .find(|constructor| constructor.form == family)
                     .map(|constructor| (constructor.tag, constructor.arity))
             };
             if let Maybe::Present(term) = closed_term(self.pbg, self.tree, point, &tag_of)?
@@ -7331,12 +7539,17 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
         let name = SurfaceName::from(self.text_at(head));
-        let Maybe::Present(constructor) = found
-        else {
-            return Err(LoweringRefusal::UnresolvedName {
-                span: head.span,
-                name,
-            });
+        let constructor = match found {
+            Maybe::Present(constructor) => constructor,
+            Maybe::Absent(constructed::Absent::Several | constructed::Absent::Shadowed) => {
+                return Err(self.unselected(here, head.span, name));
+            },
+            Maybe::Absent(constructed::Absent::Unnamed | constructed::Absent::TypePlace) => {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: head.span,
+                    name,
+                });
+            },
         };
         if fields.len() != constructor.arity {
             return Err(here.out(FragmentBoundary::Arity(OperandCount::from(fields.len()))));
@@ -9489,7 +9702,7 @@ impl<'source> Lowerer<'_, 'source>
                     Maybe::Present(origin) => {
                         let id = sink.arena.value_type_universe(
                             Sort::Ground(GroundSort::Value),
-                            Level::constant(super::Universe::FUSS_FREE.level),
+                            Level::constant(crate::form::Universe::FUSS_FREE.level),
                         );
                         sink.origins.record_value_type(id, origin);
                         Maybe::Present(id)
@@ -10019,7 +10232,7 @@ impl<'source> Lowerer<'_, 'source>
             sink.origins.record_value_type(term, origin);
             let kind = sink.arena.value_type_universe(
                 Sort::Ground(GroundSort::Value),
-                Level::constant(super::Universe::FUSS_FREE.level),
+                Level::constant(crate::form::Universe::FUSS_FREE.level),
             );
             sink.origins.record_value_type(kind, origin);
             let constructors = terms

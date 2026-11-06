@@ -36,20 +36,15 @@ use core::num::NonZeroUsize;
 use foldhash::fast::FixedState;
 use hashbrown::Equivalent;
 use hashbrown::HashMap;
-use num_bigint::BigInt;
 
 use crate::certificate::Certificate;
 use crate::certificate::CertificateRefusal;
 use crate::certificate::CheckerQuotas;
-use crate::certificate::Conclusion;
 use crate::certificate::FormatVersion;
 use crate::certificate::check;
-use crate::dyadic::Dyadic;
-use crate::dyadic::Precision;
-use crate::dyadic::Rounding;
-use crate::interval::Endpoint;
 use crate::plan::NodeId;
 use crate::plan::PlanError;
+use crate::semidecision::Answer;
 use crate::semidecision::Demand;
 use crate::semidecision::Obligation;
 use crate::validate::ValidatedPlan;
@@ -438,40 +433,8 @@ fn answers(
 ) -> Result<(), CacheRefusal>
 {
     let checked = check(plan, certificate, quotas).map_err(CacheRefusal::Replay)?;
-    let node = obligation.node();
-    let answered = match (checked.conclusion(), obligation.demand()) {
-        (&Conclusion::Holds { open }, Demand::Holds)
-        | (&Conclusion::Fails { open }, Demand::Fails) => open == node,
-        (&Conclusion::Encloses { real, ref interval }, Demand::Encloses { width }) => {
-            real == node
-                && gap(interval)
-                    .zip(Dyadic::new(BigInt::from(1_u8), width).ok())
-                    .is_some_and(|(gap, target)| gap <= target)
-        },
-        (
-            &(Conclusion::Holds { .. } | Conclusion::Fails { .. } | Conclusion::Encloses { .. }),
-            _,
-        ) => false,
+    return match obligation.answered_by(checked.conclusion()) {
+        Answer::Answers => Ok(()),
+        Answer::Misses => Err(CacheRefusal::Mismatch),
     };
-    if answered {
-        return Ok(());
-    }
-    return Err(CacheRefusal::Mismatch);
-}
-
-/// The exact width of `interval`, or `None` for an infinite end.
-///
-/// # Specification
-/// trivial.
-fn gap(interval: &crate::interval::NumericInterval) -> Option<Dyadic>
-{
-    let (&Endpoint::Finite(ref lower), &Endpoint::Finite(ref upper)) =
-        (&interval.lower().endpoint, &interval.upper().endpoint)
-    else {
-        return None;
-    };
-    return upper
-        .sub(lower, Precision::MAX, Rounding::Ceiling)
-        .ok()
-        .map(crate::dyadic::Rounded::into_value);
 }

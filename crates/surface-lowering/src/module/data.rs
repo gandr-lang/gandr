@@ -465,9 +465,9 @@ pub enum Generators
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two families' constructors resolve to their own family,
-///   tag and arity; a second constructor of one name is refused.
+///   tag and arity; a second constructor of one name in one family is refused.
 /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-/// - witness: `lower::native::tests::a_constructor_named_twice_is_refused`
+/// - witness: `lower::native::tests::a_constructor_named_twice_in_one_family_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Constructor
 {
@@ -482,6 +482,36 @@ pub struct Constructor
     /// The generator's name tile; for a constructor of `Theory`, the name tile
     /// of the `theory` block that minted it.
     pub named: Placed,
+}
+
+/// What a bare constructor name answers among one source's constructors.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: [`Bare::One`] holds the only constructor of the name that the
+///   reading keeps; [`Bare::Several`] holds the first two by their families'
+///   slots, and `more` counts the others.
+/// - executable: none — the answer holds no table to check it against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a name one family declares is that family's constructor,
+///   and a name two families declare is both.
+/// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Bare
+{
+    /// The one constructor of the name.
+    One(Constructor),
+    /// More than one family declares a constructor of the name.
+    Several
+    {
+        /// The constructor of the family with the first slot.
+        first: Constructor,
+        /// The constructor of the family with the second slot.
+        second: Constructor,
+        /// How many families after the second declare the name.
+        more: crate::CandidateCount,
+    },
 }
 
 /// A multi-output constructor, as a term naming it resolves it: the ports its
@@ -577,10 +607,10 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a decorated family, a family named twice and a
-    ///   constructor named twice separate filing from refusal.
+    ///   constructor named twice in one family separate filing from refusal.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
-    /// - witness: `lower::native::tests::a_constructor_named_twice_is_refused`
+    /// - witness: `lower::native::tests::a_constructor_named_twice_in_one_family_is_refused`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| ret.is_err() || (self.collected.slots.len() >= before
@@ -826,24 +856,28 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: `form`'s slot is live.
-    /// - ensures: the data tail at the form's position when every constructor's
-    ///   name is fresh, each entered with its family, tag and arity, in place
-    ///   of a constructor of `Theory`'s of that name, which is recorded among
-    ///   [`Collected::shadowed`](crate::module::Collected::shadowed); a
-    ///   constructor of a family a module declares is recorded there too; a
-    ///   multi-output constructor entered once, with its ports, among
-    ///   [`Collected::ports`](crate::module::Collected::ports) and never among
-    ///   the constructors; otherwise the refusal of the first constructor this
-    ///   or an earlier declaration already named, and nothing entered.
+    /// - ensures: the data tail at the form's position when no generator
+    ///   repeats a name of the form and no name is a multi-output
+    ///   constructor's; the table then holds each constructor, with its tag and
+    ///   arity, under its name and its family; it removes a constructor of
+    ///   `Theory`'s of that name and records that one among
+    ///   [`Collected::shadowed`](crate::module::Collected::shadowed); a name
+    ///   that another family of the source also declares records both families
+    ///   there, and so does a constructor of a family a module declares;
+    ///   [`Collected::ports`](crate::module::Collected::ports) holds a
+    ///   multi-output constructor once, with its ports, and the constructors
+    ///   never hold it; otherwise the refusal of the first name this form
+    ///   repeats or a multi-output constructor already holds, and no entry.
     /// - fails: never; a second name is a refused tail.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two families with distinct constructors, and a second
-    ///   family reusing a name, separate entry from refusal; a two-output
+    /// - hypothesis: L3 — the table holds two families that share a constructor
+    ///   name, and a family that repeats a name is refused; a two-output
     ///   constructor enters its name once; a module family's constructor is
     ///   recorded as written through its module.
-    /// - witness: `lower::native::tests::a_constructor_named_twice_is_refused`
+    /// - witness: `lower::native::tests::a_constructor_named_twice_in_one_family_is_refused`
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
     #[spec(
@@ -877,17 +911,20 @@ impl<'source> Collector<'_, 'source>
                 .take(index)
                 .find(|prior| self.name_of(prior.named) == name)
                 .map(|prior| prior.named.span);
+            // A source names a multi-output constructor bare, so no family
+            // shares its name, and it shares no constructor's name.
             let entered = self
                 .collected
-                .constructors
+                .ports
                 .get(&(source, name))
-                .filter(|entry| entry.form != Generators::Presentation)
                 .map(|entry| entry.named.span)
-                .or_else(|| {
-                    self.collected
-                        .ports
-                        .get(&(source, name))
-                        .map(|entry| entry.named.span)
+                .or_else(|| match generator.port {
+                    Maybe::Present(_) => self
+                        .collected
+                        .constructors_in(source, name)
+                        .find(|entry| entry.form != Generators::Presentation)
+                        .map(|entry| entry.named.span),
+                    Maybe::Absent(_) => None,
                 });
             if let Some(first) = entered.or(earlier) {
                 return Tail::Refused(LoweringRefusal::DuplicateDefinition {
@@ -917,19 +954,37 @@ impl<'source> Collector<'_, 'source>
                 entry.count = entry.count.saturating_add(1);
                 continue;
             }
-            let displaced = self
+            // A source's own constructor takes its name from `Theory`'s.
+            let theory = self
                 .collected
-                .constructors
-                .insert((source, name), Constructor {
-                    family: form.slot,
-                    form: Generators::Written(position),
-                    tag,
-                    arity: generator.fields.len(),
-                    named: generator.named,
-                });
-            if let Some(theory) = displaced {
-                let _first = self.collected.shadowed.insert((theory.family, name));
+                .constructors_in(source, name)
+                .find(|entry| entry.form == Generators::Presentation)
+                .map(|entry| entry.family);
+            if let Some(theory) = theory {
+                let _removed = self.collected.constructors.remove(&(source, name, theory));
+                let _first = self.collected.shadowed.insert((theory, name));
             }
+            // A name two families share selects neither bare, so a printer
+            // writes each through its family.
+            let other = self
+                .collected
+                .constructors_in(source, name)
+                .next()
+                .map(|entry| entry.family);
+            if let Some(other) = other {
+                let _first = self.collected.shadowed.insert((other, name));
+                let _first = self.collected.shadowed.insert((form.slot, name));
+            }
+            let _fresh =
+                self.collected
+                    .constructors
+                    .insert((source, name, form.slot), Constructor {
+                        family: form.slot,
+                        form: Generators::Written(position),
+                        tag,
+                        arity: generator.fields.len(),
+                        named: generator.named,
+                    });
             // A module's constructor names nothing bare outside the module, so
             // a printer writes it through the module (#4298).
             if let Some(Container::Module(_)) = self
