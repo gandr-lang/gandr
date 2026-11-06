@@ -12,8 +12,7 @@ set -euo pipefail
 if [[ -z ${GANDR_GATE_SLOT:-} ]]; then
   source "${BASH_SOURCE[0]%/*}/gate.bash"
   hold_gate_slot "mise run ${MISE_TASK_NAME:-$1} alone"
-  NEXTEST_TEST_THREADS=$(gate_threads)
-  export NEXTEST_TEST_THREADS
-  echo "${MISE_TASK_NAME:-$1}: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads" >&2
+  gate_bound
+  echo "${MISE_TASK_NAME:-$1}: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads and $gate_jobs build jobs" >&2
 fi
 "$@"
