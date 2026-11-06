@@ -25,6 +25,15 @@
 //! The complex is infinite. [`LawvereTheory`] states the faces of a cell when
 //! a caller asks, as a [`Complex`] of the Morse crate. A [`Truncation`] lists
 //! the largest subcomplex inside a [`BarBound`].
+//!
+//! # References
+//!
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: §
+//!   presented-spaces-frame-squier — completion is a Morse collapse of a
+//!   resolution, and this complex is the resolution that the collapse reads.
+//! - `guiraud-2019-convergent-presentations-polygraphic-resolutions` —
+//!   exemplar: the standard resolution of a convergent presentation, whose
+//!   collapsing schemes end on the rules and the critical branchings.
 
 use alloc::collections::BTreeMap;
 use alloc::vec;
