@@ -386,24 +386,28 @@ impl CircuitBody
         }
     }
 
-    /// The node binding each port: the first in source order.
+    /// The node binding each port, refused at the first port bound twice.
     ///
     /// # Specification
-    /// - ensures: one entry per bound port; a port bound by two nodes maps to
-    ///   the first, because binding a port twice is a port-linearity failure
-    ///   the surface refuses and this order keeps the derivation total rather
-    ///   than inventing a second producer.
+    /// - ensures: one entry per bound port, each the one node that binds it.
+    /// - fails: [`CircuitDerivationError::SharedPort`] at the first port, in
+    ///   source order, that two bindings name. A boundary term gives each port
+    ///   one producer, so the reading names the port rather than keep one
+    ///   binder and drop the other.
     /// - panics: none.
     ///
+    /// # Errors
+    /// Returns [`CircuitDerivationError::SharedPort`] naming the port that two
+    /// bindings name.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — distinct and duplicate bound ports are observed
-    ///   through both boundary readings; choosing the later duplicate changes
-    ///   its constructor and losing a port leaves an unexpected variable. The
-    ///   predicate reads each node and entry once: every entry is a node of
-    ///   this body bound to its port, and the producer of each node's port sits
-    ///   at or before that node, which for the port's first binder means the
-    ///   binder itself.
-    /// - witness: `circuit::tests::duplicate_producers_keep_the_first_source_binding`
+    /// - hypothesis: L3 — distinct and shared bound ports are observed through
+    ///   both boundary readings; keeping either binder of a shared port gives a
+    ///   term where the refusal is expected. The predicate reads each node and
+    ///   entry once: every entry is a node of this body bound to its port, and
+    ///   the producer of each node's port is that node.
+    /// - witness: `circuit::tests::a_port_two_nodes_bind_derives_nothing_5799`
+    /// - witness: `circuit::tests::the_congruence_wiring_derives_its_boundary_pair`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -411,19 +415,26 @@ impl CircuitBody
             reason = "parity: the body inserts every port of every node once; the check reads every port and every entry once"
         )
     )]
-    #[spec(ensures: |ref producers| producers.iter().all(|(port, producer)| producer.outs().contains(*port)
+    #[spec(ensures: |ref result| match *result {
+        Ok(ref producers) => producers.iter().all(|(port, producer)| producer.outs().contains(*port)
             && self.nodes.as_ptr_range().contains(&core::ptr::from_ref(*producer)))
-        && self.nodes.iter().all(|node| node.outs().iter().all(|port| producers.get(port)
-            .is_some_and(|producer| core::ptr::from_ref(*producer) <= core::ptr::from_ref(node)))))]
-    pub(crate) fn producers(&self) -> BTreeMap<&Name, &CircuitNode>
+            && self.nodes.iter().all(|node| node.outs().iter().all(|port| producers.get(port)
+                .is_some_and(|producer| core::ptr::eq(core::ptr::from_ref(*producer), core::ptr::from_ref(node))))),
+        Err(CircuitDerivationError::SharedPort(ref port)) => self.nodes.iter().flat_map(CircuitNode::outs).filter(|out| *out == port).count() >= 2,
+        Err(_) => false,
+    })]
+    pub(crate) fn producers(&self)
+    -> Result<BTreeMap<&Name, &CircuitNode>, CircuitDerivationError>
     {
         let mut producers: BTreeMap<&Name, &CircuitNode> = BTreeMap::new();
         for node in &self.nodes {
             for port in node.outs() {
-                producers.entry(port).or_insert(node);
+                if producers.insert(port, node).is_some() {
+                    return Err(CircuitDerivationError::SharedPort(port.clone()));
+                }
             }
         }
-        producers
+        Ok(producers)
     }
 
     /// How the declared output ports are read.
@@ -609,6 +620,12 @@ pub enum CircuitDerivationError
     /// derives no term rather than one that silently drops the node's other
     /// outputs.
     SplitOutputs(Name),
+    /// The named port is bound twice: by two nodes, or twice by one.
+    ///
+    /// A boundary is a term, and a term gives each port one producer. Reading
+    /// one binder and dropping the other would check a body that the source
+    /// does not write, so such a port derives no term.
+    SharedPort(Name),
 }
 
 /// Derive both boundaries of a circuit rule's wiring.
@@ -621,18 +638,20 @@ pub enum CircuitDerivationError
 ///   declared output port.
 /// - provides: the pair the declaration table checks against the declared
 ///   sphere ([`check_desc`]).
-/// - fails: [`CircuitDerivationError::CyclicWiring`] when either reading
-///   reaches a port from itself; [`CircuitDerivationError::SplitOutputs`] when
-///   it reaches one output of a many-out node that does not leave whole;
+/// - fails: [`CircuitDerivationError::SharedPort`] when two bindings name one
+///   port; [`CircuitDerivationError::CyclicWiring`] when either reading reaches
+///   a port from itself; [`CircuitDerivationError::SplitOutputs`] when it
+///   reaches one output of a many-out node that does not leave whole;
 ///   [`CircuitDerivationError::NodeBudget`] when either reading passes
 ///   [`CircuitNodeBudget::DEFAULT`].
 /// - panics: none.
 ///
 /// # Errors
-/// Returns [`CircuitDerivationError::CyclicWiring`] naming the port a reading
-/// reaches from itself, [`CircuitDerivationError::SplitOutputs`] naming the
-/// split port, or [`CircuitDerivationError::NodeBudget`] when a reading passes
-/// the standing ceiling.
+/// Returns [`CircuitDerivationError::SharedPort`] naming a port bound twice,
+/// [`CircuitDerivationError::CyclicWiring`] naming the port a reading reaches
+/// from itself, [`CircuitDerivationError::SplitOutputs`] naming the split
+/// port, or [`CircuitDerivationError::NodeBudget`] when a reading passes the
+/// standing ceiling.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the congruence body (two disjoint redexes whiskered into
@@ -646,6 +665,7 @@ pub enum CircuitDerivationError
 /// - witness: `circuit::tests::a_doubling_body_declines_on_the_node_budget`
 /// - witness: `circuit::tests::a_two_rooted_body_derives_one_boundary_per_root`
 /// - witness: `circuit::tests::one_output_of_a_many_out_node_derives_no_term`
+/// - witness: `circuit::tests::a_port_two_nodes_bind_derives_nothing_5799`
 ///
 /// [`check_desc`]: crate::check_desc
 #[inline]
@@ -655,6 +675,7 @@ pub enum CircuitDerivationError
     | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == CircuitNodeBudget::DEFAULT,
     | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
     | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
+    | Err(CircuitDerivationError::SharedPort(ref port)) => body.nodes.iter().flat_map(CircuitNode::outs).filter(|out| *out == port).count() >= 2,
 })]
 pub fn derive_boundaries(body: &CircuitBody) -> Result<DerivedBoundaries, CircuitDerivationError>
 {
@@ -691,6 +712,7 @@ pub fn derive_boundaries(body: &CircuitBody) -> Result<DerivedBoundaries, Circui
     | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == budget,
     | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
     | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
+    | Err(CircuitDerivationError::SharedPort(ref port)) => body.nodes.iter().flat_map(CircuitNode::outs).filter(|out| *out == port).count() >= 2,
 })]
 pub fn derive_boundaries_within(
     body: &CircuitBody,
@@ -713,33 +735,34 @@ pub fn derive_boundaries_within(
 ///   many-out frame, declared in its own order, are that frame's application;
 ///   any other several are the results tuple of their unfoldings.
 /// - provides: one endpoint candidate for the declared sphere.
-/// - fails: [`CircuitDerivationError::CyclicWiring`] when a port is reachable
-///   from itself other than as a redex's own opaque endpoint;
-///   [`CircuitDerivationError::SplitOutputs`] when a port is one output of a
-///   many-out frame read on its own; [`CircuitDerivationError::NodeBudget`]
-///   past [`CircuitNodeBudget::DEFAULT`].
+/// - fails: [`CircuitDerivationError::SharedPort`] when two bindings name one
+///   port, before any port unfolds; [`CircuitDerivationError::CyclicWiring`]
+///   when a port is reachable from itself other than as a redex's own opaque
+///   endpoint; [`CircuitDerivationError::SplitOutputs`] when a port is one
+///   output of a many-out frame read on its own;
+///   [`CircuitDerivationError::NodeBudget`] past
+///   [`CircuitNodeBudget::DEFAULT`].
 /// - panics: none.
-/// - intension: a port bound by two nodes resolves through the first node that
-///   binds it, in source order.
 ///
 /// # Errors
-/// Returns [`CircuitDerivationError::CyclicWiring`] naming the port this
-/// reading reaches from itself, [`CircuitDerivationError::SplitOutputs`]
-/// naming the split port, or [`CircuitDerivationError::NodeBudget`] when the
-/// reading passes the standing ceiling.
+/// Returns [`CircuitDerivationError::SharedPort`] naming a port bound twice,
+/// [`CircuitDerivationError::CyclicWiring`] naming the port this reading
+/// reaches from itself, [`CircuitDerivationError::SplitOutputs`] naming the
+/// split port, or [`CircuitDerivationError::NodeBudget`] when the reading
+/// passes the standing ceiling.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — both readings of redex/frame bodies, unbound and opaque
-///   endpoints, reconvergence, cycles, duplicate producers, two roots and a
-///   many-out frame leaving whole or split are observed as exact terms/errors;
-///   wrong substitution, source precedence, cycle scope or root order changes
-///   one of those observations.
+///   endpoints, reconvergence, cycles, shared ports, two roots and a many-out
+///   frame leaving whole or split are observed as exact terms/errors; wrong
+///   substitution, a kept binder of a shared port, cycle scope or root order
+///   changes one of those observations.
 /// - witness: `circuit::tests::the_congruence_wiring_derives_its_boundary_pair`
 /// - witness: `circuit::tests::a_redex_boundary_resolves_its_own_port_leaves`
 /// - witness: `circuit::tests::an_unbound_port_stays_a_boundary_variable`
 /// - witness: `circuit::tests::a_reconvergent_wire_is_unfolded_at_each_consumption`
 /// - witness: `circuit::tests::a_wiring_that_closes_a_cycle_derives_nothing`
-/// - witness: `circuit::tests::duplicate_producers_keep_the_first_source_binding`
+/// - witness: `circuit::tests::a_port_two_nodes_bind_derives_nothing_5799`
 /// - witness: `circuit::tests::a_two_rooted_body_derives_one_boundary_per_root`
 /// - witness: `circuit::tests::a_many_out_frame_leaving_whole_is_its_application`
 /// - witness: `circuit::tests::one_output_of_a_many_out_node_derives_no_term`
@@ -750,6 +773,7 @@ pub fn derive_boundaries_within(
     | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == CircuitNodeBudget::DEFAULT,
     | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
     | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
+    | Err(CircuitDerivationError::SharedPort(ref port)) => body.nodes.iter().flat_map(CircuitNode::outs).filter(|out| *out == port).count() >= 2,
 })]
 pub fn derive_boundary(
     body: &CircuitBody,
@@ -794,6 +818,7 @@ pub fn derive_boundary(
     | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == budget,
     | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
     | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
+    | Err(CircuitDerivationError::SharedPort(ref port)) => body.nodes.iter().flat_map(CircuitNode::outs).filter(|out| *out == port).count() >= 2,
 })]
 pub fn derive_boundary_within(
     body: &CircuitBody,
@@ -828,7 +853,7 @@ pub fn derive_boundary_within(
         Leave(&'body Name),
     }
 
-    let producers = body.producers();
+    let producers = body.producers()?;
     let ceiling = usize::from(budget);
     let mut emitted: usize = 0;
     let mut path: BTreeSet<&Name> = BTreeSet::new();
@@ -1432,8 +1457,11 @@ mod tests
     }
 
     #[test]
-    fn duplicate_producers_keep_the_first_source_binding()
+    fn a_port_two_nodes_bind_derives_nothing_5799()
     {
+        // `node : First --> (shared); node : Later --> (shared);` — a term
+        // gives `shared` one producer, so neither reading keeps one binder and
+        // drops the other.
         let body = CircuitBody::new(
             [
                 CircuitNode::Frame(CircuitFrame::new(
@@ -1454,9 +1482,12 @@ mod tests
             ],
             "out",
         );
-        let expected = FreeTerm::op("f", [FreeTerm::ctor("First", []), FreeTerm::var("free")]);
         for reading in [BoundaryReading::Source, BoundaryReading::Target] {
-            assert_eq!(derive_boundary(&body, reading), Ok(expected.clone()));
+            assert_eq!(
+                derive_boundary(&body, reading),
+                Err(CircuitDerivationError::SharedPort("shared".into())),
+                "the port that two nodes bind is refused by name"
+            );
         }
     }
 }

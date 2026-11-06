@@ -207,6 +207,7 @@ digraph crates {
   "surface-dispatcher" -> "core-publish";
   "surface-dispatcher" -> "core-sequent";
   "surface-dispatcher" -> "core-term";
+  "surface-dispatcher" -> "kernel-check-memo";
   "surface-dispatcher" -> "kernel-core";
   "surface-dispatcher" -> "kernel-strata";
   "surface-dispatcher" -> "kernel-term";

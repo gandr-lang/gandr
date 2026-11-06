@@ -2616,6 +2616,7 @@ fn a_type_is_read_shifted_past_the_binders_opened_since_it_was_formed()
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
         images: crate::judgement::worlds::Images::default(),
+        memo: crate::judgement::memo::GoalMemo::new(gandr_kernel_check_memo::MemoActivity::Active),
     };
     let formed = gandr_core_term::BinderDepth::default();
     assert_eq!(

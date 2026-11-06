@@ -1083,8 +1083,9 @@ pathological/circuit/circuit-repeated-port.gandr:Copy:66b759f81632ae8c uncomment
 pathological/circuit/circuit-shared-port.gandr:<file> uncommented
 pathological/circuit/circuit-shared-port.gandr:Shared.Nat:766735245ec8870b uncommented
 pathological/circuit/circuit-shared-port.gandr:Shared.f:b370e90589087120 uncommented
-pathological/circuit/circuit-shared-port.gandr:Shared.twice:7969b58dc0e546c2 uncommented
-pathological/circuit/circuit-shared-port.gandr:Shared:25d6330379e1174b uncommented
+pathological/circuit/circuit-shared-port.gandr:Shared.g:c375a149af822e82 uncommented
+pathological/circuit/circuit-shared-port.gandr:Shared.twice:102e7353dbad999e uncommented
+pathological/circuit/circuit-shared-port.gandr:Shared:710bdc9fad1b461b uncommented
 pathological/circuit/circuit-two-redex.gandr:<file> uncommented
 pathological/circuit/circuit-two-redex.gandr:Nat.Nat:766735245ec8870b uncommented
 pathological/circuit/circuit-two-redex.gandr:Nat.add:05c0e3cef5dc0d7e uncommented

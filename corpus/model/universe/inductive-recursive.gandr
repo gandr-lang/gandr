@@ -36,7 +36,7 @@ def toNat(x : Nat) -> -F UPi { return NatC }
 /// The `idDecoded` value is the identity at the decode of the function code from
 /// naturals to naturals. That decode runs to the dependent arrow between them.
 @[ checks ]
-def idDecoded : elPi(PiC(NatC, toNat));
+def idDecoded : elPi(PiC NatC toNat);
 def idDecoded = thunk { fun (x) { return x } };
 
 /// The `appliedDecoded` run applies the identity at its decoded type.
@@ -56,15 +56,15 @@ rec {
   @[ checks ]
   data UM : Nat -> Type where {
     /// The naturals, at each level.
-    | NatM : (n : Nat) --> UM(n)
+    | NatM : (n : Nat) --> UM n
     /// The dependent functions from a coded domain at a level.
-    | PiM : (n : Nat, a : UM(n), b : +U (elM(n, a) -> -F UM(n))) --> UM(n)
+    | PiM : (n : Nat, a : UM n, b : +U (elM(n, a) -> -F UM n)) --> UM n
   }
 
   /// The `elM` decoder returns the value type of each code at each level. It
   /// recurses below the code.
   @[ checks ]
-  def rec elM(n : Nat, u : UM(n)) -> -F Type =
+  def rec elM(n : Nat, u : UM n) -> -F Type =
     match u where
       | NatM(m) => return Nat
       | PiM(m, a, b) => return (+U ((x : elM[<](m, a)) -> -F elM[<](m, b(x))))
@@ -72,7 +72,7 @@ rec {
 
 /// The `natAtZero` code is the natural code at level zero.
 @[ checks ]
-def natAtZero : UM(Zero);
+def natAtZero : UM Zero;
 def natAtZero = NatM Zero;
 
 /// The `zeroAtLevel` value is zero at the decode of the natural code at level

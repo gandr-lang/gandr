@@ -1,31 +1,16 @@
-// The site that hosts the migration model's far world.
-//
-// A site is one place a world runs at, the key it proves and the sockets it
-// is reached at. Written as a file, the place stays out of the program and
-// out of the flags.
-//
-// `gandr host --site` binds these sockets in place of `--net-bind`. It proves
-// the key with the secret this site names: `GANDR_SECRET_FAR` holds it, or
-// the model `--secrets` names. The secret never stands in the file. This key
-// is the one the two-process test's host secret proves. It writes no
-// `offers`, so it answers nothing, and the program's `far` requires nothing
-// of it.
-//
-// - see: `two-processes.manifold.gandr` — the manifold placing `far` here
-// - see: `two-processes.gandr` — the program it hosts
-// - see: `crates/surface-driver/tests/net.rs` — the two processes
+//! This site hosts the migration model's far world.
+//!
+//! The site file names its key and sockets.
+//!
+//! The secret stays outside the model source.
+//!
+//! - see: `two-processes.manifold.gandr`
 
-// The site theory.
 import std.manifold (Site);
 
-/// The far site, on a loopback socket.
 pub module Site : Model(Site) where
-  /// The key the hosting process proves.
   def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
-  /// The socket it binds, where a dialer reaches it.
   def sockets = "127.0.0.1:7433";
-  /// The name of the key's secret.
   def secret = "far";
 
-/// The far site's model, where a manifold places a world.
 pub def site : Model(Site) = pack Site at Model(Site);

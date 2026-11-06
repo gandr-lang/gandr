@@ -1,0 +1,7 @@
+data Parcel(a : Type) : Type where
+  | Enclosed : (x : a) --> Parcel a
+
+data Pair(a : Type, b : Type) : Type where
+  | Paired : (x : a, y : b) --> Pair a b
+
+def taken(a : Type, x : {parameter}) -> Integer {{ 0 }}

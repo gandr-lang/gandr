@@ -36,7 +36,7 @@ rec {
 
 /// The `sumAt` function sums a list of decoded values through `f`. It recurses
 /// on the list with the element code and `f` fixed.
-def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List(elL(a))) -> Nat =
+def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List elL(a)) -> Nat =
   match v where
     | Nil => Zero
     | Cons(h, t) => plus (f h) (sumAt[<] a f t)
@@ -59,7 +59,7 @@ def rec countBeside(c : UL, v : elL(c)) -> Nat =
     | PiL(a, b) => Zero
 
 /// The `lists` value holds the list of one and the list of two.
-def lists : List(List(Nat));
+def lists : List (List Nat);
 def lists = Cons (Cons (Succ Zero) Nil) (Cons (Cons two Nil) Nil);
 
 /// The `summed` run sums `lists` at the code of lists of lists. Its sum is three.

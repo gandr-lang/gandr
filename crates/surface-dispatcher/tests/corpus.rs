@@ -19,6 +19,7 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_core_sequent::FocusRefusal;
+use gandr_kernel_check_memo::MemoActivity;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::RunSpelling;
@@ -1197,6 +1198,7 @@ mod sweeps
             text,
             &mut LoweringCount::default(),
             scheduling,
+            MemoActivity::Active,
         ) {
             Ok(Composed::Settled { report, .. }) => Some(
                 report
@@ -1230,6 +1232,127 @@ mod sweeps
             least.is_none_or(|least| compared > least) && differing.is_empty(),
             "over {compared} sources, the concurrent schedule settles as the sequential one; \
              differing: {differing:?}"
+        );
+    }
+
+    /// The goal memo's sample: sixty-four sources, ranked by their BLAKE3
+    /// digest under this name, at least one of each corpus class, and, in the
+    /// companion, every source the change adds or modifies beside them
+    /// (`gandr-workflow-sweep`). The `sweeps` and nightly profiles visit the
+    /// two roots whole.
+    const MEMOISED: Sample = Sample {
+        name: SampleName("the_goal_memo_settles_the_corpus_alike_5719"),
+        size: SampleSize(64),
+    };
+
+    /// #5719: every corpus source composed without the core checker's goal
+    /// memo settles each declaration as its composition with the memo settles
+    /// it. A memo answer is then the answer a fresh judgement gives. A
+    /// declaration that spends its allowance without the memo gives no answer,
+    /// and the memo may settle it: `records/iterated-pair.gandr` from `t18`.
+    #[test]
+    fn the_goal_memo_settles_the_corpus_alike_5719()
+    {
+        memoised_alike(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn the_goal_memo_settles_the_corpus_alike_5719_changed()
+    {
+        memoised_alike(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every source `sweep` visits settles with the goal memo as without it,
+    /// past each declaration that spends its allowance without the memo.
+    ///
+    /// # Specification
+    /// trivial.
+    fn memoised_alike(sweep: &Sweep)
+    {
+        use gandr_surface_dispatcher::Scheduling;
+        use gandr_surface_dispatcher::compose_on;
+
+        let (paths, least) = match (sweep.portion(), sweep.coverage()) {
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Full) => (
+                sources_under(&[strict_root(), fixture_root()]),
+                Some(100_usize),
+            ),
+            (Portion::Fixed, gandr_workflow_sweep::Coverage::Sampled) | (Portion::Changed, _) => {
+                let visited = sweep.visit(
+                    MEMOISED,
+                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                );
+                assert!(
+                    visited.len() >= sweep.drawn(MEMOISED).0,
+                    "the sample is drawn: {}",
+                    visited.len()
+                );
+                (
+                    visited.into_iter().map(|source| source.path).collect(),
+                    (sweep.portion() == Portion::Fixed).then_some(32_usize),
+                )
+            },
+        };
+        let grammar = built_in().expect("the built-in grammar builds");
+        let settled = |text: SourceText<'_>, memo| match compose_on(
+            &grammar,
+            CorpusRoot::Fixture,
+            text,
+            &mut LoweringCount::default(),
+            Scheduling::Sequential,
+            memo,
+        ) {
+            Ok(Composed::Settled { report, .. }) => Some(
+                report
+                    .declarations()
+                    .iter()
+                    .map(|declaration| {
+                        (
+                            declaration.name().to_string(),
+                            declaration.outcome(),
+                            declaration.settlement(),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            Ok(Composed::Refused(_)) | Err(_) => None,
+        };
+        let mut compared = 0_usize;
+        let mut differing = Vec::new();
+        for path in paths {
+            let own = std::fs::read_to_string(&path).expect("a corpus source reads");
+            let text = SourceText::from(own.as_str());
+            let memoised = settled(text, MemoActivity::Active);
+            let unmemoised = settled(text, MemoActivity::Inactive);
+            if memoised.is_some() {
+                compared = compared.saturating_add(1);
+            }
+            // A run that spends its allowance gives no answer, so a declaration
+            // that only the memo brings within it has nothing to compare.
+            let agree = match (memoised.as_ref(), unmemoised.as_ref()) {
+                (Some(with), Some(without)) => {
+                    with.len() == without.len()
+                        && with.iter().zip(without).all(|(with, without)| {
+                            with == without
+                                || (with.0 == without.0
+                                    && without.1
+                                        == Outcome::Refuses(
+                                            gandr_surface_corpus::RefusalName::BudgetExceeded,
+                                        ))
+                        })
+                },
+                (None, None) => true,
+                (Some(_), None) | (None, Some(_)) => false,
+            };
+            if !agree {
+                differing.push((path, memoised, unmemoised));
+            }
+        }
+        assert!(
+            least.is_none_or(|least| compared > least) && differing.is_empty(),
+            "over {compared} sources, each declaration settles without the goal memo as it \
+             settles with it; differing, with the memo and without it: {differing:#?}"
         );
     }
 

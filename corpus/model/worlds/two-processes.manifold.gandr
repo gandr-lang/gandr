@@ -1,32 +1,17 @@
-// The manifold that deploys the migration model across two processes.
-//
-// A manifold binds a program's worlds onto sites, so one program runs as two
-// processes without naming either in its source.
-//
-// This one deploys the migration model beside it and places `far` at the
-// site it imports, whose model holds its key and socket. `near`, where the
-// entry runs, is placed nowhere: it is the process that runs `main`. `gandr
-// run --manifold` and `gandr host --manifold` read it as the `--world
-// far=<key>@<ip:port>` it desugars to, and `gandr check` of it resolves `far`
-// against the program's worlds.
-//
-// - see: `two-processes.site.gandr` — the site `far` runs at
-// - see: `two-processes.gandr` — the program it deploys
-// - see: `crates/surface-driver/tests/net.rs` — the two processes
-
-// The deployment theories.
+//! This manifold deploys a migration model on two processes.
+//!
+//! It binds `far` to the imported site.
+//!
+//! The entry process runs `main` at `near`.
+//!
+//! - see: `two-processes.gandr`
 import std.manifold (Site, Manifold, Placement, At);
-// The site `far` is placed at.
 import "./two-processes.site.gandr" as far;
-// The native finite lists.
 import std.list (List);
 
-/// The program this manifold deploys.
 pub module Manifold : Model(Manifold) where
-  /// The migration model, beside this file.
   def artifact = "two-processes.gandr";
 
-/// `far` at the far site, as one process.
 pub def placements : List(Placement) = #[
   At "far" far.site,
 ];

@@ -703,6 +703,9 @@ fn ill_formed(kind: WfKind) -> String
         },
         WfKind::NonRepresentableBinder => "bind the variable over a declared, representable sort",
         WfKind::SplitCircuitOutputs => "read all the outputs of the many-out node together",
+        WfKind::SharedCircuitPort => {
+            "let one node bind the port, and give each other node a port of its own"
+        },
         WfKind::DuplicateFaceName => "give each face of the boundary its own name",
         WfKind::FaceOutsideShape => "put in the face only names that the boundary lists",
         WfKind::FacePosetPastBudget => {

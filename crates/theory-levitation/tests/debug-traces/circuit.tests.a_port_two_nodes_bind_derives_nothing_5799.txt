@@ -1,0 +1,77 @@
+test: circuit::tests::a_port_two_nodes_bind_derives_nothing_5799
+package: gandr-theory-levitation
+command: mise run debug:test gandr-theory-levitation circuit::tests::a_port_two_nodes_bind_derives_nothing_5799 --break CircuitBody.*producers
+
+(lldb) target create "target/debug-trace/debug/build/gandr-theory-levitation/b028afb3fae0d355/out/gandr_theory_levitation-b028afb3fae0d355"
+Current executable set to 'target/debug-trace/debug/build/gandr-theory-levitation/b028afb3fae0d355/out/gandr_theory_levitation-b028afb3fae0d355' (arm64).
+(lldb) settings set -- target.run-args  "circuit::tests::a_port_two_nodes_bind_derives_nothing_5799" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex CircuitBody.*producers
+Breakpoint 1: 5 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_theory_levitation-b028afb3fae0d355`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001002a60e8
+(lldb) run
+
+running 1 test
+test circuit::tests::a_port_two_nodes_bind_derives_nothing_5799 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 96019 launched: 'target/debug-trace/debug/build/gandr-theory-levitation/b028afb3fae0d355/out/gandr_theory_levitation-b028afb3fae0d355' (arm64)
+Process 96019 stopped
+* thread #2, name = 'circuit::tests::a_port_two_nodes_bind_derives_nothing_5799', stop reason = breakpoint 1.2
+       frame #0: 0x0000000100139608 gandr_theory_levitation-b028afb3fae0d355`<gandr_theory_levitation::circuit::CircuitBody>::producers(self={nodes:{data_ptr:Frame({head:Ctor({…}), args:{data_ptr:{…}, length:0}, outs:{data_ptr:{…}, length:1}}), length:3}, outs:{data_ptr:{__0:{data_ptr:"out", length:3}}, length:1}, feeds:{data_ptr:{source:({data_ptr:(…), length:(…)}), port:({data_ptr:(…), length:(…)})}, length:0}}) at circuit.rs:418:5
+   415 	            reason = "parity: the body inserts every port of every node once; the check reads every port and every entry once"
+   416 	        )
+   417 	    )]
+-> 418 	    #[spec(ensures: |ref result| match *result {
+    	    ^
+   419 	        Ok(ref producers) => producers.iter().all(|(port, producer)| producer.outs().contains(*port)
+   420 	            && self.nodes.as_ptr_range().contains(&core::ptr::from_ref(*producer)))
+   421 	            && self.nodes.iter().all(|node| node.outs().iter().all(|port| producers.get(port)
+(lldb) bt 24
+* thread #2, name = 'circuit::tests::a_port_two_nodes_bind_derives_nothing_5799', stop reason = breakpoint 1.2
+   * frame #0: 0x0000000100139608 gandr_theory_levitation-b028afb3fae0d355`<gandr_theory_levitation::circuit::CircuitBody>::producers(self={nodes:{data_ptr:Frame({head:Ctor({…}), args:{data_ptr:{…}, length:0}, outs:{data_ptr:{…}, length:1}}), length:3}, outs:{data_ptr:{__0:{data_ptr:"out", length:3}}, length:1}, feeds:{data_ptr:{source:({data_ptr:(…), length:(…)}), port:({data_ptr:(…), length:(…)})}, length:0}}) at circuit.rs:418:5
+     frame #1: 0x0000000100132f94 gandr_theory_levitation-b028afb3fae0d355`gandr_theory_levitation::circuit::derive_boundary_within::{closure#0} at circuit.rs:856:26
+     frame #2: 0x0000000100139dc0 gandr_theory_levitation-b028afb3fae0d355`anodized::__::eval_once::<core::result::Result<gandr_theory_levitation::rule::FreeTerm, gandr_theory_levitation::circuit::CircuitDerivationError>, gandr_theory_levitation::circuit::derive_boundary_within::{closure#0}>(closure={_ref__body:{nodes:{data_ptr:Frame({head:Ctor(…), args:{…}, outs:{…}}), length:3}, outs:{data_ptr:{__0:{data_ptr:"out", length:3}}, length:1}, feeds:{data_ptr:{source:({…}), port:({…})}, length:0}}, _ref__budget:{__0:4096}, _ref__reading:0x0000000170005b57}) at __.rs:32:5 [inlined]
+     frame #3: 0x0000000100139da0 gandr_theory_levitation-b028afb3fae0d355`gandr_theory_levitation::circuit::derive_boundary_within(body={nodes:{data_ptr:Frame({head:Ctor({…}), args:{data_ptr:{…}, length:0}, outs:{data_ptr:{…}, length:1}}), length:3}, outs:{data_ptr:{__0:{data_ptr:"out", length:3}}, length:1}, feeds:{data_ptr:{source:({data_ptr:(…), length:(…)}), port:({data_ptr:(…), length:(…)})}, length:0}}, reading=Source, budget={0:4096}) at circuit.rs:815:1
+     frame #4: 0x0000000100132df0 gandr_theory_levitation-b028afb3fae0d355`gandr_theory_levitation::circuit::derive_boundary::{closure#0} at circuit.rs:783:5
+     frame #5: 0x0000000100139bc8 gandr_theory_levitation-b028afb3fae0d355`anodized::__::eval_once::<core::result::Result<gandr_theory_levitation::rule::FreeTerm, gandr_theory_levitation::circuit::CircuitDerivationError>, gandr_theory_levitation::circuit::derive_boundary::{closure#0}>(closure={_ref__body:{nodes:{data_ptr:Frame({head:Ctor(…), args:{…}, outs:{…}}), length:3}, outs:{data_ptr:{__0:{data_ptr:"out", length:3}}, length:1}, feeds:{data_ptr:{source:({…}), port:({…})}, length:0}}, _ref__reading:0x0000000170005d7f}) at __.rs:32:5 [inlined]
+     frame #6: 0x0000000100139bc4 gandr_theory_levitation-b028afb3fae0d355`gandr_theory_levitation::circuit::derive_boundary(body={nodes:{data_ptr:Frame({head:Ctor({…}), args:{data_ptr:{…}, length:0}, outs:{data_ptr:{…}, length:1}}), length:3}, outs:{data_ptr:{__0:{data_ptr:"out", length:3}}, length:1}, feeds:{data_ptr:{source:({data_ptr:(…), length:(…)}), port:({data_ptr:(…), length:(…)})}, length:0}}, reading=Source) at circuit.rs:770:1
+     frame #7: 0x000000010015ac20 gandr_theory_levitation-b028afb3fae0d355`gandr_theory_levitation::circuit::tests::a_port_two_nodes_bind_derives_nothing_5799 at circuit.rs:1487:17
+     frame #8: 0x000000010015667c gandr_theory_levitation-b028afb3fae0d355`gandr_theory_levitation::circuit::tests::a_port_two_nodes_bind_derives_nothing_5799::{closure#0}((null)={}) at circuit.rs:1460:52
+     frame #9: 0x00000001000ce3b4 gandr_theory_levitation-b028afb3fae0d355`<gandr_theory_levitation::circuit::tests::a_port_two_nodes_bind_derives_nothing_5799::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #10: 0x0000000100227618 gandr_theory_levitation-b028afb3fae0d355`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #11: 0x0000000100227610 gandr_theory_levitation-b028afb3fae0d355`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #12: 0x0000000100232b34 gandr_theory_levitation-b028afb3fae0d355`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #13: 0x0000000100232b28 gandr_theory_levitation-b028afb3fae0d355`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #14: 0x0000000100232b28 gandr_theory_levitation-b028afb3fae0d355`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #15: 0x0000000100232b24 gandr_theory_levitation-b028afb3fae0d355`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #16: 0x0000000100232b24 gandr_theory_levitation-b028afb3fae0d355`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #17: 0x0000000100232b24 gandr_theory_levitation-b028afb3fae0d355`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #18: 0x0000000100232b18 gandr_theory_levitation-b028afb3fae0d355`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #19: 0x000000010022d528 gandr_theory_levitation-b028afb3fae0d355`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #20: 0x000000010022d4c4 gandr_theory_levitation-b028afb3fae0d355`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #21: 0x0000000100234ff8 gandr_theory_levitation-b028afb3fae0d355`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #22: 0x0000000100234fe8 gandr_theory_levitation-b028afb3fae0d355`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #23: 0x0000000100234fe8 gandr_theory_levitation-b028afb3fae0d355`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+(lldb) frame variable --depth 3
+(gandr_theory_levitation::circuit::CircuitBody *) self = 0x0000000170005f80 {nodes:{data_ptr:Frame({head:Ctor({…}), args:{data_ptr:{…}, length:0}, outs:{data_ptr:{…}, length:1}}), length:3}, outs:{data_ptr:{__0:{data_ptr:"out", length:3}}, length:1}, feeds:{data_ptr:{source:({data_ptr:(…), length:(…)}), port:({data_ptr:(…), length:(…)})}, length:0}}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000000100132f94 gandr_theory_levitation-b028afb3fae0d355`gandr_theory_levitation::circuit::derive_boundary_within::{closure#0} at circuit.rs:856:26
+   853 	        Leave(&'body Name),
+   854 	    }
+   855 	
+-> 856 	    let producers = body.producers()?;
+    	                         ^
+   857 	    let ceiling = usize::from(budget);
+   858 	    let mut emitted: usize = 0;
+   859 	    let mut path: BTreeSet<&Name> = BTreeSet::new();
+(lldb) frame variable --depth 3
+(gandr_theory_levitation::circuit::BoundaryReading) reading = <variable not available>
+(gandr_theory_levitation::boundary::CircuitNodeBudget) budget = <variable not available>
+(gandr_theory_levitation::circuit::CircuitBody) body = <variable not available>

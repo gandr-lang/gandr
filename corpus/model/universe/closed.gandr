@@ -69,14 +69,14 @@ def kept() -> -F Nat { idAt NatC one }
 /// The `succ` value is the successor at the decode of the arrow from naturals to
 /// naturals. That decode runs to `Nat => Nat`.
 @[ checks ]
-def succ : el(Arrow(NatC, NatC));
+def succ : el(Arrow NatC NatC);
 def succ = thunk { fun (n) { Succ n } };
 
 /// The `applyAt` function applies `f` to `v` at each pair of codes. The decode
 /// of `Arrow(a, b)` reads through the arrow arm of the decoder to
 /// `el(a) => el(b)`.
 @[ checks ]
-def applyAt(a : U, b : U, f : el(Arrow(a, b)), v : el(a)) -> -F el(b) { f v }
+def applyAt(a : U, b : U, f : el(Arrow a b), v : el(a)) -> -F el(b) { f v }
 
 /// The `stepped` run applies the successor at its decoded type.
 @[ runs("Succ (Succ Zero)") ]
@@ -90,7 +90,7 @@ def applied() -> -F Nat { applyAt NatC NatC succ one }
 /// The `atOne` value stands at the decode of an arrow from an arrow code. It
 /// applies its argument to one.
 @[ checks ]
-def atOne : el(Arrow(Arrow(NatC, NatC), NatC));
+def atOne : el(Arrow (Arrow NatC NatC) NatC);
 def atOne = thunk { fun (g) { g one } };
 
 /// The `appliedAbove` run applies `atOne` to the successor, one code higher.

@@ -51,7 +51,9 @@ path = "tests/lib.rs"
 # judgement, the prelude's among them, for the benchmark report. The cells
 # census fuses each block's composition overlaps through the
 # coherent-resolutions crate, and composes their distance grades in the
-# Lawvere quantale of the ordered-algebras crate, over exact dyadics.
+# Lawvere quantale of the ordered-algebras crate, over exact dyadics. A
+# composition says whether the core checker keeps its goal memo through the
+# check-memo seam's activity.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -62,6 +64,7 @@ gandr-core-nbe.workspace = true
 gandr-core-publish.workspace = true
 gandr-core-sequent.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-check-memo.workspace = true
 gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true

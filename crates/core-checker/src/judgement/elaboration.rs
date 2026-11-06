@@ -692,6 +692,7 @@ pub fn type_value(
     };
     let outer = context.start_typings();
     let abstracted = super::abstracted_by(context.arena(), goal);
+    let memo = super::memo::GoalMemo::new(context.goal_memo());
     let mut machine = Machine {
         context,
         frames: Vec::new(),
@@ -706,6 +707,7 @@ pub fn type_value(
         root: quenchant_shape::shape::Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
         images: super::worlds::Images::default(),
+        memo,
     };
     let register = machine.context.binders().world();
     let scope = machine.session_scope();

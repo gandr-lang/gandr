@@ -796,9 +796,9 @@ fn a_codata_family_spells_as_its_name_applied()
     let thunk = core.value_type_thunk(stream);
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
-        (CoreNode::CompType(stream), "Stream(Integer)"),
+        (CoreNode::CompType(stream), "Stream Integer"),
         (CoreNode::CompType(spot), "Spot"),
-        (CoreNode::ValueType(thunk), "+U Stream(Integer)"),
+        (CoreNode::ValueType(thunk), "+U (Stream Integer)"),
     ] {
         assert_eq!(
             spelled(&source, Root::Type(root)),
@@ -865,7 +865,8 @@ fn n_ary_products_and_sums_spell_between_their_braces()
 
 /// #4835: a homed type former spells bare by default, and after the name its
 /// source records for its head otherwise, `std.list.List(Integer)`, its
-/// argument where the bare spelling writes it.
+/// argument where the bare spelling writes it. A qualified head keeps the call
+/// form until #5753.
 #[test]
 fn a_homed_former_spells_as_its_reader_reads_it_4835()
 {
@@ -877,7 +878,7 @@ fn a_homed_former_spells_as_its_reader_reads_it_4835()
     let homes = [(Name::from("List"), Name::from("std.list.List"))];
     let homed = CoreSource::new(&core, &[]).homing(&homes);
     for (source, root, spelling) in [
-        (&bare, list, "List(Integer)"),
+        (&bare, list, "List Integer"),
         (&homed, list, "std.list.List(Integer)"),
         (&homed, nested, "std.list.List(std.list.List(Integer))"),
     ] {
@@ -1724,16 +1725,16 @@ fn every_type_former_spells_as_the_grammar_writes_it()
         (CoreNode::CompType(returns_named), "-F small"),
         (CoreNode::CompType(decoded_returner), "-F Integer"),
         (CoreNode::ValueType(tree), "Tree"),
-        (CoreNode::ValueType(list), "List(Integer)"),
+        (CoreNode::ValueType(list), "List Integer"),
         (
             CoreNode::CompType(returns_path),
-            "-F Path[.A = List(Integer)](small, 1)",
+            "-F Path[.A = List Integer](small, 1)",
         ),
         (
             CoreNode::CompType(returns_flow),
-            "-F Flow[.A = List(Integer)](small, 1)",
+            "-F Flow[.A = List Integer](small, 1)",
         ),
-        (CoreNode::ValueType(prefix), "Prefix(small)"),
+        (CoreNode::ValueType(prefix), "Prefix small"),
         (CoreNode::CompType(two_results), "-F (Integer, String)"),
         (CoreNode::CompType(no_results), "-F ()"),
         (
@@ -1802,9 +1803,9 @@ fn every_type_former_spells_as_the_grammar_writes_it()
 }
 
 /// #2246: a type the source records as written `Model(T)` or `Model(T) with
-/// sort C = A …` spells as written in both forms, its sorts in the order
-/// written, a carrier looser than a sum parenthesized, and quoted where an
-/// expression stands as `type(…)`; the same record unrecorded spells as the
+/// sort C = A …` spells juxtaposed in both forms, `Model T`, its sorts in the
+/// order written, a carrier looser than a sum parenthesized, and quoted where
+/// an expression stands as `type(…)`; the same record unrecorded spells as the
 /// record.
 #[test]
 fn a_model_type_spells_as_written_2246()
@@ -1848,16 +1849,16 @@ fn a_model_type_spells_as_written_2246()
     };
     let modelled = CoreSource::new(&core, &names).writing(&forms);
     for (root, sugared, explicit) in [
-        (plain, "Model(Counter)", "Model(Counter)"),
+        (plain, "Model Counter", "Model Counter"),
         (
             fixed,
-            "Model(Counter) with sort C = Integer + String",
-            "Model(Counter) with sort C = +{Integer, String}",
+            "Model Counter with sort C = Integer + String",
+            "Model Counter with sort C = +{Integer, String}",
         ),
         (
             chained,
-            "Model(ReadCounter) with sort R = (Integer -> String) with sort C = Integer",
-            "Model(ReadCounter) with sort R = (Integer -> String) with sort C = Integer",
+            "Model ReadCounter with sort R = (Integer -> String) with sort C = Integer",
+            "Model ReadCounter with sort R = (Integer -> String) with sort C = Integer",
         ),
     ] {
         for (form, spelling) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -1876,8 +1877,8 @@ fn a_model_type_spells_as_written_2246()
         }
     }
     for (root, spelling) in [
-        (quoted, "type(Model(Counter))"),
-        (argument, "Flow.stay type(Model(Counter))"),
+        (quoted, "type(Model Counter)"),
+        (argument, "Flow.stay type(Model Counter)"),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
             let presented =
@@ -1989,7 +1990,7 @@ fn each_glyph_former_is_written_in_the_spelling_asked_782()
         (
             Root::Type(CoreNode::ValueType(record)),
             "Integer ≅ String",
-            "Iso(Integer, String)",
+            "Iso Integer String",
         ),
         (
             Root::Type(CoreNode::ValueType(equivalence)),
@@ -3434,17 +3435,17 @@ fn a_binder_the_print_leaves_out_moves_no_name_5402()
         (
             CoreNode::CompType(plain),
             CoreNode::CompType(unnamed),
-            "Unit -> -F Picked(Unit, fun (a) { pure Unit })",
+            "Unit -> -F Picked Unit (fun (a) { pure Unit })",
         ),
         (
             CoreNode::ValueType(plain_thunk),
             CoreNode::ValueType(unnamed_thunk),
-            "Unit -> Picked(Unit, fun (a) { pure Unit })",
+            "Unit -> Picked Unit (fun (a) { pure Unit })",
         ),
         (
             CoreNode::ValueType(product),
             CoreNode::ValueType(pair),
-            "Unit * Picked(Unit, fun (a) { pure Unit })",
+            "Unit * Picked Unit (fun (a) { pure Unit })",
         ),
     ] {
         for root in [written, left_out] {
@@ -3487,7 +3488,7 @@ fn a_family_argument_leaves_its_function_s_thunk_out_5408()
         let presented = presented_in(&source, Root::Type(CoreNode::ValueType(root)), wide(), form);
         assert_eq!(
             (presented.as_ref(), presented.fidelity()),
-            ("Picked(Unit, fun (a) { pure Unit })", Fidelity::Faithful),
+            ("Picked Unit (fun (a) { pure Unit })", Fidelity::Faithful),
             "a family's argument over a function leaves its thunk out in the {form:?} form"
         );
     }
@@ -3499,7 +3500,7 @@ fn a_family_argument_leaves_its_function_s_thunk_out_5408()
     );
     assert_eq!(
         (presented.as_ref(), presented.fidelity()),
-        ("Picked(Unit, thunk { twice 1 })", Fidelity::Faithful),
+        ("Picked Unit (thunk { twice 1 })", Fidelity::Faithful),
         "a family's argument over a call keeps its thunk"
     );
 }
@@ -3534,7 +3535,7 @@ fn a_call_inside_a_lambda_inside_a_type_is_juxtaposed_5211()
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
         (applied, "kept(fun (a) { twice a })"),
-        (picked, "Picked(Unit, fun (a) { twice a })"),
+        (picked, "Picked Unit (fun (a) { twice a })"),
     ] {
         let presented = presented_in(
             &source,
@@ -3733,8 +3734,8 @@ fn a_path_type_over_a_family_application_is_quoted_3279()
     let over_base = core.value_quote(over_base);
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
-        (over_application, "type(Path[.A = Maybe(Nat)](a, c))"),
-        (argument, "Flow.stay type(Path[.A = Maybe(Nat)](a, c))"),
+        (over_application, "type(Path[.A = Maybe Nat](a, c))"),
+        (argument, "Flow.stay type(Path[.A = Maybe Nat](a, c))"),
         (over_nullary, "type(Path[.A = Nat](a, c))"),
         (over_base, "type(Path[.A = Integer](a, c))"),
     ] {
@@ -3782,7 +3783,11 @@ fn a_quoted_chain_is_quoted_1127()
     for (root, sugared, explicit) in [
         (pair, "type(Unit * Integer)", "*{Unit, Integer}"),
         (either, "type(Integer + Unit)", "type(+{Integer, Unit})"),
-        (pairs, "type(List(Unit * Integer))", "List *{Unit, Integer}"),
+        (
+            pairs,
+            "type(List (Unit * Integer))",
+            "List *{Unit, Integer}",
+        ),
         (
             lazy,
             "type(-F Integer & -F Unit)",
@@ -4351,7 +4356,7 @@ fn an_equivalence_and_a_list_spell_as_written()
     for (root, expected) in [
         (Root::Value(CoreNode::Value(equivalence)), "equiv not not"),
         (Root::Value(CoreNode::Value(cell)), "cons *{} nil"),
-        (Root::Type(CoreNode::ValueType(list)), "List(Unit)"),
+        (Root::Type(CoreNode::ValueType(list)), "List Unit"),
     ] {
         assert_eq!(
             spelled(&source, root),
@@ -4665,7 +4670,7 @@ fn native_paths_preserve_ordered_endpoints_and_maps()
     for (root, expected) in [
         (
             Root::Type(CoreNode::ValueType(path_type)),
-            "Path_U(Unit, Integer)",
+            "Path_U Unit Integer",
         ),
         (Root::Value(CoreNode::Value(first)), "refl Unit"),
         (
@@ -5393,7 +5398,7 @@ fn a_dialogue_and_its_web_spell_as_the_surface_writes_them()
         ),
         (
             Root::Type(CoreNode::ValueType(played_type)),
-            "Dialogue(kept)",
+            "Dialogue kept",
         ),
         (Root::Type(CoreNode::ValueType(web_type)), "Web"),
     ] {
@@ -5988,7 +5993,7 @@ fn a_definition_writes_its_implicits_in_its_telescope_2267()
 }
 
 /// A function quantifying over a model spells whole with the model implicit
-/// in its telescope, `[s : Model(S) with sort C = A]`, in place of the
+/// in its telescope, `[s : Model S with sort C = A]`, in place of the
 /// parameters its components bind, each component read by its path, `s.x`,
 /// and passed on to a callee's slot by the implicit's name (#2364).
 #[test]
@@ -6033,7 +6038,7 @@ fn a_definition_writes_its_model_implicit_whole_2364()
         declared_whole(&source, (ty, defined), PageWidth::from(100_u32)),
         Maybe::Present((
             String::from(
-                "def down[s : Model(Counter) with sort C = Nat](a : Nat) -> Nat {\n  \
+                "def down[s : Model Counter with sort C = Nat](a : Nat) -> Nat {\n  \
                  stepped[.t = s] a\n}"
             ),
             Fidelity::Faithful
@@ -7242,7 +7247,7 @@ fn a_parameterised_constructor_is_written_against_its_family_where_source_reads_
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(returned)),
-        faithful(Written("(MkIx : Ix(3))")),
+        faithful(Written("(MkIx : Ix 3)")),
         "a body's constructor reads back against its family"
     );
     assert_eq!(
@@ -7285,7 +7290,7 @@ fn a_definition_writes_its_constructors_against_their_family_815()
     let source = CoreSource::new(&core, &names).naming(&constructors);
     assert_eq!(
         spelled(&source, Root::Definition(CoreNode::Value(pair))),
-        faithful(Written("*{(MkIx : Ix(3)), thunk { 3 }}")),
+        faithful(Written("*{(MkIx : Ix 3), thunk { 3 }}")),
         "a constructor below the root reads back against its family"
     );
     assert_eq!(

@@ -1,0 +1,166 @@
+// The iterated pair, twenty levels deep, in two spellings. Each level is a
+// record of two fields, and both fields hold the level below.
+//
+// The unshared tree of the pair has 2^20 leaves, but the term has one node for
+// each level. A checker that walks each occurrence of a node walks the whole
+// tree, and it exceeds its step allowance.
+//
+// The core checker keeps a goal memo for each run. It answers a goal that it
+// meets again in one step, so each spelling checks in steps linear in the
+// depth. The definition spine names each level by a declaration, and the let
+// spine binds each level to a name.
+//
+// - see: #5719 — the goal memo of the core checker.
+// - see: `crates/core-checker/src/judgement/memo.rs` — the key and the binders
+//   that it reads.
+
+/// Level 0: the pair's base.
+pub type T0 = Unit;
+
+/// Level 1: two fields of level 0.
+pub type T1 = *{l : T0, r : T0};
+
+/// Level 2: two fields of level 1.
+pub type T2 = *{l : T1, r : T1};
+
+/// Level 3: two fields of level 2.
+pub type T3 = *{l : T2, r : T2};
+
+/// Level 4: two fields of level 3.
+pub type T4 = *{l : T3, r : T3};
+
+/// Level 5: two fields of level 4.
+pub type T5 = *{l : T4, r : T4};
+
+/// Level 6: two fields of level 5.
+pub type T6 = *{l : T5, r : T5};
+
+/// Level 7: two fields of level 6.
+pub type T7 = *{l : T6, r : T6};
+
+/// Level 8: two fields of level 7.
+pub type T8 = *{l : T7, r : T7};
+
+/// Level 9: two fields of level 8.
+pub type T9 = *{l : T8, r : T8};
+
+/// Level 10: two fields of level 9.
+pub type T10 = *{l : T9, r : T9};
+
+/// Level 11: two fields of level 10.
+pub type T11 = *{l : T10, r : T10};
+
+/// Level 12: two fields of level 11.
+pub type T12 = *{l : T11, r : T11};
+
+/// Level 13: two fields of level 12.
+pub type T13 = *{l : T12, r : T12};
+
+/// Level 14: two fields of level 13.
+pub type T14 = *{l : T13, r : T13};
+
+/// Level 15: two fields of level 14.
+pub type T15 = *{l : T14, r : T14};
+
+/// Level 16: two fields of level 15.
+pub type T16 = *{l : T15, r : T15};
+
+/// Level 17: two fields of level 16.
+pub type T17 = *{l : T16, r : T16};
+
+/// Level 18: two fields of level 17.
+pub type T18 = *{l : T17, r : T17};
+
+/// Level 19: two fields of level 18.
+pub type T19 = *{l : T18, r : T18};
+
+/// Level 20: two fields of level 19.
+pub type T20 = *{l : T19, r : T19};
+
+/// The definition spine at level 0.
+def t0 : T0 = *{};
+
+/// The definition spine at level 1: both fields name level 0.
+def t1 : T1 = *{l = t0, r = t0};
+
+/// The definition spine at level 2: both fields name level 1.
+def t2 : T2 = *{l = t1, r = t1};
+
+/// The definition spine at level 3: both fields name level 2.
+def t3 : T3 = *{l = t2, r = t2};
+
+/// The definition spine at level 4: both fields name level 3.
+def t4 : T4 = *{l = t3, r = t3};
+
+/// The definition spine at level 5: both fields name level 4.
+def t5 : T5 = *{l = t4, r = t4};
+
+/// The definition spine at level 6: both fields name level 5.
+def t6 : T6 = *{l = t5, r = t5};
+
+/// The definition spine at level 7: both fields name level 6.
+def t7 : T7 = *{l = t6, r = t6};
+
+/// The definition spine at level 8: both fields name level 7.
+def t8 : T8 = *{l = t7, r = t7};
+
+/// The definition spine at level 9: both fields name level 8.
+def t9 : T9 = *{l = t8, r = t8};
+
+/// The definition spine at level 10: both fields name level 9.
+def t10 : T10 = *{l = t9, r = t9};
+
+/// The definition spine at level 11: both fields name level 10.
+def t11 : T11 = *{l = t10, r = t10};
+
+/// The definition spine at level 12: both fields name level 11.
+def t12 : T12 = *{l = t11, r = t11};
+
+/// The definition spine at level 13: both fields name level 12.
+def t13 : T13 = *{l = t12, r = t12};
+
+/// The definition spine at level 14: both fields name level 13.
+def t14 : T14 = *{l = t13, r = t13};
+
+/// The definition spine at level 15: both fields name level 14.
+def t15 : T15 = *{l = t14, r = t14};
+
+/// The definition spine at level 16: both fields name level 15.
+def t16 : T16 = *{l = t15, r = t15};
+
+/// The definition spine at level 17: both fields name level 16.
+def t17 : T17 = *{l = t16, r = t16};
+
+/// The definition spine at level 18: both fields name level 17.
+def t18 : T18 = *{l = t17, r = t17};
+
+/// The definition spine at level 19: both fields name level 18.
+def t19 : T19 = *{l = t18, r = t18};
+
+/// The definition spine at level 20: both fields name level 19.
+def t20 : T20 = *{l = t19, r = t19};
+
+/// The let spine: each level is a binder that the next level reads twice.
+def pair20() -> -F T20 =
+  let s0 = pure *{};
+  let s1 = pure *{l = s0, r = s0};
+  let s2 = pure *{l = s1, r = s1};
+  let s3 = pure *{l = s2, r = s2};
+  let s4 = pure *{l = s3, r = s3};
+  let s5 = pure *{l = s4, r = s4};
+  let s6 = pure *{l = s5, r = s5};
+  let s7 = pure *{l = s6, r = s6};
+  let s8 = pure *{l = s7, r = s7};
+  let s9 = pure *{l = s8, r = s8};
+  let s10 = pure *{l = s9, r = s9};
+  let s11 = pure *{l = s10, r = s10};
+  let s12 = pure *{l = s11, r = s11};
+  let s13 = pure *{l = s12, r = s12};
+  let s14 = pure *{l = s13, r = s13};
+  let s15 = pure *{l = s14, r = s14};
+  let s16 = pure *{l = s15, r = s15};
+  let s17 = pure *{l = s16, r = s16};
+  let s18 = pure *{l = s17, r = s17};
+  let s19 = pure *{l = s18, r = s18};
+  let s20 = pure *{l = s19, r = s19};
+  return s20

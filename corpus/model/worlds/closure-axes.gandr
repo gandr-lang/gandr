@@ -1,26 +1,14 @@
-//! A thunk crosses by its image: what it captures, and the declarations homed
-//! at its world that it names. No former marks a mobile thunk.
+//! This fixture migrates thunks from a seat to an operator.
 //!
-//! A thunk is code over an environment, and the environment is what crosses
-//! with it. Its image is read where it is formed, so a thunk crosses when
-//! every capture and every homed declaration it names crosses.
+//! A thunk crosses with its image.
 //!
-//! Each declaration forms a thunk at the seat and returns it to the operator.
-//! The last two force it or apply it there, so it runs as it runs in place.
-//! The thunks are closed, or over an integer, a marked report or a handle to
-//! an integer. The image's three axes are the capture rules, so every capture
-//! stands at no region, at ω and at the thunk's own world.
+//! Each declaration captures a value at the seat.
 //!
-//! - see: #3265 — `forced` and `applied`, a thunk run at the operator
-//! - see: `pathological/worlds/closure-axes.gandr` — what a thunk captures that
-//!   stays
-//! - cites: [Epstein-2011-towards_haskell_in_the_cloud] — a closure crosses as
-//!   its code and its environment
+//! - cites: [Epstein-2011-towards_haskell_in_the_cloud]
 //!
 //! [Epstein-2011-towards_haskell_in_the_cloud]: https://doi.org/10.1145/2034675.2034690 "Epstein, Black and Peyton Jones, Towards Haskell in the Cloud"
 
-// The operator's and the seat's worlds, and the seat's sealed side of the
-// exchange, its report alone marked mobile.
+// The operator and seat worlds define the exchange.
 import "./seat-and-operator.gandr";
 
 /// A suspended report comes back from the seat: it names no capture.
