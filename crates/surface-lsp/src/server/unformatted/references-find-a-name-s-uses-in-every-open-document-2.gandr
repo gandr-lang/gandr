@@ -1,0 +1,3 @@
+import "./base.gandr" ;
+def unseen : Nat ;
+def unseen = Zero ;

@@ -1,0 +1,5 @@
+/// The answer.
+@[ deprecated(*{ since = "0.2", note = "use `other`" }) ]
+def answer = 42 ;
+@[ deprecated ] def bare = 1 ;
+def other = 2 ;

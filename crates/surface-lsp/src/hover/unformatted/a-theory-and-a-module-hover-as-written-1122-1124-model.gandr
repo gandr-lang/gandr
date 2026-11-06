@@ -1,0 +1,16 @@
+theory Semigroup where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+}
+
+/// A semigroup with a unit.
+theory Monoid where {
+  include Semigroup;
+  oper one : () --> M;
+  rule unitL : mul (one ()) x ==> x;
+}
+
+module Ints : Model(Semigroup) where {
+  type M = Integer;
+  def mul(x : Integer, y : Integer) -> -F Integer { return y }
+}

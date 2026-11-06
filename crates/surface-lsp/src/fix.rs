@@ -591,7 +591,9 @@ mod tests
             json!([]),
             "a range away from the refusal offers nothing"
         );
-        let missing = SourceText::from("def a : Integer ;\ndef a = ;\n");
+        let missing = SourceText::from(include_str!(
+            "fix/unformatted/a-repair-is-offered-as-the-closing-it-owes-missing.gandr"
+        ));
         let value = point((Line::from(1_u32), Character::from(7_u32)));
         let operand = refused(malformed, value);
         assert_eq!(

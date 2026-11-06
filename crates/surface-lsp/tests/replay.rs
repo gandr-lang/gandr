@@ -19,6 +19,13 @@ use serde_json::json;
 /// `gandr lsp --standalone` with a trace asked for: a document opened, a
 /// string typed where an integer is declared, a hover over the declaration,
 /// the integer typed back and a hover over it, each step a second apart.
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        embedded_source,
+        reason = "recorded: the trace is a session `gandr lsp` wrote, JSON messages whose texts the server parses; the replay reads it whole, so no `.gandr` file can hold it"
+    )
+)]
 const SCENE: &str = include_str!("replay/fixing-a-mismatch.trace");
 
 /// A trace file under the system's temporary directory, named for this

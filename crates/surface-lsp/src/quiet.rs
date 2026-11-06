@@ -990,7 +990,7 @@ pub mod tests
                 Maybe::Absent(absent) => Maybe::Absent(absent),
             }
         };
-        let text = "def a = 1 ;\ndef b = ";
+        let text = include_str!("quiet/unformatted/str.gandr");
         assert_eq!(
             held(text, text.len()),
             Maybe::Present("def b ="),
@@ -1025,7 +1025,7 @@ pub mod tests
             "def a = 1 ;".contains(inner) && inner.contains('1'),
             "the form holding a caret inside the value is the value's or the declaration's: {inner:?}"
         );
-        let lone = "def a = 1 ;\nx";
+        let lone = include_str!("quiet/unformatted/str-lone.gandr");
         assert_eq!(
             held(lone, 12),
             Maybe::Absent(formless::Absent::Between),

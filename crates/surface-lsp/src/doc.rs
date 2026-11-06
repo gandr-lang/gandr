@@ -505,10 +505,17 @@ mod tests
         let read = |text: &str| summary(SourceText::from(text));
         assert_eq!(read("One. Two."), "One.");
         assert_eq!(
-            read("The `std.cost` effect,\nover two lines. Then more."),
+            read(include_str!(
+                "doc/unformatted/a-summary-is-the-first-sentence-1.gandr"
+            )),
             "The `std.cost` effect, over two lines."
         );
-        assert_eq!(read("No stop here\n\nA second paragraph."), "No stop here");
+        assert_eq!(
+            read(include_str!(
+                "doc/unformatted/a-summary-is-the-first-sentence-2.gandr"
+            )),
+            "No stop here"
+        );
         assert_eq!(read(""), "");
     }
 

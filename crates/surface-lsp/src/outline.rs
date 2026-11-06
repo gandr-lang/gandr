@@ -1496,7 +1496,9 @@ mod tests
     #[test]
     fn a_root_form_that_declares_nothing_is_a_symbol_2073()
     {
-        let targeted = "def a = 1 ;\n@[ deprecated ]\nthunk {\n  return a\n} ;\n";
+        let targeted = include_str!(
+            "outline/unformatted/a-root-form-that-declares-nothing-is-a-symbol-2073-targeted.gandr"
+        );
         let answered = Reading::of(SourceText::from(targeted)).symbols();
         assert_eq!(outline(&answered), [
             "a 12 0:0-0:11 at 0:4-0:5",
@@ -1511,8 +1513,9 @@ mod tests
             [false, true],
             "the block before the final expression marks it"
         );
-        let strays =
-            "import \"./a.gandr\" ;\n1 ;\nrec {\n  def b = 2 ;\n}\nb ;\n@[ checks ]\n@[ checks ]\n";
+        let strays = include_str!(
+            "outline/unformatted/a-root-form-that-declares-nothing-is-a-symbol-2073-strays.gandr"
+        );
         assert_eq!(outline(&Reading::of(SourceText::from(strays)).symbols()), [
             "1 24 1:0-1:3 at 1:0-1:1",
             "b 12 3:2-3:13 at 3:6-3:7",
@@ -1543,16 +1546,12 @@ mod tests
         };
         for (layout, braced) in [
             (
-                "pub data Nat : Type where\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\nmodule Plain \
-                 where\n  def one = 1 ;\n",
-                "pub data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\nmodule \
-                 Plain where {\n  def one = 1 ;\n}\n",
+                include_str!("outline/unformatted/a-layout-block-holds-its-members-4853-1.gandr"),
+                include_str!("outline/unformatted/a-layout-block-holds-its-members-4853-2.gandr"),
             ),
             (
-                "theory Shapes where\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\nmodule \
-                 Plain where\n  def one = 1 ;\n",
-                "theory Shapes where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
-                 Plain where {\n  def one = 1 ;\n}\n",
+                include_str!("outline/unformatted/a-layout-block-holds-its-members-4853-3.gandr"),
+                include_str!("outline/unformatted/a-layout-block-holds-its-members-4853-4.gandr"),
             ),
         ] {
             let braced_symbols = held(braced);
@@ -1621,10 +1620,7 @@ mod tests
     #[test]
     fn a_deprecated_declaration_is_tagged()
     {
-        let source = "@[ deprecated ] def bare = 1 ;\n@[ checks ]\n@[ doc(\"x\"), deprecated(*{ \
-                      since = \"0.2\" }) ] def recorded = 2 ;\n@[ respects(deprecated) ] def \
-                      named = 3 ;\nmodule Holder where {\n  @[ deprecated ] def member = 4 ;\n}\ndef \
-                      plain = 5 ;\n";
+        let source = include_str!("outline/unformatted/a-deprecated-declaration-is-tagged.gandr");
         let answered = Reading::of(SourceText::from(source)).symbols();
         assert_eq!(
             answered
@@ -1698,13 +1694,7 @@ mod tests
     #[test]
     fn a_theory_holds_its_members()
     {
-        let source = "theory Shapes where {\n  sort M : Type;\n  data Unit : M;\n  oper mul : (x : M, y \
-                      : M) --> M;\n  obs size : (m : M) --> M;\n  rule assoc : mul (mul x y) z \
-                      ==> mul x (mul y z);\n  boundary Square { tl, tr, bl, br };\n  face \
-                      left = { tl, bl };\n  ext Cell = M on left is zero;\n}\ntheory Monoid where {\n  \
-                      include Shapes;\n  oper \
-                      one : () --> M;\n}\ncodata Stream : Type where {\n  head : M;\n  tail : \
-                      Stream;\n}\n";
+        let source = include_str!("outline/unformatted/a-theory-holds-its-members.gandr");
         assert_eq!(outline(&Reading::of(SourceText::from(source)).symbols()), [
             "Shapes 11 0:0-9:1 at 0:7-0:13",
             "  M 26 1:2-1:16 at 1:7-1:8",
@@ -1726,10 +1716,8 @@ mod tests
     #[test]
     fn multi_line_forms_and_documentation_fold()
     {
-        let source = "/// One.\n/// Two.\ndef f(x : Integer) -> -F Integer {\n  return x\n}\n\
-                      def g = 1 ;\n/* a\n   block */\ndef h = 2 ;\n\
-                      theory T where {\n  sort M : Type;\n  boundary Square {\n    tl, tr, bl, br\n  \
-                      };\n  oper mul :\n    (M, M) --> M;\n}\ndef k =\n  1 ;\n";
+        let source =
+            include_str!("outline/unformatted/multi-line-forms-and-documentation-fold.gandr");
         let answered: Vec<(u64, u64, Option<&str>, Option<String>)> =
             Reading::of(SourceText::from(source))
                 .folds()
@@ -1767,7 +1755,8 @@ mod tests
     #[test]
     fn a_form_folds_at_the_brace_of_its_shared_block()
     {
-        let source = "def f =\n  thunk {\n    return 1\n  } ;\n";
+        let source =
+            include_str!("outline/unformatted/a-form-folds-at-the-brace-of-its-shared-block.gandr");
         let answered: Vec<(u64, u64, Option<String>)> = Reading::of(SourceText::from(source))
             .folds()
             .iter()
@@ -1835,9 +1824,9 @@ mod tests
             Some("0:13-0:14".to_owned()),
             "where one token ends and the next starts, the one starting is selected"
         );
-        let theory = SourceText::from(
-            "theory T where {\n  sort M : Type;\n  oper mul : (x : M) --> M;\n}\n",
-        );
+        let theory = SourceText::from(include_str!(
+            "outline/unformatted/a-selection-grows-from-the-innermost-form-theory.gandr"
+        ));
         let member =
             Reading::of(theory).selections(&LineIndex::new(theory.as_ref().into()), &[at(
                 Line::from(2),

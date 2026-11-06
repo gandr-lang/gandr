@@ -2415,7 +2415,10 @@ mod tests
         let body = "def f(x : Integer) -> -F Integer {";
         // The body's closer is written, on the cursor's line or the next: the
         // body's contents are what is missing, and no `}` is repeated.
-        for after in ["}", "\n}"] {
+        for after in [
+            "}",
+            include_str!("inline/unformatted/the-defect-rows-answer-as-wanted.gandr"),
+        ] {
             let found = between(&tools, SourceText::from(body), SourceText::from(after));
             assert_eq!(
                 found.first().map(String::as_str),
@@ -2489,11 +2492,19 @@ mod tests
             ("def g : Integer ⇝", "", " ${1:type};"),
             ("def g : Integer ~~>", "", " ${1:type};"),
             (
-                "def f(x : Nat) -> -F Nat {\n  match x {",
-                " }\n}",
+                include_str!(
+                    "inline/unformatted/each-category-is-named-where-its-hole-stands-1.gandr"
+                ),
+                include_str!(
+                    "inline/unformatted/each-category-is-named-where-its-hole-stands-2.gandr"
+                ),
                 " | ${1:pattern} => ${2:computation}",
             ),
-            ("module M where {", "\n}", " ${1:member}"),
+            (
+                "module M where {",
+                include_str!("inline/unformatted/the-defect-rows-answer-as-wanted.gandr"),
+                " ${1:member}",
+            ),
             ("", "", "def ${1:identifier} : ${2:type};"),
         ] {
             let found = between(&tools, SourceText::from(before), SourceText::from(after));
@@ -2513,15 +2524,8 @@ mod tests
     #[test]
     fn a_cut_answers_as_its_text_labeled_afresh_594()
     {
-        let text = concat!(
-            "/// A doc line.\n",
-            "def greet(name : String) -> -F String {\n",
-            "  /* a block\n",
-            "     comment */ return \"hello ${name}, \\\"quoted\\\" ${ { 1 } }\";\n",
-            "}\n",
-            "def g : Integer ⇝ Integer; // a trailing comment\n",
-            "def x = (1 + #[2, 3]) /* open",
-        );
+        let text =
+            include_str!("inline/unformatted/a-cut-answers-as-its-text-labeled-afresh-594.gandr");
         let whole = Labeled::new(SourceText::from(text));
         for at in 0 ..= text.len() {
             let before = text
@@ -2599,12 +2603,25 @@ mod tests
         let tools = tools();
         let mut rendered = String::new();
         for (before, after) in [
-            ("def f(x : Integer) -> -F Integer {", "\n}"),
+            (
+                "def f(x : Integer) -> -F Integer {",
+                include_str!("inline/unformatted/the-defect-rows-answer-as-wanted.gandr"),
+            ),
             ("def f(x : Integer", ""),
             ("def x = (", ")"),
             ("def x = ", "answer;"),
-            ("def f(x : Nat) -> -F Nat {\n  match x {", " }\n}"),
-            ("data Nat : Type where {\n  | Zero", "\n}"),
+            (
+                include_str!(
+                    "inline/unformatted/each-category-is-named-where-its-hole-stands-1.gandr"
+                ),
+                include_str!(
+                    "inline/unformatted/each-category-is-named-where-its-hole-stands-2.gandr"
+                ),
+            ),
+            (
+                include_str!("inline/unformatted/the-ranking-is-pinned.gandr"),
+                include_str!("inline/unformatted/the-defect-rows-answer-as-wanted.gandr"),
+            ),
             ("def x = (", ") + 1;"),
             ("def x = (", "1 + 2)"),
             ("def x = (", "(1))"),

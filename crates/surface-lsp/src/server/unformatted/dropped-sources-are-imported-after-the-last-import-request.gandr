@@ -1,0 +1,2 @@
+{{"jsonrpc":"2.0","id":9,"method":"gandr/importFiles","params":{{
+                    "textDocument":{{"uri":"{}"}},"files":[{files}]}}}}

@@ -301,9 +301,9 @@ const NAMES: [&str; 4] = [
 /// The texts a random edit script starts from.
 const SEEDS: [&str; 4] = [
     "",
-    "def a : Integer ;\ndef a = 1 ;\n",
-    "def f(x : Integer) -> -F Integer {\n  return x\n}\n",
-    "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndef rec down(n : Nat) -> -F Nat {\n  match n {\n    | Zero => return n\n    | Succ(p) => become down[<] p\n  }\n}\n",
+    include_str!("scenarios/unformatted/seeds-1.gandr"),
+    include_str!("scenarios/unformatted/seeds-2.gandr"),
+    include_str!("scenarios/unformatted/seeds-3.gandr"),
 ];
 
 /// What a random script types, one token per step.
@@ -978,7 +978,7 @@ pub(super) fn hovered(
 #[test]
 fn fixing_a_mismatch_clears_its_diagnostic()
 {
-    let text = "def a : Integer ;\ndef a = 1 ;\n";
+    let text = include_str!("scenarios/unformatted/seeds-1.gandr");
     let mut session = Session::open(
         String::from("file:///strict/mismatch.gandr"),
         Text(text),
@@ -1109,9 +1109,9 @@ fn an_importer_erased_cold_and_warm_answers_alike_776()
 #[test]
 fn the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks_3850()
 {
-    let text = "def held0 = absent0 ;\ndef held1 = absent1 ;\ndef held2 = absent2 ;\n\
-                def held3 = absent3 ;\ndef held4 = absent4 ;\ndef held5 = absent5 ;\n\
-                def held6 = absent6 ;\ndef held7 = absent7 ;\ndef held8 = absent8 ;\n";
+    let text = include_str!(
+        "scenarios/fixtures/the-erasure-s-parts-over-its-nights-check-every-text-the-whole-erasure-checks-3850.gandr"
+    );
     let counts = |answers: &[Value]| -> BTreeSet<usize> {
         answers
             .iter()
@@ -1159,7 +1159,7 @@ fn the_erasure_s_parts_over_its_nights_check_every_text_the_whole_erasure_checks
 
 /// The document the quiet scenario types into: three declarations, the last
 /// naming the first.
-const QUIET_SEED: &str = "def one = 1 ;\ndef mid = 2 ;\ndef two = one ;\n";
+const QUIET_SEED: &str = include_str!("scenarios/unformatted/quiet-seed.gandr");
 
 /// The document's URI.
 const QUIET_URI: &str = "file:///strict/quiet.gandr";
@@ -1420,7 +1420,8 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
 #[test]
 fn a_line_comment_holds_the_newline_closing_it_456()
 {
-    let text = "// a note\ndata Unit : Type where { | Tt : Unit }\n";
+    let text =
+        include_str!("scenarios/unformatted/a-line-comment-holds-the-newline-closing-it-456.gandr");
     let source = Source {
         uri: String::from("file:///comment-line-end.gandr"),
         text: String::from(text),

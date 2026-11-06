@@ -1,0 +1,2 @@
+def faraway : Integer;
+def faraway = 9;
