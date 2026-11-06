@@ -1,8 +1,13 @@
-// The target's completion reaped before the cancellation's, every close
-// written as a statement: a block ending in `close e;` closes `e` and returns
-// the unit, as one ending in `close e` does.
-//
-// - see: #1205
+//! `closed-statements` closes both mock ring endpoints with statements.
+//!
+//! `close e;` closes `e` and returns unit. The pathological twin refuses a
+//! half that leaves its endpoint open as `LinearResidue`.
+//!
+//! The checker removes the endpoint when a closing statement ends a block.
+//! The source proves that this closing form and a final `close e` agree.
+//!
+//! - see: corpus/pathological/completion/half-unclosed.gandr
+//! - see: #1205
 
 // The ring's protocol and its entries.
 import "./ring-base.gandr";

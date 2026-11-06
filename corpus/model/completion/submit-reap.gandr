@@ -1,7 +1,13 @@
-// Submit, then reap: "exactly one matching CQE for every SQE" (io_uring(7)).
-// The mock kernel is a forked peer that serves one submission; after the
-// submit, the submitter's end is the pending completion, and the program is
-// accepted only when it reaps the completion and closes the ring.
+//! `submit-reap` sends a read and reaps its completion.
+//!
+//! A mock ring owes one completion for its submission. The pathological twin
+//! refuses a submitted read with a pending completion as `LinearResidue`.
+//!
+//! The checker gives the submitter a pending completion after its send. The
+//! mock kernel posts `done` and closes the ring.
+//!
+//! - see: corpus/pathological/completion/pending-dropped.gandr
+//! - see: https://man7.org/linux/man-pages/man7/io_uring.7.html
 
 // The ring's protocol and its entries.
 import "./ring-base.gandr";
