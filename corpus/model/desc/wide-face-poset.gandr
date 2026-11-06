@@ -47,7 +47,7 @@ type Deploy = *{
   face drained = { host, tls, region, replicas, timeout };
 
 /// A deployment that states each of its fields.
-def local : Deploy = *{
+def wide_deployment : Deploy = *{
   .host = "localhost",
   .port = 443,
   .tls = true,
@@ -73,7 +73,7 @@ def placed_replicas(d : Deploy[
   served ↦ *{.port = 443, .tls = true, .region = "eu", .zone = "a", .tier = 1, .replicas = 3}
 ]) -> Integer { d.replicas }
 
-/// `local` stands at the system by the coercion in: each of its fields
+/// `wide_deployment` stands at the system by the coercion in: each of its fields
 /// converts with the value that the system fixes.
 @[ runs("3") ]
-def local_replicas : Integer = placed_replicas (local);
+def local_replicas : Integer = placed_replicas (wide_deployment);
