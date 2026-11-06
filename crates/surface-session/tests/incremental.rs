@@ -137,8 +137,8 @@ fn insertion_adopts_untouched_neighbours()
 {
     assert_eq!(
         gate(
-            "def a = 1 ;\ndef c = 3 ;",
-            "def a = 1 ;\ndef b = 2 ;\ndef c = 3 ;"
+            include_str!("incremental/fixtures/insertion-adopts-untouched-neighbours-1.gandr"),
+            include_str!("incremental/fixtures/insertion-adopts-untouched-neighbours-2.gandr")
         ),
         vec![Adoption::Adopted, Adoption::Judged, Adoption::Adopted],
         "only the inserted definition is judged"
@@ -148,7 +148,7 @@ fn insertion_adopts_untouched_neighbours()
 #[test]
 fn noop_edit_adopts_everything()
 {
-    let source = "def a = 1 ;\ndef b = a ;\ndef c = b ;";
+    let source = include_str!("incremental/fixtures/noop-edit-adopts-everything.gandr");
     assert_eq!(
         gate(source, source),
         vec![Adoption::Adopted; 3],
@@ -162,8 +162,14 @@ fn append_sequence_counts_reused_prefixes()
     let mut session = session(SourceRoot::Strict);
     let _first = submit(&mut session, "def x = 1 ;");
     for (source, adopted) in [
-        ("def x = 1 ;\ndef y = x ;", 1_usize),
-        ("def x = 1 ;\ndef y = x ;\ndef z = y ;", 2_usize),
+        (
+            include_str!("incremental/fixtures/append-sequence-counts-reused-prefixes-1.gandr"),
+            1_usize,
+        ),
+        (
+            include_str!("incremental/fixtures/append-sequence-counts-reused-prefixes-2.gandr"),
+            2_usize,
+        ),
     ] {
         let submission = submit(&mut session, source);
         assert!(
@@ -176,7 +182,10 @@ fn append_sequence_counts_reused_prefixes()
 #[test]
 fn type_change_retypes_the_dependent()
 {
-    let adoptions = gate("def x = 1 ;\ndef y = x ;", "def x = \"hi\" ;\ndef y = x ;");
+    let adoptions = gate(
+        include_str!("incremental/fixtures/append-sequence-counts-reused-prefixes-1.gandr"),
+        include_str!("incremental/fixtures/type-change-retypes-the-dependent.gandr"),
+    );
     assert_eq!(
         adoptions,
         vec![Adoption::Judged, Adoption::Judged],
@@ -187,8 +196,11 @@ fn type_change_retypes_the_dependent()
 #[test]
 fn downstream_error_surfaces()
 {
-    let edited = "def x = \"hi\" ;\ndef y : Integer ;\ndef y = x ;";
-    let adoptions = gate("def x = 1 ;\ndef y : Integer ;\ndef y = x ;", edited);
+    let edited = include_str!("incremental/fixtures/downstream-error-surfaces-edited.gandr");
+    let adoptions = gate(
+        include_str!("incremental/fixtures/downstream-error-surfaces-adoptions.gandr"),
+        edited,
+    );
     assert_eq!(
         adoptions.get(1_usize),
         Some(&Adoption::Judged),
@@ -211,8 +223,12 @@ fn downstream_error_surfaces()
 fn a_signature_decoding_a_changed_code_is_judged_again_2102()
 {
     let adoptions = gate(
-        "def code : Type ;\ndef code = Integer ;\ndef three : code ;\ndef three = 3 ;",
-        "def code : Type ;\ndef code = String ;\ndef three : code ;\ndef three = 3 ;",
+        include_str!(
+            "incremental/fixtures/a-signature-decoding-a-changed-code-is-judged-again-2102-adoptions.gandr"
+        ),
+        include_str!(
+            "incremental/fixtures/a-signature-decoding-a-changed-code-is-judged-again-2102.gandr"
+        ),
     );
     assert_eq!(
         adoptions,
@@ -229,8 +245,9 @@ fn a_signature_decoding_a_changed_code_is_judged_again_2102()
 #[test]
 fn a_constructor_of_another_family_is_judged_again_5400()
 {
-    let families = "data Celsius : Type where\n  | Cel : (x : Integer) --> Celsius\n\ndata \
-                    Fahrenheit : Type where\n  | Fah : (x : Integer) --> Fahrenheit\n\n";
+    let families = include_str!(
+        "incremental/fixtures/a-constructor-of-another-family-is-judged-again-5400-families.gandr"
+    );
     let genuine = format!("{families}def v = (Fah 20 : Fahrenheit);\n");
     let namesake = format!("{families}def v = (Cel 20 : Fahrenheit);\n");
     for (base, edited) in [(&genuine, &namesake), (&namesake, &genuine)] {
@@ -247,8 +264,8 @@ fn deletion_matches_from_scratch()
 {
     assert_eq!(
         gate(
-            "def a = 1 ;\ndef b = 2 ;\ndef c = 3 ;",
-            "def a = 1 ;\ndef c = 3 ;"
+            include_str!("incremental/fixtures/insertion-adopts-untouched-neighbours-2.gandr"),
+            include_str!("incremental/fixtures/insertion-adopts-untouched-neighbours-1.gandr")
         ),
         vec![Adoption::Adopted, Adoption::Adopted],
         "both survivors are reused"
@@ -259,8 +276,8 @@ fn deletion_matches_from_scratch()
 fn rename_matches_from_scratch()
 {
     let adoptions = gate(
-        "def foo = 1 ;\ndef keep = 9 ;",
-        "def bar = 1 ;\ndef keep = 9 ;",
+        include_str!("incremental/fixtures/rename-matches-from-scratch-adoptions.gandr"),
+        include_str!("incremental/fixtures/rename-matches-from-scratch.gandr"),
     );
     assert_eq!(
         adoptions.get(1_usize),
@@ -637,9 +654,16 @@ fn an_edit_judges_exactly_the_items_its_support_logs_separate()
 fn a_retyped_definition_dirties_its_reader_and_nothing_else()
 {
     let mut editor = session(SourceRoot::Fixture);
-    let _base = submit(&mut editor, "def x = 1 ;\ndef y = x ;\ndef z = 2 ;");
+    let _base = submit(
+        &mut editor,
+        include_str!(
+            "incremental/fixtures/a-retyped-definition-dirties-its-reader-and-nothing-else--base.gandr"
+        ),
+    );
     let base = latest(&editor);
-    let edited = "def x = \"hi\" ;\ndef y = x ;\ndef z = 2 ;";
+    let edited = include_str!(
+        "incremental/fixtures/a-retyped-definition-dirties-its-reader-and-nothing-else-edited.gandr"
+    );
     let _edited = submit(&mut editor, edited);
     let mut scratch = session(SourceRoot::Fixture);
     let _fresh = submit(&mut scratch, edited);

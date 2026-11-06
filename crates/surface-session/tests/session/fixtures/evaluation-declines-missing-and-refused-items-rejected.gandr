@@ -1,0 +1,2 @@
+def broken : String;
+def broken = 1;

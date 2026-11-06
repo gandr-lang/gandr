@@ -581,8 +581,7 @@ mod tests
     use super::mold_runs;
 
     /// Twelve declarations, each its own form.
-    const SOURCE: &str = "def a = 1;\ndef b = 2;\ndef c = a;\ndef d = b;\ndef e = 5;\ndef f = 6;\n\
-                          def g = 7;\ndef h = 8;\ndef i = 9;\ndef j = 10;\ndef k = 11;\ndef l = 12;\n";
+    const SOURCE: &str = include_str!("forms/fixtures/source.gandr");
 
     #[test]
     fn every_width_molds_the_same_units()

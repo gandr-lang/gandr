@@ -1,0 +1,4 @@
+/// The answer,
+/// twice over.
+def answer = 42;
+def other = 1;

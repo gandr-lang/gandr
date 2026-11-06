@@ -176,7 +176,9 @@ fn whole_file_submit_carries_definitions_forward()
     let mut session = session(SourceRoot::Strict);
     let submission = submit(
         &mut session,
-        "def greeting = \"the value zone\" ;\ndef shown : String ;\ndef shown = greeting ;",
+        include_str!(
+            "session/fixtures/whole-file-submit-carries-definitions-forward-submission.gandr"
+        ),
     );
     assert_eq!(
         rows(submission.composed()),
@@ -202,7 +204,12 @@ fn whole_file_submit_carries_definitions_forward()
 fn a_malformed_declaration_is_declined_and_the_later_definition_binds()
 {
     let mut session = session(SourceRoot::Strict);
-    let first = submit(&mut session, "def bad = 1 \u{1} 2 ;\ndef good = 2 ;");
+    let first = submit(
+        &mut session,
+        include_str!(
+            "session/unformatted/a-malformed-declaration-is-declined-and-the-later-definition-binds-first.gandr"
+        ),
+    );
     let Composed::Settled { ref report, .. } = *first.composed()
     else {
         panic!("the damaged declaration does not collapse the submission");
@@ -229,7 +236,9 @@ fn a_malformed_declaration_is_declined_and_the_later_definition_binds()
 
     let later = submit(
         &mut session,
-        "def bad = 1 \u{1} 2 ;\ndef good = 2 ;\ndef later : Integer ;\ndef later = good ;",
+        include_str!(
+            "session/unformatted/a-malformed-declaration-is-declined-and-the-later-definition-binds-later.gandr"
+        ),
     );
     assert_eq!(
         rows(later.composed()).get(2_usize),
@@ -245,10 +254,13 @@ fn checkpointed_session_matches_from_scratch()
     let _definitions = submit(&mut checkpointed, "def x = 40 ;");
     let appended = submit(
         &mut checkpointed,
-        "def x = 40 ;\ndef y : Integer ;\ndef y = x ;",
+        include_str!("session/fixtures/checkpointed-session-matches-from-scratch-appended.gandr"),
     );
     let mut scratch = session(SourceRoot::Strict);
-    let whole = submit(&mut scratch, "def x = 40 ;\ndef y : Integer ;\ndef y = x ;");
+    let whole = submit(
+        &mut scratch,
+        include_str!("session/fixtures/checkpointed-session-matches-from-scratch-appended.gandr"),
+    );
     assert_eq!(
         appended.composed(),
         whole.composed(),
@@ -281,7 +293,9 @@ fn successful_submissions_publish_whole_program_synthesis()
     };
     let _second = submit(
         &mut session,
-        "def retained = 40 ;\ndef appended = retained ;",
+        include_str!(
+            "session/fixtures/successful-submissions-publish-whole-program-synthesis--second.gandr"
+        ),
     );
     let first_events: Vec<SynthesisEvent> = first_stream.collect();
     let [
@@ -347,7 +361,12 @@ fn submission_owns_outcomes_after_session_advances()
 {
     let mut session = session(SourceRoot::Strict);
     let first = submit(&mut session, "def retained = 40 ;");
-    let second = submit(&mut session, "def retained = 40 ;\ndef later = retained ;");
+    let second = submit(
+        &mut session,
+        include_str!(
+            "session/fixtures/submission-owns-outcomes-after-session-advances-second.gandr"
+        ),
+    );
     assert_eq!(
         names(first.composed()),
         vec!["retained".to_owned()],
@@ -369,7 +388,10 @@ fn submission_owns_outcomes_after_session_advances()
 fn scalar_literals_carry_their_types()
 {
     let mut session = session(SourceRoot::Strict);
-    let _submission = submit(&mut session, "def number = 42 ;\ndef text = \"hi\" ;");
+    let _submission = submit(
+        &mut session,
+        include_str!("session/fixtures/scalar-literals-carry-their-types--submission.gandr"),
+    );
     let typings = resumed(&session);
     assert!(
         matches!(typings.as_slice(), [number, text] if produced(number) == [ContentNode::Base(BaseType::Integer)] && produced(text) == [ContentNode::Base(BaseType::String)]),
@@ -384,7 +406,7 @@ fn definitions_carry_across_lines()
     let _first = submit(&mut session, "def y = 5 ;");
     let later = submit(
         &mut session,
-        "def y = 5 ;\ndef z = y ;\ndef w : Integer ;\ndef w = y ;",
+        include_str!("session/fixtures/definitions-carry-across-lines-later.gandr"),
     );
     let typings = resumed(&session);
     assert!(
@@ -455,7 +477,9 @@ fn verdicts_keep_an_outcome_only_type_error_visible()
     let mut session = session(SourceRoot::Strict);
     let submission = submit(
         &mut session,
-        "def wrong : Integer ;\ndef wrong = \"text\" ;",
+        include_str!(
+            "session/fixtures/verdicts-keep-an-outcome-only-type-error-visible-submission.gandr"
+        ),
     );
     let Composed::Settled { ref report, .. } = *submission.composed()
     else {
@@ -579,7 +603,9 @@ fn a_judged_revision_reports_before_its_admission()
 #[test]
 fn a_judged_revision_hands_its_tree_to_a_reader()
 {
-    let text = gandr_surface_syntax::SourceText::from("def a = 1 ;\ndef b = a ;\ndef c = ");
+    let text = gandr_surface_syntax::SourceText::from(include_str!(
+        "session/unformatted/a-judged-revision-hands-its-tree-to-a-reader.gandr"
+    ));
     let mut reading = session(SourceRoot::Strict);
     let mut read = Vec::new();
     let judged = reading
@@ -630,7 +656,9 @@ fn import_namespace_carries_across_lines_and_resolves_source_declarations()
     );
     let second = submit(
         &mut session,
-        "import \"file:///lib/parse.gandr\" as parse ;\nimport \"file:///lib/list.gandr\" as list_ext ;",
+        include_str!(
+            "session/fixtures/import-namespace-carries-across-lines-and-resolves-source-declarations-second.gandr"
+        ),
     );
     assert_eq!(
         second.standing(),
@@ -667,7 +695,7 @@ fn import_namespace_carries_across_lines_and_resolves_source_declarations()
             .fragment(row.span())
             .map(|covered| String::from(covered.as_ref())),
         Ok(String::from(
-            "import \"file:///lib/list.gandr\" as list_ext ;"
+            "import \"file:///lib/list.gandr\" as list_ext;"
         )),
         "the row covers its own declaration in the revision's text"
     );
@@ -679,7 +707,9 @@ fn import_namespace_carries_across_lines_and_resolves_source_declarations()
 
     let duplicate = submit(
         &mut session,
-        "import \"file:///lib/parse.gandr\" as parse ;\nimport \"file:///lib/list.gandr\" as list_ext ;\nimport \"file:///lib/other.gandr\" as parse ;",
+        include_str!(
+            "session/fixtures/import-namespace-carries-across-lines-and-resolves-source-declarations-duplicate.gandr"
+        ),
     );
     assert!(
         rows(duplicate.composed())
@@ -719,7 +749,10 @@ fn a_kept_table_is_handed_on_once()
         panic!("a session keeps no table unless asked");
     };
     session.keep(Tables::Kept);
-    let mut kept = submit(&mut session, "def a = 1 ;\ndef b = a ;");
+    let mut kept = submit(
+        &mut session,
+        include_str!("session/fixtures/a-kept-table-is-handed-on-once-kept.gandr"),
+    );
     assert!(
         matches!(kept.take_table(), Maybe::Present(_)),
         "a session asked to keep tables keeps the judged revision's"
@@ -814,7 +847,7 @@ fn nullary_function_call_evaluates()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def step() -> -F Integer { return 1 }\ndef called : +U (-F Integer) ;\ndef called = thunk { become step () } ;",
+        include_str!("session/fixtures/nullary-function-call-evaluates-submission.gandr"),
     );
     assert_eq!(
         rows(submission.composed()),
@@ -846,8 +879,9 @@ fn evaluation_declines_missing_and_refused_items()
     ));
     let mut rejected = submit(
         &mut held,
-        r#"def broken : String ;
-def broken = 1 ;"#,
+        include_str!(
+            "session/fixtures/evaluation-declines-missing-and-refused-items-rejected.gandr"
+        ),
     );
     let broken = constant_of(rejected.composed(), SurfaceName::from("broken"));
     assert!(matches!(
@@ -902,7 +936,7 @@ fn holes_decline_evaluation()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def later : +U (-F Integer) ;\ndef main : +U (-F Integer) ;\ndef main = thunk { become force later } ;",
+        include_str!("session/fixtures/holes-decline-evaluation-submission.gandr"),
     );
     let later = constant_of(submission.composed(), SurfaceName::from("later"));
     assert_eq!(
@@ -1045,7 +1079,8 @@ fn first_declaration(text: gandr_surface_syntax::SourceText<'_>) -> gandr_surfac
 fn documentation_is_kept_by_declaration_identity()
 {
     let mut session = session(SourceRoot::Strict);
-    let first = "/// The answer.\ndef answer = 42 ;\ndef other = 1 ;";
+    let first =
+        include_str!("session/fixtures/documentation-is-kept-by-declaration-identity-first.gandr");
     let _submitted = submit(&mut session, first);
     let answer = first_declaration(first.into());
     assert!(
@@ -1056,7 +1091,8 @@ fn documentation_is_kept_by_declaration_identity()
         session.documentation(other),
         Maybe::Absent(gandr_surface_lowering::documentation::Absent::Undocumented)
     ));
-    let second = "/// The answer,\n/// twice over.\ndef answer = 42 ;\ndef other = 1 ;";
+    let second =
+        include_str!("session/fixtures/documentation-is-kept-by-declaration-identity-second.gandr");
     let _submitted = submit(&mut session, second);
     assert_eq!(first_declaration(second.into()), answer);
     assert!(
@@ -1070,8 +1106,8 @@ fn documentation_is_kept_by_declaration_identity()
 fn documentation_keeps_its_declaration_links_4963()
 {
     let mut session = session(SourceRoot::Strict);
-    let text = "/// See [other], [other] and [Red].\ndef answer = 42 ;\ndef other = 1 ;\ndata Color \
-                : Type where { | Red : Color }";
+    let text =
+        include_str!("session/fixtures/documentation-keeps-its-declaration-links-4963.gandr");
     let _submitted = submit(&mut session, text);
     let answer = first_declaration(text.into());
     let links = session
@@ -1098,8 +1134,7 @@ fn documentation_keeps_its_declaration_links_4963()
 fn a_deprecation_is_kept_by_declaration_identity()
 {
     let mut session = session(SourceRoot::Strict);
-    let text = "@[ deprecated(*{ since = \"0.2\", note = \"use `other`\" }) ]\ndef answer = 42 \
-                ;\n@[ deprecated ]\ndef bare = 2 ;\ndef other = 1 ;";
+    let text = include_str!("session/fixtures/a-deprecation-is-kept-by-declaration-identity.gandr");
     let _submitted = submit(&mut session, text);
     let key = |form: &str| first_declaration(form.into());
     assert_eq!(
@@ -1275,8 +1310,15 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     // The editor's buffer is what is judged; the file only has to exist.
     std::fs::write(&document, "").expect("the document is written");
     let mut session = session(SourceRoot::Strict);
-    let first = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
-    let second = format!("{first}def four : Integer ;\ndef four = three ;\n");
+    let first = include_str!(
+        "session/fixtures/an-edit-to-its-own-text-readmits-the-document-alone-776-first.gandr"
+    );
+    let second = format!(
+        include_str!(
+            "session/unformatted/an-edit-to-its-own-text-readmits-the-document-alone-776-second.gandr"
+        ),
+        first = first
+    );
     assert_eq!(
         admitted_after(&mut session, &document, first),
         Counted {
@@ -1453,8 +1495,9 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     std::fs::write(&document, "").expect("the document is written");
     let grammar = &*crate::common::GRAMMAR;
     let mut session = session(SourceRoot::Strict);
-    let own = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\ndef four : \
-               Integer ;\ndef four = three ;\n";
+    let own = include_str!(
+        "session/fixtures/a-retired-admission-leaves-what-it-crossed-to-the-next-1547-own.gandr"
+    );
     let laid = lay_out(grammar, &document, SourceRoot::Strict, own.into());
     let text = SourceText::from(laid.text.as_str());
     let judge = |session: &mut gandr_surface_session::Session<
@@ -1534,8 +1577,12 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
 fn a_retired_judgement_leaves_the_next_its_resume_1547()
 {
     use gandr_core_checker::Polled;
-    let first = "def kept = 40 ;\ndef edited = 1 ;\ndef after = kept ;";
-    let second = "def kept = 40 ;\ndef edited = 2 ;\ndef after = kept ;";
+    let first = include_str!(
+        "session/fixtures/a-retired-judgement-leaves-the-next-its-resume-1547-first.gandr"
+    );
+    let second = include_str!(
+        "session/fixtures/a-retired-judgement-leaves-the-next-its-resume-1547-second.gandr"
+    );
     let mut retiring = session(SourceRoot::Strict);
     let _first = submit(&mut retiring, first);
     assert!(
@@ -1572,8 +1619,12 @@ fn a_retired_judgement_leaves_the_next_its_resume_1547()
 fn a_judgement_polls_before_each_declaration_it_checks_1663()
 {
     use gandr_core_checker::Polled;
-    let first = "def kept = 40 ;\ndef edited = 1 ;\ndef after = kept ;";
-    let second = "def kept = 40 ;\ndef edited = 2 ;\ndef after = kept ;";
+    let first = include_str!(
+        "session/fixtures/a-retired-judgement-leaves-the-next-its-resume-1547-first.gandr"
+    );
+    let second = include_str!(
+        "session/fixtures/a-retired-judgement-leaves-the-next-its-resume-1547-second.gandr"
+    );
     let mut session = session(SourceRoot::Strict);
     let _first = submit(&mut session, first);
     let poll = After(core::cell::Cell::new(usize::MAX));
@@ -1658,10 +1709,15 @@ fn a_document_after_its_closure_shares_the_closure_s_images_776()
         let items: Vec<Arc<ItemTree>> = session.snapshot().items().to_vec();
         (items, anchors)
     };
-    let first = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
+    let first = include_str!(
+        "session/fixtures/an-edit-to-its-own-text-readmits-the-document-alone-776-first.gandr"
+    );
     let (before, _) = judge(first);
     let (after, anchors) = judge(&format!(
-        "{first}def four : Integer ;\ndef four = three ;\n"
+        include_str!(
+            "session/unformatted/an-edit-to-its-own-text-readmits-the-document-alone-776-second.gandr"
+        ),
+        first = first
     ));
     assert_eq!((before.len(), after.len()), (*PRELUDE + 3, *PRELUDE + 4));
     assert!(
@@ -1890,11 +1946,12 @@ fn an_importer_lowers_its_closure_once_1033()
             own.into(),
         )
     };
-    let first = laid("import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n");
-    let second = laid(
-        "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\ndef four : \
-         Integer ;\ndef four = three ;\n",
-    );
+    let first = laid(include_str!(
+        "session/fixtures/an-edit-to-its-own-text-readmits-the-document-alone-776-first.gandr"
+    ));
+    let second = laid(include_str!(
+        "session/fixtures/a-retired-admission-leaves-what-it-crossed-to-the-next-1547-own.gandr"
+    ));
     let (cold_slot, again_slot, warm_slot) =
         (ClosureSlot::new(), ClosureSlot::new(), ClosureSlot::new());
     let mut cold = session(SourceRoot::Strict);
@@ -1959,7 +2016,9 @@ fn an_importer_lowers_its_closure_once_1033()
 #[test]
 fn a_held_parse_is_the_grammar_s_own_parse()
 {
-    let text = gandr_surface_syntax::SourceText::from("def a = 1 ;\ndef b = a ;");
+    let text = gandr_surface_syntax::SourceText::from(include_str!(
+        "session/fixtures/a-kept-table-is-handed-on-once-kept.gandr"
+    ));
     let mut session = session(SourceRoot::Strict);
     let afresh = gandr_surface_parser::parse(session.grammar(), text)
         .expect("the revision parses")
@@ -2000,8 +2059,9 @@ fn a_revision_reads_the_imports_its_own_parse_writes_2439()
     .expect("the sibling is written");
     let document = directory.join("document.gandr");
     std::fs::write(&document, "").expect("the document is written");
-    let own = "import \"./base.gandr\" ;\nimport \"file:///far.gandr\" as far ;\ndef two : \
-               Integer ;\ndef two = one ;\n";
+    let own = include_str!(
+        "session/fixtures/a-revision-reads-the-imports-its-own-parse-writes-2439-own.gandr"
+    );
     let laid = lay_out(
         &crate::common::GRAMMAR,
         &document,

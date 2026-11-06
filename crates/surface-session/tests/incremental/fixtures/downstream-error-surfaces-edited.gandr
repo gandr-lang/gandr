@@ -1,0 +1,3 @@
+def x = "hi";
+def y : Integer;
+def y = x;
