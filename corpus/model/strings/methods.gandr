@@ -1,16 +1,17 @@
-//! A string's methods: a module member whose first parameter is its receiver,
-//! `self`, written with the mode the receiver is lent in, called off a held
-//! string as `s.len()`. A call is the access its mode names: a shared receiver
-//! is lent for reading, an exclusive one, written with no mode, is lent and
-//! written back, and a consumed one is taken, ending its hold (the `let`,
-//! `inout` and `sink` conventions of [Racordon-2023-borrow_checking_hylo]).
+//! This source models string receiver methods.
+//!
+//! A receiver mode controls each method call. The mode prevents invalid reads,
+//! writes and takes.
+//!
+//! `Str` implements read, write and consumed methods. A call follows its
+//! receiver hold.
 //!
 //! - see: #1488 — `takenInOneArm`
 //! - cites: [Racordon-2023-borrow_checking_hylo]
 //!
 //! [Racordon-2023-borrow_checking_hylo]: https://2023.splashcon.org/details/iwaco-2023-papers/5/Borrow-checking-Hylo "Racordon and Abrahams, Borrow checking Hylo"
 
-// The lists; the byte lists; the owned bytes; the writes.
+// This source imports declarations for lists, bytes, ownership and writes.
 import "../data/data-base.gandr";
 import "./string-base.gandr";
 import "./nul-terminated.gandr";
@@ -18,26 +19,26 @@ import "./small-string.gandr";
 import "./copy-on-write.gandr";
 import "./unique-write.gandr";
 
-/// A string's methods, one per receiver mode.
+/// `Str` groups one method for each receiver mode.
 pub module Str where
-  /// The number of bytes the string holds, its zero included, read from a
-  /// string lent for reading.
+  /// `len` reads a string that a shared receiver lends.
   def len(self : shared Repr) -> Integer =
     match self
       | Inline(bs) => count bs
       | Shared(n, bs) => count bs
-  /// A byte written before the zero of a string lent to the write, which
-  /// writes it back.
+  /// `push` writes `b` before the terminating zero.
+  /// It writes the receiver back.
   def push(self : Repr, b : Integer) -> Unit =
     access self as v { let w = pushInPlace v b; let t = written w; resume(v, t) }
-  /// The bytes of a string taken: nothing reads the string after.
+  /// `bytes` takes a string and returns its bytes.
+  /// No code reads that string later.
   def bytes(self : consumed Repr) -> List(Integer) =
     match self
       | Inline(bs) => bs
       | Shared(n, bs) => bs
 
-/// `hi`'s length before and after `!` is pushed onto it: three bytes, then
-/// four.
+/// `lengths` adds the lengths before and after it appends `!`.
+/// The result is seven.
 @[ runs("7") ]
 def lengths() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
@@ -53,28 +54,27 @@ def taken() -> List(Integer) =
   s.push 33
   s.bytes ()
 
-/// A string taken in one arm of a match and kept in the other: each arm
-/// starts from the hold as the match found it, and the hold ends after the
-/// match.
+/// `takenInOneArm` uses a separate match hold in each arm.
+/// The match ends both holds.
 def takenInOneArm(t : Repr) -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
   match t
     | Inline(bs) => s.bytes ()
     | Shared(n, bs) => bs
 
-/// The arm that takes the string runs: `hi`'s bytes.
+/// `takenOnInline` runs the arm that takes the string.
 @[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def takenOnInline() -> List(Integer) =
   takenInOneArm (Inline (Nil : List(Integer)))
 
-/// The arm that keeps the string runs: the matched string's bytes, and the
-/// hold's end drops `hi`.
+/// `keptOnShared` runs the arm that preserves the string.
+/// The match ends the `hi` hold.
 @[ runs("Cons 33 Nil") ]
 def keptOnShared() -> List(Integer) =
   takenInOneArm (Shared 1 (Cons 33 Nil : List(Integer)))
 
-/// A string taken in one arm and read in the other: the reading arm finds
-/// the string the match found, not the one the other arm took.
+/// `readWhereNotTaken` reads a string in the arm that does not take it.
+/// That arm reads the string that its match found.
 @[ runs("3") ]
 def readWhereNotTaken() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))

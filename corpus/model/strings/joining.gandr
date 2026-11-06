@@ -1,20 +1,17 @@
-// Strings joined with `std.string`'s `concat`, its unit `empty` and the test
-// `isEmpty`.
+// This source models string joining.
 //
-// The functions read the native `string` namespace, so a program joins the
-// builtin `String` the checker and both executors already hold. The module
-// states the monoid laws of joining beside them.
+// The source tests `concat`, `empty` and `isEmpty`. The module states monoid
+// laws for joining.
 //
-// Each item runs one function on literals and states its answer. The laws
-// themselves are certified in the module, over joining presented as an
-// operation.
+// Each item evaluates one literal expression. The module certifies laws for
+// the join operation.
 //
 // - see: `library/std/src/string.gandr` — the functions and the laws
 // - see: `pathological/strings/joining.gandr` — a law over the definition,
 //   refused
 // - see: #525 — admits a law over a definition
 
-// Joining, its unit and the emptiness test.
+// This source imports the join operation, its unit and its emptiness test.
 import std.string (empty, concat, isEmpty);
 
 /// `greeted` joins a greeting and a name.
