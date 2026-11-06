@@ -776,20 +776,11 @@ impl Machine<'_, '_>
         };
         // A patched type's elements are the records of its free fields: the
         // fields it fixes are wanted nowhere.
-        let (wanted, fixed) = if let ValueType::Record(ref wanted) = *matched_native_node {
-            (wanted, None)
-        }
-        else if let ValueType::Patched { base, ref fixed } = *matched_native_node
-            && let Some(&ValueType::Record(ref wanted)) = self.context.arena().value_type(base)
-        {
-            (wanted, Some(fixed))
-        }
+        let Some(wanted) = self.context.arena().element_fields(matched_native_node)
         else {
             return Err(mismatch);
         };
-        let free = |label: &gandr_kernel_term::FieldLabel| {
-            fixed.is_none_or(|fixed| !fixed.contains_key(label))
-        };
+        let fixed = wanted.fixed();
         let Some(matched_native_node) = self.context.arena().value(term)
         else {
             return Err(CheckRefusal::MachineInvariant);
@@ -798,10 +789,7 @@ impl Machine<'_, '_>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        if !wanted
-            .keys()
-            .all(|label| !free(label) || fields.contains_key(label))
-        {
+        if !wanted.iter().all(|(label, _)| fields.contains_key(label)) {
             return Err(CheckRefusal::MissingRecordField { at: term, expected });
         }
         // Each field the literal holds at a fixed label, beside the fixed
@@ -816,7 +804,7 @@ impl Machine<'_, '_>
         let owner = self.owner;
         let depth = self.frames.len();
         for (label, &field) in fields.iter().rev() {
-            let direction = if let Some(&expected) = wanted.get(label).filter(|_| free(label)) {
+            let direction = if let Some(expected) = wanted.get(label) {
                 Direction::Check(expected)
             }
             else {
@@ -1485,14 +1473,12 @@ impl Machine<'_, '_>
             // label projects nothing.
             (
                 Some(&Computation::RecordProjection(_, ref label)),
-                Some(&ValueType::Patched { base, ref fixed }),
-            ) => match arena.value_type(base) {
-                Some(&ValueType::Record(ref fields)) if !fixed.contains_key(label) => fields
+                Some(patched @ &ValueType::Patched { .. }),
+            ) => match arena.element_fields(patched) {
+                Some(free) => free
                     .get(label)
-                    .copied()
                     .ok_or(CheckRefusal::AbsentRecordField(term))?,
-                Some(&ValueType::Record(_)) => return Err(CheckRefusal::AbsentRecordField(term)),
-                _ => return Err(mismatch(ExpectedShape::Record)),
+                None => return Err(mismatch(ExpectedShape::Record)),
             },
             (Some(&Computation::RecordProjection(..)), _) => {
                 return Err(mismatch(ExpectedShape::Record));
@@ -1652,12 +1638,11 @@ impl Machine<'_, '_>
         match arena.value_type(head) {
             Some(&ValueType::Record(ref fields)) => return Ok(fields.clone()),
             // A patched operand holds its free fields only.
-            Some(&ValueType::Patched { base, ref fixed }) => {
-                if let Some(&ValueType::Record(ref fields)) = arena.value_type(base) {
-                    return Ok(fields
+            Some(patched @ &ValueType::Patched { .. }) => {
+                if let Some(free) = arena.element_fields(patched) {
+                    return Ok(free
                         .iter()
-                        .filter(|&(label, _)| !fixed.contains_key(label))
-                        .map(|(label, &field)| (label.clone(), field))
+                        .map(|(label, field)| (label.clone(), field))
                         .collect());
                 }
             },
