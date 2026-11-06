@@ -1,12 +1,12 @@
 [
   {
     "name": "a claim on an unmarked body writes the lane's marker after its text",
-    "input": { "lane": "triage", "step": "write", "body": "Text.\n" },
+    "input": { "lane": "triage", "step": "write", "labels": [], "body": "Text.\n" },
     "output": { "body": "Text.\n\n<!-- claim: lane=triage -->\n" }
   },
   {
     "name": "a claim on an empty body writes the lane's marker alone",
-    "input": { "lane": "triage", "step": "write", "body": null },
+    "input": { "lane": "triage", "step": "write", "labels": [], "body": null },
     "output": { "body": "\n\n<!-- claim: lane=triage -->\n" }
   },
   {
@@ -14,18 +14,39 @@
     "input": {
       "lane": "triage",
       "step": "write",
+      "labels": [],
       "body": "Text.\n\n<!-- released: lane=triage at=2026-11-03T01:00:00Z -->\n"
     },
     "output": { "body": "Text.\n\n<!-- claim: lane=triage -->\n" }
   },
   {
-    "name": "#4660: a claim written over another lane's keeps the earlier marker first",
+    "name": "#4660: a claim written over another lane's under status:claimed keeps the earlier marker first",
+    "input": {
+      "lane": "triage",
+      "step": "write",
+      "labels": ["status:claimed"],
+      "body": "Text.\n\n<!-- claim: lane=surface -->\n"
+    },
+    "output": { "body": "Text.\n\n<!-- claim: lane=surface -->\n\n<!-- claim: lane=triage -->\n" }
+  },
+  {
+    "name": "#5531: a claim over another lane's marker with no status:claimed takes the lapsed marker off and writes its own alone",
+    "input": {
+      "lane": "triage",
+      "step": "write",
+      "labels": ["kind:defect"],
+      "body": "Text.\n\n<!-- claim: lane=surface -->\n"
+    },
+    "output": { "body": "Text.\n\n<!-- claim: lane=triage -->\n" }
+  },
+  {
+    "name": "#5531: a write that reads no labels is refused, as it cannot tell a live marker from a lapsed one",
     "input": {
       "lane": "triage",
       "step": "write",
       "body": "Text.\n\n<!-- claim: lane=surface -->\n"
     },
-    "output": { "body": "Text.\n\n<!-- claim: lane=surface -->\n\n<!-- claim: lane=triage -->\n" }
+    "fails": true
   },
   {
     "name": "a run whose marker is the first keeps the claim",
@@ -59,6 +80,7 @@
     "input": {
       "lane": "triage",
       "step": "write",
+      "labels": [],
       "body": "Quotes `<!-- claim: lane=x -->` and `<!-- released: lane=triage at=2026-11-03T01:00:00Z -->`.\n"
     },
     "output": {
@@ -73,5 +95,37 @@
       "body": "Quotes `<!-- claim: lane=x -->`.\n\n<!-- claim: lane=triage -->\n"
     },
     "output": { "kept": true }
+  },
+  {
+    "name": "#5531: a lapse takes the lapsed lane's marker off, so the body agrees with the label the sweep took off",
+    "input": {
+      "lane": "floor",
+      "step": "lapse",
+      "body": "Text.\n\n<!-- claim: lane=floor -->\n"
+    },
+    "output": { "body": "Text.\n" }
+  },
+  {
+    "name": "#5531: a lapse over a body another lane claimed after the label came off writes nothing",
+    "input": {
+      "lane": "floor",
+      "step": "lapse",
+      "body": "Text.\n\n<!-- claim: lane=workflow -->\n"
+    },
+    "output": { "body": null }
+  },
+  {
+    "name": "#5531: a lapse leaves a marker quoted in a code span",
+    "input": {
+      "lane": "floor",
+      "step": "lapse",
+      "body": "Quotes `<!-- claim: lane=floor -->`.\n\n<!-- claim: lane=floor -->\n"
+    },
+    "output": { "body": "Quotes `<!-- claim: lane=floor -->`.\n" }
+  },
+  {
+    "name": "a step the program does not know is refused",
+    "input": { "lane": "triage", "step": "drop", "body": "Text.\n" },
+    "fails": true
   }
 ]
