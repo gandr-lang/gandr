@@ -1,0 +1,3 @@
+// one, then a path through it
+def one : Integer = 2 ;
+def two : Path[.A = Integer](one, 1) = Path.here(1) ;

@@ -1,0 +1,8 @@
+import std.list (List);
+def helper(n : Integer) -> -F Integer { return n + 1 }
+def main(args : List(String)) -> -F Integer {
+  match args {
+    | #[] => 2
+    | #[x, ..rest] => { let y = helper 41; ?todo }
+  }
+}

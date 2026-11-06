@@ -1,0 +1,9 @@
+def ping() -> Unit {
+  let p = fork (a : ?Integer. !Integer. end) { let n = recv(a); send(a, n); close(a) };
+  let q = fork (b : !Integer. end) { send(b, 2); close(b) };
+  send(p, 1);
+  let m = recv(p);
+  let k = recv(q);
+  close(p);
+  close(q)
+}

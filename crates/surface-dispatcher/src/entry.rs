@@ -1398,9 +1398,9 @@ mod tests
     fn each_verb_prints_its_entries()
     {
         let grammar = built_in().expect("the grammar builds");
-        let fixture = SourceText::from(
-            "def good = 1 ;\n@[ refuses(\"UnresolvedName\") ] def bad = missing ;\n",
-        );
+        let fixture = SourceText::from(include_str!(
+            "entry/unformatted/each-verb-prints-its-entries-fixture.gandr"
+        ));
         let settled = step(
             Path::new("fixtures/pair.gandr"),
             SourceRoot::Fixture,
@@ -1487,9 +1487,9 @@ mod tests
     fn an_expected_refusal_prints_as_an_unexpected_one_when_every_refusal_is_asked()
     {
         let grammar = built_in().expect("the grammar builds");
-        let expected = SourceText::from(
-            "def good = 1 ;\n@[ refuses(\"UnresolvedName\") ] def bad = missing ;\n",
-        );
+        let expected = SourceText::from(include_str!(
+            "entry/fixtures/each-verb-prints-its-entries-fixture.gandr"
+        ));
         let settled = step(
             Path::new("fixtures/pair.gandr"),
             SourceRoot::Fixture,
@@ -1497,7 +1497,9 @@ mod tests
             Standing::Settled,
             &grammar,
         );
-        let unexpected = SourceText::from("def good = 1 ;\ndef bad = missing ;\n");
+        let unexpected = SourceText::from(include_str!(
+            "entry/fixtures/an-expected-refusal-prints-as-an-unexpected-one-when-every-refusal-is-asked-unexpected.gandr"
+        ));
         let refused = step(
             Path::new("fixtures/pair.gandr"),
             SourceRoot::Strict,
@@ -1535,8 +1537,9 @@ mod tests
             Path::new("corpus/fixture/base.gandr"),
             SourceText::from("def one = 1 ;\n"),
         );
-        let importer =
-            "import \"./base.gandr\" ;\n@[ refuses(\"UnresolvedName\") ] def bad = missing ;\n";
+        let importer = include_str!(
+            "entry/unformatted/an-importer-s-ledger-line-names-its-own-bytes-importer.gandr"
+        );
         scratch.file(
             Path::new("corpus/fixture/importer.gandr"),
             SourceText::from(importer),
@@ -1574,7 +1577,9 @@ mod tests
     fn a_shadowed_builtin_is_warned_of_under_check_alone()
     {
         let grammar = built_in().expect("the grammar builds");
-        let text = SourceText::from("def add : Integer ;\ndef add = 1 ;\n");
+        let text = SourceText::from(include_str!(
+            "entry/unformatted/a-shadowed-builtin-is-warned-of-under-check-alone.gandr"
+        ));
         let shadowing = step(
             Path::new("shadow.gandr"),
             SourceRoot::Strict,
@@ -1599,8 +1604,9 @@ mod tests
     fn each_use_of_a_deprecated_declaration_is_a_finding()
     {
         let grammar = built_in().expect("the grammar builds");
-        let written = "def add : Integer ;\n@[ deprecated ] def add = 1 ;\ndef a = add ;\ndef b \
-                       = missing ;\n";
+        let written = include_str!(
+            "entry/unformatted/each-use-of-a-deprecated-declaration-is-a-finding-written.gandr"
+        );
         let text = SourceText::from(written);
         let at = |needle: &str, length: usize| {
             let start = written.find(needle).expect("written").saturating_add(2);
@@ -1650,10 +1656,9 @@ mod tests
     fn a_declaration_naming_a_refused_one_is_a_note()
     {
         let grammar = built_in().expect("the grammar builds");
-        let text = SourceText::from(
-            "def a() -> Integer {\n  return 1 ^ 2\n}\n\ndef b() -> Integer {\n  return a ()\n}\n\ndef \
-             c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c ()\n}\n",
-        );
+        let text = SourceText::from(include_str!(
+            "entry/fixtures/a-declaration-naming-a-refused-one-is-a-note.gandr"
+        ));
         let cascade = step(
             Path::new("cascade.gandr"),
             SourceRoot::Strict,
@@ -1698,7 +1703,9 @@ mod tests
     fn a_declaration_whose_other_half_is_refused_is_a_note_2339()
     {
         let grammar = built_in().expect("the grammar builds");
-        let written = "@[ checks ]\ndef pair : Integer ;\nde pair = 1 ;\n";
+        let written = include_str!(
+            "entry/unformatted/a-declaration-whose-other-half-is-refused-is-a-note-2339-written.gandr"
+        );
         let unread = step(
             Path::new("unread.gandr"),
             SourceRoot::Strict,
@@ -1730,7 +1737,9 @@ mod tests
             matches!(first, Some(Maybe::Present(span)) if usize::from(span.start()) == at),
             "the first error is the misspelt keyword: {printed:?}"
         );
-        let text = SourceText::from("@[ checks ]\ndef lone : Integer ;\n");
+        let text = SourceText::from(include_str!(
+            "entry/unformatted/a-declaration-whose-other-half-is-refused-is-a-note-2339.gandr"
+        ));
         let lone = step(
             Path::new("lone.gandr"),
             SourceRoot::Strict,
@@ -1757,8 +1766,9 @@ mod tests
     fn a_refusal_of_form_prints_before_one_resting_on_it_2875()
     {
         let grammar = built_in().expect("the grammar builds");
-        let written =
-            "def f() -> Integer {\n  return g ()\n}\n\nde g() -> Integer {\n  return 1\n}\n";
+        let written = include_str!(
+            "entry/unformatted/a-refusal-of-form-prints-before-one-resting-on-it-2875-written.gandr"
+        );
         let misspelt = step(
             Path::new("misspelt.gandr"),
             SourceRoot::Strict,
@@ -1787,10 +1797,9 @@ mod tests
     fn a_note_names_the_refused_declaration_it_rests_on()
     {
         let grammar = built_in().expect("the grammar builds");
-        let text = SourceText::from(
-            "def a() -> Integer {\n  return 1 ~ 2\n}\n\ndef x() -> Integer {\n  return 3 ~ \
-             4\n}\n\ndef b() -> Integer {\n  return x()\n}\n",
-        );
+        let text = SourceText::from(include_str!(
+            "entry/fixtures/a-note-names-the-refused-declaration-it-rests-on.gandr"
+        ));
         let cascade = step(
             Path::new("named.gandr"),
             SourceRoot::Strict,
@@ -1815,12 +1824,9 @@ mod tests
     fn a_rules_refusal_reads_its_parting_pair_and_no_other_refusal_does()
     {
         let grammar = built_in().expect("the grammar builds");
-        let text = SourceText::from(
-            "data NatApart : Type where {\n  | Zero : NatApart\n  | Succ : (n : NatApart) --> \
-             NatApart\n  oper add : (m : NatApart, n : NatApart) --> NatApart;\n  rule : add Zero \
-             n ==> n;\n  rule : add m Zero ==> Succ m;\n  rule : add (Succ m) n ==> Succ (add m \
-             n);\n}\ndef broken = missing ;\n",
-        );
+        let text = SourceText::from(include_str!(
+            "entry/fixtures/a-rules-refusal-reads-its-parting-pair-and-no-other-refusal-does.gandr"
+        ));
         let Ok(crate::Composed::Settled {
             ref report,
             ref parted,
@@ -1894,7 +1900,9 @@ mod tests
         let refused = step(
             Path::new("relation.gandr"),
             SourceRoot::Strict,
-            SourceText::from("def r : Integer ≃ String ;\ndef r = 1 ;\n"),
+            SourceText::from(include_str!(
+                "entry/unformatted/a-refusal-names-its-types-in-the-spelling-asked-782-refused.gandr"
+            )),
             Standing::Unsettled,
             &grammar,
         );
@@ -1920,10 +1928,9 @@ mod tests
     fn an_inferred_exit_is_reported_where_a_lint_reaches()
     {
         let grammar = built_in().expect("the grammar builds");
-        let text = SourceText::from(
-            "def add : Integer ;\ndef add = 1 ;\n@[ explicit_exits ]\ndef asked(n : Integer) -> -F \
-             Integer { n }\ndef unasked(n : Integer) -> -F Integer { n }\n",
-        );
+        let text = SourceText::from(include_str!(
+            "entry/unformatted/an-inferred-exit-is-reported-where-a-lint-reaches.gandr"
+        ));
         let at = |start: usize| {
             Maybe::Present(
                 ByteSpan::new(
@@ -1985,12 +1992,9 @@ mod tests
     fn an_inferred_run_is_reported_where_a_lint_reaches()
     {
         let grammar = built_in().expect("the grammar builds");
-        let text = SourceText::from(
-            "def id(n : Integer) -> -F Integer { n }\n@[ explicit_runs(\"effects\") ]\ndef \
-             effects(n : Integer) -> -F Integer { id (id n) }\n@[ explicit_runs ]\ndef every(n : \
-             Integer) -> -F Integer { id (id n) }\ndef unasked(n : Integer) -> -F Integer { \
-             id (id n) }\n",
-        );
+        let text = SourceText::from(include_str!(
+            "entry/fixtures/an-inferred-run-is-reported-where-a-lint-reaches.gandr"
+        ));
         let nested = |declaration: &str| {
             let context = text.as_ref().find(declaration).expect("declared");
             let start = text
@@ -2076,7 +2080,9 @@ mod tests
     fn a_second_run_refusal_is_located_where_its_bound_spelling_is_380()
     {
         let grammar = built_in().expect("the grammar builds");
-        let data = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x : Int) --> Int\n  rule : S (P x) ==> x;\n  rule : P (S x) ==> x;\n}\n\n";
+        let data = include_str!(
+            "entry/unformatted/a-second-run-refusal-is-located-where-its-bound-spelling-is-380-data.gandr"
+        );
         let fold = |arm: &str| {
             format!(
                 "{data}def rec tell(n : Int) -> -F Int {{\n  match n {{\n    | Z => Z\n    | S(x) => \
@@ -2119,9 +2125,9 @@ mod tests
     #[test]
     fn counted_declarations_preserve_visible_order_and_exhaustion()
     {
-        let text = SourceText::from(
-            "def quiet = 1 ;\ndef first = missing ;\ndef middle = 2 ;\ndef second = missing ;\ndef last = 3 ;\n",
-        );
+        let text = SourceText::from(include_str!(
+            "entry/fixtures/counted-declarations-preserve-visible-order-and-exhaustion.gandr"
+        ));
         let grammar = built_in().expect("the grammar builds");
         let step = step(
             Path::new("ordered.gandr"),
@@ -2216,7 +2222,9 @@ mod tests
         let sources = [
             (
                 "laid.gandr",
-                "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n   y\n  a\n",
+                include_str!(
+                    "entry/unformatted/a-repair-is-proposed-as-a-fix-once-it-checks-5474-sources.gandr"
+                ),
             ),
             ("corpus/model/builtins/list-patterns.gandr", listed.as_str()),
         ];

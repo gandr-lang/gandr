@@ -1,0 +1,6 @@
+def compared(n : Integer) -> -F Integer {
+  match n >= 5 {
+    | true => return 2
+    | false => return 1
+  }
+}

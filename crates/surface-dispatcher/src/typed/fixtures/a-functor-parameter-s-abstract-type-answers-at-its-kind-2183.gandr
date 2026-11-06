@@ -1,0 +1,12 @@
+module Point :> *{ type T, z : T } where {
+  type T = Integer;
+  def z = 0;
+}
+module Square(S : *{ type T, z : T }) :> *{ type U, w : U } where {
+  type U = S.T * S.T;
+  def w = (S.z, S.z);
+}
+module Squared = Square(Point);
+module Pointed(R : *{ type V, y : V }) where {
+  type At = Path[.A = R.V](R.y, R.y);
+}

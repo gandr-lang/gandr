@@ -1,0 +1,44 @@
+data N : Type where {
+  | Z : N
+  | S : (n : N) --> N
+}
+data Fin : N -> Type where {
+  | FZ : (n : N) --> Fin(S(n))
+  | FS : (n : N, i : Fin(n)) --> Fin(S(n))
+}
+data V(a : Type) : N -> Type where {
+  | VN : V(a, Z)
+  | VC : (n : N, x : a, t : V(a, n)) --> V(a, S(n))
+}
+data Box(a : Type) : Type where {
+  | MkBox : (x : a) --> Box(a)
+}
+def rec toN(m : N, i : Fin(m)) -> N {
+  match i {
+    | FZ(_) => Z
+    | FS(p, j) => S (toN[<] p j)
+  }
+}
+def vlen(m : N, v : V(N, m)) -> N {
+  match v {
+    | VN => Z
+    | VC(k, _, t) => S k
+  }
+}
+def vsnd(m : N, v : V(N, m)) -> N {
+  match v {
+    | VN => Z
+    | VC(k, y, _) => S k
+  }
+}
+def vthd(m : N, v : V(N, m)) -> N {
+  match v {
+    | VN => Z
+    | VC(_, y, _) => y
+  }
+}
+def unbox(b : Box(N)) -> N {
+  match b {
+    | MkBox(_) => Z
+  }
+}

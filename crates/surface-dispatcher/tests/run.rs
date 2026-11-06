@@ -51,7 +51,7 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::SourceText;
 
 /// A program whose `main` returns forty-two.
-const ANSWER: &str = "def answer = 42 ;\ndef main() -> -F Integer { return answer }\n";
+const ANSWER: &str = include_str!("run/unformatted/answer.gandr");
 
 /// The hosting endpoint's secret, fixed so a run can bind the seat to its
 /// key.
@@ -269,7 +269,12 @@ fn run_source_file_runs_a_script_file()
 #[test]
 fn run_source_file_accepts_an_executable_shebang_line()
 {
-    let shebang = format!("#!/usr/bin/env gandr\n{ANSWER}");
+    let shebang = format!(
+        include_str!(
+            "run/unformatted/run-source-file-accepts-an-executable-shebang-line-shebang.gandr"
+        ),
+        ANSWER = ANSWER
+    );
     let script = Scratch::write(Path::new("shebang"), SourceText::from(shebang.as_str()));
     assert_runs_to(
         &script.0,
@@ -290,7 +295,8 @@ fn a_script_compares_through_the_prelude_s_eq_2302()
         ("different", r#""types" == "machines""#, 1_u8),
     ] {
         let text = format!(
-            "def main() -> -F Integer {{\n  if {compared} {{ return 0 }} else {{ return 1 }}\n}}\n"
+            include_str!("run/unformatted/a-script-compares-through-the-prelude-s-eq-2302.gandr"),
+            compared = compared
         );
         let file = Scratch::write(
             Path::new(&format!("eq-2302-{test}")),
@@ -329,7 +335,10 @@ fn a_script_runs_through_what_it_imports_2970()
         .file_name()
         .and_then(|name| name.to_str())
         .expect("the sibling's name");
-    let text = format!("import \"{name}\";\ndef main() -> -F Integer {{ return answer }}\n");
+    let text = format!(
+        include_str!("run/unformatted/a-script-runs-through-what-it-imports-2970.gandr"),
+        name = name
+    );
     let importer = Scratch::write(
         Path::new("import-2970-main"),
         SourceText::from(text.as_str()),
@@ -356,9 +365,8 @@ fn a_script_runs_through_what_it_imports_2970()
 #[test]
 fn a_script_passes_its_arguments_to_its_entry_1881()
 {
-    let counted = "import std.list (List);\ndef rec count(xs : List(String)) -> -F Integer {\n  match xs {\n    | #[] => 0\n    \
-                   | #[x, ..rest] => { let n = count[<] rest; n + 1 }\n  }\n}\ndef main(args : \
-                   List(String)) -> -F Integer { become count args }\n";
+    let counted =
+        include_str!("run/fixtures/a-script-passes-its-arguments-to-its-entry-1881-counted.gandr");
     let file = Scratch::write(Path::new("arguments"), SourceText::from(counted));
     for arguments in [vec![], vec![String::from("one"), String::from("two")]] {
         let mut script = Script::new(file.0.clone());
@@ -416,12 +424,16 @@ fn run_source_file_surfaces_a_source_failure_unchanged()
         ("no-program", "// declares nothing\n", Ran::NoProgram),
         (
             "no-main",
-            "def answer : +U (-F Integer) ;\ndef answer = thunk { return 42 } ;\n",
+            include_str!(
+                "run/fixtures/run-source-file-surfaces-a-source-failure-unchanged-1.gandr"
+            ),
             Ran::NoProgram,
         ),
         (
             "refused",
-            "def only : Integer ;\ndef only = \"one\" ;\n",
+            include_str!(
+                "run/fixtures/run-source-file-surfaces-a-source-failure-unchanged-2.gandr"
+            ),
             Ran::Refused,
         ),
     ] {
@@ -496,9 +508,9 @@ fn a_script_pings_over_its_network_3186()
 
     let stray = Scratch::write(
         Path::new("net-stray-3186"),
-        SourceText::from(
-            "import std.net;\ndef main() -> -F [std.net.Eff] Integer { std.net.transmit 7 \"lost\"; 0 }\n",
-        ),
+        SourceText::from(include_str!(
+            "run/fixtures/a-script-pings-over-its-network-3186-stray.gandr"
+        )),
     );
     let mut script = Script::new(stray.0.clone());
     script.network(Net::new(Binding::new(Secret::generate()).at(loopback)));
@@ -736,14 +748,10 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
         .collect::<Vec<_>>()
         .join(", ");
     let text = format!(
-        "import std.list (List);\n\npub world operator;\npub world seat;\npub world gate;\n\ndef rec size(xs : \
-         List(Integer)) -> Integer {{\n  match xs {{\n    | #[] => 0\n    | #[x, ..rest] => 1 + \
-         size[<] rest\n  }}\n}}\n\n@[ entry((operator, seat, seat, gate, seat, seat)) ]\ndef \
-         main() -> Integer {{\n  let listed : List(Integer) at seat = migrate [seat] {{ (hold \
-         #[{listed}]) }};\n  let xs at seat = listed;\n  let edited : List(Integer) at seat = migrate \
-         [seat] {{ (hold cons 0 xs) }};\n  let ys at seat = edited;\n  let opened = migrate [gate] \
-         {{ pure 0 }};\n  let before = migrate [seat] {{ size xs }};\n  let after = migrate \
-         [seat] {{ size ys }};\n  pure (after - before + 41 + opened)\n}}\n"
+        include_str!(
+            "run/unformatted/a-second-migration-of-an-edited-list-fetches-what-changed-3365.gandr"
+        ),
+        listed = listed
     );
     let file = Scratch::write(Path::new("descent"), SourceText::from(text.as_str()));
     let alone = exited(&mut Script::new(file.0.clone()));

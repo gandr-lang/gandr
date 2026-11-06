@@ -1,0 +1,8 @@
+@[ checks ]
+pub data Point : Type where {
+  | Here : Point
+}
+
+@[ checks ]
+pub def here : Point;
+def here = Here;

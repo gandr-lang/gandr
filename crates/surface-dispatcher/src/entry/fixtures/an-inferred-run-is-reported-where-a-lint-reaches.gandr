@@ -1,0 +1,6 @@
+def id(n : Integer) -> -F Integer { n }
+@[ explicit_runs("effects") ]
+def effects(n : Integer) -> -F Integer { id (id n) }
+@[ explicit_runs ]
+def every(n : Integer) -> -F Integer { id (id n) }
+def unasked(n : Integer) -> -F Integer { id (id n) }

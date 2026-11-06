@@ -181,9 +181,10 @@ fn a_field_that_does_not_read_is_refused_by_name_3374()
     let twice = manifold(
         "twice.gandr",
         &format!(
-            "pub module Site : Model(Site) where {{\n  def key = \"{SITE_KEY}\";\n  def sockets = \
-             \"\";\n  def secret = \"far\";\n}}\npub def placements : List(Placement) = \
-             #[Instances \"far\" (pack Site at Model(Site)) 2];\n"
+            include_str!(
+                "tests/unformatted/a-field-that-does-not-read-is-refused-by-name-3374-twice.gandr"
+            ),
+            SITE_KEY = SITE_KEY
         ),
     );
     assert!(
@@ -357,13 +358,7 @@ fn a_world_s_row_is_judged_against_its_site_s_offer_3523()
     let manifold = scratch.file(
         Path::new("m.gandr"),
         Text(&format!(
-            "import std.list (List);\nimport \"./answered.gandr\" as answered;\nimport \"./typed.gandr\" as typed;\nimport \
-             \"./bare.gandr\" as bare;\npub module Manifold : Model(Manifold) where {{\n  def artifact \
-             = \"p.gandr\";\n}}\npub module Local : Model(Site) where {{\n  def key = \"{local}\";\n  \
-             def sockets = \"\";\n  def secret = \"local\";\n}}\npub def placements : \
-             List(Placement) = #[\n  At \"far\" answered.site,\n  At \"far\" typed.site,\n  \
-             At \"far\" bare.site,\n  At \"netted\" answered.site,\n  At \"far\" (pack Local \
-             at Model(Site)),\n  At \"lost\" typed.site,\n];\n"
+            include_str!("tests/unformatted/a-world-s-row-is-judged-against-its-site-s-offer-3523-manifold.gandr"), local = local
         )),
     );
     let refused = judged(&manifold);
@@ -415,8 +410,10 @@ fn a_site_reads_its_secret_from_the_model_given_3375()
     let named = scratch.file(
         Path::new("named.gandr"),
         Text(&format!(
-            "pub module Site : Model(Site) where {{\n  def key = \"{SITE_KEY}\";\n  def sockets = \
-             \"\";\n  def secret = \"far-site.é\";\n}}\n"
+            include_str!(
+                "tests/unformatted/a-site-reads-its-secret-from-the-model-given-3375-named.gandr"
+            ),
+            SITE_KEY = SITE_KEY
         )),
     );
     assert_eq!(

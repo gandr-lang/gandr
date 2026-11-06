@@ -1,0 +1,12 @@
+def last(t : *{Integer, Bool, Integer}) -> -F Integer {
+  match t {
+    | *{x, y, z} => return z
+  }
+}
+def side(c : Integer) -> -F Integer {
+  let small = c < 128;
+  match small {
+    | +{.0 = u} => 1
+    | +{.1 = v} => 2
+  }
+}

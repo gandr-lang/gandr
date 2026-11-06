@@ -1,0 +1,2 @@
+import std.net;
+def main() -> -F [std.net.Eff] Integer { std.net.transmit 7 "lost"; 0 }

@@ -1,0 +1,5 @@
+import "./say.gandr" ;
+def said(c : Cap {print}) -> Integer {
+  say c ;
+  pure 0
+}

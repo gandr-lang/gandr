@@ -812,40 +812,11 @@ mod tests
     fn a_linear_run_is_written_away_beside_a_checker()
     {
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
-        let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                      \n\
-                      def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
-                      \n\
-                      def second(a : Nat, b : Nat) -> Nat { b }\n\
-                      \n\
-                      def make(n : Nat) -> () -> Nat { thunk { twice n } }\n\
-                      \n\
-                      def apply(t : () -> Nat) -> Nat { force t }\n\
-                      \n\
-                      def field(n : Nat) -> Nat {\n  let m = twice n;\n  Succ m\n}\n\
-                      \n\
-                      def paired(n : Nat) -> Nat {\n  let p = twice n;\n  let q = twice Zero;\n  second p q\n}\n\
-                      \n\
-                      def chained(n : Nat) -> Nat {\n  let a = twice n;\n  let b = twice a;\n  become twice b\n}\n\
-                      \n\
-                      def suspended(n : Nat) -> Nat {\n  let t = make n;\n  apply t\n}\n";
-        let sugared = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                       \n\
-                       def twice(n : Nat) -> Nat { Succ (Succ n) }\n\
-                       \n\
-                       def second(a : Nat, b : Nat) -> Nat { b }\n\
-                       \n\
-                       def make(n : Nat) -> () -> Nat { thunk { twice n } }\n\
-                       \n\
-                       def apply(t : () -> Nat) -> Nat { force t }\n\
-                       \n\
-                       def field(n : Nat) -> Nat {\n  Succ (twice n)\n}\n\
-                       \n\
-                       def paired(n : Nat) -> Nat {\n  second (twice n) (twice Zero)\n}\n\
-                       \n\
-                       def chained(n : Nat) -> Nat {\n  let a = twice n;\n  become twice (twice a)\n}\n\
-                       \n\
-                       def suspended(n : Nat) -> Nat {\n  let t = make n;\n  apply t\n}\n";
+        let source =
+            include_str!("format/unformatted/a-linear-run-is-written-away-beside-a-checker.gandr");
+        let sugared = include_str!(
+            "format/unformatted/a-linear-run-is-written-away-beside-a-checker-sugared.gandr"
+        );
         let options = FormatOptions {
             form: gandr_surface_format::Form::Sugared,
             ..FormatOptions::default()
@@ -897,40 +868,11 @@ mod tests
     fn a_thunk_the_checker_inserts_is_left_to_it_1327()
     {
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
-        let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                      \n\
-                      def twice(n : Nat) -> -F Nat { Succ (Succ n) }\n\
-                      \n\
-                      def make(n : Nat) -> -F (() -> Nat) { thunk { twice n } }\n\
-                      \n\
-                      def bump : Nat -> Nat;\n\
-                      def bump = thunk { fun (n) { Succ n } };\n\
-                      \n\
-                      def counted : () -> Nat;\n\
-                      def counted = thunk { twice Zero };\n\
-                      \n\
-                      def tailed : () -> Nat;\n\
-                      def tailed = thunk { become twice Zero };\n\
-                      \n\
-                      def none : () -> Nat;\n\
-                      def none = thunk { Zero };\n";
-        let sugared = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n\
-                       \n\
-                       def twice(n : Nat) -> -F Nat { Succ (Succ n) }\n\
-                       \n\
-                       def make(n : Nat) -> -F (() -> Nat) { thunk { twice n } }\n\
-                       \n\
-                       def bump : Nat -> Nat;\n\
-                       def bump = fun (n) { Succ n };\n\
-                       \n\
-                       def counted : () -> Nat;\n\
-                       def counted = twice Zero;\n\
-                       \n\
-                       def tailed : () -> Nat;\n\
-                       def tailed = thunk { become twice Zero };\n\
-                       \n\
-                       def none : () -> Nat;\n\
-                       def none = thunk { Zero };\n";
+        let source =
+            include_str!("format/unformatted/a-thunk-the-checker-inserts-is-left-to-it-1327.gandr");
+        let sugared = include_str!(
+            "format/unformatted/a-thunk-the-checker-inserts-is-left-to-it-1327-sugared.gandr"
+        );
         // The thunk rewrite alone: the function form would merge each signed
         // thunk, which a witness of its own pins.
         let options = FormatOptions {

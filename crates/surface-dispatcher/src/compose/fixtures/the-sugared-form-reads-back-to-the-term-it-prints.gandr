@@ -1,0 +1,6 @@
+def pair : Integer * String;
+def pair = *{1, "a"};
+def pure_pair : () -> Integer * String;
+def pure_pair = thunk { return *{1, "a"} };
+def pure_pair_sugared : () -> Integer * String;
+def pure_pair_sugared = thunk { pure *{1, "a"} };

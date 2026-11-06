@@ -1,0 +1,7 @@
+def small : Type ; def small = Integer ;
+def alias : Type ; def alias = small ;
+def again : Type ; def again = alias ;
+def wide : Type ; def wide = String ;
+def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
+  Path.walk (fun (y) { type(Path[.A = Integer](y, y)) }) (Path.step p p) (Path.here 1)
+}

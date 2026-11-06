@@ -1,0 +1,5 @@
+import "./second.gandr";
+import "./missing.gandr";
+import "./sibling.gandr";
+def one : Integer;
+def one = 1;

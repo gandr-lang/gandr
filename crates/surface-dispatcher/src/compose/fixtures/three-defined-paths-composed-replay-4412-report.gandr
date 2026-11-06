@@ -1,0 +1,22 @@
+/// A path from a point to itself.
+def p(A : Type, x : A) -> Path[.A = A](x, x) {
+  Path.here x
+}
+/// The composite of three of them reduces to the reflexivity.
+def three(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](
+  Path.step (Path.step (p A x) (p A x)) (p A x),
+  Path.here x
+) {
+  Path.here (Path.here x)
+}
+/// A 2-path between reflexivities.
+def r(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x) {
+  Path.here (Path.here x)
+}
+/// The composite of three of them reduces to the reflexivity's reflexivity.
+def threeTwoPaths(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](
+  Path.here x,
+  Path.here x
+)](Path.step (Path.step (r A x) (r A x)) (r A x), Path.here (Path.here x)) {
+  Path.here (Path.here (Path.here x))
+}

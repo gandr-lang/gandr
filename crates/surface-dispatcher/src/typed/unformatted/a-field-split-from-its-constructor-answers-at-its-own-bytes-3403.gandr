@@ -1,0 +1,11 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+data Span : Type where { | Mk : (lo : Nat, hi : Nat) --> Span }
+data Over : (s : Span) --> Type where {
+  | O : (lo : Nat, hi : Nat) --> Over(Mk(lo, hi))
+}
+data At2 : (lo : Nat, hi : Nat) --> Type where {
+  | A2 : (lo : Nat, hi : Nat) --> At2(lo, hi)
+}
+def ends(lo : Nat, hi : Nat, o : Over(Mk(lo, hi))) -> At2(lo, hi) {
+  match o { | O(l, h) => A2 l h }
+}

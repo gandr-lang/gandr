@@ -427,7 +427,6 @@ types = ["gandr_surface_syntax::SourceText", "gandr_surface_render_remote::Sourc
 extension = "gandr"
 directory = "{{ config_root }}/target/embedded-sources"
 allowed = [
-  "gandr-surface-dispatcher",
   "gandr-surface-lowering",
 ]
 '''

@@ -1,0 +1,23 @@
+/// The left whisker, as a level-two composite.
+def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g2) {
+  compose[4, 9] (chain 2 (0, 1)) (f, b)
+}
+/// The right whisker, as a level-two composite.
+def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
+  compose[4, 9] (chain 2 (1, 0)) (a, g)
+}
+/// The associator, by conversion.
+def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z), h : Path[.A = A](z, w)) -> Path[.A = Path[.A = A](x, w)](Path.step (Path.step f g) h, Path.step f (Path.step g h)) {
+  Path.here (Path.step (Path.step f g) h)
+}
+/// Two squares side by side compose to a square, through two associators.
+def cylinderComposite2(A : Type, x : A, x2 : A, xs : Path[.A = A](x, x2), y : A, y2 : A, ys : Path[.A = A](y, y2), f : Path[.A = A](x, y), f2 : Path[.A = A](x2, y2), a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2), z : A, g : Path[.A = A](y, z), z2 : A, g2 : Path[.A = A](y2, z2), zs : Path[.A = A](z, z2), b : Path[.A = Path[.A = A](y, z2)](Path.step g zs, Path.step ys g2)) -> Path[.A = Path[.A = A](x, z2)](Path.step (Path.step f g) zs, Path.step xs (Path.step f2 g2)) {
+  Path.step (Path.step (Path.step (Path.step (assoc A x y z z2 f g zs) (whiskerLeft A x y z2 f (Path.step g zs) (Path.step ys g2) b)) (Path.back (assoc A x y y2 z2 f ys g2))) (whiskerRight A x y2 z2 (Path.step f ys) (Path.step xs f2) a g2)) (assoc A x x2 y2 z2 xs f2 g2)
+}
+/// Two squares of reflexivities side by side compose to the reflexivity of the reflexivity.
+def cylinderCompositeAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](
+  cylinderComposite2 A x x (Path.here x) x x (Path.here x) (Path.here x) (Path.here x) (Path.here (Path.here x)) x (Path.here x) x (Path.here x) (Path.here x) (Path.here (Path.here x)),
+  Path.here (Path.here x)
+) {
+  Path.here (Path.here (Path.here x))
+}

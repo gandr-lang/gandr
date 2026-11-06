@@ -1,0 +1,2 @@
+import "{name}";
+def main() -> -F Integer {{ return answer }}

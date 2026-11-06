@@ -1,0 +1,2 @@
+mul (one ()) x ==> x;
+  rule unitR

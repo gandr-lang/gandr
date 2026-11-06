@@ -1192,13 +1192,7 @@ mod tests
     {
         let table: &[(&str, &[(Row, usize)])] = &[
             (
-                r#"def answer : Integer ; def answer = 42 ;
-def identity : +U (Integer -> -F Integer) ;
-def identity = thunk { fun (x) { return x } } ;
-def applied : +U (-F Integer) ;
-def applied = thunk { become (force identity) answer } ;
-def konst : +U (Integer -> Integer -> -F Integer) ;
-def konst = thunk { fun (x) { fun (y) { return x } } } ;"#,
+                include_str!("exercised/fixtures/a-module-carries-exactly-its-rows-table.gandr"),
                 &[
                     (Row::LambdaChecks, 2_usize),
                     (Row::ReturnChecks, 2_usize),
@@ -1230,8 +1224,7 @@ def konst = thunk { fun (x) { fun (y) { return x } } } ;"#,
                 &[(Row::NonSynthesisableDefinition, 1_usize)],
             ),
             (
-                r#"@[ checks ] data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-@[ refuses("OutOfFragment.instantiation_expression.computation") ] def rec both(n : Nat) -> -F Nat { match n { | Zero => return n | Succ(p) => become both[<, >] p } }"#,
+                include_str!("exercised/fixtures/a-module-carries-exactly-its-rows.gandr"),
                 &[(Row::ReservedForm, 1_usize)],
             ),
             (r#"@[ owes(1) ] def a : Integer ;"#, &[(
@@ -1265,13 +1258,9 @@ def konst = thunk { fun (x) { fun (y) { return x } } } ;"#,
     #[test]
     fn an_unsettled_declaration_carries_no_row()
     {
-        let rows = rows_of(SourceText::from(
-            r#"def a = missing ;
-def b : Natural ;
-@[ refuses("TypeMismatch") ] def c : Integer * Integer ;
-def d : Integer ;
-@[ refuses("UnresolvedName") ] def e : +U (-F Integer) ; def e = thunk { return 3 } ;"#,
-        ));
+        let rows = rows_of(SourceText::from(include_str!(
+            "exercised/fixtures/an-unsettled-declaration-carries-no-row-rows.gandr"
+        )));
         assert_eq!(
             rows,
             Exercised::default(),
@@ -1283,11 +1272,9 @@ def d : Integer ;
     fn a_near_miss_carries_no_refusal_row()
     {
         let grammar = built_in().expect("the built-in grammar builds");
-        let source = SourceText::from(
-            r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become force (thunk { return 3 }) } ;
-@[ refuses("ShapeMismatch") ] def b : Integer ; def b = thunk { return 3 } ;
-@[ refuses("MalformedLiteral") ] def c : f64 = 1e99999999 ;"#,
-        );
+        let source = SourceText::from(include_str!(
+            "exercised/fixtures/a-near-miss-carries-no-refusal-row.gandr"
+        ));
         let mut lowerings = LoweringCount::default();
         let Composed::Settled {
             report, exercised, ..
@@ -1399,11 +1386,9 @@ def d : Integer ;
     fn only_an_identical_unsigned_body_is_whole()
     {
         let grammar = built_in().expect("the built-in grammar builds");
-        let source = SourceText::from(
-            "def whole = thunk { return 1 } ; def other = thunk { return 2 } ;
-             def signed : +U (-F Integer) ; def signed = thunk { return 3 } ;
-             def owed : Integer ; def refused = missing ;",
-        );
+        let source = SourceText::from(include_str!(
+            "exercised/fixtures/only-an-identical-unsigned-body-is-whole.gandr"
+        ));
         let mut lowerings = LoweringCount::default();
         let lowering = crate::compose::lower_source(&grammar, source, &mut lowerings)
             .expect("the identity fixtures parse and lower");

@@ -1,0 +1,21 @@
+data N : Type where {
+  | Z : N
+  | S : (n : N) --> N
+}
+
+data T : Type where {
+  | V : T
+}
+
+def ext(g : N) -> -F N { return S g }
+
+def k(g : N, t : T) -> -F T { return t }
+
+def w : *{
+  c : Type,
+  tm : +U (c -> -F Type),
+  e : (g : c) -> c,
+  a : (g : c, t : tm(e(g))) -> tm(g),
+  b : (g : c, t : tm(e(g))) -> tm(g)
+};
+def w = *{N, *{thunk { fun (g) { return T } }, *{ext, *{k, k}}}};

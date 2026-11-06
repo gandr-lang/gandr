@@ -1343,9 +1343,9 @@ fn gated(
 fn a_tactic_and_a_lowercase_module_path_stand_placed_2959()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let source = "import text.greet (greeting);\ndef id : Integer -> Integer = \
-                  ~intro assumption;\ndef note = limits.hard.note;\ndef welcome = \
-                  text.greet.greeting;\n";
+    let source = include_str!(
+        "entries/fixtures/a-tactic-and-a-lowercase-module-path-stand-placed-2959.gandr"
+    );
     let tree = parse(&grammar, SourceText::from(source))
         .expect("the source parses")
         .into_tree();
@@ -1425,13 +1425,9 @@ fn every_kind_the_table_names_is_a_form_the_grammar_holds_4691()
 fn the_floor_s_forms_stand_placed_as_the_call_forms_stood_5210()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let source = "theory Counter.Eff where\n  sort C : Type;\n  oper bump : (k : C) --> \
-                  C;\n\ndef tallied() -> [n : Counter.Eff] Integer =\n  n.bump ()\n  pure \
-                  0\n\ntheory Monad where\n  sort V : Type+;\n  sort C : Type;\n  oper ext : \
-                  (m : C, k : pi+ (x : V). C) --> C;\n  rule assoc : ext (ext m k) l <=> \
-                  ext m (bind x. (ext (k x) l));\n\ndef heard : Run(Ask.Coded) = recorded \
-                  (received One) closed;\n\ndef whisker = Path.ap (fun (q) { Path.step q g \
-                  }) a;\n\nflow scaling : Current ~~> Scaling where\n  def answer = reply;\n";
+    let source = include_str!(
+        "entries/fixtures/the-floor-s-forms-stand-placed-as-the-call-forms-stood-5210.gandr"
+    );
     let tree = parse(&grammar, SourceText::from(source))
         .expect("the source parses")
         .into_tree();

@@ -1,0 +1,7 @@
+module inner where {
+  import "./base.gandr";
+}
+
+@[ checks ]
+def three : Integer;
+def three = 3;
