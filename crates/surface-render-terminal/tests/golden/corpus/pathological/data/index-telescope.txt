@@ -17,34 +17,34 @@ error[MalformedForm]: this bracket after an operand indexes an element
    ╰ help: write the index as the selector `.#[ … ]`
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/index-telescope.gandr:20:48
+   ╭▸ corpus/pathological/data/index-telescope.gandr:20:47
    │
-18 │ data Swapped : (n : Nat, i : Fin(n)) --> Type where
+18 │ data Swapped : (n : Nat, i : Fin n) --> Type where
    │                     ─── the type it is checked against
 19 │   /// The two indices in the wrong order.
-20 │   | Turned : (n : Nat, i : Fin(n)) --> Swapped(i, n)
-   │                                                ━ its type does not convert: expected `Nat`, found `Fin n`
+20 │   | Turned : (n : Nat, i : Fin n) --> Swapped i n
+   │                                               ━ its type does not convert: expected `Nat`, found `Fin n`
    │
    ├ note: `Swapped` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/index-telescope.gandr:26:52
+   ╭▸ corpus/pathological/data/index-telescope.gandr:26:51
    │
-26 │   | Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i)
-   │                                                    ━ its type does not convert: expected `Fin (Succ n)`, found `Fin n`
+26 │   | Over : (n : Nat, i : Fin n) --> Past(Succ(n), i)
+   │                                                   ━ its type does not convert: expected `Fin (Succ n)`, found `Fin n`
    │
    ├ note: `Past` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/index-telescope.gandr:31:46
+   ╭▸ corpus/pathological/data/index-telescope.gandr:31:45
    │
 11 │ data Fin : Nat -> Type where
    │            ─── the type it is checked against
    ┆
-31 │ data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type where
-   │                                              ━ its type does not convert: expected `Nat`, found `Fin n`
+31 │ data Misread : (n : Nat, i : Fin n, j : Fin i) --> Type where
+   │                                             ━ its type does not convert: expected `Nat`, found `Fin n`
    │
    ├ note: `Misread` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

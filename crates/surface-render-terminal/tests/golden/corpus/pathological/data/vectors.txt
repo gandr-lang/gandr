@@ -1,14 +1,14 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/vectors.gandr:23:3
    │
-22 │   def overstated() -> Vec(Integer, Succ(Succ(Zero))) =
+22 │   def overstated() -> Vec Integer (Succ (Succ Zero)) =
    │   │                   ────────────────────────────── the type it is checked against
    │ ┌─┘
    │ │
-23 │ │   VCons Zero 3 (VNil : Vec(Integer, Zero))
-   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
-   │ └───│──────────────────────────────────────┤
-   │     │                                      checked against `() -> Vec Integer (Succ (Succ Zero))`; while checking the body of this thunk
+23 │ │   VCons Zero 3 (VNil : Vec Integer Zero)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│────────────────────────────────────┤
+   │     │                                    checked against `() -> Vec Integer (Succ (Succ Zero))`; while checking the body of this thunk
    │     its type does not convert: expected `Vec Integer (Succ (Succ Zero))`, found `Vec Integer (Succ Zero)`
    │
    ├ note: `overstated` is refused with TypeMismatch, as its expectation states
@@ -17,7 +17,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/data/vectors.gandr:29:3
    │
-28 │   def overPadded(m : Nat, v : Vec(Integer, m)) -> Vec(Integer, plus(m, Succ(Zero))) =
+28 │   def overPadded(m : Nat, v : Vec Integer m) -> Vec Integer plus(m, Succ Zero) =
    │   │              ┬        ─ checked against `Vec Integer m -> -F Vec Integer plus(m, Succ Zero)`; while checking the body of this function; binds v : Vec Integer m
    │   │              │
    │ ┌─┘              checked against `(m : Nat) -> Vec Integer m -> -F Vec Integer plus(m, Succ Zero)`; while checking the body of this function; binds m : Nat
@@ -32,13 +32,13 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/data/vectors.gandr:35:39
+   ╭▸ corpus/pathological/data/vectors.gandr:35:38
    │
 33 │ data Misindexed(a : Type) : Nat -> Type where
    │                             ─── the type it is checked against
 34 │   /// An element standing where its length goes.
-35 │   | Wrong : (x : a) --> Misindexed(a, x)
-   │                                       ━ its type does not convert: expected `Nat`, found `a`
+35 │   | Wrong : (x : a) --> Misindexed a x
+   │                                      ━ its type does not convert: expected `Nat`, found `a`
    │
    ├ note: `Misindexed` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

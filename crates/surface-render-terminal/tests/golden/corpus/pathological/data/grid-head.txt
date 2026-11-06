@@ -1,7 +1,7 @@
 error[NotApart]: this case has no arm, but its path's endpoints are not shown apart
    ╭▸ corpus/pathological/data/grid-head.gandr:20:3
    │
-19 │    def anyCell(n : Nat, m : Nat, g : Grid(n, m)) -> Integer =
+19 │    def anyCell(n : Nat, m : Nat, g : Grid n m) -> Integer =
    │    │           ┬        ┬        ─ checked against `Grid n m -> -F Integer`; while checking the body of this function; binds g : Grid n m
    │    │           │        │
    │    │           │        checked against `(m : Nat) -> Grid n m -> -F Integer`; while checking the body of this function; binds m : Nat

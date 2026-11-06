@@ -12,7 +12,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ │    ─ checked; while checking the body of this function; binds b : Nat
 30 │ │    rest : Ixs,
    │ │    ──── checked; while checking the body of this function; binds rest : Ixs
-31 │ │    h : Path((Some (SomeV (IntV b)) : Maybe(Val)), nth heads order),
+31 │ │    h : Path((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
    │ │    ─ checked; while checking the body of this function; binds h : Path[.A = Maybe Val]((Some (SomeV (IntV b)) : Maybe Val), nth heads order)
 32 │ │    held : Path(
    │ │    ──── checked; while checking the body of this function; binds held : ?
@@ -49,7 +49,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ │    ─ checked; while checking the body of this function; binds b : Nat
 56 │ │    rest : Ixs,
    │ │    ──── checked; while checking the body of this function; binds rest : Ixs
-57 │ │    h : Path((Some (SomeV (IntV b)) : Maybe(Val)), nth heads order),
+57 │ │    h : Path((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
    │ │    ─ checked; while checking the body of this function; binds h : Path[.A = Maybe Val]((Some (SomeV (IntV b)) : Maybe Val), nth heads order)
 58 │ │    held : Path(
    │ │    ──── checked; while checking the body of this function; binds held : ?

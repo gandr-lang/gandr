@@ -2,8 +2,8 @@ error[NestedOccurrence]: the datatype occurs nested inside another type in its f
    ╭▸ corpus/pathological/data/rose.gandr:26:1
    │
 26 │ ┏ data Rose : Type where
-27 │ ┃   | Node : (kids : Test(Rose)) --> Rose
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the declared type inside another former, at a place it does not hold strictly positively
+27 │ ┃   | Node : (kids : Test Rose) --> Rose
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the declared type inside another former, at a place it does not hold strictly positively
    │
    ├ note: `Rose` is refused with NestedOccurrence, as its expectation states
    ╰ help: place the datatype only where each enclosing type holds it strictly positively
@@ -16,11 +16,11 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │ ┌──┘
    │ │
 68 │ │┌   match t where
-69 │ ││     | Sprout(kids) => Succ (sum (map Bush Nat forged[<] (Cons t (Nil : List(Bush)) : List(Bush))))
-   │ ││                       ┬─────┬────┬────────────┯━━━━━━━━──────────────────────────────────────────│
-   │ └│───────────────────────│─────│────│────────────│──────────────────────────────────────────────────│
-   │  └───────────────────────│─────│────│────────────│──────────────────────────────────────────────────checked against `Bush -> Nat`; while checking the body of this function; binds forged : Bush -> Nat
-   │                          │     │    │            │                                                  checked against `-F Nat`; while checking the body of this function; binds kids : List Bush
+69 │ ││     | Sprout(kids) => Succ (sum (map Bush Nat forged[<] (Cons t (Nil : List Bush) : List Bush)))
+   │ ││                       ┬─────┬────┬────────────┯━━━━━━━━────────────────────────────────────────│
+   │ └│───────────────────────│─────│────│────────────│────────────────────────────────────────────────│
+   │  └───────────────────────│─────│────│────────────│────────────────────────────────────────────────checked against `Bush -> Nat`; while checking the body of this function; binds forged : Bush -> Nat
+   │                          │     │    │            │                                                checked against `-F Nat`; while checking the body of this function; binds kids : List Bush
    │                          │     │    │            not below the stage its recursion wants
    │                          │     │    checked against `List Nat`; while checking the argument of this application
    │                          │     checked against `Nat`; while checking the argument of this application

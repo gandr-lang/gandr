@@ -8,13 +8,13 @@ error[ShapeMismatch]: expected an element path type `Path[.A = A](a, b)`
    ╰ help: change the term or the type it is checked against, so that the type has the required shape
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/identity/bridge.gandr:23:62
+   ╭▸ corpus/pathological/identity/bridge.gandr:23:61
    │
-23 │ def otherDigits : Bridge[.A = List(Integer)](#[1], #[2]) = *{*{}, *{}};
-   │                                                            ┬─┯━━──────
-   │                                                            │ │
-   │                                                            │ its type does not convert: expected `Void`, found `Unit`
-   │                                                            checked against `Bridge[.A = List Integer](cons 1 nil, cons 2 nil)`; while checking the next premise of this
+23 │ def otherDigits : Bridge[.A = List Integer](#[1], #[2]) = *{*{}, *{}};
+   │                                                           ┬─┯━━──────
+   │                                                           │ │
+   │                                                           │ its type does not convert: expected `Void`, found `Unit`
+   │                                                           checked against `Bridge[.A = List Integer](cons 1 nil, cons 2 nil)`; while checking the next premise of this
    │
    ├ note: `otherDigits` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
