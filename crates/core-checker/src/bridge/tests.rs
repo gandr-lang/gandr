@@ -7687,7 +7687,7 @@ fn a_body_reads_the_carrier_its_signature_solves_5272()
                 (arena.value_type_path(a, y, w), step(&mut arena, hole, 1))
             },
             Form::Here | Form::Ascribed | Form::Apart => {
-                let answer = around(&mut arena, hole, if form == Form::Apart { 0 } else { 1 });
+                let answer = around(&mut arena, hole, u32::from(form != Form::Apart));
                 let point = step(&mut arena, hole, 1);
                 let reflexive = arena.value_here(point);
                 let returned = if form == Form::Ascribed {
@@ -7700,12 +7700,14 @@ fn a_body_reads_the_carrier_its_signature_solves_5272()
                 (answer, returned)
             },
         };
+        let domains = [k_type, h_type, g_type, w_type, z_type, y_type, kind];
         let mut telescope = arena.comp_type_returner(answer);
-        for domain in [k_type, h_type, g_type, w_type, z_type, y_type, kind] {
+        for domain in domains {
             telescope = arena.comp_type_pi(domain, telescope);
         }
+        // One lambda binds each domain of the telescope.
         let mut body = arena.computation_return(returned);
-        for _ in 0 .. 7 {
+        for _ in domains {
             body = arena.computation_lambda(body);
         }
         (arena.value_type_thunk(telescope), arena.value_thunk(body))
