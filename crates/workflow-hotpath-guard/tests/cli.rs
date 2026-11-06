@@ -132,9 +132,11 @@ Its body carries no settled `hotpath: accepted — <benchmark> …` verdict for 
 ";
 
 /// The body of `decide`'s issue before its table.
-const DECIDE_HEAD: &str = "The hotpath guard's regressions of `gandr_core_checker::module::decide` (`crates/core-checker`), as the `hotpath / <series>` checks measure it: this body is the index, one row per pull request and series; each pull request's report is one comment below, edited by its later runs. The guard rewrites the rows and keeps the rest of this body as written.
+const DECIDE_HEAD: &str = "This issue indexes the hotpath regressions of `gandr_core_checker::module::decide` (`crates/core-checker`).
 
 ## Index
+
+The table gives one row for each pull request and series that a `hotpath / <series>` check measures.
 
 ";
 
@@ -145,13 +147,22 @@ const HEADING: &str = "| pull request | commit | series | metric | delta | statu
 
 /// The body of every guard-opened issue after its rows.
 const TAIL: &str = "
+Each pull request has one report comment below. Its later runs edit that comment. The guard rewrites the rows and keeps the rest of this body.
+
 ## Lint
 
-Owed once for the function, by the first fix that lands under this issue: whether a quenchant dylint could have refused the pattern that regressed, as the rule it would check.
+The first fix under this issue owes one reading for the function. The reading names the quenchant dylint that can refuse the regressed pattern, as the rule that it checks.
 
 ## Close
 
-The guard closes this issue when every row is `fixed`, `accepted` or `runner shift`, and reopens it on the next `open` row. A `runner shift` row states the run's global shift: the median move of every function both timing reports measure, and how many they are.
+The table gives the act of the guard for each standing of the rows.
+
+| Rows | Act |
+| --- | --- |
+| each row `fixed`, `accepted` or `runner shift` | the guard closes this issue |
+| a new `open` row | the guard reopens this issue |
+
+A `runner shift` row states the global shift of the run. The shift is the median move of each function that both timing reports measure, with their count.
 ";
 
 /// The commit cell of [`HEAD`].

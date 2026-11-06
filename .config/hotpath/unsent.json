@@ -1,6 +1,6 @@
 [
   {
-    "name": "the first report not uploaded opens the issue with its row",
+    "name": "#3596: the first report not uploaded opens the issue with the sentence that says what it is, a lead and its row",
     "program": "unsent.jq",
     "input": {
       "issue": null,
@@ -10,7 +10,7 @@
         "benchmarks": ["gandr", "gandr-timing"]
       }
     },
-    "output": "{\"number\":null,\"title\":\"ci: hotpath reports not uploaded on main\",\"body\":\"Main's push runs the hotpath series and uploads each report to hotpath Cloud. A failed upload is a report failure, never a red `main`: the job passes with a warning, keeps the measurements in the run's `hotpath-<commit>` artifact, and `mise run ci:hotpath-unsent` adds the run's row here. Remove a row once its cause is fixed; the issue closes with the last.\\n\\n| Commit | Run | Benchmarks |\\n| --- | --- | --- |\\n| 905a22c52 | [40331486842](https://github.com/gandr-lang/gandr/actions/runs/40331486842) | `gandr`, `gandr-timing` |\\n\"}"
+    "output": "{\"number\":null,\"title\":\"ci: hotpath reports not uploaded on main\",\"body\":\"This issue lists the pushes to `main` whose hotpath reports fail to upload to hotpath Cloud.\\n\\nA failed upload is a report failure, never a red `main`. The job passes with a warning and keeps the measurements in the `hotpath-<commit>` artifact of its run. `mise run ci:hotpath-unsent` then adds the row of the run. Remove a row once a fix for its cause lands. The issue closes with the last row.\\n\\nThe table gives each run and the benchmarks whose reports it does not upload.\\n\\n| Commit | Run | Benchmarks |\\n| --- | --- | --- |\\n| 905a22c52 | [40331486842](https://github.com/gandr-lang/gandr/actions/runs/40331486842) | `gandr`, `gandr-timing` |\\n\"}"
   },
   {
     "name": "a later run's report not uploaded adds its row to the open issue",

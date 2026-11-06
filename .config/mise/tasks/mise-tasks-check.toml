@@ -2144,7 +2144,8 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") cases re
 # in `.config/claims/design.json` the vault's absorption statuses, its unit
 # tables and the open issues, and the lines `report:design` prints for the
 # design pages and the open units that no open issue names (`design.jq`,
-# #3401); each
+# #3401); each in `.config/claims/recovery.json` a cause of the night's sweep
+# and the body `ci:recovery-file` files for it (`recovery.jq`, #3596); each
 # in `.config/claims/swept.json` a night's recovery causes, the open recovery
 # collectors, and the rows `ci:recovery-file` marks and the collectors it
 # closes (`swept.jq`, #3326, #3732); each in `.config/claims/landed.json` a
@@ -2198,6 +2199,7 @@ cases terms terms.jq terms.json
 cases absorbing absorbing.jq absorbing.json
 cases design design.jq design.json
 cases reads reads.jq reads.json --mode c
+cases recovery recovery.jq recovery.json
 cases swept swept.jq swept.json --mode c
 cases landed landed.jq landed.json --mode c
 cases slow slow.jq slow.json --mode c
@@ -2391,7 +2393,7 @@ if [[ -n ${map//[[:space:]]/} ]]; then
   printf 'claims check FAILED: the term map is malformed:\n%s\n' "$map" >&2
   exit 1
 fi
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/claimed.json) bodies their claim marker, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report, $(jq length .config/claims/period.json) periods their days, $(jq length .config/claims/terms.json) units their vocabulary, $(jq length .config/claims/swept.json) nights their recovery rows, $(jq length .config/claims/hand-off.json) transcripts their observed block, and the term map's $(jq length <<< "$terms") rows read whole"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/signed.json) worked issues their sign-off, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/claimed.json) bodies their claim marker, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/shown.json) issues their vault pages, $(jq length .config/claims/annotated.json) bodies their vault keys, $(jq length .config/claims/patched.json) tables their reading, $(jq length .config/claims/deps.json) issues their dependencies, $(jq length .config/claims/chain.json) rungs their \`## After\`, $(jq length .config/claims/report.json) boards their dependency report, $(jq length .config/claims/filing.json) merged verdicts their filing, $(jq length .config/claims/obligations.json) periods their obligations report, $(jq length .config/claims/period.json) periods their days, $(jq length .config/claims/terms.json) units their vocabulary, $(jq length .config/claims/recovery.json) causes their recovery body, $(jq length .config/claims/swept.json) nights their recovery rows, $(jq length .config/claims/hand-off.json) transcripts their observed block, and the term map's $(jq length <<< "$terms") rows read whole"
 '''
 
 # The debugger tasks read an enum's variant and pick their lldb as recorded
@@ -2550,16 +2552,17 @@ echo "issues check OK: $(jq length .config/epics/cases.json) epics gave their de
 
 # The witnessed mutation run's readings (#1456): `items.jq` reads each
 # function's witnesses from rustdoc JSON, and `groups.jq` places each mutant
-# in its function and builds the group's regex and filterset. Each case in
-# `.config/mutants/cases.json` names its program, its input and the compact
-# JSON it must give.
+# in its function and builds the group's regex and filterset. `landed.jq`
+# writes the body of a landed pull request's survivors issue (#3596). Each
+# case in `.config/mutants/cases.json` names its program, its input and the
+# compact JSON or, for `landed.jq`, the text it must give.
 ["check:mutants"]
 description = "The witnessed mutation run's readings give each recorded case its output"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash mutants .config/mutants/cases.json --programs .config/mutants --mode c
+.config/cases/run.bash mutants .config/mutants/cases.json --programs .config/mutants --mode c --raw landed.jq
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
 '''
 
@@ -2590,9 +2593,10 @@ echo "bench check OK: $(jq length .config/bench/cases.json) cases read as record
 # The stall detector's readings (#2785): `facts.jq` reads the open pull
 # requests off one answer to `.config/stall/query.graphql`, `detect.jq`
 # decides the stalls among them, what to page and what to remember,
-# `reports.jq` the stall reports whose event is over (#3112), `decide.jq`
-# the coordinator's line with the decisions its finding admits (#4655), and
-# `live.jq` whether the detector itself still reads. Each case in
+# `reports.jq` the stall reports whose event is over (#3112),
+# `observation.jq` the observation a stall report opens with (#3596),
+# `decide.jq` the coordinator's line with the decisions its finding admits
+# (#4655), and `live.jq` whether the detector itself still reads. Each case in
 # `.config/stall/cases.json` holds a recorded reading, no network, and the
 # output it must give: a case per kind, its threshold's edge, the page-once
 # memory, the reports closed and kept, the coordinator's decisions, and the
@@ -2603,7 +2607,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c --raw live.jq --raw decide.jq -L .config/claims
+.config/cases/run.bash stall .config/stall/cases.json --programs .config/stall --mode c --raw live.jq --raw decide.jq --raw observation.jq -L .config/claims
 echo "stall check OK: $(jq length .config/stall/cases.json) cases read as recorded"
 '''
 
@@ -2702,7 +2706,10 @@ echo "follow check OK: $(jq length .config/follow/cases.json) cases read as reco
 # upload's outcome does to the job, each case in `.config/hotpath/upload.json`
 # an outcome and that decision; `unsent.jq` writes the one issue that holds
 # main's reports not uploaded, each case in `.config/hotpath/unsent.json` the
-# open issue, a run and the compact JSON it must give. A budget its report
+# open issue, a run and the compact JSON it must give. The landed deltas
+# (#3596): `landed.jq` writes the body of the `Hotpath: the landed deltas`
+# ledger, each case in `.config/hotpath/landed.json` the open ledger's body
+# or none, the push's rows and the body it must give. A budget its report
 # cannot judge (#5125): hotpath takes the `alloc` of a function budget only in
 # bytes. `budgets.jq` names each `alloc` budget of a policy whose report counts
 # allocations, each case in `.config/hotpath/budgets.json` a policy and the
@@ -2723,6 +2730,7 @@ cases() {
 cases c report.jq cases.json
 cases r upload.jq upload.json
 cases c unsent.jq unsent.json
+cases r landed.jq landed.json
 cases c budgets.jq budgets.json
 metric=$(yq '.jobs.hotpath.env.HOTPATH_ALLOC_METRIC // "bytes"' .github/workflows/ci.yml)
 policies=0
@@ -2741,7 +2749,7 @@ for policy in hotpath/*-policy.toml; do
   policies=$((policies + 1))
 done
 (( failed == 0 )) || exit 1
-echo "hotpath check OK: $(jq length .config/hotpath/cases.json) reports, $(jq length .config/hotpath/upload.json) upload outcomes, $(jq length .config/hotpath/unsent.json) unsent issues and $(jq length .config/hotpath/budgets.json) budget readings read as recorded, and $policies policies hold only the budgets their reports can judge"
+echo "hotpath check OK: $(jq length .config/hotpath/cases.json) reports, $(jq length .config/hotpath/upload.json) upload outcomes, $(jq length .config/hotpath/unsent.json) unsent issues, $(jq length .config/hotpath/landed.json) landed ledgers and $(jq length .config/hotpath/budgets.json) budget readings read as recorded, and $policies policies hold only the budgets their reports can judge"
 '''
 
 # A clone may wire merge drivers. A driver that merges a rebase "cleanly" into

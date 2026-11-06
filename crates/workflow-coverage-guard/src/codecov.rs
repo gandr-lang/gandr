@@ -553,6 +553,41 @@ impl fmt::Display for Skipped
     }
 }
 
+impl Skipped
+{
+    /// The upload's row of the unprocessed uploads' table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn row(&self) -> SkippedRow<'_>
+    {
+        SkippedRow(self)
+    }
+}
+
+/// A skipped upload's row of the unprocessed uploads' table: its commit and
+/// its state.
+#[repr(transparent)]
+pub struct SkippedRow<'skipped>(&'skipped Skipped);
+
+impl fmt::Display for SkippedRow<'_>
+{
+    /// Writes the row: the commit, then the state in code.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "| {} | `{}` |", self.0.sha, self.0.state)
+    }
+}
+
 /// The newest processed upload of `main` at or before a commit's, and every
 /// unprocessed upload above it.
 ///
