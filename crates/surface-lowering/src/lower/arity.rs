@@ -3164,6 +3164,52 @@ impl<'source> Lowerer<'_, 'source>
             })
     }
 
+    /// The type the name at `at` was written with, read under `frame`: its
+    /// binder's or its declaration's.
+    ///
+    /// # Specification
+    /// - requires: `at` is an operand read under `frame`.
+    /// - ensures: the written type's node when `at` is a name whose binder or
+    ///   declaration was written with a type; the binder's own reason for a
+    ///   binder written with no type; [`binder_type::Absent::Untyped`] for an
+    ///   operand that is no name, and for a name no binder or declaration
+    ///   answers.
+    /// - fails: the name's own resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a selection by place, a patched field and a module
+    ///   statement each read the type their name was written with, and a value
+    ///   with no written type reads none.
+    /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
+    /// - witness: `lower::patched::tests::a_fixed_field_reads_its_value_back`
+    /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(self.form_at(at), Ok(Some((_, Former::Name)))))]
+    pub(super) fn name_type(
+        &mut self,
+        frame: Frame,
+        at: Placed,
+    ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
+    {
+        if !matches!(self.form_at(at)?, Some((_, Former::Name))) {
+            return Ok(Maybe::Absent(binder_type::Absent::Untyped));
+        }
+        let named = Site {
+            at,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+
+        Ok(match self.resolve_name(named, frame, self.name_at(at))? {
+            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+        })
+    }
+
     /// The entries of the type written for the operand `target` of a
     /// selection, when the operand is a name written with a telescope or a
     /// product chain.
@@ -3197,21 +3243,7 @@ impl<'source> Lowerer<'_, 'source>
         LoweringRefusal<'source>,
     >
     {
-        if !matches!(self.form_at(target)?, Some((_, Former::Name))) {
-            return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
-        }
-        let frame = site.reading.frame();
-        let named = Site {
-            at: target,
-            name: FormName::IDENTIFIER,
-            reading: Reading::Value(frame),
-        };
-        let declared = match self.resolve_name(named, frame, self.name_at(target))? {
-            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
-        };
-        let Maybe::Present(declared) = declared
+        let Maybe::Present(declared) = self.name_type(site.reading.frame(), target)?
         else {
             return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
         };
