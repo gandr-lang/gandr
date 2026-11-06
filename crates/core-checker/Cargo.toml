@@ -40,8 +40,9 @@ path = "tests/lib.rs"
 # anodized facade supplies the executable specifications; logic/BigInt stays
 # disabled in this no_std library. A staged program forks its independent
 # jobs through the fork crate's trait, on whatever pool the driver hands it.
-# Nothing here names a surface crate: names, spans and syntax stay above the
-# core.
+# The access rules add and compare uses in the ordered-algebras crate's usage
+# semiring. Nothing here names a surface crate: names, spans and syntax stay
+# above the core.
 # `hotpath` profiles checking, a model slot's resolution and readmission for
 # the benchmark report.
 [dependencies]
@@ -57,6 +58,7 @@ gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-deep-inference.workspace = true
+gandr-theory-ordered-algebras.workspace = true
 gandr-theory-sites.workspace = true
 hotpath = { workspace = true, optional = true }
 quenchant-shape.workspace = true

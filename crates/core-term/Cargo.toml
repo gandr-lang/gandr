@@ -28,22 +28,20 @@ path = "tests/lib.rs"
 # logic/BigInt stays disabled in this no_std library. The quenchant shapes
 # give the rewrite machines their clamped index arithmetic and their named
 # absence. The site crate's vocabulary — degrees, shape sizes and profiles —
-# names the stratum and the descriptions univalence at a stratum reads.
+# names the stratum and the descriptions univalence at a stratum reads. The
+# ordered-algebras crate's usage semiring is the measure of the hold and
+# capability grades, and its grades suite decides the semiring's laws.
 [dependencies]
 anodized.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-levitation.workspace = true
+gandr-theory-ordered-algebras.workspace = true
 gandr-theory-sites.workspace = true
 libm.workspace = true
 num-bigint.workspace = true
 quenchant-arith.workspace = true
 quenchant-shape.workspace = true
-
-# The grades suite reads `HoldGrade` and `CapabilityGrade` as ordered
-# semirings through the law checker.
-[dev-dependencies]
-gandr-theory-ordered-algebras.workspace = true
 
 [lints]
 workspace = true

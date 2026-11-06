@@ -16,8 +16,9 @@
 # - One atomic push moves `landing` and the notes. The lease on the old tip
 #   of `landing` refuses the push when a landing arrives during the rebase.
 #   Then the task reads both tips again, at most 3 times in all.
-# - A rebase that conflicts stops before the push and exits 3. `landing`
-#   stays as it was, and the job pages the workflow lane.
+# - A rebase that conflicts stops before the push and exits 3. A fetch or
+#   another git command that fails stops the attempt and exits 1. Either way
+#   `landing` stays as it was, and the job pages the workflow lane.
 #
 # Usage: rebase.bash [remote], `origin` by default, in a clone that holds the
 # whole history of `main` and `landing`.
@@ -36,27 +37,45 @@ printf '#!/usr/bin/env bash\ncat >> %q\n' "$scratch/rewritten" > "$scratch/hooks
 chmod +x "$scratch/hooks/post-rewrite"
 
 # One attempt: 0 when `landing` holds `main` at the end, 3 on a conflict, 4
-# when the push loses its lease, and 1 when the remote refuses the push.
+# when the push loses its lease, and 1 when a fetch or another git command
+# fails or the remote refuses the push. The loop below calls `attempt` on the
+# left of `||`, where bash ignores `set -e`. Thus each command that can fail
+# returns on its own (#5627).
 attempt() {
-  local main landing base new old moved refspecs=()
-  git fetch --quiet --no-tags "$remote" "+refs/heads/main:refs/remotes/$remote/main" \
-    "+refs/heads/landing:refs/remotes/$remote/landing"
-  if git ls-remote --exit-code "$remote" "$notes" > /dev/null; then
-    git fetch --quiet --no-tags "$remote" "+$notes:$notes"
+  local main landing base new old moved listed=0 refspecs=()
+  if ! git fetch --quiet --no-tags "$remote" "+refs/heads/main:refs/remotes/$remote/main" \
+    "+refs/heads/landing:refs/remotes/$remote/landing"; then
+    echo "git fetch of main and landing from $remote fails: no rebase runs" >&2
+    return 1
   fi
-  main=$(git rev-parse "refs/remotes/$remote/main")
-  landing=$(git rev-parse "refs/remotes/$remote/landing")
+  # `--exit-code` gives 2 when the remote holds no notes. Only 2 means that.
+  git ls-remote --exit-code "$remote" "$notes" > /dev/null || listed=$?
+  case $listed in
+    0)
+      if ! git fetch --quiet --no-tags "$remote" "+$notes:$notes"; then
+        echo "git fetch of $notes from $remote fails: no rebase runs" >&2
+        return 1
+      fi
+      ;;
+    2) ;;
+    *)
+      echo "git ls-remote of $notes on $remote fails with exit $listed: no rebase runs" >&2
+      return 1
+      ;;
+  esac
+  main=$(git rev-parse "refs/remotes/$remote/main") || return 1
+  landing=$(git rev-parse "refs/remotes/$remote/landing") || return 1
   if git merge-base --is-ancestor "$main" "$landing"; then
     echo "landing at ${landing:0:12} holds main at ${main:0:12}: nothing to rebase"
     return 0
   fi
-  base=$(git merge-base "$main" "$landing")
+  base=$(git merge-base "$main" "$landing") || return 1
   if [[ $base == "$landing" ]]; then
     new=$main
     echo "landing at ${landing:0:12} holds no commit past main: it fast-forwards to ${main:0:12}"
   else
     : > "$scratch/rewritten"
-    git worktree add --quiet --detach "$scratch/tree" "$landing"
+    git worktree add --quiet --detach "$scratch/tree" "$landing" || return 1
     if ! git -C "$scratch/tree" -c core.hooksPath="$scratch/hooks" rebase --quiet --gpg-sign --rebase-merges \
       --onto "$main" "$base" > /dev/null 2> "$scratch/rebase.err"; then
       local conflicted
@@ -69,15 +88,15 @@ attempt() {
       echo "the rebase of landing at ${landing:0:12} onto main at ${main:0:12} conflicts in $conflicted" >&2
       return 3
     fi
-    new=$(git -C "$scratch/tree" rev-parse HEAD)
-    git worktree remove --force "$scratch/tree"
+    new=$(git -C "$scratch/tree" rev-parse HEAD) || return 1
+    git worktree remove --force "$scratch/tree" || return 1
     # A side branch that leaves `main` before the base keeps its commits, and
     # the hook names each of them as its own new commit. Only a moved commit
     # gets a note.
     local count=0
     while read -r old moved _; do
       [[ $old == "$moved" ]] && continue
-      git notes --ref=rebased add --force --message "$moved" "$old"
+      git notes --ref=rebased add --force --message "$moved" "$old" || return 1
       count=$((count + 1))
     done < "$scratch/rewritten"
     refspecs+=("$notes:$notes")
