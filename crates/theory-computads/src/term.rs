@@ -347,6 +347,7 @@ impl Scope
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Default)]
+#[repr(transparent)]
 struct OpenApplications(Vec<(usize, bool)>);
 
 /// The nodes of a term's table in prefix order, each with its depth: the
