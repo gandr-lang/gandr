@@ -35,10 +35,6 @@
 //! is reported, never mistaken for a normal form. The budget is the guard
 //! against a store that does not terminate, the same decline-and-report posture
 //! completion takes.
-//!
-//! [`redex_below`] searches only the positions a given one strictly encloses,
-//! in the same order: completion asks it whether a critical pair's peak
-//! reduces below the seam, before deciding the pair.
 
 use alloc::vec::Vec;
 
@@ -47,10 +43,8 @@ use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
-use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SequentAlphabet;
-use gandr_theory_cell_complexes::SubstitutionDecision;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::BudgetExhaustion;
@@ -123,19 +117,6 @@ quenchant_shape::reason_enum! {
             /// No cell fires at any command position: the term is a normal
             /// form of the store.
             NormalForm,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why no cell of a store fires below a position of a term.
-    pub mod below_search {
-        /// The reason no redex is found below the position.
-        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-        pub enum Absent {
-            /// No cell fires at a command position the given one strictly
-            /// encloses.
-            NormalBelow,
         }
     }
 }
@@ -263,96 +244,6 @@ where
         }
     }
     Maybe::Absent(redex_search::Absent::NormalForm)
-}
-
-/// The first cell that fires in `term` strictly below `above`.
-///
-/// # Specification
-/// - ensures: the first `(position, cell)` pair whose [`rewrite_at`] fires,
-///   among the command positions `above` strictly encloses, positions in the
-///   alphabet's [`CellAlphabet::command_positions`] order and cells in store
-///   order within a position.
-/// - provides: [`below_search::Absent::NormalBelow`] when no cell fires at any
-///   command position `above` strictly encloses; `above` itself is not read.
-/// - panics: none.
-/// - intension: the alphabet's walk below `above` offers each redex once; a
-///   cell whose root clashes with it costs one comparison, and no cell builds
-///   its contractum.
-///
-/// # Adequacy
-/// - hypothesis: L3 — over the toy alphabet, a peak whose seam encloses a redex
-///   reports it and the pair is skipped, while the deepest overlap of the same
-///   peak, which encloses none, is decided. Reading the seam itself, or a
-///   position beside it, changes which pair is decided.
-/// - witness: `completion::tests::a_pair_whose_peak_reduces_below_its_seam_is_not_decided`
-#[spec(ensures: |output| match output {
-    Maybe::Present(ref step) => A::position_order(above, &step.at) == PositionOrder::Encloses
-        && matches!(store.get(step.cell), Maybe::Present(cell) if matches!(rewrite_at(cell, term, &step.at), Maybe::Present(_))),
-    Maybe::Absent(below_search::Absent::NormalBelow) => A::command_positions(term).iter().all(|at|
-        A::position_order(above, at) != PositionOrder::Encloses
-            || store.iter().all(|(_, cell)| matches!(rewrite_at(cell, term, at), Maybe::Absent(_)))),
-})]
-pub fn redex_below<A>(
-    store: &CellStore<A>,
-    term: &A::Cmd,
-    above: &A::Pos,
-) -> Maybe<CellApp<A>, below_search::Absent>
-where
-    A: CellAlphabet,
-{
-    let mut fired: Maybe<CellId, below_search::Absent> =
-        Maybe::Absent(below_search::Absent::NormalBelow);
-    let found = A::first_command_below(term, above, |redex| {
-        for (cell_id, cell) in store.iter() {
-            if bool::from(matches_at(cell, redex)) {
-                fired = Maybe::Present(cell_id);
-                return true;
-            }
-        }
-        false
-    });
-    match (found, fired) {
-        (Maybe::Present(at), Maybe::Present(cell)) => Maybe::Present(CellApp { cell, at }),
-        _ => Maybe::Absent(below_search::Absent::NormalBelow),
-    }
-}
-
-/// Whether `cell` may fire at `redex` and its left-hand side matches it: what
-/// [`contract`] decides before it builds the contractum.
-///
-/// # Specification
-/// - ensures: positive exactly when the alphabet's discipline lets the cell
-///   fire at `redex` and its left-hand side matches; the roots are compared
-///   first, so a clash answers without matching.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — [`redex_below`]'s witness runs through it: a peak whose
-///   seam encloses a redex reports it, and the deepest overlap of the same
-///   peak, which encloses none, is decided; a data η cell matching a negative
-///   cut answers no, and the same cell at a positive cut answers yes. Answering
-///   a match the discipline refuses, or refusing one that holds, changes
-///   either.
-/// - witness: `completion::tests::a_pair_whose_peak_reduces_below_its_seam_is_not_decided`
-/// - witness: `rewrite::tests::an_eta_cell_is_rejected_at_the_wrong_polarity`
-#[spec(ensures: |output| bool::from(output) == (bool::from(A::may_fire(&cell.provenance(), redex)) && {
-    let mut subst = A::Subst::default();
-    bool::from(A::match_cmd(cell.lhs(), redex, &mut subst))
-}))]
-fn matches_at<A>(
-    cell: &Cell<A>,
-    redex: &A::Cmd,
-) -> SubstitutionDecision
-where
-    A: CellAlphabet,
-{
-    if !bool::from(A::may_fire(&cell.provenance(), redex))
-        || A::root_agreement(cell.lhs(), redex) == RootAgreement::Clash
-    {
-        return SubstitutionDecision::from(false);
-    }
-    let mut subst = A::Subst::default();
-    A::match_cmd(cell.lhs(), redex, &mut subst)
 }
 
 /// Fire `cell` at `pos` in `term`.
@@ -725,10 +616,6 @@ mod tests
             rewrite_at(&eta, &lhs, &Pos::root()),
             "data-η must not fire at a negative cut"
         );
-        assert!(
-            !bool::from(matches_at(&eta, &lhs)),
-            "nor does the search below a seam take it for a redex there"
-        );
         let positive = CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), ConsPat::meta("a"));
         let data_eta: Cell = Cell::new(
             positive.clone(),
@@ -737,8 +624,11 @@ mod tests
             CellProvenance::Eta(EtaKind::Data),
         );
         assert!(
-            bool::from(matches_at(&data_eta, &positive)),
-            "at a positive cut it may fire, and its left-hand side matches"
+            matches!(
+                rewrite_at(&data_eta, &positive, &Pos::root()),
+                Maybe::Present(_)
+            ),
+            "at a positive cut it fires"
         );
     }
 

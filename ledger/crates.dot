@@ -392,7 +392,9 @@ digraph crates {
   "core-checker" -> "kernel-core" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "kernel-core" -> "kernel-strata" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "kernel-strata" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
-  "surface-dispatcher" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "surface-dispatcher" -> "theory-coherent-resolutions" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "theory-coherent-resolutions" -> "theory-computads" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "theory-computads" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "core-checker" -> "core-incremental" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-incremental" -> "core-nbe" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-nbe" -> "core-term" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
