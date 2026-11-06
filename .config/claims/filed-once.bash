@@ -64,9 +64,13 @@ while IFS= read -r case; do
       status=0
       run a a mise run --quiet issue:file "refactor(workflow): generalise — filing.jq" "$work/body.md" \
         kind:refactor area:workflow status:unsectioned --epic 4481 || status=$?
-      links=$(awk '/^api -X POST repos\/case\/case\/issues\/4481\/sub_issues/ { n++ } END { print n + 0 }' "$work/stub/calls")
+      links=$(awk 'index($0, "api -X POST repos/{owner}/{repo}/issues/4481/sub_issues") == 1 { n++ } END { print n + 0 }' "$work/stub/calls")
+      # Each GitHub read the filing makes (#5709): an `api` call that writes
+      # nothing. The free `rate_limit` gauge reads at most once a minute from
+      # the host's cache, so the count leaves it out.
+      reads=$(awk '/^api / && !/^api -X / && !/^api rate_limit/ { n++ } END { print n + 0 }' "$work/stub/calls")
       last=$(jq -r '.[0].body // "" | split("\n") | map(select(. != "")) | last // ""' "$work/stub/board.json")
-      tail="$links links; the body ends \`$last\`"
+      tail="$links links; reads $reads; the body ends \`$last\`"
       statuses=$status
       ;;
     race)
