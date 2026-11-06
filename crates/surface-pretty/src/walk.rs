@@ -2925,16 +2925,16 @@ enum Opener
     /// `break(v)`, its operands apart by commas before the closer.
     Parenthesized(Glyphs<'static>),
     /// The head alone: a value former the source applies, `Path.here a`, or
-    /// a type former where an expression is read, `List Integer`, its
-    /// operands juxtaposed.
+    /// a type former, `List Integer`, its operands juxtaposed.
     Juxtaposed(Glyphs<'static>),
 }
 
 impl Opener
 {
     /// A type former's opener in `surface`: its head alone where an
-    /// expression is read, which applies it as it applies any function, and
-    /// `opened`, its head and `(`, where a type is read.
+    /// expression or a type is read, which applies it as it applies any
+    /// function, `List Integer` (#5326), and `opened`, its head and `(`, where
+    /// an expression a type encloses is read.
     ///
     /// # Specification
     /// trivial.
@@ -2945,8 +2945,8 @@ impl Opener
     ) -> Self
     {
         match surface {
-            Surface::Expression => Self::Juxtaposed(head),
-            Surface::Type | Surface::Enclosed => Self::Parenthesized(opened),
+            Surface::Expression | Surface::Type => Self::Juxtaposed(head),
+            Surface::Enclosed => Self::Parenthesized(opened),
         }
     }
 }
@@ -3330,6 +3330,27 @@ const fn type_applied(
     match surface {
         Surface::Expression => writes(Production("application_expression"), Binding::Application),
         Surface::Type | Surface::Enclosed => writes(rule, Binding::Atom),
+    }
+}
+
+/// How a family or a constructor applied to its operands binds in
+/// `surface`, as [`Parts::family`] writes them: an application where an
+/// expression or a type is read, `Maybe A` the juxtaposed `type_application`
+/// there, and an atom with its operands between its own parentheses where an
+/// expression a type encloses is read.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn family_applied(surface: Surface) -> Binding
+{
+    match surface {
+        Surface::Expression => writes(Production("application_expression"), Binding::Application),
+        Surface::Type => writes(
+            Production("type_application.juxtaposed"),
+            Binding::Application,
+        ),
+        Surface::Enclosed => writes(Production("type_application"), Binding::Atom),
     }
 }
 
@@ -5054,6 +5075,26 @@ impl Parts
         }
     }
 
+    /// Appends a family's or a constructor's `count` operands as `surface`
+    /// reads them: juxtaposed where an expression or a type is read, as the
+    /// type grammar reads `Maybe A` (#5326), and between parentheses where an
+    /// expression a type encloses is read, whose glued `f x` the type grammar
+    /// reads as the moded type `m T`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn family(
+        &mut self,
+        count: Arity,
+        surface: Surface,
+    ) -> &mut Self
+    {
+        match surface {
+            Surface::Expression | Surface::Type => self.juxtaposed(count),
+            Surface::Enclosed => self.arguments(count),
+        }
+    }
+
     /// Appends a block over the next child's piece: the parts so far its
     /// head, ending with its opening brace.
     ///
@@ -6582,40 +6623,27 @@ impl Walk<'_, '_>
         ))
     }
 
-    /// How a type former applied to its operands binds on the walk's surface,
-    /// as [`type_applied`] states, noting the juxtaposed form a type inside
-    /// an expression takes.
+    /// The surface a path or a bridge type writes its endpoints on: a type's
+    /// where an expression reads a type, as the type grammar reads
+    /// `Path(x, y)` and no juxtaposed path, and the walk's own elsewhere.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`type_applied`]'s binding for the walk's surface and `rule`;
-    ///   on the expression surface where `admits` reads a type,
-    ///   `Notation::TypeApplication` is among the notes, since the type grammar
-    ///   reads no juxtaposed application until #5200. A value the expression
-    ///   grammar reads, `pure (Vec MkIx)`, takes no note.
-    /// - provides: the one way a type former's applied binding is chosen.
+    /// - ensures: `Surface::Type` on the expression surface where `admits`
+    ///   reads a type; the walk's surface otherwise.
+    /// - provides: the one way a path or a bridge type chooses its form.
     /// - panics: none.
-    /// - executable: none — the binding is `type_applied`'s, and the note is
-    ///   one call.
+    /// - executable: none — one comparison.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `endForced`'s ascription to `Path(3, _)` inside an
     ///   expression is held by the body parity sweep, and `pure (Vec MkIx)`
     ///   stays faithful.
     /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            answer_totality,
-            reason = "a juxtaposed type application has no type syntax until #5200: written \
-                      in the printer's notation"
-        )
-    )]
-    fn applied_type(
-        &mut self,
-        rule: Production,
+    fn endpoint_surface(
+        &self,
         admits: Admits,
-    ) -> Binding
+    ) -> Surface
     {
         if self.surface == Surface::Expression
             && matches!(
@@ -6623,9 +6651,11 @@ impl Walk<'_, '_>
                 Admits::Type | Admits::ValueType | Admits::CompType | Admits::Thunked
             )
         {
-            self.note(Unspelled::Notation(Notation::TypeApplication));
+            Surface::Type
         }
-        type_applied(self.surface, rule)
+        else {
+            self.surface
+        }
     }
 
     /// Pushes a finished atom holding `glyphs`.
@@ -9774,27 +9804,7 @@ impl Walk<'_, '_>
                 }
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
             },
-            #[cfg_attr(
-                dylint_lib = "quenchant_dylints",
-                expect(
-                    answer_totality,
-                    reason = "a family applied under a returner inside an expression has no type \
-                              syntax until #5200: written in the printer's notation"
-                )
-            )]
-            Former::Returner(result) => {
-                // Inside an expression the type grammar reads a returner's
-                // result, and a family applied there is juxtaposed,
-                // `-F (Maybe a)`, which it reads only once #5200 lands.
-                if self.surface == Surface::Expression
-                    && matches!(
-                        source.read(result),
-                        Former::Data { arity, .. } | Former::Codata { arity, .. }
-                            if usize::from(arity) > 0_usize
-                    )
-                {
-                    self.note(Unspelled::Notation(Notation::TypeApplication));
-                }
+            Former::Returner(_) => {
                 Some(writes(Production("f_type"), Join::Prefix(Prefix::Returner)))
             },
             // A group of outputs is written after the returner it is,
@@ -10214,27 +10224,6 @@ impl Walk<'_, '_>
             )]
             Former::Element(code) if let Some(notation) = positional(source, code) => {
                 self.note(Unspelled::Notation(notation));
-                None
-            },
-            // A decode of a code a call builds, inside an expression, is
-            // written juxtaposed, `-F (Maybe a)`, which the type grammar reads
-            // only once #5200 lands: until then the printer's notation.
-            #[cfg_attr(
-                dylint_lib = "quenchant_dylints",
-                expect(
-                    answer_totality,
-                    reason = "a juxtaposed application in a type has no type syntax until #5200: \
-                              written in the printer's notation"
-                )
-            )]
-            Former::Element(code)
-                if self.surface == Surface::Expression
-                    && matches!(
-                        source.read(code),
-                        Former::Application(..) | Former::StaticApplication(..)
-                    ) =>
-            {
-                self.note(Unspelled::Notation(Notation::TypeApplication));
                 None
             },
             // A computation where a value is read stands bare, its run left
@@ -11889,21 +11878,24 @@ impl Walk<'_, '_>
                 .text(")");
         };
         let binding = match *former {
-            // `Path(x, y)`, `Bridge(x, y)` and `Flow(x, y)`: a carrier the
-            // source omitted reads back as nothing. A path or a bridge spells
-            // through its own production, its endpoints terms; a flow is a
-            // type application.
+            // `Path(x, y)` and `Bridge(x, y)`: a carrier the source omitted
+            // reads back as nothing, and each spells through its own
+            // production, its endpoints terms, in the call form wherever a
+            // type is read. A flow is a type application, juxtaposed as a
+            // family's, `Flow x y`.
             Former::Path { carrier: None, .. } => {
-                let _ = parts.text("Path").applied(Arity(2_usize), self.surface);
-                self.applied_type(Production("path_type"), admits)
+                let surface = self.endpoint_surface(admits);
+                let _ = parts.text("Path").applied(Arity(2_usize), surface);
+                type_applied(surface, Production("path_type"))
             },
             Former::Bridge { carrier: None, .. } => {
-                let _ = parts.text("Bridge").applied(Arity(2_usize), self.surface);
-                self.applied_type(Production("bridge_type"), admits)
+                let surface = self.endpoint_surface(admits);
+                let _ = parts.text("Bridge").applied(Arity(2_usize), surface);
+                type_applied(surface, Production("bridge_type"))
             },
             Former::Flow { carrier: None, .. } => {
-                let _ = parts.text("Flow").applied(Arity(2_usize), self.surface);
-                self.applied_type(Production("type_application"), admits)
+                let _ = parts.text("Flow").family(Arity(2_usize), self.surface);
+                family_applied(self.surface)
             },
             Former::Path {
                 carrier: Some(_), ..
@@ -11927,8 +11919,8 @@ impl Walk<'_, '_>
                 let spelled = relation_spelled(relation);
                 match (self.spelling, spelled.ascii) {
                     (grammar::Spelling::Ascii, grammar::Ascii::Head(head)) => {
-                        let _ = parts.text(head.0).applied(Arity(2_usize), self.surface);
-                        self.applied_type(Production("type_application"), admits)
+                        let _ = parts.text(head.0).family(Arity(2_usize), self.surface);
+                        family_applied(self.surface)
                     },
                     (grammar::Spelling::Unicode, _)
                     | (grammar::Spelling::Ascii, grammar::Ascii::Token(_)) => {
@@ -12028,8 +12020,8 @@ impl Walk<'_, '_>
                     None => parts.text(name),
                 };
                 if usize::from(arity) > 0_usize {
-                    let _ = parts.applied(Arity(usize::from(arity)), self.surface);
-                    type_applied(self.surface, Production("type_application"))
+                    let _ = parts.family(Arity(usize::from(arity)), self.surface);
+                    family_applied(self.surface)
                 }
                 else {
                     writes(Production("type_identifier"), Binding::Atom)
@@ -12059,14 +12051,14 @@ impl Walk<'_, '_>
                 }
                 let _ = parts.text(name);
                 if usize::from(arity) > 0_usize {
-                    let _ = parts.applied(Arity(usize::from(arity)), self.surface);
+                    let _ = parts.family(Arity(usize::from(arity)), self.surface);
                 }
                 if annotated {
                     let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
                 }
                 let applied = match (calls, annotated) {
                     (true, true) => writes(Production("application_expression"), Binding::Atom),
-                    (true, false) => type_applied(self.surface, Production("type_application")),
+                    (true, false) => family_applied(self.surface),
                     (false, _) => writes(Production("constructor.expression"), Binding::Atom),
                 };
                 if annotated {
@@ -12735,7 +12727,8 @@ impl Walk<'_, '_>
                 writes(Production("parenthesized_expression"), Binding::Atom)
             },
             // A homed type former written through its home's path: the path,
-            // then its one argument, `std.list.List(A)`.
+            // then its one argument, `std.list.List A`, which the type grammar
+            // reads as `M.T A` applies `M.T` (#5326).
             Former::List(_)
             | Former::RunType(_)
             | Former::PrefixType(_)
@@ -12744,8 +12737,8 @@ impl Walk<'_, '_>
             {
                 let _ = parts
                     .text(String::from(head.as_ref()))
-                    .applied(Arity(1_usize), self.surface);
-                self.applied_type(Production("type_path"), admits)
+                    .family(Arity(1_usize), self.surface);
+                family_applied(self.surface)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",

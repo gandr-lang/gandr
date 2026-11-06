@@ -1562,6 +1562,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "inserted-forget",
             "function-form",
             "joined-definition",
+            "type-application",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
