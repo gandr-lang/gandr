@@ -598,7 +598,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a record of the face's two fields, and a value that
     ///   is a name.
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
-    /// - witness: `lower::patched::tests::a_fixed_value_the_lowering_does_not_read_leaves_the_fragment`
+    /// - witness: `lower::patched::tests::a_face_value_that_is_no_record_leaves_the_fragment`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| !matches!(entry.key, Key::Positional))))]
     fn face_value(
         &self,

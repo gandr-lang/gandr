@@ -3184,7 +3184,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   statement each read the type their name was written with, and a value
     ///   with no written type reads none.
     /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
-    /// - witness: `lower::patched::tests::a_fixed_field_reads_its_value_back`
+    /// - witness: `lower::patched::tests::a_selection_off_a_patched_name_projects_its_field_5579`
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
     #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(self.form_at(at), Ok(Some((_, Former::Name)))))]
     pub(super) fn name_type(
