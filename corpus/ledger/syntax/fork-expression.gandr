@@ -1,5 +1,5 @@
 /// `fork_expression`: a fork of a session, the parent's end a `let` binds and the child's end its binder.
 @[ checks ]
 def forked() -> -F Unit =
-  let desk = fork (seat : end) { close(seat) };
-  close(desk)
+  let desk = fork (seat : end) { close seat };
+  close desk

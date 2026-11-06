@@ -37,7 +37,7 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    │ │││       ┬──                            ━━━━━━━━━━━━━━━━ a view outliving its access
    │ │││       │
    │ │││       synthesised; while finishing the type of this
-35 │ │││       resume(v, v)
+35 │ │││       resume v v
 36 │ │││     };
    │ ││└─────┘ checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body of this access
    ┆ ┆┆
@@ -60,7 +60,7 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
 48 │ │┌   handle c : std.process.Exit.Eff {
 49 │ ││     let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
    │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() -> Integer) at c
-50 │ ││     access s as v { resume(v, v + 1) };
+50 │ ││     access s as v { resume v (v + 1) };
    │ ││     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
 51 │ ││     force k
    ┆ ┆┆
@@ -138,7 +138,7 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 89 │ │   let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds k : (() -> Integer) at s
-90 │ │   access s as v { resume(v, v + 1) };
+90 │ │   access s as v { resume v (v + 1) };
    │ │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
 91 │ │   force k
    │ └─────────┘ checked against `() -> Integer`; while checking the body of this thunk

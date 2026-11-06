@@ -1,23 +1,23 @@
 @[ refuses("LinearResidue") ]
 def seat_left_open() -> Unit =
   let desk = fork (seat : end) { pure *{} };
-  close(desk)
+  close desk
 
 @[ refuses("UsedAfterClose") ]
 def seat_closed_twice() -> Unit =
-  let desk = fork (seat : end) { close(seat); close(seat) };
-  close(desk)
+  let desk = fork (seat : end) { close seat; close seat };
+  close desk
 
 @[ refuses("EndpointUsedTwice") ]
 def seat_sent_over_itself() -> Unit =
-  let desk = fork (seat : !String. end) { send(seat, seat); close(seat) };
-  let task = recv(desk)
-  close(desk)
+  let desk = fork (seat : !String. end) { send seat seat; close seat };
+  let task = recv desk
+  close desk
 
 @[ refuses("CapturedEndpoint") ]
 def seat_closed_in_a_thunk() -> Unit =
-  let desk = fork (seat : end) { force thunk { close(seat) } };
-  close(desk)
+  let desk = fork (seat : end) { force thunk { close seat } };
+  close desk
 
 /// An end sent over a session leaves its sender, so closing it after the send
 /// acts on a spent slot
@@ -29,48 +29,48 @@ def seat_closed_in_a_thunk() -> Unit =
 @[ refuses("UsedAfterClose") ]
 def seat_closed_after_delegating() -> Unit =
   let desk = fork (seat : !end. end) {
-    let held = fork (inner : end) { close(inner) };
-    send(seat, held);
-    close(held);
-    close(seat)
+    let held = fork (inner : end) { close inner };
+    send seat held;
+    close held;
+    close seat
   };
-  let passed = recv(desk)
-  close(passed)
-  close(desk)
+  let passed = recv desk
+  close passed
+  close desk
 
 /// A received end is the receiver's to close: the receive's body ends with it
 /// still open.
 @[ refuses("LinearResidue") ]
 def received_seat_left_open() -> Unit =
   let desk = fork (seat : !end. end) {
-    let held = fork (inner : end) { close(inner) };
-    send(seat, held);
-    close(seat)
+    let held = fork (inner : end) { close inner };
+    send seat held;
+    close seat
   };
-  let passed = recv(desk)
-  close(desk)
+  let passed = recv desk
+  close desk
 
 @[ refuses("EndpointAsValue") ]
 def seat_returned() -> Unit =
   let desk = fork (seat : end) { pure seat };
-  close(desk)
+  close desk
 
 @[ refuses("ArmsDisagree") ]
 def seat_arms_leave_it_apart() -> Unit =
   let desk = fork (seat : &{next : end, retire : end}) {
-    offer(seat) { | next => close(seat) | retire => pure *{} }
+    offer seat { | next => close seat | retire => pure *{} }
   };
-  select(desk, next)
-  close(desk)
+  select desk next
+  close desk
 
 /// A case runs one arm, and the endpoint after it stands where every arm
 /// leaves it. Here one branch closes the seat and the other leaves it open.
 @[ refuses("ArmsDisagree") ]
 def seat_branches_leave_it_apart(early : Bool) -> Unit =
   let desk = fork (seat : end) {
-    if early { close(seat) } else { pure *{} }
+    if early { close seat } else { pure *{} }
   };
-  close(desk)
+  close desk
 
 @[ refuses("UnrestrictedEndpoint") ]
 def session_receive : ?Integer. end;

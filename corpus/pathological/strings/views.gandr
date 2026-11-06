@@ -15,7 +15,7 @@ import std.process;
 @[ refuses("ViewEscaped") ]
 def escaped() -> Repr =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  access s as v { force thunk { resume(v, v) } };
+  access s as v { force thunk { resume v v } };
   pure s
 
 /// A view ended twice: once written back, the view is spent, and the abort
@@ -23,7 +23,7 @@ def escaped() -> Repr =
 @[ refuses("ViewSpent") ]
 def endedTwice() -> Unit =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  access s as v { resume(v, v); abort(v) }
+  access s as v { resume v v; abort v }
 
 /// A view its access never ends: the access would return with neither a
 /// write-back nor an unwind.
@@ -57,7 +57,7 @@ def writtenWhileKept() -> Integer =
     let k : (() -> Integer) at c = access shared s as w {
       pure thunk { let bs = bytes w; count bs }
     };
-    access s as v { resume(v, v) };
+    access s as v { resume v v };
     force k
   } with {
     | pure(x) => pure x

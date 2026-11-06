@@ -55,6 +55,7 @@ use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
+use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
@@ -193,6 +194,52 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             ..
         } => format!("write {sort} in this position"),
         LoweringRefusal::OutOfFragment {
+            form: FormName::SEND,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from(
+            "write the endpoint and the payload after `send`, side by side: `send c v`",
+        ),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::SELECT,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from(
+            "write the endpoint and the label after `select`, side by side: `select c l`",
+        ),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::RESUME,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => {
+            String::from("write the view and the value after `resume`, side by side: `resume v e`")
+        },
+        LoweringRefusal::OutOfFragment {
+            form: FormName::RECV_EXPRESSION,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one endpoint after `recv`: `recv c`"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::CLOSE,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one endpoint after `close`: `close c`"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::DROP,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one endpoint after `drop`: `drop c`"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::OFFER,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one endpoint after `offer`, then its arms: `offer c { … }`"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::ABORT,
+            boundary: FragmentBoundary::Arity(_),
+            ..
+        } => String::from("write one view after `abort`: `abort v`"),
+        LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Arity(_),
             ..
         } => String::from("give the form its declared number of operands"),
@@ -208,7 +255,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             boundary: FragmentBoundary::Unbound,
             ..
         } => String::from(
-            "bind it to a name with `let`: `let x = recv(c);` or `let d = fork (c : S) t;`",
+            "bind it to a name with `let`: `let x = recv c;` or `let d = fork (c : S) t;`",
         ),
         LoweringRefusal::MalformedForm { form, fault, .. } => malformed(Spoken(form), fault),
         LoweringRefusal::IllFormedDescription { kind, .. } => ill_formed(kind),

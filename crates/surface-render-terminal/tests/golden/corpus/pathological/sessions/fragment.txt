@@ -1,7 +1,7 @@
 error[OutOfFragment.WrongSort]: a primitive type cannot stand where a session continuation is expected
    ╭▸ corpus/pathological/sessions/fragment.gandr:12:37
    │
-12 │   let desk = fork (seat : !Integer. Integer) { close(seat) };
+12 │   let desk = fork (seat : !Integer. Integer) { close seat };
    │                                     ━━━━━━━ a form of another sort than this position takes
    │
    ├ note: `value_type_as_continuation` is refused with OutOfFragment.WrongSort, as its expectation states
@@ -10,7 +10,7 @@ error[OutOfFragment.WrongSort]: a primitive type cannot stand where a session co
 error[MalformedForm]: a keyword or symbol of this select session type is out of place
    ╭▸ corpus/pathological/sessions/fragment.gandr:17:39
    │
-17 │   let desk = fork (seat : !Integer. +{end, end}) { close(seat) };
+17 │   let desk = fork (seat : !Integer. +{end, end}) { close seat };
    │                                       ━━━ out of place
    │
    ├ note: `branch_without_label` is refused with MalformedForm, as its expectation states
@@ -19,7 +19,7 @@ error[MalformedForm]: a keyword or symbol of this select session type is out of 
 error[OutOfFragment.Endpoint]: a session action acts on an endpoint: an end a `fork` binds, an endpoint a `recv` binds, or a parameter at a session type, written or named
   ╭▸ corpus/pathological/sessions/fragment.gandr:3:9
   │
-3 │   close(rounds)
+3 │   close rounds
   │         ━━━━━━ not an endpoint a fork, a receive or a parameter binds
   │
   ├ note: `parameter_as_endpoint` is refused with OutOfFragment.Endpoint, as its expectation states
@@ -28,7 +28,7 @@ error[OutOfFragment.Endpoint]: a session action acts on an endpoint: an end a `f
 error[OutOfFragment.NonContractive]: this recursive session type recurses before any action; put a send, a receive or a choice under its `rec`
   ╭▸ corpus/pathological/sessions/fragment.gandr:7:27
   │
-7 │   let desk = fork (seat : mu turn. turn) { close(seat) };
+7 │   let desk = fork (seat : mu turn. turn) { close seat };
   │                           ━━━━━━━━━━━━━ recurses before any action
   │
   ├ note: `recursion_before_any_action` is refused with OutOfFragment.NonContractive, as its expectation states

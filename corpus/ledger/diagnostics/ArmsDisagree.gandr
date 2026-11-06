@@ -2,7 +2,7 @@
 @[ refuses("ArmsDisagree") ]
 def seat_arms_leave_it_apart() -> -F Unit =
   let desk = fork (seat : &{ next : end, retire : end }) {
-    offer(seat) { | next => close(seat) | retire => pure *{} }
+    offer seat { | next => close seat | retire => pure *{} }
   };
-  select(desk, next)
-  close(desk)
+  select desk next
+  close desk

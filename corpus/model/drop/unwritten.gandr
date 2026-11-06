@@ -17,7 +17,7 @@ import std.process;
 def unwritten() -> Integer =
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {
-    access x as v { let _ = c.exit 1; resume(v, 5) } unwind { pure *{} };
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { pure *{} };
     pure 0
   } with {
     | pure(y) => pure y

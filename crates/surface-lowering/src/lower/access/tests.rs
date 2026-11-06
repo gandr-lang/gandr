@@ -245,8 +245,8 @@ fn an_access_names_a_held_value_and_an_eliminator_its_view()
     let module = lowered(source, &mut arena);
     for (name, written, boundary) in [
         ("lent", "access n", FragmentBoundary::Held),
-        ("resumed", "resume(n", FragmentBoundary::View),
-        ("aborted", "abort(n", FragmentBoundary::View),
+        ("resumed", "resume n", FragmentBoundary::View),
+        ("aborted", "abort n", FragmentBoundary::View),
     ] {
         assert_eq!(
             refusal_of(&module, SurfaceName::from(name)),
@@ -264,7 +264,7 @@ fn an_access_names_a_held_value_and_an_eliminator_its_view()
         LoweringRefusal::UnresolvedName {
             span: spelled_within(
                 source,
-                SourceText::from("abort(missing)"),
+                SourceText::from("abort missing"),
                 SourceText::from("missing")
             ),
             name: SurfaceName::from("missing"),
@@ -505,11 +505,11 @@ fn each_name_a_form_lends_ends_or_writes_keeps_its_binder_5011()
         ("  xs.#[0] += 1", "xs", slot),
         ("y = xs.#[i]", "xs", slot),
         (
-            "resume(v,",
+            "resume v v",
             "v",
             Some(Resolution::Binder(at("as v {", "v"))),
         ),
-        ("abort(u)", "u", Some(Resolution::Binder(at("as u {", "u")))),
+        ("abort u", "u", Some(Resolution::Binder(at("as u {", "u")))),
     ] {
         assert_eq!(
             kept(at(context, name)),

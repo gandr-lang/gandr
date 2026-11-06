@@ -60,11 +60,11 @@ def sharedHolders() -> [Partial] Integer =
 def heldOnce() -> [Partial] Integer =
   let bs = repeatOnto 97 24 (Nil : List(Integer))
   var[1] s = Shared 1 bs
-  access s as v { let w = pushInPlace v 33; let t = written w; resume(v, t); copies w }
+  access s as v { let w = pushInPlace v 33; let t = written w; resume v t; copies w }
 
 /// `heldOnceHolders` reports one holder after the grade-one write.
 @[ runs("1") ]
 def heldOnceHolders() -> [Partial] Integer =
   let bs = repeatOnto 97 24 (Nil : List(Integer))
   var[1] s = Shared 1 bs
-  access s as v { let w = pushInPlace v 33; let t = written w; resume(v, t); holders t }
+  access s as v { let w = pushInPlace v 33; let t = written w; resume v t; holders t }

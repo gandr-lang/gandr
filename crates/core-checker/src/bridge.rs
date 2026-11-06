@@ -8757,7 +8757,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `send(c, v)` is `(return v : F T) to _. return ()`, `T` the
+    /// - ensures: `send c v` is `(return v : F T) to _. return ()`, `T` the
     ///   payload type the judgement checked `v` at, so the payload still
     ///   crosses and the kernel checks it there — unascribed where no type is
     ///   recorded — and `return ()` for an endpoint sent; a select and a close

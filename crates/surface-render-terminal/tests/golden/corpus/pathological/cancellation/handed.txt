@@ -4,8 +4,8 @@ error[ContinuationAsValue]: this continuation holds something that must end, so 
 19 │ ┌  def handed() -> Unit =
 20 │ │┌   handle c : std.process.Exit.Eff {
 21 │ ││     let found = fork (task : Cancel.Join) {
-22 │ ││       send(task, Cancel.notes);
-23 │ ││       close(task)
+22 │ ││       send task Cancel.notes;
+23 │ ││       close task
    ┆ ┆┆
 30 │ ││     | oper exit(code, k) => resume_stack k
    │ ││                             ┬────────────┯

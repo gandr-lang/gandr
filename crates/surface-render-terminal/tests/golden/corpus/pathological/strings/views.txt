@@ -4,8 +4,8 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
 16 │ ┌ def escaped() -> Repr =
 17 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
    │ │   ─── checked against `-F Repr`; while checking the scope of this hold
-18 │ │   access s as v { force thunk { resume(v, v) } };
-   │ │   ┬───────────────┬─────┯━━━━━━━━━━━━━━━━━━━━━──
+18 │ │   access s as v { force thunk { resume v v } };
+   │ │   ┬───────────────┬─────┯━━━━━━━━━━━━━━━━━━━──
    │ │   │               │     │
    │ │   │               │     a view outliving its access
    │ │   │               synthesised; while forcing this
@@ -17,16 +17,16 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[ViewSpent]: the view is used after its `resume` or `abort`
-   ╭▸ corpus/pathological/strings/views.gandr:26:33
+   ╭▸ corpus/pathological/strings/views.gandr:26:31
    │
 24 │ ┌ def endedTwice() -> Unit =
 25 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
-26 │ │   access s as v { resume(v, v); abort(v) }
-   │ │   ┬───────────────┬─────────────┯━━━━━━━─│
-   │ └───│───────────────│─────────────│────────┤
-   │     │               │             │        checked against `() -> Unit`; while checking the body of this thunk
-   │     │               │             a view already ended
+26 │ │   access s as v { resume v v; abort v }
+   │ │   ┬───────────────┬───────────┯━━━━━━─│
+   │ └───│───────────────│───────────│───────┤
+   │     │               │           │       checked against `() -> Unit`; while checking the body of this thunk
+   │     │               │           a view already ended
    │     │               checked against `-F Unit`; while checking the body of this split; binds _ : Unit
    │     checked against `-F Unit`; while checking the body of this access
    │
@@ -85,8 +85,8 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
    │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() -> Integer) at c
 58 │ ││       pure thunk { let bs = bytes w; count bs }
 59 │ ││     };
-60 │ ││     access s as v { resume(v, v) };
-   │ ││     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
+60 │ ││     access s as v { resume v v };
+   │ ││     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a write to a value a live region keeps a view of
    ┆ ┆┆
 64 │ ││     | oper exit(code, k) => pure 0
 65 │ ││   }

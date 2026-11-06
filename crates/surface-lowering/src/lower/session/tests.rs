@@ -33,6 +33,7 @@ use crate::lower::native::tests::tail_of;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
 use crate::origin::Labelled;
+use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 
 /// The seat exchange over strings: the seat's end forked to the child, the
@@ -614,6 +615,90 @@ fn each_endpoint_answers_at_its_action()
     );
 }
 
+/// A keyword head takes its operands by juxtaposition, and parentheses only
+/// group one operand: `send c v`, `recv(c)`, `close(c)`, `resume v e` and
+/// `abort(v)` lower and check. A tuple, a missing operand and an extra one
+/// are each refused with the count written, a label that is no name is
+/// refused at the label, and a declaration named as an endpoint, bare or
+/// grouped, is refused as no endpoint, not as unresolved (#5556).
+#[test]
+fn a_keyword_head_takes_its_operands_by_juxtaposition_5556()
+{
+    let spoken = SourceText::from(include_str!(
+        "tests/unformatted/a-keyword-head-takes-its-operands-by-juxtaposition-5556-1.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(spoken, &mut arena);
+    assert_accepted(&judged(&module, &mut arena));
+
+    let source = SourceText::from(include_str!(
+        "tests/unformatted/a-keyword-head-takes-its-operands-by-juxtaposition-5556-2.gandr"
+    ));
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    for (name, context, written, form, count) in [
+        (
+            "tupled",
+            "send(d, n)",
+            "send(d, n)",
+            FormName::SEND,
+            2_usize,
+        ),
+        ("short", "send d }", "send d", FormName::SEND, 1_usize),
+        ("long", "send d n n", "send d n n", FormName::SEND, 3_usize),
+        (
+            "paired",
+            "close(d, d)",
+            "close(d, d)",
+            FormName::CLOSE,
+            2_usize,
+        ),
+        (
+            "viewed",
+            "resume(v, 1)",
+            "resume(v, 1)",
+            FormName::RESUME,
+            2_usize,
+        ),
+    ] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::OutOfFragment {
+                span: spelled_within(source, SourceText::from(context), SourceText::from(written)),
+                form,
+                sort: FragmentSort::Computation,
+                boundary: FragmentBoundary::Arity(OperandCount::from(count)),
+            },
+            "`{name}`: `{written}` writes {count} operands"
+        );
+    }
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("numbered")),
+        LoweringRefusal::MalformedForm {
+            span: spelled_within(
+                source,
+                SourceText::from("select d 1"),
+                SourceText::from("1")
+            ),
+            form: FormName::SELECT,
+            fault: FormFault::MisplacedTile,
+        },
+        "a selection's label is a name"
+    );
+    for (name, written) in [("declared", "send other 1"), ("grouped", "close(other)")] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::OutOfFragment {
+                span: spelled_within(source, SourceText::from(written), SourceText::from("other")),
+                form: FormName::IDENTIFIER,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Endpoint,
+            },
+            "`{name}`: a declaration is no endpoint, read before the walk reaches it"
+        );
+    }
+}
+
 #[test]
 fn an_action_on_no_endpoint_is_refused()
 {
@@ -623,14 +708,9 @@ fn an_action_on_no_endpoint_is_refused()
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, written, subject, form) in [
-        ("parameter", "close(n)", "n", FormName::IDENTIFIER),
-        ("literal", "send(3, n)", "3", FormName::NUMBER),
-        (
-            "declared",
-            "select(other, go)",
-            "other",
-            FormName::IDENTIFIER,
-        ),
+        ("parameter", "close n", "n", FormName::IDENTIFIER),
+        ("literal", "send 3 n", "3", FormName::NUMBER),
+        ("declared", "select other go", "other", FormName::IDENTIFIER),
     ] {
         assert_eq!(
             refusal_of(&module, SurfaceName::from(name)),
@@ -648,7 +728,7 @@ fn an_action_on_no_endpoint_is_refused()
         LoweringRefusal::UnresolvedName {
             span: spelled_within(
                 source,
-                SourceText::from("close(missing)"),
+                SourceText::from("close missing"),
                 SourceText::from("missing")
             ),
             name: SurfaceName::from("missing"),
@@ -667,8 +747,8 @@ fn an_action_on_no_endpoint_is_refused()
                 ..
             } if span == spelled_within(
                 source,
-                SourceText::from("let desk = fokr (seat : end) { close(seat) };"),
-                SourceText::from("fokr (seat : end) { close(seat) }")
+                SourceText::from("let desk = fokr (seat : end) { close seat };"),
+                SourceText::from("fokr (seat : end) { close seat }")
             )
         ),
         "the endpoint a misspelt fork leaves is refused at the misspelt fork: {:?}",
@@ -748,7 +828,7 @@ fn an_offer_arm_is_one_label()
             refusal_of(&module, SurfaceName::from("twice")),
             LoweringRefusal::DuplicateDefinition { name, span, .. }
                 if name == SurfaceName::from("go")
-                    && span == spelled_within(source, SourceText::from("go => close(c) | go"), SourceText::from("go"))
+                    && span == spelled_within(source, SourceText::from("go => close c | go"), SourceText::from("go"))
         ),
         "a label is armed once"
     );
@@ -775,26 +855,26 @@ fn sharing_is_reserved_by_name()
     for (name, context, written, feature) in [
         (
             "shared",
-            "{ fork !(c : end) { close(c) } ;",
-            "fork !(c : end) { close(c) }",
+            "{ fork !(c : end) { close c } ;",
+            "fork !(c : end) { close c }",
             crate::Unbuilt::SharedFork,
         ),
         (
             "bound",
-            "= fork !(c : end) { close(c) } ;",
-            "fork !(c : end) { close(c) }",
+            "= fork !(c : end) { close c } ;",
+            "fork !(c : end) { close c }",
             crate::Unbuilt::SharedFork,
         ),
         (
             "acquired",
-            "acquire(n)",
-            "acquire(n)",
+            "acquire n",
+            "acquire n",
             crate::Unbuilt::Acquire,
         ),
         (
             "released",
-            "release(n)",
-            "release(n)",
+            "release n",
+            "release n",
             crate::Unbuilt::Release,
         ),
     ] {
@@ -821,7 +901,7 @@ fn sharing_is_reserved_by_name()
                 ..
             }
                 if form == FormName::from(NamedKind("dup_expression"))
-                    && span == spelled_within(source, SourceText::from("; dup(d) ;"), SourceText::from("dup(d)"))
+                    && span == spelled_within(source, SourceText::from("; dup d ;"), SourceText::from("dup d"))
         ),
         "and so is a shared endpoint's duplication"
     );
@@ -838,8 +918,8 @@ fn a_receive_or_a_fork_no_let_binds_is_refused()
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
     for (name, written, kind) in [
-        ("received", "recv(d)", "recv_expression"),
-        ("forked", "fork (c : end) { close(c) }", "fork_expression"),
+        ("received", "recv d", "recv_expression"),
+        ("forked", "fork (c : end) { close c }", "fork_expression"),
     ] {
         assert!(
             matches!(

@@ -2,4 +2,4 @@
 @[ refuses("NotHeld") ]
 def nested() -> -F Unit =
   var n = 1
-  access n as v { access v as w { resume(w, 2) } ; resume(v, 1) }
+  access n as v { access v as w { resume w 2 } ; resume v 1 }

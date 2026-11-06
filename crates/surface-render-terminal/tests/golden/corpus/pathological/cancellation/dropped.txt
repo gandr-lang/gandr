@@ -4,8 +4,8 @@ error[ContinuationUnspent]: the operation's continuation holds something that mu
 14 │ ┌  def dropped() -> Unit =
 15 │ │┌   handle c : std.process.Exit.Eff {
 16 │ ││     let found = fork (task : Cancel.Join) {
-17 │ ││       send(task, Cancel.notes);
-18 │ ││       close(task)
+17 │ ││       send task Cancel.notes;
+18 │ ││       close task
    ┆ ┆┆
 25 │ ││     | oper exit(code, k) => pure *{}
    │ ││                             ━━━━━━━━ a continuation never resumed or abandoned

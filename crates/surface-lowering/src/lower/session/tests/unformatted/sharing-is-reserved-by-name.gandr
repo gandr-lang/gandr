@@ -1,5 +1,5 @@
-def shared(n : Integer) -> -F Unit { fork !(c : end) { close(c) } ; return *{} }
-def bound(n : Integer) -> -F Unit { let d = fork !(c : end) { close(c) } ; return *{} }
-def acquired(n : Integer) -> -F Unit { let c = acquire(n) ; return *{} }
-def released(n : Integer) -> -F Unit { let c = release(n) ; return *{} }
-def duplicated(n : Integer) -> -F Unit { let d = fork (c : end) { close(c) } ; dup(d) ; close(d) }
+def shared(n : Integer) -> -F Unit { fork !(c : end) { close c } ; return *{} }
+def bound(n : Integer) -> -F Unit { let d = fork !(c : end) { close c } ; return *{} }
+def acquired(n : Integer) -> -F Unit { let c = acquire n ; return *{} }
+def released(n : Integer) -> -F Unit { let c = release n ; return *{} }
+def duplicated(n : Integer) -> -F Unit { let d = fork (c : end) { close c } ; dup d ; close d }

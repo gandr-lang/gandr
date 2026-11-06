@@ -18,13 +18,13 @@ import "./ring-base.gandr";
 /// the completion is posted: the send consumes the submitter's end, and the
 /// kernel's receive binds it until the kernel closes it.
 def bufferMoved() -> Unit =
-  let buffer = fork (owner : Ring.Buffer) { close(owner) };
+  let buffer = fork (owner : Ring.Buffer) { close owner };
   let ring = fork (kernel : Ring.Moving) {
-    let held = recv(kernel);
-    close(held);
-    send(kernel, Ring.done);
-    close(kernel)
+    let held = recv kernel;
+    close held;
+    send kernel Ring.done;
+    close kernel
   };
-  send(ring, buffer)
-  let cqe = recv(ring)
-  close(ring)
+  send ring buffer
+  let cqe = recv ring
+  close ring

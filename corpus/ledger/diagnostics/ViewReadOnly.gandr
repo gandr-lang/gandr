@@ -2,4 +2,4 @@
 @[ refuses("ViewReadOnly") ]
 def written() -> -F Unit =
   var c = 0
-  access shared c as w { resume(w, 1) }
+  access shared c as w { resume w 1 }

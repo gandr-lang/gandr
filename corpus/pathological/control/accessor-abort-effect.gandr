@@ -4,5 +4,5 @@
 @[ refuses("UnwindEffect") ]
 def noisy(p : Cap { exit }) -> Integer =
   var c = 0
-  access c as v { abort(v) } unwind { p.exit 1 };
+  access c as v { abort v } unwind { p.exit 1 };
   pure c

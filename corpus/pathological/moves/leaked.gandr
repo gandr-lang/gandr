@@ -13,5 +13,5 @@ import "../../model/moves/file-base.gandr";
 /// still open.
 @[ refuses("LinearResidue") ]
 def leaked() -> Unit =
-  let file = fork (owner : File.Handle) { close(owner) };
+  let file = fork (owner : File.Handle) { close owner };
   pure *{}

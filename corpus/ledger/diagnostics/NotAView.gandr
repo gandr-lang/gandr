@@ -2,4 +2,4 @@
 @[ refuses("NotAView") ]
 def resumed() -> -F Unit =
   var n = 1
-  resume(n, 1)
+  resume n 1

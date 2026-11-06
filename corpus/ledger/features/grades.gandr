@@ -24,14 +24,14 @@ import "../../model/control/accessor-counter.gandr" ;
 @[ runs("1") ]
 def counted() -> Integer =
   var[1] c = 0
-  access c as v { let n = succ v ; resume(v, n) ; pure n }
+  access c as v { let n = succ v ; resume v n ; pure n }
 
 /// A tuple made in place and an abort before any read: nothing was moved out,
 /// so the held tuple stands as it was.
 @[ checks ]
 def untouched() -> Unit =
   var[1] p = *{1, 2};
-  access p as v { abort(v) } unwind { pure *{} }
+  access p as v { abort v } unwind { pure *{} }
 
 /// A hold at the default grade, under which each read copies.
 @[ runs("2") ]

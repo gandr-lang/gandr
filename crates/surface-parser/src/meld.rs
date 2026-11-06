@@ -11849,13 +11849,13 @@ mod tests
             Ok(spans)
         };
         assert_eq!(
-            vec!["access c as v { abort(v) } unwind { pure *{} }".to_owned()],
-            accesses("def g() -> Integer { access c as v { abort(v) } unwind { pure *{} } }")?,
+            vec!["access c as v { abort v } unwind { pure *{} }".to_owned()],
+            accesses("def g() -> Integer { access c as v { abort v } unwind { pure *{} } }")?,
             "the `unwind` clause continues the access after its block"
         );
         assert_eq!(
-            vec!["access c as v { resume(v, 1) }".to_owned()],
-            accesses("def g() -> Integer { access c as v { resume(v, 1) }; pure c }")?,
+            vec!["access c as v { resume v 1 }".to_owned()],
+            accesses("def g() -> Integer { access c as v { resume v 1 }; pure c }")?,
             "a `;` after the block closes the access"
         );
         Ok(())

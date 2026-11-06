@@ -2,4 +2,4 @@
 @[ refuses("LinearResidue") ]
 def seat_left_open() -> -F Unit =
   let desk = fork (seat : end) { pure *{} };
-  close(desk)
+  close desk

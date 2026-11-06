@@ -2,4 +2,4 @@
 @[ refuses("ViewSpent") ]
 def twice() -> -F Unit =
   var c = 0
-  access c as v { resume(v, 1); abort(v) }
+  access c as v { resume v 1; abort v }

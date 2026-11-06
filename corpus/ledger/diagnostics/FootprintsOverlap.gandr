@@ -15,7 +15,7 @@ import std.fs;
 def racing(c : Cap { read, write }) -> [std.fs.Eff] Unit =
   let found = fork (task : end) {
     c.write "notes" "task";
-    close(task)
+    close task
   };
   c.write "notes" "parent"
-  close(found)
+  close found

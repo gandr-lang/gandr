@@ -68,18 +68,18 @@
 //!
 //! The child is a process of its own, not a body an exit leaves: `return` and
 //! `become` do not stand in it, and it ends with its last computation, such as
-//! `close(c)` or `pure unit`, which the checker holds to the pure returner of
+//! `close c` or `pure unit`, which the checker holds to the pure returner of
 //! the unit. Alternative: the child read as a body whose exits leave it, so
 //! `return unit` ends it early. Reversal: the same, once a child needs to end
 //! from inside a match.
 //!
 //! # Actions are computations; receipt binds
 //!
-//! `send(c, v)`, `select(c, l)` and `close(c)` are computations returning the
-//! unit, so `send(c, v);` discards that unit as any statement does. `offer(c)
+//! `send c v`, `select c l` and `close c` are computations returning the
+//! unit, so `send c v;` discards that unit as any statement does. `offer(c)
 //! { l => t, … }` runs the arm of the label the peer chose, each arm's pattern
 //! a label, and passes the paths through it and its answer to each arm as a
-//! match does, so an arm may end its function. `let x = recv(c);` binds the
+//! match does, so an arm may end its function. `let x = recv c;` binds the
 //! payload over the rest of the block as `let x = f(c);` binds a returned
 //! value. A receive and a fork each give one linear end, so the `let` that
 //! binds it reads them, and either standing anywhere else is refused as
@@ -154,14 +154,17 @@ use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
+use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
+use crate::form::shape_of;
 use crate::module::TypeMeaning;
 use crate::namespace::PathResolution;
 use crate::namespace::Recognized;
 use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
+use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
 
@@ -1272,8 +1275,8 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(body)
     }
 
-    /// Classify a session action: `send(c, v)`, `select(c, l)`, `close(c)`,
-    /// `drop(c)` or `offer(c) { l => t, … }`; a receive or a fork stands here
+    /// Classify a session action: `send c v`, `select c l`, `close c`,
+    /// `drop c` or `offer c { | l => t }`; a receive or a fork stands here
     /// only where no `let` binds it.
     ///
     /// # Specification
@@ -1323,47 +1326,42 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unbound));
         }
         let frame = self.require(site, Produced::Computation)?;
-        closed(site, &mut cursor, TileName::PAREN_OPEN)?;
-        let subject = site.one(cursor.operands())?;
+        let operand = site.one(cursor.operands())?;
         let mut arms = Vec::new();
-        let action = if keyword == TileName::SEND {
-            closed(site, &mut cursor, TileName::COMMA)?;
-            let payload = site.one(cursor.operands())?;
-            closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        let (subject, action) = if keyword == TileName::SEND {
             exhausted(site, &cursor)?;
+            let (subject, payload) = self.keyword_two(site, operand)?;
             let endpoint = self.endpoint(frame, subject)?;
             self.read(payload.node, Reading::Value(frame));
-            SessionAction::Send {
+            (subject, SessionAction::Send {
                 endpoint,
                 payload: payload.node,
-            }
+            })
         }
         else if keyword == TileName::SELECT {
-            closed(site, &mut cursor, TileName::COMMA)?;
-            let Maybe::Present(chosen) = cursor.tile(TileName::IDENTIFIER)
-            else {
-                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-            };
-            closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
             exhausted(site, &cursor)?;
-            SessionAction::Select {
+            let (subject, chosen) = self.keyword_two(site, operand)?;
+            if !matches!(self.form_at(chosen)?, Some((_, Former::Name))) {
+                return Err(site.fault(chosen.span, FormFault::MisplacedTile));
+            }
+            (subject, SessionAction::Select {
                 endpoint: self.endpoint(frame, subject)?,
                 label: FieldLabel::from(String::from(self.name_at(chosen).as_ref())),
-            }
+            })
         }
         else if keyword == TileName::CLOSE || keyword == TileName::DROP {
-            closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
             exhausted(site, &cursor)?;
-            SessionAction::Close {
+            let subject = self.keyword_one(site, operand)?;
+            (subject, SessionAction::Close {
                 endpoint: self.endpoint(frame, subject)?,
-            }
+            })
         }
         else if keyword == TileName::OFFER {
-            closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+            let subject = self.keyword_one(site, operand)?;
             let endpoint = self.endpoint(frame, subject)?;
             let (offered, labels) = self.offer(site, cursor, frame, endpoint)?;
             arms = labels;
-            offered
+            (subject, offered)
         }
         else {
             return Err(site.fault(site.at.span, FormFault::MisplacedTile));
@@ -1371,6 +1369,178 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Action(action, subject.span, arms));
 
         Ok(())
+    }
+
+    /// The one operand a keyword head writes, read through the parentheses
+    /// that group it: `c` in `close c` and in `close(c)`.
+    ///
+    /// # Specification
+    /// - requires: `operand` is the one operand of the keyword head at `site`.
+    /// - ensures: `operand` past each pair of parentheses that holds it alone.
+    /// - fails: [`FragmentBoundary::Arity`] at `site` with the count of the
+    ///   members of a tuple that `operand` writes, as `close(c, d)` does; the
+    ///   refusal of a foreign mold.
+    /// - panics: none.
+    /// - executable: none — the operand is read off the syntax tree, which a
+    ///   predicate could check only by repeating the walk.
+    ///
+    /// # Errors
+    /// The operand's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare operand, one in parentheses, and a tuple.
+    /// - witness: `lower::session::tests::a_keyword_head_takes_its_operands_by_juxtaposition_5556`
+    pub(super) fn keyword_one(
+        &mut self,
+        site: Site,
+        operand: Placed,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let (at, members) = self.degrouped(operand)?;
+        if members == OperandCount::from(1_usize) {
+            Ok(at)
+        }
+        else {
+            Err(site.out(FragmentBoundary::Arity(members)))
+        }
+    }
+
+    /// The two operands a keyword head of two writes: the head and the one
+    /// argument of the application its operand holds, as `c` and `v` in
+    /// `send c v`.
+    ///
+    /// # Specification
+    /// - requires: `operand` is the one operand of the keyword head at `site`.
+    /// - ensures: when `operand`, read through the parentheses that group it,
+    ///   is an application of one argument, its head and that argument, each
+    ///   read as [`read_pieces`] reads a juxtaposed call and each owned by the
+    ///   declaration that owns the application, so a name the head writes
+    ///   resolves before the walk reaches it.
+    /// - fails: [`FragmentBoundary::Arity`] at `site` with the count of the
+    ///   operands written: a tuple's members, as `send(c, v)` writes two; an
+    ///   application's head and arguments; one for any other operand. The
+    ///   refusal of a foreign mold.
+    /// - panics: none.
+    /// - executable: none — the operands are read off the syntax tree, which a
+    ///   predicate could check only by repeating the walk.
+    ///
+    /// # Errors
+    /// The operands' refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an application of one argument, one of two, a lone
+    ///   operand and a tuple.
+    /// - witness: `lower::session::tests::a_keyword_head_takes_its_operands_by_juxtaposition_5556`
+    pub(super) fn keyword_two(
+        &mut self,
+        site: Site,
+        operand: Placed,
+    ) -> Result<(Placed, Placed), LoweringRefusal<'source>>
+    {
+        let (at, members) = self.degrouped(operand)?;
+        let one = OperandCount::from(1_usize);
+        if members != one {
+            return Err(site.out(FragmentBoundary::Arity(members)));
+        }
+        let applied = match self.tree.node(at.node) {
+            Some(node) => matches!(shape_of(self.pbg, node)?, Shape::Form {
+                former: Former::Call,
+                ..
+            }),
+            None => false,
+        };
+        if !applied {
+            return Err(site.out(FragmentBoundary::Arity(one)));
+        }
+        self.inherit_owner(at.node);
+        let mut pieces = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, at.node, &mut pieces);
+        let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
+            Piece::Operand(operand) => Some(operand),
+            Piece::Tile { .. } => None,
+        });
+        let written = (operands.next(), operands.next());
+        let rest = operands.count();
+        self.scratch = pieces;
+        read?;
+        match written {
+            (Some(head), Some(argument)) if rest == 0_usize => Ok((head, argument)),
+            (Some(_), Some(_)) => Err(site.out(FragmentBoundary::Arity(OperandCount::from(
+                rest.saturating_add(2_usize),
+            )))),
+            (Some(_), None) | (None, Some(_) | None) => Err(site.out(FragmentBoundary::Arity(one))),
+        }
+    }
+
+    /// `operand` past each pair of parentheses that holds it alone, and the
+    /// count of the members of the tuple it then writes: one for any other
+    /// form.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: the innermost of the groupings `(e)` around `operand`, and
+    ///   the count of the members that a comma list in parentheses writes
+    ///   there, or one; each grouping read through gives its children the
+    ///   declaration that owns it, as the walk does when it reaches a form.
+    /// - fails: the refusal of a foreign mold.
+    /// - panics: none.
+    /// - executable: none — the grouping is read off the syntax tree, which a
+    ///   predicate could check only by repeating the walk.
+    ///
+    /// # Errors
+    /// The refusal of a foreign mold.
+    ///
+    /// # Termination
+    /// - reason: each round moves to a child of the node before it.
+    /// - measure: the depth of the operand's subtree below the current node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the keyword heads that read through it.
+    /// - witness: `lower::session::tests::a_keyword_head_takes_its_operands_by_juxtaposition_5556`
+    fn degrouped(
+        &mut self,
+        operand: Placed,
+    ) -> Result<(Placed, OperandCount), LoweringRefusal<'source>>
+    {
+        let mut at = operand;
+        let mut pieces = core::mem::take(&mut self.scratch);
+        let found = loop {
+            let Some(node) = self.tree.node(at.node)
+            else {
+                break Ok(1_usize);
+            };
+            match shape_of(self.pbg, node) {
+                Ok(Shape::Form {
+                    former: Former::Parenthesized,
+                    ..
+                }) => {},
+                Ok(Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout) => {
+                    break Ok(1_usize);
+                },
+                Err(refusal) => break Err(refusal),
+            }
+            if let Err(refusal) = read_pieces(self.pbg, self.tree, at.node, &mut pieces) {
+                break Err(refusal);
+            }
+            let commas = pieces
+                .pieces
+                .iter()
+                .filter(|piece| matches!(**piece, Piece::Tile { label, .. } if label == TileName::COMMA))
+                .count();
+            match *pieces.pieces.as_slice() {
+                [
+                    Piece::Tile { label: open, .. },
+                    Piece::Operand(inner),
+                    Piece::Tile { label: close, .. },
+                ] if open == TileName::PAREN_OPEN && close == TileName::PAREN_CLOSE => {
+                    self.inherit_owner(at.node);
+                    at = inner;
+                },
+                _ => break Ok(commas.saturating_add(1_usize)),
+            }
+        };
+        self.scratch = pieces;
+        found.map(|members| (at, OperandCount::from(members)))
     }
 
     /// Read an offer's arms, `{ l => t, … }`, on `endpoint`.
@@ -1455,7 +1625,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok((SessionAction::Offer { endpoint, arms }, labels))
     }
 
-    /// Read the receive `recv(c)` a `let` binds, as `let x = recv(c);`.
+    /// Read the receive `recv c` a `let` binds, as `let x = recv c;`.
     ///
     /// # Specification
     /// - requires: `statement` is the `let` whose bound expression `bound` is a
@@ -1501,10 +1671,9 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mut cursor = Cursor::new(&pieces.pieces, bound.span);
         closed(site, &mut cursor, TileName::RECV)?;
-        closed(site, &mut cursor, TileName::PAREN_OPEN)?;
-        let subject = site.one(cursor.operands())?;
-        closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        let operand = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
+        let subject = self.keyword_one(site, operand)?;
         let endpoint = self.endpoint(frame, subject)?;
         self.note_binder(binder, name)?;
         self.statements.push(Statement {

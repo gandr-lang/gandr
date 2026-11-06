@@ -19,7 +19,7 @@
 //! after it is a misplaced tile. Either mode lends a place of `x` when an
 //! index follows it, `access shared x.#[e] as v { t }`: `e` is read as a value
 //! where the access stands, and the view is the element of `x` at `e`.
-//! `resume(v, e)` and `abort(v)` end the view `v` names, `e` read as a value.
+//! `resume v e` and `abort v` end the view `v` names, `e` read as a value.
 //! Each name a form lends or ends resolves to a linear binder, counted among
 //! the linear binders alone as an endpoint is (the `lower::session` module);
 //! a name resolving to anything else is refused here,
@@ -141,7 +141,7 @@ pub(super) enum Accessed
         /// The body, under the view's linear binder.
         body: Block,
     },
-    /// `resume(v, e)`.
+    /// `resume v e`.
     Resume
     {
         /// The view ended, a linear index.
@@ -149,7 +149,7 @@ pub(super) enum Accessed
         /// The value written back.
         value: NodeIndex,
     },
-    /// `abort(v)`.
+    /// `abort v`.
     Abort
     {
         /// The view ended, a linear index.
@@ -556,7 +556,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify a temporary-access form: `access x as v { t } unwind { u }`,
-    /// `resume(v, e)`, `abort(v)` or a call's view block `e as v { t }`.
+    /// `resume v e`, `abort v` or a call's view block `e as v { t }`.
     ///
     /// # Specification
     /// - requires: `site` is a temporary-access expression.
@@ -569,9 +569,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   call, as [`Self::view_call`] plans it.
     /// - fails: the wrong-sort refusal where no computation is read;
     ///   [`FragmentBoundary::Held`] and [`FragmentBoundary::View`] at a name
-    ///   that resolves to no linear binder; [`LoweringRefusal::UnresolvedName`]
-    ///   for one nothing binds; a misplaced-tile fault for a form out of shape;
-    ///   each block's and hole's own refusal; the view block's refusals.
+    ///   that resolves to no linear binder, and `View` at a view written as no
+    ///   name; [`LoweringRefusal::UnresolvedName`] for one nothing binds; a
+    ///   misplaced-tile fault for a form out of shape; the keyword heads' arity
+    ///   refusals; each block's and hole's own refusal; the view block's
+    ///   refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -607,17 +609,11 @@ impl<'source> Lowerer<'_, 'source>
             self.access(site, pieces, frame)?
         }
         else {
-            closed(site, &mut cursor, TileName::PAREN_OPEN)?;
-            let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER)
-            else {
-                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-            };
+            let operand = site.one(cursor.operands())?;
+            exhausted(site, &cursor)?;
             if keyword == TileName::RESUME {
-                closed(site, &mut cursor, TileName::COMMA)?;
-                let value = site.one(cursor.operands())?;
-                closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
-                exhausted(site, &cursor)?;
-                let (view, ended) = self.linear_slot(frame, written, FragmentBoundary::View)?;
+                let (written, value) = self.keyword_two(site, operand)?;
+                let (view, ended) = self.ended_view(frame, written)?;
                 let _first = self.ended_views.insert(ended);
                 self.read(value.node, Reading::Value(frame));
                 Accessed::Resume {
@@ -626,9 +622,8 @@ impl<'source> Lowerer<'_, 'source>
                 }
             }
             else if keyword == TileName::ABORT {
-                closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
-                exhausted(site, &cursor)?;
-                let (view, ended) = self.linear_slot(frame, written, FragmentBoundary::View)?;
+                let written = self.keyword_one(site, operand)?;
+                let (view, ended) = self.ended_view(frame, written)?;
                 let _first = self.ended_views.insert(ended);
                 Accessed::Abort { view }
             }
@@ -639,6 +634,42 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Access(accessed));
 
         Ok(())
+    }
+
+    /// The view that `resume` or `abort` ends, written at `written`: its
+    /// linear index and its binder under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `written` is the view operand of an eliminator.
+    /// - ensures: as [`Self::linear_slot`] reads the name `written` spells.
+    /// - fails: [`FragmentBoundary::View`] at `written` when it is no name, and
+    ///   [`Self::linear_slot`]'s refusals with [`FragmentBoundary::View`].
+    /// - panics: none.
+    /// - executable: none — the name's form is read off the syntax tree.
+    ///
+    /// # Errors
+    /// The view's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a view's name, a parameter, and an operand that is no
+    ///   name.
+    /// - witness: `lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
+    /// - witness: `lower::session::tests::a_keyword_head_takes_its_operands_by_juxtaposition_5556`
+    fn ended_view(
+        &mut self,
+        frame: Frame,
+        written: Placed,
+    ) -> Result<(DeBruijnIndex, ScopeId), LoweringRefusal<'source>>
+    {
+        if !matches!(self.form_at(written)?, Some((_, Former::Name))) {
+            let view = Site {
+                at: written,
+                name: FormName::IDENTIFIER,
+                reading: Reading::Value(frame),
+            };
+            return Err(view.out(FragmentBoundary::View));
+        }
+        self.linear_slot(frame, written, FragmentBoundary::View)
     }
 
     /// Read an access, `access x as v { t } unwind { u }` or
@@ -1051,8 +1082,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Mint the place assignment of `value` to the slot `held` at `place`:
-    /// `let t = e ; access x as v { resume(v, t) }`, or with a row `op`,
-    /// `let t = e ; access x as v { let w = op(v, t) ; resume(v, w) }`;
+    /// `let t = e ; access x as v { resume v t }`, or with a row `op`,
+    /// `let t = e ; access x as v { let w = op(v, t) ; resume v w }`;
     /// a computation `e` is bound itself, `let t = e`.
     ///
     /// # Specification

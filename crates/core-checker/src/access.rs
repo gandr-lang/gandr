@@ -31,8 +31,8 @@
 //! |access|`access x as w { t } unwind { u }`|`x` is lent exclusively; `t` runs with `w`, a slot of `Σ` at `A`|
 //! |shared access|`access shared x as w { t }`|`x` is lent shared; `t` runs with `w`, a slot of `Σ` at `A`|
 //! |access at a place|`access x.#[i] as w { t } unwind { u }`, `access shared x.#[i] as w { t }`|`A` is `List E`; `i` checks against the integer type; `x` is lent in the mode; `t` runs with `w`, a slot of `Σ` at `E`|
-//! |resume|`resume(w, v)`|`w` is exclusive; `v` checks against `A`; `w` is spent; synthesises `F 1`|
-//! |abort|`abort(w)`|`w` is exclusive; `w` is spent; synthesises `F 1`|
+//! |resume|`resume w v`|`w` is exclusive; `v` checks against `A`; `w` is spent; synthesises `F 1`|
+//! |abort|`abort w`|`w` is exclusive; `w` is spent; synthesises `F 1`|
 //! |consume|`s.f(a)`, `f`'s receiver consumed|`x` is held, not lent and not kept; its value moves out; synthesises `F A`|
 //!
 //! The rules run as frames of the judgement's one machine:
@@ -127,8 +127,8 @@
 //! # Two eliminators, one shot
 //!
 //! The body of an exclusive access ends its view exactly once.
-//! `resume(w, v)` spends the view and records `v`; the machine writes `v`
-//! back into `x` when it pops the access's frame. `abort(w)` spends the view
+//! `resume w v` spends the view and records `v`; the machine writes `v`
+//! back into `x` when it pops the access's frame. `abort w` spends the view
 //! and records nothing; the machine runs the unwind when it pops the frame,
 //! and `x` keeps the value it had. An exclusive view still live when the
 //! body ends is [`AccessDefect::Unended`]; a view used after either
@@ -169,7 +169,7 @@
 //! `hold x = e;` binds the held value at grade `ω` and `hold[1] x = e;` at
 //! grade one; `access x as w { t } unwind {
 //! u }` the exclusive view, `access shared x as w { t }` the shared one, and
-//! `resume(w, e)` and `abort(w)` end an exclusive view. The mode is a word
+//! `resume w e` and `abort w` end an exclusive view. The mode is a word
 //! after `access`: exclusive is the default, unwritten, and
 //! `access exclusive x as w { … }` spells it; the unwind clause is an
 //! exclusive access's alone, optional, and absent means `unwind { pure unit }`.

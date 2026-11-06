@@ -1,10 +1,10 @@
 def exchange(n : Integer) -> -F Unit {
   let peer = fork (c : &{next : !String. end, retire : end}) {
-    offer(c) {
-      | next => { send(c, "notes"); close(c) }
-      | retire => close(c)
+    offer c {
+      | next => { send c "notes"; close c }
+      | retire => close c
     }
   };
-  select(peer, retire);
-  close(peer)
+  select peer retire;
+  close peer
 }

@@ -3,7 +3,7 @@
 @[ refuses("ViewSpent") ]
 def twice() -> Unit =
   var c = 0
-  access c as v { resume(v, 1); abort(v) }
+  access c as v { resume v 1; abort v }
 
 /// A view the body never ends: the access would return without a write-back
 /// or an unwind.

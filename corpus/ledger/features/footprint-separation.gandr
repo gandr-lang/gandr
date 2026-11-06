@@ -27,20 +27,20 @@ import std.process;
 def reading(c : Cap { read }) -> [std.fs.Eff] Unit =
   let found = fork (task : Task.Join) {
     let text = c.read Task.notes;
-    send(task, text);
-    close(task)
+    send task text;
+    close task
   };
   let mine = c.read Task.notes
-  let text = recv(found)
-  close(found)
+  let text = recv found
+  close found
 
 /// A writer beside an exiter reaches two interfaces, so its halves share nothing.
 def apart(files : Cap { write }, process : Cap { exit }) -> [std.fs.Eff, std.process.Exit.Eff] Unit =
   let found = fork (task : Task.Join) {
     files.write Task.notes "task";
-    send(task, Task.notes);
-    close(task)
+    send task Task.notes;
+    close task
   };
   process.exit 0
-  let text = recv(found)
-  close(found)
+  let text = recv found
+  close found

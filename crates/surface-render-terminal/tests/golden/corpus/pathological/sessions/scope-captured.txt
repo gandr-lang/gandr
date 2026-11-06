@@ -2,14 +2,14 @@ error[CapturedEndpoint]: the endpoint is used inside a continuation a handler or
    ╭▸ corpus/pathological/sessions/scope-captured.gandr:16:3
    │
 14 │ ┌  def closedInScope() -> Unit =
-15 │ │    let desk = fork (seat : end) { close(seat) };
+15 │ │    let desk = fork (seat : end) { close seat };
    │ │    ┬──
    │ │    │
    │ │    the endpoint was opened by this fork
    │ │    checked against `-F Unit`; while checking the rest of this fork's parent
 16 │ │┏   handle c : std.process.Exit.Eff {
 17 │ │┃     c.exit 1;
-18 │ │┃     close(desk)
+18 │ │┃     close desk
 19 │ │┃   } with {
 20 │ │┃     | pure(v) => pure v
 21 │ │┃     | oper exit(code, k) => pure *{}

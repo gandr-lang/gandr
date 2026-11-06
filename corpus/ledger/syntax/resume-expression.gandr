@@ -2,4 +2,4 @@
 @[ checks ]
 def bump() -> -F Unit =
   var c = 0
-  access c as v { resume(v, 1) }
+  access c as v { resume v 1 }

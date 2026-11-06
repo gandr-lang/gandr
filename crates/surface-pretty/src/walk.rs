@@ -4997,22 +4997,6 @@ impl Parts
         self
     }
 
-    /// Appends `count` more arguments of a call already opened, each after a
-    /// comma, then the closing parenthesis.
-    ///
-    /// # Specification
-    /// trivial.
-    fn rest(
-        &mut self,
-        count: Arity,
-    ) -> &mut Self
-    {
-        for _ in 0_usize .. count.0 {
-            let _ = self.text(",").part(Part::Space).piece(Binding::ARGUMENT);
-        }
-        self.part(Part::Tight).text(")")
-    }
-
     /// Appends a call's `count` arguments between parentheses.
     ///
     /// # Specification
@@ -11788,9 +11772,9 @@ impl Walk<'_, '_>
     ///   answers `{ c } with N`, or `{ c }` for the one in scope, in place of
     ///   its clauses; a returner whose row's theory entries fix sorts, `-F [a :
     ///   T with sort C = A, I | t] B`, each fixed type a piece, then the tail's
-    ///   and the result's; `c.op(v)`; `send(e, v)`, `recv(e)`, `select(e, l)`,
-    ///   `offer(e) { l => c }`, `close(e)` and `let a = fork (a : S) { t } ;
-    ///   u`, each endpoint named by its binder; a resumption of a continuation
+    ///   and the result's; `c.op(v)`; `send e v`, `recv e`, `select e l`,
+    ///   `offer e { l => c }`, `close e` and `let a = fork (a : S) { t } ; u`,
+    ///   each endpoint named by its binder; a resumption of a continuation
     ///   binder with a returned value as the continuation's call, `k(v)`; a
     ///   return ascribed its returner as the annotated value `(v : T)`, under a
     ///   `pure` unless a body ends there, its two pieces the value and the type
@@ -12215,8 +12199,8 @@ impl Walk<'_, '_>
                 }
                 else {
                     self.note(Unspelled::Notation(Notation::Resume));
-                    let _ = parts.text("resume").arguments(Arity(2_usize));
-                    writes(Production("resume_expression"), Binding::Atom)
+                    let _ = parts.text("resume").juxtaposed(Arity(2_usize));
+                    writes(Production("resume_expression"), Binding::Prefix)
                 }
             },
             Former::Abandon(_) => {
@@ -12550,33 +12534,29 @@ impl Walk<'_, '_>
             },
             Former::Send { endpoint, .. } => {
                 let _ = parts
-                    .text("send(")
+                    .text("send ")
                     .part(Part::Endpoint(endpoint))
-                    .rest(Arity(1_usize));
-                writes(Production("send_expression"), Binding::Atom)
+                    .juxtaposed(Arity(1_usize));
+                writes(Production("send_expression"), Binding::Prefix)
             },
             Former::Close(endpoint) => {
-                let _ = parts
-                    .text("close(")
-                    .part(Part::Endpoint(endpoint))
-                    .text(")");
-                writes(Production("close_expression"), Binding::Atom)
+                let _ = parts.text("close ").part(Part::Endpoint(endpoint));
+                writes(Production("close_expression"), Binding::Prefix)
             },
             Former::Select { endpoint, label } => {
                 let label = self.spelled(Some(label), Unspelled::Missing);
                 let _ = parts
-                    .text("select(")
+                    .text("select ")
                     .part(Part::Endpoint(endpoint))
-                    .text(", ")
-                    .text(label)
-                    .text(")");
-                writes(Production("select_expression"), Binding::Atom)
+                    .part(Part::Space)
+                    .text(label);
+                writes(Production("select_expression"), Binding::Prefix)
             },
             Former::Offer { endpoint, arms } => {
                 let _ = parts
-                    .text("offer(")
+                    .text("offer ")
                     .part(Part::Endpoint(endpoint))
-                    .text(") {")
+                    .text(" {")
                     .part(Part::Open);
                 for index in 0_usize .. usize::from(arms) {
                     let label = source.label(node, Component::from(index));
@@ -12623,9 +12603,9 @@ impl Walk<'_, '_>
                 let _ = parts
                     .text("let ")
                     .part(Part::Binder(0_usize))
-                    .text(" = recv(")
+                    .text(" = recv ")
                     .part(Part::Endpoint(endpoint))
-                    .text(") ;")
+                    .text(" ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
                 writes(Production("recv_expression"), Binding::Sequence)
@@ -12653,14 +12633,14 @@ impl Walk<'_, '_>
             },
             Former::ResumeView { view, .. } => {
                 let _ = parts
-                    .text("resume(")
+                    .text("resume ")
                     .part(Part::Endpoint(view))
-                    .rest(Arity(1_usize));
-                writes(Production("resume_expression"), Binding::Atom)
+                    .juxtaposed(Arity(1_usize));
+                writes(Production("resume_expression"), Binding::Prefix)
             },
             Former::AbortView(view) => {
-                let _ = parts.text("abort(").part(Part::Endpoint(view)).text(")");
-                writes(Production("abort_expression"), Binding::Atom)
+                let _ = parts.text("abort ").part(Part::Endpoint(view));
+                writes(Production("abort_expression"), Binding::Prefix)
             },
             Former::ConsumeHeld(held) => {
                 self.note(Unspelled::Notation(Notation::Consume));

@@ -20,11 +20,11 @@ import "./file-base.gandr";
     (series (event right 0) (parallel (series (event left 0) (event left 1)) (event right 1))))
 ]
 def movedToCloser() -> Unit =
-  let file = fork (owner : File.Handle) { close(owner) };
+  let file = fork (owner : File.Handle) { close owner };
   let task = fork (closer : File.Closer) {
-    let held = recv(closer);
-    close(held);
-    close(closer)
+    let held = recv closer;
+    close held;
+    close closer
   };
-  send(task, file)
-  close(task)
+  send task file
+  close task

@@ -1108,7 +1108,7 @@ pub enum Former<'source, Node>
     },
     /// An observation of one component of a lazy product, `c.0`, `c.1`, ….
     Project(Component, Node),
-    /// A send on a linear endpoint, `send(e, v)`.
+    /// A send on a linear endpoint, `send e v`.
     Send
     {
         /// The endpoint, a linear index.
@@ -1116,7 +1116,7 @@ pub enum Former<'source, Node>
         /// The payload.
         payload: Node,
     },
-    /// A receive on a linear endpoint, `let x = recv(e); t`: the rest under the
+    /// A receive on a linear endpoint, `let x = recv e; t`: the rest under the
     /// payload's linear binder.
     Receive
     {
@@ -1135,7 +1135,7 @@ pub enum Former<'source, Node>
         /// The rest of the block.
         body: Node,
     },
-    /// A selection on a linear endpoint, `select(e, l)`.
+    /// A selection on a linear endpoint, `select e l`.
     Select
     {
         /// The endpoint, a linear index.
@@ -1143,7 +1143,7 @@ pub enum Former<'source, Node>
         /// The label chosen.
         label: Name<'source>,
     },
-    /// An offer on a linear endpoint, `offer(e) { l => c, … }`, one arm per
+    /// An offer on a linear endpoint, `offer e { l => c, … }`, one arm per
     /// label, which the source answers by [`Source::component`] and names by
     /// [`Source::label`].
     Offer
@@ -1153,7 +1153,7 @@ pub enum Former<'source, Node>
         /// How many arms it has.
         arms: Arity,
     },
-    /// A close of a linear endpoint, `close(e)`.
+    /// A close of a linear endpoint, `close e`.
     Close(DeBruijnIndex),
     /// A fork, `let d = fork (c : S) { t }; u`: the child under its end's
     /// linear binder, the parent under the dual end's.
@@ -1191,7 +1191,7 @@ pub enum Former<'source, Node>
         /// The mode, and an exclusive access's unwind.
         mode: AccessMode<Node>,
     },
-    /// A view's resume, `resume(w, v)`.
+    /// A view's resume, `resume w v`.
     ResumeView
     {
         /// The view, a linear index.
@@ -1199,7 +1199,7 @@ pub enum Former<'source, Node>
         /// The value written back.
         value: Node,
     },
-    /// A view's abort, `abort(w)`.
+    /// A view's abort, `abort w`.
     AbortView(DeBruijnIndex),
     /// The hold's end at a consuming read, which no source form writes alone:
     /// a method call whose receiver is consumed lowers to it. Written
