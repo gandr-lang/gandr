@@ -293,13 +293,9 @@ corpus/ledger/features/constructor-namespacing.gandr STE-6.3 63be786deaa6ec51
 corpus/ledger/features/constructor-namespacing.gandr STE-6.3 753e119dcea2da88
 corpus/ledger/features/constructor-namespacing.gandr STE-8.1 753e119dcea2da88
 corpus/ledger/features/cost-effect.gandr STE-3.2 c9a282627f2e4de0
-corpus/ledger/features/cost-effect.gandr STE-3.2 eb3d4a3fbade8e92
 corpus/ledger/features/cost-effect.gandr STE-3.5 e0cdd715de2fb04f
-corpus/ledger/features/cost-effect.gandr STE-6.3 487ed14bd101d619
 corpus/ledger/features/cost-effect.gandr STE-6.3 c9a282627f2e4de0
-corpus/ledger/features/cost-effect.gandr STE-6.3 eb3d4a3fbade8e92
-corpus/ledger/features/cost-effect.gandr STE-4.3 3002ae9e4932166c
-corpus/ledger/features/cost-effect.gandr STE-6.6 14cdcfb21052ee03
+corpus/ledger/features/cost-effect.gandr STE-4.3 377325692539e223
 corpus/ledger/features/coverage-evidence.gandr STE-3.6 767728ef79c61815
 corpus/ledger/features/coverage-evidence.gandr STE-3.6 c870dbc6060935b2
 corpus/ledger/features/coverage-evidence.gandr STE-3.6 f64a3a7af205a563
@@ -2938,6 +2934,7 @@ corpus/pathological/desc/theory-terms.gandr STE-3.2 a7180a9408f40fbf
 corpus/pathological/desc/theory-terms.gandr STE-3.5 633a13ba3727a9d3
 corpus/pathological/desc/theory-terms.gandr STE-3.5 c65f19571c92421b
 corpus/pathological/desc/theory-terms.gandr STE-3.5 e012a0c351793eb3
+corpus/pathological/effects/cost-model.gandr STE-6.4 7ffeb0f63edb2700
 corpus/pathological/effects/domhringr.gandr STE-3.5 3a21fc79af6fecee
 corpus/pathological/effects/domhringr.gandr STE-6.3 8c3491a5f77e1db8
 corpus/pathological/effects/domhringr.gandr STE-4.3 99ae3eb4b8226c7d
