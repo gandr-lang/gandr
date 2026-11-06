@@ -958,9 +958,12 @@ run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-ho
 # and is never read. A number that names no pull request is skipped with a
 # note. Each red check and each report that improves past its policy's
 # band is a row of the open `Hotpath: the landed deltas` tracking issue, whose
-# body the task rewrites in place: its prose kept, its rows collapsed under a
-# summary counting the landings, the regressed and the improved. A red row
-# links the issues of the functions the pull request regressed, each holding
+# body the task rewrites in place through `.config/hotpath/landed.jq` (#3596,
+# its cases held by `check:hotpath`): its prose kept, its rows collapsed under
+# a summary counting the landings, the regressed and the improved. A new
+# ledger opens with the sentence that says what it is and a lead for its
+# table. A red row links the issues of the functions the pull request
+# regressed, each holding
 # the pull request's row (the hotpath guard's index). A commit without a pull
 # request number reads nothing. GH_REPO names the repository.
 ["ci:hotpath-landed"]
@@ -1027,37 +1030,14 @@ if [[ ! -s $scratch/rows ]]; then
 fi
 ledger=$(gh issue list --repo "$repo" --state open --label collector --search "\"$ledger_title\" in:title" --json number,title \
   | jq -r --arg title "$ledger_title" '[.[] | select(.title == $title)] | first | .number // empty')
-header='| Commit | PR | Benchmark | Verdict | Issue |'
-: > "$scratch/kept"
 if [[ -z $ledger ]]; then
-  printf 'Every landing whose `hotpath / <benchmark>` check is red, or whose report improves past its policy'"'"'s band, is one row here. `mise run ci:hotpath-landed` adds the row on main'"'"'s push; a red row links the issues of the functions it regressed, where the pull request'"'"'s row is settled by a fix or a stated acceptance.\n' > "$scratch/prose"
+  echo null > "$scratch/body.json"
 else
-  gh issue view "$ledger" --repo "$repo" --json body --jq .body | tr -d '\r' > "$scratch/ledger.md"
-  # The prose before the table, less the collapsed block's opening and the
-  # blank lines that end it; then the table's rows.
-  awk -v header="$header" '$0 == header {exit} /^<details><summary>/ {next} {line[++n] = $0}
-    END {while (n > 0 && line[n] ~ /^[[:space:]]*$/) n--; for (i = 1; i <= n; i++) print line[i]}' \
-    "$scratch/ledger.md" > "$scratch/prose"
-  awk -v header="$header" '$0 == header {table = 1; getline; next} table && /^\|/ {print} table && /^<\/details>/ {exit}' \
-    "$scratch/ledger.md" > "$scratch/kept"
+  gh issue view "$ledger" --repo "$repo" --json body --jq '.body | tojson' > "$scratch/body.json"
 fi
-while IFS= read -r row; do
-  key=$(cut -d'|' -f3-4 <<< "$row")
-  if grep -qF -- "$key" "$scratch/kept"; then continue; fi
-  printf '%s\n' "$row" >> "$scratch/kept"
-done < "$scratch/rows"
-count=$(wc -l < "$scratch/kept" | tr -d ' ')
-rows=rows
-(( count != 1 )) || rows=row
-regressed=$(cut -d'|' -f5 "$scratch/kept" | grep -cF '⚠️' || true)
-improved=$(cut -d'|' -f5 "$scratch/kept" | grep -ci improv || true)
-{
-  cat "$scratch/prose"
-  printf '\n<details><summary>%s %s — %s regressed, %s improved</summary>\n\n%s\n| --- | --- | --- | --- | --- |\n' \
-    "$count" "$rows" "$regressed" "$improved" "$header"
-  cat "$scratch/kept"
-  printf '\n</details>\n'
-} > "$scratch/ledger.md"
+jq -n --slurpfile body "$scratch/body.json" --rawfile rows "$scratch/rows" \
+  '{body: $body[0], rows: ($rows | split("\n") | map(select(length > 0)))}' \
+  | jq -r -f .config/hotpath/landed.jq > "$scratch/ledger.md"
 if [[ -z $ledger ]]; then
   ledger=$(gh issue create --repo "$repo" --title "$ledger_title" --label collector --label area:workflow \
     --label kind:performance --label priority:medium --label effort:unknown \

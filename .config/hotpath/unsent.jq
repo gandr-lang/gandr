@@ -3,15 +3,19 @@
 # open issue of that title, `{number, body}`, or null, and `run` the push's
 # `{commit, url, benchmarks}`. Gives `{number, title, body}`: the issue's
 # number (null to open one) and its body with the run's row added, its
-# rows in the order they were filed. A run already filed adds nothing.
+# rows in the order they were filed. A run already filed adds nothing. A new
+# issue opens with the sentence that says what it is, and its table follows
+# a one-sentence lead (#3596).
 
 def title: "ci: hotpath reports not uploaded on main";
 def header: "| Commit | Run | Benchmarks |\n| --- | --- | --- |\n";
 def prose:
-  "Main's push runs the hotpath series and uploads each report to hotpath Cloud. "
-  + "A failed upload is a report failure, never a red `main`: the job passes with a warning, "
-  + "keeps the measurements in the run's `hotpath-<commit>` artifact, and `mise run ci:hotpath-unsent` "
-  + "adds the run's row here. Remove a row once its cause is fixed; the issue closes with the last.\n\n";
+  "This issue lists the pushes to `main` whose hotpath reports fail to upload to hotpath Cloud.\n\n"
+  + "A failed upload is a report failure, never a red `main`. "
+  + "The job passes with a warning and keeps the measurements in the `hotpath-<commit>` artifact of its run. "
+  + "`mise run ci:hotpath-unsent` then adds the row of the run. "
+  + "Remove a row once a fix for its cause lands. The issue closes with the last row.\n\n"
+  + "The table gives each run and the benchmarks whose reports it does not upload.\n\n";
 def row: "| \(.commit[0:9]) | [\(.url | split("/") | last)](\(.url)) | \(.benchmarks | map("`\(.)`") | join(", ")) |\n";
 
 (.run | row) as $row
