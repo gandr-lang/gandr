@@ -186,7 +186,7 @@ use super::lowered;
 use super::native::Answer;
 use super::native::Holds;
 use super::native::answered;
-use super::stretch;
+use crate::by_form::At;
 use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -1577,19 +1577,19 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — every arity-shaped plan reads its entries here.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
-    #[spec(captures: before = self.operands.len(), ensures: |ret| ret.start == before && ret.end == self.operands.len())]
+    #[spec(captures: before = self.operands.entries().len(), ensures: |ret| ret.start == before && ret.end == self.operands.entries().len())]
     fn stored(
         &mut self,
         entries: &[Entry<'source>],
     ) -> Stretch
     {
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         self.operands
             .extend(entries.iter().map(|entry| entry.held.at().node));
 
         Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         }
     }
 
@@ -1607,13 +1607,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::labelled_sum_type`] and
     ///   [`Self::lazy_record_type`].
     /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
-    #[spec(captures: before = self.operands.len(), ensures: |ret| ret.start == before && ret.end == self.operands.len() && (ret.end == ret.start || ret.end.saturating_sub(ret.start) == entries.len()))]
+    #[spec(captures: before = self.operands.entries().len(), ensures: |ret| ret.start == before && ret.end == self.operands.entries().len() && (ret.end == ret.start || ret.end.saturating_sub(ret.start) == entries.len()))]
     fn stored_labels(
         &mut self,
         entries: &[Entry<'source>],
     ) -> Stretch
     {
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         if entries
             .iter()
             .all(|entry| matches!(entry.key, Key::Label(..)))
@@ -1624,7 +1624,7 @@ impl<'source> Lowerer<'_, 'source>
 
         Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         }
     }
 
@@ -1770,14 +1770,14 @@ impl<'source> Lowerer<'_, 'source>
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::Value(frame));
                 }
-                Plan::Tuple(members)
+                Plan::Tuple(self.kept(members))
             },
             Arranged::Positional(entries) => {
                 let components = self.stored(&entries);
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::ValueType(frame));
                 }
-                Plan::Product(components)
+                Plan::Product(self.kept(components))
             },
             Arranged::Labelled(entries) => {
                 let Some((last, binding)) = entries.split_last()
@@ -1960,7 +1960,7 @@ impl<'source> Lowerer<'_, 'source>
             self.read(entry.held.at().node, Reading::ValueType(frame));
             self.label_entry(entry, Reading::ValueType(frame));
         }
-        self.plan(site, Plan::Sum(summands, labels));
+        self.plan(site, Plan::Sum(self.kept(summands), self.kept(labels)));
 
         Ok(())
     }
@@ -2008,7 +2008,7 @@ impl<'source> Lowerer<'_, 'source>
             self.read(entry.held.at().node, Reading::CompType(frame));
             self.label_entry(entry, Reading::CompType(frame));
         }
-        self.plan(site, Plan::With(components, labels));
+        self.plan(site, Plan::With(self.kept(components), self.kept(labels)));
 
         Ok(())
     }
@@ -2079,7 +2079,7 @@ impl<'source> Lowerer<'_, 'source>
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::Value(frame));
                 }
-                Plan::Tuple(members)
+                Plan::Tuple(self.kept(members))
             },
             Arranged::Labelled(entries) => {
                 Plan::Record(self.fields(&entries, Reading::Value(frame)))
@@ -2689,7 +2689,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
             },
         };
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         for &(clause, typed) in &clauses {
             let body = clause.held.at().node;
             self.operands.push(body);
@@ -2710,13 +2710,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             self.open_body(site, clause_body(body), stated)?;
         }
-        self.plan(
-            site,
-            Plan::Copattern(Stretch {
-                start,
-                end: self.operands.len(),
-            }),
-        );
+        self.plan(site, Plan::Copattern(self.operands.since(At::from(start))));
 
         Ok(())
     }
@@ -4385,20 +4379,14 @@ impl<'source> Lowerer<'_, 'source>
         }
         // Each label names a distinct output and there are as many: every
         // output has its value.
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         for name in names {
             if let Some(&(_, value)) = written.get(&name) {
                 self.operands.push(value.node);
                 self.read(value.node, Reading::Value(frame));
             }
         }
-        self.plan(
-            site,
-            Plan::ReturnAll(Stretch {
-                start,
-                end: self.operands.len(),
-            }),
-        );
+        self.plan(site, Plan::ReturnAll(self.operands.since(At::from(start))));
 
         Ok(())
     }
@@ -4858,8 +4846,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
     #[spec(
-        captures: before = self.operands.len(),
-        ensures: self.operands.len() == before,
+        captures: before = self.operands.entries().len(),
+        ensures: self.operands.entries().len() == before,
     )]
     pub(super) fn alias_domains(
         &mut self,
@@ -4881,9 +4869,9 @@ impl<'source> Lowerer<'_, 'source>
                 entries.iter().map(|entry| entry.held.at().node).collect(),
             ));
         }
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         let listed = self.domains(placed);
-        let domains = self.operands.split_off(start);
+        let domains = self.operands.split_off(At::from(start));
         listed?;
 
         Ok(Some(domains))
@@ -5210,13 +5198,13 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     pub(super) fn mint_sum(
         &self,
-        summands: Stretch,
-        labels: Stretch,
+        summands: FormStretch,
+        labels: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, summands);
+        let written = self.operands.read(summands);
         let mut parts: Vec<ValueTypeId> = Vec::with_capacity(written.len());
         for &summand in written {
             match self.value_type_at(summand) {
@@ -5246,13 +5234,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_sum`].
     /// - witness: `lower::arity::tests::a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395`
-    #[spec(ensures: |ret| ret.as_ref().is_none_or(|origins| !origins.is_empty() && origins.len() == labels.end.saturating_sub(labels.start)))]
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|origins| !origins.is_empty() && origins.len() == self.operands.read(labels).len()))]
     fn label_origins(
         &self,
-        labels: Stretch,
+        labels: FormStretch,
     ) -> Option<Vec<Origin>>
     {
-        let written = stretch(&self.operands, labels);
+        let written = self.operands.read(labels);
         if written.is_empty() {
             return None;
         }
@@ -5310,13 +5298,13 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
     pub(super) fn mint_with(
         &self,
-        entries: Stretch,
-        labels: Stretch,
+        entries: FormStretch,
+        labels: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, entries);
+        let written = self.operands.read(entries);
         let mut parts: Vec<CompTypeId> = Vec::with_capacity(written.len());
         for &entry in written {
             match self.comp_type_at(entry) {
@@ -5349,12 +5337,12 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_copattern(
         &self,
-        clauses: Stretch,
+        clauses: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, clauses);
+        let written = self.operands.read(clauses);
         let mut parts: Vec<ComputationId> = Vec::with_capacity(written.len());
         for &clause in written {
             match self.mint_body(clause_body(clause), sink, origin) {

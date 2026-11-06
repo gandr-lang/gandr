@@ -353,6 +353,7 @@ use gandr_surface_dispatcher::FeatureId;
 use gandr_surface_dispatcher::FeatureLedger;
 use gandr_surface_dispatcher::FormatStep;
 use gandr_surface_dispatcher::Formatting;
+use gandr_surface_dispatcher::Fusions;
 use gandr_surface_dispatcher::Gathered;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
@@ -852,11 +853,19 @@ enum Command
     /// writes it.
     ///
     /// A hole's count is its Lipschitz constant under the step: 0 for a
-    /// dropped hole, 1 for a kept one, more for a duplicated one. Nothing is
+    /// dropped hole, 1 for a kept one, more for a duplicated one. With
+    /// `--fusions`, each block's composition overlaps are fused too, and each
+    /// fusion cell is one more line: its two cells, the distance of its two
+    /// steps in ticks, its verdict, and each hole's composed count. Nothing is
     /// checked. Exits 0 when every path was read, and 2 when a path cannot be
     /// read, names no source, or holds a source the lowering cannot read.
     Cells
     {
+        /// Fuse each composition overlap of each block, and report the fused
+        /// cell's bound composed through its two steps in the Lawvere
+        /// quantale.
+        #[arg(long)]
+        fusions: bool,
         /// Source files, and directories searched for `.gandr` sources.
         #[arg(required = true)]
         paths: Vec<PathBuf>,
@@ -1993,7 +2002,18 @@ fn main() -> ExitCode
             },
             Verbosity::User,
         ),
-        Some(Command::Cells { paths }) => (Invocation::Cells { paths }, Verbosity::User),
+        Some(Command::Cells { fusions, paths }) => (
+            Invocation::Cells {
+                paths,
+                fusions: if fusions {
+                    Fusions::Composed
+                }
+                else {
+                    Fusions::Omitted
+                },
+            },
+            Verbosity::User,
+        ),
         Some(Command::Doc {
             out,
             markdown,
@@ -3597,17 +3617,19 @@ fn kept(
     Ok(())
 }
 
-/// Step `census`, printing each cell of each source on a line, and choose the
-/// exit code.
+/// Step `census`, printing each cell of each source on a line, then each
+/// fusion cell, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each cell of each source the census reads is `<path>:<row>` on
 ///   standard output, the row rendered as the dispatcher's `CellRow` renders
 ///   it, sources in walk order and each source's cells in the census's. Each
-///   path the census cannot read is `gandr: <path>: <fault>` on standard error,
-///   and the census continues past it. The exit is two when any path faulted,
-///   and zero otherwise.
+///   source's fusion rows and its blocks past the fusion budget follow its
+///   cells, rendered as `FusionRow` and `OverBudget` render them. Each path the
+///   census cannot read is `gandr: <path>: <fault>` on standard error, and the
+///   census continues past it. The exit is two when any path faulted, and zero
+///   otherwise.
 /// - provides: `gandr cells`.
 /// - fails: the first write error on either stream, printing nothing after it
 ///   and reading no source after it.
@@ -3632,9 +3654,20 @@ fn cells(
     let mut faulted = false;
     while let Maybe::Present(step) = census.step() {
         match step {
-            CensusStep::Source { path, cells } => {
+            CensusStep::Source {
+                path,
+                cells,
+                fusions,
+                over,
+            } => {
                 for row in &cells {
                     writeln!(stdout, "{}:{row}", path.display())?;
+                }
+                for row in &fusions {
+                    writeln!(stdout, "{}:{row}", path.display())?;
+                }
+                for block in &over {
+                    writeln!(stdout, "{}:{block}", path.display())?;
                 }
             },
             CensusStep::Fault { path, fault } => {

@@ -40,6 +40,7 @@ use super::exhausted;
 use super::passed;
 use super::recursion;
 use super::stuck;
+use crate::by_form::At;
 use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -144,9 +145,10 @@ impl<'source> Lowerer<'_, 'source>
             let domain = function.one(arrow.operands())?;
             closed(function, &mut arrow, tile)?;
             let codomain = function.one(arrow.operands())?;
-            let start = self.operands.len();
+            let start = self.operands.entries().len();
             let listed = self.domains(domain);
-            domains.extend(self.operands.drain(start ..));
+            domains.extend_from_slice(self.operands.entries().get(start ..).unwrap_or(&[]));
+            self.operands.truncate(At::from(start));
             listed?;
             result = codomain.node;
         }

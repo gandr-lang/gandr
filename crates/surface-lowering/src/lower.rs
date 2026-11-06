@@ -599,6 +599,7 @@ use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
 use crate::by_form::At;
 use crate::by_form::ByForm;
+use crate::by_form::FormPlace;
 use crate::by_form::FormStretch;
 use crate::classify::FailureClass;
 use crate::coincide::Decisions;
@@ -1783,8 +1784,10 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// A stretch of one of the lowerer's flat stores, which a plan reads its list
-/// from rather than owning one.
+/// Positions in a flat vector: the part store of one case's patterns, or the
+/// operand store while one classification pushes and takes back a list. A
+/// plan keeps a [`FormStretch`] of operands instead, which [`Lowerer::kept`]
+/// gives (#5628).
 ///
 /// # Specification
 /// - requires: coordinates, when present, are interpreted in their originating
@@ -2664,18 +2667,18 @@ enum Plan
     /// The type a code denotes, in the universe it was declared at: the code
     /// is the head applied statically to the arguments in the lowerer's
     /// operand store, none for a bare name.
-    Decode(Code, Stretch, Universe),
+    Decode(Code, FormStretch, Universe),
     /// The type the code a dynamic function returns denotes: the function the
     /// code names — a declaration at its admission position, or a binder
     /// holding a thunk — called on the arguments in the lowerer's operand
     /// store, its returned code decoded in the universe the position reads.
-    Unquote(Code, Stretch, Universe),
+    Unquote(Code, FormStretch, Universe),
     /// The type the code a dynamic function's result returns denotes, `f(a)(b)`
     /// where a type is read: the function the code names called on the first
     /// stretch of the lowerer's operand store, the value that call returns
     /// forced and applied to the second stretch, its returned code decoded in
     /// the universe the position reads (#5213).
-    Reapplied(Code, Stretch, Stretch, Universe),
+    Reapplied(Code, FormStretch, FormStretch, Universe),
     /// The carrier the model a binder holds gives one of its theory's
     /// unindexed sorts, `a.C`: the binder's bundled record projected at the
     /// sort's field — at its label off a record, along the nesting otherwise —
@@ -2689,10 +2692,10 @@ enum Plan
     /// The call of a dynamic function the code names on the arguments in the
     /// lowerer's operand store, left to right: a type-position call's argument
     /// written as a call, which a value position nests.
-    Called(Code, Stretch),
+    Called(Code, FormStretch),
     /// A static application of the head to the arguments in the lowerer's
     /// operand store, left to right.
-    StaticApplication(Code, Stretch),
+    StaticApplication(Code, FormStretch),
     /// A static lambda over its body.
     StaticLambda(NodeIndex),
     /// A type former over its argument.
@@ -2704,7 +2707,7 @@ enum Plan
     /// One eager product of the value types in the lowerer's operand store,
     /// in order: an unparenthesized `*` chain is one former, and the
     /// positional telescope type `#{A, …}` another, of any arity.
-    Product(Stretch),
+    Product(FormStretch),
     /// The type over labels `#{ l : A, … }`: its fields by label, the binders
     /// of every entry but the last in the lowerer's parameter store, each
     /// over the entries after it, the last entry's type and where its label
@@ -2718,19 +2721,19 @@ enum Plan
     ),
     /// The sum of the value types in the lowerer's operand store, in order,
     /// and the labels its entries are written at, none for a positional sum.
-    Sum(Stretch, Stretch),
+    Sum(FormStretch, FormStretch),
     /// The lazy record of the computation types in the lowerer's operand
     /// store, in order: one lazy product of them all. The labels its entries
     /// are written at follow, none for a positional lazy record.
-    With(Stretch, Stretch),
+    With(FormStretch, FormStretch),
     /// A case of no arms over a scrutinee stated at no data type and no path
     /// type: the eliminator of the empty sum.
     EmptyCase(NodeIndex),
     /// One tuple of the values in the lowerer's operand store, in order.
-    Tuple(Stretch),
+    Tuple(FormStretch),
     /// The native list of the values in the lowerer's operand store, in
     /// order: their cons cells ending in the empty list.
-    List(Stretch),
+    List(FormStretch),
     /// The record of the values its labels name: `#{ .l = v, … }`.
     Record(BTreeMap<FieldLabel, NodeIndex>),
     /// The update of its base by the record of the values its labels name:
@@ -2740,7 +2743,7 @@ enum Plan
     Injection(Summand, NodeIndex),
     /// The copattern block over the computations in the lowerer's operand
     /// store, in order: one lazy product of them all.
-    Copattern(Stretch),
+    Copattern(FormStretch),
     /// One entry of the lazy record or the codata the node holds: a thunk
     /// forced, when thunked, or a call run, then projected at the entry's
     /// position.
@@ -2764,7 +2767,7 @@ enum Plan
     Projected(native::ProjectedIndex),
     /// The thunked arrow from the domains in the lowerer's operand store to
     /// the returner of the codomain.
-    ValueFunction(Stretch, NodeIndex),
+    ValueFunction(FormStretch, NodeIndex),
     /// The thunked telescope from the entries in the lowerer's parameter
     /// store, each binding the ones after it, to the returner of the
     /// codomain.
@@ -2778,7 +2781,7 @@ enum Plan
     Returns(FormStretch),
     /// A tuple ending a body whose result is a group of outputs: the return
     /// of the members in the lowerer's operand store, one per output.
-    ReturnAll(Stretch),
+    ReturnAll(FormStretch),
     /// One output of a call whose result is a group, `f(a).l`: the call,
     /// every output bound, and the one at `index` returned.
     SelectedOutput
@@ -2836,20 +2839,20 @@ enum Plan
     Reenter(loops::Reentry),
     /// An application of its head to its arguments, left to right, in the
     /// lowerer's operand store.
-    Application(NodeIndex, Stretch),
+    Application(NodeIndex, FormStretch),
     /// A function tail's declared type and body.
     Function(Function),
     /// The nominal family declared at this admission position, over the
     /// arguments in the lowerer's operand store, left to right.
-    Data(ConstantIndex, Stretch),
+    Data(ConstantIndex, FormStretch),
     /// The codata declaration at this admission position, applied to the
     /// arguments in the lowerer's operand store, left to right: a
     /// computation type.
-    Codata(ConstantIndex, Stretch),
+    Codata(ConstantIndex, FormStretch),
     /// The type family member at this place of the collection's family list,
     /// its type expanded over the arguments in the lowerer's operand store,
     /// left to right.
-    Expansion(FamilyIndex, Stretch),
+    Expansion(FamilyIndex, FormStretch),
     /// A constructor applied to its fields.
     Constructor(native::Constructed),
     /// A multi-output constructor applied to its inputs and no output named:
@@ -2896,7 +2899,7 @@ enum Plan
         /// The generator `t`.
         generator: NodeIndex,
         /// The cells in vertex order, in the lowerer's operand store.
-        cells: Stretch,
+        cells: FormStretch,
     },
     /// `Eq.generic(T)` as a definition's whole body: nothing here, the
     /// declaration's type and body derived whole from `T`'s signature
@@ -2978,13 +2981,13 @@ enum Plan
     Scope(capability::Scoped),
     /// The continuation at the node resumed with the reply the values in the
     /// lowerer's operand store make.
-    Resume(NodeIndex, Stretch),
+    Resume(NodeIndex, FormStretch),
     /// The continuation at the node abandoned.
     Abandon(NodeIndex),
     /// A session type: its protocol over the payload types in the lowerer's
     /// operand store, in slot order, standing at the protocol's root, and
     /// every site the source writes one of its states at.
-    Session(Arc<Protocol>, Stretch, Arc<session::Written>),
+    Session(Arc<Protocol>, FormStretch, Arc<session::Written>),
     /// A session action over the nodes of its payload, its arms and a fork's
     /// protocol and children, with the bytes its endpoint is written at and,
     /// for an offer, each arm's label with the bytes its pattern is written at.
@@ -3512,7 +3515,7 @@ struct Lowerer<'run, 'source>
     /// refuses: it declares nothing.
     untranslated: BTreeSet<InstanceIndex>,
     /// The arguments every planned application reads, stretch by stretch.
-    operands: Vec<NodeIndex>,
+    operands: ByForm<NodeIndex>,
     /// The segments every planned interpolated string reads, stretch by
     /// stretch.
     segments: ByForm<TextSegment>,
@@ -3953,34 +3956,34 @@ struct Lowerer<'run, 'source>
     /// refusal.
     supplied: BTreeSet<NodeIndex>,
     /// Each operand an application passes for an implicit its call omits, by
-    /// its place among the operands, with the hole nominated for it: the
-    /// operand's node is the call's own, which no value lowers at, and the
-    /// application mints the hole there.
-    nominated: BTreeMap<usize, gandr_core_term::hole::HoleId>,
+    /// its coordinate in the operand store, with the hole nominated for it:
+    /// the operand's node is the call's own, which no value lowers at, and
+    /// the application mints the hole there.
+    nominated: BTreeMap<FormPlace, gandr_core_term::hole::HoleId>,
     /// Each operand a standing supply passes for an explicit parameter its
-    /// merged telescope places before a supplied implicit, by its place among
-    /// the operands, with the variable of the lambda the supply opens for it:
-    /// the operand's node is the supply's own, which no value lowers at, and
-    /// the application mints the variable there, under one lambda per such
-    /// operand.
-    abstracted: BTreeMap<usize, DeBruijnIndex>,
-    /// Each operand a call passes for an instance it omits, by its place among
-    /// the operands, with the variable of the instance resolved for it where
-    /// the call stands: the operand's node is the call's own, which no value
-    /// lowers at, and the application mints the variable there.
-    instanced: BTreeMap<usize, DeBruijnIndex>,
+    /// merged telescope places before a supplied implicit, by its coordinate
+    /// in the operand store, with the variable of the lambda the supply opens
+    /// for it: the operand's node is the supply's own, which no value lowers
+    /// at, and the application mints the variable there, under one lambda per
+    /// such operand.
+    abstracted: BTreeMap<FormPlace, DeBruijnIndex>,
+    /// Each operand a call passes for an instance it omits, by its coordinate
+    /// in the operand store, with the variable of the instance resolved for
+    /// it where the call stands: the operand's node is the call's own, which
+    /// no value lowers at, and the application mints the variable there.
+    instanced: BTreeMap<FormPlace, DeBruijnIndex>,
     /// Each operand an application passes for a component of a model
-    /// implicit its call supplies, by its place among the operands, with the
-    /// supply and the component's place in the slot: the operand's node is the
-    /// call's own, which no value lowers at, and the application mints the
-    /// component's value there ([`Self::mint_supplied`]).
-    components: BTreeMap<usize, (Arc<model::Supplied>, model::ComponentPlace)>,
+    /// implicit its call supplies, by its coordinate in the operand store,
+    /// with the supply and the component's place in the slot: the operand's
+    /// node is the call's own, which no value lowers at, and the application
+    /// mints the component's value there ([`Self::mint_supplied`]).
+    components: BTreeMap<FormPlace, (Arc<model::Supplied>, model::ComponentPlace)>,
     /// Each operand a recursive call passes for an implicit it omits before
-    /// its fixpoint, by its place among the operands: the function's
+    /// its fixpoint, by its coordinate in the operand store: the function's
     /// own implicit, which the fixpoint binds outside and the call leaves out
     /// of its application. The operand's node is the call's own, which no
     /// value lowers at.
-    kept_implicits: BTreeSet<usize>,
+    kept_implicits: BTreeSet<FormPlace>,
     /// Each model implicit flattened into one parameter per component, by the
     /// frame its name resolves to.
     flattened: BTreeMap<ScopeId, model::Flattened>,
@@ -5627,7 +5630,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && ret.manifests.is_empty()
                 && ret.exported.is_empty()
                 && ret.witnessed.is_empty()
-                && ret.operands.is_empty()
+                && ret.operands.entries().is_empty()
                 && ret.statements.entries().is_empty()
                 && ret.parameters.entries().is_empty()
                 && ret.classifiers.is_empty()
@@ -5684,7 +5687,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             modelled: BTreeMap::new(),
             faults: BTreeMap::new(),
             untranslated: BTreeSet::new(),
-            operands: Vec::new(),
+            operands: ByForm::default(),
             segments: ByForm::default(),
             statements: ByForm::default(),
             parameters: ByForm::default(),
@@ -6928,6 +6931,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )
     {
         self.scope.enter(form);
+        self.operands.enter(form);
         self.segments.enter(form);
         self.statements.enter(form);
         self.parameters.enter(form);
@@ -6935,6 +6939,64 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.cases.enter(form);
         self.arms.enter(form);
         self.projected.enter(form);
+    }
+
+    /// The key a plan keeps for the operands at the positions `written`
+    /// names.
+    ///
+    /// # Specification
+    /// trivial.
+    fn kept(
+        &self,
+        written: Stretch,
+    ) -> FormStretch
+    {
+        self.operands
+            .since_until(At::from(written.start), At::from(written.end))
+    }
+
+    /// The positions of the operands that the key `kept` names, for a read
+    /// that walks them by position; no position for a key the store does not
+    /// hold whole.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spread(
+        &self,
+        kept: FormStretch,
+    ) -> Stretch
+    {
+        let start = self.operands.first(kept).map_or(0_usize, usize::from);
+        Stretch {
+            start,
+            end: start.saturating_add(self.operands.read(kept).len()),
+        }
+    }
+
+    /// The reason that the first operand of `kept` holds when `read` answers
+    /// it absent; `None` when `read` answers every operand present.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: reads each operand of the one stretch a mint consumes once, as
+    ///   the mint itself does; no read grows with the module.
+    fn first_absent<Held, Read>(
+        &self,
+        kept: FormStretch,
+        read: Read,
+    ) -> Option<lowered::Absent>
+    where
+        Read: Fn(NodeIndex) -> Maybe<Held, lowered::Absent>,
+    {
+        self.operands
+            .read(kept)
+            .iter()
+            .find_map(|&operand| match read(operand) {
+                Maybe::Present(_) => None,
+                Maybe::Absent(reason) => Some(reason),
+            })
     }
 
     /// Hand `position`'s records to its children and classify it, offering a
@@ -9497,8 +9559,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(constructor) = self.constructor_named(site, name) {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
-                start: self.operands.len(),
-                end: self.operands.len(),
+                start: self.operands.entries().len(),
+                end: self.operands.entries().len(),
             };
             return self.construct(site, constructor, none);
         }
@@ -9508,8 +9570,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && let Maybe::Present(arity) = self.data_family(constant)
             {
                 let none = Stretch {
-                    start: self.operands.len(),
-                    end: self.operands.len(),
+                    start: self.operands.entries().len(),
+                    end: self.operands.entries().len(),
                 };
                 return self.family(site, constant, arity, none);
             }
@@ -9517,8 +9579,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && let Maybe::Present(arity) = self.codata_family(constant)
             {
                 let none = Stretch {
-                    start: self.operands.len(),
-                    end: self.operands.len(),
+                    start: self.operands.entries().len(),
+                    end: self.operands.entries().len(),
                 };
                 return self.codata_type(site, constant, arity, none);
             }
@@ -9621,7 +9683,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | Ok(ref plan) => match (resolved, self.in_type.contains(&site.at.node)) {
                 | (Resolved::Binder(bound), true) => {
-                    matches!(*plan, Plan::StaticApplication(Code::Bound { binder, .. }, arguments) if binder == bound.binder && arguments.start == arguments.end)
+                    matches!(*plan, Plan::StaticApplication(Code::Bound { binder, .. }, arguments) if binder == bound.binder && arguments == FormStretch::default())
                         && (bool::from(self.scope.mentioned(bound.binder)) || self.in_quote.contains(&site.at.node))
                 },
                 | _ => *plan == resolved.term(),
@@ -9639,17 +9701,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         match resolved {
             Resolved::Binder(bound) if self.in_type.contains(&site.at.node) => {
                 let telescope = self.name_in_type(site.at.node, bound.binder);
-                let none = Stretch {
-                    start: self.operands.len(),
-                    end: self.operands.len(),
-                };
                 Ok(Plan::StaticApplication(
                     Code::Bound {
                         from: frame,
                         binder: bound.binder,
                         telescope,
                     },
-                    none,
+                    FormStretch::default(),
                 ))
             },
             Resolved::Binder(_) => Ok(resolved.term()),
@@ -10211,14 +10269,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .is_some_and(|outputs| outputs.is_empty())
             {
                 let _frame = self.require(site, Produced::Computation)?;
-                let none = self.operands.len();
-                self.plan(
-                    site,
-                    Plan::ReturnAll(Stretch {
-                        start: none,
-                        end: none,
-                    }),
-                );
+                self.plan(site, Plan::ReturnAll(FormStretch::default()));
                 return Ok(());
             }
             let unit = Site {
@@ -10414,7 +10465,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Tuple(members) | Plan::ReturnAll(members))) if members.end.saturating_sub(members.start) >= 1_usize
+                    Some(&(Plan::Tuple(members) | Plan::ReturnAll(members))) if members != FormStretch::default()
                 )
         },
     )]
@@ -10434,24 +10485,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
             None => Produced::Value,
         };
         let frame = self.require(tuple, produced)?;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         if let Err(refusal) = arguments(tuple, &mut cursor, &mut self.operands) {
-            self.operands.truncate(start);
+            self.operands.truncate(At::from(start));
             return Err(refusal);
         }
         let members = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         if outputs.is_none() {
             self.classify_members(tuple, members, frame)?;
         }
         for position in members.start .. members.end {
-            if let Some(&member) = self.operands.get(position) {
+            if let Some(&member) = self.operands.entries().get(position) {
                 self.read(member, Reading::Value(frame));
             }
         }
 
+        let members = self.kept(members);
         self.plan(site, match outputs {
             Some(_) => Plan::ReturnAll(members),
             None => Plan::Tuple(members),
@@ -10507,7 +10559,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Value)?;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         if let Err(refusal) = delimited(
             site,
             &mut cursor,
@@ -10515,12 +10567,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             TileName::SEQUENCE_OPEN,
             TileName::BRACKET_CLOSE,
         ) {
-            self.operands.truncate(start);
+            self.operands.truncate(At::from(start));
             return Err(refusal);
         }
         let elements = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         // An element type the list is written at classifies each constructor,
         // call, list or tuple among its elements, as a field's type does the
@@ -10536,18 +10588,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let [element_type] = typed.operands[..]
         {
             for position in elements.start .. elements.end {
-                if let Some(&element) = self.operands.get(position) {
+                if let Some(&element) = self.operands.entries().get(position) {
                     self.classify_member(element, element_type, answered, frame);
                 }
             }
         }
         for position in elements.start .. elements.end {
-            if let Some(&element) = self.operands.get(position) {
+            if let Some(&element) = self.operands.entries().get(position) {
                 self.read(element, Reading::Value(frame));
             }
         }
 
-        self.plan(site, Plan::List(elements));
+        self.plan(site, Plan::List(self.kept(elements)));
 
         Ok(())
     }
@@ -10708,7 +10760,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .all(|component| matches!(component.key, arity::Key::Positional))
         {
             for (position, component) in (members.start .. members.end).zip(&components) {
-                if let Some(&member) = self.operands.get(position) {
+                if let Some(&member) = self.operands.entries().get(position) {
                     self.classify_member(member, component.held.at().node, answered, frame);
                 }
             }
@@ -12954,30 +13006,34 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
     /// - witness: `lower::tests::a_call_at_a_quoted_path_carrier_unquotes_as_at_a_binder_3573`
     #[spec(
-        captures: start = self.operands.len(),
+        captures: start = self.operands.mark(),
         ensures: |ret| {
             ret.is_err()
                 || match self.plans.get(site.at.node) {
                     | Some(&Plan::Application(head, arguments)) => {
-                        let end = self.operands.len();
+                        let written = self.operands.since(start);
+                        let positions = self.spread(arguments);
                         let descends = self.descents.get(&head).is_some_and(|descent| {
-                            descent.arguments == Stretch { start, end } && descent.call == site
+                            descent.arguments == written && descent.call == site
                         });
-                        (arguments.start == start || (descends && arguments.start >= start))
-                            && arguments.end == end
+                        (arguments == written
+                            || (descends
+                                && (arguments == FormStretch::default()
+                                    || positions.end == self.operands.entries().len())))
                             && self.reading(head) == Reading::Head(site.reading.frame())
-                            && (arguments.start .. arguments.end).all(|position| {
-                                self.nominated.contains_key(&position)
-                                    || self.components.contains_key(&position)
-                                    || self.instanced.contains_key(&position)
-                                    || self.operands.get(position).is_some_and(|&argument| {
+                            && (positions.start .. positions.end).all(|position| {
+                                self.operands.locate(At::from(position)).is_some_and(|key| {
+                                    self.nominated.contains_key(&key)
+                                        || self.components.contains_key(&key)
+                                        || self.instanced.contains_key(&key)
+                                })
+                                    || self.operands.entries().get(position).is_some_and(|&argument| {
                                         self.reading(argument) == Reading::Value(site.reading.frame())
                                     })
                             })
                     },
                     | Some(&(Plan::Constructor(constructed) | Plan::Ports(constructed, _))) => {
-                        constructed.fields.start == start
-                            && constructed.fields.end == self.operands.len()
+                        constructed.fields == self.operands.since(start)
                     },
                     | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Fill { .. } | Plan::Generic | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::FlowThen(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
                     | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..) | Plan::Data(..) | Plan::Codata(..))) => {
@@ -13005,11 +13061,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             self.constructed_at(head.span, constructor);
             let _head = cursor.operands();
-            let start = self.operands.len();
+            let start = self.operands.entries().len();
             arguments(site, &mut cursor, &mut self.operands)?;
             let fields = Stretch {
                 start,
-                end: self.operands.len(),
+                end: self.operands.entries().len(),
             };
             return self.construct(site, constructor, fields);
         }
@@ -13019,11 +13075,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let Maybe::Present(ported) = self.ported_head(site, head)?
         {
             let _head = cursor.operands();
-            let start = self.operands.len();
+            let start = self.operands.entries().len();
             arguments(site, &mut cursor, &mut self.operands)?;
             let fields = Stretch {
                 start,
-                end: self.operands.len(),
+                end: self.operands.entries().len(),
             };
             return self.ports(site, ported, fields);
         }
@@ -13080,11 +13136,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let Maybe::Present(name) = self.former_head(site, head)?
         {
             let _head = cursor.operands();
-            let start = self.operands.len();
+            let start = self.operands.entries().len();
             arguments(site, &mut cursor, &mut self.operands)?;
             let written = Stretch {
                 start,
-                end: self.operands.len(),
+                end: self.operands.entries().len(),
             };
             return self.applied_head(site, head, name, written, &[]);
         }
@@ -13094,11 +13150,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             self.resolved(head.span, family);
             let _head = cursor.operands();
-            let start = self.operands.len();
+            let start = self.operands.entries().len();
             arguments(site, &mut cursor, &mut self.operands)?;
             let applied = Stretch {
                 start,
-                end: self.operands.len(),
+                end: self.operands.entries().len(),
             };
             return self.static_application(site, family, applied);
         }
@@ -13119,7 +13175,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         let head = site.one(cursor.operands())?;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         arguments(site, &mut cursor, &mut self.operands)?;
         let descends = self.tree.node(head.node).is_some_and(|node| {
             matches!(
@@ -13135,18 +13191,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if descends {
             let omitted = Stretch {
                 start,
-                end: self.operands.len(),
+                end: self.operands.entries().len(),
             };
             self.omitted_entries(site, frame, head, omitted)?;
         }
         let written = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         let applied = if descends {
             let _first = self.descents.insert(head.node, native::Descent {
                 call: site,
-                arguments: written,
+                arguments: self.kept(written),
             });
             let leading = self.leading_parameters(frame, head)?.0;
             Stretch {
@@ -13167,19 +13223,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.parameters_classify(site, frame, head, written)?;
         self.read(head.node, Reading::Head(frame));
         for position in written.start .. written.end {
-            if self.instanced.contains_key(&position)
-                || self.nominated.contains_key(&position)
-                || self.components.contains_key(&position)
-                || self.kept_implicits.contains(&position)
-            {
+            if self.operands.locate(At::from(position)).is_some_and(|key| {
+                self.instanced.contains_key(&key)
+                    || self.nominated.contains_key(&key)
+                    || self.components.contains_key(&key)
+                    || self.kept_implicits.contains(&key)
+            }) {
                 continue;
             }
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
 
-        self.plan(site, Plan::Application(head.node, applied));
+        self.plan(site, Plan::Application(head.node, self.kept(applied)));
 
         Ok(())
     }
@@ -13242,11 +13299,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(named) = self.descent_head(head)? {
             let _first = self.typed_heads.insert(site.at.node, head.node);
             let _head = cursor.operands();
-            let start = self.operands.len();
+            let start = self.operands.entries().len();
             arguments(site, &mut cursor, &mut self.operands)?;
             let written = Stretch {
                 start,
-                end: self.operands.len(),
+                end: self.operands.entries().len(),
             };
             return self.staged_descent(site, named, written);
         }
@@ -13254,11 +13311,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // y)`, is the former the type grammar spells (#4508).
         if let Maybe::Present(name) = self.former_head(site, head)? {
             let _head = cursor.operands();
-            let start = self.operands.len();
+            let start = self.operands.entries().len();
             arguments(site, &mut cursor, &mut self.operands)?;
             let written = Stretch {
                 start,
-                end: self.operands.len(),
+                end: self.operands.entries().len(),
             };
             return self.applied_head(site, head, name, written, &[]);
         }
@@ -13283,11 +13340,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         self.resolved(head.span, resolved);
         let _head = cursor.operands();
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         arguments(site, &mut cursor, &mut self.operands)?;
         let applied = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         self.static_application(site, resolved, applied)
     }
@@ -13354,11 +13411,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let _first = self.typed_heads.insert(site.at.node, head.node);
         self.resolved(head.span, resolved);
         let _head = cursor.operands();
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         arguments(site, cursor, &mut self.operands)?;
         let applied = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         let _first = self.static_calls.insert(site.at.node);
         self.static_application(site, resolved, applied)?;
@@ -13764,8 +13821,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(constructor) = self.selected_constructor(site, site.at)? {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
-                start: self.operands.len(),
-                end: self.operands.len(),
+                start: self.operands.entries().len(),
+                end: self.operands.entries().len(),
             };
             return self.construct(site, constructor, none);
         }
@@ -13809,8 +13866,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         if named && let Maybe::Present(resolved) = self.aliased_member(site, head, selected)? {
             let none = Stretch {
-                start: self.operands.len(),
-                end: self.operands.len(),
+                start: self.operands.entries().len(),
+                end: self.operands.entries().len(),
             };
             if let Resolved::Declaration { constant, .. } = resolved
                 && let Maybe::Present(arity) = self.data_family(constant)
@@ -14327,8 +14384,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
-                start: self.operands.len(),
-                end: self.operands.len(),
+                start: self.operands.entries().len(),
+                end: self.operands.entries().len(),
             };
             return self.construct(site, constructor, none);
         }
@@ -14339,8 +14396,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(resolved) = self.resolve_name(site, from, name)? {
             self.resolved(site.at.span, resolved);
             let none = Stretch {
-                start: self.operands.len(),
-                end: self.operands.len(),
+                start: self.operands.entries().len(),
+                end: self.operands.entries().len(),
             };
             return self.static_application(site, resolved, none);
         }
@@ -14829,11 +14886,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         let read = path_arguments(site, &pieces.pieces, site.at.span, &mut self.operands)
             .and_then(|lists| self.applied_path(site, pieces, lists));
         if read.is_err() {
-            self.operands.truncate(start);
+            self.operands.truncate(At::from(start));
         }
         read
     }
@@ -14924,7 +14981,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             let count =
                 applied.map_or(0_usize, |written| written.end.saturating_sub(written.start));
-            let argument = applied.and_then(|written| self.operands.get(written.start).copied());
+            let argument =
+                applied.and_then(|written| self.operands.entries().get(written.start).copied());
             return match (argument, count) {
                 (Some(argument), 1_usize) => self.apply_former(site, former, argument),
                 (Some(_) | None, _) => {
@@ -15121,8 +15179,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             declared: Maybe::Absent(binder_type::Absent::Untyped),
         });
         let none = Stretch {
-            start: self.operands.len(),
-            end: self.operands.len(),
+            start: self.operands.entries().len(),
+            end: self.operands.entries().len(),
         };
         self.family(site, constant, arity, applied.unwrap_or(none))
     }
@@ -15732,7 +15790,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
             return self.staged_unquote(site, name, cursor);
         }
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         // A second list applies the call's result once more, `f(a)(b)`
         // (#5213); only a function's call takes it, and every other head
         // refuses it.
@@ -15741,7 +15799,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let read = lists.map(|_| ());
         let applied = Stretch {
             start,
-            end: again.map_or(self.operands.len(), |again| again.start),
+            end: again.map_or_else(|| self.operands.entries().len(), |again| again.start),
         };
         let alone = |again: Option<Stretch>| {
             again.map_or(Ok(()), |again| {
@@ -15765,7 +15823,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let Maybe::Present(constructor) = self.constructor_named(site, name)
         {
             if let Some(refusal) = unmanifest.or_else(|| alone(again).err()) {
-                self.operands.truncate(start);
+                self.operands.truncate(At::from(start));
                 return Err(refusal);
             }
             return self.construct(site, constructor, applied);
@@ -15777,7 +15835,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 ..
             })) => {
                 if let Some(refusal) = unmanifest.or_else(|| alone(again).err()) {
-                    self.operands.truncate(start);
+                    self.operands.truncate(At::from(start));
                     return Err(refusal);
                 }
                 let _first = self
@@ -15787,7 +15845,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Ok(Maybe::Present(_) | Maybe::Absent(_)) => {},
             Err(refusal) => {
-                self.operands.truncate(start);
+                self.operands.truncate(At::from(start));
                 return Err(refusal);
             },
         }
@@ -15798,7 +15856,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         match resolved {
             Ok(Maybe::Present(resolved)) => {
                 if let Some(refusal) = unmanifest {
-                    self.operands.truncate(start);
+                    self.operands.truncate(At::from(start));
                     return Err(refusal);
                 }
                 self.resolved(head.span, resolved);
@@ -15811,13 +15869,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Ok(Maybe::Absent(named::Absent::Unresolved)) => {},
             Err(refusal) => {
-                self.operands.truncate(start);
+                self.operands.truncate(At::from(start));
                 return Err(refusal);
             },
         }
 
         if let Err(refusal) = alone(again) {
-            self.operands.truncate(start);
+            self.operands.truncate(At::from(start));
             return Err(refusal);
         }
         self.applied_head(site, head, name, applied, &manifests)
@@ -15873,7 +15931,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::a_carrier_written_first_is_refused_5024`
     #[spec(
         ensures: |ret| {
-            self.operands.len() == written.start
+            self.operands.entries().len() == written.start
                 && (ret.is_err()
                     || matches!(
                         self.plans.get(site.at.node),
@@ -15892,13 +15950,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let start = written.start;
         let count = written.end.saturating_sub(start);
-        let first = self.operands.get(start).copied();
+        let first = self.operands.entries().get(start).copied();
         let written_first = count == 3_usize;
         let pair = self
             .operands
+            .entries()
             .get(start .. written.end)
             .and_then(|operands| <[NodeIndex; 2]>::try_from(operands).ok());
-        self.operands.truncate(start);
+        self.operands.truncate(At::from(start));
         if let (Some(argument), 1_usize) = (first, count)
             && name.as_ref() == MODEL
         {
@@ -16300,10 +16359,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declaration classified before the member is, states the stack.
     /// - witness: `lower::capability::tests::a_stated_stack_is_resumed_as_a_clause_resumes_1387`
     #[spec(
-        captures: before = (self.plans.count(), self.resolutions.len(), self.operands.len()),
+        captures: before = (self.plans.count(), self.resolutions.len(), self.operands.entries().len()),
         ensures: |_| self.plans.count() == before.0
             && self.resolutions.len() == before.1
-            && self.operands.len() == before.2,
+            && self.operands.entries().len() == before.2,
     )]
     fn written_stack(
         &mut self,
@@ -16328,7 +16387,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             reading: self.reading(at),
         };
         let mut scratch = core::mem::take(&mut self.scratch);
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         let read = read_pieces(self.pbg, self.tree, at, &mut scratch);
         let mut cursor = Cursor::new(&scratch.pieces, site.at.span);
         let head = match cursor.type_head() {
@@ -16338,8 +16397,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let shaped = read.is_ok()
             && head.is_some_and(|head| self.name_at(head).as_ref() == STACK)
             && arguments(site, &mut cursor, &mut self.operands).is_ok()
-            && self.operands.len().saturating_sub(start) == 2_usize;
-        self.operands.truncate(start);
+            && self.operands.entries().len().saturating_sub(start) == 2_usize;
+        self.operands.truncate(At::from(start));
         self.scratch = scratch;
         let Some(head) = head.filter(|_| shaped)
         else {
@@ -16458,22 +16517,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || match self.plans.get(site.at.node) {
                     | Some(&Plan::StaticApplication(_, planned)) => {
-                        planned == applied && matches!(site.reading, Reading::Value(_))
+                        planned == self.kept(applied) && matches!(site.reading, Reading::Value(_))
                     },
                     | Some(&Plan::Called(_, planned)) => {
-                        planned == applied
+                        planned == self.kept(applied)
                             && applied.start < applied.end
                             && matches!(site.reading, Reading::Value(_))
                     },
                     | Some(&Plan::Decode(_, planned, _) | &Plan::Unquote(_, planned, _)) => {
-                        planned == applied
+                        planned == self.kept(applied)
                             && (!matches!(site.reading, Reading::Value(_))
                                 || self.static_bodies.contains(&site.at.node))
                     },
                     | Some(&Plan::Reapplied(_, planned, again, _)) => {
-                        planned == applied && lists == Lists::Again(again)
+                        planned == self.kept(applied)
+                            && matches!(lists, Lists::Again(written) if self.kept(written) == again)
                     },
-                    | Some(&(Plan::Data(_, planned) | Plan::Codata(_, planned))) => planned == applied,
+                    | Some(&(Plan::Data(_, planned) | Plan::Codata(_, planned))) => planned == self.kept(applied),
                     | _ => false,
                 }
         },
@@ -16588,12 +16648,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Resolved::Declaration { constant, .. } => Code::Constant(constant),
         };
+        let kept = self.kept(applied);
         let plan = match (universe, again) {
-            (Some(universe), Some(again)) => Plan::Reapplied(code, applied, again, universe),
-            (Some(universe), None) if dynamic => Plan::Unquote(code, applied, universe),
-            (Some(universe), None) => Plan::Decode(code, applied, universe),
-            (None, _) if dynamic && called => Plan::Called(code, applied),
-            (None, _) => Plan::StaticApplication(code, applied),
+            (Some(universe), Some(again)) => {
+                Plan::Reapplied(code, kept, self.kept(again), universe)
+            },
+            (Some(universe), None) if dynamic => Plan::Unquote(code, kept, universe),
+            (Some(universe), None) => Plan::Decode(code, kept, universe),
+            (None, _) if dynamic && called => Plan::Called(code, kept),
+            (None, _) => Plan::StaticApplication(code, kept),
         };
         if let Code::Bound { binder, .. } = code {
             let _telescope = self.name_in_type(site.at.node, binder);
@@ -16607,7 +16670,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 else {
                     break;
                 };
-                if let Some(&argument) = self.operands.get(position)
+                if let Some(&argument) = self.operands.entries().get(position)
                     && self.static_arrow(domain)?.is_some()
                 {
                     let _first = self.static_lambdas.insert(argument, Maybe::Present(domain));
@@ -16656,8 +16719,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let none = Stretch {
-            start: self.operands.len(),
-            end: self.operands.len(),
+            start: self.operands.entries().len(),
+            end: self.operands.entries().len(),
         };
         match (applied, again) {
             (Some(first), Some(second)) => {
@@ -17274,7 +17337,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Product(components) | Plan::Sum(components, _) | Plan::With(components, _))) if components.end.saturating_sub(components.start) >= 2_usize
+                    Some(&(Plan::Product(components) | Plan::Sum(components, _) | Plan::With(components, _))) if self.operands.read(components).len() >= 2_usize
                 )
         },
     )]
@@ -17295,7 +17358,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Produced::ValueType
             },
         )?;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         let [first, second] = halves(site, &mut cursor, former)?;
         let mut pending = Vec::from([second, first]);
         while let Some(operand) = pending.pop() {
@@ -17307,19 +17370,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Ok(Some([inner_first, inner_second])) => {
                     pending.extend([inner_second, inner_first]);
                 },
-                Ok(None) => self.operands.push(operand),
+                Ok(None) => {
+                    let _key = self.operands.push(operand);
+                },
                 Err(refusal) => {
-                    self.operands.truncate(start);
+                    self.operands.truncate(At::from(start));
                     return Err(refusal);
                 },
             }
         }
         let components = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         for position in components.start .. components.end {
-            if let Some(&component) = self.operands.get(position) {
+            if let Some(&component) = self.operands.entries().get(position) {
                 self.read(
                     component,
                     if lazy {
@@ -17332,7 +17397,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         // A chain writes no label.
-        let unlabelled = Stretch { start: 0, end: 0 };
+        let (components, unlabelled) = (self.kept(components), FormStretch::default());
         let plan = if lazy {
             Plan::With(components, unlabelled)
         }
@@ -17454,24 +17519,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if self.telescope_function(site, frame, domain, codomain)? == arity::Planned(true) {
             return Ok(());
         }
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         if let Err(refusal) = self.domains(domain) {
-            self.operands.truncate(start);
+            self.operands.truncate(At::from(start));
             return Err(refusal);
         }
         let domains = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         for position in domains.start .. domains.end {
-            if let Some(&each) = self.operands.get(position) {
+            if let Some(&each) = self.operands.entries().get(position) {
                 self.read(each, Reading::ValueType(frame));
             }
         }
         let output = self.box_output(codomain, frame)?;
         self.read(codomain.node, output);
 
-        self.plan(site, Plan::ValueFunction(domains, codomain.node));
+        self.plan(site, Plan::ValueFunction(self.kept(domains), codomain.node));
 
         Ok(())
     }
@@ -17589,8 +17654,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   asserted through the alias it lowers.
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     #[spec(
-        captures: before = self.operands.len(),
-        ensures: |ret| ret.is_err() || self.operands.len() >= before,
+        captures: before = self.operands.entries().len(),
+        ensures: |ret| ret.is_err() || self.operands.entries().len() >= before,
     )]
     fn domains(
         &mut self,
@@ -17783,6 +17848,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let written = |lowerer: &Self, position: usize| {
             lowerer
                 .operands
+                .entries()
                 .get(position)
                 .and_then(|&argument| lowerer.tree.node(argument))
                 .is_some_and(|node| {
@@ -17834,7 +17900,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 parameter
             };
             if written(self, position)
-                && let Some(&argument) = self.operands.get(position)
+                && let Some(&argument) = self.operands.entries().get(position)
                 && let Some(telescope) = self.written_telescope(argument)?
                 && let Some(parameter) = parameter
                 && let native::Holds::Value(stated) = self.held_at(parameter)?
@@ -18308,7 +18374,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )
     {
         for position in read.start .. read.end {
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
@@ -18317,7 +18383,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..)
         ) {
             self.in_type
-                .extend(stretch(&self.operands, read).iter().copied());
+                .extend(stretch(self.operands.entries(), read).iter().copied());
         }
         self.plan(site, plan);
     }
@@ -18812,7 +18878,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let argued: Vec<NodeIndex> = self
             .argued_binders
             .values()
-            .flat_map(|&(called, ..)| stretch(&self.operands, called.applied).iter().copied())
+            .flat_map(|&(called, ..)| self.operands.read(called.applied).iter().copied())
             .filter(|argument| owns(argument) && !self.dependent_answers.contains_key(argument))
             .collect();
         manifests.extend(argued);
@@ -19204,15 +19270,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Some(_) | None => None,
             };
             let waited = waiting.is_some_and(|waiting| {
-                stretch(&self.operands, waiting)
+                self.operands
+                    .read(waiting)
                     .iter()
                     .any(|operand| self.awaiting.contains(operand))
             });
             if let (true, Some(waiting)) = (waited, waiting) {
                 work.push((at, true));
                 let first = work.len();
+                let waiting = self.spread(waiting);
                 for place in waiting.start .. waiting.end {
-                    if let Some(&operand) = self.operands.get(place)
+                    if let Some(&operand) = self.operands.entries().get(place)
                         && self.awaiting.remove(&operand)
                     {
                         work.push((operand, false));
@@ -20046,12 +20114,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Present(id) => match sink.arena.value(id) {
                 | Some(&gandr_core_term::Value::StaticApplication(..)) => {
-                    arguments.start < arguments.end
+                    arguments != FormStretch::default()
                 },
                 | Some(
                     &(gandr_core_term::Value::Variable { .. }
                     | gandr_core_term::Value::Constant(_)),
-                ) => arguments.start >= arguments.end,
+                ) => arguments == FormStretch::default(),
                 | _ => false,
             },
             | Maybe::Absent(_) => true,
@@ -20068,12 +20136,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     /// - witness: `tests::modules::a_family_s_parameter_under_a_data_type_answers_at_its_kind_3142`
     #[spec(
-        ensures: |ret| match stretch(&self.operands, arguments)
-            .iter()
-            .find_map(|&argument| match self.value_at(argument) {
-                | Maybe::Present(_) => None,
-                | Maybe::Absent(reason) => Some(reason),
-            }) {
+        ensures: |ret| match self.first_absent(arguments, |argument| self.value_at(argument)) {
             | Some(reason) => ret == Maybe::Absent(reason),
             | None => {
                 matches!(ret, Maybe::Present(id) if sink.origins.value(id) == Maybe::Present(origin))
@@ -20083,17 +20146,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn mint_code(
         &self,
         code: Code,
-        arguments: Stretch,
+        arguments: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<ValueId, lowered::Absent>
     {
-        let written = stretch(&self.operands, arguments);
-        for &argument in written {
-            if let Maybe::Absent(reason) = self.value_at(argument) {
-                return Maybe::Absent(reason);
-            }
+        if let Some(reason) = self.first_absent(arguments, |argument| self.value_at(argument)) {
+            return Maybe::Absent(reason);
         }
+        let written = self.operands.read(arguments);
         let mut applied = match code {
             Code::Bound {
                 from,
@@ -20214,12 +20275,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
     #[spec(
-        ensures: |ret| match stretch(&self.operands, arguments)
-            .iter()
-            .find_map(|&argument| match self.value_at(argument) {
-                | Maybe::Present(_) => None,
-                | Maybe::Absent(reason) => Some(reason),
-            }) {
+        ensures: |ret| match self.first_absent(arguments, |argument| self.value_at(argument)) {
             | Some(reason) => ret == Maybe::Absent(reason),
             | None => match (universe.sort, ret) {
                 | (GroundSort::Value, Maybe::Present(Lowered::ValueType(id))) => {
@@ -20236,7 +20292,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn mint_decode(
         &self,
         code: Code,
-        arguments: Stretch,
+        arguments: FormStretch,
         universe: Universe,
         sink: &mut Sink<'_>,
         origin: Origin,
@@ -20307,7 +20363,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn mint_unquote(
         &self,
         function: Code,
-        arguments: Stretch,
+        arguments: FormStretch,
         universe: Universe,
         sink: &mut Sink<'_>,
         (origin, head): (Origin, Origin),
@@ -20383,13 +20439,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn mint_reapplied(
         &self,
         function: Code,
-        (arguments, again): (Stretch, Stretch),
+        (arguments, again): (FormStretch, FormStretch),
         universe: Universe,
         sink: &mut Sink<'_>,
         (origin, head): (Origin, Origin),
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        for &argument in stretch(&self.operands, again) {
+        for &argument in self.operands.read(again) {
             if let Maybe::Absent(reason) = self.value_at(argument) {
                 return Maybe::Absent(reason);
             }
@@ -20404,7 +20460,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut applied = sink.arena.computation_force(result);
         sink.origins
             .record_computation(applied, origin.inserted(Insertion::Force));
-        for &argument in stretch(&self.operands, again) {
+        for &argument in self.operands.read(again) {
             if let Maybe::Present(value) = self.value_at(argument) {
                 applied = sink.arena.computation_application(applied, value);
                 sink.origins.record_computation(applied, origin);
@@ -20471,12 +20527,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn mint_called(
         &self,
         function: Code,
-        arguments: Stretch,
+        arguments: FormStretch,
         sink: &mut Sink<'_>,
         (origin, head_origin): (Origin, Origin),
     ) -> Maybe<ComputationId, lowered::Absent>
     {
-        let written = stretch(&self.operands, arguments);
+        let written = self.operands.read(arguments);
         for &argument in written {
             if let Maybe::Absent(reason) = self.value_at(argument) {
                 return Maybe::Absent(reason);
@@ -20529,7 +20585,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[spec(
         ensures: |ret| {
-            let written = stretch(&self.operands, members);
+            let written = self.operands.read(members);
             match written
                 .iter()
                 .find_map(|&member| match self.value_at(member) {
@@ -20547,12 +20603,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     fn mint_tuple(
         &self,
-        members: Stretch,
+        members: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, members);
+        let written = self.operands.read(members);
         let mut components = Vec::with_capacity(written.len());
         for &member in written {
             match self.value_at(member) {
@@ -20585,12 +20641,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     fn mint_return_all(
         &self,
-        members: Stretch,
+        members: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, members);
+        let written = self.operands.read(members);
         let mut values = Vec::with_capacity(written.len());
         for &member in written {
             match self.value_at(member) {
@@ -20626,7 +20682,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_list_literal_lowers_to_its_cons_cells_1544`
     #[spec(
         ensures: |ret| {
-            let written = stretch(&self.operands, elements);
+            let written = self.operands.read(elements);
             match written
                 .iter()
                 .find_map(|&element| match self.value_at(element) {
@@ -20648,12 +20704,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     fn mint_list(
         &self,
-        elements: Stretch,
+        elements: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, elements);
+        let written = self.operands.read(elements);
         let mut heads = Vec::with_capacity(written.len());
         for &element in written {
             match self.value_at(element) {
@@ -20691,7 +20747,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[spec(
         ensures: |ret| {
-            let written = stretch(&self.operands, components);
+            let written = self.operands.read(components);
             match written
                 .iter()
                 .find_map(|&component| match self.value_type_at(component) {
@@ -20709,12 +20765,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     fn mint_product(
         &self,
-        components: Stretch,
+        components: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, components);
+        let written = self.operands.read(components);
         let mut parts = Vec::with_capacity(written.len());
         for &component in written {
             match self.value_type_at(component) {
@@ -20768,12 +20824,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[spec(
         ensures: |ret| {
-            let missing = stretch(&self.operands, domains)
-                .iter()
-                .find_map(|&domain| match self.value_type_at(domain) {
-                    | Maybe::Present(_) => None,
-                    | Maybe::Absent(reason) => Some(reason),
-                })
+            let missing = self.first_absent(domains, |domain| self.value_type_at(domain))
                 .or_else(|| match self.lowered_at(codomain) {
                     | Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)) => None,
                     | Maybe::Present(_) => Some(lowered::Absent::OtherSort),
@@ -20789,18 +20840,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     )]
     fn mint_value_function(
         &self,
-        domains: Stretch,
+        domains: FormStretch,
         codomain: NodeIndex,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, domains);
-        for &domain in written {
-            if let Maybe::Absent(reason) = self.value_type_at(domain) {
-                return Maybe::Absent(reason);
-            }
+        if let Some(reason) = self.first_absent(domains, |domain| self.value_type_at(domain)) {
+            return Maybe::Absent(reason);
         }
+        let written = self.operands.read(domains);
         let mut arrow = match self.box_returns(codomain, sink, origin) {
             Maybe::Present(arrow) => arrow,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -22055,14 +22104,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     /// - witness: `lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
     #[spec(
-        captures: (written, opened, supplied) = (
-            (arguments.start .. arguments.end)
-                .filter(|position| !self.nominated.contains_key(position) && !self.abstracted.contains_key(position) && !self.instanced.contains_key(position) && !self.components.contains_key(position))
-                .filter_map(|position| self.operands.get(position).copied())
-                .collect::<Vec<_>>(),
-            (arguments.start .. arguments.end).any(|position| self.abstracted.contains_key(&position)),
-            (arguments.start .. arguments.end).any(|position| self.components.contains_key(&position)),
-        ),
+        captures: (written, opened, supplied) = {
+            let positions = self.spread(arguments);
+            let keys = || (positions.start .. positions.end).filter_map(|position| self.operands.locate(At::from(position)));
+            (
+                (positions.start .. positions.end)
+                    .filter(|&position| self.operands.locate(At::from(position)).is_none_or(|key| !self.nominated.contains_key(&key) && !self.abstracted.contains_key(&key) && !self.instanced.contains_key(&key) && !self.components.contains_key(&key)))
+                    .filter_map(|position| self.operands.entries().get(position).copied())
+                    .collect::<Vec<_>>(),
+                keys().any(|key| self.abstracted.contains_key(&key)),
+                keys().any(|key| self.components.contains_key(&key)),
+            )
+        },
         ensures: |ret| match self.computation_at(head) {
             | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
             | Maybe::Present(called) => {
@@ -22074,7 +22127,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }) {
                     | Some(reason) => ret == Maybe::Absent(reason),
                     | None if supplied && ret == Maybe::Absent(lowered::Absent::Unminted) => true,
-                    | None if arguments.start == arguments.end => {
+                    | None if arguments == FormStretch::default() => {
                         ret == Maybe::Present(Lowered::Computation(called))
                     },
                     | None if opened => {
@@ -22090,7 +22143,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn mint_application(
         &self,
         head: NodeIndex,
-        arguments: Stretch,
+        arguments: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -22099,19 +22152,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Present(called) => called,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        for position in arguments.start .. arguments.end {
-            if !self.nominated.contains_key(&position)
-                && !self.abstracted.contains_key(&position)
-                && !self.instanced.contains_key(&position)
-                && !self.components.contains_key(&position)
-                && let Some(&argument) = self.operands.get(position)
+        let positions = self.spread(arguments);
+        let key = |position: usize| self.operands.locate(At::from(position));
+        for position in positions.start .. positions.end {
+            if key(position).is_none_or(|key| {
+                !self.nominated.contains_key(&key)
+                    && !self.abstracted.contains_key(&key)
+                    && !self.instanced.contains_key(&key)
+                    && !self.components.contains_key(&key)
+            }) && let Some(&argument) = self.operands.entries().get(position)
                 && let Maybe::Absent(reason) = self.value_at(argument)
             {
                 return Maybe::Absent(reason);
             }
         }
-        let opened = (arguments.start .. arguments.end)
-            .filter(|position| self.abstracted.contains_key(position))
+        let opened = (positions.start .. positions.end)
+            .filter_map(key)
+            .filter(|key| self.abstracted.contains_key(key))
             .count();
         let under = Binders::from(u32::try_from(opened).unwrap_or(u32::MAX));
         if opened > 0 {
@@ -22119,8 +22176,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 gandr_core_term::shift_computation_under(sink.arena, applied, Binders::NONE, under)
                     .settle(sink.arena);
         }
-        for position in arguments.start .. arguments.end {
-            let mut passed = if let Some(&hole) = self.nominated.get(&position) {
+        for position in positions.start .. positions.end {
+            let held = key(position);
+            let mut passed = if let Some(&hole) = held.and_then(|key| self.nominated.get(&key)) {
                 let id = sink.arena.value_hole(hole);
                 sink.origins
                     .record_value(id, origin.inserted(Insertion::Implicit));
@@ -22147,19 +22205,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
                 id
             }
-            else if let Some(&(ref supplied, place)) = self.components.get(&position) {
+            else if let Some(&(ref supplied, place)) =
+                held.and_then(|key| self.components.get(&key))
+            {
                 match self.mint_supplied(supplied, place, under, sink, origin) {
                     Maybe::Present(id) => id,
                     Maybe::Absent(reason) => return Maybe::Absent(reason),
                 }
             }
-            else if let Some(&index) = self.abstracted.get(&position) {
+            else if let Some(&index) = held.and_then(|key| self.abstracted.get(&key)) {
                 let id = sink.arena.value_variable(Zone::Intuitionistic, index);
                 sink.origins
                     .record_value(id, origin.inserted(Insertion::Implicit));
                 id
             }
-            else if let Some(&index) = self.instanced.get(&position) {
+            else if let Some(&index) = held.and_then(|key| self.instanced.get(&key)) {
                 let id = sink.arena.value_variable(Zone::Intuitionistic, index);
                 sink.origins
                     .record_value(id, origin.inserted(Insertion::Implicit));
@@ -22173,6 +22233,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 match self
                     .operands
+                    .entries()
                     .get(position)
                     .map(|&argument| self.value_at(argument))
                 {
@@ -22186,7 +22247,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             // A call through a joint injects the argument its member stages,
             // the first; the later ones pass as written.
-            if position == arguments.start
+            if position == positions.start
                 && let Some(&summand) = self.injected.get(&head)
             {
                 let injected = sink.arena.value_injection(summand, passed);
@@ -25769,11 +25830,13 @@ fn unread_pattern(name: FormName) -> Unbuilt
 ///   through this one.
 /// - witness: `lower::tests::argument_lists_preserve_prefixes_and_locate_the_first_fault`
 /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
-fn arguments<'source>(
+fn arguments<'source, Written>(
     site: Site,
     cursor: &mut Cursor<'_>,
-    written: &mut Vec<NodeIndex>,
+    written: &mut Written,
 ) -> Result<(), LoweringRefusal<'source>>
+where
+    Written: Extend<NodeIndex> + AsRef<[NodeIndex]>,
 {
     delimited(
         site,
@@ -25812,7 +25875,7 @@ fn path_arguments<'source>(
     site: Site,
     pieces: &[Piece],
     span: ByteSpan,
-    written: &mut Vec<NodeIndex>,
+    written: &mut ByForm<NodeIndex>,
 ) -> Result<(Option<Stretch>, Option<Stretch>), LoweringRefusal<'source>>
 {
     let mut cursor = Cursor::new(pieces, span);
@@ -25822,11 +25885,11 @@ fn path_arguments<'source>(
             ..
         }) = cursor.peek()
         {
-            let start = written.len();
+            let start = written.entries().len();
             let again = argument_lists(site, &mut cursor, written)?;
             let first = Stretch {
                 start,
-                end: again.map_or(written.len(), |again| again.start),
+                end: again.map_or_else(|| written.entries().len(), |again| again.start),
             };
             return Ok((Some(first), again));
         }
@@ -25888,19 +25951,18 @@ fn unapplied<'source>(
 /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
 /// - witness: `lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
 /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
-#[spec(captures: before = written.len(), ensures: |_| written.len() == before)]
+#[spec(captures: before = written.entries().len(), ensures: |_| written.entries().len() == before)]
 fn exactly<'source, const N: usize>(
     site: Site,
     cursor: &mut Cursor<'_>,
-    written: &mut Vec<NodeIndex>,
+    written: &mut ByForm<NodeIndex>,
 ) -> Result<[NodeIndex; N], LoweringRefusal<'source>>
 {
-    let start = written.len();
+    let start = written.mark();
     let read = arguments(site, cursor, written);
-    let count = written.len().saturating_sub(start);
-    let exact = written
-        .get(start ..)
-        .and_then(|appended| <[NodeIndex; N]>::try_from(appended).ok());
+    let appended = written.entries().get(usize::from(start) ..).unwrap_or(&[]);
+    let count = appended.len();
+    let exact = <[NodeIndex; N]>::try_from(appended).ok();
     written.truncate(start);
     read?;
     exact.ok_or_else(|| site.out(FragmentBoundary::Arity(OperandCount::from(count))))
@@ -25933,10 +25995,10 @@ fn exactly<'source, const N: usize>(
 /// - witness: `lower::tests::argument_lists_preserve_prefixes_and_locate_the_first_fault`
 /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
 #[spec(
-    captures: before = (written.len(), cursor.clone()),
+    captures: before = (written.as_ref().len(), cursor.clone()),
     ensures: |ret| {
-        written.len() >= before.0
-            && ret.as_ref().map_or(true, |&()| written.get(before.0 ..).is_some_and(|appended| {
+        written.as_ref().len() >= before.0
+            && ret.as_ref().map_or(true, |&()| written.as_ref().get(before.0 ..).is_some_and(|appended| {
                 let mut input = before.1.clone();
                 let mut appended = appended.iter();
                 if matches!(input.tile(open), Maybe::Absent(_)) {
@@ -25969,13 +26031,15 @@ fn exactly<'source, const N: usize>(
             }))
     },
 )]
-fn delimited<'source>(
+fn delimited<'source, Written>(
     site: Site,
     cursor: &mut Cursor<'_>,
-    written: &mut Vec<NodeIndex>,
+    written: &mut Written,
     open: TileName,
     close: TileName,
 ) -> Result<(), LoweringRefusal<'source>>
+where
+    Written: Extend<NodeIndex> + AsRef<[NodeIndex]>,
 {
     delimited_list(site, cursor, written, open, close)?;
     exhausted(site, cursor)
@@ -26000,13 +26064,15 @@ fn delimited<'source>(
 /// - hypothesis: L3 — as [`delimited`]; a type's call of a call reads both of
 ///   its lists.
 /// - witness: `tests::modules::a_module_s_function_is_called_in_a_type_5213`
-fn delimited_list<'source>(
+fn delimited_list<'source, Written>(
     site: Site,
     cursor: &mut Cursor<'_>,
-    written: &mut Vec<NodeIndex>,
+    written: &mut Written,
     open: TileName,
     close: TileName,
 ) -> Result<(), LoweringRefusal<'source>>
+where
+    Written: Extend<NodeIndex>,
 {
     if let Maybe::Absent(_) = cursor.tile(open) {
         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -26018,7 +26084,7 @@ fn delimited_list<'source>(
             return Ok(());
         }
         let argument = site.one(run)?;
-        written.push(argument.node);
+        written.extend([argument.node]);
         if let Maybe::Present(_) = closing {
             return Ok(());
         }
@@ -26050,7 +26116,7 @@ fn delimited_list<'source>(
 fn argument_lists<'source>(
     site: Site,
     cursor: &mut Cursor<'_>,
-    written: &mut Vec<NodeIndex>,
+    written: &mut ByForm<NodeIndex>,
 ) -> Result<Option<Stretch>, LoweringRefusal<'source>>
 {
     delimited_list(
@@ -26071,11 +26137,11 @@ fn argument_lists<'source>(
         exhausted(site, cursor)?;
         return Ok(None);
     }
-    let start = written.len();
+    let start = written.entries().len();
     arguments(site, cursor, written)?;
     Ok(Some(Stretch {
         start,
-        end: written.len(),
+        end: written.entries().len(),
     }))
 }
 
@@ -26085,8 +26151,8 @@ fn argument_lists<'source>(
 /// - requires: the range is interpreted against the supplied store.
 /// - ensures: an ordered in-bounds range returns that borrowed slice; a
 ///   reversed or out-of-bounds range returns an empty slice.
-/// - provides: an allocation-free view of the recorded operand, parameter or
-///   statement range.
+/// - provides: an allocation-free view of the positions one classification
+///   reads in the operand store or the part store.
 /// - fails: invalid ranges are represented by the empty view.
 /// - panics: none.
 ///
@@ -29332,8 +29398,9 @@ mod tests
     {
         // Each key the plans and the answers of `source` hold into a flat
         // store keyed by form, from `def two` on: the offset of the node
-        // holding it from `def two`, the store, and the key. The count of
-        // parameters the whole module pushes follows.
+        // holding it from `def two`, the store, and the key. An omitted
+        // implicit's ordinal counts as a key into `nominated`. The counts of
+        // parameters and of operands the whole module pushes follow.
         let later_store_keys = |source: &str| {
             let pbg = grammar();
             let tree = parsed(&pbg, SourceText::from(source));
@@ -29394,6 +29461,23 @@ mod tests
                 if let super::Plan::Projected(projected) = *plan {
                     key("projected", &projected);
                 }
+                if let super::Plan::Application(_, held)
+                | super::Plan::Tuple(held)
+                | super::Plan::List(held)
+                | super::Plan::Called(_, held)
+                | super::Plan::StaticApplication(_, held)
+                | super::Plan::Data(_, held) = *plan
+                {
+                    key("operands", &held);
+                    let positions = lowerer.spread(held);
+                    for position in positions.start .. positions.end {
+                        if let Some(ordinal) = lowerer.operands.locate(super::At::from(position))
+                            && lowerer.nominated.contains_key(&ordinal)
+                        {
+                            key("nominated", &ordinal);
+                        }
+                    }
+                }
             }
             for (&node, answer) in &lowerer.answers {
                 if let (Some(offset), Maybe::Present(arm)) = (after(node), answer.arm) {
@@ -29402,7 +29486,11 @@ mod tests
             }
             keys.sort();
 
-            (keys, usize::from(lowerer.parameters.mark()))
+            let pushed = (
+                usize::from(lowerer.parameters.mark()),
+                usize::from(lowerer.operands.mark()),
+            );
+            (keys, pushed)
         };
         let (narrow, narrow_pushed) = later_store_keys(include_str!(
             "lower/unformatted/a-form-s-store-keys-stay-when-another-form-changes-5604-narrow.gandr"
@@ -29411,8 +29499,8 @@ mod tests
             "lower/unformatted/a-form-s-store-keys-stay-when-another-form-changes-5604-wide.gandr"
         ));
         assert!(
-            wide_pushed > narrow_pushed,
-            "the wide `one` pushes more parameters before `two`'s"
+            wide_pushed.0 > narrow_pushed.0 && wide_pushed.1 > narrow_pushed.1,
+            "the wide `one` pushes more parameters and more operands before `two`'s"
         );
         for store in [
             "parameters",
@@ -29421,6 +29509,8 @@ mod tests
             "cases",
             "arms",
             "projected",
+            "operands",
+            "nominated",
         ] {
             assert!(
                 narrow.iter().any(|&(_, held, _)| held == store),
