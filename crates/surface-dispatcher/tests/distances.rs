@@ -5,12 +5,12 @@
 //! fused cell's bound through the two steps of its derivation
 //! ([`Fusions::Composed`]). This suite reads the census's fusion rows over
 //! the corpus, and holds each verdict that the probe found: each fusion
-//! whose certificate replays has a composed bound equal to the census
-//! reading of its cell.
+//! replays, and has a composed bound equal to the census reading of its
+//! cell.
 //!
-//! A cell whose right side writes a wire that its left side does not bind,
-//! fused with itself, does not replay. The renaming of the second copy gives
-//! the wire a new name, so the two paths reach two terms.
+//! A cell whose right side writes a wire that its left side does not bind
+//! writes the wire under a fresh name at each firing. So such a cell, fused
+//! with itself, replays: both paths write the wire under the join's name.
 
 use alloc::vec::Vec;
 use std::path::Path;
@@ -96,13 +96,11 @@ fn each_fusion_cell_s_composed_bound_is_its_census_reading()
 {
     let rows = census();
     let quantale = Lawvere::default();
-    // Each fusion whose certificate replays has a composed bound equal to
-    // the census reading of its cell. Each other fusion fuses a cell with
-    // itself, and that cell writes a wire that its left side does not bind.
+    // Each fusion replays, and has a composed bound equal to the census
+    // reading of its cell.
     for &(ref path, ref row) in &rows {
         match row.verdict {
             FusionVerdict::Exact => {},
-            FusionVerdict::Unbound(cell, _) if row.left == cell && row.right == cell => {},
             ref other @ (FusionVerdict::Looser(_)
             | FusionVerdict::Unsound(_)
             | FusionVerdict::Unread(..)
@@ -115,19 +113,16 @@ fn each_fusion_cell_s_composed_bound_is_its_census_reading()
             },
         }
     }
-    // The circuit rule `cong1` wires `x′` between its two nodes, and its left
-    // side does not bind `x′`. Fused with itself, it does not replay.
-    let wire = HoleName::from("x′");
+    // The circuit rule `cong1`, cell 0, wires `x′` between its two nodes, and
+    // its left side does not bind `x′`. Fused with itself, it replays.
     assert!(
         rows.iter().any(|&(ref path, ref row)| {
             path.ends_with(Path::new("model/circuit/circuit-rule-block.gandr"))
-                && row.left == row.right
-                && matches!(
-                    row.verdict,
-                    FusionVerdict::Unbound(_, ref fresh) if *fresh.hole() == wire
-                )
+                && row.left == CellId::from(0_usize)
+                && row.right == row.left
+                && row.verdict == FusionVerdict::Exact
         }),
-        "`cong1` fused with itself does not replay"
+        "`cong1` fused with itself replays"
     );
     // `thrice` writes `t` three times. Fused with itself, it writes `t` nine
     // times in two ticks. Fused with `twice`, it writes `t` six times.

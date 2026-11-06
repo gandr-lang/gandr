@@ -24,6 +24,12 @@
 //! alphabet's order, outermost first, and cells in store order within a
 //! position, so normalization is deterministic for a fixed store.
 //!
+//! A wire is a metavariable that a cell's right-hand side holds and its
+//! left-hand side does not bind ([`Cell::wires`]). A wire is a scoped name, so
+//! a cell with a wire fires with its faces renamed apart from the term. Each
+//! firing thus writes each wire under a name that the term does not hold, and
+//! two firings of one cell write two wires.
+//!
 //! `normalize` stops at a normal form or after its budget, and
 //! `Normalization::exhausted` says which: a spent budget with a redex pending
 //! is reported, never mistaken for a normal form. The budget is the guard
@@ -354,7 +360,9 @@ where
 /// # Specification
 /// - ensures: `term` with the command at `pos` replaced by the cell's
 ///   right-hand side under the substitution that matches its left-hand side to
-///   that command.
+///   that command. A cell with wires ([`Cell::wires`]) fires with both faces
+///   renamed apart from `term` ([`CellAlphabet::rename_apart`]), so each wire
+///   that it writes takes a name that `term` does not hold.
 /// - provides: [`firing::Absent::NoCommand`] when `pos` addresses no command;
 ///   [`firing::Absent::Refused`] when the alphabet's firing discipline refuses
 ///   the cell there, which is decided before matching;
@@ -373,13 +381,16 @@ where
 /// - witness: `rewrite::tests::a_frame_defining_cell_fires_at_the_root`
 /// - witness: `tests::differential::eta_at_the_wrong_polarity_is_rejected`
 /// - witness: `rewrite::tests::refusal_boundaries_do_not_record_a_step`
+/// - witness: `rewrite::tests::each_firing_writes_its_wire_under_a_name_the_term_does_not_hold`
 #[inline]
 #[spec(ensures: |output| match A::subterm_cmd_at(term, pos) {
     Maybe::Absent(reason) => output == Maybe::Absent(firing::Absent::NoCommand(reason)),
     Maybe::Present(ref redex) => if bool::from(A::may_fire(&cell.provenance(), redex)) {
+        let renamed = renamed(cell, term);
+        let (lhs, rhs) = renamed.as_ref().map_or_else(|| (cell.lhs(), cell.rhs()), |&(ref lhs, ref rhs)| (lhs, rhs));
         let mut subst = A::Subst::default();
-        if bool::from(A::match_cmd(cell.lhs(), redex, &mut subst)) {
-            match A::splice_cmd_at(term, pos, A::apply_subst(&subst, cell.rhs())) {
+        if bool::from(A::match_cmd(lhs, redex, &mut subst)) {
+            match A::splice_cmd_at(term, pos, A::apply_subst(&subst, rhs)) {
                 Ok(expected) => output == Maybe::Present(expected),
                 Err(reason) => output == Maybe::Absent(firing::Absent::SpliceRefused(reason)),
             }
@@ -414,14 +425,16 @@ where
 /// - ensures: the answer [`rewrite_at`] gives for `cell`, `term` and `pos`: the
 ///   splice of the instantiated right-hand side when the discipline permits the
 ///   cell and its left-hand side matches `redex`, so a root check that refuses
-///   a cell which matches breaks it.
+///   a cell which matches breaks it. A cell with wires instantiates its faces
+///   renamed apart from `term`.
 /// - provides: [`firing::Absent::Refused`] when the alphabet's firing
 ///   discipline refuses the cell there; [`firing::Absent::NoMatch`] when the
 ///   roots clash or the left-hand side does not match;
 ///   [`firing::Absent::SpliceRefused`] when the alphabet refuses the splice.
 /// - panics: none.
 /// - intension: the roots are compared before the left-hand side is matched, so
-///   a cell whose root cannot meet the redex costs one comparison.
+///   a cell whose root cannot meet the redex costs one comparison. A cell with
+///   no wire fires with its own faces and builds no renamed copy.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — [`rewrite_at`]'s witnesses run through it, and the redex
@@ -432,10 +445,13 @@ where
 /// - witness: `rewrite::tests::a_frame_defining_cell_fires_at_the_root`
 /// - witness: `rewrite::tests::normalization_and_first_redex_respect_both_orders`
 /// - witness: `rewrite::tests::refusal_boundaries_do_not_record_a_step`
+/// - witness: `rewrite::tests::each_firing_writes_its_wire_under_a_name_the_term_does_not_hold`
 #[spec(ensures: |output| if bool::from(A::may_fire(&cell.provenance(), redex)) {
+    let renamed = renamed(cell, term);
+    let (lhs, rhs) = renamed.as_ref().map_or_else(|| (cell.lhs(), cell.rhs()), |&(ref lhs, ref rhs)| (lhs, rhs));
     let mut subst = A::Subst::default();
-    if bool::from(A::match_cmd(cell.lhs(), redex, &mut subst)) {
-        match A::splice_cmd_at(term, pos, A::apply_subst(&subst, cell.rhs())) {
+    if bool::from(A::match_cmd(lhs, redex, &mut subst)) {
+        match A::splice_cmd_at(term, pos, A::apply_subst(&subst, rhs)) {
             Ok(expected) => output == Maybe::Present(expected),
             Err(reason) => output == Maybe::Absent(firing::Absent::SpliceRefused(reason)),
         }
@@ -460,15 +476,55 @@ where
     if A::root_agreement(cell.lhs(), redex) == RootAgreement::Clash {
         return Maybe::Absent(firing::Absent::NoMatch);
     }
+    let renamed = renamed(cell, term);
+    let (lhs, rhs) = renamed.as_ref().map_or_else(
+        || (cell.lhs(), cell.rhs()),
+        |&(ref lhs, ref rhs)| (lhs, rhs),
+    );
     let mut subst = A::Subst::default();
-    if !bool::from(A::match_cmd(cell.lhs(), redex, &mut subst)) {
+    if !bool::from(A::match_cmd(lhs, redex, &mut subst)) {
         return Maybe::Absent(firing::Absent::NoMatch);
     }
-    let contractum = A::apply_subst(&subst, cell.rhs());
+    let contractum = A::apply_subst(&subst, rhs);
     match A::splice_cmd_at(term, pos, contractum) {
         Ok(result) => Maybe::Present(result),
         Err(refusal) => Maybe::Absent(firing::Absent::SpliceRefused(refusal)),
     }
+}
+
+/// The faces of `cell` renamed apart from `term`, when the cell has a wire: a
+/// wire is a scoped name, and each firing introduces a fresh one.
+///
+/// # Specification
+/// - ensures: nothing for a cell with no wire; otherwise its two faces renamed
+///   apart from the metavariables of `term` ([`CellAlphabet::rename_apart`]). A
+///   name absent from `term` stays, and a name that `term` holds takes primes
+///   until it is absent.
+/// - panics: none.
+/// - intension: a cell with no wire costs one length read, and a cell with a
+///   wire builds one renamed copy of its two faces.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `cong1` fired twice from a ground term writes `x′` and
+///   then `x′'`, and a cell with no wire fires with its own faces. A firing
+///   that keeps a held name, or renames a cell with no wire, changes the terms.
+/// - witness: `rewrite::tests::each_firing_writes_its_wire_under_a_name_the_term_does_not_hold`
+#[spec(ensures: |output| if cell.wires().is_empty() {
+    output.is_none()
+} else {
+    output == Some(A::rename_apart((term, term), (cell.lhs(), cell.rhs())))
+})]
+fn renamed<A>(
+    cell: &Cell<A>,
+    term: &A::Cmd,
+) -> Option<(A::Cmd, A::Cmd)>
+where
+    A: CellAlphabet,
+{
+    if cell.wires().is_empty() {
+        return None;
+    }
+    Some(A::rename_apart((term, term), (cell.lhs(), cell.rhs())))
 }
 
 #[cfg(test)]
@@ -683,6 +739,60 @@ mod tests
         assert!(
             bool::from(matches_at(&data_eta, &positive)),
             "at a positive cut it may fire, and its left-hand side matches"
+        );
+    }
+
+    #[test]
+    fn each_firing_writes_its_wire_under_a_name_the_term_does_not_hold()
+    {
+        let wired = |lhs, rhs| -> Cell {
+            Cell::new(
+                lhs,
+                rhs,
+                Orientation::PolarityDerived,
+                CellProvenance::SurfaceRule,
+            )
+        };
+        let fire = |cell: &Cell, term: &CmdPat| match rewrite_at(cell, term, &Pos::root()) {
+            Maybe::Present(result) => result,
+            Maybe::Absent(reason) => panic!("the cell fires at the root: {reason:?}"),
+        };
+        // `cong1` of `theory NatSum`, ⟨x | add(y; k)⟩ ~> ⟨x′ | add(y; k)⟩: the
+        // second firing consumes the first wire and writes another.
+        let add = || ConsPat::op("add", [ProdPat::meta("y")], ConsPat::meta("k"));
+        let cong = wired(
+            CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), add()),
+            CmdPat::cut(Polarity::Positive, ProdPat::meta("x′"), add()),
+        );
+        let ground = SequentAlphabet::skolemize(cong.lhs());
+        let once = fire(&cong, &ground);
+        let twice = fire(&cong, &once);
+        assert_eq!(
+            (&ProdPat::meta("x′"), &ProdPat::meta("x′'")),
+            (once.producer(), twice.producer()),
+            "the second firing writes a name that the term does not hold"
+        );
+        // ⟨x | k⟩ ~> ⟨Pair(x, w) | k⟩ keeps the first wire, so one term holds
+        // two wires with two names.
+        let pair = wired(
+            CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), ConsPat::meta("k")),
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Pair", [ProdPat::meta("x"), ProdPat::meta("w")]),
+                ConsPat::meta("k"),
+            ),
+        );
+        let ground = SequentAlphabet::skolemize(pair.lhs());
+        let twice = fire(&pair, &fire(&pair, &ground));
+        let held = ProdPat::ctor("Pair", [ProdPat::ctor("$k$x", []), ProdPat::meta("w")]);
+        assert_eq!(
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Pair", [held, ProdPat::meta("w'")]),
+                ground.consumer().clone(),
+            ),
+            twice,
+            "two firings write two wires"
         );
     }
 

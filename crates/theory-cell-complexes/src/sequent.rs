@@ -1958,6 +1958,82 @@ mod tests
     }
 
     #[test]
+    fn a_cell_s_wires_are_the_metavariables_only_its_right_side_holds()
+    {
+        let consumer = || ConsPat::op("add", [ProdPat::meta("y")], ConsPat::meta("k"));
+        let lhs = CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), consumer());
+        let rhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Wires", [
+                ProdPat::meta("w"),
+                ProdPat::meta("y"),
+                ProdPat::meta("w"),
+                ProdPat::meta("v"),
+            ]),
+            consumer(),
+        );
+        let wired: Cell = Cell::new(
+            lhs.clone(),
+            rhs,
+            Orientation::PolarityDerived,
+            CellProvenance::SurfaceRule,
+        );
+        assert_eq!(
+            [MetaVar::producer("w"), MetaVar::producer("v")].as_slice(),
+            wired.wires(),
+            "each wire once, in its order on the right side"
+        );
+        let swapped = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("y"),
+            ConsPat::op("add", [ProdPat::meta("x")], ConsPat::meta("k")),
+        );
+        let unwired: Cell = Cell::new(
+            lhs,
+            swapped,
+            Orientation::PolarityDerived,
+            CellProvenance::SurfaceRule,
+        );
+        assert!(
+            unwired.wires().is_empty(),
+            "a left side that holds each metavariable writes no wire"
+        );
+    }
+
+    #[test]
+    fn a_replay_s_join_keeps_each_wire_that_its_start_does_not_hold()
+    {
+        let start = CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), ConsPat::meta("k"));
+        let pair = |left, right| {
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Pair", [left, right]),
+                ConsPat::meta("k"),
+            )
+        };
+        let (ground, target) = SequentAlphabet::skolemize_boundary(
+            &start,
+            &pair(ProdPat::meta("x"), ProdPat::meta("w")),
+        );
+        assert_eq!(SequentAlphabet::skolemize(&start), ground);
+        assert_eq!(
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Pair", [ProdPat::ctor("$k$x", []), ProdPat::meta("w")]),
+                ConsPat::op("$k$k", [], ConsPat::top()),
+            ),
+            target,
+            "the start's metavariables take their constants and the wire stays"
+        );
+        let unwired = pair(ProdPat::meta("x"), ProdPat::meta("x"));
+        assert_eq!(
+            SequentAlphabet::skolemize(&unwired),
+            SequentAlphabet::skolemize_boundary(&start, &unwired).1,
+            "a join with no wire is its whole skolemization"
+        );
+    }
+
+    #[test]
     fn skolemization_is_name_stable()
     {
         let peak = CmdPat::cut(

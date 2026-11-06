@@ -27,9 +27,10 @@ The cell-shape substrate of gandr's rewriting stack: flat command patterns, matc
 - `Subst`, `match_cmd`, `unify_cmd`, `BindingRefusal`: an ordered substitution, one-sided matching and most-general unification with the occurs check, both transactional, and `Subst::restricted`, a substitution cut down to named metavariables.
 - `anti_unify_cmd`, `Generalization`, `GeneralizationPoint`, `GeneralizationArm`, `anti_unification::Absent`: the least general generalization of a family of command-pattern tuples, with one point per distinct disagreement and one arm per member at each, and its three refusals by name.
 - `reduction_cmp`, `path_order_cmp`: the guarded size comparison with the path order deciding ties, and the path order alone.
-- `CellAlphabet`, `SeamRole`, `PositionOrder`, `path_order`, `ConvexityDischarge`, `CommandSpliceRefusal`: the 24-method alphabet interface and the shared path order on child-index positions.
+- `CellAlphabet`, `SeamRole`, `PositionOrder`, `path_order`, `ConvexityDischarge`, `CommandSpliceRefusal`: the 25-method alphabet interface and the shared path order on child-index positions.
 - `SequentAlphabet`, `Orientation`, `CellProvenance`, `EtaKind`, `CellMeta`, `CellVarMeta`, `CellVariance`, `CellContractumUse`, `StepGrowth`, `frame_defining_cell`: the sequent inhabitant, its tags, its derived per-hole metadata — each hole's contractum count, its Lipschitz constant under the step, among it — and the η-polarity discipline.
-- `Cell`, `CellStore`, `CellId`: cells with derived metadata, deduplicated on structure, addressed in insertion order.
+- `Cell`, `CellStore`, `CellId`: cells with derived metadata and wires (`Cell::wires`, the metavariables only the right-hand side holds), deduplicated on structure, addressed in insertion order.
+- `CellAlphabet::skolemize_boundary`: the two ends of a replay, the start skolemized and the join skolemized at the start's metavariables, so the wires that a replay writes stay names.
 - `admit_linear_cell`, `copied_hole`, `NonLinearPattern`: the left-linearity admission and its alphabet-neutral copy search.
 - `Polarity` and the boundary wrappers (`PatternSize`, `PositionStep`, `SubstitutionDecision`, `CellInvertibility`, `Multiplicity`, …): the cut's orientation and every count and verdict a signature here crosses.
 
