@@ -401,18 +401,18 @@ impl Memory
         Ok(Redex::Missing)
     }
 
-    /// Push the arguments of `held`, the node at `node` in the pre-order of
-    /// its term, each with its own place in that pre-order.
+    /// Push the arguments of `held`, the node at `origin`, each with its own
+    /// place in the pre-order of its term.
     ///
     /// # Specification
     /// trivial.
     fn descend(
         &mut self,
         table: &TermTable,
-        (held, node): (&TermNode, usize),
+        (held, origin): (&TermNode, Origin),
     ) -> Result<(), LawvereError>
     {
-        let mut next = node.saturating_add(1);
+        let mut next = origin.node.saturating_add(1);
         self.children.clear();
         for &child in &held.children {
             self.children.push((child, next));
@@ -448,7 +448,7 @@ impl Memory
                             TermHead::Op(_)
                                 if self.kept.binary_search(&Origin { term: of, node }).is_ok() =>
                             {
-                                self.descend(table, (held, node))?;
+                                self.descend(table, (held, Origin { term: of, node }))?;
                             },
                             TermHead::Var(variable) if usize::from(variable) == fresh => {
                                 fresh = fresh.saturating_add(1);
@@ -496,7 +496,7 @@ impl Memory
                             {
                                 self.cutting
                                     .push(Cut::Leave(operation, held.children.len()));
-                                self.descend(table, (held, node))?;
+                                self.descend(table, (held, Origin { term: of, node }))?;
                             },
                             TermHead::Op(_) | TermHead::Var(_) => {
                                 let variable = Variable::from(fresh.len());
