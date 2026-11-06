@@ -1411,11 +1411,14 @@ done < "$scratch/actions"
 # change of that state sets the step output `brake` to `on` or `off` and the
 # output `list` to the list's issue, and the workflow pages every lane and
 # the coordinator. Last, the step dispatches ci.yml on `integration`
-# with the input `cycle` when the tip needs a verdict. The workflow runs one
-# step at a time, and the next step starts on a new runner, so the
-# dispatched run shows before that step reads the runs. Without CYCLE_FILE
-# set the step prints what it would do and writes nothing. GH_REPO names the
-# repository.
+# with the input `cycle` when the tip needs a verdict. It reads the
+# self-hosted runners first with RUNNERS_TOKEN, and
+# `.config/integration/runner.jq` gives the input `runner`: `integration`
+# while a runner with that label is online, else `hosted` (#5526). The
+# workflow runs one step at a time, and the next step starts on a new
+# runner, so the dispatched run shows before that step reads the runs.
+# Without CYCLE_FILE set the step prints what it would do and writes
+# nothing. GH_REPO names the repository.
 ["ci:cycle"]
 description = "Read the integration cycle's verdict, take landing into integration and start the suite there"
 tools.jq = "1.8.1"
@@ -1569,13 +1572,27 @@ keep_list() {
 }
 keep_list
 
+# The repository's self-hosted runners, or null when the step cannot read
+# them. RUNNERS_TOKEN is empty when the App holds no `Administration: read`.
+runners() {
+  if [[ -n ${RUNNERS_TOKEN:-} ]] \
+    && GH_TOKEN=$RUNNERS_TOKEN gh api "repos/$repo/actions/runners?per_page=100" --jq .runners 2> "$scratch/runners.err"; then
+    return
+  fi
+  if [[ -s $scratch/runners.err ]]; then printf '%s\n' "$(< "$scratch/runners.err")" >&2; fi
+  echo null
+}
+
 if [[ $(jq -r .dispatch <<< "$decision") == true && $conflict == null ]]; then
+  choice=$(runners | jq -c -s '{runners: .[0]}' | jq -c -f "$here/runner.jq")
+  say "$(jq -r .line <<< "$choice")"
+  runner=$(jq -r .runner <<< "$choice")
   if [[ -z $write ]]; then
-    say "would dispatch ci.yml on integration with the input cycle"
+    say "would dispatch ci.yml on integration with the input cycle on the $runner runner"
     exit 0
   fi
-  gh workflow run ci.yml --repo "$repo" --ref integration -f cycle=true
-  say "The cycle dispatches ci.yml on integration."
+  gh workflow run ci.yml --repo "$repo" --ref integration -f cycle=true -f runner="$runner"
+  say "The cycle dispatches ci.yml on integration on the $runner runner."
 fi
 {% endraw %}'''
 
