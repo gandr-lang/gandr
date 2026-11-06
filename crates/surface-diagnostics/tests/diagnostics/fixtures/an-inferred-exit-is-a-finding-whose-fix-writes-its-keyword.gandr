@@ -1,0 +1,3 @@
+@[ explicit_exits ]
+def kept(n : Integer) -> -F Integer { n }
+def called(n : Integer) -> -F Integer { kept n }

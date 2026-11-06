@@ -1949,7 +1949,9 @@ mod tests
     #[test]
     fn an_excerpt_is_the_lines_its_spans_touch()
     {
-        let text = SourceText::from("one\ntwo\nthree\nfour\n");
+        let text = SourceText::from(include_str!(
+            "report/unformatted/an-excerpt-is-the-lines-its-spans-touch.gandr"
+        ));
         let at = |start: usize, end: usize| {
             ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered")
         };
@@ -2023,7 +2025,9 @@ mod tests
         };
         let mut diagnostic = diagnose(
             Path::new("twice.gandr"),
-            SourceText::from("def a = 1 ;\ndef a = 2 ;\n"),
+            SourceText::from(include_str!(
+                "report/fixtures/a-located-diagnostic-without-its-primary-mark-has-no-primary.gandr"
+            )),
             Subject::Source(LoweringRefusal::DuplicateDefinition {
                 span: at(12, 17),
                 first: at(0, 5),
@@ -2049,7 +2053,9 @@ mod tests
     #[test]
     fn only_a_one_line_term_is_quoted_as_the_expression()
     {
-        let text = SourceText::from("def a = 1 ;\ndef a =\n  2 ;\n");
+        let text = SourceText::from(include_str!(
+            "report/unformatted/only-a-one-line-term-is-quoted-as-the-expression.gandr"
+        ));
         let at = |start: usize, end: usize| {
             ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered span")
         };
@@ -2115,7 +2121,9 @@ mod tests
         };
         let diagnostic = diagnose(
             Path::new("twice.gandr"),
-            SourceText::from("def a = 1 ;\ndef a = 2 ;\n"),
+            SourceText::from(include_str!(
+                "report/fixtures/a-located-diagnostic-without-its-primary-mark-has-no-primary.gandr"
+            )),
             Subject::Source(LoweringRefusal::DuplicateDefinition {
                 span: at(12, 17),
                 first: at(0, 5),

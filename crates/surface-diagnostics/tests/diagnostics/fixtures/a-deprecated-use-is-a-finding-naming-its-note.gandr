@@ -1,0 +1,11 @@
+@[ deprecated(*{since = "0.2", note = "use cube"}) ]
+def square = 1;
+@[ deprecated(*{note = "use one"}) ]
+def single = 1;
+@[ deprecated ]
+def old = 2;
+def cube = 3;
+def a = square;
+def b = single;
+def c = old;
+def d = cube;

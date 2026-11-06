@@ -1,0 +1,8 @@
+def a() -> Integer {
+  return 1 ~ 2
+}
+
+@[ owes(1) ]
+def b() -> Integer {
+  return a ()
+}

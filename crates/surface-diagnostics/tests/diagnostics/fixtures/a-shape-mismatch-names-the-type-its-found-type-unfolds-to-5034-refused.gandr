@@ -1,0 +1,3 @@
+def pairOf(a : Type, b : Type) -> Type { return type(*{x : a, y : b}) }
+
+def h1(u : Integer, s : Bool) -> pairOf(Integer, Bool) { *{u, s} }

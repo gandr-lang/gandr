@@ -1,0 +1,3 @@
+import "./base.gandr";
+def two : Integer;
+def two = missing;
