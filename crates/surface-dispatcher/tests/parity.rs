@@ -605,10 +605,7 @@ fn misses(
             let want = tokens(SourceFragment::from(pick(pair, expected).as_str()));
             match wrote.get(declaration) {
                 Some(got) if *got == want => {},
-                got => match inverse_hold(SourceFragment::from(pair.0.as_str())).or_else(|| {
-                    got.filter(|got| **got != want && **got == unthunked(&want))
-                        .map(|_| Held::Thunked)
-                }) {
+                got => match inverse_hold(SourceFragment::from(pair.0.as_str())) {
                     Some(why) => {
                         let _first = held.insert(format!("{name}: `{declaration}`: {why}"));
                     },
@@ -637,54 +634,6 @@ fn inverse_hold(sugared: SourceFragment<'_>) -> Option<Held>
         .windows(3)
         .any(|run| matches!(run, [path, dot, back] if path == "Path" && dot == "." && back == "back"))
         .then_some(Held::Inverse)
-}
-
-/// `tokens` with each `thunk { … }` around a `fun` written as the `fun`
-/// alone: the spelling the formatter writes for a lambda inside a type
-/// (#5408).
-///
-/// # Specification
-/// trivial.
-fn unthunked(tokens: &[String]) -> Vec<String>
-{
-    let mut out = Vec::with_capacity(tokens.len());
-    // The brace depth of each thunk dropped, innermost last.
-    let mut dropped: Vec<usize> = Vec::new();
-    let mut depth = 0_usize;
-    let mut at = 0_usize;
-    while let Some(token) = tokens.get(at) {
-        let opens_thunk = token == "thunk"
-            && tokens
-                .get(at.saturating_add(1))
-                .is_some_and(|next| next == "{")
-            && tokens
-                .get(at.saturating_add(2))
-                .is_some_and(|next| next == "fun");
-        if opens_thunk {
-            depth = depth.saturating_add(1);
-            dropped.push(depth);
-            at = at.saturating_add(2);
-            continue;
-        }
-        match token.as_str() {
-            "{" => {
-                depth = depth.saturating_add(1);
-                out.push(token.clone());
-            },
-            "}" => {
-                if dropped.last() == Some(&depth) {
-                    let _closed = dropped.pop();
-                }
-                else {
-                    out.push(token.clone());
-                }
-                depth = depth.saturating_sub(1);
-            },
-            _ => out.push(token.clone()),
-        }
-        at = at.saturating_add(1);
-    }
-    out
 }
 
 /// The page the printer spells a whole declaration on: wide, so a type is
@@ -717,9 +666,6 @@ enum Held
     /// A printing of a bind or a return of several values, which the printer
     /// reads as no former of one term (#5173).
     SeveralResults,
-    /// A lambda inside a type, which the formatter writes without the thunk
-    /// that the printer writes (#5408).
-    Thunked,
 }
 
 impl fmt::Display for Held
@@ -741,7 +687,6 @@ impl fmt::Display for Held
             Self::Juxtaposed => "#5200, a type application juxtaposed inside an expression",
             Self::Withdrawn => "#5207, a product of thunk types the formatter withdraws in a quote",
             Self::SeveralResults => "#5173, a bind of a call's outputs",
-            Self::Thunked => "#5408, a lambda inside a type the formatter writes unthunked",
         })
     }
 }
@@ -1815,29 +1760,6 @@ fn bodies(
                     });
             if withdrawn_product {
                 found.held.entry(Held::Withdrawn).or_default().push(format!(
-                    "{name} `{}` from {from:?} into {into}",
-                    declaration.name
-                ));
-                continue;
-            }
-            // The formatter writes a lambda inside a type without the thunk
-            // the printer writes (#5408): held when the spellings agree with
-            // each thunk around a `fun` dropped.
-            let unthunk = |tokens: Option<Vec<String>>| tokens.map(|tokens| unthunked(&tokens));
-            let thunked = match reread.shape {
-                Shape::Halves { ref ty, ref body } => {
-                    let (want_type, want_body) = (unthunk(want(ty)), unthunk(want(body)));
-                    (
-                        signatures.get(&declaration.name),
-                        definitions.get(&declaration.name),
-                    ) == (want_type.as_ref(), want_body.as_ref())
-                },
-                Shape::Whole(ref whole) => {
-                    recursions.get(&declaration.name) == unthunk(want(whole)).as_ref()
-                },
-            };
-            if thunked {
-                found.held.entry(Held::Thunked).or_default().push(format!(
                     "{name} `{}` from {from:?} into {into}",
                     declaration.name
                 ));

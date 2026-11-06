@@ -3400,17 +3400,17 @@ fn a_binder_the_print_leaves_out_moves_no_name_5402()
         (
             CoreNode::CompType(plain),
             CoreNode::CompType(unnamed),
-            "Unit -> -F Picked(Unit, thunk { fun (a) { pure Unit } })",
+            "Unit -> -F Picked(Unit, fun (a) { pure Unit })",
         ),
         (
             CoreNode::ValueType(plain_thunk),
             CoreNode::ValueType(unnamed_thunk),
-            "Unit -> Picked(Unit, thunk { fun (a) { pure Unit } })",
+            "Unit -> Picked(Unit, fun (a) { pure Unit })",
         ),
         (
             CoreNode::ValueType(product),
             CoreNode::ValueType(pair),
-            "Unit * Picked(Unit, thunk { fun (a) { pure Unit } })",
+            "Unit * Picked(Unit, fun (a) { pure Unit })",
         ),
     ] {
         for root in [written, left_out] {
@@ -3421,6 +3421,98 @@ fn a_binder_the_print_leaves_out_moves_no_name_5402()
                 "a binder nothing names takes no name from the lambda inside its scope"
             );
         }
+    }
+}
+
+/// #5408: a family's argument over a function leaves its thunk out, as the
+/// formatter writes it. The lowering mints the thunk again over a lambda a
+/// type reads. A family's argument over a call keeps its thunk, since no
+/// checker inserts one below a type.
+#[test]
+fn a_family_argument_leaves_its_function_s_thunk_out_5408()
+{
+    let names = [Name::from("Picked"), Name::from("twice")];
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let unit_code = core.value_quote(unit);
+    let returns_code = core.computation_return(unit_code);
+    let family = core.computation_lambda(returns_code);
+    let family = core.value_thunk(family);
+    let over_function = core.value_type_data(ConstantIndex::from(0_usize), vec![unit_code, family]);
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let twice = core.value_constant(ConstantIndex::from(1_usize));
+    let twice = core.computation_force(twice);
+    let doubled = core.computation_application(twice, one);
+    let doubled = core.value_thunk(doubled);
+    let over_call = core.value_type_data(ConstantIndex::from(0_usize), vec![unit_code, doubled]);
+    let source = CoreSource::new(&core, &names);
+    for (root, form) in [
+        (over_function, Form::Sugared),
+        (over_function, Form::Explicit),
+    ] {
+        let presented = presented_in(&source, Root::Type(CoreNode::ValueType(root)), wide(), form);
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            ("Picked(Unit, fun (a) { pure Unit })", Fidelity::Faithful),
+            "a family's argument over a function leaves its thunk out in the {form:?} form"
+        );
+    }
+    let presented = presented_in(
+        &source,
+        Root::Type(CoreNode::ValueType(over_call)),
+        wide(),
+        Form::Sugared,
+    );
+    assert_eq!(
+        (presented.as_ref(), presented.fidelity()),
+        ("Picked(Unit, thunk { twice 1 })", Fidelity::Faithful),
+        "a family's argument over a call keeps its thunk"
+    );
+}
+
+/// #5211: a call inside a lambda inside a type is juxtaposed, as in any
+/// expression. The lambda's body is an expression between braces, and there
+/// a parenthesised list reads as one tuple. The lambda stands as a family's
+/// argument and as a call's argument inside a type.
+#[test]
+fn a_call_inside_a_lambda_inside_a_type_is_juxtaposed_5211()
+{
+    let names = [
+        Name::from("Picked"),
+        Name::from("twice"),
+        Name::from("kept"),
+    ];
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let unit_code = core.value_quote(unit);
+    let twice = core.value_constant(ConstantIndex::from(1_usize));
+    let twice = core.computation_force(twice);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let doubled = core.computation_application(twice, bound);
+    let function = core.computation_lambda(doubled);
+    let function = core.value_thunk(function);
+    let picked = core.value_type_data(ConstantIndex::from(0_usize), vec![unit_code, function]);
+    let kept = core.value_constant(ConstantIndex::from(2_usize));
+    let kept = core.computation_force(kept);
+    let applied = core.computation_application(kept, function);
+    let applied = core.value_returned(applied);
+    let applied = core.value_type_element(applied, Level::zero());
+    let source = CoreSource::new(&core, &names);
+    for (root, spelling) in [
+        (applied, "kept(fun (a) { twice a })"),
+        (picked, "Picked(Unit, fun (a) { twice a })"),
+    ] {
+        let presented = presented_in(
+            &source,
+            Root::Type(CoreNode::ValueType(root)),
+            wide(),
+            Form::Sugared,
+        );
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            (spelling, Fidelity::Faithful),
+            "a call inside a lambda inside a type is juxtaposed"
+        );
     }
 }
 

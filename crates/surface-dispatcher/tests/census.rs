@@ -158,49 +158,6 @@ fn collapsed(text: SourceText<'_>) -> String
         .join(" ")
 }
 
-/// `text` with each call's tuple argument `f(*{a, b})` written as its list
-/// `f(a, b)`: the `*{` after each `(` and the `}` that closes it go.
-///
-/// # Specification
-/// trivial.
-fn unlisted(text: SourceText<'_>) -> String
-{
-    let mut out = String::with_capacity(text.as_ref().len());
-    // The depth of each brace a `(*{` opens, innermost last.
-    let mut listed: Vec<usize> = Vec::new();
-    let mut depth = 0_usize;
-    let mut rest = text.as_ref();
-    while let Some(next) = rest.chars().next() {
-        if let Some(after) = rest.strip_prefix("(*{") {
-            out.push('(');
-            depth = depth.saturating_add(1);
-            listed.push(depth);
-            rest = after;
-            continue;
-        }
-        match next {
-            '{' => {
-                depth = depth.saturating_add(1);
-                out.push(next);
-            },
-            '}' => {
-                let closes_list = listed.last() == Some(&depth)
-                    && rest.get(1 ..).is_some_and(|after| after.starts_with(')'));
-                if closes_list {
-                    let _closed = listed.pop();
-                }
-                else {
-                    out.push(next);
-                }
-                depth = depth.saturating_sub(1);
-            },
-            _ => out.push(next),
-        }
-        rest = rest.get(next.len_utf8() ..).unwrap_or_default();
-    }
-    out
-}
-
 /// The table of the walk's source at `path`, typed beside the prelude and
 /// the siblings it imports: the walk's `text` lays out the source's
 /// component, its own text from `base`, and read as one source the
@@ -626,10 +583,6 @@ mod sweeps
     /// `*{}` alone.
     const UNIT_READ: &str = "#5208, a `*{}` operand inside a type reads as `Unit`";
 
-    /// Why the census holds a spelling whose reprint writes each call's
-    /// argument list `f(a, b)` as one tuple, `f(*{a, b})`.
-    const LISTED_CALL: &str = "#5211, a call inside a lambda inside a type prints in the list form";
-
     /// Every printed type of every source `sweep` visits reads back to its
     /// certificate.
     ///
@@ -709,30 +662,15 @@ mod sweeps
                         }
                         spelled.push_str(word);
                     }
-                    // A call inside a lambda inside a type prints in the list
-                    // form, which the expression reads as one tuple (#5211):
-                    // held when the reprint writes `f(*{…})` for each `f(…)`
-                    // alone.
                     let why = match read.reprinted {
-                        Maybe::Present(ref again) => {
+                        Maybe::Present(ref again)
                             if spelled.contains("*{}")
                                 && spelled.replace("*{}", "Unit")
-                                    == collapsed(SourceText::from(again.as_str()))
-                            {
-                                Some(UNIT_READ)
-                            }
-                            else if again.contains("(*{")
-                                && unlisted(SourceText::from(
-                                    collapsed(SourceText::from(again.as_str())).as_str(),
-                                )) == spelled
-                            {
-                                Some(LISTED_CALL)
-                            }
-                            else {
-                                None
-                            }
+                                    == collapsed(SourceText::from(again.as_str())) =>
+                        {
+                            Some(UNIT_READ)
                         },
-                        Maybe::Absent(_) => None,
+                        Maybe::Present(_) | Maybe::Absent(_) => None,
                     };
                     let class = match read.trip {
                         RoundTrip::Equal => "Equal",

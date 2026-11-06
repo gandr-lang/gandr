@@ -24,7 +24,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │ ││                  ┬────────────────────────┬───────┬─────────┬───────────────┯──────│
    │ └│──────────────────│────────────────────────│───────│─────────│───────────────│──────│
    │  └──────────────────│────────────────────────│───────│─────────│───────────────│──────checked against `(d : Type, c : IR(d), Mu(d, c)) -> d`; while checking the body of this function; binds decodeMu : Mu(d, c) -> d
-   │                     │                        │       │         │               │      checked against `-F d`; while checking the body of this function; binds v : args(d, c, Mu(d, c), fun (a) { decodeMu(d, c, a) })
+   │                     │                        │       │         │               │      checked against `-F d`; while checking the body of this function; binds v : args(d, c, Mu(d, c), fun (a) { decodeMu d c a })
    │                     │                        │       │         │               not below the stage its recursion wants
    │                     │                        │       │         checked against `-F d`; while checking the argument of this application
    │                     │                        │       checked against `Mu(d, c) -> -F d`; while checking the body of this function; binds _ : Mu(d, c)
