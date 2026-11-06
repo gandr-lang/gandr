@@ -393,13 +393,13 @@ corpus/ledger/features/equivalence-record.gandr STE-6.3 cddc23563fe4b893
 corpus/ledger/features/equivalence-record.gandr STE-6.3 eaa5b5bf0bf1934e
 corpus/ledger/features/equivalence-record.gandr STE-6.3 f7cfcf79448cf4f4
 corpus/ledger/features/equivalence-record.gandr STE-8.1 95a70f9d4050a08d
-corpus/ledger/features/extension-types.gandr STE-3.2 2ce7ff1b66976b0d
-corpus/ledger/features/extension-types.gandr STE-3.2 bb07cbfa589cb517
-corpus/ledger/features/extension-types.gandr STE-1.2 2ce7ff1b66976b0d
+corpus/ledger/features/extension-types.gandr STE-3.2 c388c9bbe387dfcf
+corpus/ledger/features/extension-types.gandr STE-3.2 f7a43e1c27755632
+corpus/ledger/features/extension-types.gandr STE-1.2 c388c9bbe387dfcf
 corpus/ledger/features/extension-types.gandr STE-6.3 581ab6e1b1d2a477
 corpus/ledger/features/extension-types.gandr STE-6.3 89baa33f715bd679
 corpus/ledger/features/extension-types.gandr STE-6.3 b717721f7c37295b
-corpus/ledger/features/extension-types.gandr STE-6.3 bb07cbfa589cb517
+corpus/ledger/features/extension-types.gandr STE-6.3 c388c9bbe387dfcf
 corpus/ledger/features/extension-types.gandr STE-8.1 581ab6e1b1d2a477
 corpus/ledger/features/filler-generator.gandr STE-3.6 691b2e89706732ca
 corpus/ledger/features/filler-generator.gandr STE-6.3 103fdf45094d6a76

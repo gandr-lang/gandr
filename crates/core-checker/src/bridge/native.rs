@@ -214,8 +214,13 @@ impl Erasure<'_, '_>
                         .frames
                         .extend(fields.values().rev().copied().map(value_type)),
                     // A patched type crosses as the record of its free fields:
-                    // only those fields' types cross.
-                    ValueType::Patched { .. } => {
+                    // only those fields' types cross. Its formation crosses
+                    // first, as witnesses the kernel replays (`formed`).
+                    ValueType::Patched { ref fixed, .. } => {
+                        if !fixed.is_empty() && !self.positions.formed.contains(&at) {
+                            self.unseeded = Some(super::Seed::Formation(at));
+                            return Err(Refusal::MachineInvariant);
+                        }
                         let free = self
                             .arena
                             .element_fields(node)

@@ -736,6 +736,7 @@ pub use crate::error::CompTypeMismatch;
 pub use crate::error::CompTypeWitness;
 pub use crate::error::ExpectedComputationShape;
 pub use crate::error::ExpectedValueShape;
+pub use crate::error::FieldCause;
 pub use crate::error::KernelError;
 pub use crate::error::LevelOrderRefutation;
 pub use crate::error::NonInferableForm;

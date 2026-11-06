@@ -1739,6 +1739,7 @@ impl Crossed
                 open: Vec::new(),
                 withheld: BTreeSet::new(),
                 presentations: positions.presentations.clone(),
+                formed: positions.formed.clone(),
             },
             readmitted: readmitted.to_vec(),
             encoded: None,
@@ -3034,6 +3035,10 @@ enum Seed
     /// The free model of an effect signature at the level of the universe
     /// its programs' results inhabit.
     Model(gandr_core_term::effect::EffectSig, Level),
+    /// The formation of a patched type, by its core node: the witnesses the
+    /// kernel replays its fixed values and the meets of its faces by
+    /// ([`formed`]).
+    Formation(ValueTypeId),
 }
 
 /// Erase `offer`, the declaration at `constant`, into a staging session of
@@ -3067,6 +3072,7 @@ enum Seed
     Unstaged::Refused(ref outcome, _) => matches!(*outcome, Outcome::Refused(_)),
     Unstaged::Unseeded(Seed::Native(primitive)) => !positions.native.contains_key(&primitive),
     Unstaged::Unseeded(Seed::Model(..)) => !source.handled.is_empty(),
+    Unstaged::Unseeded(Seed::Formation(at)) => !positions.formed.contains(&at),
 }))]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn stage<Vouch>(
@@ -3697,7 +3703,7 @@ where
 /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
 /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
 /// - witness: `bridge::tests::a_deep_handler_of_several_operations_crosses_as_one_fold_2750`
-#[spec(captures: seeded = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()), ensures: |ret| ret.is_err() || positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()) == seeded.saturating_add(1))]
+#[spec(captures: seeded = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()), ensures: |ret| ret.is_err() || positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()) == seeded.saturating_add(1))]
 fn seeded<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -3721,6 +3727,7 @@ where
             (signature, level),
             vouch,
         ),
+        Seed::Formation(at) => formed(environment, arena, source, positions, at, vouch),
     }
 }
 
@@ -3845,6 +3852,218 @@ where
     Ok(())
 }
 
+/// Admit the witnesses of the formation of the patched type `at`, the first
+/// time a declaration about to cross holds it, so the kernel replays the check
+/// of each fixed value at its field's type and the agreement of each meet.
+///
+/// The meets cross in rounds: round `k` holds the `k`-th meet at each label.
+/// Each round is a record definition at the base record's field types. Round
+/// zero holds every fixed field, the later face's value at each meet and the
+/// fixed value at each other field. A later round holds only its meets. The
+/// kernel checks each value at its field's type. A round with meets also
+/// crosses the restriction of its record at the glued fixed values, declared
+/// at the record of the fields it keeps. The kernel's restriction rule checks
+/// each glued value at its field's type, then converts once per meet field.
+///
+/// # Specification
+/// - requires: `at` names a patched type of `arena`, whose base is a record
+///   type that holds each fixed label.
+/// - ensures: on success `positions.formed` holds `at`, and the kernel admitted
+///   every witness; otherwise the outcome of the first witness that did not
+///   cross.
+/// - fails: as above.
+/// - panics: none.
+///
+/// # Errors
+/// [`Outcome::Rejected`] with the kernel's refusal of a witness, or
+/// [`Outcome::Refused`] with its erasure's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a system whose faces agree, one whose meet value differs,
+///   and one whose glued value has another type than its field's separate the
+///   arms.
+/// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
+#[spec(captures: formed = positions.formed.len(), ensures: |ret| ret.is_err() || positions.formed.len() == formed.saturating_add(1))]
+fn formed<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    at: ValueTypeId,
+    vouch: &Vouch,
+) -> Result<(), Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let invariant = || Outcome::Refused(Refusal::MachineInvariant);
+    let Some(&gandr_core_term::ValueType::Patched {
+        base,
+        ref fixed,
+        ref meets,
+    }) = arena.value_type(at)
+    else {
+        return Err(invariant());
+    };
+    let (fixed, meets) = (fixed.clone(), meets.clone());
+    let Some(&gandr_core_term::ValueType::Record(ref fields)) = arena.value_type(base)
+    else {
+        return Err(invariant());
+    };
+    let fields = fields.clone();
+    let mut rounds: Vec<BTreeMap<gandr_core_term::FieldLabel, ValueId>> =
+        Vec::from([BTreeMap::new()]);
+    let mut depth: BTreeMap<&gandr_core_term::FieldLabel, usize> = BTreeMap::new();
+    for &(ref label, value) in &meets {
+        let round = depth.entry(label).or_insert(0);
+        if rounds.len() <= *round {
+            rounds.push(BTreeMap::new());
+        }
+        rounds
+            .get_mut(*round)
+            .ok_or_else(invariant)?
+            .insert(label.clone(), value);
+        *round = round.saturating_add(1);
+    }
+    let ordinal = crate::alloc::format!("{}", positions.formed.len());
+    let name = |part: &str, round: usize| {
+        let round = crate::alloc::format!("{round}");
+        StructuredName::from(
+            ["formation", ordinal.as_str(), part, round.as_str()]
+                .into_iter()
+                .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
+                .collect::<Vec<_>>(),
+        )
+    };
+    for (index, round) in rounds.iter().enumerate() {
+        let held = |label: &gandr_core_term::FieldLabel| {
+            round
+                .get(label)
+                .copied()
+                .or_else(|| fixed.get(label).copied())
+        };
+        let labels: Vec<&gandr_core_term::FieldLabel> = if index == 0 {
+            fixed.keys().collect()
+        }
+        else {
+            round.keys().collect()
+        };
+        let mut types = BTreeMap::new();
+        let mut values = BTreeMap::new();
+        for label in labels {
+            types.insert(label.clone(), *fields.get(label).ok_or_else(invariant)?);
+            values.insert(label.clone(), held(label).ok_or_else(invariant)?);
+        }
+        let declared = arena.value_type_record(types.clone());
+        let body = arena.value_record(values);
+        let record = witness(
+            environment,
+            arena,
+            (source, &mut *positions),
+            (declared, body),
+            &[],
+            (vouch, name("record", index)),
+        )?;
+        if round.is_empty() {
+            continue;
+        }
+        // The record's restriction at the glued values crosses through the
+        // coercion-in path: the record's constant, coerced in at them.
+        let reserved = positions.reserved();
+        let named = arena.value_constant(reserved);
+        let glued = round
+            .keys()
+            .map(|label| {
+                fixed
+                    .get(label)
+                    .map(|&value| (label.clone(), value))
+                    .ok_or_else(invariant)
+            })
+            .collect::<Result<crate::conversion::Coercion, _>>()?;
+        let coerced = BTreeMap::from([(named, glued)]);
+        // The restriction keeps the record's other fields, at their types.
+        let kept = types
+            .into_iter()
+            .filter(|&(ref label, _)| !round.contains_key(label))
+            .collect();
+        let declared = arena.value_type_record(kept);
+        witness(
+            environment,
+            arena,
+            (
+                Source {
+                    coercions: &coerced,
+                    ..source
+                },
+                &mut *positions,
+            ),
+            (declared, named),
+            &[(reserved, record)],
+            (vouch, name("meets", index)),
+        )?;
+    }
+    positions.formed.insert(at);
+    Ok(())
+}
+
+/// Stage and admit the definition `body : declared`, with `crossing` naming
+/// the definitions it reads that no module position holds, and export it
+/// under `name`.
+///
+/// # Specification
+/// - requires: as [`stage`].
+/// - ensures: on success the kernel position the definition took, its export
+///   recorded; otherwise the erasure's or the kernel's refusal.
+/// - fails: as above.
+/// - panics: none.
+///
+/// # Errors
+/// [`Outcome::Refused`] with the erasure's refusal, or [`Outcome::Rejected`]
+/// with the kernel's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`formed`].
+/// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
+#[spec(captures: exports = positions.exports.len(), ensures: |ret| ret.is_err() || positions.exports.len() != exports)]
+fn witness<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    (source, positions): (Source<'_>, &mut Positions),
+    (declared, body): (ValueTypeId, ValueId),
+    crossing: &[(ConstantIndex, ConstantIndex)],
+    (vouch, name): (&Vouch, StructuredName),
+) -> Result<ConstantIndex, Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let next = ConstantIndex::from(environment.entries().len());
+    let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+    let staged = match stage(
+        environment,
+        arena,
+        (source, &*positions),
+        Offer::Definition {
+            declared,
+            body,
+            relations: &[],
+            restated: &[],
+            laws: &[],
+            operation_rules: &[],
+            covers: &[],
+            stages: &UNQUANTIFIED,
+        },
+        vouch,
+        (crossing, base),
+    ) {
+        Ok(staged) => staged,
+        Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
+        Err(Unstaged::Unseeded(_)) => return Err(Outcome::Refused(Refusal::MachineInvariant)),
+    };
+    let exported = staged.declaration.declaration().clone().named(name);
+    let admitted = admit(environment, staged.declaration).map_err(Outcome::Rejected)?;
+    positions.exports.push(exported);
+    Ok(admitted.position())
+}
+
 /// The free model of one effect signature at one level the kernel admitted.
 ///
 /// # Specification
@@ -3911,6 +4130,9 @@ struct Positions
     /// The presented types the kernel admitted, whose terms its replay reads
     /// by their normal forms.
     presentations: Presentations,
+    /// The patched types whose formation the kernel replayed, by core node:
+    /// each crosses its witnesses once ([`formed`]).
+    formed: BTreeSet<ValueTypeId>,
 }
 
 impl Positions

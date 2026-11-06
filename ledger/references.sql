@@ -547,6 +547,7 @@ INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theor
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','ascent::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','stratum::image','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1897b-d199-7d10-a325-587b76db2508','theory-sites','wreath','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','kernel-core','check','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-diagnostics','obstruction','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-dispatcher','evaluate::reals','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-lowering','module::sealing','anchor',NULL,NULL,NULL);
