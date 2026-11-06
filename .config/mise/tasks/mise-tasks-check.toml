@@ -2148,8 +2148,9 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") cases re
 # in `.config/claims/swept.json` a night's recovery causes, the open recovery
 # collectors, and the rows `ci:recovery-file` marks and the collectors it
 # closes (`swept.jq`, #3326, #3732); each in `.config/claims/landed.json` a
-# merged body, the issues it advances, and the rows the merge ticks and the
-# collectors it closes (`landed.jq`, #3732); each in
+# merged body, the issues it advances with the merged landings on each one's
+# timeline, and the rows the merge ticks and the collectors it closes
+# (`landed.jq`, #3732, #5583); each in
 # `.config/claims/slow.json` one run's test times, the open slow-test
 # collectors, and the collectors `ci:slow-file` opens, marks and closes
 # (`slow.jq`, #3752); each in

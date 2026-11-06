@@ -37,7 +37,10 @@ permissions:
 # one pending run and a newer one cancels it, so with one group for every
 # merge a merge queue landing three at once lost the middle one's unclaim
 # (#2470). A merge and a sweep may now remove the same label at once;
-# `claims.sh` reads a removal whose label is already gone as done.
+# `claims.sh` reads a removal whose label is already gone as done. Two merges
+# that advance one collector may now write its body at once. Each ticks the
+# rows of every merged landing on the collector's timeline, so the later
+# write keeps the earlier's ticks (#5583).
 concurrency:
   group: claims-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'sweep' }}
   cancel-in-progress: false
