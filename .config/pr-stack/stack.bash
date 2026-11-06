@@ -954,12 +954,14 @@ required_contexts() {
     --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique'
 }
 
-# The most members one landing queues of a stack (#2046): the smaller of the
-# trunk's merge-queue `max_entries_to_merge` and `max_entries_to_build`, a
-# zero read as no bound; 0 when neither bounds it.
+# The most members one landing queues of a stack (#2046): the trunk's
+# merge-queue `max_entries_to_merge`, a zero read as no bound. A stack up to
+# that size fits one merge group, which the queue builds and merges whole, so
+# `max_entries_to_build` bounds nothing here. `landing` builds one group of up
+# to 10 (#5438), and the smaller of the two would queue one member at a time.
 queue_unit_cap() {
   gh api "repos/$repo/rules/branches/$trunk" \
-    --jq '[.[] | select(.type == "merge_queue") | .parameters | .max_entries_to_merge, .max_entries_to_build | select(. > 0)] | min // 0'
+    --jq '[.[] | select(.type == "merge_queue") | .parameters.max_entries_to_merge | select(. > 0)] | min // 0'
 }
 
 # Wait, every 30 seconds, until each of the trunk's required contexts on pull

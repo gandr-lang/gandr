@@ -95,18 +95,26 @@ tell() {
     || echo "::warning::#$1: the $3 comment failed"
 }
 
-# The CI depth gate (#5074), run first in a pull request's CI run: above
-# depth 3 the run is cancelled before any lane starts, so the runners go to
-# the three members that land next and to the merge groups. The pull request
-# is told once a head; the watcher's promotion runs the run again once a
-# landing moves it to depth 3. A reading that fails runs the whole CI.
+# The CI depth gate (#5074), run first in a pull request's CI run: above the
+# depth of one queue unit (`queue_unit_cap`, 3 when it reads nothing) the run
+# is cancelled before any lane starts, so the runners go to the members that
+# land next and to the merge groups. The pull request is told once a head;
+# the watcher's promotion runs the run again once a landing moves it to that
+# depth. A reading that fails runs the whole CI.
+depth_limit() {
+  local cap
+  cap=$(queue_unit_cap 2> /dev/null) || cap=0
+  (( cap > 0 )) || cap=3
+  printf '%s\n' "$cap"
+}
 depth_gate() {
-  local number=$1 head=$2 depth
+  local number=$1 head=$2 depth limit
   depth=$(stack_depth "$number") || return 0
-  (( depth > 3 )) || return 0
+  limit=$(depth_limit)
+  (( depth > limit )) || return 0
   if ! depth_marked "$number" "$head"; then
     tell "$number" "pr-depth #$number waits at stack depth $depth" pr-depth "$head" \
-      "Full CI runs for the bottom three pull requests of a stack only. This one is at depth $depth: its run stopped before any lane, and the landing watcher runs it again once a landing moves it to depth 3."
+      "Full CI runs for the bottom $limit pull requests of a stack only. This one is at depth $depth: its run stopped before any lane, and the landing watcher runs it again once a landing moves it to depth $limit."
   fi
   gh api --method POST "repos/$repo/actions/runs/$GITHUB_RUN_ID/cancel" > /dev/null || return 0
   # The cancellation ends this job; nothing after it runs meanwhile.
@@ -187,18 +195,20 @@ while IFS= read -r action; do
 done < <(jq -c '.[]' <<< "$actions")
 
 # The depth gate's promotion (#5074): a pull request the gate stopped that a
-# landing has moved to depth 3 or less runs its cancelled CI run again, and
-# the gate passes it this time. One run listing and one rerun request each.
+# landing has moved to the gate's depth or less runs its cancelled CI run
+# again, and the gate passes it this time. One run listing and one rerun
+# request each.
 # The rerun goes through `RERUN_TOKEN`, the workflow's own token: the job
 # grants it `actions: write`, and the fine-grained `LANDING_TOKEN` holds no
 # Actions permission, so GitHub refuses it the rerun (HTTP 403).
+limit=$(depth_limit)
 while read -r number oid; do
   run=$(gh api "repos/$repo/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$oid&per_page=1" \
     --jq '.workflow_runs[0] | select(.conclusion == "cancelled") | .id') || continue
   [[ -n $run ]] || continue
   if GH_TOKEN=${RERUN_TOKEN:-$GH_TOKEN} gh api --method POST "repos/$repo/actions/runs/$run/rerun" > /dev/null 2> "$err"; then
-    echo "#$number: at depth 3 or less; CI run $run runs again"
+    echo "#$number: at depth $limit or less; CI run $run runs again"
   else
     echo "::warning::#$number: the rerun of CI run $run failed: $(< "$err")"
   fi
-done < <(jq -r '.[] | select(.waiting and .depth <= 3) | "\(.number) \(.oid)"' <<< "$prs")
+done < <(jq -r --argjson limit "$limit" '.[] | select(.waiting and .depth <= $limit) | "\(.number) \(.oid)"' <<< "$prs")
