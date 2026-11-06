@@ -18,21 +18,23 @@
 # Each checker payload type the store reads in item coordinates: the type the
 # store keeps, and the projection method that reads it. A type no row names is
 # kept as the checker states it. A row with `site` reads a field `sites` names
-# by that method, as a `Site`.
+# by that method, as a `Site`. A row with `contents = true` keeps a type that
+# holds type contents: the codec bounds their levels and reads them in the
+# order it writes them, through the type's `Contents`.
 [roles]
 ValueId = { stored = "Site", by = "value_site" }
 ComputationId = { stored = "Site", by = "computation_site" }
-ValueTypeId = { stored = "TypeContent", by = "value_type", site = "value_type_site" }
-CompTypeId = { stored = "TypeContent", by = "comp_type" }
+ValueTypeId = { stored = "TypeContent", by = "value_type", site = "value_type_site", contents = true }
+CompTypeId = { stored = "TypeContent", by = "comp_type", contents = true }
 ConstantIndex = { stored = "Reference", by = "reference" }
 CoreNode = { stored = "Site", by = "core_site" }
 TermNode = { stored = "Site", by = "term_site" }
-TypeNode = { stored = "TypeContent", by = "type_node" }
+TypeNode = { stored = "TypeContent", by = "type_node", contents = true }
 CheckingForm = { stored = "Form", by = "form" }
-Mismatch = { stored = "Mismatched", by = "mismatch" }
+Mismatch = { stored = "Mismatched", by = "mismatch", contents = true }
 Endpoint = { stored = "EndpointSite", by = "endpoint" }
-LinearityDefect = { stored = "Linearity", by = "linearity" }
-LocatedDefect = { stored = "Located", by = "located" }
+LinearityDefect = { stored = "Linearity", by = "linearity", contents = true }
+LocatedDefect = { stored = "Located", by = "located", contents = true }
 
 [refusals]
 NotADataType = { tag = 19 }
