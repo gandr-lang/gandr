@@ -1,28 +1,34 @@
-// The reflexivities `cat-shape.gandr`'s laws are built from, each probed on
-// its own (the HoTT book's § 1.12, `refl`): at a variable of a type
-// parameter, at a function, at an application, and through a family indexed
-// by an integer, the shape of a hom-set indexed by its objects.
+// This source probes reflexivity forms for category laws.
+//
+// The probes cover variables, functions, applications and integer-indexed
+// families. They model a hom-set indexed by its objects.
+//
+// `cat-shape.gandr` uses each probe in isolation.
+//
+// - cites: [HoTT-Book]
+//
+// [HoTT-Book]: https://homotopytypetheory.org/book/ "The Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
-/// Reflexivity at a variable of a type parameter.
+/// `path_var` forms reflexivity at a type parameter variable.
 def path_var(a : Type, x : a) -> Path(x, x) =
   Path.here x
 
-/// Reflexivity at a function.
+/// `path_fun` forms reflexivity at a function.
 def path_fun(f : Integer -> Integer) -> Path(f, f) =
   Path.here f
 
-/// Reflexivity at an application.
+/// `path_app` forms reflexivity at an application.
 def path_app(n : Integer) -> Path(n + 1, n + 1) =
   Path.here (n + 1)
 
-/// A family indexed by an integer, one element at each index.
+/// `Ix` has one element at each integer index.
 data Ix(n : Integer) : Type where
   | MkIx : Ix(n)
 
-/// The identity at every index of the family.
+/// `ix_id` returns its element at every index.
 def ix_id(n : Integer, w : Ix(n)) -> Ix(n) =
   w
 
-/// The identity at one closed index.
+/// `ix_ctor` returns its element at index one.
 def ix_ctor(w : Ix(1)) -> Ix(1) =
   w

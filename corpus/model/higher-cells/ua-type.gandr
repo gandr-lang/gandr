@@ -1,11 +1,14 @@
-// Univalence over the user universe at a stratum code: `ua[1, 4]` makes the
-// magma's degree telescope a path in `Type` (`ua-by-hand.gandr`), and the
-// statement `univalence` makes over any two types holds at it, as does the
-// packaging `idtoequiv` of that path. Transport along `ua` of a packaged path
-// is the path's transport at every path
-// (`../identity/univalence-transports.gandr`); the path between the two paths
-// is owed (`pathological/identity/univalence-owed.gandr`).
+// This source applies univalence at a user-universe stratum code.
 //
+// `ua[1, 4]` makes the magma degree telescope a path in `Type`. `univalence`
+// relates that path to an equivalence. `idtoequiv` packages the path.
+//
+// Transport of the package along `ua` agrees pointwise with transport along
+// the path. A path between these paths remains owed.
+//
+// - see: `ua-by-hand.gandr` — the magma degree telescope path
+// - see: `../identity/univalence-transports.gandr` — transport of a packaged path
+// - see: `pathological/identity/univalence-owed.gandr` — the owed path
 // - owes: #520 — the path between the two paths
 
 // The magma, the swap and the unit's identity.
@@ -13,26 +16,25 @@ import "./magma-base.gandr";
 // Univalence over the user universe: `idtoequiv`, `univalence`.
 import "../identity/univalence.gandr";
 
-/// The magma's degree telescope at degree one, and the swap's path on it.
+/// `AtStratum` records the magma degree telescope and its swap path.
 pub module AtStratum where
   type Tel = Unit * (+{Unit} * Bool);
 
-  /// The magma to itself by the swap, at degree one: a path in `Type`.
+  /// `opposite` is the magma swap path at degree one.
   def opposite : Path[.A = Type](Tel, Tel) = ua[
     1,
     4
   ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
-  /// The statement over the user universe, at the stratum code.
+  /// `atTel` gives univalence at the stratum code.
   def atTel() -> Path[.A = Type](Tel, Tel) ≃ (Tel ≃ Tel) =
     univalence Tel Tel
 
-  /// The stratum path packaged as an equivalence.
+  /// `swapped` packages the stratum path as an equivalence.
   def swapped() -> Tel ≃ Tel =
     idtoequiv Tel Tel opposite
 
-  /// Transport along `ua` of the packaged stratum path is transport along the
-  /// path itself.
+  /// `repackaged` equates transport of the package with transport of its path.
   def repackaged : Path[.A = Tel -> Tel](
     fun (x) { fwdAlong Tel Tel (ua (idtoequiv Tel Tel opposite)) x },
     fun (x) { fwdAlong Tel Tel opposite x }
