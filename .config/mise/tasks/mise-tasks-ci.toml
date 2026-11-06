@@ -1951,9 +1951,15 @@ list "$repo: wip/ branches no open issue names" "$(jq -r '.wip[]' <<< "$reading"
 # written outside both trees (#3222): its source in the clone's git
 # directory, on the primary's filesystem, and its copy beside the worktree,
 # on the worktree's, so `git add -A` in either never meets it while the copy
-# runs.
+# runs. A copied unit that names a source of the primary would read the
+# primary's files, and cargo would still judge it fresh (#5137).
+# `.config/pr-stack/warm.jq` names each such unit from the dep-info lines
+# that name the primary, and the step removes it. Cargo then builds it again
+# in this worktree. The removal is safe to re-run, and a run that stops
+# half-way leaves a unit cargo builds again.
 ["wt:warm"]
-description = "Clone the primary worktree's gitignored artifacts into this one, or skip where the filesystem cannot clone"
+description = "Clone the primary worktree's gitignored artifacts into this one, or skip where the filesystem cannot clone, and remove each copied unit that reads the primary's sources"
+tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1973,6 +1979,20 @@ if ! "${clone[@]}" "$probe" "$copy" 2> /dev/null; then
 fi
 rm -f "$probe" "$copy"
 wt step copy-ignored
+[[ -d $here/target ]] || exit 0
+root=$(realpath "$primary")
+pattern="^# (env-dep:[^=]*=|checksum:[^ ]* file_len:[0-9]+ )$(sed 's/[][\.*^$+?(){}|]/\\&/g' <<< "$root")(/|\$)"
+named=$(grep -rE --include='*.d' "$pattern" "$here/target") || [[ $? == 1 ]]
+listed=$(jq -R -s --arg root "$root" '{root: $root, named: [split("\n")[] | select(. != "")]}' <<< "$named" \
+  | jq -f "$here/.config/pr-stack/warm.jq" | jq -r '.[]')
+removed=0
+if [[ -n $listed ]]; then
+  while IFS= read -r unit; do
+    rm -rf "$unit"
+    removed=$((removed + 1))
+  done <<< "$listed"
+fi
+echo "wt:warm: removed $removed copied units that read $primary's sources"
 '''
 
 # A unit issue is the brief, and work starts only on one that carries its
