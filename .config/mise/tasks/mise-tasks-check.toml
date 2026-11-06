@@ -1677,7 +1677,9 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # check's run was superseded on its head (#2829), `prefix.jq` what a landing
 # queues (#1988), `bottom.jq` whether a stack's bottom stands off the trunk
 # and `carried.jq` which carried pull requests a landing waits on (#4168),
-# `sweep.jq` which worktrees `wt:sweep` removes, `moved.jq`
+# `sweep.jq` which worktrees `wt:sweep` removes, `warm.jq` which copied
+# build units `wt:warm` removes because they read the primary's sources
+# (#5137), `moved.jq`
 # whether `pr:open` restacks onto a top that moved while it measured (#3849),
 # `awaited.jq` the event `pr:await` wakes a seat on (#4164), and
 # `triggers.jq` whether the landing watcher reads on the events that change
