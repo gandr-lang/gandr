@@ -1,0 +1,2 @@
+{PLACES}def passed(xs : List(Integer), i : Integer) -> -F Integer {{ let y = xs.#[i]; pure y }}
+def declared() -> -F Integer {{ let y = pair.#[0]; pure y }}

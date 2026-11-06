@@ -14,7 +14,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 ## Synopsis
 
-**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration`, whose `DeclarationOutcome` ([`module`](src/module.rs)) names what became of it. The module's attributes are resolved against a closed `AttributeRegistry` into an `AttributeTable` keyed by each declaration's `NodeKey`, and every minted core node's syntax origin is recorded in an `OriginTable`. Imports bring a sibling source's declarations in, and every declared name is declared over an outermost `Recognition` scope. `FailureClass` sorts every refusal into the class a consumer acts on.
+**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration`, whose `DeclarationOutcome` ([`module`](src/module.rs)) names what became of it. The crate rustdoc's _Side tables_ holds the attributes, the origins and the imports. `FailureClass` sorts every refusal into the class a consumer acts on.
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and whether a declaration that failed to lower failed because the author erred, because the fragment cannot represent it, or because the engine was misused — so no failure the engine refuses is mistaken for an obligation the author owes.
 
@@ -119,6 +119,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — which laws are rules.
 - `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories design — what `with sort x = A` fixes.
 - `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — background: the syntax bikeshed — the row entry's spelling.
+- `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: § methods-desugaring — a receiver no hold holds is a value, and an index of one holds it for its read.
 - `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — background: the foreign-calls design — an extern block is an effect interface.
 - `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design — a boundary check is the layout program's verdict.
 - `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: a flow is a functor, and `via` its application.

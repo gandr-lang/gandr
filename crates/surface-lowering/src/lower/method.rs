@@ -56,6 +56,23 @@
 //! otherwise; an exclusive lend unwinds by `pure unit`. A receiver that is
 //! no held slot has no place to lend, [`FragmentBoundary::Held`], and a block
 //! after a call of any other method is [`LoweringRefusal::ViewOfNoPlace`].
+//!
+//! # An index of an unheld list holds it for its read
+//!
+//! An index `e.#[i]` of a held slot lends the slot's place shared at `i`, and
+//! reads the element its view sees. An index of any other list value holds
+//! the value for that read alone: `hold e { access shared at i as v { return
+//! v } }`, the hold a source writes as `var t = e ; t.#[i]`. The read writes
+//! nothing back, so no write-back needs a slot. An `access` of such a value,
+//! shared or exclusive, stays [`FragmentBoundary::Held`], because an access
+//! lends a held slot.
+//!
+//! # References
+//!
+//! - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: §
+//!   methods-desugaring — a receiver that no hold holds is a value. A read
+//!   through it copies nothing that it need not, and a write through it is
+//!   refused.
 
 use alloc::vec::Vec;
 
@@ -1003,9 +1020,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is an index; `cursor` stands at its head.
     /// - ensures: the body of a method answering a view stands as its place, as
     ///   [`Self::view_place`] plans it; an index whose head names a held slot
-    ///   stands as the element there, as [`Self::element`] plans it.
-    /// - fails: [`FragmentBoundary::Unadmitted`] for an index anywhere else;
-    ///   the place's and the element's refusals.
+    ///   stands as the element there, as [`Self::element`] plans it; any other
+    ///   index stands as the element of its list held for the read, as
+    ///   [`Self::unheld_element`] plans it.
+    /// - fails: the place's, the element's and the unheld element's refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -1018,8 +1036,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
     /// - witness: `lower::method::tests::an_index_reads_its_held_element`
+    /// - witness: `lower::method::tests::an_index_of_an_unheld_list_holds_it_for_the_read_2670`
     #[spec(ensures: |ret| ret.is_err() || self.view_places.contains_key(&site.at.node)
-        || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Element { .. }))))]
+        || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Element { .. } | super::access::Accessed::Unheld { .. }))))]
     pub(super) fn index_form(
         &mut self,
         site: Site,
@@ -1031,7 +1050,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         match self.lent_head(site)? {
             Maybe::Present(lent) => self.element(site, cursor, lent),
-            Maybe::Absent(_) => Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Index))),
+            Maybe::Absent(_) => self.unheld_element(site, cursor),
         }
     }
 
@@ -1180,9 +1199,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   lends the slot shared at `e` and answers what its view sees; `e` reads
     ///   as a value under the form's frame; the head's name keeps the slot it
     ///   names.
-    /// - fails: the wrong-sort refusal where no computation is read;
-    ///   [`FragmentBoundary::Unadmitted`] for a bracket holding anything but
-    ///   one index; a fault naming the form for a tile out of place.
+    /// - fails: the wrong-sort refusal where no computation is read; a fault
+    ///   naming the form for a tile out of place.
     /// - panics: none.
     ///
     /// # Errors
@@ -1204,9 +1222,6 @@ impl<'source> Lowerer<'_, 'source>
         let head = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::SELECT_OPEN)?;
         let resident = site.one(cursor.operands())?;
-        if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
-            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Index)));
-        }
         closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
         if let Maybe::Present(_) = cursor.peek() {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -1217,6 +1232,54 @@ impl<'source> Lowerer<'_, 'source>
             site,
             Plan::Access(super::access::Accessed::Element {
                 held: lent.index,
+                index: resident.node,
+            }),
+        );
+
+        Ok(())
+    }
+
+    /// Classify the element `e.#[i]` at `site` of a list no hold holds, its
+    /// pieces under `cursor`: the list held for the read alone and lent shared
+    /// at `i`, the element its view sees answered.
+    ///
+    /// # Specification
+    /// - requires: `site` is an index `e.#[i]` whose head names no held slot;
+    ///   `cursor` stands at its head.
+    /// - ensures: the form stands as a computation, planned as the hold of `e`
+    ///   lent shared at `i`; `e` and `i` read as values under the form's frame.
+    /// - fails: the wrong-sort refusal where no computation is read; a fault
+    ///   naming the form for a tile out of place.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The element's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter's list read at a name, asserted as the
+    ///   hold and the access it mints.
+    /// - witness: `lower::method::tests::an_index_of_an_unheld_list_holds_it_for_the_read_2670`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Unheld { .. }))))]
+    pub(super) fn unheld_element(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Computation)?;
+        let head = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::SELECT_OPEN)?;
+        let resident = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
+        if let Maybe::Present(_) = cursor.peek() {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        }
+        self.read(head.node, Reading::Value(frame));
+        self.read(resident.node, Reading::Value(frame));
+        self.plan(
+            site,
+            Plan::Access(super::access::Accessed::Unheld {
+                list: head.node,
                 index: resident.node,
             }),
         );

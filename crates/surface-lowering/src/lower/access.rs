@@ -177,6 +177,15 @@ pub(super) enum Accessed
         /// The index `e`, read as a value where the index stands.
         index: NodeIndex,
     },
+    /// A bare index `e.#[i]` of a list no hold holds: the list held for the
+    /// read alone, lent shared at `i`, and the element its view sees answered.
+    Unheld
+    {
+        /// The list `e`, read as a value where the index stands.
+        list: NodeIndex,
+        /// The index `i`, read as a value where the index stands.
+        index: NodeIndex,
+    },
     /// A place assignment `p = e ;`, or `p += e ;` with the operator's row:
     /// `e`'s value bound first, then the place lent exclusively and written
     /// that value, or the row over the view and that value.
@@ -1067,6 +1076,35 @@ impl<'source> Lowerer<'_, 'source>
                     held,
                     place: Place::At { index },
                     body,
+                }
+            },
+            Accessed::Unheld { list, index } => {
+                let list = match self.value_at(list) {
+                    Maybe::Present(list) => list,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let index = match self.value_at(index) {
+                    Maybe::Present(index) => index,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let inner = origin.inserted(Insertion::Method);
+                let viewed = sink
+                    .arena
+                    .value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(viewed, inner);
+                let body = sink.arena.computation_return(viewed);
+                sink.origins.record_computation(body, inner);
+                let lent = sink.arena.computation_memory(MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    held: DeBruijnIndex::from(0_u32),
+                    place: Place::At { index },
+                    body,
+                });
+                sink.origins.record_computation(lent, inner);
+                MemoryForm::Hold {
+                    value: list,
+                    body: lent,
+                    grade: HoldGrade::Many,
                 }
             },
             Accessed::Assign {

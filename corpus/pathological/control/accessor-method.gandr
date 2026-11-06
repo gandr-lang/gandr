@@ -49,12 +49,6 @@ def raisedWhileRead() -> Integer =
   var xs = pair
   access shared xs as v { (xs.first ()) as w { resume w 3 }; pure 0 }
 
-/// An index of a list no var holds: there is no place to lend.
-@[ refuses("OutOfFragment.index_expression") ]
-def unheldIndex(ys : List(Integer), i : Integer) -> -F Integer =
-  let y = ys.#[i]
-  pure y
-
 /// An element index with a bare bracket for static arguments. An index uses
 /// the selector `.#[ … ]`.
 @[ refuses("MalformedForm") ]

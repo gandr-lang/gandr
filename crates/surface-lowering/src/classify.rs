@@ -1262,12 +1262,6 @@ mod tests
                 FailureClass::Unimplemented(TrackingIssue::PROJECTION),
             ),
             (
-                "index_expression",
-                FragmentSort::Computation,
-                FragmentBoundary::Unadmitted(Unbuilt::Index),
-                FailureClass::Unimplemented(TrackingIssue::UNHELD_INDEX),
-            ),
-            (
                 "pack_model_expression",
                 FragmentSort::Value,
                 FragmentBoundary::Unadmitted(Unbuilt::PackModel),
