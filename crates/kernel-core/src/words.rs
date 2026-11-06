@@ -943,6 +943,48 @@ where
     Some(Arm::Written(arm))
 }
 
+/// A loop arm read as the evaluator's mapping reads it: an arm that returns a
+/// cell's name, `loop`, answers the name's word.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Written(return w)` when `arm` is `Written(return n)` and
+///   [`named`] reads `n` as the word `w`; `arm` otherwise.
+/// - provides: the image of a loop under a map whose loop arm is a cell's name,
+///   as the evaluator's `mapped` (`gandr-core-nbe`'s `eval::words::mapped`)
+///   computes it before it inverts or splices the image.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the evaluator splices the word that the name `loop`
+///   names, and the checker's dialogue compares that word. Kept as the name,
+///   the image sticks at the name, the dialogue's next decision does not apply,
+///   and the kernel refuses what the checker accepted.
+/// - witness: `replay::tests::a_named_loop_arm_answers_its_word_5489`
+#[spec(ensures: |ret| match (arm, ret) {
+    (Arm::Unwritten, Arm::Unwritten) => true,
+    (Arm::Written(_), Arm::Written(read)) => arena.computation(read).is_some(),
+    _ => false,
+})]
+fn answered(
+    arena: &mut TermArena,
+    unfoldings: &Unfoldings,
+    arm: Arm,
+) -> Arm
+{
+    let Arm::Written(written) = arm
+    else {
+        return arm;
+    };
+    let Some(&Computation::Return(answer)) = arena.computation(written)
+    else {
+        return arm;
+    };
+    named(arena, unfoldings, answer)
+        .map_or(arm, |word| Arm::Written(arena.computation_return(word)))
+}
+
 /// What a case over an argument the loop leaves standing makes of the moving
 /// one, the branch its argument's constructor selects read under a binder for
 /// the moving argument: the letter itself where the branch returns that
@@ -1175,12 +1217,12 @@ where
 /// # Specification
 /// - requires: as [`image`]; `walk` is one of [`Routes::walks`].
 /// - ensures: the innermost call's loop arm for the letter where its case is
-///   over the moving argument, its other arguments at the point — inverted
-///   along `z. Path[.A = C](z, fixed)` for an inverse letter, the letter's
-///   empty word for a case with no loop arm — or [`select`]'s reading where the
-///   case is over another argument; bound into each further call's cong of it,
-///   the transport along it in `y. Path[.A = C](fixed, ⟨f … y …⟩)` from
-///   `here(fixed)`, every argument off the route at the point.
+///   over the moving argument, read by [`answered`], its other arguments at the
+///   point — inverted along `z. Path[.A = C](z, fixed)` for an inverse letter,
+///   the letter's empty word for a case with no loop arm — or [`select`]'s
+///   reading where the case is over another argument; bound into each further
+///   call's cong of it, the transport along it in `y. Path[.A = C](fixed, ⟨f …
+///   y …⟩)` from `here(fixed)`, every argument off the route at the point.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1222,13 +1264,14 @@ where
         .collect();
     let (case, over) = case_of(arena, unfoldings, (innermost.function, &arguments))?;
     let mut built = if over == moving {
-        match loop_arm(
+        let arm = loop_arm(
             arena,
             (table, memo),
             unfoldings.presentations(),
             (case, moving, &arguments),
             (words, cell),
-        )? {
+        )?;
+        match answered(arena, unfoldings, arm) {
             Arm::Unwritten => arena.computation_return(rest),
             Arm::Written(arm) if usize::from(tag) % 2 == 1 => arm,
             Arm::Written(arm) => {

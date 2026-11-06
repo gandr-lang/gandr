@@ -2908,6 +2908,34 @@ mod kernel_loop_elimination_readmission
             "the kernel names the loop `involutive` no longer respects"
         );
     }
+
+    /// #5489: the image of the loop under a map whose loop arm is the named
+    /// loop checks in the checker, and the kernel readmits it, from the point
+    /// and from a call that returns the point.
+    #[test]
+    fn a_map_whose_loop_arm_is_the_named_loop_readmits_5489()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/map-named-loop-arm.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("map-named-loop-arm lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        Environment::replay(decoded.arena().clone(), &declarations).unwrap_or_else(|refusal| {
+            let name = declarations
+                .get(usize::from(refusal.position()))
+                .map(|marked| marked.declaration().name().clone());
+            panic!(
+                "the kernel readmits each image of the loop: {name:?} is refused: \
+                 {refusal:?}"
+            )
+        });
+    }
 }
 
 /// A presentation's rules are decided at readmission as its value states them:
