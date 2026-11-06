@@ -205,7 +205,8 @@ impl Erasure<'_, '_>
                 }
             },
             CoreNode::Type(TypeNode::Value(at)) => {
-                match *(self.arena.value_type(at).ok_or(dangling)?) {
+                let node = self.arena.value_type(at).ok_or(dangling)?;
+                match *node {
                     ValueType::Data { ref arguments, .. } => self
                         .frames
                         .extend(arguments.iter().rev().copied().map(value)),
@@ -214,18 +215,13 @@ impl Erasure<'_, '_>
                         .extend(fields.values().rev().copied().map(value_type)),
                     // A patched type crosses as the record of its free fields:
                     // only those fields' types cross.
-                    ValueType::Patched { base, ref fixed } => {
-                        let Some(&ValueType::Record(ref fields)) = self.arena.value_type(base)
-                        else {
-                            return Err(Refusal::MachineInvariant);
-                        };
-                        self.frames.extend(
-                            fields
-                                .iter()
-                                .rev()
-                                .filter(|&(label, _)| !fixed.contains_key(label))
-                                .map(|(_, &field)| value_type(field)),
-                        );
+                    ValueType::Patched { .. } => {
+                        let free = self
+                            .arena
+                            .element_fields(node)
+                            .ok_or(Refusal::MachineInvariant)?;
+                        self.frames
+                            .extend(free.iter().rev().map(|(_, field)| value_type(field)));
                     },
                     ValueType::Product(ref components) | ValueType::Sum(ref components) => self
                         .frames
@@ -552,7 +548,8 @@ impl Erasure<'_, '_>
                 Ok(self.erased_computation(at, image))
             },
             CoreNode::Type(TypeNode::Value(at)) => {
-                let image = match *(self.arena.value_type(at).ok_or(dangling)?) {
+                let node = self.arena.value_type(at).ok_or(dangling)?;
+                let image = match *node {
                     ValueType::Data {
                         ref declaration,
                         ref arguments,
@@ -579,15 +576,14 @@ impl Erasure<'_, '_>
                             .collect::<Result<_, _>>()?;
                         target.value_type_record(fields)
                     },
-                    ValueType::Patched { base, ref fixed } => {
-                        let Some(&ValueType::Record(ref fields)) = self.arena.value_type(base)
-                        else {
-                            return Err(Refusal::MachineInvariant);
-                        };
-                        let free = fields
+                    // A patched type crosses as the record of its free fields.
+                    ValueType::Patched { .. } => {
+                        let free = self
+                            .arena
+                            .element_fields(node)
+                            .ok_or(Refusal::MachineInvariant)?
                             .iter()
-                            .filter(|&(label, _)| !fixed.contains_key(label))
-                            .map(|(label, &field)| {
+                            .map(|(label, field)| {
                                 value_type(field).map(|image| (label.clone(), image))
                             })
                             .collect::<Result<_, _>>()?;

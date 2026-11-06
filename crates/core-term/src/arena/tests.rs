@@ -126,6 +126,55 @@ fn a_patch_that_fixes_nothing_is_its_base()
 }
 
 #[test]
+fn an_element_of_a_patched_type_holds_its_free_fields()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let record = arena.value_type_record([(label("host"), unit), (label("port"), integer)].into());
+    let port = arena.value_unit();
+    let patched = arena.value_type_patched(record, [(label("port"), port)].into());
+    let unrecorded = arena.value_type_patched(integer, [(label("port"), port)].into());
+    let element = |at| arena.element_fields(arena.value_type(at)?);
+    let whole = element(record).expect("a record type's element holds its fields");
+    assert_eq!(
+        whole.iter().collect::<Vec<_>>(),
+        [(&label("host"), unit), (&label("port"), integer)],
+        "a record type's element holds every field"
+    );
+    assert_eq!(whole.fixed(), None, "a record type fixes nothing");
+    let free = element(patched).expect("a patched type's element holds its free fields");
+    assert_eq!(
+        free.iter().rev().collect::<Vec<_>>(),
+        [(&label("host"), unit)],
+        "a patched type's element holds its base's fields less the fixed one"
+    );
+    assert_eq!(free.get(&label("host")), Some(unit), "a free field is held");
+    assert_eq!(free.get(&label("port")), None, "a fixed field is not held");
+    assert_eq!(
+        free.get(&label("path")),
+        None,
+        "a label the base lacks is not held"
+    );
+    assert_eq!(
+        free.fixed(),
+        Some(&[(label("port"), port)].into()),
+        "the patch keeps its fixed value"
+    );
+    assert_eq!(
+        element(unrecorded),
+        None,
+        "a patch of no record holds no fields"
+    );
+    assert_eq!(
+        element(integer),
+        None,
+        "a type that is no record holds no fields"
+    );
+}
+
+#[test]
 fn a_decoded_quote_is_the_quoted_type()
 {
     let mut arena = CoreArena::new();

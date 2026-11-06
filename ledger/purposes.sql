@@ -666,6 +666,7 @@ INSERT INTO purpose VALUES('core-term','arena::BinderPrecedence','enum','Where a
 INSERT INTO purpose VALUES('core-term','arena::CompTypeId','struct','The arena-relative allocation index of a CompType node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ComputationId','struct','The arena-relative allocation index of a Computation node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::CoreArena','struct','The append-only arena owning every core term and type node of one run, addressed by four typed ids and carrying each node''s support beside it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','arena::ElementFields','struct','The fields an element of a record type or of a patched type holds: the record''s, or the base record''s less the labels the patch fixes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueId','struct','The arena-relative allocation index of a Value node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueTypeId','struct','The arena-relative allocation index of a ValueType node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','children::Visit','trait','What a walk does with each child of a core node, one method per family, each handed the binders of each zone the former opens over that child.',NULL,'fits','sound',NULL);
