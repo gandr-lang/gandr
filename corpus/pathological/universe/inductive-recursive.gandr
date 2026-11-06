@@ -80,7 +80,7 @@ rec {
   def rec unloop(u : Loop) -> -F Type =
     match u where
       | Base => return Two
-      | PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Two))
+      | PiL(a, b) => return (+U ((x : unloop[<](PiL a b)) -> -F Two))
 }
 
 /// A type read off a call that returns no code: `g(L)` is a function still
