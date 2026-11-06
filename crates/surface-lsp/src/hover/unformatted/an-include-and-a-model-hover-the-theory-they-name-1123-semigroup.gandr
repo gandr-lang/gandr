@@ -1,0 +1,4 @@
+theory Semigroup where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+}

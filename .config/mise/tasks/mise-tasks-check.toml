@@ -429,7 +429,6 @@ directory = "{{ config_root }}/target/embedded-sources"
 allowed = [
   "gandr-surface-dispatcher",
   "gandr-surface-lowering",
-  "gandr-surface-lsp",
 ]
 '''
 # Building the policy library or its driver links rustc's own crates, which

@@ -153,7 +153,7 @@ mod tests
     fn a_report_cards_errors_and_marks_holes()
     {
         let uri = DocumentUri::from("file:///strict/view.gandr");
-        let text = "def g : Integer ;\ndef g = ?gap ;\ndef f : Integer ;\ndef f = \"one\" ;\n";
+        let text = include_str!("view/unformatted/a-report-cards-errors-and-marks-holes.gandr");
         let mut published = recheck(
             &uri,
             &mut open(&uri, &Arc::default()),

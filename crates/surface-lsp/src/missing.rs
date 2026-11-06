@@ -160,17 +160,15 @@ mod tests
     #[test]
     fn an_unresolved_name_is_offered_the_import_declaring_it()
     {
-        let far = declared(SourceText::from(
-            "pub data Shape : Type where {\n  | Circle : Shape\n}\npub def faraway : Integer ;\ndef \
-             faraway = 7 ;\n",
-        ));
-        let twin = declared(SourceText::from(
-            "pub def faraway : Integer ;\ndef faraway = 8 ;\npub def Shape : Integer ;\ndef Shape \
-             = 1 ;\n",
-        ));
-        let hidden = declared(SourceText::from(
-            "def faraway : Integer ;\ndef faraway = 9 ;\n",
-        ));
+        let far = declared(SourceText::from(include_str!(
+            "missing/fixtures/an-unresolved-name-is-offered-the-import-declaring-it-far.gandr"
+        )));
+        let twin = declared(SourceText::from(include_str!(
+            "missing/unformatted/an-unresolved-name-is-offered-the-import-declaring-it-twin.gandr"
+        )));
+        let hidden = declared(SourceText::from(include_str!(
+            "missing/fixtures/an-unresolved-name-is-offered-the-import-declaring-it-hidden.gandr"
+        )));
         let far = Unimported {
             path: Path::new("/folder/far.gandr"),
             names: &far,
@@ -217,7 +215,9 @@ mod tests
             .map(|action| (action.title, action.is_preferred))
             .collect::<Vec<_>>()
         };
-        let value = "def here : Integer ;\ndef here = faraway ;\n";
+        let value = include_str!(
+            "missing/fixtures/an-unresolved-name-is-offered-the-import-declaring-it-value.gandr"
+        );
         let at_value = range(1, 11, 18);
         assert_eq!(
             offered(value, (at_value, at_value), &[far, hidden]),

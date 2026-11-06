@@ -1,0 +1,7 @@
+pub data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+module Plain where {
+  def one = 1 ;
+}

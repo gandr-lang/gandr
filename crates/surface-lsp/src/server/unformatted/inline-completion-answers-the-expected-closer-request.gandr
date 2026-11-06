@@ -1,0 +1,4 @@
+{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
+                    "textDocument":{{"uri":"{uri}"}},
+                    "position":{{"line":0,"character":{character}}},
+                    "context":{{"triggerKind":1}}}}}}

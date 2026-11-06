@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr"},"position":{"line":0,"character":4}}}

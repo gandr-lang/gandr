@@ -450,9 +450,9 @@ mod tests
     #[test]
     fn each_shift_the_source_leaves_out_is_hinted()
     {
-        let written = "def one() -> Integer { 1 }\n\
-                       def two() -> -F Integer { return 2 }\n\
-                       def three() -> -F Integer { one () }\n";
+        let written = include_str!(
+            "inlay/unformatted/each-shift-the-source-leaves-out-is-hinted-written.gandr"
+        );
         let text = SourceText::from(written);
         let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(written.len()))
             .expect("an ordered window");

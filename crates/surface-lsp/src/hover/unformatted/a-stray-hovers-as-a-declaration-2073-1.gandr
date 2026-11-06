@@ -1,0 +1,3 @@
+def answer = 42 ;
+def same(a : Type, x : a) -> -F a { return x }
+same Integer answer $0;

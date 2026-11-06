@@ -570,7 +570,8 @@ mod tests
     #[test]
     fn documentation_colours_its_fragments_in_html()
     {
-        let text = "Applies `apply` to `../x.gandr`.\n\n```gandr\ndef `y` = 1\n```\n";
+        let text =
+            include_str!("markup/unformatted/documentation-colours-its-fragments-in-html.gandr");
         assert_eq!(
             documented(Markup::Html, SourceText::from(text)),
             "Applies <code><span style=\"color:var(--vscode-gandr-hover-variable);\">apply</span></code> \

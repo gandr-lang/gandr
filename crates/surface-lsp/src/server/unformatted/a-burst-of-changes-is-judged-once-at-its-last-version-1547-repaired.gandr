@@ -1,0 +1,4 @@
+{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+            "textDocument":{"uri":"file:///tmp/example.gandr","version":3},
+            "contentChanges":[{"range":{"start":{"line":0,"character":8},
+                "end":{"line":0,"character":15}},"text":"7"}]}}

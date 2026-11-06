@@ -1053,13 +1053,17 @@ mod tests
     #[test]
     fn a_multiline_span_splits_and_drops_the_terminator()
     {
-        let index = LineIndex::new(SourceText::from("ab\r\ncd"));
+        let index = LineIndex::new(SourceText::from(include_str!(
+            "tokens/unformatted/a-multiline-span-splits-and-drops-the-terminator-index.gandr"
+        )));
         assert_eq!(
             encode(&index, &[span(Bytes(0, 6), HlRole::Comment)], &[], &[]),
             TokenStream::from(vec![0, 0, 2, 11, 0, 1, 0, 2, 11, 0]),
             "one comment token per line, the terminator in neither"
         );
-        let astral = LineIndex::new(SourceText::from("𝄞\n𝄞"));
+        let astral = LineIndex::new(SourceText::from(include_str!(
+            "tokens/unformatted/a-multiline-span-splits-and-drops-the-terminator-astral.gandr"
+        )));
         assert_eq!(
             encode(&astral, &[span(Bytes(0, 9), HlRole::StringLit)], &[], &[]),
             TokenStream::from(vec![0, 0, 2, 10, 0, 1, 0, 2, 10, 0]),
@@ -1112,7 +1116,9 @@ mod tests
                 expected
             );
         }
-        let index = LineIndex::new(SourceText::from("a\r\n\rb"));
+        let index = LineIndex::new(SourceText::from(include_str!(
+            "tokens/unformatted/modifier-bits-and-skipped-spans-keep-their-meaning-index.gandr"
+        )));
         assert_eq!(encode(&index, &[], &[], &[]), TokenStream::default());
         assert_eq!(
             encode(

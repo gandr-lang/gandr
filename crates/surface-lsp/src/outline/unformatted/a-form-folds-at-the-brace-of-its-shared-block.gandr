@@ -1,0 +1,4 @@
+def f =
+  thunk {
+    return 1
+  } ;

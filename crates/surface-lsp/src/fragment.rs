@@ -308,7 +308,9 @@ mod tests
             "a double backquote drops the fragment it interrupts"
         );
         assert_eq!(
-            ranges("a `long\nspan` then `y`"),
+            ranges(include_str!(
+                "fragment/unformatted/fragments-pair-single-backquotes.gandr"
+            )),
             [(20, 21)],
             "a fragment across a line break is left out, and its backquotes still pair"
         );
@@ -360,7 +362,8 @@ mod tests
     #[test]
     fn a_comment_is_split_at_its_coloured_fragments()
     {
-        let text = "// see `apply` at `../x.gandr`\ndef y = 1 ;";
+        let text =
+            include_str!("fragment/unformatted/a-comment-is-split-at-its-coloured-fragments.gandr");
         let span = |start: usize, end: usize, role| HlSpan {
             range: ByteRange::new(start.into(), end.into()).expect("an ordered range"),
             role,

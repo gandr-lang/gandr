@@ -773,10 +773,7 @@ mod tests
 
     /// A family, a recursive function matching on it, and a function whose
     /// body is a lambda.
-    const BASE: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                        plus(n : Nat, m : Nat) -> -F Nat {\n  match m {\n    | Zero => n\n    \
-                        | Succ(p) => Succ (plus[<] n p)\n  }\n}\ndef double : +U (Nat -> -F \
-                        Nat) ;\ndef double = thunk { fun (x) { return x } } ;\n";
+    const BASE: &str = include_str!("complete/unformatted/base.gandr");
 
     /// What a completion offers: each name with its kind, and each keyword,
     /// in order.
@@ -1024,11 +1021,9 @@ mod tests
     {
         use CompletionItemKind as Kind;
 
-        let far = declared(SourceText::from(
-            "pub data Shape : Type where {\n  | Circle : Shape\n}\npub def faraway : Integer ;\ndef \
-             faraway = 7 ;\ndef farther : Integer ;\ndef farther = 3 ;\npub def far : Integer \
-             ;\ndef far = 2 ;\npub module Inner where {\n  def fargone = 1 ;\n}\n",
-        ));
+        let far = declared(SourceText::from(include_str!(
+            "complete/fixtures/a-name-no-import-reaches-is-offered-with-its-import-far.gandr"
+        )));
         let import = [TextEdit {
             range: crate::position::Range::default(),
             new_text: String::from("import \"./far.gandr\" ;\n"),
@@ -1070,8 +1065,9 @@ mod tests
                 .collect()
         };
 
-        let body =
-            at_end("def far : Integer ;\ndef far = 1 ;\ndef here : Integer ;\ndef here = fa");
+        let body = at_end(include_str!(
+            "complete/unformatted/a-name-no-import-reaches-is-offered-with-its-import-body.gandr"
+        ));
         assert_eq!(
             elsewhere(&body),
             [(String::from("faraway"), Kind::FUNCTION)],
@@ -1104,14 +1100,18 @@ mod tests
             "a type: the unimported family, {ty:?}"
         );
 
-        let constructor = at_end("def here : Integer ;\ndef here = Ci");
+        let constructor = at_end(include_str!(
+            "complete/unformatted/a-name-no-import-reaches-is-offered-with-its-import-constructor.gandr"
+        ));
         assert_eq!(
             elsewhere(&constructor),
             [(String::from("Circle"), Kind::CONSTRUCTOR)],
             "a body: the unimported family's constructor, {constructor:?}"
         );
 
-        let empty = at_end("def here : Integer ;\ndef here = ");
+        let empty = at_end(include_str!(
+            "complete/unformatted/a-name-no-import-reaches-is-offered-with-its-import-empty.gandr"
+        ));
         assert_eq!(
             elsewhere(&empty),
             [],
@@ -1166,8 +1166,12 @@ mod tests
             "a name typed in full still offers itself"
         );
 
-        let boxed =
-            format!("{BASE}data Box : Type where {{\n  | Box : (x : Integer) --> Box\n}}\n");
+        let boxed = format!(
+            include_str!(
+                "complete/unformatted/a-name-is-offered-whole-and-once-per-kind-boxed.gandr"
+            ),
+            BASE = BASE
+        );
         let hovering = hovered(SourceText::from(boxed.as_str()));
         let kinds: Vec<super::NameKind> = hovering
             .names()
@@ -1189,12 +1193,20 @@ mod tests
     {
         use CompletionItemKind as Kind;
 
-        let head = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec plus(n : \
-                    Nat, m : Nat) -> -F Nat {\n  match m {\n    | Zero => ";
-        let own = format!("{head}n\n    | Succ(p) => Succ (p");
+        let head = include_str!(
+            "complete/unformatted/a-binder-offers-only-where-it-is-in-scope-806-head.gandr"
+        );
+        let own = format!(
+            include_str!(
+                "complete/unformatted/a-binder-offers-only-where-it-is-in-scope-806-own-1.gandr"
+            ),
+            head = head
+        );
         let own = offered(
             SourceText::from(own.as_str()),
-            SourceText::from(")\n  }\n}\n"),
+            SourceText::from(include_str!(
+                "complete/unformatted/a-binder-offers-only-where-it-is-in-scope-806-own-2.gandr"
+            )),
         );
         assert_eq!(
             own.names,
@@ -1204,7 +1216,9 @@ mod tests
         let sibling = format!("{head}p");
         let sibling = offered(
             SourceText::from(sibling.as_str()),
-            SourceText::from("\n    | Succ(p) => Succ (p)\n  }\n}\n"),
+            SourceText::from(include_str!(
+                "complete/unformatted/a-binder-offers-only-where-it-is-in-scope-806-sibling.gandr"
+            )),
         );
         assert_eq!(
             sibling.names,
@@ -1221,12 +1235,36 @@ mod tests
     {
         for (layout, braced) in [
             (
-                ("def f(p : Integer) -> -F Integer =\n  return ", "?\n"),
-                ("def f(p : Integer) -> -F Integer {\n  return ", "?\n}\n"),
+                (
+                    include_str!(
+                        "complete/unformatted/a-layout-body-offers-as-its-braces-do-4853-1.gandr"
+                    ),
+                    "?\n",
+                ),
+                (
+                    include_str!(
+                        "complete/unformatted/a-layout-body-offers-as-its-braces-do-4853-2.gandr"
+                    ),
+                    include_str!(
+                        "complete/unformatted/a-layout-body-offers-as-its-braces-do-4853-3.gandr"
+                    ),
+                ),
             ),
             (
-                ("def f(p : Integer) -> Integer =\n  1 + ", "?\n"),
-                ("def f(p : Integer) -> Integer {\n  1 + ", "?\n}\n"),
+                (
+                    include_str!(
+                        "complete/unformatted/a-layout-body-offers-as-its-braces-do-4853-4.gandr"
+                    ),
+                    "?\n",
+                ),
+                (
+                    include_str!(
+                        "complete/unformatted/a-layout-body-offers-as-its-braces-do-4853-5.gandr"
+                    ),
+                    include_str!(
+                        "complete/unformatted/a-layout-body-offers-as-its-braces-do-4853-3.gandr"
+                    ),
+                ),
             ),
         ] {
             let at = |(before, after): (&str, &str)| {
@@ -1253,30 +1291,49 @@ mod tests
     {
         use CompletionItemKind as Kind;
 
-        let head = "def f(p : Integer, q : Integer) -> -F Integer {\n  return ";
+        let head = include_str!(
+            "complete/unformatted/a-spine-offers-its-next-argument-as-a-value-slot-5197-head.gandr"
+        );
         let at = |before: &str, after: &str| {
             offered(SourceText::from(before), SourceText::from(after)).names
         };
-        let value = at(head, "?\n}\n");
+        let value = at(
+            head,
+            include_str!("complete/unformatted/a-layout-body-offers-as-its-braces-do-4853-3.gandr"),
+        );
         assert_eq!(
             value.first().map(|&(ref name, _)| name.as_str()),
             Some("q"),
             "the slot after `return` offers the parameters first: {value:?}"
         );
         assert_eq!(
-            at(&format!("{head}f p "), "?\n}\n"),
+            at(
+                &format!("{head}f p "),
+                include_str!(
+                    "complete/unformatted/a-layout-body-offers-as-its-braces-do-4853-3.gandr"
+                )
+            ),
             value,
             "the next argument of `f p`"
         );
         assert_eq!(
-            at(&format!("{head}f p q"), "\n}\n"),
+            at(
+                &format!("{head}f p q"),
+                include_str!(
+                    "complete/unformatted/a-spine-offers-its-next-argument-as-a-value-slot-5197-1.gandr"
+                )
+            ),
             named!([("q", Kind::VARIABLE)]),
             "a prefix in the next argument"
         );
         assert_eq!(
             at(
-                "def g(c : Bool) -> -F Integer {\n  if c { return 1 } else { return 2 } ",
-                "\n}\n"
+                include_str!(
+                    "complete/unformatted/a-spine-offers-its-next-argument-as-a-value-slot-5197-2.gandr"
+                ),
+                include_str!(
+                    "complete/unformatted/a-spine-offers-its-next-argument-as-a-value-slot-5197-1.gandr"
+                )
             ),
             Vec::new(),
             "a statement that ends at its brace takes no argument"
@@ -1581,7 +1638,13 @@ mod tests
         );
         assert_eq!(
             details(
-                format!("{BASE}def three : -F Nat ;\ndef three = pl").as_str(),
+                format!(
+                    include_str!(
+                        "complete/unformatted/each-item-carries-its-type-in-the-list-1.gandr"
+                    ),
+                    BASE = BASE
+                )
+                .as_str(),
                 " ;\n",
                 LabelsDetailed(true)
             ),
@@ -1594,7 +1657,13 @@ mod tests
         );
         assert_eq!(
             details(
-                format!("{BASE}def answer = 42 ;\ndef three = ans").as_str(),
+                format!(
+                    include_str!(
+                        "complete/unformatted/each-item-carries-its-type-in-the-list-2.gandr"
+                    ),
+                    BASE = BASE
+                )
+                .as_str(),
                 " ;\n",
                 LabelsDetailed(true)
             ),
@@ -1696,12 +1765,14 @@ mod tests
     #[test]
     fn a_binder_never_takes_the_type_of_a_term_at_its_name()
     {
-        let before = "@[ checks ]\ndef dbl(x : Integer) -> -F Integer {\n  become x + x\n}\n\n@[ \
-                      refuses(\"TypeMismatch\") ]\ndef refuted(x : Integer) -> -F Path[.A = Integer](\
-                      dbl(x), x) {\n  ";
+        let before = include_str!(
+            "complete/unformatted/a-binder-never-takes-the-type-of-a-term-at-its-name-before.gandr"
+        );
         let items = listed(
             SourceText::from(before),
-            SourceText::from("5\n}\n"),
+            SourceText::from(include_str!(
+                "complete/unformatted/a-binder-never-takes-the-type-of-a-term-at-its-name-items.gandr"
+            )),
             (LabelsDetailed(false), TakesSnippets(false)),
         );
         let parameter = items

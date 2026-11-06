@@ -1,0 +1,2 @@
+def p{i} : +U (Integer -> Integer -> -F Integer) ;
+def p{i} = thunk {{ fun (x) {{ fun (y) {{ return x }} }} }} ;

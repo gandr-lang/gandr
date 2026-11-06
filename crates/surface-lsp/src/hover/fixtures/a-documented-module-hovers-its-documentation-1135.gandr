@@ -1,0 +1,7 @@
+/// A module.
+module A where {
+  /// A def.
+  def x = 1;
+  /// The inner module.
+  module B where { def y = 2; }
+}

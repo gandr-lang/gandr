@@ -1,0 +1,3 @@
+42 ;
+def g : Integer ;
+def g = 1

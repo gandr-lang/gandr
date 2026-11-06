@@ -316,7 +316,7 @@ mod tests
     }
 
     /// Two forms out of layout, a comment between them in layout.
-    const LOOSE: &str = "def  a =  1;\n// kept\ndef b   = 2;\n";
+    const LOOSE: &str = include_str!("format/unformatted/loose.gandr");
 
     #[test]
     fn the_whole_document_is_one_trimmed_edit()
@@ -326,7 +326,7 @@ mod tests
             vec![replace(
                 at(0_u32, 4_u32),
                 at(2_u32, 7_u32),
-                "a = 1;\n// kept\ndef b"
+                "a = 1;\n// keeper\ndef b"
             )],
             "one edit, from the first change to the last"
         );
@@ -374,7 +374,9 @@ mod tests
         };
         assert_eq!(
             edits(
-                SourceText::from("def  a =  1;\n\ndef b   = 2;\n"),
+                SourceText::from(include_str!(
+                    "format/unformatted/a-range-formats-the-forms-it-touches.gandr"
+                )),
                 Scope::Within(&[blank])
             )
             .expect("the document formats"),

@@ -1,0 +1,3 @@
+{{"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta",
+                    "params":{{"textDocument":{{"uri":"file:///tmp/example.gandr"}},
+                    "previousResultId":"{previous}"}}}}

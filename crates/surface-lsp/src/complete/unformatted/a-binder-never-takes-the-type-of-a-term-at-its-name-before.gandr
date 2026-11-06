@@ -1,0 +1,8 @@
+@[ checks ]
+def dbl(x : Integer) -> -F Integer {
+  become x + x
+}
+
+@[ refuses("TypeMismatch") ]
+def refuted(x : Integer) -> -F Path[.A = Integer](dbl(x), x) {
+  

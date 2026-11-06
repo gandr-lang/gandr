@@ -1829,7 +1829,9 @@ mod tests
     fn a_text_refused_whole_hovers_its_refusal_2440()
     {
         let uri = DocumentUri::from("file:///tmp/refused-2440.gandr");
-        let text = SourceText::from("def1 f(x : Integer) -> -F Integer {\n  return x\n}\n");
+        let text = SourceText::from(include_str!(
+            "recheck/unformatted/a-text-refused-whole-hovers-its-refusal-2440.gandr"
+        ));
         let mut session = open(&uri, &Arc::default());
         if let Ok(judging) = session.as_mut() {
             judging.keep(gandr_surface_session::Tables::Kept);
@@ -2111,7 +2113,8 @@ mod tests
     #[test]
     fn a_comment_s_fragment_sends_its_roles_4919()
     {
-        let text = "// see `f` and `../x`\ndef f = 42 ;\n";
+        let text =
+            include_str!("recheck/unformatted/a-comment-s-fragment-sends-its-roles-4919.gandr");
         let reading = Reading::of(SourceText::from(text));
         let index = gandr_surface_render_remote::LineIndex::new(text.into());
         assert_eq!(
@@ -2128,7 +2131,9 @@ mod tests
     fn causal_contexts_become_lsp_related_information()
     {
         let uri = DocumentUri::from("file:///strict/mismatch.gandr");
-        let text = "def wrong : Integer ;\ndef wrong = \"text\" ;\n";
+        let text = include_str!(
+            "recheck/unformatted/causal-contexts-become-lsp-related-information.gandr"
+        );
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -2212,8 +2217,9 @@ mod tests
     fn an_unlocated_context_is_appended_to_the_message()
     {
         let uri = DocumentUri::from("file:///strict/force.gandr");
-        let text =
-            SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n");
+        let text = SourceText::from(include_str!(
+            "recheck/unformatted/an-unlocated-context-is-appended-to-the-message.gandr"
+        ));
         let pbg = gandr_surface_grammar::built_in().expect("the grammar builds");
         let root = gandr_surface_dispatcher::SourceRoot::Strict;
         let step = gandr_surface_dispatcher::Step::Source {
@@ -2275,7 +2281,8 @@ mod tests
     fn a_shadowed_builtin_is_published_as_a_warning()
     {
         let uri = DocumentUri::from("file:///strict/shadow.gandr");
-        let text = "def add : Integer ;\ndef add = 1 ;\n";
+        let text =
+            include_str!("recheck/fixtures/a-shadowed-builtin-is-published-as-a-warning.gandr");
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -2301,8 +2308,8 @@ mod tests
     fn a_deprecated_use_is_published_struck_through()
     {
         let uri = DocumentUri::from("file:///strict/deprecated.gandr");
-        let text = "@[ deprecated(*{ note = \"use two\" }) ] def one = 1 ;\ndef two = 2 \
-                    ;\ndef uses = one ;\ndef add : Integer ;\ndef add = two ;\n";
+        let text =
+            include_str!("recheck/unformatted/a-deprecated-use-is-published-struck-through.gandr");
         let diagnostics = checked(&uri, SourceText::from(text));
         assert_eq!(
             diagnostics
@@ -2343,7 +2350,9 @@ mod tests
     fn a_labeled_context_keeps_its_locus_and_cause_in_related_information()
     {
         let uri = DocumentUri::from("file:///strict/duplicate.gandr");
-        let text = "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n";
+        let text = include_str!(
+            "recheck/unformatted/a-labeled-context-keeps-its-locus-and-cause-in-related-information.gandr"
+        );
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -2375,7 +2384,8 @@ mod tests
     fn a_refusal_publishes_its_label_note_and_help()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = "def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n";
+        let text =
+            include_str!("recheck/fixtures/a-refusal-publishes-its-label-note-and-help.gandr");
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -2439,7 +2449,9 @@ mod tests
         );
         let malformed = checked(
             &DocumentUri::from("file:///strict/head.gandr"),
-            SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+            SourceText::from(include_str!(
+                "recheck/fixtures/a-refusal-publishes-its-label-note-and-help.gandr"
+            )),
         );
         assert!(
             malformed
@@ -2454,7 +2466,9 @@ mod tests
     fn one_refusal_is_published_at_every_verbosity()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  return 1\n}\n");
+        let text = SourceText::from(include_str!(
+            "recheck/fixtures/one-refusal-is-published-at-every-verbosity.gandr"
+        ));
         let [user, detailed, debug, json] = [
             Verbosity::User,
             Verbosity::Detailed,
@@ -2550,7 +2564,10 @@ mod tests
     #[test]
     fn a_pending_source_publishes_its_refusal_1248()
     {
-        for text in ["@[ checks ]\n", "1 ;\n@[ checks ]\n"] {
+        for text in [
+            "@[ checks ]\n",
+            include_str!("recheck/unformatted/a-pending-source-publishes-its-refusal-1248.gandr"),
+        ] {
             let source = SourceText::from(text);
             let pending = checked(
                 &DocumentUri::from("file:///corpus/fixture/pending/whole.gandr"),
@@ -2598,9 +2615,9 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         let base = "module P :> *{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
-        let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  let ring = \
-                    fork (kernel : P.Moving) {\n    let held = recv(kernel);\n    close(kernel)\n  \
-                    };\n  close(ring)\n}\n";
+        let user = include_str!(
+            "recheck/fixtures/a-refusal-in-an-import-is-published-where-the-document-reaches-it-1199-user.gandr"
+        );
         for (file, text) in [("base.gandr", base), ("user.gandr", user)] {
             std::fs::write(directory.join(file), text).expect("the source is written");
         }
@@ -2640,7 +2657,9 @@ mod tests
         let rechecked = recheck(
             &uri,
             &mut session,
-            SourceText::from("def a : Integer ;\ndef a = 1 ;\n"),
+            SourceText::from(include_str!(
+                "recheck/fixtures/an-admission-follows-the-published-diagnostics-rechecked.gandr"
+            )),
             &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,
             Spelling::Unicode,
@@ -2705,11 +2724,15 @@ mod tests
     fn a_trial_ranks_candidates_with_their_diagnostics()
     {
         let uri = DocumentUri::from("file:///strict/tried.gandr");
-        let base = "def a = 1 ;\ndef f : Integer ;\n";
+        let base = include_str!(
+            "recheck/fixtures/a-trial-ranks-candidates-with-their-diagnostics-base.gandr"
+        );
         let candidates = [
-            "def a = 1 ;\ndef f : Integer ;\ndef f = \"one\" ;\n",
+            include_str!(
+                "recheck/fixtures/a-trial-ranks-candidates-with-their-diagnostics-candidates.gandr"
+            ),
             "@[ checks ]\n",
-            "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
+            include_str!("recheck/fixtures/a-trial-ranks-candidates-with-their-diagnostics.gandr"),
         ];
         let mut session = open(&uri, &Arc::default());
         let before = recheck(

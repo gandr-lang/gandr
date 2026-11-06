@@ -1,0 +1,13 @@
+theory State where {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+}
+def read() -> Integer {
+  handle st : State with sort S = Integer {
+    st.get ()
+  } with {
+    | pure(x) => pure x
+    | oper get(k) => k 4
+  }
+}

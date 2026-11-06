@@ -9637,11 +9637,9 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/example.gandr","languageId":"gandr","version":1,
-                     "text":"def f = 42 ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/server-over-the-known-document--published.gandr"
+            )),
         );
         server
     }
@@ -9672,8 +9670,8 @@ mod tests
     {
         let mut server = server_over_the_known_document();
         let request = format!(
-            r#"{{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/range",
-                "params":{{"textDocument":{{"uri":"file:///tmp/example.gandr"}},"range":{range}}}}}"#
+            include_str!("server/unformatted/ranged-request.gandr"),
+            range = range
         );
         send(&mut server, Json(&request))
             .pointer("/0/result/data")
@@ -9765,10 +9763,9 @@ mod tests
         assert_eq!(
             send(
                 &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full",
-                        "params":{"textDocument":{"uri":"file:///tmp/example.gandr"}}}"#
-                ),
+                Json(include_str!(
+                    "server/unformatted/semantic-tokens-full-answers-a-known-document.gandr"
+                )),
             ),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":2,
@@ -9801,10 +9798,9 @@ mod tests
             let _published = send(&mut server, Json(&opened));
             let answered = send(
                 &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full",
-                        "params":{"textDocument":{"uri":"file:///tmp/judged.gandr"}}}"#,
-                ),
+                Json(include_str!(
+                    "server/unformatted/a-use-is-sent-as-what-it-refers-to-answered.gandr"
+                )),
             )[0]["result"]["data"]
                 .clone();
             let judged: Vec<u32> = serde_json::from_value(answered).expect("a token stream");
@@ -9926,10 +9922,9 @@ mod tests
             let _published = send(&mut server, Json(&opened));
             let answered = send(
                 &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full",
-                    "params":{"textDocument":{"uri":"file:///tmp/judged.gandr"}}}"#,
-                ),
+                Json(include_str!(
+                    "server/unformatted/a-name-is-sent-with-its-reading-answered.gandr"
+                )),
             )[0]["result"]["data"]
                 .clone();
             let judged: Vec<u32> = serde_json::from_value(answered).expect("a token stream");
@@ -10066,29 +10061,27 @@ mod tests
         let full = |server: &mut Connected| {
             send(
                 server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full",
-                        "params":{"textDocument":{"uri":"file:///tmp/example.gandr"}}}"#,
-                ),
+                Json(include_str!(
+                    "server/unformatted/semantic-tokens-full-answers-a-known-document.gandr"
+                )),
             )[0]["result"]
                 .clone()
         };
         let delta = |server: &mut Connected, previous: &str| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta",
-                    "params":{{"textDocument":{{"uri":"file:///tmp/example.gandr"}},
-                    "previousResultId":"{previous}"}}}}"#
+                include_str!(
+                    "server/unformatted/a-delta-answers-the-edits-from-the-last-full-stream-request.gandr"
+                ),
+                previous = previous
             );
             send(server, Json(&request))[0]["result"].clone()
         };
         let before = full(&mut server);
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-                    "textDocument":{"uri":"file:///tmp/example.gandr","version":2},
-                    "contentChanges":[{"text":"def f = 7 ;\n"}]}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-delta-answers-the-edits-from-the-last-full-stream--published.gandr"
+            )),
         );
         let first = before["resultId"]
             .as_str()
@@ -10119,10 +10112,9 @@ mod tests
         );
         let _closed = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didClose",
-                    "params":{"textDocument":{"uri":"file:///tmp/example.gandr"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-delta-answers-the-edits-from-the-last-full-stream--closed.gandr"
+            )),
         );
         assert_eq!(
             delta(&mut server, current),
@@ -10137,17 +10129,16 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/typing.gandr","languageId":"gandr","version":1,
-                     "text":"def one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two = on"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/completion-answers-the-names-a-word-may-complete-to-806--published.gandr"
+            )),
         );
         let ask = |server: &mut Connected, uri: &str| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":8,"method":"textDocument/completion","params":{{
-                    "textDocument":{{"uri":"{uri}"}},
-                    "position":{{"line":3,"character":12}}}}}}"#
+                include_str!(
+                    "server/unformatted/completion-answers-the-names-a-word-may-complete-to-806-request.gandr"
+                ),
+                uri = uri
             );
             send(server, Json(&request))
         };
@@ -10175,19 +10166,15 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/typing.gandr","languageId":"gandr","version":1,
-                     "text":"/// The first.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two = on"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-resolved-completion-reads-the-declared-head--published.gandr"
+            )),
         );
         let offered = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":8,"method":"textDocument/completion","params":{
-                    "textDocument":{"uri":"file:///tmp/typing.gandr"},
-                    "position":{"line":4,"character":12}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-resolved-completion-reads-the-declared-head-offered.gandr"
+            )),
         );
         let item = offered
             .pointer("/0/result/items/0")
@@ -10231,16 +10218,27 @@ mod tests
             ("base.gandr", base),
             (
                 "first.gandr",
-                "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-disk.gandr"
+                ),
             ),
             (
                 "second.gandr",
-                "import \"./base.gandr\" ;\ndef other : Integer ;\ndef other = 2 ;\n",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-1.gandr"
+                ),
             ),
-            ("third.gandr", "def three : Integer ;\ndef three = 3 ;\n"),
+            (
+                "third.gandr",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-2.gandr"
+                ),
+            ),
             (
                 "fourth.gandr",
-                "import \"./third.gandr\" ;\ndef four : Integer ;\ndef four = 4 ;\n",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-3.gandr"
+                ),
             ),
         ];
         for (file, text) in disk {
@@ -10251,12 +10249,18 @@ mod tests
         let opened = [
             ("first.gandr", disk[1].1),
             ("second.gandr", disk[2].1),
-            ("third.gandr", "def thrice : Integer ;\ndef thrice = 3 ;\n"),
+            (
+                "third.gandr",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-opened.gandr"
+                ),
+            ),
             ("fourth.gandr", disk[4].1),
             (
                 "fifth.gandr",
-                "theory Monoid where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
-                 Ints where {\n  def twice = 2 ;\n}\nInts.twice\n",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-4.gandr"
+                ),
             ),
         ];
         for (file, text) in opened {
@@ -10381,7 +10385,9 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         packaged(&directory);
-        let opener = "import \"./base.gandr\" ;\ndef near : Nat ;\ndef near = Zero ;\n";
+        let opener = include_str!(
+            "server/unformatted/workspace-symbols-find-the-names-no-open-closure-reaches-opener.gandr"
+        );
         for (file, text) in [
             ("base.gandr", include_str!("server/fixtures/nat-base.gandr")),
             ("opener.gandr", opener),
@@ -10405,7 +10411,12 @@ mod tests
         );
         for (file, text) in [
             ("opener.gandr", opener),
-            ("held.gandr", "def fresh : Integer ;\ndef fresh = 1 ;\n"),
+            (
+                "held.gandr",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-no-open-closure-reaches.gandr"
+                ),
+            ),
         ] {
             let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
                 "textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}});
@@ -10518,7 +10529,7 @@ mod tests
         let _initialized = send(&mut server, Json(&initialize.to_string()));
         let open = json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
             "textDocument": {"uri": uri("opened.gandr"), "languageId": "gandr", "version": 1_i32,
-                "text": "def held : Integer ;\ndef held = 1 ;\n"}}});
+                "text": include_str!("server/unformatted/a-workspace-pull-reports-each-source-no-editor-holds-1824-open.gandr")}}});
         let _published = send(&mut server, Json(&open.to_string()));
         let pull = |server: &mut Connected, previous: &Value| {
             let request = json!({"jsonrpc": "2.0", "id": 7_i32, "method": "workspace/diagnostic",
@@ -10748,7 +10759,7 @@ mod tests
         );
         let open = json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
             "textDocument": {"uri": uri("loose/far.gandr"), "languageId": "gandr",
-                "version": 1_i32, "text": "def far : Integer ;\ndef far = away ;\n"}}});
+                "version": 1_i32, "text": include_str!("server/unformatted/a-folder-reports-the-project-it-roots-and-nothing-beside-it-4922-open.gandr")}}});
         let _opened = send(&mut loose, Json(&open.to_string()));
         let pull = json!({"jsonrpc": "2.0", "id": 8_i32, "method": "textDocument/diagnostic",
             "params": {"textDocument": {"uri": uri("loose/far.gandr")}}});
@@ -10803,7 +10814,9 @@ mod tests
             &mut server,
             Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
         );
-        let typing = "import \"./base.gandr\" ;\ndef near : Integer ;\ndef near = fa";
+        let typing = include_str!(
+            "server/unformatted/completion-offers-a-folder-name-with-its-import-typing.gandr"
+        );
         let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
             "textDocument": {"uri": uri("typing.gandr"), "languageId": "gandr", "version": 1_i32,
                 "text": typing}}});
@@ -10881,7 +10894,9 @@ mod tests
             &mut server,
             Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
         );
-        let typing = "def near : Integer ;\ndef near = faraway ;\n";
+        let typing = include_str!(
+            "server/unformatted/an-unresolved-name-is-offered-the-import-declaring-it-1116-typing.gandr"
+        );
         let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
             "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": typing}}});
         let judged =
@@ -10963,15 +10978,21 @@ mod tests
             ),
             (
                 "first.gandr",
-                "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-disk.gandr"
+                ),
             ),
             (
                 "second.gandr",
-                "import \"./base.gandr\" ;\ndef other : Nat ;\ndef other = Zero ;\n",
+                include_str!(
+                    "server/unformatted/references-find-a-name-s-uses-in-every-open-document-1.gandr"
+                ),
             ),
             (
                 "unopened.gandr",
-                "import \"./base.gandr\" ;\ndef unseen : Nat ;\ndef unseen = Zero ;\n",
+                include_str!(
+                    "server/unformatted/references-find-a-name-s-uses-in-every-open-document-2.gandr"
+                ),
             ),
         ];
         for (file, text) in disk {
@@ -11455,13 +11476,22 @@ mod tests
             ),
             (
                 "first.gandr",
-                "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-disk.gandr"
+                ),
             ),
             (
                 "unopened.gandr",
-                "import \"./base.gandr\" ;\ndef unseen : Nat ;\ndef unseen = Zero ;\n",
+                include_str!(
+                    "server/unformatted/references-find-a-name-s-uses-in-every-open-document-2.gandr"
+                ),
             ),
-            ("apart.gandr", "def apart : Integer ;\ndef apart = 1 ;\n"),
+            (
+                "apart.gandr",
+                include_str!(
+                    "server/unformatted/a-rename-rewrites-a-name-everywhere-it-is-written.gandr"
+                ),
+            ),
         ];
         for (file, text) in disk {
             std::fs::write(directory.join(file), text).expect("the source is written");
@@ -11612,7 +11642,9 @@ mod tests
             ),
             (
                 "first.gandr",
-                "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
+                include_str!(
+                    "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-disk.gandr"
+                ),
             ),
         ];
         for (file, text) in disk {
@@ -11690,7 +11722,9 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         packaged(&directory);
-        let opened = "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n";
+        let opened = include_str!(
+            "server/unformatted/workspace-symbols-find-the-names-the-open-closures-declare-disk.gandr"
+        );
         for (file, text) in [
             (
                 "base.gandr",
@@ -11768,9 +11802,10 @@ mod tests
         let open = |offsets: bool| {
             let mut server = Connected::default();
             let initialize = format!(
-                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
-                {{"textDocument":{{"signatureHelp":{{"signatureInformation":
-                {{"parameterInformation":{{"labelOffsetSupport":{offsets}}}}}}}}}}}}}}}"#
+                include_str!(
+                    "server/unformatted/signature-help-answers-the-declared-head-of-the-call-initialize.gandr"
+                ),
+                offsets = offsets
             );
             let _answered = send(&mut server, Json(&initialize));
             let opened = serde_json::json!({
@@ -11784,9 +11819,11 @@ mod tests
         };
         let ask = |server: &mut Connected, line: u32, character: u32| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":9,"method":"textDocument/signatureHelp","params":{{
-                    "textDocument":{{"uri":"file:///tmp/called.gandr"}},
-                    "position":{{"line":{line},"character":{character}}}}}}}"#
+                include_str!(
+                    "server/unformatted/signature-help-answers-the-declared-head-of-the-call-request.gandr"
+                ),
+                character = character,
+                line = line
             );
             send(server, Json(&request))
         };
@@ -11867,28 +11904,22 @@ mod tests
         let mut server = Connected::default();
         let _answered = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":
-                {"textDocument":{"signatureHelp":{"signatureInformation":
-                {"parameterInformation":{"labelOffsetSupport":true}}}}}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/signature-help-sends-a-parameter-s-documentation-1116--answered.gandr"
+            )),
         );
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/documented.gandr","languageId":"gandr","version":1,
-                     "text":"def add(\n  /// The first.\n  a : Integer,\n  b : Integer\n) -> -F Integer { return a }\ndef f : +U (-F Integer) ;\ndef f = thunk { add 1 2 } ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/signature-help-sends-a-parameter-s-documentation-1116--published.gandr"
+            )),
         );
         assert_eq!(
             send(
                 &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":9,"method":"textDocument/signatureHelp","params":{
-                    "textDocument":{"uri":"file:///tmp/documented.gandr"},
-                    "position":{"line":6,"character":20}}}"#,
-                ),
+                Json(include_str!(
+                    "server/unformatted/signature-help-sends-a-parameter-s-documentation-1116.gandr"
+                ),),
             ),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
@@ -11907,8 +11938,10 @@ mod tests
         let started = |watching: &str| {
             let mut server = Connected::default();
             let initialize = format!(
-                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
-                {{"workspace":{{"didChangeWatchedFiles":{{"dynamicRegistration":{watching}}}}}}}}}}}"#
+                include_str!(
+                    "server/unformatted/a-watching-client-is-asked-to-watch-every-source-initialize.gandr"
+                ),
+                watching = watching
             );
             let _answered = send(&mut server, Json(&initialize));
             server
@@ -11970,7 +12003,7 @@ mod tests
             version = version.saturating_add(1);
             let change = serde_json::json!({"jsonrpc": "2.0", "method": if version == 1 { "textDocument/didOpen" }
                 else { "textDocument/didChange" }, "params": {"textDocument": {"uri": "file:///tmp/traced.gandr",
-                "languageId": "gandr", "version": version, "text": "def one : Integer ;\ndef one = 1 ;\n"},
+                "languageId": "gandr", "version": version, "text": include_str!("server/fixtures/the-server-log-is-traced-at-the-level-the-client-sets.gandr")},
                 "contentChanges": []}});
             let classified = crate::rpc::classify(&Body::from(change.to_string().into_bytes()));
             let _outcome = server.server.answer(&mut server.workspace, classified, &[]);
@@ -12025,8 +12058,10 @@ mod tests
         let started = |pulling: &str| {
             let mut server = Connected::default();
             let initialize = format!(
-                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
-                {{"workspace":{{"configuration":{pulling}}}}}}}}}"#
+                include_str!(
+                    "server/unformatted/a-pulled-setting-applies-as-a-pushed-one-initialize.gandr"
+                ),
+                pulling = pulling
             );
             let _answered = send(&mut server, Json(&initialize));
             server
@@ -12214,8 +12249,10 @@ mod tests
         let started = |refreshing: &str| {
             let mut server = Connected::default();
             let initialize = format!(
-                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
-                {{"workspace":{{"codeLens":{{"refreshSupport":{refreshing}}}}}}}}}}}"#
+                include_str!(
+                    "server/unformatted/a-refreshing-client-is-asked-for-its-lenses-once-a-fill-is-kept-elsewhere-initialize.gandr"
+                ),
+                refreshing = refreshing
             );
             let _answered = send(&mut server, Json(&initialize));
             server
@@ -12259,8 +12296,10 @@ mod tests
         let started = |workspace: &str| {
             let mut server = Connected::default();
             let initialize = format!(
-                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
-                {{"workspace":{workspace}}}}}}}"#
+                include_str!(
+                    "server/unformatted/a-refreshing-client-is-asked-for-its-tokens-and-folds-once-invalidated-initialize.gandr"
+                ),
+                workspace = workspace
             );
             let _answered = send(&mut server, Json(&initialize));
             server
@@ -12272,10 +12311,9 @@ mod tests
         };
         let tokens = "workspace/semanticTokens/refresh";
         let folds = "workspace/foldingRange/refresh";
-        let mut every = started(
-            r#"{"codeLens":{"refreshSupport":true},"semanticTokens":{"refreshSupport":true},
-                "foldingRange":{"refreshSupport":true}}"#,
-        );
+        let mut every = started(include_str!(
+            "server/unformatted/a-refreshing-client-is-asked-for-its-tokens-and-folds-once-invalidated-every.gandr"
+        ));
         assert_eq!(
             invalidated(&mut every),
             serde_json::json!([asked(tokens, 1), asked(folds, 2)]),
@@ -12320,8 +12358,10 @@ mod tests
             let _answered = send(
                 &mut server,
                 Json(&format!(
-                    r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
-                    {{"workspace":{workspace}}}}}}}"#
+                    include_str!(
+                        "server/unformatted/a-viewed-tree-answers-its-document-and-is-asked-again-after-each-change--answered.gandr"
+                    ),
+                    workspace = workspace
                 )),
             );
             let _opened = send(
@@ -12444,10 +12484,9 @@ mod tests
         let mut server = Connected::default();
         let _answered = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":
-                    {"window":{"workDoneProgress":true}}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-cancelled-progress-is-recorded-against-its-token--answered.gandr"
+            )),
         );
         let open = Body::from(
             br#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
@@ -12561,16 +12600,30 @@ mod tests
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let sources = [
-            ("base.gandr", "pub def one : Integer ;\ndef one = 1 ;\n"),
+            (
+                "base.gandr",
+                include_str!(
+                    "server/fixtures/a-changed-file-rechecks-the-copies-whose-closure-names-it-sources.gandr"
+                ),
+            ),
             (
                 "importer.gandr",
-                "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n",
+                include_str!(
+                    "server/fixtures/a-changed-file-rechecks-the-copies-whose-closure-names-it-1.gandr"
+                ),
             ),
             (
                 "waiting.gandr",
-                "import \"./later.gandr\" ;\ndef three : Integer ;\ndef three = four ;\n",
+                include_str!(
+                    "server/fixtures/a-changed-file-rechecks-the-copies-whose-closure-names-it-2.gandr"
+                ),
             ),
-            ("alone.gandr", "def five : Integer ;\ndef five = 5 ;\n"),
+            (
+                "alone.gandr",
+                include_str!(
+                    "server/fixtures/a-changed-file-rechecks-the-copies-whose-closure-names-it-3.gandr"
+                ),
+            ),
         ];
         for (file, text) in sources {
             std::fs::write(directory.join(file), text).expect("the source is written");
@@ -12648,7 +12701,9 @@ mod tests
         let sibling = directory.join("base.gandr");
         std::fs::write(&sibling, "pub def one : Integer ;\ndef one = 1 ;\n")
             .expect("the sibling is written");
-        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let importer = include_str!(
+            "server/unformatted/a-changed-file-rechecks-the-copies-whose-closure-names-it-1.gandr"
+        );
         let uri = format!("file://{}", directory.join("importer.gandr").display());
         let mut server = initialized();
         let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
@@ -12712,7 +12767,9 @@ mod tests
         let sibling = directory.join("base.gandr");
         let declared = "pub def one : Integer ;\ndef one = 1 ;\n";
         let renamed = "pub def uno : Integer ;\ndef uno = 1 ;\n";
-        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let importer = include_str!(
+            "server/fixtures/a-changed-file-rechecks-the-copies-whose-closure-names-it-1.gandr"
+        );
         let uri = |file: &str| format!("file://{}", directory.join(file).display());
         // The sibling written as `text`, its modification time set back so the
         // read of it is held.
@@ -12818,11 +12875,15 @@ mod tests
         let sources = [
             (
                 "waiting.gandr",
-                "import \"./later.gandr\" ;\ndef three : Integer ;\ndef three = four ;\n",
+                include_str!(
+                    "server/fixtures/a-changed-file-rechecks-the-copies-whose-closure-names-it-2.gandr"
+                ),
             ),
             (
                 "nested.gandr",
-                "import \"./lib/five.gandr\" ;\ndef six : Integer ;\ndef six = five ;\n",
+                include_str!(
+                    "server/fixtures/a-file-operation-rechecks-the-copies-whose-closure-names-it.gandr"
+                ),
             ),
         ];
         for (file, text) in sources {
@@ -12926,7 +12987,7 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         packaged(&directory);
-        let top = "import \"./deeper/mid.gandr\";\ndef three : Integer;\ndef three = two;\n";
+        let top = include_str!("server/fixtures/a-moved-file-s-imports-follow-it-top.gandr");
         for (file, text) in [
             ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
             (
@@ -13016,8 +13077,12 @@ mod tests
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let declares_one = "pub def one : Integer ;\ndef one = 1 ;\n";
-        let declares_uno = "pub def uno : Integer ;\ndef uno = 1 ;\n";
-        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let declares_uno = include_str!(
+            "server/unformatted/an-editor-s-copy-shadows-the-disk-for-its-importers-declares-uno.gandr"
+        );
+        let importer = include_str!(
+            "server/unformatted/a-changed-file-rechecks-the-copies-whose-closure-names-it-1.gandr"
+        );
         let base = directory.join("base.gandr");
         std::fs::write(&base, declares_one).expect("the base is written");
         std::fs::write(directory.join("importer.gandr"), importer)
@@ -13155,7 +13220,9 @@ mod tests
         assert_eq!(
             published(
                 &mut server,
-                &open("import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n")
+                &open(include_str!(
+                    "server/unformatted/a-changed-file-rechecks-the-copies-whose-closure-names-it-1.gandr"
+                ))
             ),
             [(serde_json::json!(1_i32), serde_json::json!([]))],
             "the document checks against the base"
@@ -13163,23 +13230,33 @@ mod tests
         let revisions = [
             (
                 2_i32,
-                "import \"./other.gandr\" ;\ndef two : Integer ;\ndef two = uno ;\n",
+                include_str!(
+                    "server/unformatted/an-edit-that-changes-the-imports-is-laid-out-again-2439-revisions.gandr"
+                ),
             ),
             (
                 3_i32,
-                "import \"./other.gandr\" ;\ndef two : Integer ;\ndef two = uno ;\ndef three : \
-                 Integer ;\ndef three = two ;\n",
+                include_str!(
+                    "server/unformatted/an-edit-that-changes-the-imports-is-laid-out-again-2439-1.gandr"
+                ),
             ),
-            (4_i32, "def two : Integer ;\ndef two = uno ;\n"),
+            (
+                4_i32,
+                include_str!(
+                    "server/unformatted/an-edit-that-changes-the-imports-is-laid-out-again-2439-2.gandr"
+                ),
+            ),
             (
                 5_i32,
-                "import \"./base.gandr\" ;\nimport \"./other.gandr\" ;\ndef two : Integer ;\ndef \
-                 two = uno ;\n",
+                include_str!(
+                    "server/unformatted/an-edit-that-changes-the-imports-is-laid-out-again-2439-3.gandr"
+                ),
             ),
             (
                 6_i32,
-                "import \"./sub/../base.gandr\" ;\nimport \"./other.gandr\" ;\ndef two : \
-                 Integer ;\ndef two = uno ;\n",
+                include_str!(
+                    "server/unformatted/an-edit-that-changes-the-imports-is-laid-out-again-2439-4.gandr"
+                ),
             ),
         ];
         for (version, revision) in revisions {
@@ -13206,8 +13283,9 @@ mod tests
         // An import of a file not yet written moves the closure, its import
         // unresolved: the file its new lay-out names, once created, rechecks
         // the document.
-        let awaiting = "import \"./base.gandr\" ;\nimport \"./other.gandr\" ;\nimport \
-                        \"./later.gandr\" ;\ndef two : Integer ;\ndef two = uno ;\n";
+        let awaiting = include_str!(
+            "server/unformatted/an-edit-that-changes-the-imports-is-laid-out-again-2439-awaiting.gandr"
+        );
         let change = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
             "textDocument": {"uri": uri, "version": 7_i32},
             "contentChanges": [{"text": awaiting}]}});
@@ -13250,9 +13328,13 @@ mod tests
             std::env::temp_dir().join(format!("gandr-retokened-{}", std::process::id()));
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
-        let declares_one = "pub def one : Integer ;\ndef one = 1 ;\n";
+        let declares_one = include_str!(
+            "server/unformatted/a-changed-file-rechecks-the-copies-whose-closure-names-it-sources.gandr"
+        );
         let declares_uno = "pub def uno : Integer ;\ndef uno = 1 ;\n";
-        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let importer = include_str!(
+            "server/unformatted/a-changed-file-rechecks-the-copies-whose-closure-names-it-1.gandr"
+        );
         std::fs::write(directory.join("base.gandr"), declares_uno).expect("the base is written");
         std::fs::write(directory.join("importer.gandr"), importer)
             .expect("the importer is written");
@@ -13260,8 +13342,10 @@ mod tests
         let started = |workspace: &str| {
             let mut server = Connected::default();
             let initialize = format!(
-                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
-                {{"workspace":{workspace}}}}}}}"#
+                include_str!(
+                    "server/unformatted/a-refreshing-client-is-asked-for-its-tokens-and-folds-once-invalidated-initialize.gandr"
+                ),
+                workspace = workspace
             );
             let _answered = send(&mut server, Json(&initialize));
             let _initialized = send(
@@ -13364,7 +13448,9 @@ mod tests
         let directory = std::env::temp_dir().join(format!("gandr-progress-{}", std::process::id()));
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
-        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let importer = include_str!(
+            "server/unformatted/a-changed-file-rechecks-the-copies-whose-closure-names-it-1.gandr"
+        );
         for (file, text) in [
             ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
             ("importer.gandr", importer),
@@ -13375,8 +13461,10 @@ mod tests
         let started = |shows: &str| {
             let mut server = Connected::default();
             let initialize = format!(
-                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
-                {{"window":{{"workDoneProgress":{shows}}}}}}}}}"#
+                include_str!(
+                    "server/unformatted/progress-is-reported-around-the-work-a-message-starts-initialize.gandr"
+                ),
+                shows = shows
             );
             let _answered = send(&mut server, Json(&initialize));
             server
@@ -13496,18 +13584,17 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
-                     "text":"def x = f(1\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/inline-completion-answers-the-expected-closer--published.gandr"
+            )),
         );
         let ask = |server: &mut Connected, uri: &str, character: u32| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
-                    "textDocument":{{"uri":"{uri}"}},
-                    "position":{{"line":0,"character":{character}}},
-                    "context":{{"triggerKind":1}}}}}}"#
+                include_str!(
+                    "server/unformatted/inline-completion-answers-the-expected-closer-request.gandr"
+                ),
+                character = character,
+                uri = uri
             );
             send(server, Json(&request))
         };
@@ -13554,18 +13641,15 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
-                     "text":"def x = 1; // note\ndef y = f(1 /* aside"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-ghost-text-never-breaks-its-line--published.gandr"
+            )),
         );
         let ask = |server: &mut Connected, line: u32, character: u32| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
-                    "textDocument":{{"uri":"file:///tmp/open.gandr"}},
-                    "position":{{"line":{line},"character":{character}}},
-                    "context":{{"triggerKind":1}}}}}}"#
+                include_str!("server/unformatted/a-ghost-text-never-breaks-its-line-request.gandr"),
+                character = character,
+                line = line
             );
             send(server, Json(&request))
         };
@@ -13601,18 +13685,13 @@ mod tests
             );
             let _published = send(
                 &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                        {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
-                         "text":"def x = f(1"}}}"#,
-                ),
+                Json(include_str!(
+                    "server/unformatted/inline-completion-answers-the-requests-its-trigger-names--published.gandr"
+                )),
             );
             [2_u8, 1_u8].map(|kind| {
                 let request = format!(
-                    r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
-                        "textDocument":{{"uri":"file:///tmp/open.gandr"}},
-                        "position":{{"line":0,"character":11}},
-                        "context":{{"triggerKind":{kind}}}}}}}"#
+                    include_str!("server/unformatted/inline-completion-answers-the-requests-its-trigger-names-request.gandr"), kind = kind
                 );
                 send(&mut server, Json(&request))
                     .pointer("/0/result/items/0/insertText/value")
@@ -13642,17 +13721,18 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
-                     "text":"def id : Integer -> Integer ;\ndef id = thunk { fun (y) { return y } } ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/an-inlay-hint-request-answers-the-binders-in-its-range--published.gandr"
+            )),
         );
         let ask = |server: &mut Connected, uri: &str, (from, to): (u32, u32)| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":2,"method":"textDocument/inlayHint","params":{{
-                    "textDocument":{{"uri":"{uri}"}},
-                    "range":{{"start":{{"line":{from},"character":0}},"end":{{"line":{to},"character":0}}}}}}}}"#
+                include_str!(
+                    "server/unformatted/an-inlay-hint-request-answers-the-binders-in-its-range-request.gandr"
+                ),
+                from = from,
+                to = to,
+                uri = uri
             );
             send(server, Json(&request))
         };
@@ -13795,8 +13875,12 @@ mod tests
         let mut server = server_over_the_known_document();
         let ask = |server: &mut Connected, method: &str, uri: &str, extra: &str| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":9,"method":"{method}","params":{{
-                    "textDocument":{{"uri":"{uri}"}}{extra}}}}}"#
+                include_str!(
+                    "server/unformatted/the-outline-requests-answer-a-known-document-request.gandr"
+                ),
+                extra = extra,
+                method = method,
+                uri = uri
             );
             send(server, Json(&request))
         };
@@ -13858,12 +13942,13 @@ mod tests
                 r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":{capabilities}}}}}"#
             );
             let _answered = send(&mut server, Json(&initialize));
-            let open = r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                {"uri":"file:///tmp/folded.gandr","languageId":"gandr","version":1,
-                 "text":"def f(x : Integer) -> -F Integer {\n  return x\n}\n"}}}"#;
+            let open = include_str!(
+                "server/unformatted/a-fold-shows-its-head-only-to-a-client-that-takes-collapsed-text-open.gandr"
+            );
             let _published = send(&mut server, Json(open));
-            let request = r#"{"jsonrpc":"2.0","id":9,"method":"textDocument/foldingRange",
-                "params":{"textDocument":{"uri":"file:///tmp/folded.gandr"}}}"#;
+            let request = include_str!(
+                "server/unformatted/a-fold-shows-its-head-only-to-a-client-that-takes-collapsed-text-request.gandr"
+            );
             send(&mut server, Json(request))
                 .pointer("/0/result")
                 .cloned()
@@ -13889,15 +13974,20 @@ mod tests
         let mut server = initialized();
         let open = |server: &mut Connected, uri: &str, text: &str| {
             let notification = format!(
-                r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
-                    {{"uri":"{uri}","languageId":"gandr","version":1,"text":"{text}"}}}}}}"#
+                include_str!(
+                    "server/unformatted/a-path-import-links-to-the-file-it-names-notification.gandr"
+                ),
+                text = text,
+                uri = uri
             );
             drop(send(server, Json(&notification)));
         };
         let links = |server: &mut Connected, uri: &str| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":9,"method":"textDocument/documentLink","params":{{
-                    "textDocument":{{"uri":"{uri}"}}}}}}"#
+                include_str!(
+                    "server/unformatted/a-path-import-links-to-the-file-it-names-request.gandr"
+                ),
+                uri = uri
             );
             send(server, Json(&request))
         };
@@ -13955,9 +14045,11 @@ mod tests
         let mut server = initialized();
         let open = |server: &mut Connected, file: &str, text: &str| {
             let notification = format!(
-                r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
-                    {{"uri":"{}","languageId":"gandr","version":1,"text":"{text}"}}}}}}"#,
-                uri(file)
+                include_str!(
+                    "server/unformatted/dropped-sources-are-imported-after-the-last-import-notification.gandr"
+                ),
+                uri(file),
+                text = text
             );
             drop(send(server, Json(&notification)));
         };
@@ -13968,9 +14060,11 @@ mod tests
                 .collect::<Vec<_>>()
                 .join(",");
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":9,"method":"gandr/importFiles","params":{{
-                    "textDocument":{{"uri":"{}"}},"files":[{files}]}}}}"#,
-                uri(file)
+                include_str!(
+                    "server/unformatted/dropped-sources-are-imported-after-the-last-import-request.gandr"
+                ),
+                uri(file),
+                files = files
             );
             send(server, Json(&request))
         };
@@ -14025,9 +14119,11 @@ mod tests
             .expect("an absolute path names a file URI");
         let mut server = initialized();
         let notification = format!(
-            r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
-                {{"uri":"{following}","languageId":"gandr","version":1,"text":{}}}}}}}"#,
-            serde_json::to_string(text).expect("the text serializes")
+            include_str!(
+                "server/unformatted/a-copy-answers-the-sources-its-names-are-declared-in-notification.gandr"
+            ),
+            serde_json::to_string(text).expect("the text serializes"),
+            following = following
         );
         drop(send(&mut server, Json(&notification)));
         let position = |offset: usize| {
@@ -14058,8 +14154,11 @@ mod tests
                 .collect::<Vec<_>>()
                 .join(",");
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":9,"method":"gandr/copiedSources","params":{{
-                    "textDocument":{{"uri":"{uri}"}},"ranges":[{ranges}]}}}}"#
+                include_str!(
+                    "server/unformatted/a-copy-answers-the-sources-its-names-are-declared-in-request.gandr"
+                ),
+                ranges = ranges,
+                uri = uri
             );
             send(server, Json(&request))
         };
@@ -14073,8 +14172,9 @@ mod tests
                 r#"[{{"jsonrpc":"2.0","id":9,"result":[{uris}]}}]"#
             )))
         };
-        let minus = "def rec minus(n : Nat, k : Nat) -> Nat =\n  match k\n    | Zero => n\n    \
-                     | Succ(j) => match n\n      | Zero => Zero\n      | Succ(p) => minus[<] p j";
+        let minus = include_str!(
+            "server/unformatted/a-copy-answers-the-sources-its-names-are-declared-in-minus.gandr"
+        );
         assert_eq!(
             copied(&mut server, &following, &[(
                 "def difference : () -> Nat = ",
@@ -14119,17 +14219,18 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/loose.gandr","languageId":"gandr","version":1,
-                     "text":"def  f =  42;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/formatting-answers-the-edits-that-lay-a-document-out--published.gandr"
+            )),
         );
         let ask = |server: &mut Connected, method: &str, uri: &str, range: &str| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":7,"method":"{method}","params":{{
-                    "textDocument":{{"uri":"{uri}"}},{range}
-                    "options":{{"tabSize":4,"insertSpaces":true}}}}}}"#
+                include_str!(
+                    "server/unformatted/formatting-answers-the-edits-that-lay-a-document-out-request.gandr"
+                ),
+                method = method,
+                range = range,
+                uri = uri
             );
             send(server, Json(&request))
         };
@@ -14166,8 +14267,9 @@ mod tests
                 &mut server,
                 "textDocument/rangesFormatting",
                 "file:///tmp/loose.gandr",
-                r#""ranges":[{"start":{"line":0,"character":5},"end":{"line":0,"character":5}},
-                    {"start":{"line":0,"character":0},"end":{"line":0,"character":3}}],"#
+                include_str!(
+                    "server/unformatted/formatting-answers-the-edits-that-lay-a-document-out.gandr"
+                )
             ),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":7,"result":[{
@@ -14226,11 +14328,9 @@ mod tests
         );
         let _tidy = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/tidy.gandr","languageId":"gandr","version":1,
-                     "text":"def f = 42;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/formatting-answers-the-edits-that-lay-a-document-out--tidy.gandr"
+            )),
         );
         assert_eq!(
             ask(
@@ -14250,16 +14350,16 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/untidy.gandr","languageId":"gandr","version":1,
-                     "text":"def plus(n : Nat) -> -F Nat {   \nmatch n {\n| Zero => n\n}\n}\n\n\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/the-client-s-formatting-options-are-not-read--published.gandr"
+            )),
         );
         let format = |server: &mut Connected, options: &str| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/formatting","params":{{
-                    "textDocument":{{"uri":"file:///tmp/untidy.gandr"}},"options":{options}}}}}"#
+                include_str!(
+                    "server/unformatted/the-client-s-formatting-options-are-not-read-request.gandr"
+                ),
+                options = options
             );
             send(server, Json(&request))
         };
@@ -14273,8 +14373,9 @@ mod tests
         assert_eq!(
             format(
                 &mut server,
-                r#"{"tabSize":8,"insertSpaces":false,"trimTrailingWhitespace":false,
-                    "insertFinalNewline":false,"trimFinalNewlines":false}"#
+                include_str!(
+                    "server/unformatted/the-client-s-formatting-options-are-not-read-1.gandr"
+                )
             ),
             canonical,
             "options asking for tabs and for the whitespace kept: the canonical layout, two \
@@ -14283,8 +14384,9 @@ mod tests
         assert_eq!(
             format(
                 &mut server,
-                r#"{"tabSize":2,"insertSpaces":true,"trimTrailingWhitespace":true,
-                    "insertFinalNewline":true,"trimFinalNewlines":true}"#
+                include_str!(
+                    "server/unformatted/the-client-s-formatting-options-are-not-read-2.gandr"
+                )
             ),
             canonical,
             "options asking for what the layout writes: the same edit"
@@ -14562,11 +14664,9 @@ mod tests
         assert_eq!(
             send(
                 &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":7,"method":"textDocument/prepareTypeHierarchy",
-                        "params":{"textDocument":{"uri":"file:///tmp/example.gandr"},
-                        "position":{"line":0,"character":4}}}"#
-                )
+                Json(include_str!(
+                    "server/unformatted/no-position-names-a-type-hierarchy.gandr"
+                ))
             ),
             wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":null}]"#)),
             "a declared name: no hierarchy to prepare"
@@ -14599,9 +14699,11 @@ mod tests
         let mut server = server_over_the_known_document();
         let ask = |server: &mut Connected, uri: &str, character: u32| {
             let request = format!(
-                r#"{{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{{
-                    "textDocument":{{"uri":"{uri}"}},
-                    "position":{{"line":0,"character":{character}}}}}}}"#
+                include_str!(
+                    "server/unformatted/a-hover-answers-a-known-declaration-request.gandr"
+                ),
+                character = character,
+                uri = uri
             );
             send(server, Json(&request))
         };
@@ -14652,15 +14754,12 @@ mod tests
     {
         let mut server = Connected::default();
         let initialize = format!(
-            r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
-                {{"textDocument":{{"definition":{{"linkSupport":{}}}}}}}}}}}"#,
+            include_str!("server/unformatted/referring-initialize.gandr"),
             linked.0
         );
         let _answered = send(&mut server, Json(&initialize));
         let open = format!(
-            r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
-                {{"uri":"file:///tmp/referred.gandr","languageId":"gandr","version":1,
-                 "text":{}}}}}}}"#,
+            include_str!("server/unformatted/referring-open.gandr"),
             Value::String(REFERRED.to_owned())
         );
         let _published = send(&mut server, Json(&open));
@@ -15049,11 +15148,9 @@ mod tests
         let mut server = initialized();
         let mut publication = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                {"uri":"file:///tmp/refused.gandr","languageId":"gandr","version":3,
-                 "text":"def answer = 42 ;\ndef broken = missing ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-refused-program-is-published-as-an-editor-diagnostic-publication.gandr"
+            )),
         );
         publication
             .pointer_mut("/0/params/diagnostics/0")
@@ -15180,11 +15277,9 @@ mod tests
         let mut server = server_over_the_known_document();
         let changed = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-                    "textDocument":{"uri":"file:///tmp/example.gandr","version":2},
-                    "contentChanges":[{"text":"def g = 1 ;\n"},{"text":"def g = missing ;\n"}]}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/synchronisation-publishes-and-close-clears-changed.gandr"
+            )),
         );
         assert_eq!(
             changed.pointer("/0/params/diagnostics/0/code"),
@@ -15199,10 +15294,9 @@ mod tests
         assert_eq!(
             send(
                 &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","method":"textDocument/didClose",
-                        "params":{"textDocument":{"uri":"file:///tmp/example.gandr"}}}"#
-                ),
+                Json(include_str!(
+                    "server/unformatted/synchronisation-publishes-and-close-clears-1.gandr"
+                )),
             ),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics",
@@ -15213,10 +15307,9 @@ mod tests
         assert_eq!(
             send(
                 &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":9,"method":"textDocument/semanticTokens/full",
-                        "params":{"textDocument":{"uri":"file:///tmp/example.gandr"}}}"#
-                ),
+                Json(include_str!(
+                    "server/unformatted/synchronisation-publishes-and-close-clears-2.gandr"
+                )),
             ),
             wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
             "a closed document has no tokens"
@@ -15352,10 +15445,9 @@ mod tests
         let mut pulling = Connected::default();
         let _answered = send(
             &mut pulling,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{
-                    "textDocument":{"diagnostic":{}}}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-notebook-s-code-cells-are-judged-as-one-document-1815--answered.gandr"
+            )),
         );
         assert_eq!(
             cells(&send(&mut pulling, Json(&open))),
@@ -15397,18 +15489,15 @@ mod tests
         let mut server = Connected::default();
         let _answered = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{
-                    "textDocument":{"diagnostic":{}}}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-notebook-s-code-cells-are-judged-as-one-document-1815--answered.gandr"
+            )),
         );
         let opened = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
-                    "uri":"file:///tmp/pulled.gandr","languageId":"gandr","version":1,
-                    "text":"def g = missing ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-pulled-report-is-named-by-its-digest-and-answered-unchanged-opened.gandr"
+            )),
         );
         let opened = opened.as_array().expect("the messages are a list");
         assert!(
@@ -15425,8 +15514,7 @@ mod tests
             send(
                 server,
                 Json(&format!(
-                    r#"{{"jsonrpc":"2.0","id":{id},"method":"textDocument/diagnostic","params":{{
-                        "textDocument":{{"uri":"file:///tmp/pulled.gandr"}}{previous}}}}}"#
+                    include_str!("server/unformatted/a-pulled-report-is-named-by-its-digest-and-answered-unchanged.gandr"), id = id, previous = previous
                 )),
             )[0]["result"]
                 .clone()
@@ -15453,11 +15541,9 @@ mod tests
         );
         let _changed = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-                    "textDocument":{"uri":"file:///tmp/pulled.gandr","version":2},
-                    "contentChanges":[{"text":"def g = 1 ;\n"}]}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-pulled-report-is-named-by-its-digest-and-answered-unchanged--changed.gandr"
+            )),
         );
         let cleared = pull(&mut server, 4_i32, Some(&id));
         assert_eq!(
@@ -15478,11 +15564,9 @@ mod tests
         let mut server = Connected::default();
         let _answered = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{
-                    "textDocument":{"diagnostic":{}},
-                    "workspace":{"diagnostics":{"refreshSupport":true}}}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-pulling-client-is-sent-no-publication-and-asked-to-pull-again--answered.gandr"
+            )),
         );
         let uri = DocumentUri::from("file:///tmp/pulling.gandr");
         let opened = server.server.handle(
@@ -15521,31 +15605,26 @@ mod tests
         );
         let typed = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-                    "textDocument":{"uri":"file:///tmp/pulling.gandr","version":2},
-                    "contentChanges":[{"range":{"start":{"line":1,"character":0},
-                        "end":{"line":1,"character":0}},"text":"def b ="}]}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-pulling-client-is-sent-no-publication-and-asked-to-pull-again-typed.gandr"
+            )),
         );
         let typed = typed.as_array().expect("the messages are a list");
         assert!(
             methods(typed) == [serde_json::json!("workspace/diagnostic/refresh")],
             "a publication no pull waited for asks the client to pull again: {typed:?}"
         );
-        let pulled =
-            |server: &mut Connected, id: i32| {
-                send(
+        let pulled = |server: &mut Connected, id: i32| {
+            send(
                 server,
                 Json(&format!(
-                    r#"{{"jsonrpc":"2.0","id":{id},"method":"textDocument/diagnostic","params":{{
-                        "textDocument":{{"uri":"file:///tmp/pulling.gandr"}}}}}}"#
+                    include_str!("server/unformatted/a-pulling-client-is-sent-no-publication-and-asked-to-pull-again-pulled.gandr"), id = id
                 )),
             )[0]
                 .pointer("/result/items")
                 .and_then(Value::as_array)
                 .map(|items| items.iter().map(|item| item["code"].clone()).collect::<Vec<_>>())
-            };
+        };
         assert_eq!(
             pulled(&mut server, 3_i32),
             Some(Vec::new()),
@@ -15563,10 +15642,9 @@ mod tests
         );
         let closed = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didClose",
-                    "params":{"textDocument":{"uri":"file:///tmp/pulling.gandr"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-pulling-client-is-sent-no-publication-and-asked-to-pull-again-closed.gandr"
+            )),
         );
         assert_eq!(
             closed,
@@ -15581,18 +15659,15 @@ mod tests
         let mut server = Connected::default();
         let _answered = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{
-                    "textDocument":{"diagnostic":{}}}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-notebook-s-code-cells-are-judged-as-one-document-1815--answered.gandr"
+            )),
         );
         let _opened = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
-                    "uri":"file:///tmp/superseded.gandr","languageId":"gandr","version":1,
-                    "text":"def a = missing ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-pull-its-document-changed-under-is-cancelled-and-asked-again--opened.gandr"
+            )),
         );
         let mut handled = |text: &[u8]| {
             encoded(
@@ -15651,18 +15726,15 @@ mod tests
         let mut server = Connected::default();
         let _answered = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},
-                    "initializationOptions":{"diagnostics":{"verbosity":"detailed"}}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-configuration-change-republishes-at-its-verbosity--answered.gandr"
+            )),
         );
         let opened = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
-                    "uri":"file:///tmp/b.gandr","languageId":"gandr","version":3,
-                    "text":"def g = missing ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-configuration-change-republishes-at-its-verbosity-opened.gandr"
+            )),
         );
         let message = opened
             .pointer("/0/params/diagnostics/0/message")
@@ -15674,11 +15746,9 @@ mod tests
         );
         let _clean = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
-                    "uri":"file:///tmp/a.gandr","languageId":"gandr","version":7,
-                    "text":"def f = 42 ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-configuration-change-republishes-at-its-verbosity--clean.gandr"
+            )),
         );
         let configure = |verbosity: &str| {
             Body::from(
@@ -15752,26 +15822,21 @@ mod tests
         let mut server = Connected::default();
         let _answered = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{},
-                    "initializationOptions":{"presentation":{"form":"explicit"}}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-configuration-change-reanswers-hovers-in-its-form--answered.gandr"
+            )),
         );
         let _opened = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
-                    "uri":"file:///tmp/f.gandr","languageId":"gandr","version":1,
-                    "text":"def f(x : Integer) -> -F Integer { return x }\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-configuration-change-reanswers-hovers-in-its-form--opened.gandr"
+            )),
         );
         let hovered = |server: &mut Connected| {
             send(
                 server,
                 Json(
-                    r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
-                        "textDocument":{"uri":"file:///tmp/f.gandr"},
-                        "position":{"line":0,"character":4}}}"#,
+                    include_str!("server/unformatted/a-configuration-change-reanswers-hovers-in-its-form-hovered.gandr"),
                 ),
             )
             .pointer("/0/result/contents/value")
@@ -15834,11 +15899,9 @@ mod tests
         );
         let opened = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
-                    "uri":"file:///tmp/r.gandr","languageId":"gandr","version":1,
-                    "text":"def r : Integer ≃ String ;\ndef r = 1 ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-presentation-spelling-respells-hovers-and-diagnostics-782-opened.gandr"
+            )),
         );
         let message = |published: &Value| {
             published
@@ -15851,9 +15914,7 @@ mod tests
             send(
                 server,
                 Json(
-                    r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
-                        "textDocument":{"uri":"file:///tmp/r.gandr"},
-                        "position":{"line":0,"character":4}}}"#,
+                    include_str!("server/unformatted/a-presentation-spelling-respells-hovers-and-diagnostics-782-hovered.gandr"),
                 ),
             )
             .pointer("/0/result/contents/value")
@@ -15921,25 +15982,26 @@ mod tests
         let _answered = send(
             &mut server,
             Json(&format!(
-                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":{{}},
-                    "rootUri":"{folder}"}}}}"#
+                include_str!(
+                    "server/unformatted/a-project-s-spelling-outranks-the-user-s-and-yields-to-the-editor-s-3135--answered.gandr"
+                ),
+                folder = folder
             )),
         );
         let _opened = send(
             &mut server,
             Json(&format!(
-                r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{
-                    "uri":"{library}","languageId":"gandr","version":1,
-                    "text":"def r : Integer ≃ String ;\ndef r = 1 ;\n"}}}}}}"#
+                include_str!(
+                    "server/unformatted/a-project-s-spelling-outranks-the-user-s-and-yields-to-the-editor-s-3135--opened.gandr"
+                ),
+                library = library
             )),
         );
         let hovered = |server: &mut Connected| {
             send(
                 server,
                 Json(&format!(
-                    r#"{{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{{
-                        "textDocument":{{"uri":"{library}"}},
-                        "position":{{"line":0,"character":4}}}}}}"#
+                    include_str!("server/unformatted/a-project-s-spelling-outranks-the-user-s-and-yields-to-the-editor-s-3135-hovered.gandr"), library = library
                 )),
             )
             .pointer("/0/result/contents/value")
@@ -16178,10 +16240,12 @@ mod tests
     #[test]
     fn a_change_during_a_judgement_retires_it_1547()
     {
-        let opened = r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-            {"uri":"file:///tmp/example.gandr","languageId":"gandr","version":1,
-             "text":"def f : Integer ;\ndef f = 1 ;\n"}}}"#;
-        let edited = "def f : Integer ;\ndef f = 1 ;\ndef g : Integer ;\ndef g = f ;\n";
+        let opened = include_str!(
+            "server/unformatted/a-change-during-a-judgement-retires-it-1547-opened.gandr"
+        );
+        let edited = include_str!(
+            "server/unformatted/a-change-during-a-judgement-retires-it-1547-edited.gandr"
+        );
         let hover = |id: u8| {
             Body::from(
                 format!(
@@ -16319,16 +16383,9 @@ mod tests
         };
         let changed = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-                    "textDocument":{"uri":"file:///tmp/example.gandr","version":2},
-                    "contentChanges":[
-                        {"range":{"start":{"line":0,"character":8},"end":{"line":0,"character":10}},"text":"7"},
-                        {"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":0}},"text":"def g = \"𝄞\" ;\n"},
-                        {"range":{"start":{"line":1,"character":11},"end":{"line":1,"character":12}},"text":"x\""},
-                        {"range":{"start":{"line":0,"character":10},"end":{"line":0,"character":8}},"text":"!"}
-                    ]}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/ranged-changes-edit-the-held-text-in-order-changed.gandr"
+            )),
         );
         assert_eq!(
             changed.pointer("/0/params/version"),
@@ -16347,11 +16404,9 @@ mod tests
         );
         let restored = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-                    "textDocument":{"uri":"file:///tmp/example.gandr","version":3},
-                    "contentChanges":[{"text":"def f = 42 ;\n"}]}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/ranged-changes-edit-the-held-text-in-order-restored.gandr"
+            )),
         );
         assert_eq!(
             held(&server),
@@ -16386,13 +16441,15 @@ mod tests
                     .collect(),
             )
         };
-        let hover = r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
-            "textDocument":{"uri":"file:///tmp/example.gandr"},"position":{"line":0,"character":4}}}"#;
+        let hover = include_str!(
+            "server/unformatted/a-request-withdrawn-by-a-later-message-is-not-run-hover.gandr"
+        );
         let cancel = |id: u32| {
             format!(r#"{{"jsonrpc":"2.0","method":"$/cancelRequest","params":{{"id":{id}}}}}"#)
         };
-        let change = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-            "textDocument":{"uri":"file:///tmp/example.gandr","version":2},"contentChanges":[]}}"#;
+        let change = include_str!(
+            "server/unformatted/a-request-withdrawn-by-a-later-message-is-not-run-change.gandr"
+        );
         assert_eq!(
             answer(&mut server, hover, &[&cancel(5)]),
             wire(Json(
@@ -16453,15 +16510,15 @@ mod tests
                 versions,
             )
         };
-        let refused = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-            "textDocument":{"uri":"file:///tmp/example.gandr","version":2},
-            "contentChanges":[{"text":"def f = missing ;\n"}]}}"#;
-        let hover = r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/hover","params":{
-            "textDocument":{"uri":"file:///tmp/example.gandr"},"position":{"line":0,"character":4}}}"#;
-        let repaired = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-            "textDocument":{"uri":"file:///tmp/example.gandr","version":3},
-            "contentChanges":[{"range":{"start":{"line":0,"character":8},
-                "end":{"line":0,"character":15}},"text":"7"}]}}"#;
+        let refused = include_str!(
+            "server/unformatted/a-burst-of-changes-is-judged-once-at-its-last-version-1547-refused.gandr"
+        );
+        let hover = include_str!(
+            "server/unformatted/a-request-withdrawn-by-a-later-message-is-not-run-hover.gandr"
+        );
+        let repaired = include_str!(
+            "server/unformatted/a-burst-of-changes-is-judged-once-at-its-last-version-1547-repaired.gandr"
+        );
         assert_eq!(
             answer(&mut server, refused, &[hover, repaired]),
             (serde_json::json!([]), Vec::new()),
@@ -16498,10 +16555,12 @@ mod tests
                 .all(|held| held.document.text.source().as_ref() == "def f = 7 ;\n"),
             "the ranged change applied over the deferred one's text"
         );
-        let elsewhere = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-            "textDocument":{"uri":"file:///tmp/other.gandr","version":2},"contentChanges":[]}}"#;
-        let again = r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
-            "textDocument":{"uri":"file:///tmp/example.gandr","version":4},"contentChanges":[]}}"#;
+        let elsewhere = include_str!(
+            "server/unformatted/a-burst-of-changes-is-judged-once-at-its-last-version-1547-elsewhere.gandr"
+        );
+        let again = include_str!(
+            "server/unformatted/a-burst-of-changes-is-judged-once-at-its-last-version-1547-again.gandr"
+        );
         assert_eq!(
             answer(&mut server, again, &[elsewhere]).1,
             Vec::from([String::from("4")]),
@@ -16843,7 +16902,9 @@ mod tests
             )
         };
         let close = shared(Json("textDocument/didClose"), Json("}"));
-        let lone = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = a ;\n";
+        let lone = include_str!(
+            "server/fixtures/a-copy-opened-again-or-beside-another-resumes-from-its-last-judgement-2102-lone.gandr"
+        );
         assert_eq!(
             judged(&mut first, &mut workspace, &open(lone)),
             ["2"],
@@ -16863,7 +16924,9 @@ mod tests
             "a copy opened again resumes from what the last one let go recorded"
         );
         let _closed = judged(&mut first, &mut workspace, &close);
-        let edited = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = 2 ;\n";
+        let edited = include_str!(
+            "server/fixtures/a-copy-opened-again-or-beside-another-resumes-from-its-last-judgement-2102-edited.gandr"
+        );
         assert_eq!(
             judged(&mut first, &mut workspace, &open(edited)),
             ["1"],
@@ -17148,7 +17211,17 @@ mod tests
         );
         assert!(
             matches!(
-                workspace.propose(&uri, held, fill(hole, Json("1 ;\n2 ;\npure 3"), None)),
+                workspace.propose(
+                    &uri,
+                    held,
+                    fill(
+                        hole,
+                        Json(include_str!(
+                            "server/unformatted/a-proposal-is-kept-only-once-it-checks.gandr"
+                        )),
+                        None
+                    )
+                ),
                 Err(ProposalRefusal::Unchecked { .. })
             ),
             "a fill leaving a stray the lowering refuses is not kept"
@@ -17376,7 +17449,13 @@ mod tests
         };
         for proposal in [
             fill(partial, Json("42"), None),
-            fill(whole, Json("42 ;\ndef g : Integer ;\ndef g = 1"), None),
+            fill(
+                whole,
+                Json(include_str!(
+                    "server/unformatted/a-fill-that-settles-its-document-is-the-preferred-fix.gandr"
+                )),
+                None,
+            ),
         ] {
             assert!(workspace.propose(&uri, held, proposal).is_ok());
         }
@@ -17711,7 +17790,9 @@ mod tests
                 )),
             )
         };
-        let list = "import std.list (List);\ndef pair() -> List(Integer) =\n  #[7 8]\n";
+        let list = include_str!(
+            "server/unformatted/a-repair-is-offered-once-its-trial-settles-it-5474-list.gandr"
+        );
         drop(first.handle(
             &mut workspace,
             &shared(
@@ -17755,7 +17836,9 @@ mod tests
             ),
             "the `,` settles the list, so it is the one preferred fix: {offered}"
         );
-        let laid = "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n   y\n  a\n";
+        let laid = include_str!(
+            "server/unformatted/a-repair-is-offered-once-its-trial-settles-it-5474-laid.gandr"
+        );
         drop(first.handle(
             &mut workspace,
             &shared(
@@ -17796,11 +17879,9 @@ mod tests
         );
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/fill.gandr","languageId":"gandr","version":1,
-                     "text":"def f : Integer ;\ndef f = missing ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-lens-applies-its-one-checked-fill--published.gandr"
+            )),
         );
         let uri = DocumentUri::from("file:///tmp/fill.gandr");
         let version = serde_json::from_value(serde_json::json!(1_i32)).expect("a version");
@@ -17873,11 +17954,9 @@ mod tests
         );
         let _changed = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":
-                    {"uri":"file:///tmp/fill.gandr","version":2},
-                    "contentChanges":[{"text":"def f : Integer ;\ndef f = missing ;\n"}]}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-lens-applies-its-one-checked-fill--changed.gandr"
+            )),
         );
         assert_eq!(
             send(&mut server, Json(&execute(4))).pointer("/0/error/code"),
@@ -17913,11 +17992,9 @@ mod tests
         );
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/run.gandr","languageId":"gandr","version":1,
-                     "text":"def answer = 42 ;\ndef step() -> -F Integer { return 1 }\ndef double(n : Integer) -> -F Integer { return n + n }\ndef filled : Type ;\ndef filled = Integer ;\ndef later : +U (-F Integer) ;\ndef main : +U (-F Integer) ;\ndef main = thunk { become force later } ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-run-lens-runs-its-declaration-1818--published.gandr"
+            )),
         );
         let at =
             |line: u32, character: u32| serde_json::json!({"line": line, "character": character});
@@ -18028,11 +18105,9 @@ mod tests
         );
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/offered.gandr","languageId":"gandr","version":1,
-                     "text":"def f : Integer ;\ndef f = missing ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-fill-kept-elsewhere-is-offered-to-its-editor-once--published.gandr"
+            )),
         );
         let uri = DocumentUri::from("file:///tmp/offered.gandr");
         let hole = on_line(
@@ -18096,11 +18171,9 @@ mod tests
         );
         let _changed = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":
-                    {"uri":"file:///tmp/offered.gandr","version":2},
-                    "contentChanges":[{"text":"def f : Integer ;\ndef f = missing ;\n"}]}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-fill-kept-elsewhere-is-offered-to-its-editor-once--changed.gandr"
+            )),
         );
         assert!(propose(&mut server, 2_i32, "42"), "the fill is kept again");
         assert_eq!(
@@ -18119,11 +18192,9 @@ mod tests
         let mut plain = initialized();
         let _opened = send(
             &mut plain,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/offered.gandr","languageId":"gandr","version":1,
-                     "text":"def f : Integer ;\ndef f = missing ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-fill-kept-elsewhere-is-offered-to-its-editor-once--published.gandr"
+            )),
         );
         assert!(propose(&mut plain, 1_i32, "42"), "the fill is kept");
         assert_eq!(
@@ -18196,11 +18267,9 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/halves.gandr","languageId":"gandr","version":1,
-                     "text":"def x : Integer ;\ndef x = 3 ;\ndef y = x ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-two-half-name-answers-each-half-and-renames-both-1034--published.gandr"
+            )),
         );
         let uri = DocumentUri::from("file:///tmp/halves.gandr");
         let at = |line: u32, character: u32| Position {
@@ -18245,11 +18314,9 @@ mod tests
         };
         let renamed = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":1,"method":"textDocument/rename","params":{
-                    "textDocument":{"uri":"file:///tmp/halves.gandr"},
-                    "position":{"line":2,"character":8},"newName":"z"}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-two-half-name-answers-each-half-and-renames-both-1034-renamed.gandr"
+            )),
         );
         assert_eq!(
             starts(&renamed, "/0/result/changes/file:~1~1~1tmp~1halves.gandr"),
@@ -18258,11 +18325,9 @@ mod tests
         );
         let found = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/references","params":{
-                    "textDocument":{"uri":"file:///tmp/halves.gandr"},
-                    "position":{"line":2,"character":8},"context":{"includeDeclaration":true}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/a-two-half-name-answers-each-half-and-renames-both-1034-found.gandr"
+            )),
         );
         assert_eq!(
             starts(&found, "/0/result"),
@@ -18280,11 +18345,9 @@ mod tests
         let mut server = initialized();
         let _published = send(
             &mut server,
-            Json(
-                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                    {"uri":"file:///tmp/unused.gandr","languageId":"gandr","version":1,
-                     "text":"def x : Integer ;\ndef x = 3 ;\ndef y = x ;\ndef z : Integer ;\ndef z = 4 ;\n"}}}"#,
-            ),
+            Json(include_str!(
+                "server/unformatted/references-leave-both-halves-out-with-the-declaration-1361--published.gandr"
+            )),
         );
         let mut references = |line: u32, character: u32, declared: bool| -> Vec<(u64, u64)> {
             let request = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32,
@@ -18409,8 +18472,12 @@ mod tests
             std::env::temp_dir().join(format!("gandr-saved-1816-{}", std::process::id()));
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
-        let lone = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = a ;\n";
-        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let lone = include_str!(
+            "server/fixtures/a-copy-opened-again-or-beside-another-resumes-from-its-last-judgement-2102-lone.gandr"
+        );
+        let importer = include_str!(
+            "server/fixtures/a-changed-file-rechecks-the-copies-whose-closure-names-it-1.gandr"
+        );
         for (file, text) in [
             ("lone.gandr", lone),
             ("base.gandr", "pub def one : Integer ;\ndef one = 1 ;\n"),
@@ -18462,7 +18529,12 @@ mod tests
         );
         let (_, other) = notified(
             &mut saving(&saves),
-            &open("lone.gandr", "def a : Integer ;\ndef a = 2 ;\n"),
+            &open(
+                "lone.gandr",
+                include_str!(
+                    "server/fixtures/a-saved-copy-reopens-adopting-what-the-save-judged-1816.gandr"
+                ),
+            ),
         );
         assert_eq!(
             judged(&other),
@@ -18484,7 +18556,9 @@ mod tests
             "a reopened importer adopts its own item after a closure laid anew"
         );
 
-        let edited = "def a : Integer ;\ndef a = 3 ;\n";
+        let edited = include_str!(
+            "server/fixtures/a-saved-copy-reopens-adopting-what-the-save-judged-1816-edited.gandr"
+        );
         let mut owing = saving(&saves);
         let _opened = handled(&mut owing, &open("lone.gandr", edited));
         let _saved = handled(&mut owing, &save("lone.gandr"));
