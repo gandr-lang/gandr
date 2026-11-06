@@ -66,407 +66,259 @@ impl fmt::Display for Spelling
     }
 }
 
-/// A feature the lowering has not built, named by the site that refuses it.
-///
-/// # Specification
-/// - requires: built at a refusing site.
-/// - ensures: one spelling and one tracking issue per feature, distinct
-///   spellings across features.
-/// - panics: none.
-/// - executable: none — this data type has no call boundary;
-///   [`Unbuilt::spelling`] and [`Unbuilt::tracking`] carry its readings, and
-///   the witness checks the spellings apart.
-///
-/// # Adequacy
-/// - hypothesis: L3 — every feature's spelling is read back to that feature
-///   alone.
-/// - witness: `unbuilt::tests::every_feature_is_spelled_apart`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Unbuilt
-{
+/// Generate [`Unbuilt`], its list [`Unbuilt::ALL`] and its spellings from one
+/// list, so a new feature takes its place in each at once.
+macro_rules! unbuilt {
+    ($( $(#[doc = $doc:literal])* $variant:ident => $spelling:literal ),* $(,)?) => {
+        /// A feature the lowering has not built, named by the site that refuses it.
+        ///
+        /// # Specification
+        /// - requires: built at a refusing site.
+        /// - ensures: one spelling and one tracking issue per feature, distinct
+        ///   spellings across features.
+        /// - panics: none.
+        /// - executable: none — this data type has no call boundary;
+        ///   [`Unbuilt::spelling`] and [`Unbuilt::tracking`] carry its readings, and
+        ///   the witness checks the spellings apart.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — every feature's spelling is read back to that feature
+        ///   alone.
+        /// - witness: `unbuilt::tests::every_feature_is_spelled_apart`
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Unbuilt
+        {
+            $( $(#[doc = $doc])* $variant, )*
+        }
+
+        impl Unbuilt
+        {
+            /// Every feature, in declaration order.
+            pub const ALL: [Self; [$(stringify!($variant)),*].len()] = [$(Self::$variant),*];
+
+            /// The qualifier a fixture's `refuses` expectation names the feature
+            /// by: the refused form's kind, with a reading where the form stands
+            /// for several features.
+            ///
+            /// # Specification
+            /// - requires: nothing.
+            /// - ensures: the feature's spelling, distinct from every other
+            ///   feature's.
+            /// - provides: the payload of `OutOfFragment.<spelling>`.
+            /// - fails: never.
+            /// - panics: none.
+            /// - executable: none — the list is the specification; a predicate
+            ///   would restate it row by row.
+            ///
+            /// # Adequacy
+            /// - hypothesis: L3 — every feature's spelling is asserted apart from
+            ///   every other's.
+            /// - witness: `unbuilt::tests::every_feature_is_spelled_apart`
+            #[inline]
+            #[must_use]
+            pub const fn spelling(self) -> Spelling
+            {
+                Spelling(match self {
+                    $(Self::$variant => $spelling,)*
+                })
+            }
+        }
+    };
+}
+
+unbuilt! {
     /// A projection, `e.1` or `e.field`, where the fragment reads none, or a
     /// path the projection does not resolve.
-    Projection,
+    Projection => "projection_expression",
     /// An index `xs.#[i]` outside a view-answering method's body.
-    Index,
+    Index => "index_expression",
     /// A module packed at its model type, `pack M at Model(T)`, of a shape the
     /// lowering does not read.
-    PackModel,
+    PackModel => "pack_model_expression",
     /// A model's manifest sorts forgotten, `forget[sort C = A, …](m) at
     /// Model(T)`, of a shape the lowering does not read.
-    ForgetModel,
+    ForgetModel => "forget_model_expression",
     /// An annotation `(e : T)` read where a type, or nothing, is read.
-    Annotation,
+    Annotation => "annotation_expression",
     /// A number literal written with the `f32` suffix, which has no atom yet:
     /// the integer widths and `f64` are built.
-    TypedNumber,
+    TypedNumber => "typed_number",
     /// The shell block, `#!{ … }`.
-    ShellBlock,
+    ShellBlock => "shell_block",
     /// A constructor field at a finite grade other than `1`.
-    FieldGrade,
+    FieldGrade => "grade.declaration",
     /// The as-pattern `p as x`.
-    AsPattern,
+    AsPattern => "as_pattern",
     /// The list pattern `[p, …]`.
-    ListPattern,
+    ListPattern => "list_pattern",
     /// The rest pattern `..p`.
-    RestPattern,
+    RestPattern => "rest_pattern",
     /// The union type `A | B`.
-    Union,
+    Union => "union_type",
     /// A recursive call's claim the lowering does not read: two claims at once,
     /// a resident that is no claim, a measure, a stage or a cost.
-    RecursiveClaim,
+    RecursiveClaim => "instantiation_expression.computation",
     /// A call through a mutual block's joint whose member stages a parameter
     /// after its first, or passes leading parameters unchanged: the joint
     /// reads one domain, not a telescope.
-    JointTelescope,
+    JointTelescope => "mutual_block.staged_after_first",
     /// The shared fork `fork !(…) { … } ;`.
-    SharedFork,
+    SharedFork => "fork_expression.shared",
     /// The endpoint copy `dup(e)`.
-    Dup,
+    Dup => "dup_expression",
     /// The statement `acquire …;`.
-    Acquire,
+    Acquire => "acquire_expression",
     /// The statement `release …;`.
-    Release,
+    Release => "release_expression",
     /// A type at a stage, `T[i]`, written under a form that places none.
-    StagedType,
+    StagedType => "staged_type",
     /// The unknown type `?`.
-    UnknownType,
+    UnknownType => "unknown_type",
     /// String interpolation where the prelude holds no `string.append` to
     /// fold it with.
-    Interpolation,
+    Interpolation => "string_interpolation",
     /// A match on a view, `match e with v { … }`.
-    MatchView,
+    MatchView => "match_with_view",
     /// A bind expression standing where a term is read.
-    Bind,
+    Bind => "bind_expression",
     /// A circuit declaration where a term is read.
-    Circuit,
+    Circuit => "circuit_declaration",
     /// A codata declaration where a term is read.
-    Codata,
+    Codata => "codata_declaration",
     /// A word pattern `g ∷ p` where a term is read, or one whose head is no
     /// letter.
-    ConsPattern,
+    ConsPattern => "cons_pattern",
     /// A constructor pattern where a term is read.
-    ConstructorPattern,
+    ConstructorPattern => "constructor_pattern",
     /// A derived rule where a term is read.
-    DerivedRule,
+    DerivedRule => "derived_rule_declaration",
     /// An extern block.
-    ExternBlock,
+    ExternBlock => "extern_block",
     /// A host escape.
-    HostEscape,
+    HostEscape => "host_escape",
     /// An injection pattern where a term is read.
-    LabelledSumPattern,
+    LabelledSumPattern => "labelled_sum_pattern",
     /// A literal pattern other than a number or a boolean, or one where a term
     /// is read.
-    LiteralPattern,
+    LiteralPattern => "literal_pattern",
     /// A manifest sort where a term is read.
-    ManifestSort,
+    ManifestSort => "manifest_sort",
     /// An or-pattern whose alternatives bind names, or one where a term is
     /// read.
-    OrPattern,
+    OrPattern => "or_pattern",
     /// A telescope pattern where a term is read.
-    TelescopePattern,
+    TelescopePattern => "telescope_pattern",
     /// A theory declaration where a term is read.
-    Theory,
+    Theory => "theory_declaration",
     /// A tuple pattern where a term is read.
-    TuplePattern,
+    TuplePattern => "tuple_pattern",
     /// A shell block's command substitution.
-    CommandSubstitution,
+    CommandSubstitution => "command_substitution",
     /// A shell block's double-quoted string.
-    DoubleQuotedString,
+    DoubleQuotedString => "double_quoted_string",
     /// A shell block's environment assignment.
-    EnvironmentAssignment,
+    EnvironmentAssignment => "environment_assignment",
     /// A shell block's file descriptor.
-    FileDescriptor,
+    FileDescriptor => "file_descriptor",
     /// A shell block's glob.
-    Glob,
+    Glob => "glob_expression",
     /// A shell block's list operator.
-    ListOperator,
+    ListOperator => "list_operator",
     /// A shell block's pipeline.
-    Pipeline,
+    Pipeline => "pipeline",
     /// A shell block's redirection operator.
-    RedirectionOperator,
+    RedirectionOperator => "redirection_operator",
     /// A shell block's word.
-    ShellWord,
+    ShellWord => "shell_word",
     /// A shell block's single-quoted string.
-    SingleQuotedString,
+    SingleQuotedString => "single_quoted_string",
     /// A shell block's subshell.
-    Subshell,
+    Subshell => "subshell",
     /// A shell block's variable expansion.
-    VariableExpansion,
+    VariableExpansion => "variable_expansion",
     /// A shell block's variable name.
-    VariableName,
+    VariableName => "variable_name",
     /// A thunk's grade, `thunk[r] { … }`.
-    ThunkGrade,
+    ThunkGrade => "grade.value",
     /// A grade on a list, run or prefix type.
-    TypeGrade,
+    TypeGrade => "grade.value_type",
     /// The type abstraction `fun [T] { … }`.
-    TypeAbstraction,
+    TypeAbstraction => "type_abstraction",
     /// An infix form the lowering does not read: an operator outside the
     /// prelude's vocabulary, or a word `g ∷ w` whose `g` is neither a loop
     /// nor `back` of one; a `g` that names nothing is unresolved.
-    InfixForm,
+    InfixForm => "binary_expression",
     /// A prefix operator outside the prelude's vocabulary.
-    PrefixOperator,
+    PrefixOperator => "unary_expression",
     /// A match of no arms over a type no data switch reads, such as the
     /// empty sum, written with its answer type.
-    EmptyMatch,
+    EmptyMatch => "match_expression",
     /// A form where a pattern is read that no pattern reading takes and the
     /// table declines by no feature of its own.
-    UnreadPattern,
+    UnreadPattern => "pattern",
     /// A stated type component whose held declaration the collection does not
     /// carry.
-    StatedType,
+    StatedType => "stated_type",
     /// A presentation block whose body the description does not read.
-    Presentation,
+    Presentation => "presentation",
     /// A recorded move that is no call and no closing name.
-    RecordedMove,
+    RecordedMove => "recorded_move",
     /// A dialogue move that is no endpoint's call of one move.
-    DialogueMove,
+    DialogueMove => "dialogue_move",
     /// A supply whose residents mix a named supply with what is no supply.
-    CombinedSupply,
+    CombinedSupply => "instantiation_expression.combined",
     /// A staged supply no declaration owns.
-    UnownedSupply,
+    UnownedSupply => "instantiation_expression.unowned",
     /// A capability scope over a theory no declaration owns, so no
     /// declaration owes its laws.
-    UnownedScope,
+    UnownedScope => "handle_expression.unowned",
     /// A method call whose declaration the collection does not carry.
-    MethodCall,
+    MethodCall => "method_call",
     /// A manifest model type of a shape the lowering does not read.
-    ManifestModel,
+    ManifestModel => "manifest_type",
     /// A model type over a theory the lowering does not present.
-    ModelType,
+    ModelType => "model_type",
     /// A loop's name inside a pattern rather than as an arm's whole pattern.
-    LoopPattern,
+    LoopPattern => "loop_pattern",
     /// A session type the protocol builder does not read.
-    SessionProtocol,
+    SessionProtocol => "session_protocol",
     /// A stage supply whose resident is no single tile.
-    StageResident,
+    StageResident => "instantiation_expression.stage",
     /// A stratum resident, or a chain's cell count, not written in digits
     /// alone.
-    UaCount,
+    UaCount => "ua_count",
     /// A univalence description the lowering does not read.
-    UaDescription,
+    UaDescription => "ua_description",
     /// A composite's shape that is no `chain(m)`.
-    ComposePasting,
+    ComposePasting => "compose_pasting",
     /// A cell member with parameters, a side that is no closed term, or a rule
     /// arrow.
-    CellMember,
+    CellMember => "cell_member",
     /// An attribute block on a data block's generator.
-    GeneratorAttribute,
+    GeneratorAttribute => "attribute",
     /// A model signature the derivation cannot state.
-    ModelSignature,
+    ModelSignature => "model_signature",
     /// The terms `Terms(S)` of a theory outside one plain sort: several sorts,
     /// an indexed one, or an operation that binds, abstracts or returns
     /// several results.
-    TermsType,
+    TermsType => "terms_type.sorted",
     /// The terms `Terms(S)` of a theory that states a law, which the initial
     /// model carries as a cell.
-    LawTerms,
+    LawTerms => "terms_type.law",
     /// A multi-output constructor grading an input or an output `[1]`: the
     /// linear reading, whose values are circuits.
-    LinearPorts,
+    LinearPorts => "linear_ports",
     /// A pattern naming a multi-output constructor with no output: the joint
     /// pattern over a node's outputs, the linear reading's. At grade ω a value
     /// is one port, matched as `C(x).l`.
-    PortPattern,
+    PortPattern => "port_pattern",
     /// An inner attribute block at a source's root, `@![ … ]`: the source it
     /// decorates has no key of its own yet.
-    SourceAttribute,
+    SourceAttribute => "inner_attribute_block",
 }
 
 impl Unbuilt
 {
-    /// Every feature, in declaration order.
-    pub const ALL: [Self; 81_usize] = [
-        Self::Projection,
-        Self::Index,
-        Self::PackModel,
-        Self::ForgetModel,
-        Self::Annotation,
-        Self::TypedNumber,
-        Self::ShellBlock,
-        Self::FieldGrade,
-        Self::AsPattern,
-        Self::ListPattern,
-        Self::RestPattern,
-        Self::Union,
-        Self::RecursiveClaim,
-        Self::JointTelescope,
-        Self::SharedFork,
-        Self::Dup,
-        Self::Acquire,
-        Self::Release,
-        Self::StagedType,
-        Self::UnknownType,
-        Self::Interpolation,
-        Self::MatchView,
-        Self::Bind,
-        Self::Circuit,
-        Self::Codata,
-        Self::ConsPattern,
-        Self::ConstructorPattern,
-        Self::DerivedRule,
-        Self::ExternBlock,
-        Self::HostEscape,
-        Self::LabelledSumPattern,
-        Self::LiteralPattern,
-        Self::ManifestSort,
-        Self::OrPattern,
-        Self::TelescopePattern,
-        Self::Theory,
-        Self::TuplePattern,
-        Self::CommandSubstitution,
-        Self::DoubleQuotedString,
-        Self::EnvironmentAssignment,
-        Self::FileDescriptor,
-        Self::Glob,
-        Self::ListOperator,
-        Self::Pipeline,
-        Self::RedirectionOperator,
-        Self::ShellWord,
-        Self::SingleQuotedString,
-        Self::Subshell,
-        Self::VariableExpansion,
-        Self::VariableName,
-        Self::ThunkGrade,
-        Self::TypeGrade,
-        Self::TypeAbstraction,
-        Self::InfixForm,
-        Self::PrefixOperator,
-        Self::EmptyMatch,
-        Self::UnreadPattern,
-        Self::StatedType,
-        Self::Presentation,
-        Self::RecordedMove,
-        Self::DialogueMove,
-        Self::CombinedSupply,
-        Self::UnownedSupply,
-        Self::UnownedScope,
-        Self::MethodCall,
-        Self::ManifestModel,
-        Self::ModelType,
-        Self::LoopPattern,
-        Self::SessionProtocol,
-        Self::StageResident,
-        Self::UaCount,
-        Self::UaDescription,
-        Self::ComposePasting,
-        Self::CellMember,
-        Self::GeneratorAttribute,
-        Self::ModelSignature,
-        Self::TermsType,
-        Self::LawTerms,
-        Self::LinearPorts,
-        Self::PortPattern,
-        Self::SourceAttribute,
-    ];
-
-    /// The qualifier a fixture's `refuses` expectation names the feature by:
-    /// the refused form's kind, with a reading where the form stands for
-    /// several features.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the feature's spelling, distinct from every other feature's.
-    /// - provides: the payload of `OutOfFragment.<spelling>`.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the table is the specification; a predicate would
-    ///   restate it row by row.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — every feature's spelling is asserted apart from every
-    ///   other's.
-    /// - witness: `unbuilt::tests::every_feature_is_spelled_apart`
-    #[inline]
-    #[must_use]
-    pub const fn spelling(self) -> Spelling
-    {
-        Spelling(match self {
-            Self::Projection => "projection_expression",
-            Self::Index => "index_expression",
-            Self::PackModel => "pack_model_expression",
-            Self::ForgetModel => "forget_model_expression",
-            Self::Annotation => "annotation_expression",
-            Self::TypedNumber => "typed_number",
-            Self::ShellBlock => "shell_block",
-            Self::FieldGrade => "grade.declaration",
-            Self::AsPattern => "as_pattern",
-            Self::ListPattern => "list_pattern",
-            Self::RestPattern => "rest_pattern",
-            Self::Union => "union_type",
-            Self::RecursiveClaim => "instantiation_expression.computation",
-            Self::JointTelescope => "mutual_block.staged_after_first",
-            Self::SharedFork => "fork_expression.shared",
-            Self::Dup => "dup_expression",
-            Self::Acquire => "acquire_expression",
-            Self::Release => "release_expression",
-            Self::StagedType => "staged_type",
-            Self::UnknownType => "unknown_type",
-            Self::Interpolation => "string_interpolation",
-            Self::MatchView => "match_with_view",
-            Self::Bind => "bind_expression",
-            Self::Circuit => "circuit_declaration",
-            Self::Codata => "codata_declaration",
-            Self::ConsPattern => "cons_pattern",
-            Self::ConstructorPattern => "constructor_pattern",
-            Self::DerivedRule => "derived_rule_declaration",
-            Self::ExternBlock => "extern_block",
-            Self::HostEscape => "host_escape",
-            Self::LabelledSumPattern => "labelled_sum_pattern",
-            Self::LiteralPattern => "literal_pattern",
-            Self::ManifestSort => "manifest_sort",
-            Self::OrPattern => "or_pattern",
-            Self::TelescopePattern => "telescope_pattern",
-            Self::Theory => "theory_declaration",
-            Self::TuplePattern => "tuple_pattern",
-            Self::CommandSubstitution => "command_substitution",
-            Self::DoubleQuotedString => "double_quoted_string",
-            Self::EnvironmentAssignment => "environment_assignment",
-            Self::FileDescriptor => "file_descriptor",
-            Self::Glob => "glob_expression",
-            Self::ListOperator => "list_operator",
-            Self::Pipeline => "pipeline",
-            Self::RedirectionOperator => "redirection_operator",
-            Self::ShellWord => "shell_word",
-            Self::SingleQuotedString => "single_quoted_string",
-            Self::Subshell => "subshell",
-            Self::VariableExpansion => "variable_expansion",
-            Self::VariableName => "variable_name",
-            Self::ThunkGrade => "grade.value",
-            Self::TypeGrade => "grade.value_type",
-            Self::TypeAbstraction => "type_abstraction",
-            Self::InfixForm => "binary_expression",
-            Self::PrefixOperator => "unary_expression",
-            Self::EmptyMatch => "match_expression",
-            Self::UnreadPattern => "pattern",
-            Self::StatedType => "stated_type",
-            Self::Presentation => "presentation",
-            Self::RecordedMove => "recorded_move",
-            Self::DialogueMove => "dialogue_move",
-            Self::CombinedSupply => "instantiation_expression.combined",
-            Self::UnownedSupply => "instantiation_expression.unowned",
-            Self::UnownedScope => "handle_expression.unowned",
-            Self::MethodCall => "method_call",
-            Self::ManifestModel => "manifest_type",
-            Self::ModelType => "model_type",
-            Self::LoopPattern => "loop_pattern",
-            Self::SessionProtocol => "session_protocol",
-            Self::StageResident => "instantiation_expression.stage",
-            Self::UaCount => "ua_count",
-            Self::UaDescription => "ua_description",
-            Self::ComposePasting => "compose_pasting",
-            Self::CellMember => "cell_member",
-            Self::GeneratorAttribute => "attribute",
-            Self::ModelSignature => "model_signature",
-            Self::TermsType => "terms_type.sorted",
-            Self::LawTerms => "terms_type.law",
-            Self::LinearPorts => "linear_ports",
-            Self::PortPattern => "port_pattern",
-            Self::SourceAttribute => "inner_attribute_block",
-        })
-    }
-
     /// The issue tracking the feature.
     ///
     /// # Specification
