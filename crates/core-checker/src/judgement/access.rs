@@ -19,8 +19,8 @@ use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_core_term::row::RowInclusion;
-use gandr_core_term::usage::Usage;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_theory_ordered_algebras::Usage;
 
 use super::Control;
 use super::Direction;

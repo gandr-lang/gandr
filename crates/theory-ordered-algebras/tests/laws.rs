@@ -20,6 +20,8 @@ use gandr_theory_ordered_algebras::OrderedSemiring;
 use gandr_theory_ordered_algebras::Outside;
 use gandr_theory_ordered_algebras::Reach;
 use gandr_theory_ordered_algebras::Tropical;
+use gandr_theory_ordered_algebras::Usage;
+use gandr_theory_ordered_algebras::Usages;
 use gandr_theory_ordered_algebras::check;
 use gandr_theory_ordered_algebras::check_law;
 use num_bigint::BigInt;
@@ -350,6 +352,25 @@ fn the_lawvere_quantale_passes_every_law()
     );
     assert_eq!(
         quantale.compare(&zero, &Distance::INFINITY),
+        Comparison::NotBelow
+    );
+}
+
+#[test]
+fn the_usage_semiring_passes_every_law()
+{
+    let decided = check(&Usages).expect("every law holds");
+    assert_eq!(decided.reach(), Reach::Whole);
+    assert_eq!(usize::from(decided.laws()), 16);
+    assert_eq!(usize::from(decided.tuples()), 6 * 3 + 2 * 9 + 8 * 27);
+    // Zero and one lie apart, so the order lets no rule drop or copy a
+    // linear hypothesis.
+    assert_eq!(
+        Usages.compare(&Usage::Zero, &Usage::One),
+        Comparison::NotBelow
+    );
+    assert_eq!(
+        Usages.compare(&Usage::One, &Usage::Zero),
         Comparison::NotBelow
     );
 }

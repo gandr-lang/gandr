@@ -62,6 +62,7 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
 use anodized::spec;
+use gandr_theory_ordered_algebras::Usage;
 use quenchant_shape::shape::Maybe;
 
 use super::EffectConflict;
@@ -229,11 +230,11 @@ impl CapabilityGrade
     /// trivial.
     #[must_use]
     #[inline]
-    pub const fn usage(self) -> crate::usage::Usage
+    pub const fn usage(self) -> Usage
     {
         match self {
-            Self::Durable => crate::usage::Usage::Many,
-            Self::Consumable => crate::usage::Usage::One,
+            Self::Durable => Usage::Many,
+            Self::Consumable => Usage::One,
         }
     }
 }

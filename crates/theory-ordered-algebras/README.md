@@ -1,6 +1,6 @@
 # gandr-theory-ordered-algebras
 
-One law checker for the ordered semirings of gandr, with the max-plus semiring and the Lawvere quantale over exact dyadics.
+One law checker for the ordered semirings of gandr, with the max-plus semiring and the Lawvere quantale over exact dyadics, and the usage semiring of the core language's grades.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -16,7 +16,7 @@ One law checker for the ordered semirings of gandr, with the max-plus semiring a
 
 **What.** An `OrderedSemiring` states a carrier, an order, a zero, a one, an addition and a multiplication. `check` decides sixteen laws on it: the semiring laws, the laws of the order, and the monotonicity of both operations. A law that fails returns a `LawFailure` that names the instance, the law and the elements that break it.
 
-**Why.** A grade, a weight, a distance and a cost are each a value of an ordered semiring, and gandr takes its grade algebra as a parameter. One checker states the laws once, so each algebra gandr uses is checked against the same statement.
+**Why.** A grade, a weight, a distance and a cost are each a value of an ordered semiring, and gandr takes its grade algebra as a parameter. One checker states the laws once, so each algebra gandr uses is checked against the same statement. The core checker's access rules read the usage semiring here, so the checker runs the operations whose laws the suite decides.
 
 **How.** A law of arity `k` reads every `k`-tuple of the elements a carrier gives: the whole carrier when it is finite, and the elements an instance generates when it is not. The checker allocates nothing but a counterexample. An operation whose exact result lies past the represented elements refuses with `Outside`, and the checker reports that law as undecided at those elements.
 
@@ -32,6 +32,7 @@ One law checker for the ordered semirings of gandr, with the max-plus semiring a
 - `Decided`, `LawFailure`, `Counterexample`: what a check decided, and the instance, the law and the elements of a failure.
 - `Tropical`, `MaxPlus`: the max-plus semiring over exact dyadics with `−∞`.
 - `Lawvere`, `Distance`: the Lawvere quantale of extended non-negative dyadics, under the reverse order.
+- `Usage`, `Usages`: the usage semiring `{0, 1, ω}` that the core language's grades read, and its instance on the whole carrier.
 
 ## Expected features
 
@@ -59,7 +60,7 @@ mise exec -- cargo nextest run -p gandr-theory-ordered-algebras
 
 ## Where the detail lives
 
-The signature is in `src/signature.rs`, the laws and the checker are in `src/law.rs`, and the max-plus and Lawvere instances are in `src/instance.rs`. The grades of the core language are checked in `gandr-core-term`'s suite `tests::grades`.
+The signature is in `src/signature.rs`, the laws and the checker are in `src/law.rs`, the max-plus and Lawvere instances are in `src/instance.rs`, and the usage semiring is in `src/usage.rs`. The bound of each grade of the core language is checked in `gandr-core-term`'s suite `tests::grades`.
 
 ## License
 
