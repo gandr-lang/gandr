@@ -433,7 +433,9 @@ stack_link() {
     '{chain: $chain, stacks: ($ARGS.positional | map(fromjson))}' --args "${stacks[@]}" | jq -r -f "$pr_stack_dir/link.jq")
   (( ${#args[@]} > 0 )) || return 0
   # No prompt is answered here: a question fails the link instead of waiting.
-  gh stack link "${args[@]}" < /dev/null > /dev/null
+  # The link bases the chain's bottom on the branch `--base` names. With no
+  # `--base`, it uses GitHub's default branch, which is not the trunk (#5443).
+  gh stack link --base "$trunk" "${args[@]}" < /dev/null > /dev/null
 }
 
 # Rebase the stack `$1` (bottom to top) onto `origin/$trunk` and push every
