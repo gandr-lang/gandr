@@ -24,6 +24,7 @@
 //!   off the grammar, and the spans of a molded tree's tiles read through it.
 //! - [`SPELLED`] pairs each glyph tile with its ASCII spelling, and
 //!   [`Spelling`] chooses which a printer writes (§ Spellings).
+//!   [`edit_distance`] measures how near a written word stands to a spelling.
 //!
 //! The crate is `no_std` and depends on `core`, `alloc`,
 //! `gandr-surface-render-remote`, `gandr-surface-syntax` and
@@ -185,6 +186,7 @@ pub use crate::parity::named_kind_realization;
 pub use crate::spelling::Ascii;
 pub use crate::spelling::CONS;
 pub use crate::spelling::EQUIVALENCE;
+pub use crate::spelling::EditDistance;
 pub use crate::spelling::FLOW;
 pub use crate::spelling::ISOMORPHISM;
 pub use crate::spelling::PRIME;
@@ -194,6 +196,7 @@ pub use crate::spelling::Spelling;
 pub use crate::spelling::UNRESTRICTED;
 pub use crate::spelling::Unspelled;
 pub use crate::spelling::aliased;
+pub use crate::spelling::edit_distance;
 pub use crate::spelling::spelled;
 pub use crate::surface::APPLICATION;
 pub use crate::surface::PBG_ONLY_KINDS;

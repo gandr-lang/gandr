@@ -189,6 +189,7 @@ use crate::mold::Molding;
 use crate::mold::lookahead_reach;
 use crate::oblig::ObligationInstance;
 
+mod gap;
 mod place;
 
 /// What a form run's molding depends on, spelled out.

@@ -1020,7 +1020,7 @@ pub const KEYWORDS: &[&str] = &[
 
 /// The keywords that open a block's statements: one that no open form
 /// continues ends the statement it stands in, and starts the next.
-const STATEMENT_LEADS: &[&str] = &[
+pub const STATEMENT_LEADS: &[&str] = &[
     "let", "run", "unpack", "hold", "var", "recv", "acquire", "release", "fork",
 ];
 

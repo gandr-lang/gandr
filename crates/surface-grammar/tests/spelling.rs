@@ -1,10 +1,12 @@
 //! The spelling table: every glyph tile has an ASCII spelling, written as
-//! asked, and an ASCII token stands for its glyph.
+//! asked, and an ASCII token stands for its glyph. The edit distance between
+//! two spellings counts characters.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use gandr_surface_grammar::Ascii;
+use gandr_surface_grammar::EditDistance;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
@@ -15,6 +17,7 @@ use gandr_surface_grammar::TileLabel;
 use gandr_surface_grammar::Unspelled;
 use gandr_surface_grammar::aliased;
 use gandr_surface_grammar::built_in;
+use gandr_surface_grammar::edit_distance;
 use gandr_surface_grammar::spelled;
 
 /// Every tile label `regex` names, into `labels`.
@@ -132,4 +135,66 @@ fn an_ascii_token_stands_for_its_glyph_and_a_head_for_none()
         );
     }
     assert_eq!(aliased(LabelText("~>")), None, "nor is another token");
+}
+
+#[test]
+fn the_edit_distance_of_equal_spellings_is_zero()
+{
+    assert_eq!(
+        edit_distance(LabelText("checks"), LabelText("checks")),
+        EditDistance(0),
+        "no edit carries a spelling to itself"
+    );
+}
+
+#[test]
+fn each_single_edit_costs_one()
+{
+    assert_eq!(
+        edit_distance(LabelText("checkz"), LabelText("checks")),
+        EditDistance(1),
+        "one substitution costs one"
+    );
+    assert_eq!(
+        edit_distance(LabelText("check"), LabelText("checks")),
+        EditDistance(1),
+        "one insertion costs one"
+    );
+    assert_eq!(
+        edit_distance(LabelText("checkss"), LabelText("checks")),
+        EditDistance(1),
+        "one deletion costs one"
+    );
+    assert_eq!(
+        edit_distance(LabelText("cheskc"), LabelText("checks")),
+        EditDistance(2),
+        "a transposition costs two substitutions"
+    );
+}
+
+#[test]
+fn an_empty_spelling_costs_the_other_length()
+{
+    assert_eq!(
+        edit_distance(LabelText(""), LabelText("owes")),
+        EditDistance(4),
+        "the empty spelling costs one insertion per character"
+    );
+}
+
+#[test]
+fn edit_distance_counts_unicode_scalars_not_bytes()
+{
+    assert_eq!(
+        edit_distance(LabelText("rüns"), LabelText("runs")),
+        EditDistance(1)
+    );
+    assert_eq!(
+        edit_distance(LabelText("ru水ns"), LabelText("runs")),
+        EditDistance(1)
+    );
+    assert_eq!(
+        edit_distance(LabelText("水"), LabelText("runs")),
+        EditDistance(4)
+    );
 }

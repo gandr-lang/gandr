@@ -23,6 +23,12 @@
 //! tile is read by all three. Reversal: a construct whose ASCII and Unicode
 //! spellings mold different trees beyond a head call would need the table to
 //! name both rules.
+//!
+//! [`edit_distance`] measures how near a written word stands to a spelling.
+//! The parser reads a word near a keyword as the keyword misspelt, and the
+//! lowering suggests the registered attribute nearest an unknown one.
+
+use alloc::vec::Vec;
 
 use anodized::spec;
 
@@ -233,4 +239,74 @@ pub fn aliased(text: LabelText<'_>) -> Option<TileLabel>
         Ascii::Token(ascii) if ascii.0 == text.0 => Some(entry.tile),
         Ascii::Token(_) | Ascii::Head(_) => None,
     })
+}
+
+/// A count of single-character edits between two spellings, as
+/// [`edit_distance`] measures it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EditDistance(pub usize);
+
+/// The number of single-character edits between two spellings.
+///
+/// # Specification
+/// - requires: nothing — either spelling may be empty.
+/// - ensures: the Levenshtein distance over characters: the least number of
+///   insertions, deletions and substitutions carrying one spelling to the
+///   other, which is zero exactly when the two are equal.
+/// - provides: the ordering a bounded suggestion selects its answer by.
+/// - fails: never.
+/// - panics: none. The row walk reads through checked lookups, and every
+///   addition saturates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — four decision surfaces (the substitution cost and the
+///   three-way minimum) separated by equal spellings, a single substitution, a
+///   single insertion, a single deletion, a transposition costing two, and each
+///   spelling against the empty one, every case asserted as an exact distance.
+/// - witness: `tests::spelling::the_edit_distance_of_equal_spellings_is_zero`
+/// - witness: `tests::spelling::each_single_edit_costs_one`
+/// - witness: `tests::spelling::an_empty_spelling_costs_the_other_length`
+/// - witness: `tests::spelling::edit_distance_counts_unicode_scalars_not_bytes`
+#[spec(
+    ensures: |ret| {
+        let left_len = written.0.chars().count();
+        let right_len = candidate.0.chars().count();
+        ret.0 >= left_len.abs_diff(right_len)
+            && ret.0 <= left_len.max(right_len)
+            && (ret.0 == 0) == (written == candidate)
+            && (!written.0.is_empty() || ret.0 == right_len)
+            && (!candidate.0.is_empty() || ret.0 == left_len)
+    },
+)]
+#[inline]
+#[must_use]
+pub fn edit_distance(
+    written: LabelText<'_>,
+    candidate: LabelText<'_>,
+) -> EditDistance
+{
+    let width = candidate.0.chars().count();
+    let mut previous: Vec<usize> = (0_usize ..= width).collect();
+    let mut current: Vec<usize> = Vec::with_capacity(width.saturating_add(1_usize));
+    for (row, from) in written.0.chars().enumerate() {
+        current.clear();
+        current.push(row.saturating_add(1_usize));
+        for (column, into) in candidate.0.chars().enumerate() {
+            let above = previous
+                .get(column.saturating_add(1_usize))
+                .copied()
+                .unwrap_or(usize::MAX);
+            let before = current.get(column).copied().unwrap_or(usize::MAX);
+            let diagonal = previous.get(column).copied().unwrap_or(usize::MAX);
+            let substitution = diagonal.saturating_add(usize::from(from != into));
+            let best = above
+                .saturating_add(1_usize)
+                .min(before.saturating_add(1_usize))
+                .min(substitution);
+            current.push(best);
+        }
+        core::mem::swap(&mut previous, &mut current);
+    }
+    EditDistance(previous.last().copied().unwrap_or(width))
 }
