@@ -148,7 +148,9 @@ use gandr_core_checker::check_module;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::MalformedSite;
 use gandr_kernel_term::NameSegment;
 use gandr_kernel_term::StructuredName;
 use gandr_storage_artifact::ArtifactManifest;
@@ -310,7 +312,8 @@ struct Exported
 /// - requires: the fixture producer preserves the source and boundary
 ///   correspondence represented.
 /// - ensures: Distinguishes a source exported after lowering from a source
-///   refused as a whole before any declaration was offered.
+///   refused as a whole before any declaration was offered, and from a source
+///   whose artifact the decoder refuses past its cap on expanded work.
 /// - panics: none.
 /// - executable: none — The enum carries no original lowering result; `export`
 ///   selects the case while the corpus consumers validate successful exports.
@@ -329,7 +332,16 @@ enum Swept
     Exported(Exported),
     /// The lowering refused it as a whole, so it offered nothing.
     RefusedWhole,
+    /// The decoder refuses its artifact past the cap on expanded work, so no
+    /// record holds it.
+    PastTheWorkCap,
 }
+
+/// The sources whose artifact passes the decoder's cap on expanded work. The
+/// checkers admit each one in work linear in its distinct nodes.
+///
+/// - see: #5797 — the decoder refuses such an artifact as malformed.
+const PAST_THE_WORK_CAP: [&str; 1] = ["pathological/records/iterated-pair.gandr"];
 
 /// Every `.gandr` source under `root`, sorted, symbolic links not followed.
 ///
@@ -557,7 +569,7 @@ fn class_of(
 /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 #[spec(
     ensures: |ret| match ret {
-    Swept::RefusedWhole => true,
+    Swept::RefusedWhole | Swept::PastTheWorkCap => true,
     Swept::Exported(ref exported) => {
         exported.root == root
             && exported
@@ -698,6 +710,17 @@ fn export(
         path.display()
     );
     let artifact = readmission.export(names);
+    if PAST_THE_WORK_CAP.iter().any(|held| path.ends_with(held)) {
+        assert_eq!(
+            gandr_kernel_term::decode(artifact.as_image()).err(),
+            Some(DecodeError::Malformed {
+                site: MalformedSite::ExpandedWork,
+            }),
+            "{}: the decoder refuses the export past its work cap until #5797",
+            path.display()
+        );
+        return Swept::PastTheWorkCap;
+    }
     Swept::Exported(Exported {
         path,
         root,
@@ -1241,7 +1264,7 @@ mod kernel_generative_distinctness
         ));
         match export(&pbg, path, Root::Fixture) {
             Swept::Exported(exported) => exported,
-            Swept::RefusedWhole => panic!("the functor pair lowers"),
+            Swept::RefusedWhole | Swept::PastTheWorkCap => panic!("the functor pair lowers"),
         }
     }
 
