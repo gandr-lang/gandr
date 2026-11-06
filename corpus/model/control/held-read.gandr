@@ -1,7 +1,10 @@
-//! A held value is read as any variable is: its type is the slot's, known where
-//! the hold binds it. A return synthesises the pure returner of what its value
-//! synthesises, the mode-correct reading of an introduction whose premise
-//! synthesises [Dunfield-2019-bidirectional_typing].
+//! This source shows reads of held values.
+//!
+//! A held read has the type of its slot.
+//! A statement binder can infer that type.
+//!
+//! The checker records the slot type at the hold.
+//! A return synthesises the pure returner of its value.
 //!
 //! - see: #1142 — `bound`
 //! - cites: [Dunfield-2019-bidirectional_typing]

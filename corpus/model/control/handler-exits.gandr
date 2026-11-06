@@ -1,10 +1,10 @@
-//! Effect handlers and the exits through them, after Plotkin and Pretnar,
-//! _Handling Algebraic Effects_ [Plotkin-2013-handling_algebraic_effects]: an
-//! operation's clause may resume the handled body through its continuation or
-//! discard it, a body's `pure` value passes through the handler's `pure`
-//! clause, and a `return` leaves the handler with its value as it stands. A
-//! tail call is an exit too, so every `become` here is written: the exits are
-//! the subject.
+//! This source shows exits from effect handlers.
+//!
+//! An operation clause resumes or discards its continuation.
+//! A `pure` value passes through the handler `pure` clause.
+//!
+//! A `return` exits the handler with its value.
+//! The lowering records every `become` exit.
 //!
 //! - see: #1481 — `looped`
 //! - see: #1387 — `resume_stack`
@@ -92,9 +92,8 @@ def branch_zero() -> Integer { become branch 0 }
 @[ runs("102") ]
 def branch_one() -> Integer { become branch 1 }
 
-/// A loop's `break` gives the loop's value to the body, which continues. The
-/// loop may run forever, so the row states `Partial`, and the handler of
-/// `std.process.Exit.Eff` leaves it there.
+/// `break` gives the loop value to its body.
+/// `looped` carries `Partial` through the handler.
 @[ runs("105") ]
 def looped() -> [Partial] Integer =
   handle c : std.process.Exit.Eff {
@@ -130,13 +129,13 @@ def answered() -> Integer =
     | oper exit(code, k) => 9
   }
 
-/// A continuation's type is written `Stack(C, D)`, the computation it resumes
-/// from and the one it ends as; a clause hands its continuation on by it.
+/// `Stack(C, D)` names a continuation type.
+/// It states the computation it resumes and its result.
 def dropped(k : Stack(-F Unit, -F Integer)) -> Integer =
   9
 
-/// A clause hands its continuation to a function stating the continuation's
-/// type, and the handled body answers what that function returns.
+/// This clause passes its continuation to a typed function.
+/// The handler returns that function result.
 @[ runs("9") ]
 def handed_on() -> Integer =
   handle c : std.process.Exit.Eff {
@@ -147,13 +146,12 @@ def handed_on() -> Integer =
     | oper exit(code, k) => dropped k
   }
 
-/// A function stating a continuation's type resumes the continuation it is
-/// handed, as the clause that bound it would.
+/// A function with a continuation type resumes the continuation it receives.
 def resume_stack(j : Stack(-F Unit, -F Integer)) -> Integer =
   j *{}
 
-/// A clause hands its continuation to `resume_stack`, which resumes the body;
-/// the body's value passes through the `pure` clause, as in `resumed`.
+/// This clause calls `resume_stack` with its continuation.
+/// The body then passes through the `pure` clause.
 @[ runs("101") ]
 def resumed_on() -> Integer =
   handle c : std.process.Exit.Eff {
@@ -164,8 +162,8 @@ def resumed_on() -> Integer =
     | oper exit(code, k) => resume_stack k
   }
 
-/// A type member may abbreviate a continuation's type: a function stating the
-/// member resumes the continuation it is handed as one stating the stack does.
+/// A type member can name a continuation type.
+/// Its function resumes the continuation it receives.
 module Conts where
   type K = Stack(-F Unit, -F Integer);
 
@@ -173,8 +171,8 @@ module Conts where
   def aliased(j : K) -> Integer =
     j *{}
 
-/// A clause hands its continuation to the function stating the member, which
-/// resumes the body.
+/// This clause passes its continuation to the member-typed function.
+/// That function resumes the body.
 @[ runs("101") ]
 def resumed_aliased() -> Integer =
   handle c : std.process.Exit.Eff {
