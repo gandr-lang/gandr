@@ -1812,23 +1812,24 @@ enum Elaboration
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an expression for a thunk's body, a static lambda's body, a
-///   transport's and a ride's motive and operands, and the statements of a
-///   nested or returned computation over a bind, which the grammar reads
-///   between their braces or a call's parentheses as an expression in either
-///   sort, so a type argument of a call there is quoted (#1102, #4508); a type
-///   for a type slot of a value or a computation that writes itself — an
-///   annotation, a binder's type, a typed bind's result — where the expression
-///   grammar embeds a type; `surface` itself otherwise. A quote, any other
-///   nested or returned computation and an ascription, elided or written as the
-///   match that answers it, write nothing of their own around a slot, so their
-///   slot is read as they are; the endpoints of a path or a bridge type,
-///   `Path(A, x, y)`, are expressions in either sort unless its carrier is a
-///   universe, since the grammar reads a universe's endpoints, codes, as types
-///   and any other carrier's as expressions; any other type former's value slot
-///   is read as the type is, since every type application reads its arguments
-///   in the type's own sort. A call reads its own head and arguments as
-///   expressions, which [`Walk::visit`] schedules itself.
+/// - ensures: an expression for a thunk's body, a lambda's body, a static
+///   lambda's body, a transport's and a ride's motive and operands, and the
+///   statements of a nested or returned computation over a bind, which the
+///   grammar reads between their braces or a call's parentheses as an
+///   expression in either sort, so a type argument of a call there is quoted
+///   (#1102, #4508) and a call there is juxtaposed (#5211); a type for a type
+///   slot of a value or a computation that writes itself — an annotation, a
+///   binder's type, a typed bind's result — where the expression grammar embeds
+///   a type; `surface` itself otherwise. A quote, any other nested or returned
+///   computation and an ascription, elided or written as the match that answers
+///   it, write nothing of their own around a slot, so their slot is read as
+///   they are; the endpoints of a path or a bridge type, `Path(A, x, y)`, are
+///   expressions in either sort unless its carrier is a universe, since the
+///   grammar reads a universe's endpoints, codes, as types and any other
+///   carrier's as expressions; any other type former's value slot is read as
+///   the type is, since every type application reads its arguments in the
+///   type's own sort. A call reads its own head and arguments as expressions,
+///   which [`Walk::visit`] schedules itself.
 /// - provides: whether a quote in the slot stands where an expression reads.
 /// - fails: never.
 /// - panics: none.
@@ -1837,13 +1838,15 @@ enum Elaboration
 /// - hypothesis: L3 — a quote as an argument, as a definition's body, as a
 ///   static lambda's body, as a decoded code in a type position, as a call's
 ///   argument in a thunk a path type's endpoint writes and as a value a block
-///   in a path type's endpoint binds distinguish the slots an expression reads
-///   from those a type reads.
+///   in a path type's endpoint binds, and a call in a lambda's body as a type's
+///   argument, distinguish the slots an expression reads from those a type
+///   reads.
 /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
 /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
 /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
 /// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
-#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
+/// - witness: `tests::goldens::a_call_inside_a_lambda_inside_a_type_is_juxtaposed_5211`
+#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::Lambda(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
     || (endpoints_read_as_expressions(source, former) == Endpoints::Expressions && !matches!(admits, Admits::ValueType)) {
     Surface::Expression
 } else if !matches!(*former,
@@ -1864,12 +1867,14 @@ fn surface_below<S>(
 where
     S: Source + ?Sized,
 {
-    // A thunk's body, a static lambda's body and a block's statements are
-    // written between braces, and a transport's motive and operands between a
-    // call's parentheses, which either grammar reads as an expression.
+    // A thunk's body, a lambda's body, a static lambda's body and a block's
+    // statements are written between braces, and a transport's motive and
+    // operands between a call's parentheses, which either grammar reads as an
+    // expression.
     if matches!(
         *former,
         Former::Thunk(_)
+            | Former::Lambda(_)
             | Former::StaticLambda(_)
             | Former::PathTransport { .. }
             | Former::Ride { .. }
@@ -8852,40 +8857,42 @@ impl Walk<'_, '_>
     ///   reads at `node`.
     /// - ensures: a value at the depth limit finishes as `<deep>`; a node of a
     ///   sort its position does not admit and an unreadable node finish as `?`;
-    ///   a thunk finishes as `<thunk>` where bodies are opaque; a leaf former
-    ///   finishes as its spelling, the 0-ary product as `Unit`, the 0-ary sum
-    ///   as `Void` and the sum of two 0-ary products as `Bool`; a composite
-    ///   former pushes its join below its children's visits, each label
-    ///   scheduled just before its entry and each child between the opening and
-    ///   the closing of the binders it stands under; a former spelled by parts
-    ///   pushes its parts as [`Self::form`] builds them, a `for` loop's
-    ///   application and a threading loop's among them, and so does a return
-    ///   ascribed its returner where no pass ends, over its value and type, and
-    ///   a sum case, a split or a list case ascribed its answer, over the
-    ///   eliminator's slots with the answer after the scrutinee; any other
-    ///   ascription outside a typed bind pushes its body's visit alone, noted
-    ///   as elided; a static application schedules its spine as [`Self::spine`]
-    ///   does and any other application its call as [`Self::call`] does, under
-    ///   `become` where it ends a loop's pass; a nested computation or a
-    ///   returned value over a bind binding no call is the block of its
-    ///   statements, `{ let x = c ; rest }`, as [`Self::form`] writes it; a
-    ///   decode, a quote, a returner where the body ends, any other nested
-    ///   computation or returned value and a reset where a body ends push their
-    ///   child's visit alone, so the child's piece is theirs, the reset's child
-    ///   inside the body it delimits; there, in a handler's subject, a shift
-    ///   over a returner where a body or a pass ends is `return v`, the stack's
-    ///   binder unwritten; the loop's own binder forced at the end of a pass,
-    ///   or applied to what the pass hands on, finishes as `continue`, a
-    ///   returner ending a pass is `break(v)` or `return v` and a loop ending a
-    ///   pass is written with its rest, as [`Self::pass_end`] reads them, and a
-    ///   computation the end of a pass cannot write is noted as the fixpoint's
-    ///   notation; a returner anywhere else is `pure v` and a run `run c`; a
-    ///   projection out of a forced variable naming a context binder is the
-    ///   observation `a.i`, the binder's name its one piece; a decode of a
-    ///   positional projection, which the type grammar writes no spelling of,
-    ///   is noted as the printer's notation, and so is a row as a term, written
-    ///   as the bracket of its interfaces that the surface reads as a list
-    ///   where a term stands, its tail after a bar when it is open.
+    ///   a thunk finishes as `<thunk>` where bodies are opaque, and a family's
+    ///   argument over a function is its lambda where they are spelled; a leaf
+    ///   former finishes as its spelling, the 0-ary product as `Unit`, the
+    ///   0-ary sum as `Void` and the sum of two 0-ary products as `Bool`; a
+    ///   composite former pushes its join below its children's visits, each
+    ///   label scheduled just before its entry and each child between the
+    ///   opening and the closing of the binders it stands under; a former
+    ///   spelled by parts pushes its parts as [`Self::form`] builds them, a
+    ///   `for` loop's application and a threading loop's among them, and so
+    ///   does a return ascribed its returner where no pass ends, over its value
+    ///   and type, and a sum case, a split or a list case ascribed its answer,
+    ///   over the eliminator's slots with the answer after the scrutinee; any
+    ///   other ascription outside a typed bind pushes its body's visit alone,
+    ///   noted as elided; a static application schedules its spine as
+    ///   [`Self::spine`] does and any other application its call as
+    ///   [`Self::call`] does, under `become` where it ends a loop's pass; a
+    ///   nested computation or a returned value over a bind binding no call is
+    ///   the block of its statements, `{ let x = c ; rest }`, as [`Self::form`]
+    ///   writes it; a decode, a quote, a returner where the body ends, any
+    ///   other nested computation or returned value and a reset where a body
+    ///   ends push their child's visit alone, so the child's piece is theirs,
+    ///   the reset's child inside the body it delimits; there, in a handler's
+    ///   subject, a shift over a returner where a body or a pass ends is
+    ///   `return v`, the stack's binder unwritten; the loop's own binder forced
+    ///   at the end of a pass, or applied to what the pass hands on, finishes
+    ///   as `continue`, a returner ending a pass is `break(v)` or `return v`
+    ///   and a loop ending a pass is written with its rest, as
+    ///   [`Self::pass_end`] reads them, and a computation the end of a pass
+    ///   cannot write is noted as the fixpoint's notation; a returner anywhere
+    ///   else is `pure v` and a run `run c`; a projection out of a forced
+    ///   variable naming a context binder is the observation `a.i`, the
+    ///   binder's name its one piece; a decode of a positional projection,
+    ///   which the type grammar writes no spelling of, is noted as the
+    ///   printer's notation, and so is a row as a term, written as the bracket
+    ///   of its interfaces that the surface reads as a list where a term
+    ///   stands, its tail after a bar when it is open.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -8913,6 +8920,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::an_observation_of_a_parameter_prints_by_position_941`
     /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
     /// - witness: `tests::goldens::a_positional_projection_the_surface_does_not_read_is_notation`
+    /// - witness: `tests::goldens::a_family_argument_leaves_its_function_s_thunk_out_5408`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -9223,6 +9231,24 @@ impl Walk<'_, '_>
                     Production("identifier.expression"),
                     writes(Production("type_variable"), self.variable(zone, index)),
                 );
+            },
+            // A family's argument over a function is the thunk the lowering
+            // mints over a lambda a type reads (#3697): the thunk is left out
+            // where bodies are spelled, as a call's argument there leaves it
+            // out (#5408). The parameter states the lambda's type, as it
+            // states the thunk's. The slots keep the thunk, so a scan still
+            // reaches the thunk's node.
+            Former::Thunk(body)
+                if self.bodies == Bodies::Spelled
+                    && admits == Admits::Stated
+                    && matches!(source.read(body), Former::Lambda(_)) =>
+            {
+                tasks.push(Task::Visit {
+                    node: body,
+                    admits: Admits::Computation(Tail::Ends),
+                    depth: below(depth, kind),
+                });
+                return Ok(());
             },
             Former::Thunk(_) => match self.bodies {
                 #[cfg_attr(
