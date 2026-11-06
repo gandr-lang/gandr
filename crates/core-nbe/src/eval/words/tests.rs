@@ -331,6 +331,38 @@ fn cong_along_the_loop_is_the_arm_s_image()
 }
 
 #[test]
+fn cong_along_the_loop_reads_a_map_its_binder_holds_5481()
+{
+    let mut core = CoreArena::new();
+    let circle = circle(&mut core);
+    let chain = chain(&circle, Count::Recorded);
+    // `(λf. cong(f, loop)) flip`, the family `y. Path[.A = S](Base, ⟨force f
+    // y⟩)` under the binder `f` of a definition's body, which holds `flip`.
+    let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let map = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let forced = core.computation_force(map);
+    let applied = core.computation_application(forced, moving);
+    let through = core.value_returned(applied);
+    let family = core.value_type_path(circle.carrier, circle.point, through);
+    let cong = core.computation_path_transport(family, circle.named, circle.empty);
+    let over = core.computation_lambda(cong);
+    let flip = core.value_constant(ConstantIndex::from(FLIP));
+    let called = core.computation_application(over, flip);
+    let image = core.computation_return(circle.inverse);
+    assert_eq!(
+        decided(&core, &chain, (called, image)),
+        Some(MachineVerdict::Convertible),
+        "the image of the loop under the map the binder holds is its loop arm's answer"
+    );
+    let looped = core.computation_return(circle.letter);
+    assert_eq!(
+        decided(&core, &chain, (called, looped)),
+        Some(MachineVerdict::NotConvertible),
+        "and not the loop"
+    );
+}
+
+#[test]
 fn cong_along_the_loop_reads_a_map_of_two_arguments()
 {
     let mut core = CoreArena::new();
