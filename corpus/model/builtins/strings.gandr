@@ -1,49 +1,48 @@
-// The string operations of the `string` namespace: containment, equality,
-// prefix and suffix, escaping and splitting. The native `string` namespace
-// holds `append`, `eq` and `lt` (`simple-builtins.gandr`), so the others name
-// no member of it; scanning and escaping are planned text primitives.
-// Equality is written `==`, which resolves the prelude's `Eq` model of
-// strings; their order is written `<`, through `Ord`
-// (`model-ord.gandr`).
+// This source tests string namespace operations.
+//
+// The native `string` namespace has `append`, `eq` and `lt`. It has no
+// containment, prefix, suffix, escaping or splitting operation. Scanning and
+// escaping remain planned text primitives.
+//
+// String equality uses `==` through the prelude's `Eq` model. String order
+// uses `<` through `Ord`.
 //
 // - see: #318
 // - see: #1832
 // - see: #2572
 
-/// A string, named.
+/// `slogan` names one string.
 def slogan = "types are machines";
 
-/// A statement at the top level, where only declarations stand: it runs
-/// inside a declaration, `main` or another.
+/// The top level accepts declarations only. `string.contains` must run inside
+/// a declaration, `main` or another block.
 @[ refuses("OutOfFragment.TopLevel") ]
 (string.contains slogan "machine");
 
-/// Equality: `==` between strings resolves the prelude's `EqString`, and a
-/// slogan is itself.
+/// `same` compares `slogan` with itself through `EqString`.
 @[ runs("+{.0 = *{}}") ]
 def same() -> Bool { slogan == "types are machines" }
 
-/// A slogan is not another.
+/// `different` compares `slogan` with another string.
 @[ runs("+{.1 = *{}}") ]
 def different() -> Bool { slogan == "types are types" }
 
-/// Equality across types: the integer fixes the carrier `==` compares at, and
-/// the string is not one.
+/// `across` refuses equality between an integer and a string.
 @[ refuses("TypeMismatch") ]
 def across() -> Bool { 3 == "three" }
 
-/// Whether the string starts with a word.
+/// `has_prefix` asks whether `slogan` starts with a word.
 @[ refuses("UnknownMember") ]
 def has_prefix = string.starts_with slogan "types";
 
-/// Whether the string ends with a word.
+/// `has_suffix` asks whether `slogan` ends with a word.
 @[ refuses("UnknownMember") ]
 def has_suffix = string.ends_with slogan "machines";
 
-/// A path with its special characters escaped.
+/// `escaped` asks to escape a path's special characters.
 @[ refuses("UnknownMember") ]
 def escaped = string.escape "a+b.txt";
 
-/// A split at a comma, which is no member of the native `string` namespace.
+/// `halves` asks to split a string at a comma.
 @[ refuses("UnknownMember") ]
 def halves = string.split "alpha,beta" ",";
