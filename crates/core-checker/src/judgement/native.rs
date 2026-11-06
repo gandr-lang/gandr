@@ -1731,10 +1731,15 @@ impl Machine<'_, '_>
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_) => return Err(CheckRefusal::MachineInvariant),
         };
+        let result = instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);
+        let lifted = shift_comp_type_under(
+            self.context.arena_mut(),
+            motive,
+            Binders::ONE,
+            Binders::from(2_u32),
+        );
+        let lifted = self.context.settle_comp_type(lifted);
         let arena = self.context.arena_mut();
-        let result = instantiate_comp_type(arena, motive, scrutinee);
-        let lifted =
-            shift_comp_type_under(arena, motive, Binders::ONE, Binders::from(2_u32)).settle(arena);
         let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
         let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let pair = arena.value_tuple(&[outer, inner]);

@@ -31,7 +31,6 @@ use gandr_core_term::session::ActionKind;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::SessionType;
 use gandr_core_term::session::Step as Move;
-use gandr_core_term::shift_value_type;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use quenchant_shape::shape::Maybe;
@@ -631,8 +630,7 @@ impl Machine<'_, '_>
             return Ok(ty);
         }
         let opened = u32::try_from(opened).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
-        let arena = self.context.arena_mut();
-        Ok(shift_value_type(arena, ty, Binders::from(opened)).settle(arena))
+        Ok(self.context.shift_value_type(ty, Binders::from(opened)))
     }
 
     /// The pure returner of the unit, an action's type.
@@ -2118,8 +2116,9 @@ impl Machine<'_, '_>
             .binders()
             .occurrence(Zone::Intuitionistic, index)
             .map_err(|_fault| CheckRefusal::MachineInvariant)?;
-        let arena = self.context.arena_mut();
-        let read = shift_value_type(arena, declared, Binders::past(index)).settle(arena);
+        let read = self
+            .context
+            .shift_value_type(declared, Binders::past(index));
         let mut head = self.context.whnf_value_type(read)?;
         // A fixpoint's descending parameter stands at a stage of its type; an
         // endpoint never descends, so it is placed at the session it is.

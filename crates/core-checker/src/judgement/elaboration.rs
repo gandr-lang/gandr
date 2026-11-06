@@ -550,7 +550,7 @@ pub fn elaborate_value(
     .map_err(|failure: Failure| failure.refusal())?;
     let produced = match (direction, produced) {
         (Direction::Synthesise, Produced::ValueType(found)) => {
-            FormedValueType::derived(found.settle(context.arena_mut()))
+            FormedValueType::derived(context.settle_value_type(found))
         },
         (Direction::Check(expected), Produced::Checked) => expected,
         (Direction::Synthesise, Produced::CompType(_) | Produced::Checked)
