@@ -1302,6 +1302,97 @@ fn an_unended_family_is_refused_once_at_its_close()
     }
 }
 
+/// A field that is no type is refused once, by the lowering where it reads
+/// the field's type, though an operation makes the description read the
+/// family. A type in parentheses reads as the type it groups, and a codata
+/// observation that is no type is malformed (#2664).
+#[test]
+fn a_field_that_is_no_type_is_refused_once_by_the_lowering_2664()
+{
+    use crate::DeclarationOutcome;
+    use crate::LoweringBudget;
+    use crate::fixture::parsed;
+    use crate::lower_module;
+    use crate::namespace::Recognition;
+    let grammar = grammar();
+    let data = |ty: &str| {
+        alloc::format!(
+            "data G : Type where {{ | Mk : (p : {ty}) --> G oper keep : (g : G) --> G; }}"
+        )
+    };
+    let mut rows: Vec<(String, &str)> =
+        ["0", "\"a\"", "'a'", "?", "()", "(Integer, Integer)", "(0)"]
+            .into_iter()
+            .map(|ty| (data(ty), ty))
+            .collect();
+    rows.push((
+        String::from("codata G : Type[-] where { held : 0; next : G; }"),
+        "0",
+    ));
+    for &(ref source, ty) in &rows {
+        let tree = parsed(&grammar, source.as_str().into());
+        let mut arena = gandr_core_term::CoreArena::new();
+        let module = lower_module(
+            &grammar,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap();
+        let mut refusals = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration.outcome() {
+                DeclarationOutcome::Refused(refusal) => Some(refusal),
+                DeclarationOutcome::Completed { .. }
+                | DeclarationOutcome::Uncompleted { .. }
+                | DeclarationOutcome::Bodied { .. }
+                | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Codata(_)
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World => None,
+            });
+        let (Some(refusal), None) = (refusals.next(), refusals.next())
+        else {
+            panic!("`{source}`: one refusal")
+        };
+        assert!(
+            !matches!(refusal, LoweringRefusal::UndescribedMember { .. }),
+            "`{source}`: the refusal is no undescribed member: {refusal:?}"
+        );
+        let start = source.rfind(ty).unwrap();
+        let Maybe::Present(span) = refusal.span()
+        else {
+            panic!("`{source}`: the refusal is located: {refusal:?}")
+        };
+        assert!(
+            usize::from(span.start()) >= start
+                && usize::from(span.end()) <= start.saturating_add(ty.len()),
+            "`{source}`: the refusal is inside `{ty}`: {refusal:?}"
+        );
+    }
+    let fields = |ty: &str| {
+        let report = elaborated(SourceText::from(data(ty).as_str()));
+        assert_eq!(report.diagnostics, [], "`{ty}` reads");
+        let [ref family] = *report.declarations.as_slice()
+        else {
+            panic!("`{ty}`: one description")
+        };
+        family.description.ctors.clone()
+    };
+    assert_eq!(
+        fields("(Integer)"),
+        fields("Integer"),
+        "a type in parentheses reads as the type it groups"
+    );
+    assert_eq!(
+        fields("((Integer))"),
+        fields("Integer"),
+        "each pair of parentheses is read through"
+    );
+}
+
 #[test]
 fn a_codata_declaration_lowers_to_its_signature()
 {
@@ -1546,6 +1637,7 @@ fn every_member_fault_renders_its_own_message()
         MemberFault::HigherOrderField,
         MemberFault::DependentField,
         MemberFault::TypeShape,
+        MemberFault::NoUniverse,
         MemberFault::NativeDecode,
         MemberFault::OperationFiller,
         MemberFault::TopLevelOperation,

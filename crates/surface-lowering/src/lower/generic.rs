@@ -943,6 +943,8 @@ fn uncarried(
                 | DescriptionFault::NonUniformResult
                 | DescriptionFault::MemberPolarity
                 | DescriptionFault::TypeShape
+                | DescriptionFault::NoType
+                | DescriptionFault::NoUniverse
                 | DescriptionFault::RetiredRuleArrow
                 | DescriptionFault::RetiredOperation
                 | DescriptionFault::NativeDecode(_)

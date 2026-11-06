@@ -1,0 +1,8 @@
+error[UndescribedMember.NoUniverse]: this member is a sort whose classifier is no universe
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.NoUniverse.gandr:9:3
+  │
+9 │   sort Bad : Integer;
+  │   ━━━━━━━━━━━━━━━━━━ a member the description does not read
+  │
+  ├ note: `Shape` is refused with UndescribedMember.NoUniverse, as its expectation states
+  ╰ help: classify the sort by `Type`, `Type+`, `Type[-]` or `Atom`
