@@ -1,0 +1,8 @@
+error[FixedFieldDiffers]: the field is not the value its type fixes
+  ╭▸ corpus/ledger/diagnostics/FixedFieldDiffers.gandr:5:66
+  │
+5 │ def wrong : Config[.port = 443] = *{.host = "localhost", .port = 80};
+  │                            ─── the value the type fixes          ━━ not the value its type fixes
+  │
+  ├ note: `wrong` is refused with FixedFieldDiffers, as its expectation states
+  ╰ help: state the value the type fixes, or omit the field

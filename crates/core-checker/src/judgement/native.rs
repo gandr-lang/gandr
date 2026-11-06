@@ -732,8 +732,11 @@ impl Machine<'_, '_>
     /// - ensures: each required field checks at its declared type, and every
     ///   additional field has a type rather than escaping judgment. At a
     ///   patched type, the required fields are its base's free fields, and a
-    ///   fixed field is an additional one.
-    /// - fails: wrong expected shape or a missing field, then field refusals.
+    ///   fixed field is an additional one that converts with the value the type
+    ///   fixes at its label.
+    /// - fails: wrong expected shape or a missing field; then, least label
+    ///   first, [`CheckRefusal::FixedFieldDiffers`] for a fixed field that does
+    ///   not convert with its fixed value; then field refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -741,9 +744,12 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — width in both directions, nested depth and a field of
-    ///   the wrong type separate record checking from mere label inclusion.
+    ///   the wrong type separate record checking from mere label inclusion; a
+    ///   fixed field stating the fixed value and one stating another separate
+    ///   the comparison from a discard.
     /// - witness: `tests::native_formers::record_width_depth_and_projection`
     /// - witness: `tests::native_formers::a_patched_type_forms_over_its_base_and_types_its_free_fields`
+    /// - witness: `tests::native_formers::a_literal_s_fixed_field_converts_with_the_fixed_value_5612`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn check_native_record(
@@ -798,7 +804,17 @@ impl Machine<'_, '_>
         {
             return Err(CheckRefusal::MissingRecordField { at: term, expected });
         }
+        // Each field the literal holds at a fixed label, beside the fixed
+        // value, least label first. Only a literal at a patched type that
+        // states a fixed field allocates.
+        let held: Vec<(ValueId, ValueId)> = fixed.map_or_else(Vec::new, |fixed| {
+            fixed
+                .iter()
+                .filter_map(|(label, &value)| fields.get(label).map(|&field| (field, value)))
+                .collect()
+        });
         let owner = self.owner;
+        let depth = self.frames.len();
         for (label, &field) in fields.iter().rev() {
             let direction = if let Some(&expected) = wanted.get(label).filter(|_| free(label)) {
                 Direction::Check(expected)
@@ -817,6 +833,21 @@ impl Machine<'_, '_>
                 }),
                 owner,
             });
+        }
+        // A field the literal holds at a fixed label is the value the type
+        // fixes there, or the literal contradicts its type. A refusal takes
+        // back the field checks queued above.
+        for (field, value) in held {
+            let refusal = match crate::conversion::fixed_field_agrees(self.context, field, value) {
+                Ok(crate::conversion::Agreement::Convertible) => continue,
+                Ok(_) => CheckRefusal::FixedFieldDiffers {
+                    at: field,
+                    fixed: value,
+                },
+                Err(refusal) => refusal,
+            };
+            self.frames.truncate(depth);
+            return Err(refusal);
         }
         Ok(Step::Ascend(Produced::Checked))
     }

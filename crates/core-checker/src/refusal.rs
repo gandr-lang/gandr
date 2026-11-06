@@ -841,6 +841,16 @@ pub enum CheckRefusal
         /// hold; the label is the one the patched type keys it by.
         value: ValueId,
     },
+    /// A record literal at a patched type holds a field at a label the type
+    /// fixes, and the field does not convert with the fixed value.
+    FixedFieldDiffers
+    {
+        /// The field the literal holds; the label is the one the literal
+        /// keys it by.
+        at: ValueId,
+        /// The value the patched type fixes at the label.
+        fixed: ValueId,
+    },
     /// A perform names no operation in its supplied interface.
     UnknownOperation
     {
@@ -1640,7 +1650,7 @@ impl CheckRefusal
         | Self::MachineInvariant | Self::TacticRefused { fault: TacticFault::Forged, .. } => matches!(ret, FailureClass::EngineFault),
         | Self::Undecided { .. } | Self::LoopUndecided { .. }
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. } | Self::ComposeNotAShape { .. } | Self::ComposeDoesNotFill { .. } | Self::NoFiller { .. }
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::BridgeAtSealedType { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. } | Self::PatchOutsideBase { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::BridgeAtSealedType { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. } | Self::PatchOutsideBase { .. } | Self::FixedFieldDiffers { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. } | Self::HandlerUnlawful { .. }
@@ -1697,6 +1707,7 @@ impl CheckRefusal
             | Self::AbsentTupleComponent(_)
             | Self::MissingRecordField { .. }
             | Self::PatchOutsideBase { .. }
+            | Self::FixedFieldDiffers { .. }
             | Self::TypeMismatch(_)
             | Self::EffectSignatureConflict { .. }
             | Self::UnknownOperation { .. }
@@ -1962,6 +1973,7 @@ impl CheckRefusal
             | Self::AbsentRecordField(_)
             | Self::AbsentTupleComponent(_)
             | Self::MissingRecordField { .. }
+            | Self::FixedFieldDiffers { .. }
             | Self::UnknownOperation { .. }
             | Self::HandlerCoverage { .. }
             | Self::HandlerUnlawful { .. }

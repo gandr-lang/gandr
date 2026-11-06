@@ -2347,6 +2347,76 @@ fn a_patched_type_forms_over_its_base_and_types_its_free_fields()
     );
 }
 
+/// A record literal at a patched type can state a fixed field. A field at the
+/// fixed value checks, and the kernel admits the literal at the record of the
+/// free fields. A field at another value is refused at the field, least label
+/// first.
+#[test]
+fn a_literal_s_fixed_field_converts_with_the_fixed_value_5612()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| FieldLabel::from(String::from(name));
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let base = arena.value_type_record(BTreeMap::from([
+        (label("host"), integer),
+        (label("port"), integer),
+        (label("tls"), integer),
+    ]));
+    let fixed = three(&mut arena);
+    let patched = arena.value_type_patched(
+        base,
+        BTreeMap::from([(label("port"), fixed), (label("tls"), fixed)]),
+    );
+    let host = three(&mut arena);
+    let port = three(&mut arena);
+    let tls = three(&mut arena);
+    let stated = arena.value_record(BTreeMap::from([
+        (label("host"), host),
+        (label("port"), port),
+        (label("tls"), tls),
+    ]));
+    let other_port = arena.value_literal(gandr_kernel_term::Literal::Integer(
+        gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            gandr_kernel_term::Magnitude::zero(),
+        ),
+    ));
+    let other_tls = arena.value_literal(gandr_kernel_term::Literal::Integer(
+        gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            gandr_kernel_term::Magnitude::zero(),
+        ),
+    ));
+    let contradicted = arena.value_record(BTreeMap::from([
+        (label("host"), host),
+        (label("port"), other_port),
+        (label("tls"), other_tls),
+    ]));
+    let declarations = [
+        definition(ConstantIndex::from(0_usize), patched, stated),
+        definition(ConstantIndex::from(1_usize), patched, contradicted),
+    ];
+    let (report, crossed) = run(&mut arena, &declarations);
+    assert!(
+        matches!(report.judged()[0].verdict(), Verdict::Checked { .. }),
+        "a field at the fixed value checks: {:?}",
+        report.judged()[0].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[0].outcome(), Outcome::Defined { .. }),
+        "the kernel admits the literal at the record of the free fields: {:?}",
+        crossed.readmitted()[0].outcome()
+    );
+    assert_eq!(
+        report.judged()[1].verdict(),
+        Verdict::Refused(CheckRefusal::FixedFieldDiffers {
+            at: other_port,
+            fixed,
+        }),
+        "a field at another value is refused at the least such label"
+    );
+}
+
 #[test]
 fn term_indices_are_structural_in_both_checkers()
 {

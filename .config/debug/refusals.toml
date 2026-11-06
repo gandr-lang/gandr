@@ -84,3 +84,8 @@ sites = [
 sites = [
   { file = "crates/surface-lowering/src/module.rs", pattern = 'Err\(extra_operand\(FormName::ATTRIBUTE, (stray|extra)\)\)' },
 ]
+
+[refusal.FixedFieldDiffers]
+sites = [
+  { file = "crates/core-checker/src/judgement/native.rs", pattern = '^\s*Ok\(_\) => CheckRefusal::FixedFieldDiffers \{$' },
+]

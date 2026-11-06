@@ -1027,6 +1027,9 @@ fn checked(
         CheckRefusal::PatchOutsideBase { .. } => {
             f.write_str("the base record has no field of this name to fix")
         },
+        CheckRefusal::FixedFieldDiffers { .. } => {
+            f.write_str("the field is not the value its type fixes")
+        },
         CheckRefusal::UnknownOperation { .. } => f.write_str("the interface has no such operation"),
         CheckRefusal::HandlerCoverage { .. } => {
             f.write_str("the handler must handle every operation of its interface exactly once")
@@ -2275,6 +2278,10 @@ pub mod tests
             CheckRefusal::MissingRecordField {
                 at: value,
                 expected: value_type,
+            },
+            CheckRefusal::FixedFieldDiffers {
+                at: value,
+                fixed: value,
             },
             CheckRefusal::UnknownOperation { at: computation },
             CheckRefusal::HandlerCoverage { at: computation },
