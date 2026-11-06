@@ -8,7 +8,7 @@
 //! | ---- | ------- | --------- |
 //! | latency | each keystroke's time from its change to its settled answer, p50 and p99 | a language-server session per [`SAMPLE`] source, one line typed back a character per change |
 //! | throughput | bytes and significant tokens per second of the corpus's cold parse | each corpus source parsed [`RUNS`] times, the fastest run kept |
-//! | recovery | each mutant's fate over the syntax exemplars | `gandr ledger recovery`'s sweep |
+//! | recovery | each mutant's fate over the syntax exemplars, and the obligations a line owes outside itself while it is typed | `gandr ledger recovery`'s sweep, and every [`STRIDE`]th indented line of each [`SAMPLE`] source typed back, indented first and at column zero |
 //! | ambiguity | each decision's settling stage, the candidates it read, and the windows and window tokens it molded | the molder's [`DecisionCensus`] over every corpus source |
 //! | incremental | per edit, the tokens re-labelled and the forms re-molded against what the edit touches | a form store per [`SAMPLE`] source, through the latency workload's keystrokes and the edit sweep's form edits |
 //! | parallel | the units the form split molds apart, the seams that break, the bytes in units that join as molded, and the split's scan against the cold parse | [`FormSplit`] over each corpus source, its runs molded and joined as [`parse_by_form`](gandr_surface_parser::parse_by_form) does, the scan's fastest of [`RUNS`] |
@@ -77,6 +77,10 @@ const SAMPLE: [&str; 8] = [
 /// the first line at or after a source's middle that holds this much and is
 /// no comment.
 const TYPED: usize = 20;
+
+/// The typing workload's stride: it types every fourth indented code line of
+/// a sample source.
+const STRIDE: usize = 4;
 
 /// Why the report stopped.
 #[derive(Debug)]
@@ -882,6 +886,126 @@ fn incremental(pbg: &Pbg) -> Result<(Incremental, Incremental), Failure>
     Ok((keystroke, form))
 }
 
+/// What one typing scenario read: the revisions it parsed, and the
+/// obligations they owe outside the line being typed.
+#[derive(Clone, Copy, Debug, Default)]
+struct Typing
+{
+    /// The revisions parsed, one per keystroke.
+    keystrokes: Tally,
+    /// The obligations owed outside the typed line, summed over the revisions.
+    elsewhere: Tally,
+}
+
+impl Typing
+{
+    /// This reading and one more revision, which owes `elsewhere`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn and(
+        self,
+        elsewhere: usize,
+    ) -> Self
+    {
+        Self {
+            keystrokes: self.keystrokes.and(Tally(1)),
+            elsewhere: self.elsewhere.and(Tally(elsewhere)),
+        }
+    }
+}
+
+/// How many obligations `revision` owes outside `typed`, the bytes of the
+/// line being typed.
+///
+/// # Specification
+/// trivial.
+fn owed(
+    pbg: &Pbg,
+    revision: &str,
+    typed: core::ops::Range<usize>,
+) -> Result<usize, Failure>
+{
+    let parsed = parse(pbg, SourceText::from(revision))?;
+    Ok(parsed
+        .obligations()
+        .iter()
+        .filter(|obligation| {
+            usize::from(obligation.span.end()) < typed.start
+                || usize::from(obligation.span.start()) > typed.end
+        })
+        .count())
+}
+
+/// The typing workload: every [`STRIDE`]th indented code line of each
+/// [`SAMPLE`] source typed back one character per revision, in two
+/// scenarios. Indented first, the line's indentation stands before its first
+/// character. At column zero, the code comes first, and then its
+/// indentation, one space per revision. Answers the indented scenario's
+/// reading, then the column-zero one's.
+///
+/// # Specification
+/// trivial.
+fn typing(pbg: &Pbg) -> Result<(Typing, Typing), Failure>
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut indented = Typing::default();
+    let mut zero = Typing::default();
+    for relative in SAMPLE {
+        let text = std::fs::read_to_string(root.join(relative))?;
+        // Each indented code line: its start, its code's start and its end.
+        let mut lines = Vec::new();
+        let mut at = 0_usize;
+        for line in text.split_inclusive('\n') {
+            let content = line.trim_end_matches(['\n', '\r']);
+            let code = content.trim_start();
+            let indent = content.len().saturating_sub(code.len());
+            if indent > 0 && !code.is_empty() && !code.starts_with("//") {
+                lines.push((
+                    at,
+                    at.saturating_add(indent),
+                    at.saturating_add(content.len()),
+                ));
+            }
+            at = at.saturating_add(line.len());
+        }
+        for &(start, code_start, end) in lines.iter().step_by(STRIDE) {
+            let (Some(before), Some(spaces), Some(code), Some(after)) = (
+                text.get(.. start),
+                text.get(start .. code_start),
+                text.get(code_start .. end),
+                text.get(end ..),
+            )
+            else {
+                continue;
+            };
+            for (offset, character) in code.char_indices() {
+                let length = offset.saturating_add(character.len_utf8());
+                let typed = code.get(.. length).unwrap_or_default();
+                indented = indented.and(owed(
+                    pbg,
+                    &format!("{before}{spaces}{typed}{after}"),
+                    start .. code_start.saturating_add(length),
+                )?);
+                zero = zero.and(owed(
+                    pbg,
+                    &format!("{before}{typed}{after}"),
+                    start .. start.saturating_add(length),
+                )?);
+            }
+            for width in 1 ..= spaces.len() {
+                let spaced = spaces.get(.. width).unwrap_or_default();
+                zero = zero.and(owed(
+                    pbg,
+                    &format!("{before}{spaced}{code}{after}"),
+                    start .. start.saturating_add(width).saturating_add(code.len()),
+                )?);
+            }
+        }
+    }
+    Ok((indented, zero))
+}
+
 /// Read every axis this report holds and print its table.
 ///
 /// # Specification
@@ -905,6 +1029,7 @@ fn main() -> Result<(), Failure>
     let tally = recovery()?;
     let latency = latency()?;
     let (keystroke, form) = incremental(&pbg)?;
+    let (indented, zero) = typing(&pbg)?;
     let swept = Tally(tally.swept);
     let of_swept = |part: usize| Share {
         part: Tally(part),
@@ -916,7 +1041,7 @@ fn main() -> Result<(), Failure>
         whole: decisions,
     };
     let mut table = String::from("| Axis | Measure | Reading |\n| --- | --- | --- |\n");
-    let rows: [(&str, &str, &dyn fmt::Display); 22] = [
+    let rows: [(&str, &str, &dyn fmt::Display); 26] = [
         ("latency", "keystrokes typed", &latency.keystrokes),
         (
             "latency",
@@ -958,6 +1083,26 @@ fn main() -> Result<(), Failure>
         ),
         ("recovery", "closed early", &of_swept(tally.early)),
         ("recovery", "marked elsewhere", &of_swept(tally.elsewhere)),
+        (
+            "recovery",
+            "keystrokes typed, indented first",
+            &indented.keystrokes,
+        ),
+        (
+            "recovery",
+            "obligations owed outside the typed line, indented first",
+            &indented.elsewhere,
+        ),
+        (
+            "recovery",
+            "keystrokes typed, at column zero",
+            &zero.keystrokes,
+        ),
+        (
+            "recovery",
+            "obligations owed outside the typed line, at column zero",
+            &zero.elsewhere,
+        ),
         ("ambiguity", "decisions", &decisions),
         (
             "ambiguity",

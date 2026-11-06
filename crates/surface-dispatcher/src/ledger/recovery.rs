@@ -1075,6 +1075,35 @@ mod tests
         );
     }
 
+    /// A deleted `let` leaves a statement's first line right of the line
+    /// after it, and a deleted `(` leaves a `)` with no bracket to close. The
+    /// layout pass keeps the body's block open past both, so neither mutant's
+    /// first error marks a line that an early close left at the top level.
+    #[test]
+    fn a_layout_block_stays_open_past_a_broken_line_5189()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-layout", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("block.gandr"),
+            "/// `block`: a block.\n@[ checks ]\ndef answer() -> -F Integer =\n  let x = (1 + 2);\n  \
+             return x\n",
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            report.findings.iter().all(|finding| {
+                !((finding.tile == "let" || finding.tile == "(")
+                    && finding.mutation == Mutation::Deleted)
+            }),
+            "each deletion's first error marks its site or the stray: {report}"
+        );
+    }
+
     /// #2340: `Integer` deleted from `-> -F +{Integer}` leaves the empty sum,
     /// a well-formed type, and the checker's first refusal is the body's
     /// injection at a summand the empty sum lacks. No mistake of form is left

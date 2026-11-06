@@ -7,6 +7,19 @@
 //! zero closes every block and every open bracket, so a fault stays in its
 //! own declaration.
 //!
+//! Two repairs keep a block open past a line that stands left of its column
+//! at no column of an open block. The pass reads one line ahead for them:
+//!
+//! | the line | it stays in the block when | the block's column |
+//! | --- | --- | --- |
+//! | a dent | the next line stands at the block's column again | stays |
+//! | the block's second item, the first too far right | the block holds one item and stands right of this line by less than this line stands right of the enclosing block, and the next line stands at this line's column or left of it, or no line follows | moves to this line's column |
+//!
+//! A line that the next line continues never stays, nor a line that leaves
+//! open a bracket it opens, nor a line that closes a bracket an earlier line
+//! opened, nor a line at column zero. A `)` with no open bracket to close
+//! leaves every block open, so the melder marks it where it stands.
+//!
 //! | opener | block | separator |
 //! | --- | --- | --- |
 //! | `=` ending a `def` head that has a `->` result | a statement body | `;` |
@@ -153,6 +166,8 @@ struct Frame
     sep: Sep,
     /// Its current item.
     head: Head,
+    /// How many items it has begun.
+    items: u32,
 }
 
 impl Frame
@@ -170,6 +185,7 @@ impl Frame
             kind,
             sep,
             head: Head::default(),
+            items: 0,
         }
     }
 }
@@ -520,7 +536,13 @@ pub(super) fn lay_out(
             line_indent = column;
         }
         if line_start && !opened {
-            while frames.len() > 1
+            let line = LineStart {
+                rest: tokens.get(index ..).unwrap_or_default(),
+                column,
+            };
+            let stays = !closer && bool::from(dented(bytes, line, &mut frames));
+            while !stays
+                && frames.len() > 1
                 && let Some(&frame) = frames.last()
                 && let Kind::Layout { column: block } = frame.kind
                 && column < block
@@ -530,8 +552,8 @@ pub(super) fn lay_out(
             }
             if let Some(&frame) = frames.last()
                 && match frame.kind {
-                    Kind::Layout { column: block }
-                    | Kind::Brace {
+                    Kind::Layout { column: block } => block == column || stays,
+                    Kind::Brace {
                         column: Some(block),
                     } => block == column,
                     Kind::Brace { column: None } | Kind::Plain => false,
@@ -551,6 +573,7 @@ pub(super) fn lay_out(
         if let Some(frame) = frames.last_mut() {
             if begins || restart {
                 frame.head = Head::begun(token.lexeme);
+                frame.items = frame.items.saturating_add(1);
             }
             else {
                 frame.head.more = true;
@@ -560,7 +583,17 @@ pub(super) fn lay_out(
         let opener_allowed = frames
             .last()
             .is_some_and(|frame| matches!(frame.kind, Kind::Layout { .. } | Kind::Brace { .. }));
-        if closer {
+        // A `)` with no open bracket to close is stray. It leaves every layout
+        // block open, and the melder marks it where it stands. A stray `}` or
+        // `]` still closes the blocks: the melder pairs it with a block's
+        // virtual brace when the block stays open.
+        if closer
+            && (spelled != b")"
+                || frames
+                    .iter()
+                    .skip(1)
+                    .any(|frame| !matches!(frame.kind, Kind::Layout { .. })))
+        {
             while frames.len() > 1
                 && let Some(&frame) = frames.last()
                 && matches!(frame.kind, Kind::Layout { .. })
@@ -710,6 +743,194 @@ pub(super) fn lay_out(
         plan.place(Lexeme::LayoutSemi);
     }
     insert(tokens, &plan.planned);
+}
+
+primitive_copy_wrapper!(
+    /// Whether a line left of its block stays in the block.
+    struct Stays(bool);
+);
+
+/// A line's first token, as [`dented`] reads it.
+#[derive(Clone, Copy, Debug)]
+struct LineStart<'tokens>
+{
+    /// The line's first token and every token after it.
+    rest: &'tokens [Token],
+    /// The column of the line's first token.
+    column: u32,
+}
+
+/// Whether `line` stays in the innermost layout block although it stands
+/// left of the block's column. The line stays when it stands at no column of
+/// an open block, it ends with no token that the next line continues, and one
+/// of two readings holds:
+///
+/// | reading | the next line | the block | the block's column |
+/// | --- | --- | --- | --- |
+/// | a dent: one line left of its block | at the block's column | any | stays |
+/// | the block's first line stood too far right | at this line's column or left of it, or none | holds one item, and stands right of this line by less than this line stands right of the enclosing block | moves to this line's column |
+///
+/// A line at column zero aligns with the source's own block, so it never
+/// stays. A dent there cannot tell which nested block it leaves. A line one
+/// column right of the enclosing block, after a block one column right of the
+/// line, closes the block. A deleted keyword leaves an item of the enclosing
+/// block there more often than a block's first line.
+///
+/// # Specification
+/// - requires: `line` begins at the first token of its line, and `frames` are
+///   the open frames before it.
+/// - ensures: true only when the innermost frame is a layout block right of the
+///   line's column, and then the block's column is the one the table names.
+/// - panics: none.
+/// - executable: none — the clauses read the frames before the call and the
+///   lines around the token, which the witnesses fix for each reading.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dent, a first line too far right and a line that the
+///   next line continues each take their own reading; a reading left out or
+///   misapplied changes a witness's marks.
+/// - witness: `label::layout::tests::a_line_left_of_its_block_stays_when_the_next_line_returns`
+/// - witness: `label::layout::tests::a_block_moves_left_to_the_column_its_lines_keep`
+/// - witness: `label::layout::tests::a_line_that_another_line_continues_never_stays`
+fn dented(
+    bytes: SourceBytes<'_>,
+    line: LineStart<'_>,
+    frames: &mut [Frame],
+) -> Stays
+{
+    let column = line.column;
+    let Some((top, below)) = frames.split_last_mut()
+    else {
+        return Stays(false);
+    };
+    let Kind::Layout { column: block } = top.kind
+    else {
+        return Stays(false);
+    };
+    let at = |frame: &Frame| match frame.kind {
+        Kind::Layout { column }
+        | Kind::Brace {
+            column: Some(column),
+        } => Some(column),
+        Kind::Brace { column: None } | Kind::Plain => None,
+    };
+    if column >= block || below.iter().any(|frame| at(frame) == Some(column)) {
+        return Stays(false);
+    }
+    let NextLine {
+        column: next,
+        continued,
+    } = next_line(bytes, line.rest);
+    if continued {
+        return Stays(false);
+    }
+    let landing = below.last().and_then(at).unwrap_or(0);
+    if next == Some(block) {
+        return Stays(true);
+    }
+    if top.items == 1
+        && column > landing
+        && block.saturating_sub(column) < column.saturating_sub(landing)
+        && next.is_none_or(|next| next <= column)
+    {
+        top.kind = Kind::Layout { column };
+        return Stays(true);
+    }
+    Stays(false)
+}
+
+/// What the lines after a line's first token hold, as [`dented`] reads them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NextLine
+{
+    /// The column of the next line's first significant token, none when no
+    /// line follows.
+    column: Option<u32>,
+    /// The line belongs to an item before it or after it: it leaves open a
+    /// bracket it opens, it ends with a token the next line continues (an
+    /// opener, a separator, an arrow or a `:`), or it closes a bracket an
+    /// earlier line opened.
+    continued: bool,
+}
+
+/// The line after the first of `rest`, and whether the line the first of
+/// `rest` stands on belongs to an item before it.
+///
+/// # Specification
+/// trivial.
+fn next_line(
+    bytes: SourceBytes<'_>,
+    rest: &[Token],
+) -> NextLine
+{
+    let spelled = |token: &Token| {
+        bytes
+            .0
+            .get(
+                usize::try_from(token.start).unwrap_or(usize::MAX)
+                    .. usize::try_from(token.end).unwrap_or(usize::MAX),
+            )
+            .unwrap_or_default()
+    };
+    let continues = |token: &Token| {
+        matches!(
+            (token.lexeme, spelled(token)),
+            (Lexeme::LowerWord, b"where" | b"match")
+                | (Lexeme::Punct, b"=" | b"," | b"->" | b"=>" | b":")
+        )
+    };
+    let Some((&first, after)) = rest.split_first()
+    else {
+        return NextLine {
+            column: None,
+            continued: false,
+        };
+    };
+    // How deep the line stands in brackets it opens itself, and whether it
+    // closed one it did not open.
+    let mut depth = 0_u32;
+    let mut closes_earlier = false;
+    let nest = |token: &Token, depth: &mut u32, closes_earlier: &mut bool| {
+        if token.lexeme == Lexeme::Punct {
+            let spelled = spelled(token);
+            if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
+                *depth = depth.saturating_add(1);
+            }
+            else if matches!(spelled, b")" | b"]" | b"}") {
+                *closes_earlier |= *depth == 0;
+                *depth = depth.saturating_sub(1);
+            }
+        }
+    };
+    nest(&first, &mut depth, &mut closes_earlier);
+    let mut last = first;
+    for &token in after {
+        if token.lexeme == Lexeme::Space {
+            continue;
+        }
+        let gap = usize::try_from(last.end).unwrap_or(usize::MAX)
+            .. usize::try_from(token.start).unwrap_or(usize::MAX);
+        if let Some(newline) = bytes
+            .0
+            .get(gap.clone())
+            .unwrap_or_default()
+            .iter()
+            .rposition(|&byte| byte == b'\n')
+        {
+            let begin = u32::try_from(gap.start.saturating_add(newline).saturating_add(1))
+                .unwrap_or(u32::MAX);
+            return NextLine {
+                column: Some(token.start.saturating_sub(begin)),
+                continued: closes_earlier || depth > 0 || continues(&last),
+            };
+        }
+        nest(&token, &mut depth, &mut closes_earlier);
+        last = token;
+    }
+    NextLine {
+        column: None,
+        continued: closes_earlier || depth > 0 || continues(&last),
+    }
 }
 
 /// Write each of `planned` into `tokens` before the token it names, in place:
@@ -899,6 +1120,83 @@ mod tests
         assert_eq!(
             marked("def f(x : A) -> A =\n  match x\n    | a => a"),
             "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n    | a => a⟪}⟫⟪}⟫"
+        );
+    }
+
+    #[test]
+    fn a_line_left_of_its_block_stays_when_the_next_line_returns()
+    {
+        // A dent: the line after it stands at the block's column again, so
+        // the dented line is one more item of the block.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  let y = x\n let z = y\n  z\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  let y = x⟪;⟫\n let z = y⟪;⟫\n  z⟪}⟫\n"
+        );
+        // A line left of a block of two items, with no line after it at the
+        // block's column, closes the block.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  let y = x\n  let z = y\n z\ndef g(x : A) -> A = x;\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  let y = x⟪;⟫\n  let z = y⟪}⟫\n z⟪;⟫\ndef g(x : A) -> A = x;\n"
+        );
+    }
+
+    #[test]
+    fn a_block_moves_left_to_the_column_its_lines_keep()
+    {
+        // The block's first line stands right of the lines after it, as a
+        // deleted `let` leaves it, so the block takes their column.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n   y = x\n  let z = y\n  z\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n   y = x⟪;⟫\n  let z = y⟪;⟫\n  z⟪}⟫\n"
+        );
+        // The block's last line moves it too.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n   y = x\n  y\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n   y = x⟪;⟫\n  y⟪}⟫\n"
+        );
+        // A line one column right of the enclosing block, after a block one
+        // column right of the line, is an item whose keyword is gone. The
+        // block closes before it.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  x\n g(x : A) -> A = x;\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  x⟪}⟫\n g(x : A) -> A = x;\n"
+        );
+    }
+
+    #[test]
+    fn a_line_that_another_line_continues_never_stays()
+    {
+        // A line that opens a block of its own leaves the block before it.
+        assert_eq!(
+            marked("theory S where\n  sort A : Type\n T where\n  sort B : Type\n"),
+            "theory S where⟪{⟫\n  sort A : Type⟪;⟫⟪}⟫\n T where⟪{⟫\n  sort B : Type⟪;⟫⟪}⟫\n"
+        );
+        // A line that closes a bracket it never opened belongs to an item
+        // before it.
+        assert_eq!(
+            marked("theory S where\n  sort A : Type\n checks ]\ntheory T where\n  sort B : Type\n"),
+            "theory S where⟪{⟫\n  sort A : Type⟪;⟫⟪}⟫\n checks ]\ntheory T where⟪{⟫\n  sort B : Type⟪;⟫⟪}⟫\n"
+        );
+        // A line at column zero closes every block, though the next line
+        // stands at a block's column.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  match x\n    | a => a\n| b => b\n    | c => c\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n    | a => a⟪}⟫⟪}⟫\n| b => b\n    | c => c\n"
+        );
+    }
+
+    #[test]
+    fn a_stray_parenthesis_leaves_the_blocks_open()
+    {
+        // A `)` with no bracket to close stays inside the block.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  let y = g x)\n  y\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  let y = g x)⟪;⟫\n  y⟪}⟫\n"
+        );
+        // A stray `}` still closes the blocks before it.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  let y = x}\n  y\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  let y = x⟪}⟫}\n  y\n"
         );
     }
 }
