@@ -1366,6 +1366,177 @@ while IFS= read -r action; do
 done < "$scratch/actions"
 '''
 
+# One step of the integration cycle (#5440, `.github/workflows/integration.yml`).
+# Each step reads the state of the cycle from GitHub, so a lost or repeated
+# event changes nothing. Every call runs on GH_TOKEN, the token of the
+# cycle's own GitHub App in the workflow, because the workflow's token has no
+# room for the cycle (`.config/gh/calls.toml`). `.config/integration/
+# cycle.jq` decides the step from the tips of `landing` and `integration` and
+# from the dispatched runs of ci.yml on `integration`. A passing verdict
+# fast-forwards `main` to the commit it tested. Until `main`'s ruleset admits
+# the App (#5443), GitHub refuses that, and the step says so. `integration`
+# then takes the tip of `landing`. A fast-forward moves the ref. A merge
+# through the merges API keeps the fixer's commits, and GitHub signs the
+# merge commit of an App. A merge that conflicts goes on the list for the
+# fixer. `.config/integration/known-red.jq` writes the list from the
+# verdict's JUnit reports and failed jobs into one issue, which stays open.
+# A list that already names the verdict's run and the same take stands, and
+# the step reads no report again. Each failed test of the soundness suite
+# (`.config/integration/soundness.json`) gets an issue of its own,
+# `status:unsectioned` for its claiming seat. A new list that is red, or that
+# holds a conflict, sets the step output `page` to the list's issue, and the
+# workflow pages the fixer. Last, the step dispatches ci.yml on `integration`
+# with the input `cycle` when the tip needs a verdict. The workflow runs one
+# step at a time, and the next step starts on a new runner, so the
+# dispatched run shows before that step reads the runs. Without CYCLE_FILE
+# set the step prints what it would do and writes nothing. GH_REPO names the
+# repository.
+["ci:cycle"]
+description = "Read the integration cycle's verdict, take landing into integration and start the suite there"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+repo=${GH_REPO:?}
+write=${CYCLE_FILE:-}
+root=$(git rev-parse --show-toplevel)
+here=$root/.config/integration
+source "$root/.config/issues/keep.bash"
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+say() {
+  printf '%s\n' "$1"
+  if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then printf '%s\n\n' "$1" >> "$GITHUB_STEP_SUMMARY"; fi
+}
+tip() { gh api "repos/$repo/git/ref/heads/$1" --jq .object.sha; }
+running() {
+  gh run list --repo "$repo" --workflow ci.yml --branch integration --event workflow_dispatch --limit 20 \
+    --json databaseId,status,conclusion,headSha,url
+}
+landing=$(tip landing)
+integration=$(tip integration)
+compare=$(gh api "repos/$repo/compare/$integration...$landing" --jq .status)
+running > "$scratch/runs.json"
+decision=$(jq -n -c --arg landing "$landing" --arg integration "$integration" --arg compare "$compare" \
+  --slurpfile runs "$scratch/runs.json" '{landing: $landing, integration: $integration, compare: $compare, runs: $runs[0]}' \
+  | jq -c -f "$here/cycle.jq")
+verdict=$(jq -c .verdict <<< "$decision")
+conclusion=$(jq -r '.conclusion // empty' <<< "$verdict")
+
+if [[ $conclusion == success ]]; then
+  sha=$(jq -r .sha <<< "$verdict")
+  main=$(tip main)
+  case $(gh api "repos/$repo/compare/$main...$sha" --jq .status) in
+    ahead)
+      if [[ -z $write ]]; then
+        say "would fast-forward main from ${main:0:12} to ${sha:0:12}"
+      elif gh api -X PATCH "repos/$repo/git/refs/heads/main" -f sha="$sha" -F force=false > /dev/null 2> "$scratch/main.err"; then
+        say "main fast-forwards from ${main:0:12} to ${sha:0:12}"
+      else
+        say "main stays at ${main:0:12}: GitHub refuses its fast-forward to ${sha:0:12}: $(< "$scratch/main.err")"
+      fi
+      ;;
+    diverged) say "main stays at ${main:0:12}: it does not hold the passing ${sha:0:12} as its ancestor" ;;
+  esac
+fi
+
+say "$(jq -r .line <<< "$decision")"
+conflict=null
+if [[ -n $write ]]; then
+  case $(jq -r .take <<< "$decision") in
+    fast-forward)
+      gh api -X PATCH "repos/$repo/git/refs/heads/integration" -f sha="$landing" -F force=false > /dev/null
+      ;;
+    merge)
+      if ! gh api "repos/$repo/merges" -f base=integration -f head="$landing" \
+        -f commit_message="Merge landing at ${landing:0:12} into integration" > /dev/null 2> "$scratch/merge.err"; then
+        if [[ $(< "$scratch/merge.err") != *"HTTP 409"* ]]; then
+          cat "$scratch/merge.err" >&2
+          exit 1
+        fi
+        conflict=$(jq -n -c --arg sha "$landing" '$sha')
+        say "The tip of landing, ${landing:0:12}, does not merge into integration."
+      fi
+      ;;
+  esac
+fi
+
+# The known-red list in step with the verdict and the take. A list that
+# names the verdict's run and holds the same take stands unread.
+keep_list() {
+  local title="integration: the known-red list" found number current id held taken jobs='[]' known url own heading
+  found=$(issue_found "$repo" "$title")
+  number=$(jq -r '.number // empty' <<< "$found")
+  current=$(jq -r '.body // empty' <<< "$found")
+  id=$(jq -r '.id // empty' <<< "$verdict")
+  held=$([[ $current == *"## The take"* ]] && echo true || echo false)
+  taken=$([[ $conflict != null ]] && echo true || echo false)
+  if [[ -n $id && $current == *"/actions/runs/$id)"* && $held == "$taken" ]]; then
+    say "The known-red list #$number stands: it reads run $id."
+    return
+  fi
+  echo '[]' > "$scratch/reports.json"
+  if [[ -n $conclusion && $conclusion != success ]]; then
+    if gh run download "$id" --repo "$repo" --pattern 'junit-*' --dir "$scratch/junit" 2> "$scratch/download.err"; then
+      find "$scratch/junit" -name junit.xml -print0 | while IFS= read -r -d '' report; do
+        lane=${report#"$scratch/junit/junit-"}
+        yq -p xml -o json -I0 . "$report" | jq -c --arg lane "${lane%%/*}" '{lane: $lane, junit: .}'
+      done | jq -s . > "$scratch/reports.json"
+    else
+      say "Run $id holds no test report: $(< "$scratch/download.err")"
+    fi
+    jobs=$(gh api --paginate "repos/$repo/actions/runs/$id/jobs?per_page=100" \
+      --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | .name' \
+      | jq -R -s -c 'split("\n") | map(select(. != ""))')
+  fi
+  known=$(jq -n -c --argjson verdict "$verdict" --argjson conflict "$conflict" --argjson jobs "$jobs" \
+    --slurpfile reports "$scratch/reports.json" --slurpfile soundness "$here/soundness.json" \
+    '{verdict: $verdict, conflict: $conflict, reports: $reports[0], jobs: $jobs, soundness: $soundness[0]}' \
+    | jq -c -f "$here/known-red.jq")
+  jq -r .body <<< "$known" > "$scratch/body.md"
+  if [[ $current == "$(< "$scratch/body.md")" ]]; then
+    say "The known-red list #$number stands."
+    return
+  fi
+  if [[ -z $write ]]; then
+    say "would rewrite the known-red list${number:+ #$number}:"
+    cat "$scratch/body.md"
+    jq -r '.soundness[] | "would file or update: \(.title)"' <<< "$known"
+    return
+  fi
+  if [[ -z $number ]]; then
+    url=$(gh issue create --repo "$repo" --title "$title" --label collector --label kind:defect --label area:ci \
+      --label priority:high --label effort:unknown --body-file "$scratch/body.md")
+    number=${url##*/}
+  else
+    [[ $(jq -r .state <<< "$found") == OPEN ]] || gh issue reopen "$number" --repo "$repo" > /dev/null
+    gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+  fi
+  say "The cycle rewrites the known-red list #$number."
+  while IFS= read -r own; do
+    jq -r .body <<< "$own" > "$scratch/own.md"
+    heading=$(jq -r .title <<< "$own")
+    issue_keep "$repo" "$heading" "$(issue_found "$repo" "$heading")" 1 "$scratch/own.md" \
+      gh issue create --repo "$repo" --title "$heading" --body-file "$scratch/own.md" --label kind:defect \
+      --label "$(jq -r .area <<< "$own")" --label priority:high --label effort:unknown --label status:unsectioned
+  done < <(jq -c '.soundness[]' <<< "$known")
+  if [[ $(jq -r .page <<< "$known") == true && -n ${GITHUB_OUTPUT:-} ]]; then
+    echo "page=$number" >> "$GITHUB_OUTPUT"
+  fi
+}
+keep_list
+
+if [[ $(jq -r .dispatch <<< "$decision") == true && $conflict == null ]]; then
+  if [[ -z $write ]]; then
+    say "would dispatch ci.yml on integration with the input cycle"
+    exit 0
+  fi
+  gh workflow run ci.yml --repo "$repo" --ref integration -f cycle=true
+  say "The cycle dispatches ci.yml on integration."
+fi
+{% endraw %}'''
+
 # A worktree is removed when its branch lands, mechanically: nothing else
 # removed one but a seat remembering to, and a `pr:watch` that dies with its
 # shell never prints `pr-merged`, so landed worktrees and their build

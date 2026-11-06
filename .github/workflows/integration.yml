@@ -1,0 +1,141 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
+name: integration
+
+# The integration cycle (#5440) of the landing model (#5438). `integration`
+# takes the tip of `landing`, and ci.yml runs the lanes of a merge group on
+# it with no fail-fast. A red run writes the known-red list and pages the
+# fixer, and the landings go on. A green run fast-forwards `main`. A cycle
+# starts when the one before it ends: the end of a dispatched run of ci.yml
+# on `integration` starts this workflow. A push to `landing` or
+# `integration` starts it too, so an idle cycle takes a new landing or a fix
+# at once. Each step reads the state of the cycle from GitHub (`ci:cycle`),
+# so a repeated event changes nothing, and the next event recovers a lost
+# one. There is no schedule: GitHub's scheduler ran this repository's
+# schedules hours late (landing.yml). The step checks out the default branch
+# and runs its script there. It runs none of the code on `integration`.
+#
+# Every call of the step runs on the cycle's own GitHub App, minted from
+# `GANDR_CYCLE_APP_ID` and `GANDR_CYCLE_APP_KEY`: the workflow's token has no
+# room for the cycle in `.config/gh/calls.toml`. The App's merge commits are
+# signed, and its pushes start this workflow again, which reads that nothing
+# changed. Until the owner sets the two secrets, the step only says that it
+# waits for them.
+on:
+  push:
+    branches: [landing, integration]
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [CI]
+    types: [completed]
+    branches: [integration]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# One step at a time, never cancelled: a step moves refs and writes issues.
+# Events that arrive meanwhile collapse into the one pending step, which
+# reads everything they changed.
+concurrency:
+  group: integration
+  cancel-in-progress: false
+
+jobs:
+  # A push runs the workflow file of the branch it pushes. The relay starts
+  # this workflow on the default branch, so every step runs the default
+  # branch's file, and the factory runner admits its page.
+  relay:
+    name: start a cycle step on the default branch
+    if: ${{ github.event_name == 'push' && github.repository_owner == 'gandr-lang' }}
+    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    runs-on: &linux ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: dispatch this workflow on the default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: gh workflow run integration.yml --ref "$DEFAULT_BRANCH"
+
+  # The cycle's one step (`ci:cycle`): it reads the verdict, fast-forwards
+  # `main` on green, takes `landing` into `integration`, keeps the known-red
+  # list and starts the suite. Only a dispatched run of ci.yml on
+  # `integration` ends a cycle.
+  cycle:
+    name: take landing into integration and start the suite
+    if: ${{ github.event_name != 'push' && github.repository_owner == 'gandr-lang' && github.ref_name == github.event.repository.default_branch && (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'workflow_dispatch') }}
+    runs-on: *linux
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      page: ${{ steps.step.outputs.page }}
+    env:
+      GANDR_CYCLE_APP_ID: ${{ secrets.GANDR_CYCLE_APP_ID }}
+      # mise.toml pins neither tool: the task's own pins (`tools.jq`,
+      # `tools.yq`) install them when it runs, and no other tool installs.
+      MISE_ENABLE_TOOLS: "jq,yq"
+    steps:
+      - name: say that the cycle waits for its App
+        if: ${{ env.GANDR_CYCLE_APP_ID == '' }}
+        run: echo "The cycle waits for its App, the secrets GANDR_CYCLE_APP_ID and GANDR_CYCLE_APP_KEY." >> "$GITHUB_STEP_SUMMARY"
+      - name: git checkout
+        if: ${{ env.GANDR_CYCLE_APP_ID != '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          ref: ${{ github.event.repository.default_branch }}
+      - name: mint the cycle App's token
+        id: app
+        if: ${{ env.GANDR_CYCLE_APP_ID != '' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.GANDR_CYCLE_APP_ID }}
+          private-key: ${{ secrets.GANDR_CYCLE_APP_KEY }}
+          # The step's needs, no more: move `integration` and `main`, merge;
+          # dispatch ci.yml and read its runs and reports; keep the issues.
+          permission-contents: write
+          permission-actions: write
+          permission-issues: write
+      # No cache, as in pr-title.yml: the shared cache holds every tool of
+      # CI, and this job installs none of mise.toml's.
+      - name: install mise
+        if: ${{ env.GANDR_CYCLE_APP_ID != '' }}
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+        with:
+          cache: "false"
+      - id: step
+        name: read the verdict, take landing and start the suite
+        if: ${{ env.GANDR_CYCLE_APP_ID != '' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          CYCLE_FILE: "true"
+        run: mise run ci:cycle
+
+  # A new list that is red, or that holds a conflict, pages the fixer. The
+  # factory's own runner passes the list's issue number to one command,
+  # which pages the fixer's seat. No text of the issue reaches the runner,
+  # and the job holds no token.
+  notify:
+    name: page the fixer
+    needs: cycle
+    if: ${{ needs.cycle.outputs.page != '' }}
+    runs-on: [self-hosted, factory] # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: page the fixer
+        env:
+          ISSUE: ${{ needs.cycle.outputs.page }}
+        run: factory-notify integration-red "$ISSUE"

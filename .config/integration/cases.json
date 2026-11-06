@@ -1,0 +1,472 @@
+[
+  {
+    "name": "a run in progress moves nothing; the newest completed run is the verdict",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "ahead",
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "in_progress",
+          "conclusion": "",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "3333333333333333333333333333333333333333",
+        "conclusion": "failure"
+      },
+      "take": "none",
+      "dispatch": false,
+      "line": "A cycle runs on integration. The end of that run starts the next cycle."
+    }
+  },
+  {
+    "name": "landing ahead of integration fast-forwards it and starts the suite",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "ahead",
+      "runs": [
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "success"
+      },
+      "take": "fast-forward",
+      "dispatch": true,
+      "line": "integration fast-forwards to the tip of landing, 111111111111, and the suite starts."
+    }
+  },
+  {
+    "name": "integration holding the fixer's commits takes landing by a merge",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "diverged",
+      "runs": [
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "take": "merge",
+      "dispatch": true,
+      "line": "The tip of landing, 111111111111, merges into integration, and the suite starts."
+    }
+  },
+  {
+    "name": "a verdict on the tip and nothing new on landing leaves the cycle idle",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "behind",
+      "runs": [
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "take": "none",
+      "dispatch": false,
+      "line": "A verdict names the tip of integration, 222222222222, and landing holds nothing new."
+    }
+  },
+  {
+    "name": "a cancelled run gives no verdict, so its tip is tested again",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "2222222222222222222222222222222222222222",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "identical",
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "cancelled",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "3333333333333333333333333333333333333333",
+        "conclusion": "success"
+      },
+      "take": "none",
+      "dispatch": true,
+      "line": "No verdict names the tip of integration, 222222222222, so the suite starts."
+    }
+  },
+  {
+    "name": "a timed-out run is a failed verdict",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "2222222222222222222222222222222222222222",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "identical",
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "timed_out",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 3,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/3",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "timed_out"
+      },
+      "take": "none",
+      "dispatch": false,
+      "line": "A verdict names the tip of integration, 222222222222, and landing holds nothing new."
+    }
+  },
+  {
+    "name": "no run at all tests the tip",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "2222222222222222222222222222222222222222",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "identical",
+      "runs": []
+    },
+    "output": {
+      "verdict": null,
+      "take": "none",
+      "dispatch": true,
+      "line": "No verdict names the tip of integration, 222222222222, so the suite starts."
+    }
+  },
+  {
+    "name": "a passing cycle lists no test and pages nobody",
+    "program": "known-red.jq",
+    "input": {
+      "verdict": {
+        "id": 7,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/7",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "success"
+      },
+      "conflict": null,
+      "reports": [],
+      "jobs": [],
+      "soundness": [
+        {
+          "package": "gandr-kernel-",
+          "area": "area:kernel"
+        },
+        {
+          "package": "gandr-core-",
+          "area": "area:core"
+        }
+      ]
+    },
+    "output": {
+      "page": false,
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.",
+      "soundness": []
+    }
+  },
+  {
+    "name": "no verdict yet says so",
+    "program": "known-red.jq",
+    "input": {
+      "verdict": null,
+      "conflict": null,
+      "reports": [],
+      "jobs": [],
+      "soundness": [
+        {
+          "package": "gandr-kernel-",
+          "area": "area:kernel"
+        },
+        {
+          "package": "gandr-core-",
+          "area": "area:core"
+        }
+      ]
+    },
+    "output": {
+      "page": false,
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nNo cycle has a verdict yet.",
+      "soundness": []
+    }
+  },
+  {
+    "name": "a failed cycle lists each failed or aborted test, never a flaky pass, and files the soundness suite's own",
+    "program": "known-red.jq",
+    "input": {
+      "verdict": {
+        "id": 7,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/7",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "conflict": null,
+      "reports": [
+        {
+          "lane": "cargo-test-enforcing-shard-core",
+          "junit": {
+            "testsuites": {
+              "+@name": "nextest-run",
+              "testsuite": [
+                {
+                  "+@name": "gandr-core-term",
+                  "testcase": [
+                    {
+                      "+@name": "tests::passes",
+                      "+@classname": "gandr-core-term"
+                    },
+                    {
+                      "+@name": "tests::fails",
+                      "+@classname": "gandr-core-term",
+                      "failure": {
+                        "+content": "thread panicked",
+                        "+@type": "test failure with exit code 101"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "+@name": "gandr-surface-parser::recovery",
+                  "testcase": [
+                    {
+                      "+@name": "flaky",
+                      "+@classname": "gandr-surface-parser::recovery",
+                      "flakyFailure": {
+                        "+content": "once",
+                        "+@type": "test failure"
+                      }
+                    },
+                    {
+                      "+@name": "aborts",
+                      "+@classname": "gandr-surface-parser::recovery",
+                      "error": {
+                        "+@type": "test abort"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "jobs": ["test enforcing targets (linux, core)"],
+      "soundness": [
+        {
+          "package": "gandr-kernel-",
+          "area": "area:kernel"
+        },
+        {
+          "package": "gandr-core-",
+          "area": "area:core"
+        }
+      ]
+    },
+    "output": {
+      "page": true,
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\n<details><summary>Known-red tests: 2, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core|\n|`aborts`|`gandr-surface-parser::recovery`|cargo-test-enforcing-shard-core|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|test enforcing targets (linux, core)|\n\n</details>",
+      "soundness": [
+        {
+          "title": "soundness: gandr-core-term tests::fails fails on integration",
+          "area": "area:core",
+          "body": "The test `tests::fails` of `gandr-core-term` fails in the integration cycle on `222222222222`. The test belongs to the soundness suite. Thus its failure is a defect of its own (#5440).\n\n## Observation\n\n|Run|Commit|Lanes|\n|---|---|---|\n|[7](https://github.com/gandr-lang/gandr/actions/runs/7)|`222222222222`|cargo-test-enforcing-shard-core|\n"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a test that fails in two lanes is one row naming both",
+    "program": "known-red.jq",
+    "input": {
+      "verdict": {
+        "id": 7,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/7",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "conflict": null,
+      "reports": [
+        {
+          "lane": "cargo-test-plain-only",
+          "junit": {
+            "testsuites": {
+              "testsuite": {
+                "+@name": "gandr-core-term",
+                "testcase": {
+                  "+@name": "tests::fails",
+                  "+@classname": "gandr-core-term",
+                  "failure": "thread panicked"
+                }
+              }
+            }
+          }
+        },
+        {
+          "lane": "cargo-test-enforcing-shard-core",
+          "junit": {
+            "testsuites": {
+              "testsuite": {
+                "+@name": "gandr-core-term",
+                "testcase": {
+                  "+@name": "tests::fails",
+                  "+@classname": "gandr-core-term",
+                  "failure": "thread panicked"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "jobs": [],
+      "soundness": [
+        {
+          "package": "gandr-kernel-",
+          "area": "area:kernel"
+        },
+        {
+          "package": "gandr-core-",
+          "area": "area:core"
+        }
+      ]
+    },
+    "output": {
+      "page": true,
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\n<details><summary>Known-red tests: 1, red</summary>\n\n|Test|Binary|Lanes|\n|---|---|---|\n|`tests::fails`|`gandr-core-term`|cargo-test-enforcing-shard-core, cargo-test-plain-only|\n\n</details>\n\nThe soundness suite holds 1 of these tests. Each of them also has an issue of its own.",
+      "soundness": [
+        {
+          "title": "soundness: gandr-core-term tests::fails fails on integration",
+          "area": "area:core",
+          "body": "The test `tests::fails` of `gandr-core-term` fails in the integration cycle on `222222222222`. The test belongs to the soundness suite. Thus its failure is a defect of its own (#5440).\n\n## Observation\n\n|Run|Commit|Lanes|\n|---|---|---|\n|[7](https://github.com/gandr-lang/gandr/actions/runs/7)|`222222222222`|cargo-test-enforcing-shard-core, cargo-test-plain-only|\n"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a failed cycle with no failing test names its failed jobs",
+    "program": "known-red.jq",
+    "input": {
+      "verdict": {
+        "id": 7,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/7",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "conflict": null,
+      "reports": [],
+      "jobs": ["check formatting and lint gates (treefmt)"],
+      "soundness": [
+        {
+          "package": "gandr-kernel-",
+          "area": "area:kernel"
+        },
+        {
+          "package": "gandr-core-",
+          "area": "area:core"
+        }
+      ]
+    },
+    "output": {
+      "page": true,
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` fails: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7).\n\nNo test report names a failure. The failed jobs hold the cause.\n\n<details><summary>Failed jobs: 1</summary>\n\n|Job|\n|---|\n|check formatting and lint gates (treefmt)|\n\n</details>",
+      "soundness": []
+    }
+  },
+  {
+    "name": "a take that does not merge pages the fixer under a passing verdict",
+    "program": "known-red.jq",
+    "input": {
+      "verdict": {
+        "id": 7,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/7",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "success"
+      },
+      "conflict": "1111111111111111111111111111111111111111",
+      "reports": [],
+      "jobs": [],
+      "soundness": [
+        {
+          "package": "gandr-kernel-",
+          "area": "area:kernel"
+        },
+        {
+          "package": "gandr-core-",
+          "area": "area:core"
+        }
+      ]
+    },
+    "output": {
+      "page": true,
+      "body": "The integration cycle keeps this list (#5440). Each cycle rewrites it. The fixer repairs each row on `integration` and never reverts a landing.\n\nThe cycle on `222222222222` passes: [run 7](https://github.com/gandr-lang/gandr/actions/runs/7). The list holds no test.\n\n## The take\n\nThe tip of `landing`, `111111111111`, does not merge into `integration`. The fixer merges it on `integration` by hand.",
+      "soundness": []
+    }
+  }
+]

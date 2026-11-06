@@ -1,0 +1,4 @@
+[
+  { "package": "gandr-kernel-", "area": "area:kernel" },
+  { "package": "gandr-core-", "area": "area:core" }
+]

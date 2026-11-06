@@ -5,15 +5,17 @@
 # `budget`, the hour's ceiling of each identity and API, and `site`, the
 # rows. A row names a site (`file`, `scope`), its `api` (`graphql` or
 # `rest`), its `identity` (`read` or `write` on a host, `actions` for a
-# workflow's token), the `calls` of that API the site holds, the `points`
-# one run spends, how they were `measured`, its `trigger`, and `hour`, the
-# runs in an hour on one host at eight seats.
+# workflow's token, `cycle` for the integration cycle's App), the `calls` of
+# that API the site holds, the `points` one run spends, how they were
+# `measured`, its `trigger`, and `hour`, the runs in an hour on one host at
+# eight seats.
 #
 # Output: one finding a line, nothing when every site is priced.
 #
 # - A verb's class is its API and whether it reads or writes (`class.jq`).
 # - Each site's calls of one API and kind need a row of that API whose
-#   identity is the kind, or `actions`, and whose `calls` is their count.
+#   identity is the kind, or a token that reads and writes (`actions`,
+#   `cycle`), and whose `calls` is their count.
 # - A row whose site holds no call of its API and kind is gone.
 # - A row's `points` is a whole number. `measured` is `cost` (the
 #   `rateLimit` cost of one call), `rest` (one request a call and a page),
@@ -27,8 +29,9 @@ include "class";
 
 def key: "\(.file) \(.scope) (\(.api))";
 
-# The kinds an identity covers.
-def covers: if . == "actions" then ["read", "write"] else [.] end;
+# The kinds an identity covers: a workflow's token and the cycle's App each
+# read and write.
+def covers: if . == "actions" or . == "cycle" then ["read", "write"] else [.] end;
 
 def plural($n): if $n == 1 then "" else "s" end;
 
@@ -37,7 +40,7 @@ def row_findings($groups):
   . as $r
   | [$groups[] | select(.file == $r.file and .scope == $r.scope and .api == $r.api and (.kind as $k | $r.identity | covers | index($k)))] as $held
   | ($held | map(.count) | add // 0) as $count
-  | (if ($r.identity | IN("read", "write", "actions") | not) then "bad identity: \($r | key) names `\($r.identity)`; one of read, write, actions"
+  | (if ($r.identity | IN("read", "write", "actions", "cycle") | not) then "bad identity: \($r | key) names `\($r.identity)`; one of read, write, actions, cycle"
      elif $count == 0 then "gone: \($r | key) as \($r.identity) is in .config/gh/calls.toml, but the site holds no such call"
      elif $r.calls != $count then "changed: \($r | key) as \($r.identity) holds \($count) call\(plural($count)); its row says \($r.calls)"
      else empty end),

@@ -55,11 +55,14 @@ site = [
   { file = ".config/issues/unsectioned.sh", scope = "-", api = "graphql", identity = "actions", calls = 4, points = 3, measured = "rule", hour = 30, trigger = "issues.yml: each issue opened or edited, and each label the reading reads (15 of 20 label events on 2026-11-04 were claims' and stalls', which start no run); the repository, then one label edit" },
   { file = ".config/issues/unsectioned.sh", scope = "-", api = "rest", identity = "actions", calls = 6, points = 2, measured = "rest", hour = 30, trigger = "issues.yml: the issue, its comments only while a flag, an exemption or a finding stands, and a body or comment write at most" },
 
-  # The one issue a report keeps by title: the nightly's reports (Actions)
-  # and the gate on main past its budget (a host).
+  # The one issue a report keeps by title: the nightly's reports (Actions),
+  # the integration cycle (its App) and the gate on main past its budget (a
+  # host).
   { file = ".config/issues/keep.bash", scope = "issue_found", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 2, trigger = "nightly.yml: report:deps and report:prose, one search each a day" },
+  { file = ".config/issues/keep.bash", scope = "issue_found", api = "graphql", identity = "cycle", calls = 1, points = 1, measured = "cost", hour = 10, trigger = "integration.yml: ci:cycle, one search for the known-red list each step, and one for each failed test of the soundness suite on a new red verdict, rare" },
   { file = ".config/issues/keep.bash", scope = "issue_found", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 1, trigger = "report:gate-time after a gate:all on main's tree past its budget, one search" },
   { file = ".config/issues/keep.bash", scope = "issue_keep", api = "graphql", identity = "actions", calls = 4, points = 4, measured = "rule", hour = 2, trigger = "nightly.yml: report:deps and report:prose; a run makes two writes at most, a reopen and an edit or an edit and a close, each a lookup and a mutation" },
+  { file = ".config/issues/keep.bash", scope = "issue_keep", api = "graphql", identity = "cycle", calls = 4, points = 4, measured = "rule", hour = 1, trigger = "integration.yml: ci:cycle, one keep for each failed test of the soundness suite on a new red verdict; a reopen and an edit at most, each a lookup and a mutation" },
   { file = ".config/issues/keep.bash", scope = "issue_keep", api = "graphql", identity = "write", calls = 4, points = 4, measured = "rule", hour = 1, trigger = "report:gate-time past its budget: a reopen and an edit at most, each a lookup and a mutation" },
 
   # The ledger check: a gate on a host and in CI.
@@ -89,6 +92,10 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:mutants-landed", api = "rest", identity = "actions", calls = 2, points = 2, measured = "rest", hour = 8, trigger = "ci.yml's push to main" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:recovery-file", api = "graphql", identity = "actions", calls = 6, points = 30, measured = "rule", hour = 1, trigger = "nightly.yml: the filed and open lists of up to 1,000, then a write each" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:slow-file", api = "graphql", identity = "actions", calls = 4, points = 20, measured = "rule", hour = 2, trigger = "nightly.yml and coverage.yml: the collectors, then a write each" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:cycle", api = "rest", identity = "cycle", calls = 7, points = 8, measured = "rest", hour = 10, trigger = "integration.yml: each cycle step, a cycle's end or a push to landing or integration; three tips and two comparisons, then a take, a fast-forward of main and a dispatch at most" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:cycle/keep_list", api = "graphql", identity = "cycle", calls = 4, points = 4, measured = "rule", hour = 5, trigger = "integration.yml: a new verdict or a conflict rewrites the known-red list, at most one cycle's end each 12 minutes; a reopen and an edit, or a create, each a lookup and a mutation" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:cycle/keep_list", api = "rest", identity = "cycle", calls = 2, points = 11, measured = "rest", hour = 5, trigger = "integration.yml: a new red verdict, at most one cycle's end each 12 minutes; the artifact list, about 9 reports and one page of jobs" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:cycle/running", api = "rest", identity = "cycle", calls = 1, points = 1, measured = "rest", hour = 10, trigger = "integration.yml: each cycle step reads the dispatched runs once" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "claim:next", api = "rest", identity = "read", calls = 7, points = 9, measured = "rest", hour = 8, trigger = "claim:next once a seat an hour: the lane's candidates and the chosen issue; the reread after the write is claim_mark's" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "claim:release", api = "rest", identity = "read", calls = 2, points = 2, measured = "rest", hour = 2, trigger = "claim:release by hand" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "claim:release", api = "rest", identity = "write", calls = 2, points = 2, measured = "rest", hour = 2, trigger = "claim:release by hand" },
@@ -216,13 +223,16 @@ site = [
   { file = ".github/workflows/coverage.yml", scope = "freshness/compare main against the last successful upload", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 1, trigger = "coverage.yml: once a day" },
   { file = ".github/workflows/hotpath-guard.yml", scope = "file/look for the pull request's open rows", api = "graphql", identity = "actions", calls = 1, points = 2, measured = "cost", hour = 24, trigger = "hotpath-guard.yml: each hotpath check completed" },
   { file = ".github/workflows/landing.yml", scope = "landing/install gh-stack", api = "rest", identity = "actions", calls = 1, points = 2, measured = "rest", hour = 1, trigger = "landing.yml: a cache miss only, once for each pin and runner; a hit reads no API" },
+  { file = ".github/workflows/integration.yml", scope = "relay/dispatch this workflow on the default branch", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 6, trigger = "integration.yml: each push to landing or integration, a landing batch or a fix" },
   { file = ".github/workflows/nightly.yml", scope = "freshness/compare main against the last successful run", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 1, trigger = "nightly.yml: once a day" },
 ]
 
 # The hour's ceiling of each identity on each API: a fifth of the reader's
-# and the writer's 5,000 a host, and the whole of a workflow token's hour,
-# which no host shares.
+# and the writer's 5,000 a host, the whole of a workflow token's hour, which
+# no host shares, and a fifth of the integration cycle's App, whose 5,000 an
+# hour no other site shares (#5440).
 [budget]
 read = { graphql = 1000, rest = 1000 }
 write = { graphql = 1000, rest = 1000 }
 actions = { graphql = 1000, rest = 1000 }
+cycle = { graphql = 1000, rest = 1000 }

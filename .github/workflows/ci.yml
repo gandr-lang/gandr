@@ -38,6 +38,10 @@
 #   The integration cycle tests `landing`. A pull request on `landing` runs
 #   no Clippy, because its lane ran `check:landing` before `pr:open`.
 #   `check:landing-queue` holds the jobs to these rules.
+# - The integration cycle dispatches this workflow on `integration` with the
+#   input `cycle` (`integration.yml`, #5440). That run tests every lane that
+#   a merge group tests on Linux, with no fail-fast. It runs no macOS, no
+#   obligations, no mutants and no hotpath lane.
 name: CI
 
 on:
@@ -46,6 +50,10 @@ on:
     inputs:
       plain-baseline:
         description: Also time the plain baseline the enforcing lanes compare with
+        type: boolean
+        default: false
+      cycle:
+        description: Run as the integration cycle, the lanes of a merge group on Linux alone
         type: boolean
         default: false
   # The push to main reruns no Linux check: the merge-group run already
@@ -138,7 +146,11 @@ jobs:
     # can runs on arm64; macOS's runners are arm64 too. coverage.yml's x86-64
     # Linux run is the one job that compiles and runs the emitter's x86-64
     # patcher and memory placement, so the image is published for both.
-    runs-on: &linux ubuntu-24.04-arm
+    # The integration cycle runs on the runner that the repository variable
+    # `GANDR_INTEGRATION_RUNNER` names, the local runner with the label
+    # `integration` once it is online. Until then the variable stays unset,
+    # and a hosted runner runs the cycle (#5440).
+    runs-on: &linux ${{ inputs.cycle && vars.GANDR_INTEGRATION_RUNNER || 'ubuntu-24.04-arm' }}
     # Private-GHCR consumers need package reads on the job; the workflow floor
     # stays `contents: read` for every job that pulls no image.
     permissions: &image-read-permissions
@@ -1126,7 +1138,7 @@ jobs:
   cargo-test-macos-enforcing-shard:
     name: test enforcing targets (macos-arm64, ${{ matrix.shard }})
     needs: *rust-needs
-    if: &main-lane ${{ !cancelled() && !failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    if: &main-lane ${{ !cancelled() && !failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
     runs-on: macos-latest
     permissions:
       contents: read
@@ -1203,7 +1215,7 @@ jobs:
   cargo-test-macos:
     name: test the workspace (macos-arm64)
     needs: [cargo-test-macos-enforcing-shard, cargo-test-macos-enforcing]
-    if: ${{ always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
     runs-on: macos-latest
     permissions: {}
     timeout-minutes: 5
@@ -1371,7 +1383,7 @@ jobs:
   obligations:
     name: re-verify obligated specifications (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
     runs-on: *linux
     permissions:
       contents: read
@@ -1553,7 +1565,7 @@ jobs:
   mutants:
     name: report the mutants of the change (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
     runs-on: *linux
     permissions:
       contents: read
@@ -1652,7 +1664,7 @@ jobs:
   mutants-nightly:
     name: mutate the night's crate (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.mutants == 'true' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
     runs-on: *linux
     permissions:
       contents: read
@@ -1738,7 +1750,7 @@ jobs:
   hotpath:
     name: report the hotpath benchmarks (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.prepare.outputs.rust == 'true' && needs.prepare.outputs.stacked != 'true')) }}
+    if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' && !inputs.cycle || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.prepare.outputs.rust == 'true' && needs.prepare.outputs.stacked != 'true')) }}
     outputs:
       judged: ${{ steps.judge.outputs.checks }}
       unsent: ${{ steps.unsent.outputs.benchmarks }}
