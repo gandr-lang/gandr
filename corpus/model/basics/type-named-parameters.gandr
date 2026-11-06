@@ -1,5 +1,9 @@
-// A function's parameter may be named as a type is, `A`, and is bound as any
-// other parameter: the types after it read `A` as that parameter.
+// This source shows type-named parameters.
+//
+// A function can name a type parameter as `A`.
+// Later types read `A` as that parameter.
+//
+// The parser binds it as it binds every other parameter.
 //
 // - see: #1996
 // - see: #2179 — `idTelescope`
@@ -15,7 +19,7 @@ def idAtThree() -> Integer { idAt Integer 3 }
 /// type and one as a value.
 def firstAt(A : Type, b : Type, x : A, y : b) -> A { x }
 
-/// `firstAt` at two types, handed a value of each.
+/// `firstAt` receives two types and one value of each.
 @[ runs("5") ]
 def firstAtFive() -> Integer { firstAt Integer Unit 5 *{} }
 

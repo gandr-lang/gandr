@@ -1,5 +1,11 @@
-// A pair of values, named, and returned as a program's result; a triple
-// written as a product chain, its places selected by position.
+// This source shows product values.
+//
+// A pair names values.
+// A triple forms a product chain whose positions select its values.
+//
+// The runtime returns a pair as a program result.
+//
+// - see: `point`, `triple` — product values.
 
 /// Two integers, paired.
 def point = *{1, 2};

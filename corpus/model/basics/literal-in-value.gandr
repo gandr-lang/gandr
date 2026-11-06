@@ -14,10 +14,10 @@
 
 /// Expressions over the integers.
 data Expr : Type where
-  /// The leaf holding an integer.
+  /// `Lit` holds an integer.
   | Lit : (n : Integer) --> Expr
 
-/// An expression reads a literal as the leaf holding it.
+/// `ExprFromNat` reads a literal as `Lit`.
 module ExprFromNat : Model(FromNat) with sort Carrier = Expr where
   /// The leaf.
   def fromNat(n : Integer) -> Expr { Lit n }
@@ -31,6 +31,6 @@ def body() -> Expr { 5 }
 @[ runs("Lit 5") ]
 def leaf : Expr = 5;
 
-/// The definition read in a body, which runs the reader's call again.
+/// This body reads `leaf` and runs its reader call again.
 @[ runs("Lit 5") ]
 def readLeaf() -> Expr { leaf }
