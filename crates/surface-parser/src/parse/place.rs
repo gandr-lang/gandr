@@ -88,6 +88,7 @@ use crate::label::label;
 use crate::meld::BOUNDARY_SORT;
 use crate::meld::Expected;
 use crate::meld::Splice;
+use crate::meld::Splices;
 use crate::meld::declaration_head;
 use crate::meld::primitive_copy_wrapper;
 use crate::mold::KEYWORDS;
@@ -267,9 +268,10 @@ impl Target
 ///   bracket at the last such place in the source, reaching back to the first
 ///   such place, and an empty postfix grout otherwise at the first such place
 ///   in that order, and the obligations are that repair and the copy's others,
-///   shifted back over the tile; otherwise `parsed`. A declaration's keyword
-///   left out at the head of a top-level form is placed first ([`headed`]), and
-///   the search above runs over that parse.
+///   shifted back over the tile. A declaration's keyword left out at the head
+///   of a top-level form is placed first ([`headed`]), and the search above
+///   runs over that parse. Where the search places no tile, the gap before each
+///   line places the separators and closers it shows ([`super::gap::gapped`]).
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -288,13 +290,14 @@ impl Target
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
 /// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
+/// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 pub(super) fn placed<'source>(
     pbg: &Pbg,
     parsed: ParseResult<'source>,
 ) -> ParseResult<'source>
 {
     let parsed = headed(pbg, &parsed).unwrap_or(parsed);
-    earlier(pbg, &parsed).unwrap_or(parsed)
+    earlier(pbg, &parsed).unwrap_or_else(|| super::gap::gapped(pbg, parsed))
 }
 
 /// `parsed` with a placeable repair placed, if a place parses.
@@ -474,12 +477,14 @@ fn headed<'source>(
                 sort: BOUNDARY_SORT.grout_sort(),
                 shape: GroutShape::Prefix,
             })?;
+            let splices = [splice];
+            let splices = Splices::from(splices.as_slice());
             let (tree, copied) = molded(pbg, SourceText::from(copy.as_str()))
-                .commit_spliced(source, splice)
+                .commit_spliced(source, splices)
                 .ok()?;
             let mut obligations: Vec<ObligationInstance> = copied
                 .into_iter()
-                .map(|obligation| splice.obligation(obligation))
+                .map(|obligation| splices.obligation(obligation))
                 .collect();
             obligations.push(ObligationInstance::new(Oblig::MissingTile, lead));
             ordered(&mut obligations);
@@ -939,12 +944,14 @@ fn settled<'source>(
         },
     );
     let splice = Splice::new(place, spelled, leaf)?;
+    let splices = [splice];
+    let splices = Splices::from(splices.as_slice());
     let (tree, copied) = molded(pbg, SourceText::from(copy.as_str()))
-        .commit_spliced(source, splice)
+        .commit_spliced(source, splices)
         .ok()?;
     let mut obligations: Vec<ObligationInstance> = copied
         .into_iter()
-        .map(|obligation| splice.obligation(obligation))
+        .map(|obligation| splices.obligation(obligation))
         .collect();
     obligations.push(target.repair);
     ordered(&mut obligations);

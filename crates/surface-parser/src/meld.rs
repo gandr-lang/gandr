@@ -522,31 +522,36 @@ impl SourceSpan
     }
 }
 
-/// A tile the source left out, written into a copy of the source so the copy
-/// molds without a repair, and read back as the close the melder mints.
+/// A tile the source left out or misspelt, written into a copy of the source
+/// so the copy molds without a repair, and read back over the source.
 ///
 /// The copy holds the tile's bytes over `at .. after`, with the space it is
-/// written with to stand as a token of its own; every other byte of the copy
-/// is the source's, those past the tile shifted by its width.
+/// written with to stand as a token of its own. A tile the source left out
+/// replaces nothing and reads back as the close the melder mints. A tile the
+/// source misspelt replaces the `over` bytes of the misspelt word and reads
+/// back as itself over them. [`Splices`] reads a copy that holds one or more
+/// such tiles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Splice
 {
-    /// Where the tile stands, in the source and in the copy alike.
+    /// Where the tile stands in the copy.
     at: SourceOffset,
     /// One past the tile's last byte in the copy.
     after: SourceOffset,
-    /// The minted close the tile is read back as.
+    /// How many source bytes the tile replaces: none for a tile left out.
+    over: u32,
+    /// The minted close a tile left out is read back as.
     ghost: NodeLabel,
 }
 
 impl Splice
 {
-    /// The splice of `tile` written at `at`, read back as `ghost`.
+    /// The splice of `tile` written at `at` of the copy, read back as `ghost`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the splice over `at .. at + tile.len()`; `None` when that end
-    ///   lies past the wire's ceiling.
+    /// - ensures: the splice over `at .. at + tile.len()` that replaces no
+    ///   source byte; `None` when that end lies past the wire's ceiling.
     /// - panics: none.
     /// - executable: none — the clause restates the construction.
     ///
@@ -565,40 +570,166 @@ impl Splice
         Some(Self {
             at: SourceOffset(start),
             after: SourceOffset(start.checked_add(width)?),
+            over: 0,
             ghost,
         })
     }
 
-    /// The source offset of the copy's `offset`: past the tile, shifted back
-    /// over it; within it, its start; before it, unchanged.
+    /// The splice of `tile` written at `at` of the copy in place of the bytes
+    /// of `word`. A misspelt word's bytes read back as the tile over them. An
+    /// empty `word` is a tile left out, an empty postfix grout until
+    /// [`read_as`](Self::read_as) names its minted tile.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the splice over `at .. at + tile.len()` that replaces
+    ///   `word.len()` source bytes; `None` when that end or that length lies
+    ///   past the wire's ceiling.
+    /// - panics: none.
+    /// - executable: none — the clause restates the construction.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`MeldState::commit_spliced`].
+    /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
+    /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+    #[must_use]
+    pub(crate) fn replacing(
+        at: ByteOffset,
+        tile: SourceText<'_>,
+        word: SourceText<'_>,
+    ) -> Option<Self>
+    {
+        let splice = Self::new(at, tile, NodeLabel::Space)?;
+        Some(Self {
+            over: u32::try_from(<&str>::from(word).len()).ok()?,
+            ..splice
+        })
+    }
+
+    /// How many bytes the tile takes in the copy.
     ///
     /// # Specification
     /// trivial.
-    const fn offset(
+    const fn width(self) -> SourceOffset
+    {
+        SourceOffset(self.after.0.saturating_sub(self.at.0))
+    }
+
+    /// What the tile stands for in the source.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn stands(self) -> Stands
+    {
+        if self.over > 0 {
+            Stands::Misspelt
+        }
+        else {
+            Stands::LeftOut
+        }
+    }
+
+    /// The bytes the splice writes, read from its `copy`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn tile(
+        self,
+        copy: SourceText<'_>,
+    ) -> Option<SourceText<'_>>
+    {
+        <&str>::from(copy)
+            .get(usize::try_from(self.at.0).ok()? .. usize::try_from(self.after.0).ok()?)
+            .map(SourceText::from)
+    }
+
+    /// The same splice, its tile read back as `ghost`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn read_as(
+        self,
+        ghost: NodeLabel,
+    ) -> Self
+    {
+        Self { ghost, ..self }
+    }
+}
+
+/// What a splice's tile stands for in the source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Stands
+{
+    /// A tile the source left out, which replaces no byte.
+    LeftOut,
+    /// A keyword the source misspelt, which replaces the word's bytes.
+    Misspelt,
+}
+
+/// The tiles a copy of a source holds that the source left out or misspelt,
+/// in copy order: the copy's offsets read back as the source's.
+///
+/// Each splice's `at .. after` is a range of the copy, and no two overlap.
+/// Every other byte of the copy is the source's, those past a tile shifted by
+/// the width of each tile before them less the bytes it replaces.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Splices<'splices>(&'splices [Splice]);
+
+impl<'splices> From<&'splices [Splice]> for Splices<'splices>
+{
+    /// The splices `splices` holds, in copy order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(splices: &'splices [Splice]) -> Self
+    {
+        Self(splices)
+    }
+}
+
+impl Splices<'static>
+{
+    /// No tile written in: the copy is the source.
+    pub(crate) const NONE: Self = Self(&[]);
+}
+
+impl Splices<'_>
+{
+    /// The source offset of the copy's `offset`: past a tile, shifted back
+    /// over it and every tile before it, less the bytes each replaces; within
+    /// one, the tile's own place.
+    ///
+    /// # Specification
+    /// trivial.
+    fn offset(
         self,
         offset: SourceOffset,
     ) -> SourceOffset
     {
-        if offset.0 >= self.after.0 {
-            SourceOffset(
-                offset
-                    .0
-                    .saturating_sub(self.after.0.saturating_sub(self.at.0)),
-            )
+        let mut written = 0_u32;
+        let mut replaced = 0_u32;
+        for splice in self.0 {
+            if offset.0 >= splice.after.0 {
+                written = written.saturating_add(splice.width().0);
+                replaced = replaced.saturating_add(splice.over);
+            }
+            else if offset.0 > splice.at.0 {
+                return SourceOffset(splice.at.0.saturating_sub(written).saturating_add(replaced));
+            }
+            else {
+                break;
+            }
         }
-        else if offset.0 > self.at.0 {
-            self.at
-        }
-        else {
-            offset
-        }
+        SourceOffset(offset.0.saturating_sub(written).saturating_add(replaced))
     }
 
     /// The source span of the copy's `span`.
     ///
     /// # Specification
     /// trivial.
-    const fn span(
+    fn span(
         self,
         span: SourceSpan,
     ) -> SourceSpan
@@ -606,35 +737,50 @@ impl Splice
         SourceSpan::new(self.offset(span.start), self.offset(span.end))
     }
 
-    /// The source leaf the copy's leaf `label` over `span` reads as: the tile
-    /// the splice writes is the minted tile, empty at `at`; any other leaf is
-    /// itself, shifted.
+    /// The splice whose tile holds the copy's `span`, if one does.
     ///
     /// # Specification
     /// trivial.
-    const fn leaf(
+    fn holding(
+        self,
+        span: SourceSpan,
+    ) -> Option<Splice>
+    {
+        self.0
+            .iter()
+            .find(|splice| splice.at.0 <= span.start.0 && span.end.0 <= splice.after.0)
+            .copied()
+    }
+
+    /// The source leaf the copy's leaf `label` over `span` reads as: a tile a
+    /// splice writes is that splice's minted tile. A tile written in place of
+    /// nothing stands empty at its place, and one written in place of a
+    /// misspelt word stands over the word. Any other leaf is itself, shifted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn leaf(
         self,
         label: NodeLabel,
         span: SourceSpan,
     ) -> (NodeLabel, SourceSpan)
     {
-        if self.at.0 <= span.start.0
-            && span.end.0 <= self.after.0
-            && matches!(label, NodeLabel::Tile(_))
-        {
-            (self.ghost, SourceSpan::point(self.at))
-        }
-        else {
-            (label, self.span(span))
+        match self.holding(span) {
+            Some(splice) if matches!(label, NodeLabel::Tile(_)) && splice.over == 0 => (
+                splice.ghost,
+                SourceSpan::point(self.offset(SourceOffset(splice.at.0))),
+            ),
+            Some(splice) if matches!(label, NodeLabel::Tile(_)) => (splice.ghost, self.span(span)),
+            Some(_) | None => (label, self.span(span)),
         }
     }
 
     /// Whether the copy's leaf `label` over `span` is layout the copy wrote
-    /// with its tile — the space around it — which the source never had.
+    /// with a tile — the space around it — which the source never had.
     ///
     /// # Specification
     /// trivial.
-    const fn written_layout(
+    fn written_layout(
         self,
         label: NodeLabel,
         span: SourceSpan,
@@ -642,9 +788,8 @@ impl Splice
     {
         WrittenLayout(
             matches!(label, NodeLabel::Space)
-                && self.at.0 <= span.start.0
                 && span.start.0 < span.end.0
-                && span.end.0 <= self.after.0,
+                && self.holding(span).is_some(),
         )
     }
 
@@ -654,7 +799,7 @@ impl Splice
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the obligation of the same class over `obligation`'s span
-    ///   with each end shifted back over the tile; an end past the wire's
+    ///   with each end shifted back over the tiles; an end past the wire's
     ///   ceiling keeps the span as it was.
     /// - panics: none.
     /// - executable: none — the clause restates the shift.
@@ -682,13 +827,13 @@ impl Splice
         }
     }
 
-    /// Refuse a `copy` that is not `source` with the tile's bytes at
-    /// `at .. after`.
+    /// Refuse a `copy` that is not `source` with each splice's bytes written
+    /// in, each in place of the source bytes it replaces.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `Ok` exactly when `copy` without its bytes `at .. after` is
-    ///   `source`.
+    /// - ensures: `Ok` exactly when `copy` without the bytes of each splice is
+    ///   `source` without the bytes each splice replaces.
     /// - fails: [`MeldError::SourceMismatch`] otherwise.
     /// - panics: none.
     /// - executable: none — the clause restates the comparison.
@@ -705,13 +850,28 @@ impl Splice
         copy: SourceText<'_>,
     ) -> Result<(), MeldError>
     {
-        let (source, copy) = (<&str>::from(source), <&str>::from(copy));
-        let at = usize::try_from(self.at.0).map_err(|_error| MeldError::SourceMismatch)?;
-        let after = usize::try_from(self.after.0).map_err(|_error| MeldError::SourceMismatch)?;
-        let same = source.split_at_checked(at).is_some_and(|(head, tail)| {
-            copy.get(.. at) == Some(head) && copy.get(after ..) == Some(tail)
-        });
-        if same {
+        let (source, copy) = (
+            <&str>::from(source).as_bytes(),
+            <&str>::from(copy).as_bytes(),
+        );
+        let mut kept = 0_usize;
+        let mut from = 0_usize;
+        for splice in self.0 {
+            let at = usize::try_from(splice.at.0).map_err(|_error| MeldError::SourceMismatch)?;
+            let after =
+                usize::try_from(splice.after.0).map_err(|_error| MeldError::SourceMismatch)?;
+            let piece = copy.get(from .. at).ok_or(MeldError::SourceMismatch)?;
+            let end = kept
+                .checked_add(piece.len())
+                .ok_or(MeldError::SourceMismatch)?;
+            if source.get(kept .. end) != Some(piece) {
+                return Err(MeldError::SourceMismatch);
+            }
+            let over = usize::try_from(splice.over).map_err(|_error| MeldError::SourceMismatch)?;
+            kept = end.checked_add(over).ok_or(MeldError::SourceMismatch)?;
+            from = after;
+        }
+        if copy.get(from ..) == source.get(kept ..) {
             Ok(())
         }
         else {
@@ -6076,21 +6236,21 @@ impl<'pbg> MeldState<'pbg>
         let obligations = self.obligations.clone();
         let root = self.wrap_root();
         self.attach_comments(root);
-        let tree = self.build_tree(source, root, None)?;
+        let tree = self.build_tree(source, root, Splices::NONE)?;
         Ok((tree, obligations))
     }
 
-    /// Commit a state molded over a copy of `source` with one tile written in,
-    /// as `source`'s tree: the written tile read back as the minted close
-    /// `splice` names, every other span shifted back over it.
+    /// Commit a state molded over a copy of `source` with tiles written in,
+    /// as `source`'s tree: each written tile read back as the minted tile its
+    /// splice names, every other span shifted back over the tiles.
     ///
     /// # Specification
     /// - requires: none.
-    /// - ensures: the tree over `source` whose leaves are the copy's, the
-    ///   written tile an empty minted close at its place, beside the copy's
+    /// - ensures: the tree over `source` whose leaves are the copy's, each
+    ///   written tile an empty minted tile at its place, beside the copy's
     ///   obligations after closing the input.
     /// - fails: [`MeldError::SourceMismatch`] when the state's source is not
-    ///   `source` with the tile written in; otherwise as
+    ///   `source` with the tiles written in; otherwise as
     ///   [`commit`](MeldState::commit).
     /// - panics: none.
     /// - executable: none — the clause restates the replay.
@@ -6101,21 +6261,72 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parameter list's `)` left out is minted where the
-    ///   copy wrote it, and the tree reconstructs the source.
+    ///   copy wrote it, and a `)` and a `,` left out before the next line of a
+    ///   record type are minted at the end of the line they leave; each tree
+    ///   reconstructs the source.
     /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
-    pub(crate) fn commit_spliced(
+    /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+    pub(crate) fn commit_spliced<'source>(
         mut self,
-        source: SourceText<'_>,
-        splice: Splice,
-    ) -> Result<(SyntaxTree<'_>, Vec<ObligationInstance>), MeldError>
+        source: SourceText<'source>,
+        splices: Splices<'_>,
+    ) -> Result<(SyntaxTree<'source>, Vec<ObligationInstance>), MeldError>
     {
-        splice.copied(source, SourceText::from(self.source.as_str()))?;
+        splices.copied(source, SourceText::from(self.source.as_str()))?;
         self.collapse(StackFloor::from(StackIndex::from(0)));
         let obligations = self.obligations.clone();
         let root = self.wrap_root();
         self.attach_comments(root);
-        let tree = self.build_tree(source, root, Some(splice))?;
+        let tree = self.build_tree(source, root, splices)?;
         Ok((tree, obligations))
+    }
+
+    /// The obligations a commit of this state owes, its completion's
+    /// included, with no tree built.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the obligations
+    ///   [`commit_with_obligations`](Self::commit_with_obligations) answers.
+    /// - panics: none.
+    /// - executable: none — the clause restates the collapse.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the gap search's copies.
+    /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+    pub(crate) fn owed(mut self) -> Vec<ObligationInstance>
+    {
+        self.collapse(StackFloor::from(StackIndex::from(0)));
+        self.obligations
+    }
+
+    /// The mold of the tile this state pushed over exactly `span`.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the mold of an emitted [`NodeLabel::Tile`] token over `span`;
+    ///   `None` when no tile token spans it.
+    /// - panics: none.
+    /// - executable: none — the clause restates the scan.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the gap search's copies.
+    /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
+    pub(crate) fn tile_spanning(
+        &self,
+        span: ByteSpan,
+    ) -> Option<MoldId>
+    {
+        let start = u32::try_from(usize::from(span.start())).ok()?;
+        let end = u32::try_from(usize::from(span.end())).ok()?;
+        self.emit.iter().find_map(|op| match *op {
+            EmitOp::Token {
+                label: NodeLabel::Tile(mold),
+                start: at,
+                end: after,
+            } if at == start && after == end => Some(mold),
+            EmitOp::Token { .. } | EmitOp::Interior { .. } => None,
+        })
     }
 
     /// Wrap the fully collapsed slope's operands into a single root interior.
@@ -6523,8 +6734,8 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// Replay the emission log into a checked [`TreeBuilder`] over `source`
-    /// and finish at `root`, reading each span through `splice` when the log
-    /// was molded over a copy with a tile written in.
+    /// and finish at `root`, reading each span through `splices` when the log
+    /// was molded over a copy with tiles written in.
     ///
     /// Every leaf is staged before any interior, so an interior may own a leaf
     /// logged after it, as a comment its owner was reduced before is. Every
@@ -6533,12 +6744,12 @@ impl<'pbg> MeldState<'pbg>
     /// interior owns only interiors logged before it.
     ///
     /// # Specification
-    /// - requires: `source` is the assembled text, or with a `splice` the text
-    ///   the splice's copy was made from, which [`commit`](Self::commit) and
+    /// - requires: `source` is the assembled text, or with `splices` the text
+    ///   their copy was made from, which [`commit`](Self::commit) and
     ///   [`commit_spliced`](Self::commit_spliced) check first.
     /// - ensures: the tree's root is `root`'s node, and every log entry
-    ///   reachable from it is a node of the tree, its span and the written
-    ///   tile's label read through `splice`.
+    ///   reachable from it is a node of the tree, its span and each written
+    ///   tile's label read through `splices`.
     /// - fails: the builder refuses a node, or the log names an id outside
     ///   itself or an interior over other interiors not yet logged.
     /// - panics: none.
@@ -6564,7 +6775,7 @@ impl<'pbg> MeldState<'pbg>
         &self,
         source: SourceText<'source>,
         root: EmitId,
-        splice: Option<Splice>,
+        splices: Splices<'_>,
     ) -> Result<SyntaxTree<'source>, MeldError>
     {
         let mut builder = TreeBuilder::new(source, self.pbg.fingerprint())?;
@@ -6578,11 +6789,11 @@ impl<'pbg> MeldState<'pbg>
         {
             if let EmitOp::Token { label, start, end } = *op {
                 let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end));
-                if splice.is_some_and(|splice| bool::from(splice.written_layout(label, span))) {
+                if bool::from(splices.written_layout(label, span)) {
                     *dropped = true;
                     continue;
                 }
-                let (label, span) = splice.map_or((label, span), |splice| splice.leaf(label, span));
+                let (label, span) = splices.leaf(label, span);
                 *slot = Some(builder.node(label, span.byte_span()?, &[])?);
             }
         }
@@ -6621,9 +6832,7 @@ impl<'pbg> MeldState<'pbg>
                     child_nodes.push(mapped);
                 }
                 let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end));
-                let span = splice
-                    .map_or(span, |splice| splice.span(span))
-                    .byte_span()?;
+                let span = splices.span(span).byte_span()?;
                 let node = builder.node(label, span, &child_nodes)?;
                 if let Some(slot) = mapping.get_mut(position) {
                     *slot = Some(node);
@@ -10020,7 +10229,7 @@ mod tests
             super::SourceOffset::from(0)
         );
         let source = SourceText::from("éx");
-        let tree = state.build_tree(source, root, None)?;
+        let tree = state.build_tree(source, root, super::Splices::NONE)?;
         assert_eq!(tile_texts(&tree, tree.root()), vec!["x", "é"]);
         assert_eq!(crate::testing::reconstruct(&tree), "éx");
         state.flag(Oblig::UnmoldedTok, first);
@@ -10035,19 +10244,19 @@ mod tests
         assert_eq!(u32::from(state.delta().inserted(Oblig::InconMeld)), 1);
         assert_eq!(u32::from(state.delta().inserted(Oblig::AmbiguousPrec)), 0);
         assert!(matches!(
-            state.build_tree(source, super::EmitId(u32::MAX), None),
+            state.build_tree(source, super::EmitId(u32::MAX), super::Splices::NONE),
             Err(super::MeldError::Corrupt)
         ));
         let forward =
             state.emit_interior(NodeLabel::Wald, root_span, vec![super::EmitId(u32::MAX)]);
         assert!(matches!(
-            state.build_tree(source, forward, None),
+            state.build_tree(source, forward, super::Splices::NONE),
             Err(super::MeldError::Corrupt)
         ));
         let mut state = MeldState::new(&pbg);
         let bad = state.emit_token(NodeLabel::Tile(atom), inverted);
         assert!(matches!(
-            state.build_tree(source, bad, None),
+            state.build_tree(source, bad, super::Splices::NONE),
             Err(super::MeldError::Build(
                 gandr_surface_syntax::SyntaxError::InvertedSpan { .. }
             ))

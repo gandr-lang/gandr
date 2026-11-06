@@ -3,7 +3,7 @@
 //! module carries beside its declarations.
 //!
 //! Its public types: `AttributeRegistry`, `AttributeSchema`,
-//! `RegisteredAttribute`, `EditDistance`, `PayloadForm`, `PayloadVerdict`,
+//! `RegisteredAttribute`, `PayloadForm`, `PayloadVerdict`,
 //! `payload_form`, `payload_verdict`, `AttributeEntry`, `AttributeTable` and
 //! `AttributedCount`.
 //!
@@ -145,6 +145,9 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Literal;
+use gandr_surface_grammar::EditDistance;
+use gandr_surface_grammar::LabelText;
+use gandr_surface_grammar::edit_distance;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -512,37 +515,6 @@ impl fmt::Display for RegisteredAttribute
     }
 }
 
-/// The number of single-character edits between two spellings.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct EditDistance(usize);
-
-impl From<usize> for EditDistance
-{
-    /// The distance of `edits` edits.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(edits: usize) -> Self
-    {
-        Self(edits)
-    }
-}
-
-impl From<EditDistance> for usize
-{
-    /// The number of edits `distance` holds.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(distance: EditDistance) -> Self
-    {
-        distance.0
-    }
-}
-
 /// What an attribute's payload must be, if it takes one at all.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AttributeSchema
@@ -885,7 +857,7 @@ impl AttributeRegistry
             Maybe::Absent(suggestion::Absent::BeyondBound);
         for (spelling, _schema) in REGISTRY {
             let candidate = RegisteredAttribute(spelling);
-            let distance = edit_distance(name, candidate);
+            let distance = edit_distance(LabelText(name.as_ref()), LabelText(candidate.as_ref()));
             if distance > SUGGESTION_BOUND {
                 continue;
             }
@@ -1179,74 +1151,6 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Unadmitted(_)
         | Former::Misplaced => PayloadForm::OtherValue,
     }
-}
-
-/// The number of single-character edits between two spellings.
-///
-/// # Specification
-/// - requires: nothing — either spelling may be empty.
-/// - ensures: the Levenshtein distance over characters: the least number of
-///   insertions, deletions and substitutions carrying one spelling to the
-///   other, which is zero exactly when the two are equal.
-/// - provides: the ordering the bounded suggestion selects its answer by.
-/// - fails: never.
-/// - panics: none. The row walk reads through checked lookups, and every
-///   addition saturates.
-///
-/// # Adequacy
-/// - hypothesis: L3 — four decision surfaces (the substitution cost and the
-///   three-way minimum) separated by equal spellings, a single substitution, a
-///   single insertion, a single deletion, a transposition costing two, and each
-///   spelling against the empty one, every case asserted as an exact distance.
-/// - witness: `attribute::tests::the_edit_distance_of_equal_spellings_is_zero`
-/// - witness: `attribute::tests::each_single_edit_costs_one`
-/// - witness: `attribute::tests::an_empty_spelling_costs_the_other_length`
-/// - witness: `attribute::tests::edit_distance_counts_unicode_scalars_not_bytes`
-#[spec(
-    ensures: |ret| {
-        let left: &str = written.as_ref();
-        let right = candidate.0;
-        let left_len = left.chars().count();
-        let right_len = right.chars().count();
-        ret.0 >= left_len.abs_diff(right_len)
-            && ret.0 <= left_len.max(right_len)
-            && (ret.0 == 0) == (left == right)
-            && (!left.is_empty() || ret.0 == right_len)
-            && (!right.is_empty() || ret.0 == left_len)
-    },
-)]
-#[must_use]
-fn edit_distance(
-    written: SurfaceName<'_>,
-    candidate: RegisteredAttribute,
-) -> EditDistance
-{
-    let left: &str = written.as_ref();
-    let right: &str = candidate.as_ref();
-    let width = right.chars().count();
-    let mut previous: Vec<usize> = (0_usize ..= width).collect();
-    let mut current: Vec<usize> = Vec::with_capacity(width.saturating_add(1_usize));
-    for (row, from) in left.chars().enumerate() {
-        current.clear();
-        current.push(row.saturating_add(1_usize));
-        for (column, into) in right.chars().enumerate() {
-            let above = previous
-                .get(column.saturating_add(1_usize))
-                .copied()
-                .unwrap_or(usize::MAX);
-            let before = current.get(column).copied().unwrap_or(usize::MAX);
-            let diagonal = previous.get(column).copied().unwrap_or(usize::MAX);
-            let substitution = diagonal.saturating_add(usize::from(from != into));
-            let best = above
-                .saturating_add(1_usize)
-                .min(before.saturating_add(1_usize))
-                .min(substitution);
-            current.push(best);
-        }
-        core::mem::swap(&mut previous, &mut current);
-    }
-
-    EditDistance(previous.last().copied().unwrap_or(width))
 }
 
 /// One attribute, resolved against the registry and filed under a declaration.
@@ -1851,6 +1755,9 @@ mod tests
     use gandr_core_term::CoreArena;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::Literal;
+    use gandr_surface_grammar::EditDistance;
+    use gandr_surface_grammar::LabelText;
+    use gandr_surface_grammar::edit_distance;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::FormRank;
     use gandr_surface_syntax::NodeDigest;
@@ -1863,11 +1770,9 @@ mod tests
     use super::AttributeTable;
     use super::AttributedCount;
     use super::Deprecation;
-    use super::EditDistance;
     use super::PayloadForm;
     use super::PayloadVerdict;
     use super::deprecation;
-    use super::edit_distance;
     use super::members;
     use super::names;
     use super::payload;
@@ -1911,15 +1816,12 @@ mod tests
             Maybe::Absent(suggestion::Absent::BeyondBound)
         );
         assert_eq!(
-            edit_distance(SurfaceName::from("rows"), owes),
-            EditDistance::from(2_usize)
+            edit_distance(LabelText("rows"), LabelText("owes")),
+            EditDistance(2_usize)
         );
         assert_eq!(
-            edit_distance(
-                SurfaceName::from("rows"),
-                registered(SurfaceName::from("runs"))
-            ),
-            EditDistance::from(2_usize)
+            edit_distance(LabelText("rows"), LabelText("runs")),
+            EditDistance(2_usize)
         );
         assert_eq!(
             AttributeRegistry::suggestion(SurfaceName::from("rows")),
@@ -1933,24 +1835,11 @@ mod tests
     }
 
     #[test]
-    fn edit_distance_counts_unicode_scalars_not_bytes()
+    fn a_suggestion_counts_unicode_scalars_not_bytes()
     {
-        let runs = registered(SurfaceName::from("runs"));
-        assert_eq!(
-            edit_distance(SurfaceName::from("rüns"), runs),
-            EditDistance::from(1_usize)
-        );
-        assert_eq!(
-            edit_distance(SurfaceName::from("ru水ns"), runs),
-            EditDistance::from(1_usize)
-        );
-        assert_eq!(
-            edit_distance(SurfaceName::from("水"), runs),
-            EditDistance::from(4_usize)
-        );
         assert_eq!(
             AttributeRegistry::suggestion(SurfaceName::from("rüns")),
-            Maybe::Present(runs)
+            Maybe::Present(registered(SurfaceName::from("runs")))
         );
     }
     #[test]
@@ -2069,55 +1958,6 @@ mod tests
             AttributeRegistry::suggestion(SurfaceName::from("")),
             Maybe::Absent(suggestion::Absent::BeyondBound),
             "the empty spelling sits at each entry's own length"
-        );
-    }
-
-    #[test]
-    fn the_edit_distance_of_equal_spellings_is_zero()
-    {
-        assert_eq!(
-            edit_distance(
-                SurfaceName::from("checks"),
-                registered(SurfaceName::from("checks"))
-            ),
-            EditDistance::from(0_usize),
-            "no edit carries a spelling to itself"
-        );
-    }
-
-    #[test]
-    fn each_single_edit_costs_one()
-    {
-        let checks = registered(SurfaceName::from("checks"));
-        assert_eq!(
-            edit_distance(SurfaceName::from("checkz"), checks),
-            EditDistance::from(1_usize),
-            "one substitution costs one"
-        );
-        assert_eq!(
-            edit_distance(SurfaceName::from("check"), checks),
-            EditDistance::from(1_usize),
-            "one insertion costs one"
-        );
-        assert_eq!(
-            edit_distance(SurfaceName::from("checkss"), checks),
-            EditDistance::from(1_usize),
-            "one deletion costs one"
-        );
-        assert_eq!(
-            edit_distance(SurfaceName::from("cheskc"), checks),
-            EditDistance::from(2_usize),
-            "a transposition costs two substitutions"
-        );
-    }
-
-    #[test]
-    fn an_empty_spelling_costs_the_other_length()
-    {
-        assert_eq!(
-            edit_distance(SurfaceName::from(""), registered(SurfaceName::from("owes"))),
-            EditDistance::from(4_usize),
-            "the empty spelling costs one insertion per character"
         );
     }
 
@@ -2441,6 +2281,5 @@ mod tests
         .map(ToString::to_string)
         .collect();
         apart(&forms);
-        assert_eq!(usize::from(EditDistance::from(3_usize)), 3_usize);
     }
 }

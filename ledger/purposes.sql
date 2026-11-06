@@ -2442,6 +2442,7 @@ INSERT INTO purpose VALUES('surface-grammar','parity::named_kind_realization','f
 INSERT INTO purpose VALUES('surface-grammar','spelling::Ascii','enum','Names how a glyph tile is written in ASCII, so a labeler and a printer know the spelling a reader asks for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::CONS','constant','Names the cons glyph and its ASCII spelling, so a printer writes either.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::EQUIVALENCE','constant','Names the equivalence glyph and its ASCII spelling, so a printer writes either.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-grammar','spelling::EditDistance','struct','Names the edit distance between two spellings, so a suggestion and a misspelt keyword are bounded.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::FLOW','constant','Names the flow glyph and its ASCII spelling, so a printer writes either.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::ISOMORPHISM','constant','Names the isomorphism glyph and its ASCII spelling as a head call, so a printer writes either.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::PRIME','constant','Names the identifier prime, a Unicode with no ASCII spelling, so a printer asked for ASCII refuses a name holding it.',NULL,'fits','sound',NULL);
@@ -2451,6 +2452,7 @@ INSERT INTO purpose VALUES('surface-grammar','spelling::Spelling','enum','Names 
 INSERT INTO purpose VALUES('surface-grammar','spelling::UNRESTRICTED','constant','Names the unrestricted grade glyph and its ASCII spelling, so a printer writes either.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::Unspelled','struct','Names why a word is no spelling''s name, so a reader of a setting refuses it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::aliased','function','Names the glyph tile an ASCII token stands for, so the labeler molds the token as the glyph''s tile.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-grammar','spelling::edit_distance','function','Counts the character edits between two spellings, so the parser reads a word near a keyword as the keyword misspelt and the lowering suggests the nearest attribute.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::spelled','function','Names the glyph tile and its ASCII spelling for a tile, so a printer writes the spelling a reader asks for.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','surface::APPLICATION','constant','Names the label of juxtaposition''s tile, which no lexeme spells, so the melder pushes it and the lowering reads a call.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','surface::PBG_ONLY_KINDS','constant','Names the named kinds only this grammar has, disjoint from the tree-sitter kinds, so the parity inventory never enumerates them.',NULL,'fits','sound',NULL);
@@ -2547,7 +2549,6 @@ INSERT INTO purpose VALUES('surface-lowering','attribute::AttributeTable','struc
 INSERT INTO purpose VALUES('surface-lowering','attribute::AttributedCount','struct','Names how many attributes a declaration carries, so a face reports the count.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','attribute::DeprecatedUse','struct','Holds a use of a declaration a `deprecated` attribute marks, so the `deprecated` lint names the version and the note.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','attribute::Deprecation','struct','Holds the `since` and `note` texts a `deprecated` attribute states, so a use of the declaration is titled with them.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering','attribute::EditDistance','struct','Names the edit distance between two names, so an unknown attribute''s suggestion is bounded.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','attribute::PayloadForm','enum','Names the form a payload takes, so a payload of a form the schema does not admit is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','attribute::PayloadVerdict','enum','Names the verdict a payload''s schema returns, so a payload''s form is checked against the schema.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','attribute::RegisteredAttribute','struct','Holds one registered attribute, so the registry''s inventory is read.',NULL,'fits','sound',NULL);
