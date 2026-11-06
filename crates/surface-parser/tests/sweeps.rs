@@ -39,9 +39,11 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_workflow_sweep::Changed;
 use gandr_workflow_sweep::Coverage;
+use gandr_workflow_sweep::Held;
 use gandr_workflow_sweep::Nights;
 use gandr_workflow_sweep::Portion;
 use gandr_workflow_sweep::Rotation;
+use gandr_workflow_sweep::Row;
 use gandr_workflow_sweep::Sample;
 use gandr_workflow_sweep::SampleName;
 use gandr_workflow_sweep::SampleSize;
@@ -62,11 +64,14 @@ const RECOVERY: Sample = Sample {
 /// The step between the token rows the recovery sample checks.
 const RECOVERY_STRIDE: usize = 16;
 
-/// The nights the nightly recovery sweep takes to visit the corpus: a
-/// thirteenth a night, the fewest that keep its night within half the
-/// nightly sweeps' test wall (#3013). A thirty-second took 65 s with
-/// specifications enforced on the nightly runner (run 40602657172), the
-/// whole about 2,080 s.
+/// The nights the nightly recovery sweep takes to check every row of the
+/// corpus: each night it checks every source whole and every thirteenth row
+/// of each, so each night costs about a thirteenth of the whole. Thirteen is
+/// the fewest that keep its night within half the nightly sweeps' test wall
+/// (#3013). A thirty-second took 65 s with specifications enforced on the
+/// nightly runner (run 40602657172), the whole about 2,080 s. The rows rotate
+/// and the sources do not, since one source, `buddy-pop.gandr`, costs more
+/// than a thirteenth of the whole alone (#4668).
 const RECOVERY_NIGHTS: Nights = Nights(13);
 
 /// The most tab-separated fields a recovery record row holds, with room
@@ -150,7 +155,8 @@ struct TokenCount(usize);
 /// The whole matrix is some two hundred thousand parses, two for each of the
 /// corpus's hundred thousand significant tokens (`mise run ci:recovery`, and
 /// the `sweeps` profile), and the rewrite always runs it; the `nightly`
-/// profile parses the night's slice of it. A queue entry that changes the
+/// profile parses every source whole and the night's thirteenth of each
+/// source's rows ([`Rotation::holds_row`]). A queue entry that changes the
 /// parser, its grammar or its syntax tree (`crates/surface-parser/`,
 /// `crates/surface-grammar/`, `crates/surface-syntax/`) reaches every record,
 /// and the plain lane runs the whole matrix for it; the enforcing shards keep
@@ -285,7 +291,8 @@ fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
         Portion::Fixed => sweep,
         Portion::Changed => sweep.changed(),
     };
-    eprintln!("{}", sweep.rotation());
+    let rotation = sweep.rotation();
+    eprintln!("{rotation}");
     let coverage = sweep.coverage();
     let stride = match coverage {
         Coverage::Full => 1,
@@ -298,7 +305,7 @@ fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
     };
     let sources = corpus::sources()?;
     let visited: HashSet<PathBuf> = sweep
-        .visit_rotating(RECOVERY, RECOVERY_NIGHTS, &sources)
+        .visit(RECOVERY, &sources)
         .into_iter()
         .map(|source| source.path)
         .collect();
@@ -353,7 +360,9 @@ fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
             let RowStep(step) =
                 sampled_step(coverage, RowStep(stride), TokenCount(significant().count()));
             for (index, token) in significant().enumerate() {
-                if !index.is_multiple_of(step) {
+                if !index.is_multiple_of(step)
+                    || rotation.holds_row(Row(index), RECOVERY_NIGHTS) == Held::Elsewhen
+                {
                     writeln!(observed, "T").map_err(|error| error.to_string())?;
                     continue;
                 }
