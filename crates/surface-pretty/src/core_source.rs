@@ -1052,18 +1052,16 @@ impl<'arena> CoreSource<'arena>
         }
     }
 
-    /// The key the family `datatype` names is held under, a data type of the
-    /// arena.
+    /// The key the family `declaration` is held under.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a data type's declaration, read through any stage over it,
-    ///   where the constructor table holds a family under it, and otherwise its
-    ///   declaration name; nothing for every other former, a prefix type and a
-    ///   run type among them, and for a node the arena does not hold.
+    /// - ensures: the declaration itself where the constructor table holds a
+    ///   family under it, and otherwise its declaration name; nothing for a
+    ///   declaration the source holds no name for.
     /// - provides: the family a constructor is looked up in.
     /// - panics: none.
-    /// - executable: none — a clause would restate the match arm by arm.
+    /// - executable: none — a clause would restate the two lookups.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor spells by its own family's declaration,
@@ -1073,49 +1071,15 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `tests::goldens::a_family_spells_by_its_declaration_past_a_namesake_3125`
     fn family(
         &self,
-        datatype: ValueTypeId,
+        declaration: ConstantIndex,
     ) -> Option<FamilyKey<'arena>>
     {
-        match *self.arena.value_type(self.unstaged(datatype))? {
-            ValueType::Data { declaration, .. } => {
-                let declared = FamilyKey::Declared(declaration);
-                if self.constructors.families.contains_key(&declared) {
-                    Some(declared)
-                }
-                else {
-                    self.name(declaration).map(FamilyKey::Named)
-                }
-            },
-            ValueType::Record(_)
-            | ValueType::PathUniverse(..)
-            | ValueType::Path { .. }
-            | ValueType::Bridge { .. }
-            | ValueType::Flow { .. }
-            | ValueType::Run(_)
-            | ValueType::Prefix(_)
-            | ValueType::Dialogue(_)
-            | ValueType::Web
-            | ValueType::Base(_)
-            | ValueType::Buffer
-            | ValueType::Row
-            | ValueType::RowTail(_)
-            | ValueType::Product(_)
-            | ValueType::Sum(_)
-            | ValueType::List(_)
-            | ValueType::Thunk(_)
-            | ValueType::Universe { .. }
-            | ValueType::Lift { .. }
-            | ValueType::Element { .. }
-            | ValueType::Abstract(_)
-            | ValueType::StaticPi { .. }
-            | ValueType::Sigma { .. }
-            | ValueType::Unknown
-            | ValueType::Stack { .. }
-            | ValueType::Session(_)
-            | ValueType::Capability { .. }
-            | ValueType::Kept { .. }
-            | ValueType::Staged { .. }
-            | ValueType::World(_) => None,
+        let declared = FamilyKey::Declared(declaration);
+        if self.constructors.families.contains_key(&declared) {
+            Some(declared)
+        }
+        else {
+            self.name(declaration).map(FamilyKey::Named)
         }
     }
 
@@ -1286,11 +1250,11 @@ impl<'arena> CoreSource<'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each value former read as its [`Former`], the binary
-    ///   composite, returned or not, as the fold `Path.step(p, q)` writes, any
-    ///   other composite as [`Former::Compose`] and a fill as [`Former::Fill`];
-    ///   [`Former::Unreadable`] for an id the arena does not hold, and for a
-    ///   constructor whose classifier names no data family.
+    /// - ensures: each value former read as its [`Former`], a constructor by
+    ///   its own family whatever type classifies it, the binary composite,
+    ///   returned or not, as the fold `Path.step(p, q)` writes, any other
+    ///   composite as [`Former::Compose`] and a fill as [`Former::Fill`];
+    ///   [`Former::Unreadable`] for an id the arena does not hold.
     /// - provides: the value half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
@@ -1305,7 +1269,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::only_a_parameterised_constructor_carries_its_classifier`
-    /// - witness: `core_source::tests::a_constructor_whose_classifier_names_no_family_reads_unclassified_3644`
+    /// - witness: `core_source::tests::a_constructor_at_a_computed_type_reads_by_its_family_3669`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value(id), ret) {
@@ -1344,14 +1308,12 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
-        | (Some(&Value::Constructor { datatype, tag, ref fields, .. }), Former::Constructor { name, arity, placement, classifier }) =>
-            usize::from(arity) == fields.len() && name == self.family(datatype)
+        | (Some(&Value::Constructor { family, datatype, tag, ref fields }), Former::Constructor { name, arity, placement, classifier }) =>
+            usize::from(arity) == fields.len() && name == self.family(family)
                 .and_then(|family| self.constructors.constructor(family, Component::from(usize::from(tag))))
                 .map(|(held, _)| held)
-                && placement == self.family(datatype).map_or(crate::Placement::Applied, |family| self.constructors.placement(family, arity))
+                && placement == self.family(family).map_or(crate::Placement::Applied, |family| self.constructors.placement(family, arity))
                 && classifier.is_some() == matches!(self.arena.value_type(datatype), Some(ValueType::Data { arguments, .. }) if !arguments.is_empty()),
-        | (Some(&Value::Constructor { datatype, .. }), Former::Unreadable(Unreadable::Unclassified)) =>
-            !matches!(self.arena.value_type(self.unstaged(datatype)), Some(&ValueType::Data { .. })),
         | (Some(&Value::Recorded(ref moves)), Former::Recorded { payloads, .. }) =>
             usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
         | (Some(&Value::Dialogue(ref moves)), Former::Dialogue { payloads, .. }) =>
@@ -1409,29 +1371,13 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable(Unreadable::Dangling);
         };
         match *value {
-            #[cfg_attr(
-                dylint_lib = "quenchant_dylints",
-                expect(
-                    answer_totality,
-                    reason = "a constructor kept at a type its position states, one a \
-                              definition computes, names no family to read it by"
-                )
-            )]
-            Value::Constructor { datatype, .. }
-                if !matches!(
-                    self.arena.value_type(self.unstaged(datatype)),
-                    Some(&ValueType::Data { .. })
-                ) =>
-            {
-                Former::Unreadable(Unreadable::Unclassified)
-            },
             Value::Constructor {
+                family,
                 datatype,
                 tag,
                 ref fields,
-                ..
             } => {
-                let family = self.family(datatype);
+                let family = self.family(family);
                 Former::Constructor {
                     name: family
                         .and_then(|family| {
@@ -3496,11 +3442,14 @@ mod tests
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::FieldLabel;
 
+    use super::Arity;
     use super::Component;
     use super::ConstantIndex;
+    use super::Constructors;
     use super::CoreArena;
     use super::CoreNode;
     use super::CoreSource;
+    use super::FamilyKey;
     use super::Former;
     use super::Name;
     use super::Source as _;
@@ -3924,11 +3873,12 @@ mod tests
         );
     }
 
-    /// #3644: a constructor kept at a type a definition computes names no
-    /// family. It reads as that reason, not as a malformed naming table, and
-    /// the same constructor at its data family reads as itself.
+    /// #3669: a constructor kept at a type a definition computes reads by the
+    /// family on its node, as the same constructor at its data family does.
+    /// Neither carries a classifier: the family takes no parameters, and a
+    /// computed type is no family application to write against.
     #[test]
-    fn a_constructor_whose_classifier_names_no_family_reads_unclassified_3644()
+    fn a_constructor_at_a_computed_type_reads_by_its_family_3669()
     {
         let mut arena = CoreArena::new();
         let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -3939,20 +3889,28 @@ mod tests
             arena.value_constructor(ConstantIndex::from(0_usize), computed, tag, Vec::new());
         let at_family =
             arena.value_constructor(ConstantIndex::from(0_usize), family, tag, Vec::new());
-        let source = CoreSource::new(&arena, &[]);
+        let mut constructors = Constructors::default();
+        constructors.family(FamilyKey::Declared(ConstantIndex::from(0_usize)), [(
+            Name::from("Origin"),
+            Arity::from(0_usize),
+        )]);
+        let source = CoreSource::new(&arena, &[]).naming(&constructors);
+        let read = |value| {
+            let Former::Constructor {
+                name, classifier, ..
+            } = source.read(CoreNode::Value(value))
+            else {
+                return None;
+            };
+            Some((name.map(|name| String::from(name.as_ref())), classifier))
+        };
         assert_eq!(
+            (read(at_computed), read(at_family)),
             (
-                matches!(
-                    source.read(CoreNode::Value(at_computed)),
-                    Former::Unreadable(Unreadable::Unclassified)
-                ),
-                matches!(
-                    source.read(CoreNode::Value(at_family)),
-                    Former::Constructor { .. }
-                )
+                Some((Some(String::from("Origin")), None)),
+                Some((Some(String::from("Origin")), None))
             ),
-            (true, true),
-            "a constructor at a computed type reads unclassified, and at its family as itself"
+            "a constructor reads by its family at a computed type and at its family alike"
         );
     }
 }

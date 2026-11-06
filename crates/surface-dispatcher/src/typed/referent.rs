@@ -501,10 +501,8 @@ impl Referents
             }
             match arena.value(value) {
                 Some(&Value::Constant(constant)) => keep(origin.span(), declared(constant), false),
-                Some(&Value::Constructor { datatype, tag, .. }) => {
-                    if let Some(&ValueType::Data { declaration, .. }) = arena.value_type(datatype) {
-                        keep(origin.span(), constructed(declaration, tag), false);
-                    }
+                Some(&Value::Constructor { family, tag, .. }) => {
+                    keep(origin.span(), constructed(family, tag), false);
                 },
                 Some(_) | None => {},
             }

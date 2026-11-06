@@ -5512,10 +5512,7 @@ impl<'source> Lowerer<'_, 'source>
                     .map_or(unread, Maybe::Present);
             },
             Some(&Value::Constant(constant)) => self.words_at(constant),
-            Some(&Value::Constructor { datatype, .. }) => match sink.arena.value_type(datatype) {
-                Some(&ValueType::Data { declaration, .. }) => self.words_at(declaration),
-                _ => return unread,
-            },
+            Some(&Value::Constructor { family, .. }) => self.words_at(family),
             _ => return unread,
         };
         let Maybe::Present(words) = worded

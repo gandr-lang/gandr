@@ -1,0 +1,30 @@
+// A constructor at a type that a definition computes names its own family.
+// `pairOf(Nat, Nat)` unfolds to `Both(Nat, Nat)`, and `MkBoth` checks there.
+//
+// The type the constructor is checked at names no family. The printer must
+// still write the declaration back as the source writes it.
+//
+// The printer spells the constructor by the family on its node. The fixture
+// that refuses a constructor of one family under a classifier of another
+// family is the pathological twin of this fixture.
+//
+// - see: #3669 — `bothZero`, `bothOne`
+// - see: `pathological/data/nominal-distinctness.gandr`
+
+// The naturals.
+import "./data-base.gandr";
+
+/// The pairs of two types.
+data Both(a : Type, b : Type) : Type where
+  /// A value of each type.
+  | MkBoth : (x : a, y : b) --> Both(a, b)
+
+/// The pair type of two types, which a definition computes.
+def pairOf(a : Type, b : Type) -> Type { return (Both a b) }
+
+/// A pair of naturals at the type the definition computes.
+def bothZero : pairOf(Nat, Nat) = MkBoth Zero Zero;
+
+/// A pair of naturals as the body of a function whose result type the
+/// definition computes.
+def bothOne(n : Nat) -> pairOf(Nat, Nat) { MkBoth (Succ n) n }
