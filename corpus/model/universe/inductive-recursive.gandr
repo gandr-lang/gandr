@@ -1,37 +1,20 @@
-// An inductive-recursive universe, after Dybjer and Setzer: the codes and
-// their decoder are one block, because a code's field names the decoder. The
-// dependent function code carries a domain code and, for each element of
-// that domain's decode, a codomain code, so its second field's type decodes
-// its first. The block is one admission: the codes form with the decoder's
-// declared type in scope, then the decoder is checked against the codes just
-// formed, and inside the decoder's own fixpoint a field type naming the
-// decoder reads the fixpoint's binder, so the decode a field holds stands
-// below the code it came from. Nothing about induction-recursion is new to
-// the kernel: the decoder is a function into the universe, and a decode is
-// the type the code it returns quotes. The codes and the decoder are named
-// apart from the closed universe's, whose arrow code is not dependent. A
-// universe indexed by a level takes the same admission. Each code's field
-// decodes the code before it, at the level the field holds.
-//
-// - see: #577 — `idNat`
+//! This fixture defines an inductive-recursive universe.
+//!
+//! The codes and decoder share one recursive block.
+//!
+//! A function code selects a decoded codomain.
+//!
+//! - see: #577 — `idNat`
 
-// The naturals.
 import "../data/data-base.gandr";
 
-/// The universe and its decoder, one block: a code's field names the
-/// decoder, and the decoder recurses on the codes.
 rec {
-  /// The codes: the naturals, and the dependent functions from a coded
-  /// domain to a family of codes over that domain's decode.
   @[ checks, form(explicit) ]
   data UPi : Type where {
     | NatC : UPi
     | PiC : (a : UPi, b : +U (elPi(a) -> -F UPi)) --> UPi
   }
 
-  /// The decoder. The function code's arm decodes its domain and, under a
-  /// binder at that decode, the codomain its family picks; each decode
-  /// recurses below the code.
   @[ checks ]
   def rec elPi(u : UPi) -> -F Type =
     match u where
@@ -39,40 +22,27 @@ rec {
       | PiC(a, b) => return (+U ((x : elPi[<](a)) -> -F elPi[<](b(x))))
 }
 
-/// The family that picks the natural code at every natural.
 @[ checks ]
 def toNat(x : Nat) -> -F UPi { return NatC }
 
-/// The identity at the decode of the function code from naturals to
-/// naturals, which runs to the dependent arrow between them.
 @[ checks ]
 def idDecoded : elPi(PiC(NatC, toNat));
 def idDecoded = thunk { fun (x) { return x } };
 
-/// The identity applied at its decoded type.
 @[ runs("Succ Zero") ]
 def appliedDecoded() -> -F Nat { idDecoded (Succ Zero) }
 
-/// The same identity where the plain arrow between naturals is expected: the
-/// decode is a dependent arrow whose codomain, `elPi(toNat(x))`, runs to
-/// `Nat` and so ignores its binder, which makes it the plain arrow.
 @[ checks ]
 def idNat : +U (Nat -> -F Nat);
 def idNat = idDecoded;
 
-/// A universe indexed by a level, and its decoder, in one block. A code's
-/// field decodes the code before it, at the level the field holds.
 rec {
-  /// The codes at each level: the naturals, and the dependent functions.
   @[ checks ]
   data UM : Nat -> Type where {
-    /// The naturals, at every level.
     | NatM : (n : Nat) --> UM(n)
-    /// The dependent functions from a coded domain at a level.
     | PiM : (n : Nat, a : UM(n), b : +U (elM(n, a) -> -F UM(n))) --> UM(n)
   }
 
-  /// The decoder at each level. It recurses below the code.
   @[ checks ]
   def rec elM(n : Nat, u : UM(n)) -> -F Type =
     match u where
@@ -80,12 +50,10 @@ rec {
       | PiM(m, a, b) => return (+U ((x : elM[<](m, a)) -> -F elM[<](m, b(x))))
 }
 
-/// The natural code at level zero.
 @[ checks ]
 def natAtZero : UM(Zero);
 def natAtZero = NatM Zero;
 
-/// Zero at the decode of the natural code at level zero.
 @[ checks ]
 def zeroAtLevel : elM(Zero, natAtZero);
 def zeroAtLevel = Zero;

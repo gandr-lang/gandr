@@ -1,131 +1,87 @@
-//! A Tarski universe written by hand: a datatype of codes and a decoder from
-//! codes to value types. The decode of a code over a binder is a value type
-//! over a neutral code, compared by its code; the decode of a code that runs to
-//! a quote is the quoted type. The arrow code decodes to the function type
-//! between its two decoded sides, so a function at a decoded arrow applies. A
-//! type a body quotes reads each binder where the body binds it, and a decode
-//! at its path type's carrier reads as it does in a binder's type. A
-//! constructor field may read the one before it, so a value packs with its code
-//! [MartinLof-1984-intuitionistic_type_theory].
+//! This fixture defines a Tarski universe.
 //!
-//! - see: #540 — `endo`
-//! - see: #583 — `byCode`
-//! - see: #590 — `onType`
+//! The universe has natural and arrow codes.
+//!
+//! The decoder returns a value type for each code.
+//!
 //! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
 
-// The naturals.
 import "../data/data-base.gandr";
 
-/// The codes: the naturals, and the functions from one coded type to another.
 @[ checks, form(explicit) ]
 data U : Type where
   | NatC : U
   | Arrow : (a : U, b : U) --> U
 
-/// The decoder. An arm binds the type each side decodes to, a type-valued
-/// variable, and returns the function type between the two.
 @[ checks ]
 def rec el(u : U) -> -F Type =
   match u where
     | NatC => return Nat
     | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (+U (x -> -F y)) }
 
-/// The arrow from a type to itself, quoted in a body past two parameters no
-/// type names: the quote reads `a`, not `v`.
 @[ checks ]
 def endo(a : Type, n : Nat, v : a) -> -F Type { return (+U (a -> -F a)) }
 
-/// The same arrow past one parameter no type names: the quote's read of `a`
-/// leaves the signature non-dependent, so it prints as `Type -> Nat -> -F
-/// Type` and reads back to itself (#547).
 @[ checks ]
 def endoBare(a : Type, n : Nat) -> -F Type { return (+U (a -> -F a)) }
 
-/// The loops at a value of a decoded type, quoted in a body. The carrier
-/// `el(u)` reads as the type its call returns, where `x` stands.
 @[ checks ]
 def loopAt(u : U, x : el(u)) -> -F Type { return (Path x x) }
 
-/// The functions from a code to its decode, quoted in a body: the codomain
-/// `el(c)` names the arrow's own binder, which no signature type names, so
-/// the arrow is the Π over `c`.
 @[ checks ]
 def byCode(n : Nat) -> -F Type { return (+U ((c : U) -> -F el(c))) }
 
-/// The functions on a type a parameter names, quoted in a body: the arrow's
-/// binder is labelled with that parameter's type, spelled `t`, because `t`
-/// binds in the quote's telescope though no signature type names it.
 @[ checks ]
 def onType(t : Type) -> -F Type { return (+U ((x : t) -> -F t)) }
 
-/// One, at the decode of the natural code, which runs to `Nat`.
 @[ checks ]
 def one : el(NatC);
 def one = Succ Zero;
 
-/// The identity at every code: over the binder `c` the decode `el(c)` is a
-/// neutral type, and its two occurrences are one type.
 @[ checks ]
 def idAt(c : U, v : el(c)) -> -F el(c) { v }
 
-/// The identity at the natural code keeps one.
 @[ runs("Succ Zero") ]
 def kept() -> -F Nat { idAt NatC one }
 
-/// The successor, at the decode of the arrow from naturals to naturals,
-/// which runs to `Nat => Nat`.
 @[ checks ]
 def succ : el(Arrow(NatC, NatC));
 def succ = thunk { fun (n) { Succ n } };
 
-/// Application at every pair of codes: the decode of `Arrow(a, b)` reads
-/// through the decoder's arm to `el(a) => el(b)`, so `f` applies to `v` and
-/// returns at `el(b)`.
 @[ checks ]
 def applyAt(a : U, b : U, f : el(Arrow(a, b)), v : el(a)) -> -F el(b) { f v }
 
-/// The successor applied at its decoded type.
 @[ runs("Succ (Succ Zero)") ]
 def stepped() -> -F Nat { succ one }
 
-/// Application at the arrow from naturals to naturals: the successor of one.
 @[ runs("Succ (Succ Zero)") ]
 def applied() -> -F Nat { applyAt NatC NatC succ one }
 
-/// A function at the decode of an arrow whose domain is itself an arrow:
-/// it applies its argument to one.
 @[ checks ]
 def atOne : el(Arrow(Arrow(NatC, NatC), NatC));
 def atOne = thunk { fun (g) { g one } };
 
-/// Application one code up: `atOne` at the successor.
 @[ runs("Succ (Succ Zero)") ]
 def appliedAbove() -> -F Nat { applyAt (Arrow NatC NatC) NatC atOne succ }
 
-/// A value packed with its code: the second field's type is the decode of the
-/// first, so each constructor term carries its own type.
 @[ checks ]
 data Coded : Type where
   | Pack : (c : U, v : el(c)) --> Coded
 
-/// One, packed at the natural code.
 @[ checks ]
 def packedOne : Coded;
 def packedOne = Pack NatC one;
 
-/// The successor, packed at the arrow code its type decodes from.
 @[ checks ]
 def packedSucc : Coded;
 def packedSucc = Pack (Arrow NatC NatC) succ;
 
-/// The code a packed value carries.
 @[ checks ]
 def codeOf(p : Coded) -> -F U =
   match p where
     | Pack(c, v) => return c
 
-/// The successor's code, read back out of its pack.
 @[ runs("Arrow NatC NatC") ]
 def unpacked() -> -F U { codeOf packedSucc }
