@@ -3828,14 +3828,14 @@ fn a_match_without_an_answer_is_unannotated()
 #[test]
 fn a_layout_match_writes_where_before_its_arms_5557()
 {
-    let bare = alloc::format!(
-        "{COLOR}def bare(c : Color) -> -F Integer =\n  match c\n    | Red => pure 0\n    | _ => pure 1\n"
+    let source = include_str!(
+        "tests/fixtures/a-layout-match-writes-where-before-its-arms-5557-module.gandr"
     );
-    let head = bare
-        .find("match c")
+    let head = source
+        .find("match c\n")
         .map(|at| at.saturating_add("match c".len()));
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(bare.as_str()), &mut arena);
+    let module = lowered(SourceText::from(source), &mut arena);
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("bare")),
@@ -3848,12 +3848,9 @@ fn a_layout_match_writes_where_before_its_arms_5557()
         ),
         "a layout match with no `where` is refused at the end of its head"
     );
-    let marked = bare.replace("match c\n", "match c where\n");
-    let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(marked.as_str()), &mut arena);
     assert!(
         matches!(
-            outcome_of(&module, SurfaceName::from("bare")),
+            outcome_of(&module, SurfaceName::from("marked")),
             DeclarationOutcome::Completed { .. }
         ),
         "the same match with `where` after its scrutinee lowers"
