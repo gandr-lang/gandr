@@ -26,14 +26,14 @@ data Kind : Type where
 
 /// One per `Oper` link of a presentation's operation chain, zero at its end.
 def rec opsOf(chain : Theory) -> Integer =
-  match chain
+  match chain where
     | Oper(name, inputs, outputs, rest) => { let r = opsOf[<] rest; r + 1 }
     | _ => 0
 
 /// The block read by `Presents`: two operations, `mul` and `one`.
 @[ runs("2") ]
 def presentedOps() -> Integer =
-  match Mon
+  match Mon where
     | Presents(sorts, opers, rules) => opsOf opers
     | _ => 0
 
@@ -44,5 +44,5 @@ def applied() -> Bruijn { App (Ix 0) (Ix 1) }
 /// `Sort` matches a `Kind`.
 @[ runs("1") ]
 def sorted() -> Integer =
-  match Sort
+  match Sort where
     | Sort => 1

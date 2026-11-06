@@ -24,7 +24,7 @@ def renameRenameLift(
   h : (n : N) -> Path[.A = N](rlook (rlook n a1) a2, rlook n a3),
   n : N
 ) -> Path[.A = N](rlook (rlook n (RLift a1)) (RLift a2), rlook n (RLift a3)) =
-  match n
+  match n where
     | Z => Path.here Z
     | S(m) => Path.ap succOf (h m)
 
@@ -37,7 +37,7 @@ pub def rec renameRename(
   a3 : Ren,
   h : (n : N) -> Path[.A = N](rlook (rlook n a1) a2, rlook n a3)
 ) -> Path[.A = Term](rename (rename t a1) a2, rename t a3) =
-  match t
+  match t where
     | Ix(n) => Path.ap ixOf (h n)
     | Lam(b) => Path.ap
       lamOf
@@ -69,7 +69,7 @@ def renameSquareLift(
   h : (n : N) -> Path[.A = N](rlook (rlook n a1) a2, rlook (rlook n a3) a4),
   n : N
 ) -> Path[.A = N](rlook (rlook n (RLift a1)) (RLift a2), rlook (rlook n (RLift a3)) (RLift a4)) =
-  match n
+  match n where
     | Z => Path.here Z
     | S(m) => Path.ap succOf (h m)
 
@@ -83,7 +83,7 @@ pub def rec renameSquare(
   a4 : Ren,
   h : (n : N) -> Path[.A = N](rlook (rlook n a1) a2, rlook (rlook n a3) a4)
 ) -> Path[.A = Term](rename (rename t a1) a2, rename (rename t a3) a4) =
-  match t
+  match t where
     | Ix(n) => Path.ap ixOf (h n)
     | Lam(b) => Path.ap
       lamOf

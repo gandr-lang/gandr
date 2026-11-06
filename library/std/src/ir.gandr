@@ -41,7 +41,7 @@ pub data IR(d : Type) : Type[+, 1] where
 /// the family.
 @[ builtin(irArgs) ]
 pub def rec args(d : Type, c : IR(d), x : Type, t : x -> d) -> Type =
-  match c
+  match c where
     | Iota(e) => return Unit
     | SigmaC(a, f) => return (Sig a (fun (y) { args[<] d (f y) x t }))
     | DeltaC(a, f) => return (Sig (a -> x) (fun (h) { args[<] d (f (fun (z) { t (h z) })) x t }))
@@ -50,9 +50,9 @@ pub def rec args(d : Type, c : IR(d), x : Type, t : x -> d) -> Type =
 /// type, since the marked call stages the code.
 @[ builtin(irDecode), form(explicit) ]
 pub def rec decodeArgs(d : Type, c : IR(d), x : Type, t : x -> d, v : args(d, c, x, t)) -> d =
-  match c
+  match c where
     | Iota(e) => e
-    | SigmaC(a, f) => match v
+    | SigmaC(a, f) => match v where
       | MkSig(y, r) => decodeArgs[<] d (f y) x t r
-    | DeltaC(a, f) => match v
+    | DeltaC(a, f) => match v where
       | MkSig(h, r) => decodeArgs[<] d (f (fun (z) { t (h z) })) x t r

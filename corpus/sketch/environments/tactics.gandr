@@ -17,7 +17,7 @@ import std.tactic (Tactic, Goal, exact, fail);
 /// Closes the goal with the first hypothesis whose type matches it.
 def assumption(hyps : Model(*{ .. })) -> [Tactic] Unit =
   let goal = Goal.current ()
-  match find(hyps, fun (h) { h.type == goal.type })
+  match find(hyps, fun (h) { h.type == goal.type }) where
     | Some(h) => exact h.term
     | None => fail "no hypothesis matches the goal"
 

@@ -21,7 +21,7 @@ import std.codec.json (Json);
 
 /// The JSON encoder for any type with a description, a field's label its key.
 pub def encodeJson(D : Desc, x : Mu(D)) -> Json =
-  match D.view x
+  match D.view x where
     | Desc.Record(fields) => Json.object (fields.map (fun (f : Field) { *{f.label, encodeJson f.desc f.value} }))
     | Desc.Tag(name, payload) => Json.object (#[*{"tag", Json.string name}, *{"value", encodeJson payload.desc payload.value}])
     | Desc.Atom(a) => a.json

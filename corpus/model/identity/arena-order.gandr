@@ -12,7 +12,7 @@
 
 /// The relabelling swaps the first two ids and retains the third id.
 def swapFirstTwo(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
-  match i
+  match i where
     | +{.0 = u} => +{.1 = +{.0 = u}}
     | +{.1 = +{.0 = u}} => +{.0 = u}
     | +{.1 = +{.1 = u}} => +{.1 = +{.1 = u}}
@@ -83,7 +83,7 @@ def oneArena : Path(
 
 /// The `walk` consumer reads the label two links after its start.
 def walk(r : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Integer}) -> Integer =
-  match r
+  match r where
     | *{.start = s, .next = n, .label = l} => {
       let once = n s;
       l (n once)

@@ -494,6 +494,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             ..
         } => String::from("remove the match result annotation"),
         LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::BareArms,
+            ..
+        } => String::from("write `where` after the match's scrutinee"),
+        LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::NonUniform,
             ..
         } => String::from("pass the recursive call's parameters unchanged"),

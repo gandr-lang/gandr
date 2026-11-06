@@ -32,9 +32,9 @@ data Bit : Type where
 /// Exclusive or.
 @[ checks ]
 def xor(a : Bit, b : Bit) -> Bit =
-  match a
+  match a where
     | Zero => b
-    | One => match b
+    | One => match b where
       | Zero => One
       | One => Zero
 
@@ -52,16 +52,16 @@ module Parity : Model(Group) where {
   def unitL(x : Bit) -> Path(mul e x, x) { Path.here x }
   @[ checks ]
   def unitR(x : Bit) -> Path(mul x e, x) =
-    match x
+    match x where
       | Zero => Path.here Zero
       | One => Path.here One
   @[ checks ]
   def assoc(x : Bit, y : Bit, z : Bit) -> Path(mul (mul x y) z, mul x (mul y z)) =
-    match x
+    match x where
       | Zero => Path.here (xor y z)
-      | One => match y
+      | One => match y where
         | Zero => Path.here (xor One z)
-        | One => match z
+        | One => match z where
           | Zero => Path.here Zero
           | One => Path.here One
   @[ checks ]
@@ -70,7 +70,7 @@ module Parity : Model(Group) where {
   def invE() -> Path(inv e, e) { Path.here Zero }
   @[ checks ]
   def invL(x : Bit) -> Path(mul (inv x) x, e) =
-    match x
+    match x where
       | Zero => Path.here Zero
       | One => Path.here Zero
 }

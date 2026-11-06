@@ -43,7 +43,7 @@ def loop_not_nil : Path[.A = Words](Loop Nil, Nil) = Path.here Nil;
 /// The `tell_words` function refuses the cancellation rule.
 @[ refuses("RuleNotRespected") ]
 def tell_words(c : Words) -> Integer =
-  match c
+  match c where
     | Nil => 0
     | Loop(x) => 1
     | Unloop(x) => 2
@@ -55,7 +55,7 @@ def two_is_one() -> Path[.A = Integer](2, 1) =
 
 /// The `mirror` function exchanges loop and inverse-loop letters.
 def rec mirror(c : Words) -> Words =
-  match c
+  match c where
     | Nil => Nil
     | Loop(x) => Unloop (mirror[<] x)
     | Unloop(x) => Loop (mirror[<] x)

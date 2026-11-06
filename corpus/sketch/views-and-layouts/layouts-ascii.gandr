@@ -52,6 +52,6 @@ pub def compact : Layout(Tree) = #ribbit{
 
 /// The sum of a tree, written over the tree, whichever layout it has.
 def rec total(t : Tree) -> i64 =
-  match t
+  match t where
     | Leaf => 0i64
     | Node(left, v, right) => total[<] left + widen v + total[<] right

@@ -19,7 +19,7 @@ def substIdLift(
   look n (Lift s) Z,
   Ix n
 ) =
-  match n
+  match n where
     | Z => Path.here (Ix Z)
     | S(m) => compose[5, 7] (chain 3) (
       lookWeakens m s Z,
@@ -36,7 +36,7 @@ pub def rec substId(
   subst t s,
   t
 ) =
-  match t
+  match t where
     | Ix(n) => h n
     | Lam(b) => Path.ap lamOf (substId[<] b (Lift s) (fun (n) { substIdLift s h n }))
     | Ap(f, x) => Path.walk
@@ -48,6 +48,6 @@ pub def rec substId(
 
 /// The shift by zero is the identity at every index.
 pub def shiftZeroIsId(n : N) -> Path[.A = Term](look n (Shift Z) Z, Ix n) =
-  match n
+  match n where
     | Z => Path.here (Ix Z)
     | S(j) => Path.here (Ix (S j))

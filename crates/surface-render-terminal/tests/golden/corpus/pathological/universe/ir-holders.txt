@@ -2,7 +2,7 @@ error[BuiltinNotCanonical]: this declaration departs from the canonical form of 
    ╭▸ corpus/pathological/universe/ir-holders.gandr:35:1
    │
 35 │ ┏ def rec fields(d : Type, c : Codes(d), x : Type, t : x -> d) -> Type =
-36 │ ┃   match c
+36 │ ┃   match c where
 37 │ ┃     | Stop(e) => return Unit
 38 │ ┃     | Ask(a, f) => return (Pair a (fun (y) { fields[<] d (f y) x t }))
 39 │ ┃     | Read(a, f) => return (Pair (x -> a) (fun (h) { return Unit }))

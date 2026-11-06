@@ -31,7 +31,7 @@ def shiftPastLift(
   q : Ren,
   n : N
 ) -> Path(rlook (rlook n q) (RShift (S Z)), rlook (rlook n (RShift (S Z))) (RLift q)) =
-  match n
+  match n where
     | Z => shiftAdds (rlook Z q) (S Z)
     | S(j) => shiftAdds (rlook (S j) q) (S Z)
 
@@ -56,7 +56,7 @@ def substRenameSquareLift(
   h : (n : N) -> Path[.A = Term](look (rlook n r) s Z, rename (look n u Z) q),
   n : N
 ) -> Path[.A = Term](look (rlook n (RLift r)) (Lift s) Z, rename (look n (Lift u) Z) (RLift q)) =
-  match n
+  match n where
     | Z => Path.here (Ix Z)
     | S(m) => compose[7, 9] (chain 4) (
       lookWeakens (rlook m r) s Z,
@@ -81,7 +81,7 @@ def rec substRenameSquare(
   q : Ren,
   h : (n : N) -> Path[.A = Term](look (rlook n r) s Z, rename (look n u Z) q)
 ) -> Path[.A = Term](subst (rename t r) s, rename (subst t u) q) =
-  match t
+  match t where
     | Ix(n) => h n
     | Lam(b) => Path.ap
       lamOf
@@ -110,7 +110,7 @@ def weakenLiftLooks(
   s : Env,
   n : N
 ) -> Path(look (rlook n (RShift (S Z))) (Lift s) Z, rename (look n s Z) (RShift (S Z))) =
-  match n
+  match n where
     | Z => lookWeakens Z s Z
     | S(j) => lookWeakens (S j) s Z
 

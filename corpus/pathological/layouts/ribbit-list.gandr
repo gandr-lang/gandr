@@ -15,20 +15,20 @@ data Tags : Type where
 
 /// A list's tag.
 def tagsOf(l : Ints) -> Tags =
-  match l
+  match l where
     | Nil => Bare
     | Cons(x, rest) => Held
 
 /// A tag read back as a list, a zero standing for what the tag never kept.
 def listOf(t : Tags) -> Ints =
-  match t
+  match t where
     | Bare => Nil
     | Held => Cons 0i32 Nil
 
 /// The tag loses the list's elements, so reading it back is refused as undoing it (vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576, § layouts-ribbit).
 @[ refuses("EndpointMismatch") ]
 def restored(l : Ints) -> Path(listOf (tagsOf l), l) =
-  match l
+  match l where
     | Nil => Path.here Nil
     | Cons(x, rest) => Path.here (Cons x rest)
 

@@ -20,7 +20,7 @@ module Cells where {
   /// The translator swaps record fields.
   @[ checks ]
   def swap(old : Old) -> New =
-    match old
+    match old where
       | *{name, age} => *{age, name}
   /// The translator defines the record flow.
   @[ checks ]

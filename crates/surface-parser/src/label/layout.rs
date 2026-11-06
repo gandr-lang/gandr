@@ -32,15 +32,23 @@
 //! | opener | block | separator |
 //! | --- | --- | --- |
 //! | `=` ending a `def` head that has a `->` result | a statement body | `;` |
-//! | `match` whose head ends its line with no `{` | an arm list | none: a line-leading `\|` separates arms |
-//! | `where` ending its line | a declaration body | `;`, and one before the block's close |
+//! | `where` ending a `match` head | an arm list | none: a line-leading `\|` separates arms |
+//! | `where` ending any other line | a declaration body | `;`, and one before the block's close |
 //! | an explicit `{` | a statement block | `;` |
-//! | an explicit `{` after `where` | a declaration body | `;`, and one before the `}` |
+//! | an explicit `{` after a declaration's `where` | a declaration body | `;`, and one before the `}` |
 //! | the source | its declarations | `;` after a `def` only, none at the end |
+//!
+//! A `match` head that ends its line with no `where` and no `{` opens its arm
+//! list too, with an open of no width, so the parse stays whole: the lowering
+//! refuses that head by name, as a match in layout form with no `where`
+//! (`OutOfFragment.BareArms`).
 //!
 //! The pass writes zero-width tokens the molder reads as `{`, `;` and `}`, so
 //! the grammar takes them as the braces it already knows. A body's `=` is
-//! relabeled as the block's `{`, and the body is then the braced body.
+//! relabeled as the block's `{`, and the body is then the braced body. A
+//! `match` head's line-final `where` is relabeled as the arms' `{` in the same
+//! way, so the grammar's `match` rule has no `where` of its own, and a `where`
+//! that does not end the head's line is no part of the match.
 //!
 //! An item ends with a separator only when it needs one. An item a
 //! line-leading `|` begins is a constructor, a clause or an arm, which the
@@ -232,11 +240,21 @@ enum Pending
         /// The indentation of the opener's line.
         indent: u32,
     },
-    /// A `match` whose arms may open at the next line at its depth.
+    /// A `match` whose arms may open at the next line at its depth. A
+    /// `where` at its depth makes it [`Pending::ArmsWhere`].
     Arms
     {
         /// The frame depth the `match` stands at.
         depth: usize,
+        /// The indentation of the opener's line.
+        indent: u32,
+    },
+    /// A `match` head's `where`, at its index in the stream: when it ends its
+    /// line, it becomes the arms' open, as a body's `=` becomes the body's.
+    ArmsWhere
+    {
+        /// The `where`'s index.
+        at: usize,
         /// The indentation of the opener's line.
         indent: u32,
     },
@@ -517,7 +535,8 @@ pub(super) fn lay_out(
         let waiting = match pending {
             Pending::Body { indent, .. }
             | Pending::Members { indent }
-            | Pending::Arms { indent, .. } => Some(Column(indent)),
+            | Pending::Arms { indent, .. }
+            | Pending::ArmsWhere { indent, .. } => Some(Column(indent)),
             Pending::None => None,
         };
         let below = step
@@ -570,6 +589,16 @@ pub(super) fn lay_out(
                 if line_start && frames.len() == depth && !brace {
                     pending = Pending::None;
                     plan.place(Lexeme::LayoutOpen);
+                    open(&mut frames, &mut plan, indent, Sep::Arms);
+                }
+            },
+            Pending::ArmsWhere { at, indent } => {
+                pending = Pending::None;
+                if line_start {
+                    if let Some(word) = tokens.get_mut(at) {
+                        word.lexeme = Lexeme::LayoutOpen;
+                    }
+                    plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
                     open(&mut frames, &mut plan, indent, Sep::Arms);
                 }
             },
@@ -725,9 +754,20 @@ pub(super) fn lay_out(
                         indent: line_indent,
                     };
                 },
+                // The `where` of a match head opens its arms, not a
+                // declaration body.
                 b"where" => {
-                    pending = Pending::Members {
-                        indent: line_indent,
+                    pending = match pending {
+                        Pending::Arms { depth, indent } if depth == frames.len() => {
+                            Pending::ArmsWhere { at: index, indent }
+                        },
+                        Pending::None
+                        | Pending::Body { .. }
+                        | Pending::Members { .. }
+                        | Pending::Arms { .. }
+                        | Pending::ArmsWhere { .. } => Pending::Members {
+                            indent: line_indent,
+                        },
                     };
                 },
                 _ => {},
@@ -781,9 +821,9 @@ pub(super) fn lay_out(
     // block opens left of its opener's line, so the block closes at once.
     if next == Next::Reset {
         match pending {
-            Pending::Body { at, .. } => {
-                if let Some(equals) = tokens.get_mut(at) {
-                    equals.lexeme = Lexeme::LayoutOpen;
+            Pending::Body { at, .. } | Pending::ArmsWhere { at, .. } => {
+                if let Some(opener) = tokens.get_mut(at) {
+                    opener.lexeme = Lexeme::LayoutOpen;
                 }
                 plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
                 plan.place(Lexeme::LayoutClose);
@@ -1236,16 +1276,38 @@ mod tests
             marked("def f(x : A) -> A = x;\n"),
             "def f(x : A) -> A = x;\n"
         );
-        // A `match` head ending its line opens its arms, which take no
-        // separator.
+        // The `where` ending a `match` head is the arms' brace, as a body's
+        // `=` is the body's: the arms take no separator, after an answer type
+        // too.
         assert_eq!(
-            marked("def f(x : A) -> A {\n  match x\n    | a => a\n    | b => b\n}\n"),
-            "def f(x : A) -> A {\n  match x⟪{⟫\n    | a => a\n    | b => b⟪}⟫\n}\n"
+            marked("def f(x : A) -> A {\n  match x where\n    | a => a\n    | b => b\n}\n"),
+            "def f(x : A) -> A {\n  match x ⟪where→{⟫\n    | a => a\n    | b => b⟪}⟫\n}\n"
         );
-        // A `match` whose head takes its brace opens nothing.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  match x -> A where\n    | a => a\n}\n"),
+            "def f(x : A) -> A {\n  match x -> A ⟪where→{⟫\n    | a => a⟪}⟫\n}\n"
+        );
+        // A line no further right than the head's closes its arms at once.
+        assert_eq!(
+            marked("def f(x : A) -> A =\n  match x where\ndef g(x : A) -> A = x;\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫⟪}⟫⟪}⟫\ndef g(x : A) -> A = x;\n"
+        );
+        // A bare `match` head ending its line opens its arms too, so the parse
+        // stays whole and the lowering refuses the head by name.
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  match x\n    | a => a\n}\n"),
+            "def f(x : A) -> A {\n  match x⟪{⟫\n    | a => a⟪}⟫\n}\n"
+        );
+        // A `match` whose head takes its brace opens nothing, and a `where`
+        // that does not end the head's line stays a word, no part of the
+        // match.
         assert_eq!(
             marked("def f(x : A) -> A {\n  match x {\n    | a => a\n  }\n}\n"),
             "def f(x : A) -> A {\n  match x {\n    | a => a\n  }\n}\n"
+        );
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  match x where {\n    | a => a\n  }\n}\n"),
+            "def f(x : A) -> A {\n  match x where {\n    | a => a\n  }\n}\n"
         );
         // A `where` ending its line opens a declaration body.
         assert_eq!(
@@ -1321,13 +1383,15 @@ mod tests
         // A dedent closes the blocks right of the line, and a word at column
         // zero closes every block, a bracket left open included.
         assert_eq!(
-            marked("def f(x : A) -> A =\n  match x\n    | a => g(a\n  y\ndef h(x : A) -> A = x;\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n    | a => g(a\n  y⟪}⟫⟪}⟫\ndef h(x : A) -> A = x;\n"
+            marked(
+                "def f(x : A) -> A =\n  match x where\n    | a => g(a\n  y\ndef h(x : A) -> A = x;\n"
+            ),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a => g(a\n  y⟪}⟫⟪}⟫\ndef h(x : A) -> A = x;\n"
         );
         // The end of the source closes every block.
         assert_eq!(
-            marked("def f(x : A) -> A =\n  match x\n    | a => a"),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n    | a => a⟪}⟫⟪}⟫"
+            marked("def f(x : A) -> A =\n  match x where\n    | a => a"),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a => a⟪}⟫⟪}⟫"
         );
     }
 
@@ -1388,8 +1452,8 @@ mod tests
         // A line at column zero closes every block, though the next line
         // stands at a block's column.
         assert_eq!(
-            marked("def f(x : A) -> A =\n  match x\n    | a => a\n| b => b\n    | c => c\n"),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n    | a => a⟪}⟫⟪}⟫\n| b => b\n    | c => c\n"
+            marked("def f(x : A) -> A =\n  match x where\n    | a => a\n| b => b\n    | c => c\n"),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a => a⟪}⟫⟪}⟫\n| b => b\n    | c => c\n"
         );
     }
 
@@ -1413,11 +1477,10 @@ mod tests
     {
         // An arm at column zero inside two arm blocks and a body closes all
         // three. A move keeps it in the block its count of closes leaves.
-        let source =
-            "def f(x : A) -> A =\n  match x\n    | a => match a\n      | b => b\n| c => c\n";
+        let source = "def f(x : A) -> A =\n  match x where\n    | a => match a where\n      | b => b\n| c => c\n";
         let line = u32::try_from(source.find("| c").unwrap_or_default()).unwrap_or(u32::MAX);
         let moved = |closes: u32| marked_moving(source, &[Move { line, closes }]);
-        let head = "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n    | a => match a⟪{⟫\n      | b => b";
+        let head = "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n    | a => match a ⟪where→{⟫\n      | b => b";
         assert_eq!(marked(source), format!("{head}⟪}}⟫⟪}}⟫⟪}}⟫\n| c => c\n"));
         assert_eq!(moved(0), format!("{head}\n| c => c⟪}}⟫⟪}}⟫⟪}}⟫\n"));
         assert_eq!(moved(1), format!("{head}⟪}}⟫\n| c => c⟪}}⟫⟪}}⟫\n"));
@@ -1434,20 +1497,20 @@ mod tests
         // that closes nothing opens the block at the least column of the
         // lines after it, and a move that closes one keeps the arm in the
         // body.
-        let first = "def f(x : A) -> A =\n  match x\n| a => a\n    | b => b\n";
+        let first = "def f(x : A) -> A =\n  match x where\n| a => a\n    | b => b\n";
         let line = u32::try_from(first.find("| a").unwrap_or_default()).unwrap_or(u32::MAX);
         let first_moved = |closes: u32| marked_moving(first, &[Move { line, closes }]);
         assert_eq!(
             marked(first),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫⟪}⟫⟪}⟫\n| a => a\n    | b => b\n"
+            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫⟪}⟫⟪}⟫\n| a => a\n    | b => b\n"
         );
         assert_eq!(
             first_moved(0),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n| a => a\n    | b => b⟪}⟫⟪}⟫\n"
+            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫\n| a => a\n    | b => b⟪}⟫⟪}⟫\n"
         );
         assert_eq!(
             first_moved(1),
-            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫⟪}⟫\n| a => a\n    | b => b⟪}⟫\n"
+            "def f(x : A) -> A ⟪=→{⟫\n  match x ⟪where→{⟫⟪}⟫\n| a => a\n    | b => b⟪}⟫\n"
         );
     }
 }

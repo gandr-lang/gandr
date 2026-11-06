@@ -58,8 +58,8 @@ theory LetOverlap where
 /// as an `Inst` node.
 @[ runs("1") ]
 def instantiates() -> Integer { match Let {
-  | Presents(sorts, opers, rules) => match rules
-    | Rule(name, left, right, rest) => match right
+  | Presents(sorts, opers, rules) => match rules where
+    | Rule(name, left, right, rest) => match right where
       | Inst(variable, arguments) => 1
       | _ => 0
     | _ => 0

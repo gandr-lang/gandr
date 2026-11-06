@@ -14,7 +14,7 @@ import "../data/data-base.gandr";
 
 /// The node an arena holds at `i`.
 def rec node(nodes : List(Integer), i : Integer) -> Integer =
-  match nodes
+  match nodes where
     | Nil => pure 0
     | Cons(n, rest) => {
       let here = i == 0;

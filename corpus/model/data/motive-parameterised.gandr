@@ -24,19 +24,19 @@ data CodeAt(d : Type) : Type where
 
 /// A family over the codes at a type.
 def famAt(d : Type, c : CodeAt(d)) -> Type =
-  match c
+  match c where
     | AAt => return Unit
     | BAt => return Unit
 
 /// The goal reads the code, and each arm answers the unit.
 def unitAt(d : Type, c : CodeAt(d)) -> famAt(d, c) =
-  match c
+  match c where
     | AAt => *{}
     | BAt => *{}
 
 /// Each arm returns `v` at its own code.
 def keepAt(d : Type, c : CodeAt(d), v : famAt(d, c)) -> famAt(d, c) =
-  match c
+  match c where
     | AAt => v
     | BAt => v
 
@@ -49,13 +49,13 @@ data Seq(a : Type) : Type where
 
 /// A family by recursion on a sequence.
 def rec units(a : Type, s : Seq(a)) -> Type =
-  match s
+  match s where
     | Nil => return Unit
     | Cons(h, t) => units[<] a t
 
 /// A walk down a sequence. Its goal reads the sequence.
 def rec trek(a : Type, s : Seq(a)) -> units(a, s) =
-  match s
+  match s where
     | Nil => *{}
     | Cons(h, t) => trek[<] a t
 
@@ -65,6 +65,6 @@ def seqOf(a : Type) -> Type = return Seq (a)
 /// The scrutinee's type unfolds to the sequences, so the checker reads its
 /// head form at the case.
 def rec walkOf(a : Type, s : seqOf(a)) -> units(a, s) =
-  match s
+  match s where
     | Nil => *{}
     | Cons(h, t) => walkOf[<] a t

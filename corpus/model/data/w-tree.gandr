@@ -21,7 +21,7 @@ data Tree : Type where
 /// The number of leaves: each subtree is reached through `f` and counted one
 /// stage below the node.
 def rec size(t : Tree) -> Nat =
-  match t
+  match t where
     | Leaf => Succ Zero
     | Node(f) => {
       let l = f L;

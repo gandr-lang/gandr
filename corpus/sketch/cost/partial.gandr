@@ -56,7 +56,7 @@ def rec explore(next : Node -> List(Node), goal : Node -> Bool, frontier : Batch
     | cost 1
   }
 } {
-  match pop frontier
+  match pop frontier where
     | None => none
     | Some(*{n, rest}) => if goal n {
       some n

@@ -17,7 +17,7 @@ import "./loop-shape.gandr";
 
 /// The `windWords` function maps a loop word to a presented integer.
 pub def rec windWords(c : Words) -> Int =
-  match c
+  match c where
     | Nil => Z
     | Loop(x) => S (windWords[<] x)
     | Unloop(x) => P (windWords[<] x)
@@ -39,7 +39,7 @@ def wound_never : Path[.A = Int](windWords (Loop (Unloop Nil)), Z) = Path.here Z
 /// The `native_wind` function maps words through the native model.
 @[ respects(*{NativeWinding.turnUnturn, NativeWinding.unturnTurn}), owes(2) ]
 def rec native_wind(c : Words) -> Integer =
-  match c
+  match c where
     | Nil => 0
     | Loop(x) => NativeWinding.turn (native_wind[<] x)
     | Unloop(x) => NativeWinding.unturn (native_wind[<] x)

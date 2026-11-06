@@ -28,7 +28,7 @@ data U : Type where
 /// variable, and returns the function type between the two.
 @[ checks ]
 def rec el(u : U) -> -F Type =
-  match u
+  match u where
     | NatC => return Nat
     | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (+U (x -> -F y)) }
 
@@ -123,7 +123,7 @@ def packedSucc = Pack (Arrow NatC NatC) succ;
 /// The code a packed value carries.
 @[ checks ]
 def codeOf(p : Coded) -> -F U =
-  match p
+  match p where
     | Pack(c, v) => return c
 
 /// The successor's code, read back out of its pack.

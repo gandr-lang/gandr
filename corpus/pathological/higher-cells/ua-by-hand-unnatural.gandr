@@ -13,7 +13,7 @@ module Unnatural where {
 
   @[ checks ]
   def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
-    match e
+    match e where
       | +{.0 = u} => +{.2 = u}
       | +{.1 = u} => +{.1 = u}
       | +{.2 = u} => +{.0 = u}

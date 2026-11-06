@@ -18,7 +18,7 @@ data Parity : Type where
 
 /// The other parity.
 def flip(p : Parity) -> Parity =
-  match p
+  match p where
     | Even => Odd
     | Odd => Even
 

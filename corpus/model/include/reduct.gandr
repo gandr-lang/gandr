@@ -30,7 +30,7 @@ def restricted : Path(
 /// Whether a semigroup's multiplication is there to read: every semigroup's
 /// is, so this answers zero.
 pub def multiplies(s : Model(Semigroup)) -> Integer =
-  match s
+  match s where
     | *{.mul = m} => 0
 
 /// The monoid where a semigroup is asked: the checker applies the reduct.

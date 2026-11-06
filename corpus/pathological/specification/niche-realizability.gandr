@@ -15,7 +15,7 @@ import "../../model/specification/niche-realizability.gandr";
 /// `int deref(const int *_Nonnull p)`, specified by hand: no precondition
 /// at null; otherwise `p` points to an int and it answers that int.
 def derefWp(w : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
-  match w
+  match w where
     | Zero => return Void
     | Succ(_n) => return type(*{
       v : Nat,
@@ -27,8 +27,8 @@ def derefWp(w : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
 /// holds, and `deref` asks what no heap gives.
 @[ refuses("TypeMismatch") ]
 def derefMeets(w : Nat, h : Heap) -> (vOpt(vInt, w, h)) -> derefWp(w, keptOpt, h) =
-  match w
-    | Zero => match h
+  match w where
+    | Zero => match h where
       | Emp => return fun (e) { e }
       | Cell(_l, _v, _rest) => return fun (e) { e }
     | Succ(n) => return fun (r) { derefOrSome n Zero h r }

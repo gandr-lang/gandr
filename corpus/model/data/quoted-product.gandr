@@ -17,7 +17,7 @@ def prodOf(a : Type, b : Type) -> Type { return type(a * b) }
 
 /// One integer for each step of `n`, the next step's tower beside it.
 def rec tower(n : Nat) -> Type =
-  match n
+  match n where
     | Zero => return Unit
     | Succ(m) => return type(Integer * tower[<](m))
 

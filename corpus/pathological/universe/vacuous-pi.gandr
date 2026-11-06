@@ -15,7 +15,7 @@ data Nat : Type where
 /// on them at every successor.
 @[ checks ]
 def pick(n : Nat) -> -F Type =
-  match n
+  match n where
     | Zero => return Nat
     | Succ(m) => return (+U (Nat -> -F Nat))
 

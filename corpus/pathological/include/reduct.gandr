@@ -11,7 +11,7 @@ import "../../model/include/reduct.gandr";
 /// Whether a left zero's zero is there to read: every left zero's is, so
 /// this answers zero.
 def absorbs(z : Model(LeftZero)) -> Integer =
-  match z
+  match z where
     | *{.zero = o} => 0
 
 /// The manifest monoid where a left zero is asked: the monoid includes no

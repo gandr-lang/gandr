@@ -5359,11 +5359,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   its arm bodies ([`Self::scrutinise`]).
     /// - provides: the reading of `match`.
     /// - fails: the wrong-sort refusal outside computation position; the view
-    ///   form `match … with` by the view's name; a match of no arms as
-    ///   [`Self::empty_case`] refuses it; a written answer on a match whose
-    ///   arms continue a block as joining it; a pattern the fragment does not
-    ///   read by its own name; a pattern of another kind than the first tested
-    ///   at its place, a constructor of another data type among them, as
+    ///   form `match … with` by the view's name; a match in layout form with no
+    ///   `where` before its arms as [`FragmentBoundary::BareArms`] at the end
+    ///   of its head; a match of no arms as [`Self::empty_case`] refuses it; a
+    ///   written answer on a match whose arms continue a block as joining it; a
+    ///   pattern the fragment does not read by its own name; a pattern of
+    ///   another kind than the first tested at its place, a constructor of
+    ///   another data type among them, as
     ///   [`LoweringRefusal::MismatchedPattern`] at that pattern; a variable
     ///   bound twice in one pattern; a non-exhaustive match; a match whose tree
     ///   eliminates native data with no answer as unannotated; and the tiles'
@@ -5384,6 +5386,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_match_of_no_arms_eliminates_the_empty_sum`
     /// - witness: `lower::exits::tests::a_match_continuing_its_block_answers_what_the_block_does`
     /// - witness: `lower::native::tests::an_or_pattern_settles_each_alternative`
+    /// - witness: `lower::native::tests::a_layout_match_writes_where_before_its_arms_5557`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
     pub(super) fn case(
         &mut self,
@@ -5406,6 +5409,24 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(_) => Maybe::Present(site.one(cursor.operands())?),
             Maybe::Absent(_) => Maybe::Absent(answered::Absent::Unstated),
         };
+        // A layout match writes `where` before its arms, and the layout pass
+        // reads that `where` as the arms' `{`. It opens the arms of a bare
+        // head too, with an open of no width, so the parse stays whole and
+        // this reading refuses the bare head by name.
+        if let Maybe::Present(open) = cursor.at(TileName::BRACE_OPEN)
+            && open.span.start() == open.span.end()
+        {
+            let head = match written {
+                Maybe::Present(stated) => stated.span,
+                Maybe::Absent(_) => scrutinee.span,
+            };
+            return Err(LoweringRefusal::OutOfFragment {
+                span: ByteSpan::new(head.end(), head.end()).unwrap_or(head),
+                form: FormName::MATCH,
+                sort: site.reading.sort(),
+                boundary: FragmentBoundary::BareArms,
+            });
+        }
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let mut arms: Vec<(Placed, Placed)> = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {

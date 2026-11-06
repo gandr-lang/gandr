@@ -20,7 +20,7 @@
 /// right inverse (cubical's `isoToEquiv`).
 @[ checks ]
 def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b =
-  match i
+  match i where
     | *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}}
 
 /// The left inverse's round trip through the forward map, at `y`: the right
@@ -46,7 +46,7 @@ def leftRetraction(
 /// and its round trip, and the other round trip through the right inverse.
 @[ checks ]
 def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b =
-  match e
+  match e where
     | *{t, *{g, s}, *{h, r}} => *{
       t,
       *{g, *{s, fun (y) { leftRetraction a b t g h y (s (h y)) (r y) }}}

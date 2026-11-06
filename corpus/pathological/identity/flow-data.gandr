@@ -24,7 +24,7 @@ pub data Nat : Type where
 module Repack where {
   /// The translator: the field moved back into its constructor.
   def rebox(box : Box(Integer)) -> Box(Integer) =
-    match box
+    match box where
       | Boxed(x) => Boxed x
   /// A field naming a parameter is covered at the parameters' instance only
   /// once that cover lands, so no flow forwards by it yet.
@@ -36,7 +36,7 @@ module Repack where {
 pub module Renumber where {
   /// The translator: each constructor to itself, the predecessor moved.
   def step(n : Nat) -> Nat =
-    match n
+    match n where
       | Zero => Zero
       | Succ(m) => Succ m
   /// A type holding itself is covered as a list is, its own field a tail,

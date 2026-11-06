@@ -59,9 +59,9 @@ def render (list : Dom.Element, xs : List Entry) -> [Html, Dom] () =
 /// list, or a body that does not decode, changes nothing.
 pub def start () -> [Html, Dom, Fetch, Async] () =
   let document = Html.Window.document (Html.window())
-  match Dom.Document.getElementById document "entries"
+  match Dom.Document.getElementById document "entries" where
     | None => ()
     | Some list =>
-      match entries "/api/entries"
+      match entries "/api/entries" where
         | None => ()
         | Some xs => render list xs

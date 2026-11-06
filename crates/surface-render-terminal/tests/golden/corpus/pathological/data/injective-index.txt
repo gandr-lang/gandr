@@ -8,7 +8,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │    │         │        checked against `(v : Pred(Succ(n))) -> Packed(Pack(n, v)) -> -F At(n)`; while checking the body of this function; binds v : Pred(Succ(n))
    │ ┌──┘         checked against `(n : Nat) -> (v : Pred(Succ(n))) -> Packed(Pack(n, v)) -> -F At(n)`; while checking the body of this function; binds n : Nat
    │ │
-31 │ │┌   match h
+31 │ │┌   match h where
 32 │ ││     | Hold(m, w) => A m
    │ ││                     ┯━│
    │ └│─────────────────────│─│

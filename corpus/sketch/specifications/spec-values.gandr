@@ -41,7 +41,7 @@ pub def unconsSpec[a : Type](xs : List(a)) -> Spec(Pure, *{a, List(a)}) =
 /// A lookup in a hash table, which meets the store's specification.
 pub def tableLookup[k : Type, v : Type](t : Table(k, v), key : k) -> lookupSpec(t.store, key) =
   let slot = probe t (hash key)
-  match slot
+  match slot where
     | Empty => none
     | Full(stored, value) => if stored == key { some value } else { tableLookupFrom t key slot }
 

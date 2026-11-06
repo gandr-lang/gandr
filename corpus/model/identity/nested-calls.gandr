@@ -16,7 +16,7 @@ import "./circle-base.gandr";
 
 /// The `doubleNat` recursion doubles free naturals.
 def rec doubleNat(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => Succ (Succ (doubleNat[<] p))
 
