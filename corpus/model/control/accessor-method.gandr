@@ -1,12 +1,10 @@
-//! A method that answers a place. A method whose receiver's mode is a variable
-//! of its implicit block, `self : m T` under `[m : Mode]`, answers a place of
-//! its receiver at that mode, `View[m](a)`, its returner the one the lowering
-//! inserts at a result: its body is the place, `self.#[i]`, and a call is the
-//! access to it. A call with a block, `xs.first() as w { … }`, lends the place
-//! at the mode the block asks — a resume or an abort through `w` asks an
-//! exclusive lend, a read alone a shared one — and a call without one reads the
-//! place. One body serves every mode, as an explicit object parameter deduces
-//! its receiver's qualifiers [Azman-2021-deducing_this].
+//! This source shows methods that answer places.
+//!
+//! A mode parameter makes a receiver answer `View[m](a)`.
+//! A method body names a place in its receiver.
+//!
+//! A block call lends the place at the requested mode.
+//! A call without a block reads the place.
 //!
 //! - see: #2255
 //! - cites: [Azman-2021-deducing_this]
@@ -38,7 +36,8 @@ def head() -> Integer =
   let h = xs.first ()
   pure h
 
-/// The element after the first, read through a sum as its index.
+/// `later` reads the element after the first.
+/// A sum provides its index.
 @[ runs("2") ]
 def later() -> Integer =
   var xs = pair

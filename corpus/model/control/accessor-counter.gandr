@@ -1,10 +1,10 @@
-//! Temporary access. `var c = e;` keeps a value for the rest of a block, and
-//! `access c as v { … }` lends it to the view `v`, which the body ends exactly
-//! once: `resume v e` writes `e` back, `abort v` leaves the held value as it
-//! was and runs the access's `unwind` clause instead. The unwind runs under the
-//! empty row, and an access with none unwinds by doing nothing. The loan
-//! follows Rust's mutable borrow, ended once [Rust-reference], § Borrow
-//! operators.
+//! This source shows temporary access through views.
+//!
+//! A hold keeps a value for the rest of its block.
+//! Each exclusive view ends once by `resume` or `abort`.
+//!
+//! `resume` writes a value back to the hold.
+//! `abort` runs an empty-row unwind clause.
 //!
 //! - cites: [Rust-reference]
 //!
@@ -33,14 +33,14 @@ def doubled() -> Integer =
   access c as v { resume v (v + 6) };
   pure c
 
-/// A held value beside a parameter: the write-back reads both, and an access
-/// that aborts without an `unwind` clause unwinds by doing nothing.
+/// This access writes back through a held value and a parameter.
+/// An abort without `unwind` does nothing.
 def add_to(n : Integer) -> Integer =
   var c = 1
   access c as v { resume v (v + n) };
   access c as v { abort v };
   pure c
 
-/// One held, five added.
+/// This hold adds five.
 @[ runs("6") ]
 def add_five : () -> Integer = add_to 5;

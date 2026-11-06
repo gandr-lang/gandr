@@ -1,8 +1,10 @@
-//! Capability attenuation, after the object-capability discipline of Dennis
-//! and Van Horn [Dennis-1966-programming_semantics_for_multiprogrammed_computations]
-//! and of Miller's thesis, 2006: a capability holding more operations is passed
-//! where one holding fewer is asked, and a holder cannot use an operation its
-//! capability does not hold.
+//! This source shows capability attenuation.
+//!
+//! A wider capability can satisfy a narrower need.
+//! A holder cannot use an operation outside its capability.
+//!
+//! The checker rejects an operation outside the stated authority.
+//! The host grants the authority that a capability carries.
 //!
 //! - cites: [Dennis-1966-programming_semantics_for_multiprogrammed_computations]
 //!
@@ -11,8 +13,7 @@
 // The filesystem's host interface.
 import std.fs;
 
-/// The file system's capability, holding reading and writing, owed by the
-/// host that grants it.
+/// `fs` gives the host read and write authority.
 @[ owes(1) ]
 def fs : Cap { read, write };
 
@@ -20,7 +21,7 @@ def fs : Cap { read, write };
 pub def peek(c : Cap { read }) -> [std.fs.Eff] String =
   c.read "notes"
 
-/// The full capability passed where reading alone is asked.
+/// `granted` passes read and write authority to `peek`.
 def granted() -> [std.fs.Eff] String =
   peek fs
 

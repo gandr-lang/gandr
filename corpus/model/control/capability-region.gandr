@@ -1,8 +1,10 @@
-//! A capability a scope introduces lives in that scope's region, and its type
-//! says so: `Cap {exit} at c` is the capability living until the scope binding
-//! `c` ends. A region is a static extent, ordered by outlives and erased before
-//! anything runs [Koronkevich-2025-type_universes_kripke_worlds]: a value of an
-//! outer region may stand in an inner one, never the reverse.
+//! This source shows capability regions.
+//!
+//! A capability stays in the region that introduces it.
+//! An outer capability can enter an inner region.
+//!
+//! The checker orders regions by outlives.
+//! It erases regions before execution.
 //!
 //! - cites: [Koronkevich-2025-type_universes_kripke_worlds]
 //!
@@ -11,7 +13,7 @@
 // Early exit's host interface.
 import std.process;
 
-/// The scope's own capability is bound at the type that names its region.
+/// `named` gives the scope capability its region type.
 def named() -> Unit =
   handle c : std.process.Exit.Eff {
     let d : Cap { exit } at c = c;
@@ -48,8 +50,8 @@ def outer() -> Unit =
     | oper exit(code, k) => *{}
   }
 
-/// An outer capability may stand where the inner region is named, since it
-/// lives longer; the inner one may not stand in the outer region.
+/// An outer capability can enter an inner region.
+/// An inner capability cannot enter an outer region.
 @[ refuses("CapabilityEscaped") ]
 def swapped() -> Unit =
   handle c : std.process.Exit.Eff {
@@ -66,7 +68,7 @@ def swapped() -> Unit =
     | oper exit(code, k) => *{}
   }
 
-/// A region is named by a scope's capability, never by another binder.
+/// Only a scope capability names a region.
 @[ refuses("UnresolvedName") ]
 def unbound(c : Integer) -> -F Unit =
   handle e : std.process.Exit.Eff {
@@ -77,8 +79,8 @@ def unbound(c : Integer) -> -F Unit =
     | oper exit(code, k) => return *{}
   }
 
-/// Any value enters a region the same way: the integer is kept until the scope
-/// binding `c` ends (`kept-view.gandr` keeps a view there).
+/// `plain` keeps an integer until scope `c` ends.
+/// `kept-view.gandr` shows a view in the same region.
 def plain() -> Unit =
   handle c : std.process.Exit.Eff {
     let d : Integer at c = 1;

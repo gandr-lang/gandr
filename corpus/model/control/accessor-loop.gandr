@@ -1,25 +1,26 @@
-//! Loop-carried state. A `while` or a `loop` that names a slot held around it
-//! carries the slot through its passes: each pass reads the value the pass
-//! before left there, and what follows the loop reads the value the last pass
-//! left. The loop is a fold whose accumulator is the slot
-//! [Hutton-1999-a_tutorial_on_the_universality_and_expressiveness_of_fold]. A
-//! loop may run forever, so each function states `Partial` in its row.
+//! This source shows loop-carried state.
+//!
+//! A loop carries each named slot between passes.
+//! A loop can run forever and returns under `Partial`.
+//!
+//! The checker tracks each slot through every loop pass.
+//! The lowering treats a loop as a fold over its slots.
 //!
 //! - see: #1481
 //! - cites: [Hutton-1999-a_tutorial_on_the_universality_and_expressiveness_of_fold]
 //!
 //! [Hutton-1999-a_tutorial_on_the_universality_and_expressiveness_of_fold]: https://doi.org/10.1017/S0956796899003500 "Hutton, A tutorial on the universality and expressiveness of fold"
 
-/// A count held at three and taken down by one on each pass: the condition
-/// reads the value the pass before wrote back, so the loop stops at zero.
+/// `countdown` decrements its held count.
+/// Each condition reads the preceding write-back.
 @[ runs("0") ]
 def countdown() -> [Partial] Integer =
   var n = 3
   while n > 0 { access n as v { resume v (v - 1) } };
   pure n
 
-/// Two slots carried together, each keeping its own: the first counts down
-/// while the second counts up.
+/// `opposed` carries two slots.
+/// It decrements one slot and increments the other.
 @[ runs("704") ]
 def opposed() -> [Partial] Integer =
   var a = 10
@@ -30,8 +31,8 @@ def opposed() -> [Partial] Integer =
   };
   pure a * 100 + b
 
-/// An accumulator: each pass adds the count to the total before taking the
-/// count down, so the total ends as three plus two plus one.
+/// `sum` adds each count to its total.
+/// It decrements the count after each addition.
 @[ runs("6") ]
 def sum() -> [Partial] Integer =
   var i = 3
@@ -42,8 +43,7 @@ def sum() -> [Partial] Integer =
   };
   pure total
 
-/// A slot the loop never names but what follows it reads is carried as well,
-/// unchanged.
+/// `beside` carries an unread slot unchanged.
 @[ runs("7") ]
 def beside() -> [Partial] Integer =
   var a = 4
@@ -51,7 +51,7 @@ def beside() -> [Partial] Integer =
   while b > 0 { access b as v { resume v (v - 1) } };
   pure a + 3
 
-/// A pass ending in `continue` hands the next pass the slot as it left it.
+/// `continue` carries the current slot value to the next pass.
 @[ runs("0") ]
 def skipping() -> [Partial] Integer =
   var n = 3
