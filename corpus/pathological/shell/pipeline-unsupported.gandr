@@ -1,9 +1,12 @@
-// A shell block runs one command per statement, with no pipeline between
-// commands. The lowering admits no shell block yet, so that refusal
-// stands in front of this one.
-//
-// - see: #1057 — `piped`
+//! `pipeline-unsupported` puts a pipe between shell commands.
+//!
+//! A shell block runs one command per statement.
+//! The lowering refuses shell blocks before it reaches this form.
+//!
+//! The source pipes `printf 'x'` to `cat`.
+//!
+//! - see: #1057 — `piped`
 
-/// A pipe between two commands.
+/// `piped` puts a pipe between two commands.
 @[ refuses("OutOfFragment.shell_block") ]
 def piped() -> -F Unit { #!{ printf 'x' | cat; } }

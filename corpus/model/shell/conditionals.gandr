@@ -1,9 +1,13 @@
-// A shell block's exit code steers a conditional. The lowering admits no
-// shell block yet.
-//
-// - see: #1057 — `probed`
+//! `conditionals` reads a shell exit code in a conditional.
+//!
+//! The lowering refuses shell blocks.
+//!
+//! `test -d` runs on the host.
+//! An `if` reads the command's exit code.
+//!
+//! - see: #1057 — `probed`
 
-/// `test -d` on the host, its exit code read by an `if`.
+/// `probed` runs `test -d /tmp` and reads its exit code in `if`.
 @[ refuses("OutOfFragment.shell_block") ]
 def probed() -> -F String =
   let probe = #!{ test -d /tmp; };
