@@ -94,7 +94,7 @@
     }
   },
   {
-    "name": "a failed verdict on the tip holds landing ahead of integration",
+    "name": "a failed verdict on the tip holds landing ahead of integration (#5829)",
     "program": "cycle.jq",
     "input": {
       "landing": "1111111111111111111111111111111111111111",
@@ -123,7 +123,7 @@
     }
   },
   {
-    "name": "a failed verdict on the tip holds landing diverged from integration",
+    "name": "a failed verdict on the tip holds landing diverged from integration (#5829)",
     "program": "cycle.jq",
     "input": {
       "landing": "1111111111111111111111111111111111111111",
@@ -152,7 +152,7 @@
     }
   },
   {
-    "name": "a fixer's commit past a failed verdict is tested, and landing waits",
+    "name": "a fixer's commit past a failed verdict is tested, and landing waits (#5829)",
     "program": "cycle.jq",
     "input": {
       "landing": "1111111111111111111111111111111111111111",
