@@ -804,10 +804,13 @@ fn every_decided_corpus_reading_collapses_onto_its_rules_and_certified_pairs_but
     // of degree two and the certified pairs as those of degree three. Its
     // matching has no fault. One reading fails. Over commands, completion
     // certifies a pair of `Wrap` that overlaps `unwrap(MkWrap(x)) ⇒ x` with the
-    // eta cell of `Wrap`. The commands reading keeps no eta cell among its
-    // rules, so no essential cell answers that pair. The probe decides nothing
-    // on a reading that binds, that repeats a variable on a left side, or that
-    // defines an operation by a rule.
+    // eta cell of `Wrap`. The commands reading fires a cell only at a cut's
+    // root, and the eta cell only at a cut of its polarity. The theory rewrites
+    // at each position, so it cannot hold the eta cell as the commands reading
+    // does. Without the cell, no essential cell answers the pair. With it, an
+    // essential overlap answers no pair. The probe decides nothing on a reading
+    // that binds, that repeats a variable on a left side, or that defines an
+    // operation by a rule.
     let grammar = built_in().expect("the built-in grammar builds");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
     let mut decided = 0_usize;
