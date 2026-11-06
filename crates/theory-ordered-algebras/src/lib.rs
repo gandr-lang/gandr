@@ -21,6 +21,7 @@
 //! | [`Decided`], [`LawFailure`], [`Counterexample`] | what a check decided, and the instance, law and elements of a failure |
 //! | [`Tropical`], [`MaxPlus`] | the max-plus semiring over exact dyadics with `−∞` |
 //! | [`Lawvere`], [`Distance`] | the Lawvere quantale of extended non-negative dyadics, in the reverse order |
+//! | [`Usage`], [`Usages`] | the usage semiring `{0, 1, ω}` that the core language's grades read, and its instance on the whole carrier |
 //!
 //! # References
 //!
@@ -36,6 +37,7 @@ extern crate alloc;
 mod instance;
 mod law;
 mod signature;
+mod usage;
 
 pub use instance::Distance;
 pub use instance::Lawvere;
@@ -57,3 +59,5 @@ pub use signature::Comparison;
 pub use signature::InstanceName;
 pub use signature::OrderedSemiring;
 pub use signature::Outside;
+pub use usage::Usage;
+pub use usage::Usages;

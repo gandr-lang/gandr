@@ -7,23 +7,26 @@
 //! puts zero and one below many. It keeps zero and one apart. No rule drops
 //! or copies a linear hypothesis.
 //!
-//! A grade is the bound on the uses of its value. [`HoldGrade`] and
-//! [`CapabilityGrade`] are each two points of the semiring: one use, or many.
-//! A rule that combines two uses of a held value adds them here. It admits
-//! the sum only at or below the grade's bound. The law checker of
-//! `gandr-theory-ordered-algebras` decides the sixteen laws of the semiring
-//! in the suite `tests::grades`.
+//! A grade of the core language is the bound on the uses of its value. The
+//! access rules of the core checker add two uses of a held value here, and
+//! admit the sum only at or below the grade's bound. [`Usages`] is the
+//! semiring's instance on its whole carrier. Each operation of the instance
+//! calls the `const fn` of [`Usage`], so the law checker decides the
+//! operations that the access rules run.
 //!
 //! # References
 //!
 //! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — anchor: § quant-counts —
 //!   the usage semiring `{0, 1, ω}`, and the count that the two-point grades
 //!   forget.
-//!
-//! [`HoldGrade`]: crate::memory::HoldGrade
-//! [`CapabilityGrade`]: crate::effect::capability::CapabilityGrade
 
 use core::cmp::Ordering;
+
+use crate::signature::Carrier;
+use crate::signature::Comparison;
+use crate::signature::InstanceName;
+use crate::signature::OrderedSemiring;
+use crate::signature::Outside;
 
 /// The number of uses of a hypothesis: zero, one, or many.
 ///
@@ -98,6 +101,105 @@ impl PartialOrd for Usage
             (_, Self::Many) => Some(Ordering::Less),
             (Self::Many, _) => Some(Ordering::Greater),
             (Self::Zero | Self::One, Self::Zero | Self::One) => None,
+        }
+    }
+}
+
+/// The usage semiring on its three points, the whole carrier.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Usages;
+
+impl OrderedSemiring for Usages
+{
+    type Element = Usage;
+
+    /// `usages`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn name(&self) -> InstanceName
+    {
+        InstanceName::from("usages")
+    }
+
+    /// Zero, one and many: the whole carrier.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn carrier(&self) -> Carrier<'_, Usage>
+    {
+        Carrier::Whole(&[Usage::Zero, Usage::One, Usage::Many])
+    }
+
+    /// No use.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn zero(&self) -> Usage
+    {
+        Usage::Zero
+    }
+
+    /// One use.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn one(&self) -> Usage
+    {
+        Usage::One
+    }
+
+    /// [`Usage::add`], which never leaves the carrier.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn add(
+        &self,
+        left: &Usage,
+        right: &Usage,
+    ) -> Result<Usage, Outside>
+    {
+        Ok(left.add(*right))
+    }
+
+    /// [`Usage::multiply`], which never leaves the carrier.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn multiply(
+        &self,
+        left: &Usage,
+        right: &Usage,
+    ) -> Result<Usage, Outside>
+    {
+        Ok(left.multiply(*right))
+    }
+
+    /// The order of [`Usage`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn compare(
+        &self,
+        lower: &Usage,
+        upper: &Usage,
+    ) -> Comparison
+    {
+        if lower <= upper {
+            Comparison::Below
+        }
+        else {
+            Comparison::NotBelow
         }
     }
 }

@@ -69,6 +69,7 @@
 
 use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_theory_ordered_algebras::Usage;
 use quenchant_shape::shape::Maybe;
 
 use crate::Binders;
@@ -77,7 +78,6 @@ use crate::ComputationId;
 use crate::CoreArena;
 use crate::ValueId;
 use crate::session::ChildOrder;
-use crate::usage::Usage;
 
 quenchant_shape::reason_enum! {
     /// Why a memory form names no resident.

@@ -111,6 +111,7 @@ digraph crates {
   "core-checker" -> "kernel-strata";
   "core-checker" -> "kernel-term";
   "core-checker" -> "theory-deep-inference";
+  "core-checker" -> "theory-ordered-algebras";
   "core-checker" -> "theory-sites";
   "core-incremental" -> "core-checker";
   "core-incremental" -> "core-publish";
@@ -140,6 +141,7 @@ digraph crates {
   "core-term" -> "kernel-strata";
   "core-term" -> "kernel-term";
   "core-term" -> "theory-levitation";
+  "core-term" -> "theory-ordered-algebras";
   "core-term" -> "theory-sites";
   "core-unify" -> "core-term";
   "core-unify" -> "kernel-strata";
