@@ -8,7 +8,7 @@
 /// - see: #2940
 /// - see: #2898
 
-/// The naturals the family is indexed by.
+/// The family `N` indexes `Skip`.
 data N : Type where
   /// The naturals' zero.
   | Z : N

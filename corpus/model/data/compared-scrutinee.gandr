@@ -1,27 +1,29 @@
-// A computation written as a case's scrutinee: no thunk stands there, so it
-// runs and the case reads its answer, as `run` binding it first does
-// (`indexed-arms.gandr`). A comparison, a call and a pair split each read
-// the value their computation returns.
+// A case can scrutinise a computation directly.
+//
+// No thunk stands between the case and its answer.
+// `run` gives the case the same binding.
+//
+// Comparisons, calls and pair splits each provide a value.
 //
 // - see: #1141
 
 /// The naturals, their addition and the numeral two.
 import "./data-base.gandr";
 
-/// The comparison cased on where it is written: three is not five or more.
+/// This case scrutinises the comparison where it occurs.
 @[ runs("1") ]
 def compared() -> Integer =
   match 3 >= 5 where
     | true => 2
     | false => 1
 
-/// A comparison over a parameter, cased on where it is written.
+/// This case scrutinises a comparison over a parameter.
 def sized(n : Integer) -> Integer =
   match n < 128 where
     | true => 1
     | false => 2
 
-/// A call cased on where it is written: `plus` answers three.
+/// This case scrutinises the call to `plus`.
 @[ runs("1") ]
 def summed() -> Integer =
   match plus two (Succ Zero) where

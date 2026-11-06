@@ -1,11 +1,12 @@
-//! The folds over a list of naturals — its length, appending and mapping — in
-//! the spellings an arm admits, each as the sugared form writes it: a `run`
-//! that only sequences a call, its result returned or the `return` elided, is
-//! written with the call nested in the constructor, and a `run` written inside
-//! a constructor's field stays. Each spelling of one fold runs to the same
-//! value, and the polymorphic length of `recursive-lists.gandr` checks at the
-//! naturals. A structural recursive call stands one stage below the list it was
-//! read from [Abel-2004-termination_checking_with_types].
+//! Natural-number lists test recursive sugar.
+//!
+//! The folds calculate length, append and map.
+//! They can return a call result or elide `return`.
+//! They can also nest a call under a constructor.
+//!
+//! Each spelling evaluates to the same value.
+//! The polymorphic length checks at naturals.
+//! Each structural call uses a smaller list.
 //!
 //! - cites: [Abel-2004-termination_checking_with_types]
 //!
@@ -14,23 +15,22 @@
 // The naturals, the numerals two and three, and the lists.
 import "./data-base.gandr";
 
-// The polymorphic length, read at the naturals.
+// This import reads the polymorphic length at naturals.
 import "./recursive-lists.gandr";
 
-/// The length of a list of naturals, returned, the run written at its read.
+/// This function writes its `run` at the call and returns the list length.
 def rec length_nat(xs : List(Nat)) -> Nat =
   match xs where
     | Nil => Zero
     | Cons(x, rest) => Succ (length_nat[<] rest)
 
-/// The length of a list of naturals, the `return`s elided, the run written
-/// at its read.
+/// This version elides `return` and writes its `run` at the call.
 def rec length_nat_elided(xs : List(Nat)) -> Nat =
   match xs where
     | Nil => Zero
     | Cons(x, rest) => Succ (length_nat_elided[<] rest)
 
-/// Appending lists of naturals, returned, the run written at its read.
+/// This function appends natural-number lists and returns its recursive result.
 def rec append_nat(ys : List(Nat), xs : List(Nat)) -> List(Nat) =
   match xs where
     | Nil => ys
@@ -43,7 +43,7 @@ def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> List(Nat) =
     | Nil => ys
     | Cons(x, rest) => (Cons x (append_nat_elided[<] ys rest) : List(Nat))
 
-/// Mapping over a list of naturals, returned, the runs written at their reads.
+/// This function maps a natural-number list and returns its recursive results.
 def rec map_nat(f : Nat -> Nat, xs : List(Nat)) -> List(Nat) =
   match xs where
     | Nil => (Nil : List(Nat))
@@ -72,7 +72,7 @@ def rec map_nat_run(f : Nat -> Nat, xs : List(Nat)) -> List(Nat) =
 @[ runs("Cons (Succ (Succ Zero)) (Cons Zero Nil)") ]
 def small : List(Nat) = (Cons two (Cons Zero (Nil : List(Nat)) : List(Nat)) : List(Nat));
 
-/// The successor, returned.
+/// This definition returns the successor.
 @[ runs("fun (a) { Succ a }") ]
 def bump(n : Nat) -> Nat { Succ n }
 
@@ -125,7 +125,7 @@ def bumped_nested : () -> List(Nat) = map_nat_nested bump small;
 @[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ Zero) Nil)") ]
 def bumped_run : () -> List(Nat) = map_nat_run bump small;
 
-/// The length of `small` at its element type, returned.
+/// This definition returns the length of `small` at its element type.
 def lengthened() -> Nat { length Nat small }
 
 /// The same length, the `return`s elided.

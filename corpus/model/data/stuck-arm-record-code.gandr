@@ -1,8 +1,10 @@
-/// This source checks pairs against definitions whose dependent record types reach a record type over a call.
+/// This source checks pairs against dependent record definitions.
 ///
-/// It pins how the kernel replays the unfoldings of those definitions: its own δ-step against the checker's reduct.
+/// It specifies how the kernel replays the unfolding.
 ///
-/// Each record type sits behind a stuck arm over the outer record's first field. The checker's reduct runs the call inside the record type. The kernel's δ-step holds it, and the kernel reads the two codes alike once it reads their decodes.
+/// Each record type is behind a stuck arm over a first field.
+/// The checker expands the call inside that record type.
+/// The kernel reads both codes after it decodes them.
 ///
 /// - see: #3045
 /// - see: #2831
@@ -21,7 +23,7 @@ def owe(h : Heap, x : Nat) -> Type =
     | Zero => return Unit
     | Succ(_s) => evidenced h
 
-/// The dependent record this definition names, which pairs each natural with what it owes of `h`.
+/// `wpR` is a dependent record over each natural and its obligation.
 def wpR(h : Heap) -> Type =
   return type(*{w : Nat, ok : owe(h, w)})
 
@@ -29,30 +31,30 @@ def wpR(h : Heap) -> Type =
 def proof(u : Unit) -> wpR(Emp) =
   *{Zero, u}
 
-/// A write: a natural, evidence that `h` is empty, and the continuation at the natural.
+/// `write` records a natural, empty-heap evidence and a continuation.
 def write(h : Heap, k : Nat -> Type) -> Type =
   return type(*{v : Nat, ok : emp(h), next : k(v)})
 
-/// What a read owes at the natural it reads: the rest at zero, a write at a successor.
+/// `matchRead` gives the rest at zero and a write at a successor.
 def matchRead(h : Heap, rest : Type, w : Nat) -> Type =
   match w where
     | Zero => rest
     | Succ(_s) => write h (fun (_v) { return Unit })
 
-/// A read: a natural and what it owes.
+/// `read` records a natural and its obligation.
 def read(h : Heap, rest : Type) -> Type =
   return type(*{w : Nat, ok : matchRead(h, rest, w)})
 
-/// `n` reads in turn, a recursive fold.
+/// `fold` makes `n` reads.
 def rec fold(n : Nat, h : Heap) -> Type =
   match n where
     | Zero => return Unit
     | Succ(m) => read h (fold[<] m h)
 
-/// Two reads, each zero, check against the reads written out.
+/// `twoReads` checks two explicit reads.
 def twoReads(u : Unit) -> read(Emp, read(Emp, Unit)) =
   *{Zero, *{Zero, u}}
 
-/// The fold of two reads converts with the reads written out.
+/// `foldedReads` converts a two-read fold with explicit reads.
 def foldedReads(_u : Unit) -> (read(Emp, read(Emp, Unit))) -> fold(Succ(Succ(Zero)), Emp) =
   return fun (h) { h }

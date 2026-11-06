@@ -3,10 +3,11 @@
 //! A vector's type states its length. A function then states the length that
 //! it returns.
 //!
-//! The kind `Nat -> Type` reads the type of the length before the universe.
-//! `VNil` stands at zero. `VCons` stands at one past the length of its tail. A
-//! length written as a call stands at the length that the call computes. Thus
-//! `plus(m, Zero)` is the length `m`. The pathological twin holds the refusals.
+//! The kind `Nat -> Type` reads the length type before the universe.
+//! `VNil` stands at zero.
+//! `VCons` stands one past its tail length.
+//! A length call evaluates to its result.
+//! `plus(m, Zero)` therefore stands at length `m`.
 //!
 //! - cites: [Dybjer-1994-inductive_families] — a family whose constructors each
 //!   state the index they stand at
@@ -15,6 +16,7 @@
 //!   writes the call
 //! - see: #3627 — a constructor at a length written as a call that computes
 //!   the length it states
+//! - see: `../../pathological/data/vectors.gandr`
 //!
 //! [Dybjer-1994-inductive_families]: https://doi.org/10.1007/BF01211308 "Dybjer, Inductive families"
 

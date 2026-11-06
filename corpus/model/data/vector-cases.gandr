@@ -1,9 +1,8 @@
 //! A case on a vector checks each arm at the fields of its own constructor.
 //!
-//! A case on an indexed family works as a case on a family with no indices. A
-//! case may still write an arm whose constructor cannot stand at the
-//! scrutinee's index, as `oneLength` does. `vector-head.gandr` leaves that arm
-//! out.
+//! A case on an indexed family checks each constructor arm at its own fields.
+//! `oneLength` writes an arm that no index can select.
+//! `vector-head.gandr` omits that arm.
 //!
 //! An arm may return a constructor at a length that a call computes. The
 //! `VCons` arm of `vappend` returns `VCons` at `plus(m, Succ(k))`, which
@@ -22,14 +21,14 @@ import "./data-base.gandr";
 // The vectors and the vector two long.
 import "./vectors.gandr";
 
-/// The length a vector holds, read off the index its `VCons` states.
+/// `vlength` returns a vector length from its `VCons` index.
 def vlength(n : Nat, v : Vec(Integer, n)) -> Nat =
   match v where
     | VNil => Zero
     | VCons(m, h, t) => Succ m
 
-/// The length of a vector one long: the `VNil` arm is written, though `VNil`
-/// stands at no length but zero.
+/// `oneLength` reads a vector at length one.
+/// It writes a `VNil` arm although only zero selects it.
 def oneLength(v : Vec(Integer, Succ(Zero))) -> Nat =
   match v where
     | VNil => Zero
@@ -42,11 +41,11 @@ def rec vcount(n : Nat, v : Vec(Integer, n)) -> Nat =
     | VNil => Zero
     | VCons(m, h, t) => Succ (vcount[<] m t)
 
-/// The length of the vector two long, read off its index.
+/// `pairRead` returns the length from the vector index.
 @[ runs("Succ (Succ Zero)") ]
 def pairRead() -> Nat { vlength (Succ (Succ Zero)) (pair ()) }
 
-/// The length of the vector two long, counted.
+/// `pairCount` calculates the length by recursion.
 @[ runs("Succ (Succ Zero)") ]
 def pairCount() -> Nat { vcount (Succ (Succ Zero)) (pair ()) }
 
@@ -60,7 +59,7 @@ def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec(a, n), ys : Vec(a, m)) -> V
     | VNil => ys
     | VCons(k, x, xt) => VCons (plus m k) x (vappend[<] a k m xt ys)
 
-/// The length of the vector two long after itself, read off its index.
+/// `pairsRead` returns the length of a vector appended to itself.
 @[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 def pairsRead() -> Nat =
   vlength

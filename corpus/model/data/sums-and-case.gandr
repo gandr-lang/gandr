@@ -1,14 +1,19 @@
-// A binary sum is eliminated by a case over its two injections.
-
-/// Injects 42 on the left and takes the left arm. The injections are spelled
-/// `Inl` and `Inr` here, names this surface does not define.
+// A binary sum has two injections.
+//
+// A case selects an arm by injection.
+//
+// This source checks names that this surface does not define.
+//
+// - see: ./data-either.gandr
+/// `pick` uses a left injection and the left arm.
+/// `Inl` and `Inr` are not names that this surface defines.
 @[ refuses("UnresolvedName") ]
 def pick() -> -F Integer =
   match (Inl 42 : Integer + String) where
     | Inl(x) => return (x + 1)
     | Inr(s) => return 0
 
-/// A call of `pick`, refused above, so it names a declaration whose type is
-/// not known.
+/// `picked` calls the refused `pick` declaration.
+/// Its result type is unknown.
 @[ refuses("UnknownConstant") ]
 def picked() -> Integer { pick () }

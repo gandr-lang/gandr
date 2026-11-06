@@ -1,11 +1,12 @@
-//! Addition on the naturals in the spellings an arm admits, each as the sugared
-//! form writes it: a `run` that only sequences the recursive call, its result
-//! returned or the `return` elided, is written with the call nested in the
-//! constructor it returns (the base's `plus`), and a `run` written inside a
-//! constructor's field stays. Each spelling runs to the same value. A
-//! structural recursive call stands one stage below the term it was read from
-//! [Abel-2004-termination_checking_with_types]. The lists' folds are
-//! `recursive-lists.gandr` and `recursive-nat-lists.gandr`.
+//! Natural-number addition tests recursive sugar.
+//!
+//! An arm can return a call result or elide `return`.
+//! It can also nest a call under a constructor.
+//! A field can hold an explicit `run`.
+//!
+//! Each spelling evaluates to the same value.
+//! A structural call uses a smaller term.
+//! The list sources use related folds.
 //!
 //! - cites: [Abel-2004-termination_checking_with_types]
 //!
@@ -15,14 +16,13 @@
 // numerals two and three.
 import "./data-base.gandr";
 
-/// Addition with the recursive call run and its result returned, the run
-/// written at its read.
+/// This addition returns the recursive result from its `run`.
 def rec plus_returned(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => n
     | Succ(p) => Succ (plus_returned[<] n p)
 
-/// Addition with the `return`s elided, the run written at its read.
+/// This addition elides `return` at its `run`.
 def rec plus_elided(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => n
@@ -34,7 +34,7 @@ def rec plus_run(n : Nat, m : Nat) -> Nat =
     | Zero => n
     | Succ(p) => Succ (run plus_run[<] n p)
 
-/// Two and three, added with the call returned.
+/// This example adds two and three.
 @[ runs("Succ (Succ (Succ (Succ (Succ Zero))))") ]
 def five() -> Nat { plus_returned two three }
 

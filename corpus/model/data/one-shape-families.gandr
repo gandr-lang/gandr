@@ -1,12 +1,13 @@
-// Two data families of one shape are distinct types, equal only along the
-// path a stated equivalence makes between them. `Celsius` and `Fahrenheit`
-// each wrap an integer; the relabelling maps each constructor to the other's,
-// and transport along `ua` of that equivalence carries `Cel(20)` to `Fah(20)`
-// by a run: the HoTT book's § 2.10, Lemma 2.10.5, transport along `ua(e)` is
-// `e`. The twin, `pathological/data/nominal-distinctness.gandr`, refuses the
-// same value read as `Fahrenheit` with no path written.
+// Equal-shape data families remain distinct types.
+//
+// An equivalence path relates `Celsius` and `Fahrenheit`.
+// Its relabelling maps each constructor to its counterpart.
+//
+// Transport along `ua` carries `Cel(20)` to `Fah(20)`.
+// A reader uses a path to read the value as `Fahrenheit`.
 //
 // - see: #2140 — `carriedInTuple`, `carriedInField`, `carriedScrutinised`
+// - see: `pathological/data/nominal-distinctness.gandr`
 
 /// A temperature in Celsius.
 data Celsius : Type where
@@ -16,8 +17,7 @@ data Celsius : Type where
 data Fahrenheit : Type where
   | Fah : (x : Integer) --> Fahrenheit
 
-/// The relabelling forward: a Celsius value to the Fahrenheit value of its
-/// integer.
+/// `toFahrenheit` maps each Celsius value to a Fahrenheit value.
 def toFahrenheit(c : Celsius) -> Fahrenheit =
   match c { | Cel(x) => Fah x }
 
@@ -51,12 +51,11 @@ def carriedInTuple() -> Fahrenheit * Integer {
   *{Path.walk (fun (X) { X }) (ua relabel) (Cel 20), 1}
 }
 
-/// A thermometer reading one Fahrenheit temperature.
+/// `Thermometer` stores one Fahrenheit temperature.
 data Thermometer : Type where
   | Reads : (f : Fahrenheit) --> Thermometer
 
-/// The transport written as a constructor's field runs before the
-/// constructor is built.
+/// The constructor evaluates its transport before it builds `Reads`.
 @[ runs("Reads (Fah 20)") ]
 def carriedInField() -> Thermometer { Reads (Path.walk (fun (X) { X }) (ua relabel) (Cel 20)) }
 

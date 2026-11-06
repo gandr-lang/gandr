@@ -21,7 +21,7 @@ data Ctx : Type where
   /// The context `gamma` extended by one entry of type `a`.
   | Extend : (gamma : Ctx, a : ObjTy) --> Ctx
 
-/// A variable of type `a` in the context `gamma`, counted from the last entry.
+/// `Var` represents a variable of type `a` in `gamma`.
 data Var : (gamma : Ctx, a : ObjTy) --> Type where
   /// The variable the last entry binds.
   | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
@@ -65,6 +65,6 @@ data Pinned(a : Type) : (n : Nat, i : Fin(n)) --> Type where
   /// The value `x` at the position `i`.
   | Pin : (n : Nat, i : Fin(n), x : a) --> Pinned(a, n, i)
 
-/// The integer `x` marked at the position `i` below `n`.
+/// `pin` marks the integer `x` at position `i` below `n`.
 def pin(n : Nat, i : Fin(n), x : Integer) -> Pinned(Integer, n, i) =
   Pin n i x

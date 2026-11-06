@@ -1,8 +1,10 @@
-//! η for products and records: a pair is the pair of its own projections and a
-//! record the record of its own fields, as a function is the abstraction of its
-//! own application [MartinLof-1984-intuitionistic_type_theory]. A neutral at a
-//! product, a record or a dependent pair converts to the tuple of its
-//! projections on either side, so reflexivity at the neutral proves the path.
+//! Products and records satisfy eta.
+//!
+//! A pair equals the pair of its projections.
+//! A record equals the record of its fields.
+//!
+//! A neutral product converts to its projected tuple on either side.
+//! Reflexivity proves the resulting path.
 //!
 //! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!
@@ -27,8 +29,7 @@ def etaRecordTwo(e : *{l : Integer, r : Integer}) -> Path[.A = *{l : Integer, r 
 ) =
   Path.here e
 
-/// A dependent pair, the second component's type reading the first, is the
-/// pair of its components.
+/// This eta path for a dependent pair uses its two components.
 def etaFiber(e : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(
   *{e.n, e.v},
   e

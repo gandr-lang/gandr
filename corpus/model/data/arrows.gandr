@@ -1,28 +1,18 @@
-// The members a data block writes, side by side, and what each arrow does. A
-// single shaft builds and a double shaft computes; a left head makes the
-// arrow invertible (`surface-lowering`, `module/data`):
+// Data arrows state constructors, operations, rules and cells.
 //
-//   `S : (x : IntOp) --> IntOp`   a constructor: builds a term of the sort
-//   `oper pred(x : IntOp) -> IntOp` an operation: a term former the rules compute
-//   `rule P(S(x)) ==> x`           a rule: computes its left side to its right
-//   `rule x <=> S(P(x))`           an invertible rule: one term spelled two
-//                                  ways; the order chooses the direction
-//   `loop : Base <-> Base`         an invertible cell: adds a path at a point
-//   `loop : Base --> Base`         a directed cell: not minted, refused by name
-//                                  (`pathological/identity/directed-cell.gandr`)
+// A single shaft defines a constructor.
+// A double shaft defines an operation.
+// A left head makes an arrow invertible.
 //
-// A rule collapses terms the constructors build, so the type is their
-// quotient; a cell adds a path between points the constructors build, so the
-// paths at the point are the words over it. `IntOp` is presented by rules:
-// `S(P(x))` is `x`. `Circle` carries a cell: `loop` is apart from `Path.here(Base)`.
-// The integers here carry an operation the base's do not, so they are named
-// apart from them.
+// Constructors build terms.
+// Operations form terms.
+// Rules compute terms.
+// Cells add paths between terms.
+//
+// - see: `pathological/identity/directed-cell.gandr`
 
-/// The integers: two constructors that cancel, one rule written directed and
-/// one invertible, and an operation the rules compute. The directed rule runs
-/// `P(S(x))` to `x` and nothing to `P(S(x))`; the invertible rule is read in
-/// the direction the order admits, `S(P(x))` to `x`. The operation's own rule
-/// unfolds it to a predecessor, which the directed rule then cancels.
+/// `IntOp` has two constructors, two rules and one operation.
+/// The rules reduce both compositions to `x`, and the operation unfolds to a predecessor.
 @[ normalizes("pred(S(S(Z))) ~> S(Z)") ]
 data IntOp : Type where {
   | Z : IntOp
@@ -44,9 +34,8 @@ data Circle : Type where
   | Base : Circle
   | loop : Base <-> Base
 
-/// A cell adds: the loop's inverse is `back(loop)`, and the cancellation
-/// `Path.step(loop, Path.back(loop))` is the empty word by the rules the cell mints on
-/// its words.
+/// A cell adds paths.
+/// Its rules make `back(loop)` an inverse and reduce cancellation to the empty word.
 def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
   Path.step loop (Path.back loop),
   Path.here Base

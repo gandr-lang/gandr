@@ -1,10 +1,11 @@
-//! The empty type and the apartness rule. `Empty` is a data type with no
-//! constructor, so a match on it has no arm and answers whatever type it is
-//! asked for: `A -> Empty` is how "not A" is spelled. A path between two terms
-//! of a data type is eliminated the same way when the terms are apart: their
-//! type's rules converge, and their normal forms first differ at two distinct
-//! constructors, so no path joins them and a match on one has no arm either
-//! [Coquand-1992-pattern_matching_with_dependent_types].
+//! `Empty` has no constructors.
+//!
+//! A match on `Empty` has no arms.
+//! `A -> Empty` denotes not `A`.
+//!
+//! Apart normal forms have no path between them.
+//! A match on either term has no arms.
+//! Rule convergence exposes distinct constructors.
 //!
 //! - see: #534 — `viaLambda`, `viaStated`
 //! - see: #1944 — `viaBare`, `viaBareStated`
@@ -27,16 +28,15 @@ def absurd(v : Empty) -> Integer =
 def stated(v : Empty) -> Integer =
   match v -> -F Integer {}
 
-/// A lambda's binder matched with no arm: the function form lowers to
-/// the lambda its arrow types, the binder `Empty`, as a parameter's written
-/// type does.
+/// `viaLambda` matches a lambda binder with no arms.
+/// Its arrow gives the binder type.
 def viaLambda(x : Empty) -> Integer { match x {} }
 
 /// The answer written on a lambda binder's match.
 def viaStated(x : Empty) -> Integer { match x -> -F Integer {} }
 
-/// The same lambda written bare, the checker inserting its thunk: the
-/// signature's arrow types its binder as it types the thunk's.
+/// `viaBare` writes a lambda without its syntax.
+/// The checker inserts its thunk and gives the binder its type.
 def viaBare(x : Empty) -> Integer { match x {} }
 
 /// The answer written on a bare lambda binder's match.
@@ -45,8 +45,8 @@ def viaBareStated(x : Empty) -> Integer { match x -> -F Integer {} }
 /// A function of a function on the empty type, applied to its element.
 def applied(f : Empty -> Integer, v : Empty) -> Integer { f v }
 
-/// A lambda passed as an argument: the callee's parameter types its binder
-/// as a signature types a definition's.
+/// `viaArgument` passes a lambda as an argument.
+/// The callee parameter gives the binder type.
 def viaArgument(v : Empty) -> Integer { applied (fun (x) { match x {} }) v }
 
 /// The answer written on a passed lambda binder's match.

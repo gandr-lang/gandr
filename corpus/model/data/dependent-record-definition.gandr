@@ -1,8 +1,10 @@
 /// This source checks a pair against a definition that returns a dependent record type.
 ///
-/// It pins the kernel's replay of that definition's unfolding. Before the fix, the kernel declined the unfolding, and the whole source faulted.
+/// This source makes the kernel replay a definition as it unfolds.
 ///
-/// The record's second field is a call stuck on the first field, and one of its arms calls another definition. The checker reads the unfolding to its normal form, and the kernel converts the two sides with definitions unfolding.
+/// The record's second field calls a definition through its first field.
+/// The checker normalises that call.
+/// The kernel unfolds definitions to convert both sides.
 ///
 /// - see: #2831
 /// - see: #2555
