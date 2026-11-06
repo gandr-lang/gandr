@@ -1,20 +1,15 @@
-//! An extension type stated as the signature the face theory generates for it.
-//! `ext Val on left is zero` over the two points of `Two` is the type of cells
-//! fixed to `zero` on the face `left`: a cell holds its value off the face,
-//! `ins` introduces it and `outp`, `outq` read it at each point. The boundary,
-//! β and η are the signature's laws, so each holds by conversion, on a neutral
-//! cell as on an introduced one
-//! [Zhang-2024-three_noncubical_applications_extension_types]. The member `ext`
-//! generates this signature from its spelling (`generated.gandr`).
+//! `ZeroFiber` states an extension signature over the two points of `Two`.
+//!
+//! The signature fixes each `Val` cell to `zero` at `left`.
+//!
+//! The checker applies its boundary, β and η laws by conversion.
 //!
 //! - cites: [Zhang-2024-three_noncubical_applications_extension_types]
 //!
 //! [Zhang-2024-three_noncubical_applications_extension_types]: https://arxiv.org/abs/2311.05658 "Zhang, Three non-cubical applications of extension types"
-
-/// The cells of `Val` over `Two` fixed to `zero` on `left`, with `c` a cell
-/// nothing introduces. The boundary reads `zero` at `left` of every cell, `c`
-/// included; β reads an introduced cell's value at the point off the face; η
-/// rebuilds a cell from its value there.
+//!
+/// `ZeroFiber` states how `left` fixes `Val` cells to `zero` over `Two`.
+/// `ZeroFiber` uses its boundary, β and η laws for `c` and cells from `ins`.
 @[ normalizes("cells(outp(c), outq(ins(one)), ins(outq(c))) ~> cells(zero, one, c)") ]
 theory ZeroFiber where
   boundary Two { p, q };
