@@ -137,6 +137,10 @@ pub enum RewriteName
     /// ; def x = e ;` and `def x : T = e ;`; the sugared form joins them and
     /// the explicit form writes them apart.
     JoinedDefinition,
+    /// A type application: `F(a, b)` and `F a b`, as a type reads a
+    /// juxtaposition (#5326); both forms write the juxtaposition, an argument
+    /// that is no atom in its parentheses.
+    TypeApplication,
 }
 
 impl fmt::Display for RewriteName
@@ -169,6 +173,7 @@ impl fmt::Display for RewriteName
             Self::InsertedForget => "inserted-forget",
             Self::FunctionForm => "function-form",
             Self::JoinedDefinition => "joined-definition",
+            Self::TypeApplication => "type-application",
         })
     }
 }
@@ -213,7 +218,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 31] = [
+pub const REWRITES: [Rewrite; 33] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -466,6 +471,22 @@ pub const REWRITES: [Rewrite; 31] = [
         to: Spelling("def x : T ; def x = e ;"),
         enabled: Enabled::On,
     },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("type_application"),
+        from: Spelling("F(a, b)"),
+        to: Spelling("F a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("type_application"),
+        from: Spelling("F(a, b)"),
+        to: Spelling("F a b"),
+        enabled: Enabled::On,
+    },
 ];
 
 /// Which rewrites a form runs.
@@ -650,19 +671,25 @@ impl Band
             // A manifest sort's carrier binds no looser than a sum wherever
             // the sort is fixed, as the printer writes it (#2246, #3715).
             (_, Position::Carrier) | ("lazy_product_type", _) => Self::Sum,
+            // A type's juxtaposition binds tighter than a type's prefix, so
+            // `-F Maybe A` returns `Maybe A` (#5326).
             (
                 "u_type"
                 | "f_type"
                 | "f_type.row"
                 | "f_type.result"
                 | "f_type.row.labelled"
-                | "f_type.result.labelled"
-                | "at_type",
+                | "f_type.result.labelled",
                 _,
             )
+            | ("application_expression" | "type_application.juxtaposed", Position::First) => {
+                Self::Application
+            },
+            ("at_type", _)
             | ("send_session_type" | "receive_session_type", Position::First)
-            | ("application_expression", Position::Later) => Self::Atom,
-            ("application_expression", Position::First) => Self::Application,
+            | ("application_expression" | "type_application.juxtaposed", Position::Later) => {
+                Self::Atom
+            },
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
             ("function_type", Position::First) => Self::Lazy,
@@ -684,7 +711,7 @@ impl Band
             | "f_type.row.labelled"
             | "f_type.result.labelled"
             | "at_type" => Self::Bridge,
-            "application_expression" => Self::Application,
+            "application_expression" | "type_application.juxtaposed" => Self::Application,
             "product_type" => Self::Product,
             "sum_type" => Self::Sum,
             "lazy_product_type" => Self::Lazy,
@@ -2293,6 +2320,10 @@ impl<'source> Respelling<'_, 'source>
                 out.place(&self.operand(path), Band::Atom);
                 Band::Application
             },
+            (RewriteName::TypeApplication, Direction::Sugar | Direction::Desugar) => {
+                self.juxtaposed_type(&mut out, parts)?;
+                Band::Application
+            },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
                     return None;
@@ -3360,6 +3391,44 @@ impl<'source> Respelling<'_, 'source>
             && !left.contains(&binder)
             && reflexive(left))
         .then_some(Operation::Action { map, path: along })
+    }
+
+    /// Write the type application whose parts are `parts`, `F(a, b)`, as the
+    /// juxtaposition `F a b`, each argument an atom or in its parentheses.
+    /// Nothing is written for a head that is a type variable, which
+    /// juxtaposed reads as the moded type `m T`, a list of no argument, a
+    /// second list, or a comment among the parts.
+    ///
+    /// # Specification
+    /// trivial.
+    fn juxtaposed_type(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<()>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&head, rest) = owns.split_first()?;
+        let opens = rest
+            .iter()
+            .filter(|&&own| <&str>::from(own) == OPEN_PAREN.0)
+            .count();
+        if rest.first().map(|&own| <&str>::from(own)) != Some(OPEN_PAREN.0)
+            || opens != 1
+            || operands.is_empty()
+            || !<&str>::from(head).starts_with(char::is_uppercase)
+        {
+            return None;
+        }
+        out.fragment(head);
+        for operand in operands {
+            out.gap(Spelling(" "));
+            out.place(&self.operand(operand), Band::Atom);
+        }
+        Some(())
     }
 }
 
