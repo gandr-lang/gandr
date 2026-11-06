@@ -1,0 +1,89 @@
+test: ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785
+package: gandr-surface-dispatcher
+command: mise run debug:test gandr-surface-dispatcher ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785 --break sweep
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-dispatcher/b42c83b8fe521e2f/out/gandr_surface_dispatcher-b42c83b8fe521e2f"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-dispatcher/b42c83b8fe521e2f/out/gandr_surface_dispatcher-b42c83b8fe521e2f' (x86_64).
+(lldb) settings set -- target.run-args  "ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex sweep
+Breakpoint 1: 185 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_dispatcher-b42c83b8fe521e2f`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000006c162b8
+(lldb) run
+
+running 1 test
+test ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 510285 launched: 'target/debug-trace/debug/build/gandr-surface-dispatcher/b42c83b8fe521e2f/out/gandr_surface_dispatcher-b42c83b8fe521e2f' (x86_64)
+Process 510285 stopped
+* thread #2, name = 'ledger::recover', stop reason = breakpoint 1.45
+       frame #0: 0x0000555557469629 gandr_surface_dispatcher-b42c83b8fe521e2f`gandr_surface_dispatcher::ledger::recovery::sweep(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3029, rctxs:size=3029, bounds:size=3029, owners:size=3029, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3029, adjacencies:size=7226, successor_starts:size=3030, has_pred:size=3029, has_succ:size=3029, form_first:size=206, is_first:size=3029, form_last:size=275, complete_last:size=236, is_complete_last:size=3029, required_tail:size=39, is_required_tail:size=3029, closing:size=3029, twins:size=3029, fingerprint:{0:6328610752581770380}}, automaton:{kinds:size=3029, observations:size=3029, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2247}), flat:size=3}, directory="/tmp/gandr-recovery-test-510285-remainder") at recovery.rs:724:1
+   721 	/// - witness: `ledger::recovery::tests::a_closer_left_with_nothing_to_close_is_closed_early_3063`
+   722 	/// - witness: `ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785`
+   723 	/// - witness: `ledger::recovery::tests::a_deleted_licence_leaves_a_well_formed_source_3332`
+-> 724 	#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.early).saturating_add(report.findings.len()) <= report.swept))]
+    	^
+   725 	pub(super) fn sweep(
+   726 	    pbg: &Pbg,
+   727 	    directory: &Path,
+(lldb) bt 24
+* thread #2, name = 'ledger::recover', stop reason = breakpoint 1.45
+   * frame #0: 0x0000555557469629 gandr_surface_dispatcher-b42c83b8fe521e2f`gandr_surface_dispatcher::ledger::recovery::sweep(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3029, rctxs:size=3029, bounds:size=3029, owners:size=3029, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3029, adjacencies:size=7226, successor_starts:size=3030, has_pred:size=3029, has_succ:size=3029, form_first:size=206, is_first:size=3029, form_last:size=275, complete_last:size=236, is_complete_last:size=3029, required_tail:size=39, is_required_tail:size=3029, closing:size=3029, twins:size=3029, fingerprint:{0:6328610752581770380}}, automaton:{kinds:size=3029, observations:size=3029, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2247}), flat:size=3}, directory="/tmp/gandr-recovery-test-510285-remainder") at recovery.rs:724:1
+     frame #1: 0x000055555772227f gandr_surface_dispatcher-b42c83b8fe521e2f`gandr_surface_dispatcher::ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785 at recovery.rs:1159:22
+     frame #2: 0x00005555576d6487 gandr_surface_dispatcher-b42c83b8fe521e2f`gandr_surface_dispatcher::ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785::{closure#0}((null)={}) at recovery.rs:1133:82
+     frame #3: 0x00005555571f0906 gandr_surface_dispatcher-b42c83b8fe521e2f`<gandr_surface_dispatcher::ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x0000555557aceb7b gandr_surface_dispatcher-b42c83b8fe521e2f`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x0000555557aceb79 gandr_surface_dispatcher-b42c83b8fe521e2f`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #6: 0x0000555557adc0c5 gandr_surface_dispatcher-b42c83b8fe521e2f`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #7: 0x0000555557adc0c0 gandr_surface_dispatcher-b42c83b8fe521e2f`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x0000555557adc0c0 gandr_surface_dispatcher-b42c83b8fe521e2f`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #9: 0x0000555557adc0ab gandr_surface_dispatcher-b42c83b8fe521e2f`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #10: 0x0000555557adc0ab gandr_surface_dispatcher-b42c83b8fe521e2f`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x0000555557adc0ab gandr_surface_dispatcher-b42c83b8fe521e2f`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #12: 0x0000555557adc096 gandr_surface_dispatcher-b42c83b8fe521e2f`test::run_test::{closure#0} at lib.rs:677:43
+     frame #13: 0x0000555557ad6a84 gandr_surface_dispatcher-b42c83b8fe521e2f`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #14: 0x0000555557ad6a09 gandr_surface_dispatcher-b42c83b8fe521e2f`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x0000555557adf222 gandr_surface_dispatcher-b42c83b8fe521e2f`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x0000555557adf213 gandr_surface_dispatcher-b42c83b8fe521e2f`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x0000555557adf213 gandr_surface_dispatcher-b42c83b8fe521e2f`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #18: 0x0000555557adf203 gandr_surface_dispatcher-b42c83b8fe521e2f`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #19: 0x0000555557adf203 gandr_surface_dispatcher-b42c83b8fe521e2f`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x0000555557adf203 gandr_surface_dispatcher-b42c83b8fe521e2f`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x0000555557adf1f4 gandr_surface_dispatcher-b42c83b8fe521e2f`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555c19282f gandr_surface_dispatcher-b42c83b8fe521e2f`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+     frame #23: 0x000055555c192828 gandr_surface_dispatcher-b42c83b8fe521e2f`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg *) pbg = 0x00007ffff79fd9a0 {dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3029, rctxs:size=3029, bounds:size=3029, owners:size=3029, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3029, adjacencies:size=7226, successor_starts:size=3030, has_pred:size=3029, has_succ:size=3029, form_first:size=206, is_first:size=3029, form_last:size=275, complete_last:size=236, is_complete_last:size=3029, required_tail:size=39, is_required_tail:size=3029, closing:size=3029, twins:size=3029, fingerprint:{0:6328610752581770380}}, automaton:{kinds:size=3029, observations:size=3029, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2247}), flat:size=3}
+(&std::path::Path) directory = "/tmp/gandr-recovery-test-510285-remainder" {
+  data_ptr = 0x00007ffff0000d80 {inner:{inner:{inner:"/tmp/gandr-recovery-test-510285-remainder"}}}
+  length = 41
+}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x000055555772227f gandr_surface_dispatcher-b42c83b8fe521e2f`gandr_surface_dispatcher::ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785 at recovery.rs:1159:22
+   1156	            std::fs::write(folder.join(exemplar), text).expect("the exemplar is written");
+   1157	        }
+   1158	        let pbg = built_in().expect("the built-in grammar builds");
+-> 1159	        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+    	                     ^
+   1160	        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+   1161	        for (exemplar, at) in [
+   1162	            ("break-expression.gandr", 95_usize),
+(lldb) frame variable --depth 3
+(std::path::PathBuf) scratch = "/tmp/gandr-recovery-test-510285-remainder" {
+  inner = "/tmp/gandr-recovery-test-510285-remainder" {
+    inner = {inner:size=41}
+  }
+}
+(std::path::PathBuf) folder = "/tmp/gandr-recovery-test-510285-remainder/syntax" {
+  inner = "/tmp/gandr-recovery-test-510285-remainder/syntax" {
+    inner = {inner:size=48}
+  }
+}
+(gandr_surface_grammar::model::Pbg) pbg = {dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=171, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:171, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3029, rctxs:size=3029, bounds:size=3029, owners:size=3029, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:23, items:201}, alloc:{}, marker:{}}}, menus:size=201, mold_labels:size=3029, adjacencies:size=7226, successor_starts:size=3030, has_pred:size=3029, has_succ:size=3029, form_first:size=206, is_first:size=3029, form_last:size=275, complete_last:size=236, is_complete_last:size=3029, required_tail:size=39, is_required_tail:size=3029, closing:size=3029, twins:size=3029, fingerprint:{0:6328610752581770380}}, automaton:{kinds:size=3029, observations:size=3029, width:48, sets:size=864}, application:Some({0:1515}), type_application:Some({0:2247}), flat:size=3}
