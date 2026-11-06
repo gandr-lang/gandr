@@ -23,8 +23,8 @@ pub type Version = *{ major : Nat, minor : Nat, patch : Nat };
 pub def versionToml : Codec(Toml, Version) = *{
   encode = fun (v) { Value.string (show v.major ++ "." ++ show v.minor ++ "." ++ show v.patch) },
   decode = fun (doc) {
-    match doc
-      | Value.string(s) => match split s "."
+    match doc where
+      | Value.string(s) => match split s "." where
         | #[a, b, c] => (zip3 (parseNat a) (parseNat b) (parseNat c)).map (fun (*{x, y, z}) { *{ major = x, minor = y, patch = z } })
         | _ => none
       | _ => none

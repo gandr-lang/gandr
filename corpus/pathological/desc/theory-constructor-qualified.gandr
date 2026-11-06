@@ -11,6 +11,6 @@ data Tree : Type where
 /// `Tree` has no `Lam`, so `Tree.Lam` names nothing.
 @[ refuses("UnresolvedName") ]
 def lambda(t : Tree) -> Integer =
-  match t
+  match t where
     | Tree.Lam(body) => 1
     | _ => 0

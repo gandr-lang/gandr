@@ -22,7 +22,7 @@ pub def forLoop : Notation = #notation{
   | for $x in $e $body -> {
       var it = iter $e;
       loop {
-        match it.next ()
+        match it.next () where
           | Some($x) => $body
           | None => break
       }

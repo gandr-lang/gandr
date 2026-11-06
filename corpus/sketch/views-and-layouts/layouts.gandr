@@ -41,20 +41,20 @@ pub def packed : Layout(Ints) = #ribbit{
 
 /// The first element, read through the packed layout's own arms.
 def head(xs : Ints) -> Maybe(i32) =
-  match xs with packed
+  match xs with packed where
     | Empty => none
     | One(x) => some x
     | Many(x, _, _) => some x
 
 /// The length, written once over the list, whichever layout the list has.
 def rec length(xs : Ints) -> Integer =
-  match xs
+  match xs where
     | Nil => 0
     | Cons(_, rest) => length[<] rest + 1
 
 /// The sum of a packed list, two elements per step.
 def rec sum(xs : Ints) -> i64 =
-  match xs with packed
+  match xs with packed where
     | Empty => 0i64
     | One(x) => widen x
     | Many(x, y, rest) => widen x + widen y + sum[<] rest

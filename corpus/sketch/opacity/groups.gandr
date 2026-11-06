@@ -30,9 +30,9 @@ def push[A : Type](x : A, q : Queue(A)) -> Queue(A) =
 /// The front value and the rest, or nothing for an empty queue.
 @[within(Rep)]
 def pop[A : Type](q : Queue(A)) -> Maybe(A * Queue(A)) =
-  match q.front
+  match q.front where
     | Cons(x, rest) => Just (*{x, Queue rest q.back})
-    | Nil => match reverse q.back
+    | Nil => match reverse q.back where
       | Nil => Nothing
       | Cons(x, rest) => Just (*{x, Queue rest Nil})
 

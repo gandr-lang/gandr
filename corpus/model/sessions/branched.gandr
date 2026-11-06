@@ -16,7 +16,7 @@ def closing(seat : end, early : Bool) -> Unit =
 /// Each arm of a match sends its own number, and the close after the match
 /// acts on the seat as both arms leave it.
 def reportsByMatch(seat : !Integer. end, early : Bool) -> Unit =
-  match early
+  match early where
     | true => send seat 1
     | false => send seat 2
   close seat

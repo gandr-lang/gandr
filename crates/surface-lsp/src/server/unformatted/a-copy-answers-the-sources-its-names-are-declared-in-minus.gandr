@@ -1,6 +1,6 @@
 def rec minus(n : Nat, k : Nat) -> Nat =
-  match k
+  match k where
     | Zero => n
-    | Succ(j) => match n
+    | Succ(j) => match n where
       | Zero => Zero
       | Succ(p) => minus[<] p j

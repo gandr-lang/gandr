@@ -38,7 +38,7 @@ def around_once : Path[.A = Path[.A = Circle](Base, Base)](
 /// The checker refuses `tell` because it reads the empty word as 1.
 @[ refuses("RuleNotRespected") ]
 def tell(p : Path[.A = Circle](Base, Base)) -> Integer =
-  match p
+  match p where
     | here => 0
     | loop ∷ q => 1
     | back(loop) ∷ q => 2

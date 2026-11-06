@@ -5,6 +5,6 @@ data Stack : Type where
   | Push : (x : Integer, rest : Stack) --> Stack
 @[ checks ]
 def first(xs : Stack) -> -F Integer =
-  match xs
+  match xs where
     | Push(x, rest) => return x
     | Empty => return 0

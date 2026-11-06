@@ -11,7 +11,7 @@ import "./flow-data.gandr";
 
 /// The `toShape` function swaps figure sides into shape order.
 def toShape(figure : Figure) -> Shape =
-  match figure
+  match figure where
     | Round(r) => Circle r
     | Box(h, w) => Rect w h
 

@@ -8,14 +8,14 @@ theory Monoid where
 /// One per operation of a presentation's chain, zero at its end.
 @[ checks ]
 def rec operations(chain : Theory) -> -F Integer =
-  match chain
+  match chain where
     | Oper(name, inputs, outputs, rest) => { let r = operations[<] rest; return r + 1 }
     | _ => return 0
 
 /// The number of operations a presentation declares.
 @[ checks ]
 def arity(presented : Theory) -> -F Integer =
-  match presented
+  match presented where
     | Presents(sorts, opers, rules) => operations opers
     | _ => return 0
 

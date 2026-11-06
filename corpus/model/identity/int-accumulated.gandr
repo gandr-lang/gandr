@@ -13,7 +13,7 @@ import "./circle-base.gandr";
 
 /// The `count` function adds `b` to the accumulator by recursion.
 def rec count(acc : Int, b : Int) -> Int =
-  match b
+  match b where
     | Z => acc
     | S(x) => count[<] (S acc) x
     | P(x) => count[<] (P acc) x

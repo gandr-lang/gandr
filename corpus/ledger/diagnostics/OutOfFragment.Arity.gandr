@@ -10,7 +10,7 @@ data U : Type where
 
 @[ checks ]
 def rec el(u : U) -> -F Type =
-  match u
+  match u where
     | NatC => return Nat
     | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (x -> y) }
 

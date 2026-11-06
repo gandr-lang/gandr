@@ -4389,6 +4389,9 @@ fn primary_expressions(
     // `with` view rather than between it and the scrutinee — because a motive
     // quantifies over the whole target, so a later dependent motive occupies
     // this same position without moving the view.
+    // A match in layout form writes `where` after its whole scrutinee,
+    // `match e where`, and the layout pass reads that `where` as the arms'
+    // `{`, as it reads a body's `=`, so the rule never sees it (#5557).
     let mut matching = r(
         RuleName("match_expression"),
         Provenance("match_expression"),

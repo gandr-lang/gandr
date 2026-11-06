@@ -66,7 +66,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 46 │ │    retire : ?Integer. end
 47 │ │  }) -> Unit =
 48 │ │┏   loop {
-49 │ │┃     match waiting
+49 │ │┃     match waiting where
 50 │ │┃       | true => continue
 51 │ │┃       | false => offer operator {
    ┆ ┆┇

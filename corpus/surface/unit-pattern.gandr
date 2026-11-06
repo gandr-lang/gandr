@@ -8,7 +8,7 @@
 
 /// Forty-two, read off the one arm a unit takes.
 def answer(u : Unit) -> Integer =
-  match u
+  match u where
     | *{} => 42
 
 /// The unit takes its arm.

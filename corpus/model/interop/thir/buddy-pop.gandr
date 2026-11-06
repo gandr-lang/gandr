@@ -46,17 +46,17 @@ rec {
 
 /// The element at an index, if there is one.
 pub def rec nth(vs : Vals, i : Nat) -> Maybe(Val) =
-  match vs
+  match vs where
     | VNil => None
-    | VCons(v, rest) => match i
+    | VCons(v, rest) => match i where
       | Zero => Some v
       | Succ(j) => nth[<] rest j
 
 /// The elements with the one at `i` replaced by `x`.
 pub def rec setN(vs : Vals, i : Nat, x : Val) -> Vals =
-  match vs
+  match vs where
     | VNil => VNil
-    | VCons(v, rest) => match i
+    | VCons(v, rest) => match i where
       | Zero => VCons x rest
       | Succ(j) => VCons v (setN[<] rest j x)
 
@@ -69,7 +69,7 @@ pub data Steps : Type where
 
 /// The field or element of a tree at a position.
 pub def fieldAt(v : Val, i : Nat) -> Maybe(Val) =
-  match v
+  match v where
     | Tree(fs) => nth fs i
     | IntV(_n) => None
     | PtrV(_l) => None
@@ -79,7 +79,7 @@ pub def fieldAt(v : Val, i : Nat) -> Maybe(Val) =
 
 /// A tree with its field or element at `i` replaced by `y`.
 pub def setField(v : Val, i : Nat, y : Val) -> Maybe(Val) =
-  match v
+  match v where
     | Tree(fs) => Some (Tree (setN fs i y))
     | IntV(_n) => None
     | PtrV(_l) => None
@@ -89,29 +89,29 @@ pub def setField(v : Val, i : Nat, y : Val) -> Maybe(Val) =
 
 /// The value below `v` at a path.
 pub def rec below(p : Steps, v : Val) -> Maybe(Val) =
-  match p
+  match p where
     | Here => Some v
-    | Down(i, rest) => match fieldAt v i
+    | Down(i, rest) => match fieldAt v i where
       | None => None
       | Some(w) => below[<] rest w
 
 /// `v` with the value at a path replaced by `w`, where the path is there.
 pub def rec setAt(p : Steps, v : Val, w : Val) -> Maybe(Val) =
-  match p
+  match p where
     | Here => Some w
-    | Down(i, rest) => match fieldAt v i
+    | Down(i, rest) => match fieldAt v i where
       | None => None
-      | Some(x) => match setAt[<] rest x w
+      | Some(x) => match setAt[<] rest x w where
         | None => None
         | Some(y) => setField v i y
 
 /// Whether two naturals are one.
 pub def rec same(a : Nat, b : Nat) -> Bool =
-  match a
-    | Zero => match b
+  match a where
+    | Zero => match b where
       | Zero => true
       | Succ(_q) => false
-    | Succ(p) => match b
+    | Succ(p) => match b where
       | Zero => false
       | Succ(q) => same[<] p q
 
@@ -167,7 +167,7 @@ pub data Loc : Type where
 
 /// The root a pointer value points to.
 pub def ptrOf(v : Val) -> Maybe(Nat) =
-  match v
+  match v where
     | PtrV(l) => Some l
     | IntV(_n) => None
     | NoneV => None
@@ -177,7 +177,7 @@ pub def ptrOf(v : Val) -> Maybe(Nat) =
 
 /// The index an integer value names.
 pub def indexOf(v : Val) -> Maybe(Nat) =
-  match v
+  match v where
     | IntV(n) => Some n
     | PtrV(_l) => None
     | NoneV => None
@@ -187,35 +187,35 @@ pub def indexOf(v : Val) -> Maybe(Nat) =
 
 /// The root a local points to, with `acc` below it.
 pub def derefAt(m : Maybe(Val), acc : Steps) -> Maybe(Loc) =
-  match m
+  match m where
     | None => None
-    | Some(v) => match ptrOf v
+    | Some(v) => match ptrOf v where
       | None => None
       | Some(l) => Some (At l acc)
 
 /// The location the place `p` names at the locals `env`, `acc` the path already below it.
 pub def rec locate(p : PlaceExpr, env : Vals, acc : Steps) -> Maybe(Loc) =
-  match p
+  match p where
     | Deref(x) => derefAt (nth env x) acc
     | Field(q, i) => locate[<] q env (Down i acc)
-    | Index(q, x) => match nth env x
+    | Index(q, x) => match nth env x where
       | None => None
-      | Some(v) => match indexOf v
+      | Some(v) => match indexOf v where
         | None => None
         | Some(n) => locate[<] q env (Down n acc)
 
 /// The core transformer: what `e` needs at the locals `env` and the state `s` to end in `k` or return into `r`.
 /// A read needs the root at any fraction and a value its place holds, a write the whole root and the root it makes.
 pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s : State) -> Type =
-  match e
-    | Var(x) => match nth env x
+  match e where
+    | Var(x) => match nth env x where
       | None => return Void
       | Some(v) => k (Ends v s)
-    | Read(p) => match locate p env Here
+    | Read(p) => match locate p env Here where
       | None => return Void
-      | Some(loc) => match loc
-        | At(l, path) => match s
-          | Own(m, q, v) => match same l m
+      | Some(loc) => match loc where
+        | At(l, path) => match s where
+          | Own(m, q, v) => match same l m where
             | true => return type(*{
               w : Val,
               holds : Path[.A = Maybe(Val)]((Some w : Maybe(Val)), below path v),
@@ -227,12 +227,12 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s :
       | Ends(v, t) => k (Ends (SomeV v) t)
     } }) r s
     | Assign(p, a) => wpMem[<] a env (fun (o) { match o {
-      | Ends(w, t) => match locate p env Here
+      | Ends(w, t) => match locate p env Here where
         | None => return Void
-        | Some(loc) => match loc
-          | At(l, path) => match t
-            | Own(m, q, v) => match q
-              | Whole => match same l m
+        | Some(loc) => match loc where
+          | At(l, path) => match t where
+            | Own(m, q, v) => match q where
+              | Whole => match same l m where
                 | true => return type(*{
                   v1 : Val,
                   made : Path[.A = Maybe(Val)]((Some v1 : Maybe(Val)), setAt path v w),
@@ -245,7 +245,7 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s :
       | Ends(_v, t) => wpMem[<] b env k r t
     } }) r s
     | MatchOpt(a, n, m) => wpMem[<] a env (fun (o) { match o {
-      | Ends(v, t) => match v
+      | Ends(v, t) => match v where
         | NoneV => wpMem[<] n env k r t
         | SomeV(x) => wpMem[<] m (VCons x env) k r t
         | IntV(_n) => return Void
@@ -285,15 +285,15 @@ pub data Ixs : Type where
 
 /// Whether a block index is absent from a list.
 pub def rec notIn(xs : Ixs, b : Nat) -> Type =
-  match xs
+  match xs where
     | INil => return Unit
-    | ICons(x, rest) => match same b x
+    | ICons(x, rest) => match same b x where
       | true => return Void
       | false => notIn[<] rest b
 
 /// The head a free list starts at: `None`, or its first block.
 pub def headOf(ixs : Ixs) -> Val =
-  match ixs
+  match ixs where
     | INil => NoneV
     | ICons(b, _rest) => SomeV (IntV b)
 
@@ -310,7 +310,7 @@ pub def linked(b : Nat, rest : Ixs, blocks : Vals, tail : Type) -> Type =
 
 /// Each listed block links to the next through the blocks, and no block repeats.
 pub def rec chain(ixs : Ixs, blocks : Vals) -> Type =
-  match ixs
+  match ixs where
     | INil => return Unit
     | ICons(b, rest) => linked b rest blocks (chain[<] rest blocks)
 
@@ -323,8 +323,8 @@ pub def freeAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> Type =
 
 /// `pop`'s postcondition at the free list `ixs`: empty answers `None` and keeps the state.
 pub def popAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs, o : Out) -> Type =
-  match o
-    | Ends(res, s) => match ixs
+  match o where
+    | Ends(res, s) => match ixs where
       | INil => return type(*{
         none : Path[.A = Val](res, NoneV),
         kept : Path[.A = State](s, Own Zero Whole (buddy blocks heads))
@@ -347,13 +347,13 @@ pub def popEnv(order : Nat) -> Vals =
 
 /// The place read's last step: an option keeps the value it holds.
 pub def keepSome(m : Maybe(Val)) -> Maybe(Val) =
-  match m
+  match m where
     | None => None
     | Some(x) => Some x
 
 /// Whether an option holds a value.
 pub def isSome(m : Maybe(Val)) -> Type =
-  match m
+  match m where
     | None => return Void
     | Some(_x) => return Unit
 
@@ -373,23 +373,23 @@ pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> (Path[.A = Maybe(Val
     vs
     i
 )) -> Path[.A = Maybe(Val)]((Some x : Maybe(Val)), nth (setN vs i x) i) =
-  match vs
-    | VNil => match i
+  match vs where
+    | VNil => match i where
       | Zero => return fun (h) { match (noneHeld y h : Void) {} }
       | Succ(_j) => return fun (h) { match (noneHeld y h : Void) {} }
-    | VCons(_v, rest) => match i
+    | VCons(_v, rest) => match i where
       | Zero => return fun (_h) { Path.here (Some x : Maybe(Val)) }
       | Succ(j) => nthSet[<] rest j x y
 
 /// The heads the write to `heads[order]` makes, given what they held there.
 pub def headsAt(heads : Vals, order : Nat, w : Val, m : Maybe(Val)) -> Maybe(Val) =
-  match m
+  match m where
     | None => None
     | Some(_x) => Some (Tree (setN heads order w))
 
 /// The root the write to `self.heads[order]` makes, given what the heads held there.
 pub def setHeadsAt(blocks : Vals, heads : Vals, order : Nat, w : Val, m : Maybe(Val)) -> Maybe(Val) =
-  match headsAt heads order w m
+  match headsAt heads order w m where
     | None => None
     | Some(hs) => setField (buddy blocks heads) (Succ Zero) hs
 
@@ -532,7 +532,7 @@ pub def popSome(
   popPost(blocks, heads, order, ICons(b, rest)),
   Own(Zero, Whole, buddy(blocks, heads))
 ) =
-  match wf
+  match wf where
     | *{held, link, apart} => *{
       SomeV (IntV b),
       *{Path.ap keepSome h, afterRead blocks heads order b rest h held link apart}
@@ -562,7 +562,7 @@ pub def popFrom(
   popPost(blocks, heads, order, ICons(b, rest)),
   Own(Zero, Whole, buddy(blocks, heads))
 ) =
-  match fl
+  match fl where
     | *{head, wf} => popSome blocks heads order b rest head wf
 
 /// The empty predicate taken apart at its head.
@@ -577,7 +577,7 @@ pub def popFromEmpty(
   popPost(blocks, heads, order, INil),
   Own(Zero, Whole, buddy(blocks, heads))
 ) =
-  match fl
+  match fl where
     | *{head, wf} => popNone blocks heads order head
 
 /// `pop` meets its specification: from the free list of `order`, it answers the list's head and leaves the rest free.
@@ -593,6 +593,6 @@ pub def popMeets(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt
   popPost(blocks, heads, order, ixs),
   Own(Zero, Whole, buddy(blocks, heads))
 ) =
-  match ixs
+  match ixs where
     | INil => return fun (fl) { popFromEmpty blocks heads order fl }
     | ICons(b, rest) => return fun (fl) { popFrom blocks heads order b rest fl }

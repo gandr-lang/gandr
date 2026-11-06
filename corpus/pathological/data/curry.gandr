@@ -22,12 +22,12 @@ def apply(g : Bad -> Empty, b : Bad) -> Empty =
 /// Curry's consumer: the function a node holds, applied to that node.
 @[ refuses("StageNotBelow") ]
 def bad(b : Bad) -> Empty =
-  match b
+  match b where
     | MkBad(f) => f b
 
 /// The same consumer through `apply`: the function a node holds takes
 /// nodes only below the node, not every node `apply` hands it.
 @[ refuses("StageNotBelow") ]
 def smuggled(b : Bad) -> Empty =
-  match b
+  match b where
     | MkBad(f) => apply f b

@@ -33,7 +33,7 @@ theory Receive where
 /// Structural recursion over a port chain: one per `Abstracted` link, none
 /// for a `Port` or a `Bound` one.
 def rec abstracted(chain : Theory) -> Integer =
-  match chain
+  match chain where
     | Abstracted(name, sort, indices, atoms, binders, rest) => {
       let r = abstracted[<] rest;
       r + 1
@@ -45,7 +45,7 @@ def rec abstracted(chain : Theory) -> Integer =
 /// Structural recursion over an operation chain: the abstracting input ports
 /// of every operation.
 def rec abstracting(chain : Theory) -> Integer =
-  match chain
+  match chain where
     | Oper(name, inputs, outputs, rest) => {
       let here = abstracted inputs;
       let r = abstracting[<] rest;

@@ -27,13 +27,13 @@ def twice : Chain = Link (Link Start linked) linked;
 /// The test a link holds, applied to the chain before it: the chain stands
 /// at the stage the test takes.
 def judge(c : Chain) -> Two =
-  match c
+  match c where
     | Start => L
     | Link(prev, test) => test prev
 
 /// The links of a chain, by recursion one stage below each link.
 def rec chainLength(c : Chain) -> Nat =
-  match c
+  match c where
     | Start => Zero
     | Link(prev, test) => Succ (chainLength[<] prev)
 

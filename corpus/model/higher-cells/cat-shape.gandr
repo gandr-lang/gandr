@@ -102,7 +102,7 @@ module SetoidCat : Model(CatShape) where {
     comp p p q (id p) f,
     f
   ) =
-    match b
+    match b where
       | true => unitL p q f
       | false => unitR p q f
 }

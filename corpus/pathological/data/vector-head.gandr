@@ -13,5 +13,5 @@ import "../../model/data/vectors.gandr";
 /// be left out.
 @[ refuses("NotApart") ]
 def vheadAny(n : Nat, v : Vec(Integer, n)) -> Integer =
-  match v
+  match v where
     | VCons(m, h, t) => h

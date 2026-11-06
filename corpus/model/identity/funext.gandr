@@ -9,7 +9,7 @@
 
 /// The `not` function exchanges the two Boolean values.
 pub def not(b : Unit + Unit) -> Unit + Unit =
-  match b
+  match b where
     | +{.0 = u} => +{.1 = u}
     | +{.1 = u} => +{.0 = u}
 

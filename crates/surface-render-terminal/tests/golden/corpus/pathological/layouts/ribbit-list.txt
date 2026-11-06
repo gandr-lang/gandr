@@ -5,7 +5,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │    │            ─ checked against `(a : Ints) -> -F Path[.A = Ints](listOf (tagsOf a), a)`; while checking the body of this function; binds l : Ints
    │ ┌──┘
    │ │
-31 │ │┌   match l
+31 │ │┌   match l where
 32 │ ││     | Nil => Path.here Nil
 33 │ ││     | Cons(x, rest) => Path.here (Cons x rest)
    │ ││                        ┯━━━━━━━━━━━━━━━━━━━━━│

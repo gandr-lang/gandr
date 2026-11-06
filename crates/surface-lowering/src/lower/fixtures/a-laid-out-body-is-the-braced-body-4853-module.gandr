@@ -5,7 +5,7 @@ data Two : Type where {
 
 def laid(t : Two) -> Two =
   let u = t
-  match u
+  match u where
     | L => R
     | R => L
 

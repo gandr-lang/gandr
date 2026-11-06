@@ -1,0 +1,6 @@
+/// `OutOfFragment.BareArms`: a match in layout form writes no `where` between its scrutinee and its arms.
+@[ refuses("OutOfFragment.BareArms") ]
+def bare(b : Bool) -> Integer =
+  match b
+    | true => 1
+    | false => 0

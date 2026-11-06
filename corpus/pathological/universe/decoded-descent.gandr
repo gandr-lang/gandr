@@ -21,10 +21,10 @@ import "../../model/universe/decoded-descent.gandr";
 /// parameter the fixpoint stages.
 @[ refuses("StageNotBelow") ]
 def rec totalDirect(c : UL) -> elL(c) -> Nat =
-  match c
+  match c where
     | NatL => thunk { fun (v) { v } }
     | ListL(a) => thunk { fun (v) {
-      match v -> -F Nat
+      match v -> -F Nat where
         | Nil => Zero
         | Cons(h, t) => {
           let each = totalDirect[<] a;

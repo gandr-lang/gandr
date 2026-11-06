@@ -680,7 +680,8 @@ fn lowering_row(
                 | FragmentBoundary::Held
                 | FragmentBoundary::View
                 | FragmentBoundary::Unbound
-                | FragmentBoundary::ChainedArrow,
+                | FragmentBoundary::ChainedArrow
+                | FragmentBoundary::BareArms,
             ..
         }
         | LoweringRefusal::UnresolvedDocLink { .. }

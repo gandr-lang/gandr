@@ -24,13 +24,13 @@ theory CircleShape where
 
 /// The `laws` function counts rules in a theory chain.
 def rec laws(chain : Theory) -> Integer =
-  match chain
+  match chain where
     | Rule(name, left, right, rest) => { let r = laws[<] rest; r + 1 }
     | _ => 0
 
 /// The `law_count` function counts the rules in one presentation.
 def law_count(presented : Theory) -> Integer =
-  match presented
+  match presented where
     | Presents(sorts, opers, rules) => laws rules
     | _ => 0
 

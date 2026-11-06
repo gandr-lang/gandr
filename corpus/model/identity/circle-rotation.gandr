@@ -15,14 +15,14 @@ def unitSquared : Path(mul Base Base, mul Base Base) = Path.here Base;
 
 /// The `rotInv1` cases prove rotation by `b` then its inverse returns `a`.
 def rotInv1(a : Circle, b : Circle) -> Path[.A = Circle](mul (mul b a) (invLooper b), a) =
-  match a
-    | Base => match b
+  match a where
+    | Base => match b where
       | Base => Path.here Base
 
 /// The `rotInv2` cases prove inverse rotation then rotation returns `a`.
 def rotInv2(a : Circle, b : Circle) -> Path[.A = Circle](mul (mul (invLooper b) a) b, a) =
-  match a
-    | Base => match b
+  match a where
+    | Base => match b where
       | Base => Path.here Base
 
 /// The `rotInv3` cases prove division after rotation returns `a`.
@@ -30,8 +30,8 @@ def rotInv3(a : Circle, b : Circle) -> Path[.A = Circle](
   mul b (invLooper (mul (invLooper a) b)),
   a
 ) =
-  match a
-    | Base => match b
+  match a where
+    | Base => match b where
       | Base => Path.here Base
 
 /// The `rotInv4` cases prove division before rotation returns `a`.
@@ -39,8 +39,8 @@ def rotInv4(a : Circle, b : Circle) -> Path[.A = Circle](
   mul (invLooper (mul b (invLooper a))) b,
   a
 ) =
-  match a
-    | Base => match b
+  match a where
+    | Base => match b where
       | Base => Path.here Base
 
 /// The `atBase` function evaluates a point loop at `Base`.
@@ -57,7 +57,7 @@ def toLoop(f : Circle -> Int) -> *{point : Int, around : Path[.A = Int](point, p
 
 /// The `fromLoopAt` case makes a circle map from one point and one loop.
 pub def fromLoopAt(x : Int, p : Path(x, x), c : Circle) -> Int =
-  match c
+  match c where
     | Base => x
     | loop => p
 

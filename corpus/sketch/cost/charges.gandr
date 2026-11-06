@@ -25,7 +25,7 @@ def threeSteps() -> [Cost] Integer =
 /// Looks a key up in a cache. A hit charges one, and a miss charges ten and
 /// loads the value.
 def lookup(cache : Ref(Map(String, String)), load : String -> String, key : String) -> [Cost, State(Heap)] String =
-  match (cache.get ()).#[key]
+  match (cache.get ()).#[key] where
     | Some(v) => {
       charge 1;
       v
