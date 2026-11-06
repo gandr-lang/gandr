@@ -6,10 +6,12 @@
 //! and `refusals.toml` and writes all four as `macro_rules!` macros the crate
 //! expands where each belongs: the enum in `typing.rs` under its own
 //! documentation, the projection in `Projection::refusal`, and the arms in
-//! `write_refusal` and `read_refusal`.
+//! `write_refusal` and `read_refusal`. A fifth macro gives the type contents
+//! each refusal holds, which the codec bounds by their levels.
 //!
 //! A field's role follows its type, from the table's `[roles]`; a type no row
-//! names is kept as the checker states it. The table's row for a refusal
+//! names is kept as the checker states it. A role's row states whether its
+//! stored type holds type contents. The table's row for a refusal
 //! states its wire tag, the fields of a two-role type read as sites, and the
 //! fields the store does not keep. The script refuses a refusal without a row,
 //! a row without a refusal, a tag two refusals share, and a field a row names
@@ -138,6 +140,17 @@ struct Variant
     fields: Vec<Field>,
 }
 
+/// Whether a stored type holds type contents: the tables the codec writes
+/// and bounds by their levels.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Holds
+{
+    /// It holds type contents.
+    Contents,
+    /// It holds none.
+    Nothing,
+}
+
 /// A row of the table's `[roles]`: the type the store keeps, and the
 /// projection method that reads it, beside the method that reads it as a
 /// site.
@@ -149,6 +162,8 @@ struct Role
     by: String,
     /// The projection method that reads a field `sites` names, if any.
     site: Option<String>,
+    /// Whether the stored type holds type contents.
+    holds: Holds,
 }
 
 /// A row of the table's `[refusals]`.
@@ -165,7 +180,7 @@ struct Row
 }
 
 /// A kept field, as the generated code spells it: its binding, its stored
-/// type and its projection.
+/// type, its projection, and whether it holds type contents.
 struct Kept<'variant>
 {
     /// The checker's field.
@@ -176,15 +191,18 @@ struct Kept<'variant>
     stored: String,
     /// The projection of the binding.
     projected: String,
+    /// Whether the stored type holds type contents.
+    holds: Holds,
 }
 
 /// Write `$OUT_DIR/refusal.rs`, the store's refusal mirror.
 ///
 /// # Specification
 /// - ensures: the macros `refusal_enum`, `refusal_projection`, `refusal_kept`,
-///   `refusal_write` and `refusal_read`, one arm per checker refusal, each
-///   built from the refusal's fields and its row; the script reruns when the
-///   checker's refusals, the checker's root or the table change.
+///   `refusal_write`, `refusal_read` and `refusal_contents`, one arm per
+///   checker refusal, each built from the refusal's fields and its row; the
+///   script reruns when the checker's refusals, the checker's root or the table
+///   change.
 /// - executable: none — the output is code the crate compiles.
 ///
 /// # Errors
@@ -195,6 +213,7 @@ struct Kept<'variant>
 /// - hypothesis: L2 — every refusal round-trips under the generated codec, and
 ///   every refusal projects to the stored refusal of its kind.
 /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+/// - witness: `codec::tests::every_refusal_holding_a_capped_level_is_refused_when_written_4451`
 /// - witness: `typing::tests::each_refusal_projects_its_payload`
 fn main() -> Result<(), Refusal>
 {
@@ -486,11 +505,13 @@ fn absolute(
 /// The table's `[roles]`, by the checker type each reads.
 ///
 /// # Specification
-/// - ensures: one [`Role`] per row, keyed by the type's name.
+/// - ensures: one [`Role`] per row, keyed by the type's name; a row's `contents
+///   = true` marks a stored type that holds type contents.
 /// - executable: none — a reading of a parsed table.
 ///
 /// # Errors
-/// [`Refusal::Table`] for a row without `stored` or `by`.
+/// [`Refusal::Table`] for a row without `stored` or `by`, or whose `contents`
+/// is no boolean.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`main`].
@@ -509,10 +530,20 @@ fn roles(table: &toml::Table) -> Result<BTreeMap<String, Role>, Refusal>
                 .ok_or_else(|| Refusal::Table(format!("the role `{ty}` keeps no type")))?;
             let by = text("by")
                 .ok_or_else(|| Refusal::Table(format!("the role `{ty}` names no method")))?;
+            let holds = match row.get("contents").map(toml::Value::as_bool) {
+                None | Some(Some(false)) => Holds::Nothing,
+                Some(Some(true)) => Holds::Contents,
+                Some(None) => {
+                    return Err(Refusal::Table(format!(
+                        "the role `{ty}` states `contents` as no boolean"
+                    )));
+                },
+            };
             Ok((ty.clone(), Role {
                 stored,
                 by,
                 site: text("site"),
+                holds,
             }))
         })
         .collect()
@@ -614,7 +645,9 @@ fn rows(
 /// # Specification
 /// - ensures: each field the row does not elide, bound to its own name or to
 ///   `field_<position>`, beside its stored type and its projection by its
-///   type's role, or the checker's type kept and the binding itself.
+///   type's role, or the checker's type kept and the binding itself; a field
+///   holds type contents exactly when its role's row says so and the row does
+///   not read it as a site.
 /// - executable: none — string assembly.
 ///
 /// # Errors
@@ -641,7 +674,7 @@ fn kept<'variant>(
                 Shape::Unit | Shape::Named => field.name.clone(),
             };
             let last = field.ty.last().cloned().unwrap_or_default();
-            let (stored, projected) = match roles.get(&last) {
+            let (stored, projected, holds) = match roles.get(&last) {
                 Some(role) if row.sites.contains(&field.name) => {
                     let site = role.site.as_ref().ok_or_else(|| {
                         Refusal::Table(format!(
@@ -652,19 +685,22 @@ fn kept<'variant>(
                     (
                         String::from("Site"),
                         format!("$projection.{site}({binding})"),
+                        Holds::Nothing,
                     )
                 },
                 Some(role) => (
                     role.stored.clone(),
                     format!("$projection.{}({binding})", role.by),
+                    role.holds,
                 ),
-                None => (spelled(&field.ty, paths), binding.clone()),
+                None => (spelled(&field.ty, paths), binding.clone(), Holds::Nothing),
             };
             Ok(Kept {
                 field,
                 binding,
                 stored,
                 projected,
+                holds,
             })
         })
         .collect()
@@ -805,6 +841,53 @@ fn write_stored_pattern(
     Ok(())
 }
 
+/// Write a refusal's stored pattern into `out`, binding by reference only
+/// the kept fields that hold type contents.
+///
+/// # Specification
+/// - ensures: `Refusal::<name>` in its stored shape, each kept field that holds
+///   type contents bound to its binding by `ref`, and each other field skipped.
+/// - executable: none — string assembly.
+///
+/// # Errors
+/// [`Refusal::Format`] when the text does not format.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`main`].
+/// - witness: `codec::tests::every_refusal_holding_a_capped_level_is_refused_when_written_4451`
+fn write_contents_pattern(
+    out: &mut String,
+    variant: &Variant,
+    kept: &[Kept<'_>],
+) -> Result<(), Refusal>
+{
+    write!(out, "Refusal::{}", variant.name)?;
+    match stored_shape(variant, kept) {
+        Shape::Unit => {},
+        Shape::Tuple => {
+            out.push('(');
+            for (position, kept) in kept.iter().enumerate() {
+                if position > 0 {
+                    out.push_str(", ");
+                }
+                match kept.holds {
+                    Holds::Contents => write!(out, "ref {}", kept.binding)?,
+                    Holds::Nothing => out.push('_'),
+                }
+            }
+            out.push(')');
+        },
+        Shape::Named => {
+            out.push_str(" { ");
+            for kept in kept.iter().filter(|kept| kept.holds == Holds::Contents) {
+                write!(out, "ref {}, ", kept.binding)?;
+            }
+            out.push_str(".. }");
+        },
+    }
+    Ok(())
+}
+
 /// Write a checker refusal's pattern into `out`, its kept fields bound and
 /// its elided ones skipped.
 ///
@@ -937,7 +1020,7 @@ fn write_declared(
     Ok(())
 }
 
-/// Write the five macros into `out`.
+/// Write the six macros into `out`.
 ///
 /// # Specification
 /// - ensures: `refusal_enum` declares the store's enum, each refusal with the
@@ -946,7 +1029,9 @@ fn write_declared(
 ///   compares a checker refusal's kind with a stored one's; `refusal_write` and
 ///   `refusal_read` hold one arm per refusal not written by hand, each its tag
 ///   followed by its kept fields in declaration order, beside the arms the
-///   caller passes.
+///   caller passes; `refusal_contents` passes each kept field that holds type
+///   contents to the caller's visitor in declaration order, one arm for the
+///   refusals that bind the same fields at the same types.
 /// - executable: none — string assembly.
 ///
 /// # Errors
@@ -955,6 +1040,7 @@ fn write_declared(
 /// # Adequacy
 /// - hypothesis: L2 — as [`main`].
 /// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+/// - witness: `codec::tests::every_refusal_holding_a_capped_level_is_refused_when_written_4451`
 fn emit(
     out: &mut String,
     variants: &[Variant],
@@ -968,6 +1054,9 @@ fn emit(
     let mut kinds = String::new();
     let mut write = String::new();
     let mut read = String::new();
+    // The refusals by the fields that hold type contents, each with its stored
+    // type: refusals that bind the same fields share one arm.
+    let mut held: BTreeMap<Vec<(String, String)>, Vec<String>> = BTreeMap::new();
     for variant in variants {
         let Some(row) = rows.get(&variant.name)
         else {
@@ -976,6 +1065,16 @@ fn emit(
         let kept = kept(variant, row, roles, paths)?;
         let name = &variant.name;
         write_declared(&mut declared, variant, &kept)?;
+        let mut pattern = String::new();
+        write_contents_pattern(&mut pattern, variant, &kept)?;
+        held.entry(
+            kept.iter()
+                .filter(|kept| kept.holds == Holds::Contents)
+                .map(|kept| (kept.binding.clone(), kept.stored.clone()))
+                .collect(),
+        )
+        .or_default()
+        .push(pattern);
         projection.push_str(VARIANT.0);
         write_checker_pattern(&mut projection, variant, row, &kept)?;
         projection.push_str(" => ");
@@ -1002,6 +1101,27 @@ fn emit(
         write!(read, "{}{tag} => ", VARIANT.0)?;
         write_built(&mut read, variant, &kept, Value::Read)?;
         read.push_str(",\n");
+    }
+    let mut contents = String::new();
+    for (fields, patterns) in &held {
+        contents.push_str(VARIANT.0);
+        for (position, pattern) in patterns.iter().enumerate() {
+            if position > 0 {
+                write!(contents, "\n{}| ", VARIANT.0)?;
+            }
+            contents.push_str(pattern);
+        }
+        contents.push_str(" => {");
+        match fields.split_last() {
+            None => contents.push_str(" Ok(())"),
+            Some((&(ref last, _), rest)) => {
+                for &(ref binding, _) in rest {
+                    write!(contents, " Contents::each_content({binding}, $visit)?;")?;
+                }
+                write!(contents, " Contents::each_content({last}, $visit)")?;
+            },
+        }
+        contents.push_str(" },\n");
     }
     write!(
         out,
@@ -1032,6 +1152,12 @@ fn emit(
         "/// The arms of `read_refusal` by tag, beside the hand-written arms the caller\n/// passes.\nmacro_rules! \
          refusal_read {{\n    ($reader:ident, $tag:expr, {{ $($hand:tt)* }}) => {{\n        match $tag \
          {{\n{read}            $($hand)*\n        }}\n    }};\n}}\n"
+    )?;
+    write!(
+        out,
+        "\n/// The type contents a stored refusal holds, each passed to `$visit` in the\n/// order the codec \
+         writes them; the first error stops the walk.\nmacro_rules! refusal_contents {{\n    \
+         ($refusal:expr, $visit:ident) => {{\n        match *$refusal {{\n{contents}        }}\n    }};\n}}\n"
     )?;
     Ok(())
 }
