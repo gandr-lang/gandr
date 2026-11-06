@@ -6064,6 +6064,31 @@ fn a_lambda_the_checker_thunks_spells_whole_2228()
     );
 }
 
+/// A body that abstracts fewer parameters than its type's arrows run through
+/// is not written whole. The header reads no arrow as its result, so the
+/// definition is written in halves (#5219).
+#[test]
+fn a_body_short_of_its_arrows_is_written_in_halves_5219()
+{
+    let names = [Name::from("Nat"), Name::from("down"), Name::from("kept")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let function = core.comp_type_arrow(nat, returns_nat);
+    let curried = core.comp_type_arrow(nat, function);
+    let ty = core.value_type_thunk(curried);
+    let kept = core.value_constant(ConstantIndex::from(2_usize));
+    let forced = core.computation_force(kept);
+    let lambda = core.computation_lambda(forced);
+    let body = core.value_thunk(lambda);
+    let source = CoreSource::new(&core, &names);
+    assert_eq!(
+        declared_whole(&source, (ty, body), PageWidth::from(100_u32)),
+        Maybe::Absent(whole::Absent::NotAbstracted),
+        "a body that abstracts one of two parameters is written in halves"
+    );
+}
+
 /// A thunk the checker inserts is left out: a call's argument over a call
 /// and a definition's value over a function are written as what they hold,
 /// while a thunk over a returned value or over statements keeps its braces

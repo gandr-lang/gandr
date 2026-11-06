@@ -1100,7 +1100,9 @@ quenchant_shape::reason_enum! {
 ///   binder nor the parameter is written: `Cap {…}` names a host interface's
 ///   operations alone. The presentation is approximate, its unspelled reasons
 ///   collected, when a header type or the body is. Absent for any other shape,
-///   and when no names for the parameters are found.
+///   when no names for the parameters are found, and when the body abstracts
+///   fewer parameters than the arrows run through, whose result arrow the
+///   header reads no spelling of (#5219).
 /// - provides: the declaration a function definition reads back as, written
 ///   whole: a recursive one where `def name = body` would write a fixpoint the
 ///   surface spells only in its declaration, a suspended computation as the
@@ -1126,8 +1128,9 @@ quenchant_shape::reason_enum! {
 ///   that abstracts nothing of its own is written as the body's loop; a
 ///   function whose implicit's type names the explicit parameter before it
 ///   writes the implicit in its telescope and the explicit one in parentheses;
-///   and a body that abstracts nothing at an arrow and a type that is no
-///   function are absent.
+///   a body that abstracts nothing at an arrow, a body that abstracts fewer
+///   parameters than its arrows run through, and a type that is no function are
+///   absent.
 /// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
 /// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
 /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
@@ -1137,6 +1140,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `tests::goldens::a_lambda_the_checker_thunks_spells_whole_2228`
 /// - witness: `tests::goldens::a_definition_writes_its_implicits_in_its_telescope_2267`
 /// - witness: `tests::goldens::a_labelled_theory_entry_spells_its_label_3230`
+/// - witness: `tests::goldens::a_body_short_of_its_arrows_is_written_in_halves_5219`
 #[spec(ensures: |ref ret| match *ret {
     Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
         && presentation.as_ref().ends_with('}')
@@ -1215,9 +1219,13 @@ pub fn present_whole(
         else {
             break;
         };
+        // A body that abstracts fewer parameters than its arrows run through
+        // leaves an arrow as the header's result. The header reads no
+        // computation arrow there, so the signature and the body write such a
+        // definition instead (#5219).
         let Former::Lambda(under) = source.read(inner)
         else {
-            break;
+            return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
         };
         arrows.push((codomain, domain, dependent));
         (codomain, inner) = (rest, under);
