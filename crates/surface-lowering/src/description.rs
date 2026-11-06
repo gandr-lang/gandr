@@ -290,6 +290,12 @@ pub enum MemberFault
     RewrittenIndex,
     /// A circuit rule whose wiring derives no boundary.
     UnderivedWiring,
+    /// A circuit rule over a marked sort whose wiring the seam cannot
+    /// assemble into a diagram.
+    UnwiredDiagram,
+    /// A circuit rule whose tied spider legs need more trials than the budget
+    /// holds.
+    SpiderBudget,
     /// A circuit rule rewriting two redexes at once.
     ParallelRedexes,
     /// A circuit rule whose redex lies off the boundary its wiring derives.
@@ -355,6 +361,12 @@ impl fmt::Display for MemberFault
                  does not join yet"
             },
             Self::UnderivedWiring => "is a circuit whose wiring derives no boundary",
+            Self::UnwiredDiagram => {
+                "is a circuit rule over a sort marked `@[ frobenius ]` whose wiring is no diagram"
+            },
+            Self::SpiderBudget => {
+                "is a circuit rule whose tied spider legs need more trials than the budget holds"
+            },
             Self::ParallelRedexes => {
                 "is a circuit rule rewriting two redexes at once, which has no single whiskered \
                  composite yet"
@@ -447,15 +459,16 @@ impl DescriptionDiagnostic
     ///   site; a field past the description code, an undecodable description, a
     ///   sort whose classifier is no universe, an operation filler, a top-level
     ///   operation, a fillerless higher cell and the reserved glyph are an
-    ///   undescribed member carrying their own fault, a feed no observation
-    ///   guards its own refusal, a description the description check refuses an
-    ///   ill-formed description carrying the check's kind and its first two
-    ///   subjects as `written` spells them, a theory an `under` row names that
-    ///   no block presents an unresolved type head and one it names twice a
-    ///   duplicate definition, a point a `boundary` lists twice a duplicate
-    ///   definition, each named as `written` spells it, a `shape` member a
-    ///   malformed form naming `boundary` as the keyword it retires to, and
-    ///   every other fault a malformed form.
+    ///   undescribed member carrying their own fault, a rule over a marked sort
+    ///   with no spider canon an undescribed member naming the wiring or the
+    ///   budget, a feed no observation guards its own refusal, a description
+    ///   the description check refuses an ill-formed description carrying the
+    ///   check's kind and its first two subjects as `written` spells them, a
+    ///   theory an `under` row names that no block presents an unresolved type
+    ///   head and one it names twice a duplicate definition, a point a
+    ///   `boundary` lists twice a duplicate definition, each named as `written`
+    ///   spells it, a `shape` member a malformed form naming `boundary` as the
+    ///   keyword it retires to, and every other fault a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -467,6 +480,7 @@ impl DescriptionDiagnostic
     /// - witness: `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`
     /// - witness: `description::theory::tests::an_ill_formed_theory_is_refused_with_the_checks_reason_1553`
     /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
+    /// - witness: `description::theory::tests::a_seam_refusal_stands_at_its_rule_5763`
     #[spec(ensures: |result| result.span() == Maybe::Present(self.span))]
     pub(crate) fn lowering_refusal<'source>(
         &self,
@@ -503,6 +517,19 @@ impl DescriptionDiagnostic
                     span: self.span,
                     rule,
                 }
+            },
+            DescriptionFault::Signature(crate::circuit::SignatureFault::Diagram(ref error)) => {
+                undescribed(match *error {
+                    crate::circuit::embed::CircuitCanonError::Canon(
+                        gandr_theory_circuit_algebras::SpiderObstruction::BudgetExhausted {
+                            ..
+                        },
+                    ) => MemberFault::SpiderBudget,
+                    crate::circuit::embed::CircuitCanonError::Wiring(_)
+                    | crate::circuit::embed::CircuitCanonError::Canon(
+                        gandr_theory_circuit_algebras::SpiderObstruction::Wiring(_),
+                    ) => MemberFault::UnwiredDiagram,
+                })
             },
             DescriptionFault::Signature(crate::circuit::SignatureFault::Reversible) => {
                 undescribed(MemberFault::Reversible)

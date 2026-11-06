@@ -2746,6 +2746,7 @@ INSERT INTO purpose VALUES('surface-lowering','model::Presentation','struct','Ho
 INSERT INTO purpose VALUES('surface-lowering','model::PresentationFault','enum','Names why a theory''s presentation faults, so the refusal names the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','model::Presented','type_alias','Names the type a presented component states, so the component''s type is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','model::PresentedCircuit','struct','Holds a presented circuit, so the circuit''s ports and wires are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','model::PresentedDiagram','struct','Holds a circuit rule a theory reads as a diagram, with its spider canon, so a rule that merges a marked wire is decided modulo the Frobenius laws.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','model::PresentedLaw','struct','Holds a presented law, so the law''s sides are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','model::PresentedOperation','struct','Holds a presented operation, so the operation''s ports are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','model::PresentedSort','struct','Holds a presented sort, so the sort''s universe is read.',NULL,'fits','sound',NULL);

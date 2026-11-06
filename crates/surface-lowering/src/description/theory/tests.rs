@@ -3315,3 +3315,234 @@ fn each_universe_at_level_zero_classifies_a_sort_2664()
         assert_eq!(sort.representability, representability, "`{source}`");
     }
 }
+
+/// `@[ frobenius ]` marks an unindexed sort on its presentation, and a theory
+/// that includes it holds the mark. The mark on an operation, on an indexed
+/// sort, or twice, is refused malformed at the name (#5763).
+#[test]
+fn a_frobenius_mark_stands_on_an_unindexed_sort_5763()
+{
+    let report = described(
+        "theory Marked where { @[ frobenius ] sort Q : Type; sort N : Type; } theory Wider where { include Marked; }",
+    );
+    assert_eq!(report.diagnostics, []);
+    let marks = |at: usize| {
+        let Maybe::Present(ref presentation) = report.declarations[at].presentation
+        else {
+            panic!("the theory presents its members")
+        };
+        presentation
+            .frobenius
+            .iter()
+            .map(|sort| String::from(sort.as_ref()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(marks(0), [String::from("Q")]);
+    assert_eq!(marks(1), [String::from("Q")], "an include brings the mark");
+    for source in [
+        "theory OnOperation where { sort Q : Type; @[ frobenius ] oper x : Q; }",
+        "theory OnIndexed where { sort Ob : Type; @[ frobenius ] sort Hom(dom : Ob, cod : Ob) : Type; }",
+        "theory Twice where { @[ frobenius, frobenius ] sort Q : Type; }",
+    ] {
+        let report = described(source);
+        let spelled: Vec<_> = report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.fault.clone(),
+                    SourceText::from(source)
+                        .fragment(diagnostic.span)
+                        .ok()
+                        .map(<&str>::from),
+                )
+            })
+            .collect();
+        assert_eq!(
+            spelled,
+            [(DescriptionFault::Malformed, Some("frobenius"))],
+            "`{source}`"
+        );
+    }
+}
+
+/// The one diagram rule `name` of the one theory `source` declares, which
+/// reads with no refusal: no term sphere, its canon on the presentation, and
+/// a model component that keeps the circuit fault.
+///
+/// # Specification
+/// trivial.
+fn diagram(
+    source: SourceText<'_>,
+    name: &Name,
+) -> gandr_theory_circuit_algebras::SpiderCanon
+{
+    let report = described(source);
+    assert_eq!(report.diagnostics, [], "`{source}` reads");
+    let [ref theory] = *report.declarations.as_slice()
+    else {
+        panic!("`{source}`: one theory")
+    };
+    assert_eq!(
+        theory.description.circuits.as_ref(),
+        [],
+        "a diagram has no term sphere"
+    );
+    assert_eq!(theory.written.diagrams.len(), 1_usize);
+    let Maybe::Present(ref presentation) = theory.presentation
+    else {
+        panic!("`{source}`: the theory presents its members")
+    };
+    assert_eq!(presentation.circuits, []);
+    let [ref read] = *presentation.diagrams.as_slice()
+    else {
+        panic!("`{source}`: one diagram")
+    };
+    assert_eq!(read.circuit.name, *name);
+    let model = crate::model::derive(presentation).unwrap();
+    assert!(
+        model
+            .components
+            .iter()
+            .any(|component| component.name == *name && component.form == Err(ModelFault::Circuit)),
+        "a model owes the diagram rule as it owes a circuit rule"
+    );
+    read.canon.clone()
+}
+
+/// A rule that merges a wire of a marked sort reads as a diagram, and the
+/// order of its node lines is no part of it. A merge on an inner wire reads
+/// so when only operations after the rule give the wire its sort (#5763).
+#[test]
+fn a_marked_merge_is_a_diagram_of_its_presentation_5763()
+{
+    let merge = |lines: &str| {
+        alloc::format!(
+            "theory M where {{ @[ frobenius ] sort Q : Type; oper f : (a : Q) --> (b : Q); oper g : (a : Q) --> (b : Q); rule merge : (data x : Q, data y : Q) <=> (z : Q) {{ {lines} }}; }}"
+        )
+    };
+    let merge_name = Name::from("merge");
+    let forward = diagram(
+        SourceText::from(merge("node : f(x) --> (z); node : g(y) --> (z);").as_str()),
+        &merge_name,
+    );
+    let backward = diagram(
+        SourceText::from(merge("node : g(y) --> (z); node : f(x) --> (z);").as_str()),
+        &merge_name,
+    );
+    assert_eq!(
+        forward.form(),
+        backward.form(),
+        "either order of the node lines is one diagram"
+    );
+    let _inner = diagram(
+        SourceText::from(
+            "theory Inner where { @[ frobenius ] sort Q : Type; rule join : (data x : Q, data y : Q) <=> (o : Q) { node : f(x) --> (m); node : g(y) --> (m); node : h(m) --> (o); }; oper f : (a : Q) --> (b : Q); oper g : (a : Q) --> (b : Q); oper h : (a : Q) --> (b : Q); }",
+        ),
+        &Name::from("join"),
+    );
+}
+
+/// A merge on a sort that no mark names keeps the boundary reading, which
+/// refuses the port two nodes bind. A marked sort whose wires neither merge
+/// nor split keeps the boundary reading too, with its term sphere (#5763).
+#[test]
+fn an_unmarked_merge_keeps_the_boundary_reading_5763()
+{
+    let source = "theory U where { sort Q : Type; oper f : (a : Q) --> (b : Q); oper g : (a : Q) --> (b : Q); rule merge : (data x : Q, data y : Q) <=> (z : Q) { node : f(x) --> (z); node : g(y) --> (z); }; }";
+    let report = described(source);
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    assert_eq!(
+        diagnostic.fault,
+        DescriptionFault::Signature(SignatureFault::Derivation(
+            gandr_theory_levitation::CircuitDerivationError::SharedPort("z".into())
+        ))
+    );
+    assert!(
+        SourceText::from(source)
+            .fragment(diagnostic.span)
+            .is_ok_and(|text| text.as_ref().starts_with("rule merge"))
+    );
+    let Maybe::Present(ref presentation) = report.declarations[0].presentation
+    else {
+        panic!("the theory presents its members")
+    };
+    assert_eq!(presentation.diagrams, []);
+    let plain = described(
+        "theory P where { @[ frobenius ] sort Q : Type; oper f : (a : Q) --> (b : Q); rule step : (data x : Q) <=> (z : Q) { node : f(x) --> (z); }; }",
+    );
+    assert_eq!(plain.diagnostics, []);
+    let [ref rule] = *plain.declarations[0].description.circuits.as_ref()
+    else {
+        panic!("one circuit with a term sphere")
+    };
+    assert_eq!(rule.sphere.lhs, FreeTerm::op("f", [FreeTerm::var("x")]));
+}
+
+/// The two refusals of the seam stand at the rule. A marked tie of seven legs
+/// needs more trials than the budget holds. A marked body that also merges an
+/// unmarked wire is no diagram. Each reaches the surface as its own
+/// undescribed member (#5763).
+#[test]
+fn a_seam_refusal_stands_at_its_rule_5763()
+{
+    let outputs: Vec<String> = (1 ..= 7_u32)
+        .map(|leg| alloc::format!("o{leg} : Q"))
+        .collect();
+    let lines = (1 ..= 7_u32)
+        .map(|leg| alloc::format!("node : f(x) --> (o{leg}); "))
+        .collect::<Vec<_>>()
+        .concat();
+    let tied = alloc::format!(
+        "theory Tied where {{ @[ frobenius ] sort Q : Type; oper f : (a : Q) --> (b : Q); rule fan : (data x : Q) <=> ({}) {{ {lines}}}; }}",
+        outputs.join(", ")
+    );
+    let mixed = "theory Mixed where { @[ frobenius ] sort Q : Type; sort N : Type; oper f : (a : Q) --> (b : Q); oper g : (a : Q) --> (b : Q); oper p : (a : N) --> (b : N); oper q : (a : N) --> (b : N); rule both : (data x : Q, data y : Q, data u : N, data v : N) <=> (z : Q, w : N) { node : f(x) --> (z); node : g(y) --> (z); node : p(u) --> (w); node : q(v) --> (w); }; }";
+    for (source, rule, member) in [
+        (tied.as_str(), "rule fan", MemberFault::SpiderBudget),
+        (mixed, "rule both", MemberFault::UnwiredDiagram),
+    ] {
+        let report = described(source);
+        let [ref diagnostic] = *report.diagnostics.as_slice()
+        else {
+            panic!("`{source}`: one refusal, {:?}", report.diagnostics)
+        };
+        assert!(
+            SourceText::from(source)
+                .fragment(diagnostic.span)
+                .is_ok_and(|text| text.as_ref().starts_with(rule)),
+            "`{source}`: the refusal stands at its rule"
+        );
+        assert_eq!(
+            diagnostic.lowering_refusal(gandr_surface_syntax::SourceFragment::from(source)),
+            crate::LoweringRefusal::UndescribedMember {
+                span: diagnostic.span,
+                fault: member
+            },
+            "`{source}`"
+        );
+        let Maybe::Present(ref presentation) = report.declarations[0].presentation
+        else {
+            panic!("`{source}`: the theory presents its members")
+        };
+        assert_eq!(presentation.diagrams, [], "`{source}`: no diagram stands");
+        assert_eq!(presentation.circuits, [], "`{source}`: no sphere stands");
+        if member == MemberFault::SpiderBudget {
+            assert_eq!(
+                diagnostic.fault,
+                DescriptionFault::Signature(SignatureFault::Diagram(
+                    crate::circuit::embed::CircuitCanonError::Canon(
+                        gandr_theory_circuit_algebras::SpiderObstruction::BudgetExhausted {
+                            needed: gandr_theory_circuit_algebras::SpiderTrials::from(5_040_usize),
+                            budget: SpiderBudget::DEFAULT,
+                        }
+                    )
+                )),
+                "the tie of seven legs needs 7! trials"
+            );
+        }
+    }
+}
