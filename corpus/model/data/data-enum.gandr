@@ -1,6 +1,8 @@
-//! An enumeration matched on a constructor written with its type: the case
-//! reads the scrutinee's type from the annotation and takes the arm its
-//! constructor names [MartinLof-1984-intuitionistic_type_theory].
+//! An enumeration selects an arm by constructor.
+//!
+//! The annotation gives the scrutinee type.
+//!
+//! The case selects the arm named by its constructor.
 //!
 //! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!
@@ -9,7 +11,7 @@
 // The three colours.
 import "./data-base.gandr";
 
-/// The rank of green among the colours, read off the arm green takes.
+/// The `Green` arm gives green rank one.
 def rank() -> Integer =
   match (Green : Color) where
     | Red => 0

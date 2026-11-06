@@ -1,9 +1,11 @@
-//! A definition whose selected arm is another definition's call, stuck at a
-//! variable: `viaZero(Zero, h)` selects `emp(h)`, which cases on `h` and so
-//! runs no further. The call converts with the call its arm reached, at any
-//! depth of such arms, and the kernel replays each step. A family computed by
-//! recursion on its index is unfolded only as far as the index's constructors
-//! take it [Dybjer-1994-inductive_families].
+//! A selected arm can call another definition at a variable.
+//!
+//! `viaZero(Zero, h)` selects `emp(h)`.
+//! That call scrutinises `h` and stops there.
+//!
+//! Call conversion follows selected arm calls.
+//! The kernel replays each step.
+//! A family recursion unfolds through index constructors.
 //!
 //! - see: #2832
 //! - cites: [Dybjer-1994-inductive_families]
@@ -24,7 +26,8 @@ pub def emp(h : Heap) -> Type =
     | Emp => return Unit
     | Cell(_l, _r) => return Void
 
-/// At zero, the heap is empty; at a successor, never.
+/// At zero, the heap is empty.
+/// At a successor, the type has no inhabitant.
 pub def viaZero(w : Nat, h : Heap) -> Type =
   match w where
     | Zero => emp h
@@ -36,11 +39,11 @@ pub def viaZeroAgain(w : Nat, h : Heap) -> Type =
     | Zero => viaZero w h
     | Succ(_n) => return Void
 
-/// `viaZero(Zero, h)` is `emp(h)`, the call its arm reached.
+/// `atZero` returns `emp(h)` from `viaZero(Zero, h)`.
 def atZero(h : Heap) -> (viaZero(Zero, h)) -> emp(h) =
   return fun (e) { e }
 
-/// Two arms down, the call the last one reached.
+/// `twiceAtZero` returns `emp(h)` after two selected arms.
 def twiceAtZero(h : Heap) -> (viaZeroAgain(Zero, h)) -> emp(h) =
   return fun (e) { e }
 

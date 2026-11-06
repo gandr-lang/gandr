@@ -1,11 +1,13 @@
-// A data family applied where a value is read is the family's type over its
-// arguments: passed for a type parameter, a function polymorphic in a type is
-// called at an applied type as at a bare one, and a definition of `Type`
-// names one.
+// Data families accept applied type arguments.
+//
+// A type parameter receives a family's type over its arguments.
+// A polymorphic function accepts an applied type or a bare type.
+//
+// A definition of `Type` names such a type.
 //
 // - see: #2512
 
-/// A parcel holding one value of any type.
+/// A parcel contains one value of any type.
 data Parcel(a : Type) : Type where
   | Enclosed : (x : a) --> Parcel(a)
 
@@ -14,7 +16,7 @@ def unwrap(a : Type, p : Parcel(a)) -> a =
   match p where
     | Enclosed(x) => x
 
-/// A parcel of an integer opened at a bare type.
+/// This source opens an integer parcel at a bare type.
 @[ runs("1") ]
 def openedBare() -> Integer { unwrap Integer (Enclosed 1 : Parcel(Integer)) }
 

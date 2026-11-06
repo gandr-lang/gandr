@@ -1,7 +1,9 @@
-//! The arms a match may write besides one constructor each: a wildcard that
-//! takes every constructor the arms before it left, an or-pattern that shares
-//! one body between constructors, and a pattern nested inside a constructor's
-//! field [Augustsson-1985-compiling_pattern_matching].
+//! Matches support wildcard, or and nested patterns.
+//!
+//! A wildcard covers constructors that prior arms omit.
+//! Or patterns share one arm.
+//!
+//! Nested patterns inspect a constructor field.
 //!
 //! - cites: [Augustsson-1985-compiling_pattern_matching]
 //!
@@ -16,7 +18,7 @@ def notRed(c : Color) -> Integer =
     | Red => 0
     | _ => 1
 
-/// The warm colours, two constructors sharing one arm.
+/// The `Red` and `Green` constructors share one arm.
 def warm(c : Color) -> Integer =
   match c where
     | Red | Green => 1
@@ -43,5 +45,5 @@ def depth(m : Outer) -> Integer =
 /// An inner value, annotated with its type.
 def inner = (Yes 41 : Inner);
 
-/// The inner value wrapped once more.
+/// This source wraps the inner value once more.
 def answer = (Some inner : Outer);

@@ -1,14 +1,15 @@
-//! A rule written as an equation, `<=>`: one term spelled two ways, with the
-//! left side the one a reader would rewrite to. The order of terms chooses the
-//! direction, so `x <=> S(P(x))` still runs `S(P(x))` to `x`
-//! [Huet-1980-confluent_reductions]. The integers are named apart from the
-//! base's, whose rules are written the other way round.
+//! Equation rules relate two spellings of one term.
+//!
+//! The order of terms selects the reduction direction.
+//! `x <=> S(P(x))` reduces `S(P(x))` to `x`.
+//!
+//! `IntEq` uses rules opposite to the base integers.
 //!
 //! - cites: [Huet-1980-confluent_reductions]
 //!
 //! [Huet-1980-confluent_reductions]: https://doi.org/10.1145/322217.322230 "Huet, Confluent reductions"
 
-/// The integers with their first rule written smaller side first.
+/// The first `IntEq` rule lists its smaller side first.
 @[ normalizes("S(P(Z)) ~> Z") ]
 data IntEq : Type where {
   | Z : IntEq

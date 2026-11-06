@@ -1,8 +1,11 @@
-/// This source checks a pair against a fold whose subject reaches its arm through a constant.
+/// This source checks a pair against a fold at a constant.
 ///
-/// It pins how the kernel reads a mode switch whose expected type holds a call in a stuck arm.
+/// It specifies how the kernel replays a mode switch.
 ///
-/// The checker's reduct of `wp(body, post)` keeps the fold's call on `arm`'s value inside an arm that cases on the record's first field. The pair's second component checks at that arm, and `afterRead` gives it the type the call runs to. The kernel runs the held call by its δ-step and reads the two types alike.
+/// `wp(body, post)` keeps a call on `arm` inside an arm.
+/// The pair checks at that arm.
+/// `afterRead` gives the call result type.
+/// The kernel unfolds the call by its delta step.
 ///
 /// - see: #3090
 /// - see: #2831

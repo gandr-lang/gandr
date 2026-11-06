@@ -1,6 +1,8 @@
-//! A data type with two parameters: the sum of two types, each constructor
-//! injecting one side. A match on a constructor written with its type takes the
-//! arm that constructor names [MartinLof-1984-intuitionistic_type_theory].
+//! Either forms a sum of two types.
+//!
+//! Each constructor injects one side.
+//!
+//! A match selects the arm of its constructor.
 //!
 //! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!

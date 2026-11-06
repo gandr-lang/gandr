@@ -1,8 +1,10 @@
-// A constructor standing where a body ends takes the type the body answers
-// even when the result is written as a definition's application: the
-// lowering reads the decode through the definition's body, as the checker
-// unfolds it. `Maybe` is the one `data-maybe.gandr` declares. Before the fix
-// such a constructor dropped its declaration.
+// A body-ending constructor takes its body's answer type.
+//
+// The result can name a definition application.
+// The lowering reads the definition's body.
+//
+// The checker unfolds that body.
+// `Maybe` supplies the optional type.
 //
 // - see: #2112 — `someOne`, `noneAt`, `someTwo`
 

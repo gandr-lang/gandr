@@ -1,10 +1,10 @@
-//! A match of no arm over a path whose endpoints hold variables. The naturals
-//! are free: no rule rewrites a term, so two terms whose first difference, read
-//! side by side, is two distinct constructors are apart whatever their
-//! variables hold. That is the unifier's conflict rule, disjointness under
-//! injectivity
-//! [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory].
-//! A presented type's open endpoints are refused, in `absurd-not-apart`.
+//! A no-arm match eliminates apart endpoints.
+//!
+//! Natural-number terms have no rewriting rules.
+//! Distinct head constructors make their terms apart.
+//!
+//! The unifier uses this conflict rule with injectivity.
+//! A presented type does not admit open endpoints.
 //!
 //! - cites: [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory]
 //!

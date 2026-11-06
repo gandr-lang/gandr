@@ -1,10 +1,9 @@
-// A recursive call whose descending argument is another recursion's stuck
-// call, beside an argument the arm passes through a definition: unfolded at
-// that call, the arm runs the definition before it recurses, and the path
-// states the recursion with the definition still written. Both sides apply
-// the recursion at the one stuck call and differ only in that argument, so
-// they compare part by part, the definition unfolding to meet what the arm
-// ran.
+// A recursive call can use another stuck recursive call as its descent argument.
+//
+// An unfolded arm evaluates its definition argument before it recurses.
+//
+// Both sides apply the recursion at the same stuck call.
+// They compare the changed argument after the definition unfolds.
 //
 // - see: #879 — `walkTwice`
 
@@ -15,15 +14,15 @@ import "./data-base.gandr";
 pub def succ(n : Nat) -> Nat =
   Succ n
 
-/// A walk down its first argument, passing its accumulator through `succ`
-/// at every step.
+/// `walk` descends through its first argument.
+/// It applies `succ` to its accumulator at each step.
 pub def rec walk(t : Nat, c : Nat) -> Nat =
   match t where
     | Zero => c
     | Succ(m) => Succ (walk[<] m (succ c))
 
-/// Two walked from zero: a successor per step over the accumulator `succ`
-/// raised once per step.
+/// `walkedTwo` evaluates two steps from zero.
+/// It applies `succ` to its accumulator at each step.
 @[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 def walkedTwo : () -> Nat = walk two Zero;
 
@@ -31,8 +30,8 @@ def walkedTwo : () -> Nat = walk two Zero;
 def walkOnce(b : Nat, c : Nat) -> Path(walk (Succ b) c, Succ (walk b (succ c))) =
   Path.here (Succ (walk b (succ c)))
 
-/// One step at another walk's stuck call: the step's recursive call
-/// receives that call beside `succ(c2)`.
+/// `walkTwice` takes one step at another stuck `walk` call.
+/// Its recursive call receives that result and `succ(c2)`.
 def walkTwice(b : Nat, c1 : Nat, c2 : Nat) -> Path(
   walk (Succ (walk b c1)) c2,
   Succ (walk (walk b c1) (succ c2))
