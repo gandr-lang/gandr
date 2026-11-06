@@ -31929,8 +31929,8 @@ mod tests
         );
         assert_eq!(
             refused.classify(),
-            FailureClass::Unimplemented(gandr_core_term::TrackingIssue::IMPLICIT_TELESCOPE),
-            "it is outside the fragment, not malformed"
+            FailureClass::MalformedSource,
+            "the design gives implicits only to a function, so the telescope is the author's error"
         );
     }
 

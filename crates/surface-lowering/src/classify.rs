@@ -80,6 +80,19 @@
 //! grammar, or carrying a mold the grammar does not hold, says nothing about
 //! the source: the caller handed the lowering a tree and a grammar that do not
 //! belong together, which is a fault of the run, never of the text.
+//!
+//! # An implicit telescope on no function is the author's
+//!
+//! Implicits are the prefix of a function type, so a declaration that is no
+//! function has no type for its telescope `[…]` to prefix. That telescope, and
+//! an entry of a telescope out of shape, is malformed source, and no issue
+//! tracks it.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the lead and § The
+//!   rules — implicitness is a property of a function type's prefix block, so
+//!   [`LoweringRefusal::ImplicitTelescope`] is malformed source.
 
 use anodized::spec;
 pub use gandr_core_term::FailureClass;
@@ -199,8 +212,7 @@ impl LoweringRefusal<'_>
             }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
-            | Self::UnreadCells { .. }
-            | Self::ImplicitTelescope { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+            | Self::UnreadCells { .. } => matches!(ret, FailureClass::Unimplemented(_)),
             | Self::UndescribedMember {
                 fault: MemberFault::OffBoundary,
                 ..
@@ -263,6 +275,7 @@ impl LoweringRefusal<'_>
             | Self::FamilyTelescope { .. }
             | Self::UnlabelledRequirement { .. }
             | Self::UnfixedParameter { .. }
+            | Self::ImplicitTelescope { .. }
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
@@ -340,6 +353,7 @@ impl LoweringRefusal<'_>
             | Self::UninterfacedMember { .. }
             | Self::UnlabelledRequirement { .. }
             | Self::UnfixedParameter { .. }
+            | Self::ImplicitTelescope { .. }
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
@@ -388,9 +402,6 @@ impl LoweringRefusal<'_>
             Self::GradedBridge { .. } => FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
             Self::UnreadAscription { .. } => FailureClass::Unimplemented(TrackingIssue::ASCRIPTION),
             Self::UnreadCells { .. } => FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
-            Self::ImplicitTelescope { .. } => {
-                FailureClass::Unimplemented(TrackingIssue::IMPLICIT_TELESCOPE)
-            },
             Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -1196,7 +1207,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unimplemented(TrackingIssue::IMPLICIT_TELESCOPE),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
