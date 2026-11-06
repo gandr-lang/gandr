@@ -1,9 +1,12 @@
-// A host escape `$( … )` hands a command a string; an integer there is no
-// argument. The lowering admits no shell block yet, so that refusal
-// stands in front of this one.
-//
-// - see: #1057 — `escaped`
+//! `host-escape-non-string` puts an integer in a host escape.
+//!
+//! A host escape passes a string to a command.
+//! The lowering refuses shell blocks before it reaches this form.
+//!
+//! The source gives `printf` the integer `1` in a host escape.
+//!
+//! - see: #1057 — `escaped`
 
-/// An integer in a host escape.
+/// `escaped` gives a host escape an integer.
 @[ refuses("OutOfFragment.shell_block") ]
 def escaped() -> -F Unit { #!{ printf '%s' $(1); } }

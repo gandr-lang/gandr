@@ -1,9 +1,12 @@
-// A shell block's run is a value: what the host printed is a string the
-// block after it computes on. The lowering admits no shell block yet.
-//
-// - see: #1057 — `searched`
+//! `scripts-compute` reads host output as a string.
+//!
+//! The lowering refuses shell blocks.
+//!
+//! A later block computes on the output of an earlier block.
+//!
+//! - see: #1057 — `searched`
 
-/// A banner printed on the host, then searched for a word.
+/// `searched` prints a host banner and searches its output for `gandr`.
 @[ refuses("OutOfFragment.shell_block") ]
 def searched() -> -F Bool =
   let banner = #!{ printf 'hello from gandr\n'; };

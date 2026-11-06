@@ -1090,11 +1090,6 @@ pathological/circuit/circuit-two-redex.gandr:Nat.Nat:766735245ec8870b uncommente
 pathological/circuit/circuit-two-redex.gandr:Nat.add:05c0e3cef5dc0d7e uncommented
 pathological/circuit/circuit-two-redex.gandr:Nat.cong2:d52b0079a68fe011 uncommented
 pathological/circuit/circuit-two-redex.gandr:Nat:ff7870ee0ff1a07a uncommented
-pathological/codata/lazy-record-projection.gandr:<file> uncommented
-pathological/codata/lazy-record-projection.gandr:missing_label:b7c4b173bbc125cb uncommented
-pathological/codata/lazy-record-projection.gandr:not_a_record:187c5f93912dbe7a uncommented
-pathological/codata/lazy-record-projection.gandr:swapped:95f45c3410a60551 uncommented
-pathological/codata/lazy-record-projection.gandr:wrong_side:a76834d67d4ef240 uncommented
 pathological/codata/streams.gandr:Point.depth:0311d3e9e9112f64 uncommented
 pathological/codata/streams.gandr:Point.x:55b0837edfa96728 uncommented
 pathological/codata/streams.gandr:Spot.depth:0311d3e9e9112f64 uncommented

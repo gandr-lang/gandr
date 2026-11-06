@@ -1,10 +1,13 @@
-// A shell block runs its commands on the host, and a host escape `$( … )`
-// hands a gandr string to a command as one argument, its spaces kept. The
-// lowering admits no shell block yet.
-//
-// - see: #1057 — `greeted`
+//! `blocks` gives a shell block with one host command.
+//!
+//! The lowering refuses a shell block.
+//!
+//! A host escape passes one gandr string to a host command.
+//! Spaces stay in its argument.
+//!
+//! - see: #1057 — `greeted`
 
-/// `printf` handed one argument with spaces through a host escape.
+/// `greeted` gives `printf` one host-escape argument with spaces.
 @[ refuses("OutOfFragment.shell_block") ]
 def greeted() -> -F Unit =
   #!{

@@ -624,34 +624,41 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The reading of a type member's definition `defined` under `frame`, at
-    /// the sort its own former decides: a computation type for a returner, a
-    /// lazy product or a lazy record, read through parentheses and down an
-    /// arrow's codomain, and a value type for any other former; a computation
+    /// The reading of a type member's definition `defined` under `frame`.
+    /// Its former decides the sort. A returner, a lazy product, a lazy record,
+    /// a name of a computation member or an application of a computation family
+    /// reads as a computation type. The reader follows parentheses and arrow
+    /// codomains. Any other former reads as a value type. A computation
     /// definition is recorded among the lowerer's computation members.
     ///
     /// # Specification
     /// - requires: `defined` is a type member's definition.
     /// - ensures: [`Reading::CompType`] under `frame` exactly when the
-    ///   definition's former, through parentheses and arrows' codomains, is a
-    ///   returner, a lazy product or a lazy record, the definition then
-    ///   recorded as a computation member; [`Reading::ValueType`] under `frame`
-    ///   otherwise.
-    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
-    ///   allowance.
+    ///   definition's former, through parentheses and arrow codomains, is a
+    ///   returner, a lazy product, a lazy record, a name of a computation
+    ///   member or an application of a computation family. The reader then
+    ///   records the definition as a computation member. [`Reading::ValueType`]
+    ///   under `frame` applies otherwise.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when a form or member
+    ///   lookup outruns the allowance.
+    /// - fails: [`LoweringRefusal::ImportShadows`] when a member name reaches
+    ///   two unqualified imports.
     /// - panics: none.
     ///
     /// # Errors
-    /// The allowance's refusal.
+    /// The lookup's refusal.
     ///
     /// # Termination
-    /// Every turn reads one form, spending the allowance, and steps to an
-    /// arrow's codomain, strictly deeper in a finite tree.
+    /// Each turn reads one form. An arrow turns to its codomain. Each codomain
+    /// is strictly deeper in a finite tree. A named member lookup visits each
+    /// enclosing container once. Each visit spends one allowance step.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a returner, a family into returners and a value
+    /// - hypothesis: L3 — a returner, a family into returners, a name of a
+    ///   computation member, an application of a computation family and a value
     ///   member are each read at their own sort.
     /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
+    /// - witness: `tests::modules::a_type_member_names_a_computation_member_or_application_3089`
     #[spec(ensures: |ret| match ret {
         Ok(Reading::CompType(read)) => read == frame && self.computation_members.contains(&defined),
         Ok(Reading::ValueType(read)) => read == frame,
@@ -676,6 +683,44 @@ impl<'source> Lowerer<'_, 'source>
             ) {
                 let _fresh = self.computation_members.insert(defined);
                 return Ok(Reading::CompType(frame));
+            }
+            if matches!(form.former, Former::TypeHead | Former::TypeApplication)
+                && let (Some(at), Some(head)) = (
+                    self.tree
+                        .node(form.node)
+                        .map(|tree_node| Placed::of(form.node, tree_node)),
+                    form.keyword,
+                )
+                && let Some((form_name, _)) = self.form_at(at)?
+            {
+                let head_name = self.name_at(head);
+                if let Maybe::Present(member) = self.stated_named(
+                    Site {
+                        at,
+                        name: form_name,
+                        reading: Reading::ValueType(frame),
+                    },
+                    head_name,
+                )? {
+                    let computation = match member.meaning {
+                        TypeMeaning::Manifest(target)
+                        | TypeMeaning::Instantiated {
+                            defined: target, ..
+                        } => self.computation_members.contains(&target.node),
+                        TypeMeaning::Family(family) => self
+                            .collected
+                            .families
+                            .get(usize::from(family))
+                            .is_some_and(|member| {
+                                self.computation_members.contains(&member.defined.node)
+                            }),
+                        TypeMeaning::Sealed => false,
+                    };
+                    if computation {
+                        let _fresh = self.computation_members.insert(defined);
+                        return Ok(Reading::CompType(frame));
+                    }
+                }
             }
             let (true, Some(&codomain)) = (
                 matches!(form.former, Former::ArrowType),

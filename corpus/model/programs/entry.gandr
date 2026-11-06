@@ -1,8 +1,10 @@
-//! A program: a source declaring a top-level `main` that returns the exit code
-//! and reads the arguments `gandr run` passes after the path, as a C or a Rust
-//! program's `main` does [ISO-2018-programming_languages_c], § 5.1.2.2, and
-//! [Rust-reference], § Crates and source files, "Main functions". `gandr run
-//! entry.gandr a b c` exits 3.
+//! `entry` defines a program entry point and its command arguments.
+//!
+//! A program's top-level `main` returns its exit code.
+//! The entry point follows C and Rust `main` functions.
+//!
+//! `gandr run` passes arguments after the source path to `main`.
+//! `gandr run entry.gandr a b c` exits 3.
 //!
 //! - cites: [ISO-2018-programming_languages_c]
 //! - cites: [Rust-reference]
@@ -13,11 +15,11 @@
 // The native finite lists.
 import std.list (List);
 
-/// The number of strings in a list.
+/// The function counts strings in a list.
 pub def rec count(xs : List(String)) -> Integer =
   match xs where
     | #[] => 0
     | #[x, ..rest] => { let n = count[<] rest; n + 1 }
 
-/// The entry: its exit code is the number of its arguments.
+/// `main` returns its string argument count as its exit code.
 def main(args : List(String)) -> Integer { count args }

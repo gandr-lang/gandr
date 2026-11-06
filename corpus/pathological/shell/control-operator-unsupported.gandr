@@ -1,9 +1,12 @@
-// A shell block runs one command per statement, with no control operator
-// between commands. The lowering admits no shell block yet, so that
-// refusal stands in front of this one.
-//
-// - see: #1057 — `both`
+//! `control-operator-unsupported` uses two shell commands with `&&`.
+//!
+//! A shell block runs one command per statement.
+//! The lowering refuses shell blocks before it reaches this form.
+//!
+//! The source puts `true && false` in one statement.
+//!
+//! - see: #1057 — `both`
 
-/// `&&` between two commands.
+/// `both` uses `&&` between two commands.
 @[ refuses("OutOfFragment.shell_block") ]
 def both() -> -F Unit { #!{ true && false; } }

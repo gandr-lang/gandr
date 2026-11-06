@@ -1011,7 +1011,8 @@ pub enum RefusalName
     /// A constructor of a family with parameters, bound by a `let` with no
     /// type, whose fields fix no parameter.
     UnfixedParameter,
-    /// A declaration binding parameters in an implicit telescope `@[…]`.
+    /// A declaration whose implicit telescope `[…]` is out of shape, or binds
+    /// a declaration that is no function.
     ImplicitTelescope,
     /// A function's merged telescope with two parameters each mentioning the
     /// other.

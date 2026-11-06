@@ -1,16 +1,16 @@
-// A handler over a theory with laws is checked as a model of it: each law,
-// read through the handler's clauses, converts on both sides. A handler that
-// passes the state along is a model of every law of global state; a constant
-// one, answering every read alike and forgetting every store, is a model
-// only of the laws that repeat a read or a store.
+// This source tests handlers against state laws.
+//
+// State passing satisfies global-state laws. Constant handlers satisfy only
+// repeated reads or stores.
+//
+// The checker compares each law through the handler clauses.
+//
+// - see: `../../pathological/effects/state-laws.gandr` — unlawful handlers
 
 // The theories `StatePutLaws`, `StateGetGet` and `StatePutPut`.
 import "./state.gandr";
 
-/// The state passed along: the answer is a function of the state, a read
-/// applies what runs after it at the state, and a store applies it at the
-/// stored value. Both sides of put-get store and continue at the stored
-/// value, and both sides of put-put continue at the second.
+/// `counter` passes state through reads and stores.
 def counter() -> (Integer -> Integer) =
   handle st : StatePutLaws with sort S = Integer {
     st.put 1;
@@ -24,15 +24,13 @@ def counter() -> (Integer -> Integer) =
     | oper put(s, k) => pure fun (t : Integer) { let g = k *{}; g s }
   }
 
-/// Whatever the state starts at, the second read sees the first's successor.
+/// `counted` runs `counter` from zero.
 @[ runs("2") ]
 def counted() -> Integer =
   let f = counter ()
   f 0
 
-/// Reading twice is reading once: every read answers four, so both sides of
-/// get-get continue at four twice. The subject normalises by get-get before
-/// it runs, so the handler answers one read and `b` is bound to `a`.
+/// `readTwice` handles two reads as one read.
 @[ runs("8") ]
 def readTwice() -> Integer =
   handle st : StateGetGet with sort S = Integer {
@@ -44,8 +42,7 @@ def readTwice() -> Integer =
     | oper get(k) => k 4
   }
 
-/// Storing twice keeps the second value: every store is forgotten, so both
-/// sides of put-put continue once.
+/// `storeTwice` keeps the second stored value.
 @[ runs("3") ]
 def storeTwice() -> Integer =
   handle st : StatePutPut with sort S = Integer {

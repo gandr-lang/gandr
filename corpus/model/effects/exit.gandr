@@ -1,17 +1,18 @@
-// Deep handlers of one operation, replayed by the kernel: the bridge reads a
-// handled body as a program of its effect's free model, a `Return` of the
-// body's value or the operation with its payload and the continuation
-// awaiting its reply, and the handler as the fold of that program
-// (`tree-exit.gandr` writes the translation by hand). The kernel types the
-// program and the fold, so the claim that the body performs only the handled
-// operation is its own.
+// This source tests deep handlers for exit and console effects.
+//
+// The bridge represents a handled body as a free-model tree. The handler
+// folds that tree.
+//
+// The kernel checks the tree and its fold.
+//
+// - see: `tree-exit.gandr` — handler folds
 
 // The console's host interface.
 import std.io;
 // Early exit's host interface.
 import std.process;
 
-/// The clause resumes the body, whose value passes through the `pure` clause.
+/// `resumed` resumes the exit continuation.
 @[ runs("101") ]
 def resumed() -> Integer =
   handle c : std.process.Exit.Eff {
@@ -22,7 +23,7 @@ def resumed() -> Integer =
     | oper exit(code, k) => k *{}
   }
 
-/// The clause answers for the handler, and the rest of the body never runs.
+/// `answered` returns nine.
 @[ runs("9") ]
 def answered() -> Integer =
   handle c : std.process.Exit.Eff {
@@ -33,7 +34,7 @@ def answered() -> Integer =
     | oper exit(code, k) => pure 9
   }
 
-/// The clause answers the operation's payload.
+/// `coded` returns the exit payload.
 @[ runs("5") ]
 def coded() -> Integer =
   handle c : std.process.Exit.Eff {
@@ -44,8 +45,7 @@ def coded() -> Integer =
     | oper exit(code, k) => pure code
   }
 
-/// The handler is deep: the second exit is handled in the body the first
-/// resumed, and each clause adds its code to what the rest answers.
+/// `summed` adds codes from nested exits.
 @[ runs("108") ]
 def summed() -> Integer =
   handle c : std.process.Exit.Eff {
@@ -60,8 +60,7 @@ def summed() -> Integer =
     }
   }
 
-/// A second effect crosses through its own free model: each line printed is
-/// counted, and the body's value is dropped.
+/// `printed` counts console prints.
 @[ runs("2") ]
 def printed() -> Integer =
   handle out : std.io.Console.Eff {

@@ -104,7 +104,7 @@
 //! descending order visits every child before its parent. Lowering classifies
 //! on the way down and mints on the way up, each as a plain loop over one
 //! source's positions: no descent, no explicit frame stack, and no depth a
-//! real module can overflow.
+//! real module can overflow. Both sweeps spend one [`LoweringBudget`].
 //!
 //! # A unit is lowered a source at a time
 //!

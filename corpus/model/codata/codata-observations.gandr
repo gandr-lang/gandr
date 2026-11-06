@@ -1,25 +1,27 @@
-// A codata value is defined by what each observation answers, and observed
-// by projecting it. This source is written in an earlier surface: its kind is
-// `Type` and its copatterns stand without `&{ … }`. `streams.gandr` writes
-// both as the language now spells them.
+//! `codata-observations` is an earlier source with rejected observations.
+//!
+//! A declaration of codata needs a universe for computations.
+//! A copattern needs a copattern block.
+//!
+//! The source defines a rejected point and projects its rejected origin.
+//!
+//! - see: streams.gandr — current surface spelling
 
-/// A point observed by its coordinates. A codata declaration's kind is a
-/// computation universe, and `Type` is none.
+/// Point is refused because its kind is a value universe.
 @[ refuses("CodataKindNotUniverse") ]
 codata Point : Type where
   x : Integer;
   y : Integer;
 
-/// The point at three and four, its observations written bare as the earlier
-/// surface wrote them: a copattern clause stands inside `&{ … }`, so a bare
-/// one is out of place.
+/// `origin` supplies three and four with bare copatterns.
+/// The checker refuses it without a copattern block.
 @[ refuses("MalformedForm") ]
 def rec origin() -> Point {
   .x => 3,
   .y => 4
 }
 
-/// The coordinates summed; `origin` is refused above, so it names a
-/// declaration whose type is not known.
+/// `coordinates` sums the rejected origin coordinates.
+/// It is refused because origin has no known type.
 @[ refuses("UnknownConstant") ]
 def coordinates() -> Integer { origin.x + origin.y }
