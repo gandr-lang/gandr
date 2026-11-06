@@ -1,0 +1,28 @@
+//! This source models bare constructor names among the imports of a source.
+//!
+//! The imported families share `Red`. A name that only one imported family
+//! declares stays unambiguous, so the source writes it bare.
+//!
+//! `Amber` resolves to the lamp and `Clear` to the signal, as a value and as a
+//! pattern. `Red` goes through its family.
+//!
+//! - see: #2713
+
+// The paints and the lamps, which share `Red`.
+import "./constructor-shared-name.gandr";
+// The signals, whose `Red` the lamps share too.
+import "./signal.gandr";
+
+/// The amber lamp, which only `Light` declares.
+def caution : Light = Amber;
+
+/// Whether a lamp asks a driver to slow: `Amber` bare, and `Red` through its
+/// family.
+def slows(l : Light) -> Integer =
+  match l where
+    | Amber => 1
+    | Light.Red => 0
+
+/// A clear signal, which only `Signal` declares, passes.
+@[ runs("1") ]
+def through() -> Integer { passes Clear }

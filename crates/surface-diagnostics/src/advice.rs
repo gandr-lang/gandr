@@ -386,6 +386,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::AmbiguousMethod { .. } => {
             String::from("call the intended method through its module")
         },
+        LoweringRefusal::AmbiguousConstructor { .. } => {
+            String::from("write the constructor through the family you mean, `Family.Name`")
+        },
         LoweringRefusal::DescentOnSeveralParameters { .. } => {
             String::from("mark descent on one parameter in each recursive call")
         },
@@ -1334,7 +1337,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 239] = [
+    const WORDED: [&str; 240] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1434,6 +1437,7 @@ mod tests
         "ViewReadOnly",
         "ViewSpent",
         "AmbiguousMethod",
+        "AmbiguousConstructor",
         "AtomTransport",
         "BareFeedback",
         "Boundary",

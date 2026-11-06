@@ -1,0 +1,34 @@
+//! This source refuses a bare constructor name that two families share.
+//!
+//! `Color` and `Light` each declare `Red`. The bare name selects no family,
+//! as a value or as a pattern.
+//!
+//! Each bare use is refused `AmbiguousConstructor`, and the refusal names both
+//! families.
+//!
+//! - see: #2713 — `lamp`, `pause`
+
+/// A colour.
+data Color : Type where
+  /// The red colour.
+  | Red : Color
+  /// The green colour.
+  | Green : Color
+
+/// A traffic light's lamp.
+data Light : Type where
+  /// The red lamp.
+  | Red : Light
+  /// The amber lamp.
+  | Amber : Light
+
+/// The red lamp, written bare.
+@[ refuses("AmbiguousConstructor") ]
+def lamp : Light = Red;
+
+/// The pause that a lamp asks for. The match writes the red lamp bare.
+@[ refuses("AmbiguousConstructor") ]
+def pause(l : Light) -> Integer =
+  match l where
+    | Red => 2
+    | Amber => 1

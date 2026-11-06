@@ -1840,6 +1840,60 @@ fn two_imports_binding_one_name_refuse_its_use()
     );
 }
 
+/// Two sources each declare a family with a constructor `Red`, and a third
+/// imports both (#2713): a bare `Red` there is refused, naming both imports,
+/// and `Signal.Red` and `Color.Red` each name their own family's constructor.
+#[test]
+fn a_constructor_two_imports_bind_is_refused_at_its_use_2713()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from("pub data Color : Type where { | Red : Color | Green : Color }"),
+            &[],
+        ),
+        (
+            SourceText::from("pub data Signal : Type where { | Red : Signal | Clear : Signal }"),
+            &[],
+        ),
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-constructor-two-imports-bind-is-refused-at-its-use-2713.gandr"
+            )),
+            &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+                ImportTarget::Source(SourceIndex::from(1_usize)),
+            ],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let outcome = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .map(gandr_surface_lowering::LoweredDeclaration::outcome)
+    };
+
+    for name in ["stop", "paint"] {
+        assert!(
+            !matches!(outcome(name), Some(DeclarationOutcome::Refused(_))),
+            "`{name}` names its constructor through its family: {:?}",
+            outcome(name)
+        );
+    }
+    assert!(
+        matches!(
+            outcome("either"),
+            Some(DeclarationOutcome::Refused(LoweringRefusal::ImportShadows { name, import, other, .. }))
+                if name == SurfaceName::from("Red") && import != other
+        ),
+        "a bare `Red` both imports bind is refused, naming both: {:?}",
+        outcome("either")
+    );
+}
+
 /// #1834: a type member written at a source's top level names its type in a
 /// source importing it unqualified, which reaches the import; two imports
 /// writing one name refuse its use, naming it; and an import's own imports

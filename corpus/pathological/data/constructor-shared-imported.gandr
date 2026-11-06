@@ -1,0 +1,20 @@
+//! This source refuses a bare constructor name that two imported families
+//! share.
+//!
+//! The imported source declares `Red` in `Paint` and in `Light`. A bare use in
+//! the importer selects no family.
+//!
+//! The bare use is refused `AmbiguousConstructor`, and the refusal names both
+//! families. A use through its family names that family's constructor.
+//!
+//! - see: #2713 — `lamp`
+
+// The paints and the lamps, which share `Red`.
+import "../../model/data/constructor-shared-name.gandr";
+
+/// The red lamp, written through its family.
+def stop : Light = Light.Red;
+
+/// The red lamp, written bare.
+@[ refuses("AmbiguousConstructor") ]
+def lamp : Light = Red;

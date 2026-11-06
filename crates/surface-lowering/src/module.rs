@@ -252,7 +252,6 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::collections::btree_map::Entry;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -376,6 +375,7 @@ pub use self::layered::listed_entry;
 
 mod world;
 
+pub use self::data::Bare;
 pub use self::data::Constructor;
 pub use self::data::DataForm;
 pub use self::data::DataMember;
@@ -1590,8 +1590,9 @@ pub struct Collected<'source>
     /// theory, in the order they are admitted.
     pub terms: Vec<TermsForm>,
     /// Every constructor a data declaration declares, by the source declaring
-    /// it and its name.
-    pub constructors: BTreeMap<(SourceIndex, SurfaceName<'source>), Constructor>,
+    /// it, its name and its family's slot: two families of one source may each
+    /// declare a constructor of one name.
+    pub constructors: BTreeMap<(SourceIndex, SurfaceName<'source>, SlotIndex), Constructor>,
     /// Every multi-output constructor a data declaration declares, by the
     /// source declaring it and its name: its ports, which are no constructor
     /// of that name.
@@ -2359,9 +2360,9 @@ impl<'source> Collected<'source>
                 .get(&(Container::TopLevel(target), name))
                 .copied()
                 .or_else(|| {
-                    self.constructors
-                        .get(&(target, name))
+                    self.constructors_in(target, name)
                         .map(|found| found.family)
+                        .find(|&family| self.slot_visibility(family) == Visibility::Private)
                 });
             if let Some(slot) = declared
                 && self.slot_visibility(slot) == Visibility::Private
@@ -2410,8 +2411,8 @@ impl<'source> Collected<'source>
             .get(&(top, name))
             .and_then(|&slot| slot_at(slot))
             .or_else(|| {
-                self.constructors
-                    .get(&(target, name))
+                self.constructors_in(target, name)
+                    .next()
                     .map(|found| (self.slot_visibility(found.family), found.named.span))
             })
             .or_else(|| {
@@ -2609,8 +2610,9 @@ impl<'source> Collected<'source>
     /// - witness: `tests::namespace::the_prelude_offers_no_presentation_constructor_2302`
     /// - witness: `tests::namespace::a_source_s_type_shadows_the_prelude_s_constructor_3287`
     #[spec(ensures: |ref ret| match *ret {
-        Ok(Maybe::Present((constructor, import))) => constructor.form != Generators::Presentation
+        Ok(Maybe::Present((Bare::One(constructor), import))) => constructor.form != Generators::Presentation
             || import.start() != import.end(),
+        Ok(Maybe::Present((Bare::Several { first, second, .. }, _))) => first.family < second.family,
         Ok(Maybe::Absent(_)) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
@@ -2618,7 +2620,7 @@ impl<'source> Collected<'source>
         &self,
         source: SourceIndex,
         name: SurfaceName<'source>,
-    ) -> Result<Maybe<(Constructor, ByteSpan), imported::Absent>, Ambiguity>
+    ) -> Result<Maybe<(Bare, ByteSpan), imported::Absent>, Ambiguity>
     {
         let prelude = self.unit.prelude();
         // Whether `source` binds `name` itself or through a written import,
@@ -2636,16 +2638,82 @@ impl<'source> Collected<'source>
             source,
             name,
             |target| {
-                self.constructors
-                    .get(&(target, name))
-                    .copied()
-                    .filter(|found| {
-                        prelude != Some(target)
-                            || (found.form != Generators::Presentation && !shadowed())
-                    })
-                    .filter(|found| self.slot_visibility(found.family) == Visibility::Public)
+                self.bare_constructor(target, name, |found| {
+                    (prelude != Some(target)
+                        || (found.form != Generators::Presentation && !shadowed()))
+                        && self.slot_visibility(found.family) == Visibility::Public
+                })
             },
             |_| None,
+        )
+    }
+
+    /// The constructors `source` declares named `name`, one for each family
+    /// that declares one, in the order of the families' slots.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each entry of [`Self::constructors`] under `source` and
+    ///   `name`, once, ordered by its family's slot.
+    /// - provides: the bare reading of a constructor name and its checks.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a range of the receiver's table,
+    ///   which a clause would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two families that share a name answer both, in the
+    ///   order of their slots.
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    pub fn constructors_in(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> impl Iterator<Item = &Constructor>
+    {
+        self.constructors
+            .range((source, name, SlotIndex(0)) ..= (source, name, SlotIndex(usize::MAX)))
+            .map(|(_, constructor)| constructor)
+    }
+
+    /// What the bare name `name` answers among the constructors `source`
+    /// declares that `keep` keeps.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Bare::One`] when `keep` keeps one constructor of
+    ///   [`Self::constructors_in`]; [`Bare::Several`] with the first two and
+    ///   the count of the rest when it keeps more; none when it keeps none.
+    /// - provides: the bare reading of a constructor name, in the source that
+    ///   names it and in each source it imports.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a filtered range of the receiver's
+    ///   table, which a clause would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name one family declares answers its constructor,
+    ///   and a name two families declare answers both.
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    pub fn bare_constructor<Keep>(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+        keep: Keep,
+    ) -> Option<Bare>
+    where
+        Keep: FnMut(&Constructor) -> bool,
+    {
+        let mut kept = self.constructors_in(source, name).copied().filter(keep);
+        let first = kept.next()?;
+        Some(
+            kept.next()
+                .map_or(Bare::One(first), |second| Bare::Several {
+                    first,
+                    second,
+                    more: crate::CandidateCount::from(kept.count()),
+                }),
         )
     }
 
@@ -6196,27 +6264,27 @@ impl<'source> Collector<'_, 'source>
             theory
         };
         for (tag, (&arity, name)) in theory.arities.iter().zip(THEORY_CONSTRUCTORS).enumerate() {
-            match self
+            let name = SurfaceName::from(name);
+            // A constructor the source declares keeps its name.
+            if self
                 .collected
-                .constructors
-                .entry((source, SurfaceName::from(name)))
+                .constructors_in(source, name)
+                .next()
+                .is_some()
             {
-                Entry::Vacant(free) => {
-                    let _entered = free.insert(Constructor {
+                let _first = self.collected.shadowed.insert((theory.slot, name));
+                continue;
+            }
+            let _fresh =
+                self.collected
+                    .constructors
+                    .insert((source, name, theory.slot), Constructor {
                         family: theory.slot,
                         form: Generators::Presentation,
                         tag,
                         arity,
                         named: theory.named,
                     });
-                },
-                Entry::Occupied(_) => {
-                    let _first = self
-                        .collected
-                        .shadowed
-                        .insert((theory.slot, SurfaceName::from(name)));
-                },
-            }
         }
         let _first = self.collected.theory_sources.insert(source);
 
