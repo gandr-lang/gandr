@@ -107,6 +107,20 @@
 //! completed run that derived nothing says the same, but a divergence is
 //! oriented into a cell and the loop continues past it, so the pair that
 //! diverged would have to be recovered from the derivation.
+//!
+//! # Composite pairs
+//!
+//! [`PairJoining::resume_with`] asks a [`PairScheme`] for the class of each
+//! pair before it joins the pair. A pair whose peak holds a redex strictly
+//! below its seam is composite. When the rewriting terminates, its join
+//! follows from the joins of the other pairs (Kapur, Musser and Narendran). The
+//! joining skips the join of a composite pair and keeps the match as the
+//! pair's witness ([`CompositePair`]). [`CompositePair::replay`] checks each
+//! witness, so the scheme is no trusted decision. A pair with no witness joins.
+//! [`PairJoining::resume`] runs with [`NoScheme`], which classes no pair. The
+//! scheme of a term reading is `CompositeCriterion` in
+//! `gandr-theory-computads`, which walks the peak below the seam with no
+//! allocation for each pair.
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
@@ -116,6 +130,7 @@ use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
+use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::SequentAlphabet;
 use quenchant_shape::shape::Maybe;
 
@@ -134,7 +149,7 @@ use crate::overlap::interior_overlaps_between;
 use crate::overlap::root_overlaps_between;
 use crate::rewrite::CellApp;
 use crate::rewrite::normalize;
-use crate::rewrite::redex_below;
+use crate::rewrite::rewrite_at;
 use crate::tracelet::Tracelet;
 use crate::tracelet::joined;
 
@@ -909,11 +924,9 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 ///
 /// A store whose rewriting terminates and whose critical pairs all join is
 /// confluent, so every strategy reaches one normal form from every term; a
-/// caller that has the termination half asks this for the other. Only the
-/// prime pairs are decided: a pair whose peak a cell rewrites strictly below
-/// the seam is composite, and when the rewriting terminates it joins once
-/// every prime pair does (Kapur, Musser and Narendran), so it is passed over
-/// and carries no certificate.
+/// caller that has the termination half asks this for the other. Each pair is
+/// decided, a composite one too. A caller that skips the join of a composite
+/// pair gives a scheme to [`PairJoining::resume_with`].
 ///
 /// # Specification
 /// - ensures: the pairs are taken in order of their later cell: for each cell
@@ -923,13 +936,12 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 ///   entries of [`interior_overlaps_between`] with the earlier cell on the left
 ///   and then on the right, the diagonal once; every pair a cell makes with the
 ///   cells before it is decided before any pair of a later cell, so a store
-///   growing by cells reaches each pair; a pair whose peak holds a redex
-///   strictly below its seam ([`redex_below`]) is passed over, and each other
-///   pair's two reducts are normalized under `budget`; [`Joinability::Joined`]
-///   carries one replaying certificate per pair decided when every one of them
-///   joins; otherwise the first that does not, as [`Joinability::Undecided`]
-///   when a reduct ran out of budget and as [`Joinability::Diverges`] with both
-///   normal forms, and the steps that reached each, when they differ.
+///   growing by cells reaches each pair; each pair's two reducts are normalized
+///   under `budget`; [`Joinability::Joined`] carries one replaying certificate
+///   per pair decided when every one of them joins; otherwise the first that
+///   does not, as [`Joinability::Undecided`] when a reduct ran out of budget
+///   and as [`Joinability::Diverges`] with both normal forms, and the steps
+///   that reached each, when they differ.
 /// - panics: none.
 /// - intension: a fresh [`PairJoining`] resumed once.
 ///
@@ -940,13 +952,10 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 ///   reduct needing a step under a zero budget is undecided, and a store with
 ///   no overlap joins with no certificate; a rule overlapping a successor below
 ///   an addition diverges at that interior seam and a rule overlapping itself
-///   one position down joins with a certificate stepping at the seam; a peak
-///   that reduces below its seam is passed over while the deeper pair of the
-///   same peak is decided; deciding a mirrored root pair twice, skipping an
-///   interior pair, deciding a composite pair, reporting a starved pair as
-///   divergent or dropping a certificate changes one of them.
+///   one position down joins with a certificate stepping at the seam; deciding
+///   a mirrored root pair twice, skipping an interior pair, reporting a starved
+///   pair as divergent or dropping a certificate changes one of them.
 /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
-/// - witness: `completion::tests::a_pair_whose_peak_reduces_below_its_seam_is_not_decided`
 /// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
 #[spec(ensures: |output| match output {
     Joinability::Joined(ref certificates) => certificates.iter().all(|certificate|
@@ -970,6 +979,188 @@ where
     PairJoining::new().resume(store, budget)
 }
 
+/// The class that a scheme gives a critical pair before a joining decides it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PairClass<A: CellAlphabet = SequentAlphabet>
+{
+    /// A rule matches the pair's peak strictly below its seam, by this step.
+    /// The pair is composite, so the joining skips its join.
+    Composite(CellApp<A>),
+    /// The scheme finds no witness, so the joining joins the pair.
+    Unclassed,
+}
+
+/// Why the witness of a composite pair does not replay.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CompositeRefusal
+{
+    /// The pair is a composition, not a confluence.
+    NotAConfluence,
+    /// The store holds no cell under an identifier that the witness names.
+    UnissuedCell(CellId),
+    /// The pair's left cell does not fire at the peak's root, or its right
+    /// cell does not fire at the seam.
+    NotAPeak,
+    /// The witness's position is not strictly below the seam.
+    NotBelow,
+    /// The witness's cell does not fire at the witness's position.
+    Unmatched,
+}
+
+impl core::fmt::Display for CompositeRefusal
+{
+    /// Names the refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::NotAConfluence => f.write_str("the pair is not a confluence"),
+            Self::UnissuedCell(cell) => {
+                write!(f, "the store holds no cell {}", usize::from(cell))
+            },
+            Self::NotAPeak => f.write_str("the pair's cells do not fire at its peak"),
+            Self::NotBelow => f.write_str("the witness is not strictly below the seam"),
+            Self::Unmatched => f.write_str("the witness's cell does not fire at its position"),
+        }
+    }
+}
+
+impl core::error::Error for CompositeRefusal
+{
+}
+
+/// A critical pair that a joining skips, with the match that makes it
+/// composite.
+///
+/// # Specification
+/// - ensures: the pair, and the step of a cell that matches the pair's peak
+///   strictly below its seam; [`Self::replay`] checks the step.
+/// - executable: none — a datum; [`Self::replay`] carries the predicate.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Self::replay`].
+/// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompositePair<A: CellAlphabet = SequentAlphabet>
+{
+    /// The pair.
+    pub overlap: Overlap<A>,
+    /// The cell that matches the peak strictly below the seam, and where.
+    pub below: CellApp<A>,
+}
+
+impl<A> CompositePair<A>
+where
+    A: CellAlphabet,
+{
+    /// Check the witness against `store`.
+    ///
+    /// # Specification
+    /// - ensures: `Ok` exactly when the pair is a confluence, its left cell
+    ///   fires at the peak's root and its right cell at the seam, the witness's
+    ///   position is strictly below the seam, and the witness's cell fires at
+    ///   that position; otherwise the first check that fails, in that order.
+    /// - panics: none.
+    /// - executable: none — the body is the predicate.
+    ///
+    /// # Errors
+    /// The first check that fails, as a [`CompositeRefusal`] names it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the toy alphabet, the witness of a composite
+    ///   pair replays. A witness moved to the seam, a witness whose cell does
+    ///   not match at its position, a witness that names no cell of the store,
+    ///   and a pair whose left cell is another are each refused by name.
+    /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
+    #[inline]
+    pub fn replay(
+        &self,
+        store: &CellStore<A>,
+    ) -> Result<(), CompositeRefusal>
+    {
+        let &Self {
+            ref overlap,
+            ref below,
+        } = self;
+        if overlap.kind != OverlapKind::Confluence {
+            return Err(CompositeRefusal::NotAConfluence);
+        }
+        let fires = |cell: CellId, at: &A::Pos| match store.get(cell) {
+            Maybe::Present(found) => Ok(matches!(
+                rewrite_at(found, &overlap.peak, at),
+                Maybe::Present(_)
+            )),
+            Maybe::Absent(_) => Err(CompositeRefusal::UnissuedCell(cell)),
+        };
+        if !fires(overlap.left, &A::root_position())? || !fires(overlap.right, &overlap.seam)? {
+            return Err(CompositeRefusal::NotAPeak);
+        }
+        if A::position_order(&overlap.seam, &below.at) != PositionOrder::Encloses {
+            return Err(CompositeRefusal::NotBelow);
+        }
+        if !fires(below.cell, &below.at)? {
+            return Err(CompositeRefusal::Unmatched);
+        }
+        Ok(())
+    }
+}
+
+/// How a joining classes each critical pair before it decides it.
+pub trait PairScheme<A: CellAlphabet>
+{
+    /// The class of `overlap`, a confluence critical pair of `store`.
+    ///
+    /// # Specification
+    /// - ensures: [`PairClass::Composite`] only with a step whose cell matches
+    ///   the peak of `overlap` strictly below its seam, so that the pair's
+    ///   [`CompositePair::replay`] holds; [`PairClass::Unclassed`] when the
+    ///   scheme finds no such step.
+    /// - panics: none.
+    /// - executable: none — a type-level block: a required method has no body
+    ///   of its own, and each implementation states its own checks.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — [`NoScheme`] classes no pair, and a scheme that finds
+    ///   the first step below the seam classes the composite pair of a toy
+    ///   store and not its prime pair. The criterion on terms states its own
+    ///   witnesses.
+    /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
+    fn class(
+        &mut self,
+        store: &CellStore<A>,
+        overlap: &Overlap<A>,
+    ) -> PairClass<A>;
+}
+
+/// The scheme that classes no pair, so a joining joins each pair.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NoScheme;
+
+impl<A> PairScheme<A> for NoScheme
+where
+    A: CellAlphabet,
+{
+    /// [`PairClass::Unclassed`] for every pair.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn class(
+        &mut self,
+        _store: &CellStore<A>,
+        _overlap: &Overlap<A>,
+    ) -> PairClass<A>
+    {
+        PairClass::Unclassed
+    }
+}
+
 /// The confluence critical pairs of a store that grows by appended cells,
 /// decided in [`join_critical_pairs`]'s order and resumed at the pair the last
 /// decision stopped at.
@@ -978,20 +1169,22 @@ where
 /// steps are steps of every larger store. So completion, which derives a cell
 /// from the pair that parted and appends it, resumes at that pair rather than
 /// deciding every earlier pair again: one round decides the pair that parted
-/// and the pairs after it, the new cell's among them. A composite pair, whose
-/// peak reduces below its seam, stays composite as the store grows, so it is
-/// passed over in every round.
+/// and the pairs after it, the new cell's among them. A composite pair stays
+/// composite as the store grows, because its witness's cell stays in the
+/// store, so the joining skips it in every round and keeps its witness once.
 ///
 /// # Specification
-/// - requires: between two [`Self::resume`]s on one joining, the store keeps
-///   its cells and their order and only gains cells after them.
+/// - requires: between two [`Self::resume_with`]s on one joining, the store
+///   keeps its cells and their order and only gains cells after them.
 /// - ensures: the certificates of the pairs decided joined since the joining
 ///   began or last answered [`Joinability::Joined`], in order; the position of
-///   the next pair to decide; the count of pairs decided.
-/// - executable: none — a datum; [`Self::resume`] carries the predicate.
+///   the next pair to decide; the count of pairs decided; and the composite
+///   pairs skipped since the joining began or last gave them, each with its
+///   witness.
+/// - executable: none — a datum; [`Self::resume_with`] carries the predicate.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Self::resume`].
+/// - hypothesis: L3 — as [`Self::resume_with`].
 /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PairJoining<A: CellAlphabet = SequentAlphabet>
@@ -1006,6 +1199,8 @@ pub struct PairJoining<A: CellAlphabet = SequentAlphabet>
     within: usize,
     /// How many pairs have been decided.
     decided: usize,
+    /// The composite pairs skipped, each with its witness, in order.
+    composites: Vec<CompositePair<A>>,
 }
 
 impl<A> Default for PairJoining<A>
@@ -1025,6 +1220,7 @@ where
             earlier: 0,
             within: 0,
             decided: 0,
+            composites: Vec::new(),
         }
     }
 }
@@ -1056,25 +1252,60 @@ where
         PairDecisions::from(self.decided)
     }
 
+    /// The composite pairs that the joining skipped since it began or last
+    /// gave them, in order, each with its witness.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn take_composites(&mut self) -> Vec<CompositePair<A>>
+    {
+        core::mem::take(&mut self.composites)
+    }
+
     /// Decide the pairs of `store` from the pair the last decision stopped at,
-    /// in [`join_critical_pairs`]'s order.
+    /// in [`join_critical_pairs`]'s order, each joined.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::resume_with`] under [`NoScheme`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::resume_with`].
+    /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
+    #[inline]
+    pub fn resume(
+        &mut self,
+        store: &CellStore<A>,
+        budget: NormalizationBudget,
+    ) -> Joinability<A>
+    {
+        self.resume_with(store, budget, &mut NoScheme)
+    }
+
+    /// Decide the pairs of `store` from the pair the last decision stopped at,
+    /// in [`join_critical_pairs`]'s order, each classed by `scheme` first.
     ///
     /// # Specification
     /// - requires: as [`PairJoining`]: `store` is the store of the last resume,
     ///   grown only by cells appended after its others.
     /// - ensures: [`Joinability::Joined`] with the certificate of every pair
     ///   decided joined since the joining began or last answered `Joined`, when
-    ///   every pair from the stopping one on joins or is passed over as
-    ///   composite; otherwise the first that does not, as `join_critical_pairs`
-    ///   reports it, the joining stopped at it so the next resume decides it
-    ///   first. Each pair reached, composite or not, adds one to
+    ///   every pair from the stopping one on joins or is skipped; otherwise the
+    ///   first that does not, as `join_critical_pairs` reports it, the joining
+    ///   stopped at it so the next resume decides it first. A pair that
+    ///   `scheme` classes [`PairClass::Composite`] is skipped, and its witness
+    ///   is kept for [`Self::take_composites`]. A pair that it classes
+    ///   [`PairClass::Unclassed`] is joined. Each pair reached adds one to
     ///   [`Self::decided`].
     /// - panics: none.
     /// - intension: the store's cells read once into positions; the overlaps of
     ///   each cell pair enumerated once per resume that reaches it, the pairs
-    ///   already joined skipped, and the root entries read without the
-    ///   composition entries no pair is made of; a composite pair costs the
-    ///   search below its seam, never a normalization.
+    ///   already decided skipped, and the root entries read without the
+    ///   composition entries no pair is made of; a composite pair costs its
+    ///   class and never a normalization, and its overlap moves into its
+    ///   witness.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — over the toy alphabet, a joining stopped at a parting
@@ -1082,13 +1313,16 @@ where
     ///   that pair and the ones after it, fewer than a fresh joining of the
     ///   grown store decides to the same verdict, and reaches the verdict the
     ///   fresh joining does; deciding every pair again, or skipping the pair
-    ///   that parted, changes a count or the verdict.
+    ///   that parted, changes a count or the verdict. A composite pair carries
+    ///   no certificate and its witness replays, and with [`NoScheme`] the same
+    ///   pair is joined.
     /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
     /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
-    /// - witness: `completion::tests::a_pair_whose_peak_reduces_below_its_seam_is_not_decided`
+    /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
     #[spec(
-        captures: before = self.decided,
-        ensures: |output| self.decided >= before && match output {
+        captures: before = (self.decided, self.composites.len()),
+        ensures: |output| self.decided >= before.0 && self.composites.len() >= before.1
+            && self.composites.iter().skip(before.1).all(|pair| pair.replay(store).is_ok()) && match output {
             Joinability::Joined(ref certificates) => certificates.iter().all(|certificate|
                 certificate.overlap.kind == OverlapKind::Confluence && bool::from(certificate.replay(store))),
             Joinability::Diverges { ref overlap, ref left, ref left_steps, ref right, ref right_steps } => overlap.kind == OverlapKind::Confluence && left != right
@@ -1098,11 +1332,14 @@ where
         },
     )]
     #[inline]
-    pub fn resume(
+    pub fn resume_with<S>(
         &mut self,
         store: &CellStore<A>,
         budget: NormalizationBudget,
+        scheme: &mut S,
     ) -> Joinability<A>
+    where
+        S: PairScheme<A>,
     {
         let cells: Vec<(CellId, &Cell<A>)> = store.iter().collect();
         while let Some(&later) = cells.get(self.later) {
@@ -1127,7 +1364,8 @@ where
                     .skip(self.within);
                 for overlap in pairs {
                     self.decided = self.decided.saturating_add(1);
-                    if let Maybe::Present(_) = redex_below(store, &overlap.peak, &overlap.seam) {
+                    if let PairClass::Composite(below) = scheme.class(store, &overlap) {
+                        self.composites.push(CompositePair { overlap, below });
                         self.within = self.within.saturating_add(1);
                         continue;
                     }
@@ -1560,8 +1798,39 @@ mod tests
     }
 
     #[test]
-    fn a_pair_whose_peak_reduces_below_its_seam_is_not_decided()
+    fn a_composite_pair_is_skipped_and_its_witness_is_checked()
     {
+        /// The criterion as its definition states it: the first position
+        /// strictly below the seam, in the listing's order, at which a cell
+        /// fires, and the first such cell.
+        struct Below;
+
+        impl PairScheme<ToyAlphabet> for Below
+        {
+            /// The first step below the seam.
+            ///
+            /// # Specification
+            /// trivial.
+            fn class(
+                &mut self,
+                store: &CellStore<ToyAlphabet>,
+                overlap: &Overlap<ToyAlphabet>,
+            ) -> PairClass<ToyAlphabet>
+            {
+                for at in ToyAlphabet::command_positions(&overlap.peak) {
+                    if ToyAlphabet::position_order(&overlap.seam, &at) != PositionOrder::Encloses {
+                        continue;
+                    }
+                    for (cell, rule) in store.iter() {
+                        if let Maybe::Present(_) = rewrite_at(rule, &overlap.peak, &at) {
+                            return PairClass::Composite(CellApp { cell, at });
+                        }
+                    }
+                }
+                PairClass::Unclassed
+            }
+        }
+
         let budget = NormalizationBudget::from(8_usize);
         let mut store = CellStore::<ToyAlphabet>::new();
         // The second rule meets the first's addition at the addition's root,
@@ -1570,48 +1839,79 @@ mod tests
         // rule meets the inner `add(Zero, Zero)` itself, with nothing below
         // it to rewrite: that pair is prime, and the third rule joins both.
         let peak = Toy::succ(Toy::add(Toy::add(Toy::zero(), Toy::zero()), Toy::zero()));
-        let first = toy_cell(peak.clone(), Toy::zero());
-        let second = toy_cell(Toy::add(Toy::var("x"), Toy::zero()), Toy::var("x"));
-        let first_id = store.insert(first.clone());
-        let second_id = store.insert(second.clone());
-        let _third = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let first = store.insert(toy_cell(peak, Toy::zero()));
+        let second = store.insert(toy_cell(
+            Toy::add(Toy::var("x"), Toy::zero()),
+            Toy::var("x"),
+        ));
+        let third = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
         let at = |steps: &[usize]| {
             let steps: Vec<gandr_theory_cell_complexes::PositionStep> =
                 steps.iter().copied().map(Into::into).collect();
             ToyAlphabet::position_at_path(&steps)
         };
         let (addition, inner) = (at(&[0]), at(&[0, 0]));
-        let seams: Vec<ToyPos> =
-            interior_overlaps_between((first_id, &first), (second_id, &second))
-                .into_iter()
-                .filter(|overlap| overlap.peak == peak)
-                .map(|overlap| overlap.seam)
-                .collect();
-        assert!(
-            seams.len() == 2 && seams.contains(&addition) && seams.contains(&inner),
-            "the first rule's peak is overlapped at its addition and at the addition inside it: {seams:?}"
-        );
-        assert!(matches!(
-            redex_below(&store, &peak, &addition),
-            Maybe::Present(ref step) if step.at == inner
-        ));
-        assert_eq!(
-            redex_below(&store, &peak, &inner),
-            Maybe::Absent(crate::rewrite::below_search::Absent::NormalBelow)
-        );
-        let mut joining = PairJoining::new();
-        let Joinability::Joined(certificates) = joining.resume(&store, budget)
+        let seams = |certificates: &[Tracelet<ToyAlphabet>]| -> Vec<ToyPos> {
+            certificates
+                .iter()
+                .map(|certificate| certificate.overlap.seam.clone())
+                .collect()
+        };
+        let mut plain = PairJoining::new();
+        let Joinability::Joined(every) = plain.resume(&store, budget)
         else {
             panic!("both pairs reach `Zero`");
         };
-        let decided: Vec<ToyPos> = certificates
-            .iter()
-            .map(|certificate| certificate.overlap.seam.clone())
-            .collect();
+        let every = seams(&every);
+        assert!(
+            every.len() == 2 && every.contains(&addition) && every.contains(&inner),
+            "with no scheme, the pair at the addition and the pair inside it both join: {every:?}"
+        );
+        let mut joining = PairJoining::new();
+        let Joinability::Joined(certificates) = joining.resume_with(&store, budget, &mut Below)
+        else {
+            panic!("the prime pair reaches `Zero`");
+        };
         assert_eq!(
-            (decided, usize::from(joining.decided())),
-            (alloc::vec![inner], 2),
-            "both pairs are counted and only the prime one is normalized"
+            (seams(&certificates), usize::from(joining.decided())),
+            (alloc::vec![inner.clone()], 2),
+            "both pairs are counted and only the prime one is joined"
+        );
+        let composites = joining.take_composites();
+        let [ref composite] = *composites
+        else {
+            panic!("one composite pair: {composites:?}");
+        };
+        assert_eq!(
+            (&composite.overlap.seam, &composite.below),
+            (&addition, &CellApp {
+                cell: second,
+                at: inner
+            }),
+            "the pair at the addition is composite by the second rule one position down"
+        );
+        assert_eq!(composite.replay(&store), Ok(()), "the witness replays");
+        let refused = |change: &dyn Fn(&mut CompositePair<ToyAlphabet>)| {
+            let mut forged = composite.clone();
+            change(&mut forged);
+            forged.replay(&store)
+        };
+        assert_eq!(
+            [
+                refused(&|forged| forged.below.at = addition.clone()),
+                refused(&|forged| forged.below.cell = third),
+                refused(&|forged| forged.overlap.left = third),
+                refused(&|forged| forged.overlap.kind = OverlapKind::Composition),
+                composite.replay(&CellStore::new()),
+            ],
+            [
+                Err(CompositeRefusal::NotBelow),
+                Err(CompositeRefusal::Unmatched),
+                Err(CompositeRefusal::NotAPeak),
+                Err(CompositeRefusal::NotAConfluence),
+                Err(CompositeRefusal::UnissuedCell(first)),
+            ],
+            "a forged witness is refused by name"
         );
     }
 }

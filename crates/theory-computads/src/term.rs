@@ -67,7 +67,6 @@ use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
 use gandr_theory_cell_complexes::anti_unification;
-use gandr_theory_cell_complexes::command_below;
 use gandr_theory_cell_complexes::command_subterm;
 use gandr_theory_cell_complexes::path_order;
 use gandr_theory_levitation::AbstractionDepth;
@@ -81,6 +80,10 @@ use crate::boundary::Reducibility;
 use crate::boundary::Renaming;
 use crate::boundary::RuleGrowth;
 use crate::boundary::ScopeAdmission;
+
+mod composite;
+
+pub use self::composite::CompositeCriterion;
 
 /// The term alphabet marker.
 ///
@@ -260,8 +263,9 @@ impl Scope
         }
     }
 
-    /// Whether `instance` names no abstraction the scope withholds, and holds
-    /// no metavariable, skolem constant or instantiation, any of which could.
+    /// Whether `instance`, the nodes of a subterm in prefix order, names no
+    /// abstraction the scope withholds, and holds no metavariable, skolem
+    /// constant or instantiation, any of which could.
     ///
     /// # Specification
     /// - ensures: positive exactly when no node of `instance` is a
@@ -269,6 +273,9 @@ impl Scope
     ///   and every atom counting past the instance's root counts to an
     ///   abstraction [`Self::place`] gives a place.
     /// - panics: none.
+    /// - intension: one pass of [`Depths`] over the slice, with `open` as its
+    ///   stack, so an instance read in place costs no allocation once `open`
+    ///   holds the instance's depth.
     /// - executable: none — the body is the predicate.
     ///
     /// # Adequacy
@@ -276,24 +283,23 @@ impl Scope
     /// - witness: `term::tests::a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not`
     fn admits(
         &self,
-        instance: &Term,
+        instance: &[Head],
+        open: &mut Vec<(usize, bool)>,
     ) -> ScopeAdmission
     {
-        ScopeAdmission::from(instance.0.iter().zip(instance.depths()).all(
-            |(head, Count(depth))| {
-                match *head {
-                    Head::Var(_) | Head::Scoped(..) | Head::Konst(_) | Head::Inst(..) => false,
-                    Head::Occ(_, Count(between)) => between
-                        .checked_sub(depth)
-                        .is_none_or(|free| self.place(Count(free)).is_some()),
-                    Head::Ctor(..)
-                    | Head::Op(..)
-                    | Head::Results(_)
-                    | Head::Abs(_)
-                    | Head::Free(..) => true,
-                }
-            },
-        ))
+        ScopeAdmission::from(Depths::new(instance, open).all(|(head, Count(depth))| {
+            match *head {
+                Head::Var(_) | Head::Scoped(..) | Head::Konst(_) | Head::Inst(..) => false,
+                Head::Occ(_, Count(between)) => between
+                    .checked_sub(depth)
+                    .is_none_or(|free| self.place(Count(free)).is_some()),
+                Head::Ctor(..)
+                | Head::Op(..)
+                | Head::Results(_)
+                | Head::Abs(_)
+                | Head::Free(..) => true,
+            }
+        }))
     }
 
     /// `instance` with every atom counting past its root counted to the
@@ -332,6 +338,93 @@ impl Scope
                     )
             })
             .collect()
+    }
+}
+
+/// The nodes of a term's table in prefix order, each with its depth: the
+/// number of abstractions above it.
+///
+/// # Specification
+/// - ensures: each node once, in prefix order; the first node's depth is zero,
+///   and a node's depth is its parent's, plus one when the parent is an
+///   abstraction.
+/// - panics: none.
+/// - intension: one pass with a stack of the applications still owed arguments,
+///   which the caller gives, so a walk that reuses the stack costs no
+///   allocation once the stack holds the table's depth.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Term::depths`] and [`Scope::admits`].
+/// - witness: `term::tests::an_atom_counts_the_abstractions_to_its_binder`
+/// - witness: `term::tests::a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not`
+struct Depths<'heads, 'open>
+{
+    /// The nodes still to visit.
+    heads: core::slice::Iter<'heads, Head>,
+    /// Each application still owed arguments: how many, and whether it is an
+    /// abstraction.
+    open: &'open mut Vec<(usize, bool)>,
+    /// The depth of the next node.
+    depth: usize,
+}
+
+impl<'heads, 'open> Depths<'heads, 'open>
+{
+    /// The walk of `heads` from its first node, with `open` cleared.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(
+        heads: &'heads [Head],
+        open: &'open mut Vec<(usize, bool)>,
+    ) -> Self
+    {
+        open.clear();
+        Self {
+            heads: heads.iter(),
+            open,
+            depth: 0,
+        }
+    }
+}
+
+impl<'heads> Iterator for Depths<'heads, '_>
+{
+    type Item = (&'heads Head, Count);
+
+    /// The next node and its depth.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        let &mut Self {
+            ref mut heads,
+            ref mut open,
+            ref mut depth,
+        } = self;
+        let head = heads.next()?;
+        let at = Count(*depth);
+        let arity = head.arity().0;
+        if arity > 0 {
+            let abstraction = matches!(*head, Head::Abs(_));
+            if abstraction {
+                *depth = depth.saturating_add(1);
+            }
+            open.push((arity, abstraction));
+            return Some((head, at));
+        }
+        while let Some(&mut (ref mut owed, abstraction)) = open.last_mut() {
+            *owed = owed.saturating_sub(1);
+            if *owed > 0 {
+                break;
+            }
+            if abstraction {
+                *depth = depth.saturating_sub(1);
+            }
+            let _closed = open.pop();
+        }
+        Some((head, at))
     }
 }
 
@@ -549,8 +642,7 @@ impl Term
     /// - ensures: one depth per node, in prefix order; the root's is zero, and
     ///   a node's is its parent's, plus one when the parent is an abstraction.
     /// - panics: none.
-    /// - intension: one pass in prefix order with a stack of the applications
-    ///   still owed arguments.
+    /// - intension: one pass of [`Depths`] in prefix order.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::read`]: an abstraction below another reads
@@ -560,34 +652,10 @@ impl Term
     #[spec(ensures: |ret| ret.len() == self.0.len() && ret.first().is_none_or(|&root| root == Count(0)))]
     fn depths(&self) -> Vec<Count>
     {
-        let mut depths = Vec::with_capacity(self.0.len());
-        // Each application still owed arguments: how many, and whether it is
-        // an abstraction.
-        let mut open: Vec<(usize, bool)> = Vec::new();
-        let mut depth = 0_usize;
-        for head in &self.0 {
-            depths.push(Count(depth));
-            let arity = head.arity().0;
-            if arity > 0 {
-                let abstraction = matches!(*head, Head::Abs(_));
-                if abstraction {
-                    depth = depth.saturating_add(1);
-                }
-                open.push((arity, abstraction));
-                continue;
-            }
-            while let Some(&mut (ref mut owed, abstraction)) = open.last_mut() {
-                *owed = owed.saturating_sub(1);
-                if *owed > 0 {
-                    break;
-                }
-                if abstraction {
-                    depth = depth.saturating_sub(1);
-                }
-                let _closed = open.pop();
-            }
-        }
-        depths
+        let mut open = Vec::new();
+        Depths::new(&self.0, &mut open)
+            .map(|(_, depth)| depth)
+            .collect()
     }
 
     /// The end of the subterm starting at `start`: one past its last node.
@@ -1442,7 +1510,7 @@ impl CellAlphabet for TermAlphabet
             if let Some((var, scope)) = variable {
                 let end = target.end_of(at);
                 let image = target.slice(at, end);
-                if scope.is_some_and(|scope| !bool::from(scope.admits(&image)))
+                if scope.is_some_and(|scope| !bool::from(scope.admits(&image.0, &mut Vec::new())))
                     || found.0.get(var).is_some_and(|bound| *bound != image)
                 {
                     return SubstitutionDecision::from(false);
@@ -1774,96 +1842,6 @@ impl CellAlphabet for TermAlphabet
     {
         cmd.range_at(&pos.0)
             .map(|(start, end)| cmd.slice(start, end))
-    }
-
-    /// The subterms below `above`, breadth first from it, each offered from
-    /// one buffer the walk reuses; a position is built only for the one
-    /// accepted.
-    ///
-    /// # Specification
-    /// - ensures: as [`CellAlphabet::first_command_below`]: breadth first from
-    ///   `above` is [`CellAlphabet::command_positions`]' order restricted to
-    ///   the positions `above` encloses.
-    /// - provides: [`command_below::Absent::NoneAccepted`] when `above` leaves
-    ///   the term or `accepts` holds below it nowhere.
-    /// - panics: none.
-    /// - intension: one table of the visited nodes — each its start, its
-    ///   parent's slot and its step — and one buffer, both the size of
-    ///   `above`'s subterm.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — over every position of a nested term and one off it,
-    ///   the walk offers exactly the listing's subterms below the position, in
-    ///   the listing's order, and answers the listing's first accepted
-    ///   position. Offering the position itself, skipping a level or building
-    ///   the path from the wrong parent changes either.
-    /// - witness: `term::tests::the_walk_below_a_position_agrees_with_the_listing`
-    #[inline]
-    #[spec(ensures: |output| match output {
-        Maybe::Present(ref at) => Self::position_order(above, at) == PositionOrder::Encloses
-            && matches!(cmd.range_at(&at.0), Maybe::Present(_)),
-        Maybe::Absent(command_below::Absent::NoneAccepted) => true,
-    })]
-    fn first_command_below<F>(
-        cmd: &Self::Cmd,
-        above: &Self::Pos,
-        mut accepts: F,
-    ) -> Maybe<Self::Pos, command_below::Absent>
-    where
-        F: FnMut(&Self::Cmd) -> bool,
-    {
-        let Maybe::Present((root, end)) = cmd.range_at(&above.0)
-        else {
-            return Maybe::Absent(command_below::Absent::NoneAccepted);
-        };
-        let size = end.0.saturating_sub(root.0);
-        let mut visited: Vec<(Count, usize, PositionStep)> = Vec::with_capacity(size);
-        visited.push((root, 0, PositionStep::from(0_usize)));
-        let mut buffer = Term(Vec::with_capacity(size));
-        let mut cursor = 0_usize;
-        while let Some(&(start, ..)) = visited.get(cursor) {
-            let Some(head) = cmd.0.get(start.0)
-            else {
-                break;
-            };
-            let mut child = start.next();
-            for index in 0 .. head.arity().0 {
-                visited.push((child, cursor, PositionStep::from(index)));
-                child = cmd.end_of(child);
-            }
-            if cursor != 0 {
-                buffer.0.clear();
-                buffer.0.extend(
-                    cmd.0
-                        .iter()
-                        .take(cmd.end_of(start).0)
-                        .skip(start.0)
-                        .cloned(),
-                );
-                if accepts(&buffer) {
-                    let mut steps = Vec::new();
-                    let mut node = cursor;
-                    while node != 0 {
-                        let Some(&(_, parent, step)) = visited.get(node)
-                        else {
-                            break;
-                        };
-                        steps.push(step);
-                        node = parent;
-                    }
-                    return Maybe::Present(TermPos(
-                        above
-                            .0
-                            .iter()
-                            .copied()
-                            .chain(steps.into_iter().rev())
-                            .collect(),
-                    ));
-                }
-            }
-            cursor = cursor.saturating_add(1);
-        }
-        Maybe::Absent(command_below::Absent::NoneAccepted)
     }
 
     /// `cmd` with the subterm at `pos` replaced.

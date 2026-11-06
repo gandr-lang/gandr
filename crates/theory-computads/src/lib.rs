@@ -171,6 +171,7 @@ pub use crate::instantiate::ConvexitySupply;
 pub use crate::instantiate::RewriteBinding;
 pub use crate::instantiate::instantiate_cell;
 pub use crate::instantiate::instantiate_two_redex_rule;
+pub use crate::term::CompositeCriterion;
 pub use crate::term::Term;
 pub use crate::term::TermAlphabet;
 pub use crate::term::TermMeta;
