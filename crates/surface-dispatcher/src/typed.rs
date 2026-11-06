@@ -7311,6 +7311,45 @@ mod tests
         );
     }
 
+    /// #5213: a type that calls a module's function prints as that call, a
+    /// call of no arguments with its empty list, and reads back to its
+    /// certificate. A call's result applied once more prints and reads back
+    /// the same.
+    #[test]
+    fn a_module_s_call_in_a_type_reads_back_5213()
+    {
+        let text = "module Standard where {\n  def unit() -> Type { return Unit }\n  def \
+                    after(a : Type) -> Integer -> Type = return fun (x) { a } ;\n}\ndef point \
+                    : Standard.unit() ;\ndef point = *{} ;\ndef two(n : Integer) -> \
+                    Standard.after(Integer)(n) { 2 }";
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = table(SourceText::from(text));
+        let trips: Vec<(String, RoundTrip)> = table
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert!(
+            trips
+                .iter()
+                .any(|&(ref spelled, ref trip)| spelled == "Standard.unit()"
+                    && *trip == RoundTrip::Equal),
+            "the call of no arguments prints with its empty list and reads back: {trips:?}"
+        );
+        assert!(
+            trips
+                .iter()
+                .any(|&(ref spelled, _)| spelled.contains("Standard.after(Integer)(")),
+            "the call's result applied once more prints as two lists: {trips:?}"
+        );
+        assert!(
+            trips
+                .iter()
+                .all(|&(_, ref trip)| matches!(*trip, RoundTrip::Equal | RoundTrip::Open)),
+            "every printed type reads back: {trips:?}"
+        );
+    }
+
     /// #4835: a list type prints as its reader reads it — bare where the
     /// reader lists `List`, after the alias where it imports `std.list` as
     /// one, after `std.list` where it imports nothing of it — and each reads

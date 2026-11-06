@@ -1,6 +1,8 @@
-/// `type_path`: a type named through a module, applied when it is a family.
+/// `type_path`: a type named through a module, applied when it is a family,
+/// or a call of a function the module declares.
 module Counter where
   type Pair(a : Type) = *{a, a};
+  def same(a : Type) -> Type { return a }
 @[ checks ]
-def twin : Counter.Pair(Integer) ;
+def twin : Counter.same(Counter.Pair(Integer)) ;
 def twin = *{1, 2} ;

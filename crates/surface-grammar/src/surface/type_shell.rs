@@ -505,8 +505,17 @@ fn add_type_rules(
                 ]),
             ]),
             tile(TileLabel("(")),
-            comma1(Regex::sort(ty)),
+            // An empty list calls a function of no arguments, `empty()`
+            // (#5213).
+            Regex::optional(comma1(Regex::sort(ty))),
             tile(TileLabel(")")),
+            // A call's result applied once more, `f(a)(b)`: the call returns
+            // a function, which the second list applies (#5213).
+            Regex::optional(Regex::seq([
+                tile(TileLabel("(")),
+                comma1(Regex::sort(ty)),
+                tile(TileLabel(")")),
+            ])),
         ]),
     ));
     // A type application written by juxtaposition, `Maybe A`, as a value call
@@ -549,9 +558,13 @@ fn add_type_rules(
     //
     // An argument list after the type name applies the member, a module's
     // family reached through its name, `M.F(Integer)`, as a bare family's
-    // `F(Integer)` is applied (#3051). The list ends the link, so it applies
-    // the last name alone; a later `.` selects from an application, which
-    // the lowering refuses.
+    // `F(Integer)` is applied (#3051). A link may also end at a value name
+    // the list applies, a module's function that computes a type,
+    // `Standard.ext(a, b)`, as a bare function's call `ext(a, b)` is read
+    // (#5213). The list ends the link, so it applies the last name alone; a
+    // second list applies the call's result once more,
+    // `Standard.subTy(a, s)(x)`, and a later `.` selects from an application,
+    // which the lowering refuses.
     rules.push(rule(
         RuleName("type_path"),
         ty,
@@ -563,7 +576,22 @@ fn add_type_rules(
                 tile(TileLabel("type_variable")),
                 tile(TileLabel(".")),
             ])),
-            tile(TileLabel("type_identifier")),
+            Regex::alt([
+                Regex::seq([
+                    tile(TileLabel("type_identifier")),
+                    Regex::optional(Regex::seq([
+                        tile(TileLabel("(")),
+                        comma1(Regex::sort(ty)),
+                        tile(TileLabel(")")),
+                    ])),
+                ]),
+                Regex::seq([
+                    tile(TileLabel("type_variable")),
+                    tile(TileLabel("(")),
+                    Regex::optional(comma1(Regex::sort(ty))),
+                    tile(TileLabel(")")),
+                ]),
+            ]),
             Regex::optional(Regex::seq([
                 tile(TileLabel("(")),
                 comma1(Regex::sort(ty)),

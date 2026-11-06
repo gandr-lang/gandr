@@ -3620,6 +3620,57 @@ fn a_module_s_family_is_applied_through_its_name_3051()
     counted("flat", "M.T(Integer)", 1_usize);
 }
 
+/// A module's function called where a type is read through the module's
+/// name reads as the call the bare name gives: `M.same(Integer)` is the type
+/// its code decodes to, `M.empty()` calls a function of no arguments, and
+/// `M.after(Integer)(n)` applies the call's result once more. A second list
+/// after a type member is refused by the count it writes (#5213).
+#[test]
+fn a_module_s_function_is_called_in_a_type_5213()
+{
+    let source = "module M where { def empty() -> Type { return Integer } def same(a : Type) -> \
+                  Type { return a } def after(a : Type) -> Integer -> Type = return fun (x) { a \
+                  } ; }\ndef none(x : M.empty()) -> Integer { x }\ndef one(x : M.same(Integer)) -> \
+                  Integer { x }\ndef twice(n : Integer, x : M.after(Integer)(n)) -> Integer { x \
+                  }\ndef other(x : M.same(Integer)) -> String { x }";
+    let mut lowered = lower(source);
+    let judged: Vec<Judgement> = verdicts(&mut lowered)
+        .into_iter()
+        .map(|(_, judgement)| judgement)
+        .filter(|&judgement| judgement != Judgement::Declared)
+        .collect();
+    assert_eq!(
+        judged,
+        [
+            Judgement::Checked,
+            Judgement::Checked,
+            Judgement::Checked,
+            Judgement::Checked,
+            Judgement::Checked,
+            Judgement::Checked,
+            Judgement::Mismatched
+        ],
+        "each call is the type its code decodes to, `Integer`, so each body checks, and \
+         `String` is another type"
+    );
+    let written = "M.F(Integer)(Integer)";
+    let source = format!("module M where {{ type F(a : Type) = a ; }}\ndef again : {written} ;");
+    assert_eq!(
+        rows(&lower(source.as_str())),
+        [row(
+            "again",
+            Role::Declared,
+            Amounts::Refused(LoweringRefusal::OutOfFragment {
+                span: span_of(&source, written, 0_usize),
+                form: FormName::from(NamedKind("type_path")),
+                sort: FragmentSort::ValueType,
+                boundary: FragmentBoundary::Arity(OperandCount::from(1_usize)),
+            })
+        )],
+        "a family's type is applied by no second list"
+    );
+}
+
 #[test]
 fn an_unbound_type_path_is_refused_by_name()
 {

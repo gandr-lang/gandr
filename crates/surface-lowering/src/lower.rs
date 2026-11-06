@@ -2231,6 +2231,23 @@ enum Code
     Constant(ConstantIndex),
 }
 
+/// The argument lists a type operator's use writes after its head (#5213).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Lists
+{
+    /// No list, or the one list a static application reads, which calls a
+    /// dynamic function only when it holds an argument.
+    Bare,
+    /// One list written after the head, which calls it even when it is
+    /// empty, `f()`.
+    Called,
+    /// A second list, which applies the call's result once more, `f(a)(b)`.
+    Again(Stretch),
+}
+
 quenchant_shape::reason_enum! {
     /// Why a name resolves to nothing.
     pub mod named {
@@ -2621,6 +2638,12 @@ enum Plan
     /// holding a thunk — called on the arguments in the lowerer's operand
     /// store, its returned code decoded in the universe the position reads.
     Unquote(Code, Stretch, Universe),
+    /// The type the code a dynamic function's result returns denotes, `f(a)(b)`
+    /// where a type is read: the function the code names called on the first
+    /// stretch of the lowerer's operand store, the value that call returns
+    /// forced and applied to the second stretch, its returned code decoded in
+    /// the universe the position reads (#5213).
+    Reapplied(Code, Stretch, Stretch, Universe),
     /// The carrier the model a binder holds gives one of its theory's
     /// unindexed sorts, `a.C`: the binder's bundled record projected at the
     /// sort's field — at its label off a record, along the nesting otherwise —
@@ -14386,7 +14409,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Former(..)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Former(..)))
                 )
         },
     )]
@@ -14398,7 +14421,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let start = self.operands.len();
         let read = path_arguments(site, &pieces.pieces, site.at.span, &mut self.operands)
-            .and_then(|applied| self.applied_path(site, pieces, applied));
+            .and_then(|lists| self.applied_path(site, pieces, lists));
         if read.is_err() {
             self.operands.truncate(start);
         }
@@ -14407,11 +14430,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// Classify the qualified type reference `M.T` at `site`, applied to the
     /// arguments `applied` holds in the operand store when it writes them,
-    /// `M.F(A)`.
+    /// `M.F(A)`, and to those `again` holds when it applies the result once
+    /// more, `M.f(a)(b)`.
     ///
     /// # Specification
     /// - requires: `site` is a type path; `pieces` is its reading; `applied` is
-    ///   the stretch of its argument list when it writes one.
+    ///   the stretch of its first argument list and `again` of its second, each
+    ///   when it writes one.
     /// - ensures: as [`Self::type_path`], each reading of an unapplied path the
     ///   same; an applied path ending at a type family a module exports expands
     ///   it over the arguments, as [`Self::expansion`] reads it, and one ending
@@ -14419,10 +14444,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   names, stands applied to them. A path whose qualifier an import of a
     ///   `std` module binds and whose member that module homes as a former,
     ///   `l.List(A)`, stands as that former applied to its one argument, as
-    ///   [`Self::qualified_former`] reads it.
+    ///   [`Self::qualified_former`] reads it. A path ending at a value name a
+    ///   module or an import's alias exports, `Standard.ext(a, b)`, is the call
+    ///   [`Self::call_resolved`] reads (#5213).
     /// - fails: as [`Self::type_path`]; the arity refusal for an applied path
-    ///   ending at anything but a family or an imported type, and for a homed
-    ///   former written at any count but one.
+    ///   ending at anything but a family, an imported type or a function, for a
+    ///   homed former written at any count but one, and for a second list after
+    ///   anything but a function.
     /// - panics: none.
     /// - executable: none — [`Self::type_path`] states the plans.
     ///
@@ -14434,14 +14462,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   family's type, `M.Box(Integer)` stands as the data family, and
     ///   `M.T(Integer)` over an unparameterised member is refused by its arity;
     ///   `std.list.List(Integer)` and `l.List(Integer)` stand as the native
-    ///   list.
+    ///   list; `M.f(a)`, `M.f()` and `M.f(a)(b)` stand as the calls.
     /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
     /// - witness: `lower::tests::a_homed_former_reads_through_its_import_s_qualifier_4862`
+    /// - witness: `tests::modules::a_module_s_function_is_called_in_a_type_5213`
     fn applied_path(
         &mut self,
         site: Site,
         pieces: &Pieces,
-        applied: Option<Stretch>,
+        (applied, again): (Option<Stretch>, Option<Stretch>),
     ) -> Result<(), LoweringRefusal<'source>>
     {
         // Each link is the module a name is selected from and the name, from
@@ -14450,6 +14479,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut links: Vec<(Placed, Placed)> = Vec::new();
         let (target, nested, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
         Self::linked(&mut links, target, nested, member);
+        // A link that ends at a value name calls a function (#5213).
+        let valued = matches!(
+            pieces.pieces.get(nested.len().saturating_add(2_usize)),
+            Some(&Piece::Tile {
+                label: TileName::TYPE_VARIABLE,
+                ..
+            })
+        );
+        if !valued {
+            unapplied(site, again)?;
+        }
         let headed = match self.tree.node(target.node) {
             Some(node) => matches!(shape_of(self.pbg, node)?, Shape::Form {
                 former: Former::TypeHead,
@@ -14468,6 +14508,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Some(_) | None => Some(target),
         };
         if headed
+            && !valued
             && let Some(qualifier) = qualifier
             && let Some(former) = self.qualified_former(site, qualifier, member)
         {
@@ -14485,11 +14526,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let Some(qualifier) = qualifier
             && let Maybe::Present(resolved) = self.aliased_member(site, qualifier, member)?
         {
-            let none = Stretch {
-                start: self.operands.len(),
-                end: self.operands.len(),
-            };
-            return self.static_application(site, resolved, applied.unwrap_or(none));
+            return self.call_resolved(site, resolved, applied, again);
         }
         let head = self.path_head(site, target, &mut links)?;
         if let Some(&(_, first)) = links.last()
@@ -14532,6 +14569,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 name: self.name_at(head),
                 arity: HeadArity::Nullary,
             }),
+            PathResolution::Complete(Recognized::ModuleComponent) if valued => {
+                self.module_call(site, &path, (head, member), applied, again)
+            },
             PathResolution::Complete(Recognized::ModuleComponent) => {
                 self.module_family(site, &path, (head, member), applied)
             },
@@ -14677,20 +14717,91 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.family(site, constant, arity, applied.unwrap_or(none))
     }
 
-    /// The target and the selected type name of one link of a type path, and
-    /// the module names the link passes, read from its pieces.
+    /// Read the module component at `path`, the function the link's `member`
+    /// names under its `head`, as the call the type path writes: applied to the
+    /// arguments `applied` holds, and its result to those `again` holds when
+    /// the path writes a second list (#5213).
+    ///
+    /// # Specification
+    /// - requires: `path` resolves to a module's value component; `applied` and
+    ///   `again` are stretches of the operand store when present.
+    /// - ensures: the call [`Self::call_resolved`] reads of the component's
+    ///   declaration, its written type the one its signature states, when the
+    ///   component is declared strictly before the declaration `site` belongs
+    ///   to and its source exports it.
+    /// - provides: a type path's reading of a function a module body declares,
+    ///   as the call form reads the same function named bare.
+    /// - fails: the wrong-sort refusal for a path no export holds;
+    ///   [`LoweringRefusal::ForwardMemberReference`] for a component declared
+    ///   at or after the referring declaration; the export refusal of a
+    ///   component its source keeps private; the call's own refusals.
+    /// - panics: none.
+    /// - executable: none — the plan is the call's, which
+    ///   [`Self::listed_application`] makes and its own predicate checks.
+    ///
+    /// # Errors
+    /// The component's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `M.f(a)`, `M.f()` and `M.f(a)(b)` in a declared type
+    ///   lower to the decode of the call the bare `f` gives.
+    /// - witness: `tests::modules::a_module_s_function_is_called_in_a_type_5213`
+    fn module_call(
+        &mut self,
+        site: Site,
+        path: &NamePath,
+        (head, member): (Placed, Placed),
+        applied: Option<Stretch>,
+        again: Option<Stretch>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(&exported) = self.exported.get(path)
+        else {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        };
+        let Some(held) = self.collected.slots.get(usize::from(exported))
+        else {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        };
+        let (constant, named) = (held.constant, held.named.span);
+        let declared = match held.signature {
+            Maybe::Present(Half {
+                operand: Operand::Written(written),
+                ..
+            }) => Maybe::Present(written.node),
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+        };
+        if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+            && own <= exported
+        {
+            return Err(LoweringRefusal::ForwardMemberReference {
+                span: site.at.span,
+                name: self.name_at(member),
+                declared: named,
+            });
+        }
+        self.exported_across(site, self.name_at(head), exported)?;
+        let resolved = Resolved::Declaration { constant, declared };
+        self.resolved(member.span, resolved);
+        self.call_resolved(site, resolved, applied, again)
+    }
+
+    /// The target and the selected name of one link of a type path, and the
+    /// module names the link passes, read from its pieces.
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of a type path covering `span`.
     /// - ensures: the operand the type is selected from; the pieces between the
-    ///   link's first dot and its type name, each module name it passes and the
-    ///   dot after it, `inner .` in `Sealed.inner.T` and `b . c .` in
-    ///   `a.b.c.T`, empty for a link that passes none; and the type name tile
-    ///   after its last dot.
+    ///   link's first dot and its selected name, each module name it passes and
+    ///   the dot after it, `inner .` in `Sealed.inner.T` and `b . c .` in
+    ///   `a.b.c.T`, empty for a link that passes none; and the selected name
+    ///   after its last dot: a type name, or a value name the link applies,
+    ///   `ext` in `Standard.ext(a, b)` (#5213).
     /// - provides: the link half of [`Self::type_path`], one link through a
     ///   module path of any length.
     /// - fails: yields the misplaced-tile refusal when the pieces are not an
-    ///   operand, a dot, module names each followed by a dot, and a type name.
+    ///   operand, a dot, module names each followed by a dot, and a type name
+    ///   or a value name.
     /// - panics: none.
     ///
     /// # Errors
@@ -14709,11 +14820,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 pieces.first() == Some(&Piece::Operand(target))
                     && matches!(pieces.get(1), Some(&Piece::Tile { label: TileName::DOT, .. }))
                     && modules.len() % 2 == 0
-                    && pieces.get(modules.len().saturating_add(2))
-                        == Some(&Piece::Tile {
-                            label: TileName::TYPE_IDENTIFIER,
-                            at: selected,
-                        })
+                    && matches!(pieces.get(modules.len().saturating_add(2)), Some(&Piece::Tile {
+                        label: TileName::TYPE_IDENTIFIER | TileName::TYPE_VARIABLE,
+                        at,
+                    }) if at == selected)
             })
         },
     )]
@@ -14733,16 +14843,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         let mut passed = 0_usize;
-        while let Maybe::Present(_module) = cursor.tile(TileName::TYPE_VARIABLE) {
-            let Maybe::Present(_dot) = cursor.tile(TileName::DOT)
+        let selected = loop {
+            if let Maybe::Present(name) = cursor.tile(TileName::TYPE_VARIABLE) {
+                if let Maybe::Present(_dot) = cursor.tile(TileName::DOT) {
+                    passed = passed.saturating_add(2_usize);
+                    continue;
+                }
+                // A value name the link ends at, which its argument list
+                // applies (#5213).
+                break name;
+            }
+            let Maybe::Present(selected) = cursor.tile(TileName::TYPE_IDENTIFIER)
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            passed = passed.saturating_add(2_usize);
-        }
-        let Maybe::Present(selected) = cursor.tile(TileName::TYPE_IDENTIFIER)
-        else {
-            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            break selected;
         };
         let modules = pieces
             .get(2_usize .. passed.saturating_add(2_usize))
@@ -15189,7 +15304,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Bundle(_) | Plan::Constructor(_)))
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Expansion(..) | Plan::Path(..) | Plan::Flow(..) | Plan::Relation(..) | Plan::Stack(..) | Plan::Bundle(_) | Plan::Constructor(_)))
                 )
         },
     )]
@@ -15208,7 +15323,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.staged_unquote(site, name, cursor);
         }
         let start = self.operands.len();
-        let read = arguments(site, &mut cursor, &mut self.operands);
+        // A second list applies the call's result once more, `f(a)(b)`
+        // (#5213); only a function's call takes it, and every other head
+        // refuses it.
+        let lists = argument_lists(site, &mut cursor, &mut self.operands);
+        let again = lists.as_ref().ok().copied().flatten();
+        let read = lists.map(|_| ());
+        let applied = Stretch {
+            start,
+            end: again.map_or(self.operands.len(), |again| again.start),
+        };
+        let alone = |again: Option<Stretch>| {
+            again.map_or(Ok(()), |again| {
+                Err(site.out(FragmentBoundary::Arity(OperandCount::from(
+                    again.end.saturating_sub(again.start),
+                ))))
+            })
+        };
         // The sorts a manifest type closing the application fixes, read after
         // `Model` alone: any other head that answers it is refused at the
         // first sort.
@@ -15223,15 +15354,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let (Ok(()), Reading::Value(_)) = (read, site.reading)
             && let Maybe::Present(constructor) = self.constructor_named(site, name)
         {
-            if let Some(refusal) = unmanifest {
+            if let Some(refusal) = unmanifest.or_else(|| alone(again).err()) {
                 self.operands.truncate(start);
                 return Err(refusal);
             }
-            let fields = Stretch {
-                start,
-                end: self.operands.len(),
-            };
-            return self.construct(site, constructor, fields);
+            return self.construct(site, constructor, applied);
         }
         match read.and_then(|()| self.stated_named(site, name)) {
             Ok(Maybe::Present(TypeComponent {
@@ -15239,14 +15366,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 held,
                 ..
             })) => {
-                if let Some(refusal) = unmanifest {
+                if let Some(refusal) = unmanifest.or_else(|| alone(again).err()) {
                     self.operands.truncate(start);
                     return Err(refusal);
                 }
-                let applied = Stretch {
-                    start,
-                    end: self.operands.len(),
-                };
                 let _first = self
                     .expansions
                     .insert(site.at.node, (site.at.span, site.reading.frame()));
@@ -15269,11 +15392,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     return Err(refusal);
                 }
                 self.resolved(head.span, resolved);
-                let applied = Stretch {
-                    start,
-                    end: self.operands.len(),
-                };
-                return self.static_application(site, resolved, applied);
+                return self.listed_application(
+                    site,
+                    resolved,
+                    applied,
+                    again.map_or(Lists::Called, Lists::Again),
+                );
             },
             Ok(Maybe::Absent(named::Absent::Unresolved)) => {},
             Err(refusal) => {
@@ -15282,11 +15406,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
         }
 
-        let written = Stretch {
-            start,
-            end: self.operands.len(),
-        };
-        self.applied_head(site, head, name, written, &manifests)
+        if let Err(refusal) = alone(again) {
+            self.operands.truncate(start);
+            return Err(refusal);
+        }
+        self.applied_head(site, head, name, applied, &manifests)
     }
 
     /// Classify the type former `name`, written at `head` and applied to the
@@ -15849,17 +15973,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// Classify the static application of the code `resolved` names to the
-    /// arguments `applied` holds in the operand store.
+    /// arguments `applied` holds in the operand store, the head written as
+    /// `lists` states.
     ///
     /// # Specification
     /// - requires: `applied` is a stretch of the operand store, each entry an
-    ///   argument the application was written with, left to right.
-    /// - ensures: a data family stands as the nominal type over its arguments,
-    ///   each read as a value under the site's frame, which a value position
-    ///   quotes. Otherwise, where a value is read, the application stands as
-    ///   itself; where a type is read, it stands as the decode of the
-    ///   application, in the universe the code's written type reaches after one
-    ///   arrow per argument, and else in the universe the position reads — the
+    ///   argument the application was written with, left to right; a second
+    ///   list `lists` names is the stretch after it.
+    /// - ensures: a head written with a list is called, even by an empty one,
+    ///   `f()`; a dynamic function's result applied by a second list where a
+    ///   type is read, `f(a)(b)`, is the decode of the code that application
+    ///   returns, in the universe the code's written type reaches after one
+    ///   arrow per argument of both lists (#5213). With no second list, a data
+    ///   family stands as the nominal type over its arguments, each read as a
+    ///   value under the site's frame, which a value position quotes.
+    ///   Otherwise, where a value is read, the application stands as itself;
+    ///   where a type is read, it stands as the decode of the application, in
+    ///   the universe the code's written type reaches after one arrow per
+    ///   argument, and else in the universe the position reads — the
     ///   computation types where only a computation type is read, the value
     ///   types everywhere else, at the fuss-free level. A dynamic function — a
     ///   declaration defined by a function tail, or a binder applied to at
@@ -15929,25 +16060,35 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             && (!matches!(site.reading, Reading::Value(_))
                                 || self.static_bodies.contains(&site.at.node))
                     },
+                    | Some(&Plan::Reapplied(_, planned, again, _)) => {
+                        planned == applied && lists == Lists::Again(again)
+                    },
                     | Some(&(Plan::Data(_, planned) | Plan::Codata(_, planned))) => planned == applied,
                     | _ => false,
                 }
         },
     )]
-    fn static_application(
+    fn listed_application(
         &mut self,
         site: Site,
         resolved: Resolved,
         applied: Stretch,
+        lists: Lists,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         self.unflattened(site, resolved)?;
-        if let Resolved::Declaration { constant, .. } = resolved
+        let again = match lists {
+            Lists::Again(again) => Some(again),
+            Lists::Bare | Lists::Called => None,
+        };
+        if again.is_none()
+            && let Resolved::Declaration { constant, .. } = resolved
             && let Maybe::Present(arity) = self.data_family(constant)
         {
             return self.family(site, constant, arity, applied);
         }
-        if let Resolved::Declaration { constant, .. } = resolved
+        if again.is_none()
+            && let Resolved::Declaration { constant, .. } = resolved
             && let Maybe::Present(arity) = self.codata_family(constant)
         {
             return self.codata_type(site, constant, arity, applied);
@@ -15957,7 +16098,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Resolved::Binder(bound) => bound.declared,
             Resolved::Declaration { declared, .. } => declared,
         };
-        let called = applied.start < applied.end;
+        // A list written after the head calls it, even an empty one, `f()`
+        // (#5213).
+        let called = applied.start < applied.end || lists != Lists::Bare;
         let dynamic = match resolved {
             Resolved::Declaration { constant, .. } => matches!(
                 self.collected
@@ -15990,8 +16133,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // the body quotes it (#3786).
         let decoded = !matches!(site.reading, Reading::Value(_))
             || (dynamic && called && self.static_bodies.contains(&site.at.node));
+        // A second list applies a function's result where a type is read, and
+        // nothing else (#5213).
+        if let Some(again) = again
+            && (!dynamic || !decoded)
+        {
+            return Err(site.out(FragmentBoundary::Arity(OperandCount::from(
+                again.end.saturating_sub(again.start),
+            ))));
+        }
         let universe = if decoded {
-            let count = OperandCount::from(applied.end.saturating_sub(applied.start));
+            let written = applied.end.saturating_sub(applied.start).saturating_add(
+                again.map_or(0_usize, |again| again.end.saturating_sub(again.start)),
+            );
+            let count = OperandCount::from(written);
             if dynamic && !called {
                 return Err(site.out(FragmentBoundary::Arity(count)));
             }
@@ -16023,11 +16178,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Resolved::Declaration { constant, .. } => Code::Constant(constant),
         };
-        let plan = match universe {
-            Some(universe) if dynamic => Plan::Unquote(code, applied, universe),
-            Some(universe) => Plan::Decode(code, applied, universe),
-            None if dynamic && called => Plan::Called(code, applied),
-            None => Plan::StaticApplication(code, applied),
+        let plan = match (universe, again) {
+            (Some(universe), Some(again)) => Plan::Reapplied(code, applied, again, universe),
+            (Some(universe), None) if dynamic => Plan::Unquote(code, applied, universe),
+            (Some(universe), None) => Plan::Decode(code, applied, universe),
+            (None, _) if dynamic && called => Plan::Called(code, applied),
+            (None, _) => Plan::StaticApplication(code, applied),
         };
         if let Code::Bound { binder, .. } = code {
             let _telescope = self.name_in_type(site.at.node, binder);
@@ -16049,21 +16205,70 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 classifier = codomain;
             }
         }
-        for position in applied.start .. applied.end {
+        let read = again.map_or(applied.start .. applied.end, |again| {
+            applied.start .. again.end
+        });
+        for position in read.clone() {
             if let Some(&argument) = self.operands.get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
         // Each argument of a decode or an unquote is a value the type reads:
         // it counts in that type's telescope, as a family's arguments do.
-        if matches!(plan, Plan::Decode(..) | Plan::Unquote(..)) {
+        if matches!(
+            plan,
+            Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..)
+        ) {
             self.in_type
-                .extend(stretch(&self.operands, applied).iter().copied());
+                .extend(self.operands.get(read).unwrap_or_default().iter().copied());
         }
 
         self.plan(site, plan);
 
         Ok(())
+    }
+
+    /// As [`Self::listed_application`], the head written with no list or with
+    /// the one list `applied` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn static_application(
+        &mut self,
+        site: Site,
+        resolved: Resolved,
+        applied: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        self.listed_application(site, resolved, applied, Lists::Bare)
+    }
+
+    /// Read the head `resolved` as the call a type path or a type's call form
+    /// writes: applied to the arguments `applied` holds, and its result to
+    /// those `again` holds when it writes a second list (#5213). A head written
+    /// with no list stands bare.
+    ///
+    /// # Specification
+    /// trivial.
+    fn call_resolved(
+        &mut self,
+        site: Site,
+        resolved: Resolved,
+        applied: Option<Stretch>,
+        again: Option<Stretch>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let none = Stretch {
+            start: self.operands.len(),
+            end: self.operands.len(),
+        };
+        match (applied, again) {
+            (Some(first), Some(second)) => {
+                self.listed_application(site, resolved, first, Lists::Again(second))
+            },
+            (Some(first), None) => self.listed_application(site, resolved, first, Lists::Called),
+            (None, _) => self.static_application(site, resolved, none),
+        }
     }
 
     /// Whether a binder whose type is written at `written` holds a function:
@@ -18649,7 +18854,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::Returns(_) | Plan::With(..) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
-                | Plan::Decode(_, _, universe) | Plan::Unquote(_, _, universe) => Some(match universe.sort {
+                | Plan::Decode(_, _, universe) | Plan::Unquote(_, _, universe) | Plan::Reapplied(_, _, _, universe) => Some(match universe.sort {
                     | GroundSort::Value => Produced::ValueType,
                     | GroundSort::Computation => Produced::CompType,
                 }),
@@ -18830,6 +19035,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Unquote(code, arguments, universe) => {
                 let head = self.written_head(origin);
                 self.mint_unquote(code, arguments, universe, sink, (origin, head))
+            },
+            Plan::Reapplied(code, arguments, again, universe) => {
+                let head = self.written_head(origin);
+                self.mint_reapplied(code, (arguments, again), universe, sink, (origin, head))
             },
             Plan::Carrier(code, selected, ref label) => {
                 self.mint_carrier(code, selected, label.as_ref(), sink, origin)
@@ -19329,6 +19538,99 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let code = sink.arena.value_returned(called);
+        sink.origins
+            .record_value(code, origin.inserted(Insertion::Endpoint));
+        let level = Level::constant(universe.level);
+        let decoded = origin.inserted(Insertion::Decode);
+        match universe.sort {
+            GroundSort::Value => {
+                let id = sink.arena.value_type_element(code, level);
+                sink.origins.record_value_type(id, decoded);
+                Maybe::Present(Lowered::ValueType(id))
+            },
+            GroundSort::Computation => {
+                let id = sink.arena.comp_type_element(code, level);
+                sink.origins.record_comp_type(id, decoded);
+                Maybe::Present(Lowered::CompType(id))
+            },
+        }
+    }
+
+    /// Carry out a reapplied plan: the call of a dynamic function, the value
+    /// it returns forced and applied once more, the code that application
+    /// returns, and the type that code denotes (#5213).
+    ///
+    /// # Specification
+    /// - requires: every argument of both stretches is already minted or
+    ///   absent.
+    /// - ensures: `f(a1, …, an)(b1, …, bm)` where a type is read mints as the
+    ///   decode of `returned(app(… app(force returned(c), b1) …, bm))`, `c` the
+    ///   call [`Self::mint_called`] mints of the first list, at the universe's
+    ///   level, a value type for the value sort and a computation type for the
+    ///   computation sort. The inner returned value, the force, both returned
+    ///   codes and the decode are marked inserted; each application of the
+    ///   second list carries the written origin. Nothing is minted when an
+    ///   argument did not lower.
+    /// - provides: the type a function's result names, `a(x)` for a binder `a`
+    ///   the checker instantiates at `Standard.subTy(g, d, a, s)`, as it
+    ///   prints, so the printed type lowers back to itself.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function of four arguments whose result one more
+    ///   argument applies, asserted as the exact core type read back out of the
+    ///   arena.
+    /// - witness: `tests::modules::a_module_s_function_is_called_in_a_type_5213`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::ValueType(id)) => universe.sort == GroundSort::Value
+                && matches!(
+                    sink.arena.value_type(id),
+                    Some(&gandr_core_term::ValueType::Element { code, .. })
+                        if matches!(sink.arena.value(code), Some(&gandr_core_term::Value::Returned(_)))
+                ),
+            | Maybe::Present(Lowered::CompType(id)) => universe.sort == GroundSort::Computation
+                && matches!(
+                    sink.arena.comp_type(id),
+                    Some(&gandr_core_term::CompType::Element { code, .. })
+                        if matches!(sink.arena.value(code), Some(&gandr_core_term::Value::Returned(_)))
+                ),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    fn mint_reapplied(
+        &self,
+        function: Code,
+        (arguments, again): (Stretch, Stretch),
+        universe: Universe,
+        sink: &mut Sink<'_>,
+        (origin, head): (Origin, Origin),
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        for &argument in stretch(&self.operands, again) {
+            if let Maybe::Absent(reason) = self.value_at(argument) {
+                return Maybe::Absent(reason);
+            }
+        }
+        let called = match self.mint_called(function, arguments, sink, (origin, head)) {
+            Maybe::Present(called) => called,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let result = sink.arena.value_returned(called);
+        sink.origins
+            .record_value(result, origin.inserted(Insertion::Endpoint));
+        let mut applied = sink.arena.computation_force(result);
+        sink.origins
+            .record_computation(applied, origin.inserted(Insertion::Force));
+        for &argument in stretch(&self.operands, again) {
+            if let Maybe::Present(value) = self.value_at(argument) {
+                applied = sink.arena.computation_application(applied, value);
+                sink.origins.record_computation(applied, origin);
+            }
+        }
+        let code = sink.arena.value_returned(applied);
         sink.origins
             .record_value(code, origin.inserted(Insertion::Endpoint));
         let level = Level::constant(universe.level);
@@ -20082,6 +20384,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Universe(_)
             | Plan::Decode(..)
             | Plan::Unquote(..)
+            | Plan::Reapplied(..)
             | Plan::Carrier(..)
             | Plan::FixedCarrier(..)
             | Plan::Called(..)
@@ -24698,50 +25001,54 @@ fn arguments<'source>(
     )
 }
 
-/// The argument list a qualified type writes after its member, `(Integer)` in
-/// `M.F(Integer)`, read into `written`, when it writes one (#3051).
+/// The argument lists a qualified type writes after its member, `(Integer)` in
+/// `M.F(Integer)`, read into `written`, when it writes them (#3051): the first,
+/// and the second that applies the first call's result once more,
+/// `(x)` in `Standard.subTy(a, s)(x)` (#5213).
 ///
 /// # Specification
 /// - requires: `pieces` is the reading of a type path covering `span`.
-/// - ensures: the stretch of `written` the list's arguments fill, in written
-///   order, for a path whose pieces hold a `(`; none, `written` unchanged, for
-///   one that holds none.
+/// - ensures: the stretches of `written` the first list's and the second list's
+///   arguments fill, each in written order, for a path whose pieces hold a `(`;
+///   none for a list the path does not write, `written` unchanged by a path
+///   that writes none.
 /// - fails: as [`arguments`].
 /// - panics: none.
-/// - executable: none — the list's reading is [`arguments`]'s, whose own
+/// - executable: none — each list's reading is [`arguments`]'s, whose own
 ///   predicate states it.
 ///
 /// # Errors
 /// The list's refusal.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `M.F(Integer)` reads one argument, `M.T` none.
+/// - hypothesis: L3 — `M.F(Integer)` reads one argument, `M.T` none, and
+///   `M.f(a)(b)` one in each list.
 /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
+/// - witness: `tests::modules::a_module_s_function_is_called_in_a_type_5213`
 fn path_arguments<'source>(
     site: Site,
     pieces: &[Piece],
     span: ByteSpan,
     written: &mut Vec<NodeIndex>,
-) -> Result<Option<Stretch>, LoweringRefusal<'source>>
+) -> Result<(Option<Stretch>, Option<Stretch>), LoweringRefusal<'source>>
 {
     let mut cursor = Cursor::new(pieces, span);
     loop {
-        match cursor.peek() {
-            Maybe::Present(Piece::Tile {
-                label: TileName::PAREN_OPEN,
-                ..
-            }) => {
-                let start = written.len();
-                arguments(site, &mut cursor, written)?;
-                return Ok(Some(Stretch {
-                    start,
-                    end: written.len(),
-                }));
-            },
-            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {
-                let _skipped = cursor.read();
-            },
-            Maybe::Absent(_) => return Ok(None),
+        if let Maybe::Present(Piece::Tile {
+            label: TileName::PAREN_OPEN,
+            ..
+        }) = cursor.peek()
+        {
+            let start = written.len();
+            let again = argument_lists(site, &mut cursor, written)?;
+            let first = Stretch {
+                start,
+                end: again.map_or(written.len(), |again| again.start),
+            };
+            return Ok((Some(first), again));
+        }
+        if let Maybe::Absent(_) = cursor.read() {
+            return Ok((None, None));
         }
     }
 }
@@ -24887,6 +25194,37 @@ fn delimited<'source>(
     close: TileName,
 ) -> Result<(), LoweringRefusal<'source>>
 {
+    delimited_list(site, cursor, written, open, close)?;
+    exhausted(site, cursor)
+}
+
+/// Read a comma-separated operand list between the tiles `open` and `close`
+/// into `written`, and leave the cursor past the `close`, where a call in a
+/// type may write its second list, `f(a)(b)` (#5213).
+///
+/// # Specification
+/// - requires: `cursor` stands at the list's `open`.
+/// - ensures: as [`delimited`], except that pieces may follow the `close`.
+/// - fails: as [`delimited`].
+/// - panics: none.
+/// - executable: none — [`delimited`] states the reading, and this is its
+///   reading without the check that nothing follows.
+///
+/// # Errors
+/// The form's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`delimited`]; a type's call of a call reads both of
+///   its lists.
+/// - witness: `tests::modules::a_module_s_function_is_called_in_a_type_5213`
+fn delimited_list<'source>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+    written: &mut Vec<NodeIndex>,
+    open: TileName,
+    close: TileName,
+) -> Result<(), LoweringRefusal<'source>>
+{
     if let Maybe::Absent(_) = cursor.tile(open) {
         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
     }
@@ -24894,19 +25232,68 @@ fn delimited<'source>(
         let run = cursor.operands();
         let closing = cursor.tile(close);
         if let (Run::Empty(_), Maybe::Present(_)) = (run, closing) {
-            break;
+            return Ok(());
         }
         let argument = site.one(run)?;
         written.push(argument.node);
         if let Maybe::Present(_) = closing {
-            break;
+            return Ok(());
         }
         if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         }
     }
+}
 
-    exhausted(site, cursor)
+/// Read the argument lists a call in a type writes into `written`: the first,
+/// and the second that applies the call's result once more, `(b)` in
+/// `f(a)(b)`, when the cursor stands at one (#5213).
+///
+/// # Specification
+/// - requires: `cursor` stands at the first list's `(`.
+/// - ensures: the first list's arguments appended to `written`, then the
+///   stretch of the second list's when it writes one, with the cursor past the
+///   last `)` and nothing after it.
+/// - fails: as [`delimited`].
+/// - panics: none.
+/// - executable: none — each list's reading is [`delimited_list`]'s.
+///
+/// # Errors
+/// The form's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `f(a)` reads one list, and `f(a)(b)` reads two.
+/// - witness: `tests::modules::a_module_s_function_is_called_in_a_type_5213`
+fn argument_lists<'source>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+    written: &mut Vec<NodeIndex>,
+) -> Result<Option<Stretch>, LoweringRefusal<'source>>
+{
+    delimited_list(
+        site,
+        cursor,
+        written,
+        TileName::PAREN_OPEN,
+        TileName::PAREN_CLOSE,
+    )?;
+    let opens = matches!(
+        cursor.peek(),
+        Maybe::Present(Piece::Tile {
+            label: TileName::PAREN_OPEN,
+            ..
+        })
+    );
+    if !opens {
+        exhausted(site, cursor)?;
+        return Ok(None);
+    }
+    let start = written.len();
+    arguments(site, cursor, written)?;
+    Ok(Some(Stretch {
+        start,
+        end: written.len(),
+    }))
 }
 
 /// The entries of `store` that `stretch` names.

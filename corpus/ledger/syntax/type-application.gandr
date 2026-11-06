@@ -1,9 +1,17 @@
-/// `type_application`: a type family applied.
+/// `type_application`: the application of a type family or a function to a
+/// list, and of the result to a second list.
 
 // The native finite lists.
 import std.list (List);
 
-/// One integer in a list.
+/// The type with one point, from a function of no arguments.
+def unit() -> Type { return Unit }
+
+/// A family that ignores its index.
+def after(a : Type) -> Integer -> Type { return fun (x) { a } }
+
+/// A list of points at the type that the calls name. The type applies `List`,
+/// calls `unit` with no arguments, and applies the result of `after` again.
 @[ checks ]
-def numbers : List(Integer) ;
-def numbers = cons 1 nil ;
+def points : (n : Integer) -> after(List(unit()))(n) ;
+def points = fun (n) { cons *{} nil } ;

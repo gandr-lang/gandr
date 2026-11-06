@@ -72,14 +72,15 @@ use gandr_theory_graphs::WalkChainLength;
 /// whitespace, `*{ }` products, the box arrow, juxtaposed calls and layout,
 /// with the call form, the value function type, `unit` and the arm commas
 /// gone (#4853), then by a type applied by juxtaposition beside its call form
-/// (#5326).
-const BUILT_IN_FINGERPRINT: u64 = 0xa034_88d8_0145_bae7;
+/// (#5326), then by a type's call through a module path, its empty list and
+/// its second list (#5213).
+const BUILT_IN_FINGERPRINT: u64 = 0x57d3_bdf2_f55a_9c8c;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3016);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3029);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -99,8 +100,8 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&&", 1),
     ("&{", 2),
     ("'", 2),
-    ("(", 136),
-    (")", 140),
+    ("(", 139),
+    (")", 143),
     ("*", 2),
     ("*=", 15),
     ("*{", 9),
@@ -109,7 +110,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+=", 15),
     ("+U", 1),
     ("+{", 3),
-    (",", 267),
+    (",", 273),
     ("-", 6),
     ("-->", 31),
     ("-=", 15),
@@ -261,7 +262,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("type", 23),
     ("type(", 1),
     ("type_identifier", 203),
-    ("type_variable", 92),
+    ("type_variable", 93),
     ("typed_number", 2),
     ("u32", 1),
     ("u64", 1),
