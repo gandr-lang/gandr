@@ -2662,6 +2662,7 @@ INSERT INTO purpose VALUES('surface-lowering','form::Boxed','struct','Names whet
 INSERT INTO purpose VALUES('surface-lowering','form::Ending','enum','Names a form''s ending, so the form''s ending is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::FormName','struct','Names the name a diagnostic writes a form as, so a form''s name is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Former','enum','Names the former a form''s kind is read as, so the form''s kind is dispatched.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::Kinded','struct','Names whether a written type classifies codes, so a kind arrow lowers as the static arrow.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Offer','enum','Names a form''s offer, so the form''s offer is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Piece','enum','Names one piece of a form, a tile or an operand, so a form''s pieces are read in written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Pieces','struct','Holds a form''s pieces in written order, so a reader walks them once.',NULL,'fits','sound',NULL);
@@ -2670,6 +2671,7 @@ INSERT INTO purpose VALUES('surface-lowering','form::Repair','enum','Names a for
 INSERT INTO purpose VALUES('surface-lowering','form::Repaired','struct','Holds a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::StrayKeyword','struct','Holds a stray keyword, so the keyword''s span is named.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::TileName','struct','Names the name a diagnostic writes a tile as, so a tile''s name is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::classifies_codes','function','Names whether a written type classifies codes, so a kind arrow lowers as the static arrow and the formatter writes no alias for its thunk.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::former::Absent','enum','Names why a form''s kind is read as no former, so the form''s kind is unadmitted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::former_of','function','Names the former a form''s kind is read as, so the form''s kind is dispatched.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::nested::Absent','enum','Names why a form''s kind is read as no nested form, so the form''s kind is unadmitted.',NULL,'fits','sound',NULL);
