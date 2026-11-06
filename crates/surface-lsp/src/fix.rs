@@ -17,6 +17,11 @@
 //! place in one trial of the document, the one a model's candidate fills
 //! pass. A name the trial judges, leaving no more errors than the document
 //! publishes, is offered as a fix, best first.
+//!
+//! A refusal whose help names a repair, such as the `,` between two items
+//! side by side, keeps the repair on its diagnostic. The repairs the asked
+//! range meets are tried in one trial of the document, and a repair is offered
+//! as a fix only when the document it writes refuses less.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -44,6 +49,7 @@ use crate::position::Range;
 use crate::protocol::CodeAction;
 use crate::protocol::CompletionItemKind;
 use crate::protocol::Diagnostic;
+use crate::protocol::DiagnosticData;
 use crate::protocol::DocumentEdit;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
@@ -358,6 +364,93 @@ pub fn fills(
                     new_text: name.clone(),
                 }]),
             )])),
+        })
+        .collect()
+}
+
+/// The quick fixes that write each repair `named` carries, once `tried` shows
+/// that the document the repair writes refuses less than `published`.
+///
+/// # Specification
+/// - requires: every diagnostic of `named` carries a repair; `tried` is a trial
+///   of those repairs, each alone written over its range, the repair of
+///   `named[n]` candidate `n`; `published` is the document's published
+///   diagnostics, and `diagnostics` the request's, each as the client sent it.
+/// - ensures: in the order of `named`, one `quickfix` per repair the trial
+///   judged with fewer errors than `published`, titled by its help, writing the
+///   repair, and naming each diagnostic of `diagnostics` whose range reads and
+///   meets the repaired diagnostic's; preferred when it is the only such fix
+///   and leaves no error.
+/// - provides: the checked repairs' share of `textDocument/codeAction`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list of two items with no `,` between them is offered
+///   the `,`; a line that continues a `let` is offered nothing, because the
+///   document the repair writes refuses as much.
+/// - witness: `server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
+#[spec(ensures: |ret| ret.len() <= named.len()
+    && ret.iter().all(|action| action.kind == "quickfix")
+    && ret.iter().filter(|action| action.is_preferred).count() <= 1)]
+#[must_use]
+pub fn checked(
+    uri: &DocumentUri,
+    named: &[&Diagnostic],
+    tried: &[Tried],
+    (published, diagnostics): (&[Diagnostic], &[Value]),
+) -> Vec<CodeAction>
+{
+    let errors = |judged: &[Diagnostic]| {
+        judged
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == Severity::ERROR)
+            .count()
+    };
+    let before = errors(published);
+    let kept: Vec<(&Diagnostic, &DiagnosticData, usize)> = named
+        .iter()
+        .enumerate()
+        .filter_map(|(at, &repaired)| {
+            let data = repaired.data.as_ref()?;
+            let after = tried
+                .iter()
+                .find(|tried| {
+                    usize::from(tried.candidate) == at && tried.reached == Reached::Judged
+                })
+                .map(|tried| errors(&tried.diagnostics))?;
+            (after < before).then_some((repaired, data, after))
+        })
+        .collect();
+    let alone = kept.len() == 1;
+    kept.into_iter()
+        .map(|(repaired, data, after)| {
+            let mut letters = data.help.chars();
+            let title = letters.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(letters).collect()
+            });
+            CodeAction {
+                title,
+                kind: "quickfix",
+                diagnostics: diagnostics
+                    .iter()
+                    .filter(|diagnostic| {
+                        diagnostic
+                            .get("range")
+                            .and_then(|range| Range::deserialize(range).ok())
+                            .is_some_and(|range| {
+                                range.start <= repaired.range.end
+                                    && repaired.range.start <= range.end
+                            })
+                    })
+                    .cloned()
+                    .collect(),
+                is_preferred: alone && after == 0,
+                edit: WorkspaceEdit::of(BTreeMap::from([(
+                    uri.clone(),
+                    Vec::from([data.repair.clone()]),
+                )])),
+            }
         })
         .collect()
 }

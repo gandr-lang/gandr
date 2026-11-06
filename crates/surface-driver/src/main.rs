@@ -380,6 +380,7 @@ use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::Reached;
 use gandr_surface_dispatcher::Reconciled;
+use gandr_surface_dispatcher::Repairs;
 use gandr_surface_dispatcher::Revisions;
 use gandr_surface_dispatcher::Rewrite;
 use gandr_surface_dispatcher::RunStatus;
@@ -3840,7 +3841,19 @@ fn run(
         }
         match step {
             Step::Source { .. } => {
-                for diagnostic in entries(&step, verb).linting(lints).spelling(spelling) {
+                // `check` proposes a repair as a fix only once the source the
+                // repair writes settles its declaration; `test` names it alone.
+                let repairs = if checking {
+                    Repairs::Checked
+                }
+                else {
+                    Repairs::Named
+                };
+                for diagnostic in entries(&step, verb)
+                    .linting(lints)
+                    .spelling(spelling)
+                    .repairing(repairs)
+                {
                     let separator = match (diagnostic.severity, verbosity) {
                         (
                             Severity::Error | Severity::Warning | Severity::Goal | Severity::Note,

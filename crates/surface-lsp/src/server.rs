@@ -121,6 +121,7 @@ use crate::complete::Unimported;
 use crate::complete::completions;
 use crate::complete::resolved;
 use crate::files::Files;
+use crate::fix::checked;
 use crate::fix::fills;
 use crate::fix::holes;
 use crate::fix::repairs;
@@ -5222,6 +5223,11 @@ impl Server
                                     (params.range, &params.context.diagnostics),
                                     self.style.printed(),
                                 ));
+                                offered.extend(workspace.checked_repairs(
+                                    &params.text_document.uri,
+                                    self.peer,
+                                    (params.range, &params.context.diagnostics),
+                                ));
                                 offered.extend(workspace.import_removals(
                                     &params.text_document.uri,
                                     self.peer,
@@ -6790,6 +6796,72 @@ impl Workspace
             })
             .flat_map(|placed| fills(uri, placed, &tried, (published, diagnostics)))
             .collect()
+    }
+
+    /// The quick fixes that write each repair a diagnostic carries, among
+    /// those the latest copy of the document at `uri` publishes and `asked`
+    /// meets, once a trial shows that the document the repair writes refuses
+    /// less.
+    ///
+    /// # Specification
+    /// - requires: `diagnostics` are the request's, each as the client sent it.
+    /// - ensures: nothing for an unknown document, a copy that is not the
+    ///   latest the trial judges, or a range that meets no published diagnostic
+    ///   carrying a repair, which pays no trial; otherwise the [`checked`]
+    ///   fixes of one trial of every repair the published diagnostics `asked`
+    ///   meets carry, made as [`Self::trial`] makes it. Every copy, its session
+    ///   and its published diagnostics are unchanged.
+    /// - provides: the checked repairs of `textDocument/codeAction`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one trial of the repairs the range meets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`checked`], through the request.
+    /// - witness: `server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
+    #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_empty())]
+    fn checked_repairs(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        (asked, diagnostics): (Range, &[Value]),
+    ) -> Vec<CodeAction>
+    {
+        let (Maybe::Present(document), Some((version, published))) =
+            (self.view(uri, peer), self.published(uri))
+        else {
+            return Vec::new();
+        };
+        if version != document.version {
+            return Vec::new();
+        }
+        let named: Vec<&Diagnostic> = published
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.data.is_some()
+                    && diagnostic.range.start <= asked.end
+                    && asked.start <= diagnostic.range.end
+            })
+            .collect();
+        let changes: Vec<ContentChange> = named
+            .iter()
+            .filter_map(|diagnostic| diagnostic.data.as_ref())
+            .map(|data| ContentChange {
+                range: Some(data.repair.range),
+                text: data.repair.new_text.clone(),
+            })
+            .collect();
+        if changes.is_empty() {
+            return Vec::new();
+        }
+        let Some((judged, tried)) = self.trial(uri, &changes)
+        else {
+            return Vec::new();
+        };
+        if judged != version {
+            return Vec::new();
+        }
+        checked(uri, &named, &tried, (published, diagnostics))
     }
 
     /// The quick fixes removing each unused import `asked` meets in the copy of
@@ -17610,6 +17682,100 @@ mod tests
             ask(line, 2),
             serde_json::json!([]),
             "where no hole stands, no fill"
+        );
+    }
+
+    /// #5474: a refusal whose help names a repair publishes the repair, and a
+    /// code action offers it once a trial shows that the document it writes
+    /// refuses less: the `,` between two list items is offered, and a line
+    /// moved to its block's column, which still refuses, is not.
+    #[test]
+    fn a_repair_is_offered_once_its_trial_settles_it_5474()
+    {
+        let (mut workspace, [mut first, _second]) = two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        let published = |workspace: &Workspace| {
+            workspace
+                .documents
+                .get(&uri)
+                .map(|held| serde_json::to_value(&held.document.checked))
+                .expect("the document is held")
+                .expect("the diagnostics serialise")
+        };
+        let ask = |workspace: &Workspace, judged: &Value, line: u32, character: u32| {
+            asked(
+                workspace,
+                Json("textDocument/codeAction"),
+                Json(&format!(
+                    r#","range":{{"start":{{"line":{line},"character":{character}}},"end":{{"line":{line},"character":{character}}}}},"context":{{"diagnostics":{judged}}}"#
+                )),
+            )
+        };
+        let list = "import std.list (List);\ndef pair() -> List(Integer) =\n  #[7 8]\n";
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didOpen"),
+                Json(&format!(
+                    r#","version":1,"text":{}}}"#,
+                    serde_json::to_string(list).expect("the text serialises")
+                )),
+            ),
+        ));
+        let judged = published(&workspace);
+        let comma = serde_json::json!({"start": {"line": 2_u32, "character": 5_u32},
+            "end": {"line": 2_u32, "character": 5_u32}});
+        assert_eq!(
+            judged.pointer("/0/data"),
+            Some(&serde_json::json!({
+                "repair": {"range": comma, "newText": ","},
+                "help": "add a `,` after `7` to separate the two items",
+            })),
+            "the refusal publishes the repair its help names: {judged}"
+        );
+        let offered = ask(&workspace, &judged, 2, 4);
+        assert_eq!(
+            (
+                offered.pointer("/0/title"),
+                offered.pointer("/0/isPreferred"),
+                offered.pointer("/0/edit"),
+                offered.pointer("/1"),
+            ),
+            (
+                Some(&serde_json::json!(
+                    "Add a `,` after `7` to separate the two items"
+                )),
+                Some(&serde_json::json!(true)),
+                Some(
+                    &serde_json::json!({"changes": {"file:///tmp/shared.gandr": [
+                        {"range": comma, "newText": ","}
+                    ]}})
+                ),
+                None,
+            ),
+            "the `,` settles the list, so it is the one preferred fix: {offered}"
+        );
+        let laid = "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n   y\n  a\n";
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didChange"),
+                Json(&format!(
+                    r#","version":2}},"contentChanges":[{{"text":{}}}]"#,
+                    serde_json::to_string(laid).expect("the text serialises")
+                )),
+            ),
+        ));
+        let judged = published(&workspace);
+        assert_eq!(
+            judged.pointer("/0/data/repair/newText"),
+            Some(&serde_json::json!("  ")),
+            "the refusal publishes the line moved to its block's column: {judged}"
+        );
+        assert_eq!(
+            ask(&workspace, &judged, 1, 10),
+            serde_json::json!([]),
+            "the moved line still refuses, so no fix is offered"
         );
     }
 

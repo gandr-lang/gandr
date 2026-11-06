@@ -941,6 +941,7 @@ pub mod tests
             message: message.into(),
             related_information: Vec::new(),
             tags: Vec::new(),
+            data: None,
         }
     }
 

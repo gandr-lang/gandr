@@ -2159,6 +2159,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','compose::tabled::Absent','enum'
 INSERT INTO purpose VALUES('surface-dispatcher','dispatch','function','Route one invocation to its outcome.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::Entries','struct','The diagnostics of one step, in the order its verb prints them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::Refusals','enum','Which of a step''s refusals its declarations print.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','entry::Repairs','enum','Whether the repair a refusal names is checked before the refusal proposes it as its fix, so `check` proposes only a fix that settles its declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::entries','function','What `step` prints under `verb`, in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Engine','enum','The engine a run takes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','evaluate::Evaluation','enum','What running one declaration came to.',NULL,'fits','sound',NULL);
@@ -2920,6 +2921,7 @@ INSERT INTO purpose VALUES('surface-lsp','protocol::ContentParams','struct','The
 INSERT INTO purpose VALUES('surface-lsp','protocol::ContentResult','struct','What `workspace/textDocumentContent` answers: the virtual document''s text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::CreateProgressParams','struct','The parameters of `window/workDoneProgress/create`: the token the client is asked to show progress under.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::Diagnostic','struct','One diagnostic, as the editor shows it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp','protocol::DiagnosticData','struct','The repair a diagnostic''s help names, kept on the diagnostic for the code action that offers it once a trial checks it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::DiagnosticOptions','struct','The diagnostic provider, as advertised.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::DiagnosticReport','enum','What a pull of a document''s diagnostics answers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','protocol::DiagnosticTag','struct','How a diagnostic''s range is marked besides its severity, as the protocol numbers it.',NULL,'fits','sound',NULL);
@@ -3146,6 +3148,9 @@ INSERT INTO purpose VALUES('surface-parser','parse::FormSplit','struct','One sou
 INSERT INTO purpose VALUES('surface-parser','parse::ParseCleanStatus','struct','Whether a batch parse produced no obligations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::ParseResult','struct','The result of a batch parse: the committed tree and its completion obligations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::Unlayable','enum','Why a parse cannot stand before documents parsed alone and laid after it (ParseResult::layable).',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','parse::gap::Juxtaposition','struct','Names the repair a refusal of an application whose head is no function names: the bytes it replaces and the text written there.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','parse::gap::Separation','enum','Names what separates an operand from a head that is no function, so the help says whether a `,` or a new statement repairs it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','parse::gap::juxtaposed','function','The repair the refusal of an application whose head is no function names: a `,` between two items of a group, or the operand''s line moved to its block''s column.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::parse','function','Batch-parse `source` over the checked grammar `pbg`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','parse::parse_by_form','function','Batch-parse `source` by its top-level forms: split, mold each form run apart, join.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','DEPTH_LIMIT','constant','Names the depth a value''s presentation is bounded at, so a value deeper than the limit is elided.',NULL,'fits','sound',NULL);

@@ -44,6 +44,7 @@ use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::fix;
 use gandr_surface_diagnostics::obstructed;
 use gandr_surface_diagnostics::parting;
+use gandr_surface_diagnostics::repair;
 use gandr_surface_diagnostics::report_identifier;
 use gandr_surface_diagnostics::report_span;
 use gandr_surface_diagnostics::tracking;
@@ -1926,6 +1927,77 @@ fn a_return_position_failure_points_at_the_returned_value()
         diagnostic.contexts.last().map(|context| context.role),
         Some(FrameRole::ReturnValue),
         "the innermost rule is the return's"
+    );
+}
+
+#[test]
+fn a_head_that_is_no_function_names_its_repair_5474()
+{
+    let list = "import std.list (List);\ndef pair() -> List(Integer) =\n  #[7 8]\n";
+    let repaired_list = "import std.list (List);\ndef pair() -> List(Integer) =\n  #[7, 8]\n";
+    for (source, help, repaired) in [
+        (
+            list,
+            "add a `,` after `7` to separate the two items",
+            repaired_list,
+        ),
+        (
+            "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n   y\n  a\n",
+            "move the line after `x` to its block's column to start a statement",
+            "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n  y\n  a\n",
+        ),
+    ] {
+        let printed = walked(Path::new("juxtaposed.gandr"), SourceText::from(source));
+        assert_eq!(printed.len(), 1_usize, "one refusal: {printed:?}");
+        let fixed = printed
+            .iter()
+            .find_map(|diagnostic| match diagnostic.repair {
+                Maybe::Present(ref named) => {
+                    let mut fixed = String::from(source);
+                    fixed.replace_range(
+                        usize::from(named.span.start()) .. usize::from(named.span.end()),
+                        &named.replacement,
+                    );
+                    Some(fixed)
+                },
+                Maybe::Absent(_) => None,
+            });
+        assert_eq!(
+            (
+                printed
+                    .iter()
+                    .map(|diagnostic| diagnostic.help.clone())
+                    .collect::<Vec<_>>(),
+                fixed.as_deref()
+            ),
+            (vec![Maybe::Present(String::from(help))], Some(repaired)),
+            "the help names the repair, and the repair writes it: {source}"
+        );
+        assert_eq!(
+            printed
+                .iter()
+                .map(|diagnostic| diagnostic.fix.clone())
+                .collect::<Vec<_>>(),
+            [Maybe::Absent(fix::Absent::Unproposed)],
+            "a report checks no repair, so it proposes none as a fix: {source}"
+        );
+    }
+    assert_eq!(
+        walked(
+            Path::new("juxtaposed.gandr"),
+            SourceText::from(repaired_list)
+        ),
+        [],
+        "the list the repair writes checks"
+    );
+    assert_eq!(
+        only(
+            Path::new("applied.gandr"),
+            SourceText::from("def g(x : Integer) -> Integer =\n  x 1\n")
+        )
+        .repair,
+        Maybe::Absent(repair::Absent::Unnamed),
+        "an operand on its head's line inside no group names no repair"
     );
 }
 
