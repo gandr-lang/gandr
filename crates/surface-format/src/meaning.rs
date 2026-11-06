@@ -180,37 +180,6 @@ pub fn refused(
         .collect()
 }
 
-/// The withdrawal, for `reason`, of the first declaration `module` lowered at
-/// or after `base` whose forms' keys `held` accepts.
-///
-/// # Specification
-/// trivial.
-pub fn holding<Held>(
-    module: &LoweredModule<'_>,
-    base: ByteOffset,
-    reason: &Withdrawn,
-    held: Held,
-) -> Option<Withdrawal>
-where
-    Held: Fn(&[NodeKey]) -> bool,
-{
-    let mut keys = Vec::new();
-    module
-        .declarations()
-        .iter()
-        .filter(|declaration| declaration.span().start() >= base)
-        .find(|declaration| {
-            keys.clear();
-            keys.extend(halves(declaration));
-            held(&keys)
-        })
-        .map(|declaration| Withdrawal {
-            declaration: format!("{}", declaration.name()),
-            span: own(declaration.span(), base),
-            reason: reason.clone(),
-        })
-}
-
 /// The withdrawal of each declaration `module` lowered at or after `base`
 /// whose forms' keys `held` accepts and whose name `reader` maps to the
 /// declaration that reads it: the declarations a reader's meaning depends on

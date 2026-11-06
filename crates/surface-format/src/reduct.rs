@@ -33,6 +33,8 @@ use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_parser::Lexeme;
+use gandr_surface_parser::label;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Fidelity;
@@ -48,8 +50,6 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use crate::composite::Token;
-use crate::composite::tokens;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
 use crate::meaning::Elaboration;
@@ -93,6 +93,52 @@ pub struct Forget
     pub sorts: Vec<(String, Vec<Token>)>,
     /// The theory's name, segment by segment.
     pub theory: Vec<String>,
+}
+
+/// One token of a carrier's type as the printer spells it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Token
+{
+    /// Its text.
+    pub text: String,
+    /// Whether the printer wrote whitespace before it.
+    pub spaced: Spaced,
+}
+
+/// Whether whitespace stands before a token.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Spaced
+{
+    /// It does.
+    Yes,
+    /// It does not.
+    No,
+}
+
+/// The tokens of `spelled`, each with whether the printer wrote whitespace
+/// before it, the first with none; none when it spells no token.
+///
+/// # Specification
+/// trivial.
+fn tokens(spelled: SourceFragment<'_>) -> Option<Vec<Token>>
+{
+    let text = <&str>::from(spelled);
+    let mut found: Vec<Token> = Vec::new();
+    let mut spaced = Spaced::No;
+    for token in label(spelled) {
+        if token.lexeme == Lexeme::Space {
+            spaced = Spaced::Yes;
+            continue;
+        }
+        let written =
+            text.get(usize::try_from(token.start).ok()? .. usize::try_from(token.end).ok()?)?;
+        found.push(Token {
+            text: String::from(written),
+            spaced: if found.is_empty() { Spaced::No } else { spaced },
+        });
+        spaced = Spaced::No;
+    }
+    (!found.is_empty()).then_some(found)
 }
 
 /// How the explicit form writes the map the checker applies at a value.

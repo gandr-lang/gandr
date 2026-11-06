@@ -508,8 +508,7 @@ fn census(
 }
 
 /// Every way `written`'s signatures, spelled by the printer, fail the
-/// parity: one line each. Beside them, each declaration the parity holds out,
-/// by the issue its printing names ([`inverse_hold`]).
+/// parity: one line each.
 ///
 /// # Specification
 /// trivial.
@@ -517,22 +516,18 @@ fn misses(
     grammar: &Pbg,
     written: Written<'_>,
     name: &CorpusName,
-) -> (Vec<String>, BTreeSet<String>)
+) -> Vec<String>
 {
     let name: &str = name.as_ref();
     let signatures = signed(written.text, &top_level(grammar, written.text));
     if signatures.is_empty() {
-        return (Vec::new(), BTreeSet::new());
+        return Vec::new();
     }
     let Some(table) = typed(grammar, written)
     else {
-        return (
-            vec![format!("{name}: the source does not type")],
-            BTreeSet::new(),
-        );
+        return vec![format!("{name}: the source does not type")];
     };
     let mut misses = Vec::new();
-    let mut held = BTreeSet::new();
     let mut printed_whole = BTreeMap::new();
     for (declaration, pair) in printed(&table, &signatures) {
         match pair {
@@ -605,35 +600,15 @@ fn misses(
             let want = tokens(SourceFragment::from(pick(pair, expected).as_str()));
             match wrote.get(declaration) {
                 Some(got) if *got == want => {},
-                got => match inverse_hold(SourceFragment::from(pair.0.as_str())) {
-                    Some(why) => {
-                        let _first = held.insert(format!("{name}: `{declaration}`: {why}"));
-                    },
-                    None => misses.push(format!(
-                        "{name}: `{declaration}` from {from:?} into {into}:\n  formatter: {}\n  printer:   {}",
-                        got.map_or_else(|| String::from("(no signature)"), |got| got.join(" ")),
-                        want.join(" ")
-                    )),
-                },
+                got => misses.push(format!(
+                    "{name}: `{declaration}` from {from:?} into {into}:\n  formatter: {}\n  printer:   {}",
+                    got.map_or_else(|| String::from("(no signature)"), |got| got.join(" ")),
+                    want.join(" ")
+                )),
             }
         }
     }
-    (misses, held)
-}
-
-/// Why the parity holds out a declaration the printer spells `sugared`: a
-/// reason read off the printing, never a name list. A printing that writes
-/// the path inverse, `Path.back p`, holds a form the formatter rewrites in
-/// neither direction (#5205).
-///
-/// # Specification
-/// trivial.
-fn inverse_hold(sugared: SourceFragment<'_>) -> Option<Held>
-{
-    tokens(sugared)
-        .windows(3)
-        .any(|run| matches!(run, [path, dot, back] if path == "Path" && dot == "." && back == "back"))
-        .then_some(Held::Inverse)
+    misses
 }
 
 /// The page the printer spells a whole declaration on: wide, so a type is
@@ -651,9 +626,6 @@ enum Held
     /// A printing whose sugared and explicit spellings, each substituted
     /// for the declaration, lower to different core (#808).
     Apart,
-    /// A printing that writes a path inverse, which the formatter rewrites in
-    /// neither direction (#5205).
-    Inverse,
     /// A printing that juxtaposes a type application inside an expression,
     /// where the type grammar reads no juxtaposition (#5200).
     Juxtaposed,
@@ -679,7 +651,6 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
-            Self::Inverse => "#5205, a printed path inverse",
             Self::Juxtaposed => "#5200, a type application juxtaposed inside an expression",
             Self::Withdrawn => "#5207, a product of thunk types the formatter withdraws in a quote",
             Self::SeveralResults => "#5173, a bind of a call's outputs",
@@ -1592,18 +1563,6 @@ fn bodies(
     for declaration in parted {
         holding.push((Held::Apart, declaration.name.as_str()));
     }
-    // A printing that writes a path inverse is held before the formatter
-    // spells it: the formatter rewrites the inverse in neither direction.
-    let (inverted, held): (Vec<&Printed>, Vec<&Printed>) =
-        held.into_iter().partition(|declaration| {
-            inverse_hold(SourceFragment::from(
-                declaration.written(Form::Sugared).as_str(),
-            ))
-            .is_some()
-        });
-    for declaration in inverted {
-        holding.push((Held::Inverse, declaration.name.as_str()));
-    }
     for (held, declaration) in holding {
         found
             .held
@@ -1802,11 +1761,44 @@ fn a_scope_s_and_a_row_s_manifest_carrier_is_spelled_as_the_printer_does_3715()
     );
 }
 
+/// #5205: `unwound_word` writes a path inverse in its type's endpoint. The
+/// printer writes the inverse as `Path.back` in the explicit form too, and
+/// the formatter spells each signature of the source as the printer does,
+/// from either form into either.
+#[test]
+fn an_inverse_in_a_type_s_endpoint_is_spelled_as_the_printer_does_5205()
+{
+    let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+    let source = gandr_workflow_sweep::corpus::sources()
+        .expect("the corpus reads")
+        .into_iter()
+        .find(|source| source.path.ends_with("model/identity/circle-elim.gandr"))
+        .expect("the source stands in the corpus");
+    let text = std::fs::read_to_string(&source.path).expect("the source is readable");
+    let written = Written {
+        path: &source.path,
+        text: SourceText::from(text.as_str()),
+    };
+    let signatures = signed(written.text, &top_level(&grammar, written.text));
+    let table = typed(&grammar, written).expect("the source types");
+    let spelled = printed(&table, &signatures);
+    let Some(&(Spelled::Faithful(_), Spelled::Faithful(ref explicit))) =
+        spelled.get("unwound_word")
+    else {
+        panic!("the printer spells `unwound_word`'s type faithfully in both forms");
+    };
+    assert!(
+        explicit.contains("Path.back loop") && !explicit.contains("Path.walk"),
+        "the explicit form writes the inverse as written: {explicit}"
+    );
+    let misses = misses(&grammar, written, &source.name);
+    assert!(misses.is_empty(), "{}", misses.join("\n"));
+}
+
 /// The parity sweeps: a sample on every pull request, every source under the
 /// `sweeps` profile.
 mod sweeps
 {
-    use alloc::collections::BTreeSet;
     use std::io::Write as _;
 
     use gandr_surface_grammar::built_in;
@@ -1871,22 +1863,16 @@ mod sweeps
             &corpus::sources().expect("the corpus reads"),
         );
         let mut all = Vec::new();
-        let mut held = BTreeSet::new();
         for source in sources {
             let text = std::fs::read_to_string(&source.path).expect("a corpus source is readable");
-            let (missed, holding) = misses(
+            all.extend(misses(
                 &grammar,
                 Written {
                     path: &source.path,
                     text: SourceText::from(text.as_str()),
                 },
                 &source.name,
-            );
-            all.extend(missed);
-            held.extend(holding);
-        }
-        for line in &held {
-            eprintln!("held out, {line}");
+            ));
         }
         assert!(all.is_empty(), "{} misses:\n{}", all.len(), all.join("\n"));
     }
