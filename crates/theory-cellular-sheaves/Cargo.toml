@@ -3,7 +3,7 @@ name = "gandr-theory-cellular-sheaves"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Cellular sheaves for gandr: stalks and restriction maps over a finite graded poset, gluing over a cover, and cohomology through a tower of levels"
+description = "Cellular sheaves for gandr: stalks and restriction maps over a finite graded poset, gluing over a cover, cohomology through a tower of levels, and the reduction along a compatible matching"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -21,9 +21,11 @@ path = "tests/lib.rs"
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. The graded poset holds the cells and their
 # order, and finite Stone duality names the cells and holds the sets of them
-# as bit rows.
+# as bit rows. Discrete Morse theory gives the matching and the walk of its
+# gradient that a reduction sums along.
 [dependencies]
 anodized.workspace = true
+gandr-theory-discrete-morse.workspace = true
 gandr-theory-graded-posets.workspace = true
 gandr-theory-stone-duality.workspace = true
 

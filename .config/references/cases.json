@@ -69,6 +69,19 @@
     ]
   },
   {
+    "name": "a key line `cargo fmt` wraps after its dash takes its role from the next line, that line's locator left to the entry; a dash with no role after it is refused",
+    "files": {
+      "crates/demo-crate/src/lib.rs": "//! The crate.\n//!\n//! # References\n//!\n//! - `Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology` —\n//!   exemplar: Definition 2.4 and Theorem 2.6, `arXiv:1312.6454`.\n//! - `Dashed-2020-a_key_with_no_role` —\n//!   the role wrapped away.\npub mod memo;\n",
+      "crates/demo-crate/README.md": "# demo-crate\n\n## References\n\n- `Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology` — exemplar: Definition 2.4.\n"
+    },
+    "output": [
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tCurry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology\tdemo-crate\t\texemplar\tcrates/demo-crate/src/lib.rs:6",
+      "refused\ta References line gives its key a role and what it decides: - `Dashed-2020-a_key_with_no_role` — <newest|dependency|anchor|exemplar>: <what it decides>\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs:8",
+      "mirror\tCurry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology\tdemo-crate\t\texemplar\tcrates/demo-crate/README.md:5"
+    ]
+  },
+  {
     "name": "#3666: a vault page cited by its mint at a nested module and in its README is one cite and one mirror, and the entry's `hal:` identifier is no locator",
     "files": {
       "crates/demo-crate/src/replay/environment.rs": "//! The environment.\n//!\n//! # References\n//!\n//! - `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: Accattoli's\n//!   habilitation, § 3.9, the value of variables.\n",

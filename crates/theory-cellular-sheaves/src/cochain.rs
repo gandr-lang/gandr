@@ -31,14 +31,15 @@ use crate::sheaf::Sheaf;
 /// cochains of each degree and the coboundary from each degree to the next.
 ///
 /// # Specification
-/// - ensures: one slot for each cell; one dimension for each degree from zero
+/// - ensures: one slot for each cell of the complex, each cell of the sheaf or
+///   each critical cell of a reduction; one dimension for each degree from zero
 ///   to the highest rank; one coboundary for each degree below the highest,
 ///   with the next degree's dimension as its rows and its own as its columns;
 ///   each two coboundaries in turn compose to zero.
 /// - provides: the coboundaries and the cohomology.
 /// - panics: none.
 /// - executable: none — a type-level block: the invariant is
-///   [`Sheaf::cochains`]'s, which makes it.
+///   `CochainComplex::assembled`'s, which makes it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CochainComplex
 {
@@ -160,6 +161,44 @@ impl<Cell> Sheaf<Cell>
                 }
             }
         }
+        CochainComplex::assembled(slots, dimensions, coboundaries)
+    }
+}
+
+impl CochainComplex
+{
+    /// The cochain complex of `slots`, `dimensions` and `coboundaries`, once
+    /// each two coboundaries in turn compose to zero.
+    ///
+    /// # Specification
+    /// - requires: one coboundary for each degree below the highest, with the
+    ///   next degree's dimension as its rows and its own as its columns.
+    /// - ensures: the complex holds the three lists as given.
+    /// - fails: two coboundaries in turn whose composite is not zero are
+    ///   refused by the lower degree.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`SheafError::NotAComplex`]: the coboundaries from a degree and the
+    ///   next compose to a map that is not zero.
+    /// - [`SheafError::Overflow`]: a product passes the integers.
+    /// - [`SheafError::ShapeMismatch`]: two coboundaries do not chain,
+    ///   unreachable for the shapes the crate builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a square with every incidence positive is refused,
+    ///   and with the incidences of its boundary it is admitted; L2 — the
+    ///   reduct of every level of both towers is admitted.
+    /// - witness: `tests::cochains::a_square_with_every_incidence_positive_is_refused`
+    /// - witness: `tests::cochains::a_square_oriented_as_a_complex_is_contractible`
+    /// - witness: `tests::towers::every_level_of_both_towers_keeps_its_cohomology_on_its_reduct`
+    #[spec(ensures: |ref ret| ret.is_ok() || matches!(*ret, Err(SheafError::NotAComplex(_) | SheafError::Overflow | SheafError::ShapeMismatch)))]
+    pub(crate) fn assembled(
+        slots: Vec<Slot>,
+        dimensions: Vec<Dimension>,
+        coboundaries: Vec<Matrix>,
+    ) -> Result<Self, SheafError>
+    {
         for (degree, pair) in coboundaries.windows(2).enumerate() {
             if let [ref lower, ref upper] = *pair {
                 let composite = upper.product(lower)?;
@@ -168,16 +207,13 @@ impl<Cell> Sheaf<Cell>
                 }
             }
         }
-        Ok(CochainComplex {
+        Ok(Self {
             slots,
             dimensions,
             coboundaries,
         })
     }
-}
 
-impl CochainComplex
-{
     /// The coboundary from degree `degree` to the next.
     ///
     /// # Specification

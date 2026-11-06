@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use gandr_theory_discrete_morse::Budget;
 use gandr_theory_graded_posets::Rank;
 use gandr_theory_stone_duality::DualityError;
 use gandr_theory_stone_duality::Element;
@@ -109,6 +110,21 @@ pub enum SheafError
     /// A level lies past the tower, or it is the first level, which no
     /// bonding map reaches.
     LevelOutside(Level),
+    /// A matching pairs the first cell with the second, and the map from the
+    /// first to the second, with the sign of the first cell's incidence, is
+    /// not invertible. The first cell is no face of the second, its incidence
+    /// is zero, the two stalks have other widths, or the map reads one entry
+    /// twice.
+    NotInvertible
+    {
+        /// The redundant cell of the pair.
+        lower: Element,
+        /// Its partner, one rank up.
+        upper: Element,
+    },
+    /// The walk of a reduction's gradient reaches more redundant cells than
+    /// this budget.
+    PastBudget(Budget),
     /// Exact arithmetic over the rationals passes the integers it holds.
     Overflow,
     /// Two matrices, or a matrix and a row or a column, do not fit together:
@@ -216,6 +232,17 @@ impl fmt::Display for SheafError
             Self::LevelOutside(level) => {
                 write!(f, "level {} has no bonding map into it", usize::from(level))
             },
+            Self::NotInvertible { lower, upper } => write!(
+                f,
+                "the matching pairs cell {} with cell {}, and the map between them is not invertible",
+                usize::from(lower),
+                usize::from(upper)
+            ),
+            Self::PastBudget(budget) => write!(
+                f,
+                "the walk of the gradient reaches more than {} redundant cells",
+                usize::from(budget)
+            ),
             Self::Overflow => f.write_str("exact arithmetic past the integers it holds"),
             Self::ShapeMismatch => f.write_str("two matrices that do not fit together"),
         }

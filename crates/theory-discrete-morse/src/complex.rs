@@ -48,6 +48,51 @@ impl Incidence
             Invertibility::NotInvertible
         }
     }
+
+    /// The sum of two incidences, or nothing past the 64-bit integers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn plus(
+        self,
+        other: Self,
+    ) -> Option<Self>
+    {
+        match self.0.checked_add(other.0) {
+            Some(sum) => Some(Self(sum)),
+            None => None,
+        }
+    }
+
+    /// The product of two incidences, or nothing past the 64-bit integers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn times(
+        self,
+        other: Self,
+    ) -> Option<Self>
+    {
+        match self.0.checked_mul(other.0) {
+            Some(product) => Some(Self(product)),
+            None => None,
+        }
+    }
+
+    /// The negated incidence, or nothing past the 64-bit integers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn negated(self) -> Option<Self>
+    {
+        match self.0.checked_neg() {
+            Some(negated) => Some(Self(negated)),
+            None => None,
+        }
+    }
 }
 
 /// Whether a cell lies in a complex.

@@ -13,7 +13,9 @@
 //! through the same maps, each with the sign that an orientation gives. A
 //! tower is a sequence of levels, each a sheaf, with a bonding map from each
 //! level to the one before it. The crate gives each level's cohomology and the
-//! rank of the map that each bonding map induces on it.
+//! rank of the map that each bonding map induces on it. A sheaf also reduces
+//! along a matching whose maps are invertible, onto cochains on its critical
+//! cells alone, with the same cohomology.
 //!
 //! The cells and their order are a [`GradedPoset`]. A sheaf holds each set of
 //! cells as one bit row, so it refuses a poset of more than 64 cells.
@@ -26,6 +28,7 @@
 //! | [`Gluing`], [`Section`], [`Obstruction`], [`Agreement`] | the verdict on the sections of a cover, the glued section or each pair that differs, and the verdict on one pair |
 //! | [`CochainComplex`], [`Matrix`], [`Cohomology`] | the coboundaries over the rationals, their ranks and the cohomology by degree |
 //! | [`Tower`], [`Image`] | the levels of a tower, where each bonding map sends each cell, and the rank of the map it induces on cohomology |
+//! | [`Oriented`], [`Reduced`] | the poset as a complex over the integers for a matching, and the cochains reduced along it |
 //! | [`Entry`], [`Width`], [`Dimension`], [`CoverIndex`], [`Level`], [`Incidence`] | the names of an entry, a width, a dimension, a cover member, a level and an incidence |
 //! | [`SheafError`] | every refusal, by the cell or the degree it concerns |
 //!
@@ -91,6 +94,7 @@ mod cochain;
 mod error;
 mod index;
 mod matrix;
+mod reduce;
 mod sheaf;
 mod tower;
 
@@ -104,6 +108,8 @@ pub use index::Incidence;
 pub use index::Level;
 pub use index::Width;
 pub use matrix::Matrix;
+pub use reduce::Oriented;
+pub use reduce::Reduced;
 pub use sheaf::Agreement;
 pub use sheaf::Gluing;
 pub use sheaf::Obstruction;

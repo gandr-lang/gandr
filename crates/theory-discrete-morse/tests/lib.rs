@@ -21,4 +21,6 @@ mod greedy;
 #[cfg(test)]
 mod poset;
 #[cfg(test)]
+mod reduct;
+#[cfg(test)]
 mod simplices;
