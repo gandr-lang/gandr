@@ -4091,6 +4091,42 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.updates.insert(written, kept);
     }
 
+    /// Record that the value `at` stands as its update by the record `overlay`,
+    /// the update keeping `at`'s fields at `kept`: the coercion out of an
+    /// element of a patched type, and the read of a field that the type fixes
+    /// (#5579).
+    ///
+    /// # Specification
+    /// - requires: `overlay` is a record of values that `at`'s patched type
+    ///   fixes, and `kept` the labels of `at`'s free fields the record stands
+    ///   at.
+    /// - ensures: the written value `at` stands for crosses by the overlaid
+    ///   crossing of `overlay`, and its update keeps `kept`, each replacing an
+    ///   earlier record.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an element of a patched type at its base stands as
+    ///   the record of its base's fields, and a selection of a fixed field
+    ///   reads the value that the type fixes.
+    /// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
+    #[spec(captures: [count = kept.len(), written = self.written(at)], ensures: self.updates.get(&written).map(Vec::len) == Some(count)
+        && self.crossings.get(&written).is_some_and(|crossing| crossing.operand == gandr_core_term::CrossedOperand::Overlaid(overlay)))]
+    pub(crate) fn record_overlay(
+        &mut self,
+        at: ValueId,
+        overlay: ValueId,
+        kept: Vec<gandr_kernel_term::FieldLabel>,
+    )
+    {
+        self.record_update(at, kept);
+        self.record_crossing(at, gandr_core_term::Crossing {
+            by: Maybe::Absent(()),
+            carriers: Vec::new(),
+            operand: gandr_core_term::CrossedOperand::Overlaid(overlay),
+        });
+    }
+
     /// Take every record update recorded since the last take, leaving none.
     ///
     /// # Specification
