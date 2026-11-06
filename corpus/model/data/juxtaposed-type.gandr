@@ -31,8 +31,8 @@ def coupled() -> Couple Integer (Maybe Integer) =
   Couple 1 (Some 2 : Maybe Integer)
 
 /// The same couple at its type in the call form: the two spellings convert.
-def recoupled() -> Couple(Integer, Maybe(Integer)) =
-  (Couple 1 (Some 2 : Maybe(Integer)) : Couple Integer (Maybe Integer))
+def recoupled() -> Couple Integer (Maybe Integer) =
+  (Couple 1 (Some 2 : Maybe Integer) : Couple Integer (Maybe Integer))
 
 /// An optional computation's type, named once.
 def maybeRun : Type -> Type[-] = fun (A) { -F Maybe A };

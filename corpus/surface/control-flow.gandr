@@ -123,7 +123,7 @@ def held(n : Nat) -> -F Nat =
 /// A `for` steps through a native list: `continue` runs the loop again on the
 /// list's tail, `return` leaves the function from inside it, and what follows
 /// the loop reads the binders around it.
-def find_succ(xs : List(Nat), otherwise : Nat) -> Nat =
+def find_succ(xs : List Nat, otherwise : Nat) -> Nat =
   for x in xs {
     match x where
       | Zero => continue
@@ -141,12 +141,12 @@ def find_one() -> Nat { become find_succ (cons Zero (cons (Succ (Succ Zero)) nil
 def find_none() -> Nat { become find_succ (cons Zero nil) (Succ Zero) }
 
 /// A `for` ending a body runs it on every cell and returns unit.
-def for_each(xs : List(Nat)) -> Unit =
+def for_each(xs : List Nat) -> Unit =
   for x in xs { tick x; }
 
 /// A `for` leaves with unit on the empty list, so a `break` with a value of
 /// another type does not check.
 @[ refuses("TypeMismatch") ]
-def for_value(xs : List(Nat)) -> Nat =
+def for_value(xs : List Nat) -> Nat =
   let m = for x in xs { break(x) };
   m

@@ -190,9 +190,9 @@ pub def count : Model(Grade) = pack Count at Model(Grade);
 
 /// A map from one algebra's grades to another's, named, so a reader asks for
 /// it by the two algebras it joins.
-pub data Hom(a : Model(Grade), b : Model(Grade)) : Type where
+pub data Hom(a : Model Grade, b : Model Grade) : Type where
   /// The map.
-  | Map : (map : a.G -> b.G) --> Hom(a, b)
+  | Map : (map : a.G -> b.G) --> Hom a b
 
 /// A count's usage: zero unused, one once, more many.
 def collapsed(n : Nat) -> Use =
@@ -204,15 +204,15 @@ def collapsed(n : Nat) -> Use =
       | Bit1(_q) => Many
 
 /// The map from counting to usage.
-pub def collapse : Hom(count, usage) = Map collapsed;
+pub def collapse : Hom count usage = Map collapsed;
 
 /// Whether `have` covers `need` in the algebra `a`.
-pub def fits(a : Model(Grade), need : a.G, have : a.G) -> Bool =
+pub def fits(a : Model Grade, need : a.G, have : a.G) -> Bool =
   let l = a.le
   l need have
 
 /// Whether `have`, a grade of `a`, covers `need`, a grade of `b`, once `h`
 /// maps it into `b`.
-pub def covers(a : Model(Grade), b : Model(Grade), h : Hom(a, b), need : b.G, have : a.G) -> Bool =
+pub def covers(a : Model Grade, b : Model Grade, h : Hom a b, need : b.G, have : a.G) -> Bool =
   match h where
     | Map(m) => fits b need (m have)

@@ -10,7 +10,7 @@ import "../../model/cancellation/cancel-base.gandr";
 import std.process;
 
 /// Resumes the stack it is handed: a stack a parameter holds owes nothing.
-def resume_stack(j : Stack(-F Unit, -F Unit)) -> Unit =
+def resume_stack(j : Stack (-F Unit) (-F Unit)) -> Unit =
   j *{}
 
 /// A scope whose exit clause hands the rest to `resume_stack` while its task's

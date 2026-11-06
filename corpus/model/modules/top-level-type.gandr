@@ -25,7 +25,7 @@ def setWidth() -> Integer { width setBand }
 pub type Twice(a : Type) = a * a;
 
 /// `bounds` gives the set bounds.
-def bounds : Twice(Integer) = *{200000, 800000};
+def bounds : Twice Integer = *{200000, 800000};
 
 /// `Reading` names an integer returner.
 pub type Reading = -F Integer;
@@ -46,10 +46,10 @@ pub type Returning(a : Type) = -F a;
 
 /// `low` returns the low bound.
 @[ runs("200000") ]
-def low() -> Returning(Integer) { 200000 }
+def low() -> Returning Integer { 200000 }
 
 /// `IntegerReturning` applies `Returning`.
-pub type IntegerReturning = Returning(Integer);
+pub type IntegerReturning = Returning Integer;
 
 /// `returnedLow` returns the low bound.
 @[ runs("200000") ]

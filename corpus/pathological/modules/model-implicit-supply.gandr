@@ -28,10 +28,10 @@ module Mute : Model(Stepper) where
   def incr(c : Integer) -> Integer { c + 1 }
 
 /// The reading after one step, over any tally the slot names.
-def stepped[s : Model(Tally)](c : s.C) -> Integer { s.read (s.incr c) }
+def stepped[s : Model Tally](c : s.C) -> Integer { s.read (s.incr c) }
 
 /// A step counted, whatever the model.
-def observe(m : Model(Stepper)) -> Integer { 0 }
+def observe(m : Model Stepper) -> Integer { 0 }
 
 /// No module is named `Nowhere`.
 @[ refuses("UnresolvedName") ]

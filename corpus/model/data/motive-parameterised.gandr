@@ -18,24 +18,24 @@
 /// Two codes over a type.
 data CodeAt(d : Type) : Type where
   /// The first code.
-  | AAt : CodeAt(d)
+  | AAt : CodeAt d
   /// The second code.
-  | BAt : CodeAt(d)
+  | BAt : CodeAt d
 
 /// A family over the codes at a type.
-def famAt(d : Type, c : CodeAt(d)) -> Type =
+def famAt(d : Type, c : CodeAt d) -> Type =
   match c where
     | AAt => return Unit
     | BAt => return Unit
 
 /// The goal reads the code, and each arm answers the unit.
-def unitAt(d : Type, c : CodeAt(d)) -> famAt(d, c) =
+def unitAt(d : Type, c : CodeAt d) -> famAt(d, c) =
   match c where
     | AAt => *{}
     | BAt => *{}
 
 /// Each arm returns `v` at its own code.
-def keepAt(d : Type, c : CodeAt(d), v : famAt(d, c)) -> famAt(d, c) =
+def keepAt(d : Type, c : CodeAt d, v : famAt(d, c)) -> famAt(d, c) =
   match c where
     | AAt => v
     | BAt => v
@@ -43,18 +43,18 @@ def keepAt(d : Type, c : CodeAt(d), v : famAt(d, c)) -> famAt(d, c) =
 /// The sequences over a type.
 data Seq(a : Type) : Type where
   /// The empty sequence.
-  | Nil : Seq(a)
+  | Nil : Seq a
   /// A head before the rest.
-  | Cons : (h : a, t : Seq(a)) --> Seq(a)
+  | Cons : (h : a, t : Seq a) --> Seq a
 
 /// A family by recursion on a sequence.
-def rec units(a : Type, s : Seq(a)) -> Type =
+def rec units(a : Type, s : Seq a) -> Type =
   match s where
     | Nil => return Unit
     | Cons(h, t) => units[<] a t
 
 /// A walk down a sequence. Its goal reads the sequence.
-def rec trek(a : Type, s : Seq(a)) -> units(a, s) =
+def rec trek(a : Type, s : Seq a) -> units(a, s) =
   match s where
     | Nil => *{}
     | Cons(h, t) => trek[<] a t

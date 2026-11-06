@@ -25,7 +25,7 @@ data Out : Type where
 /// This fold computes the type a program owes its postcondition `k`.
 def rec wp(e : E, k : Out -> Type) -> Type =
   match e where
-    | Get => return type(*{w : Nat, post : k(Ends(w))})
+    | Get => return type(*{w : Nat, post : k(Ends w)})
     | Br(a, m) => wp[<] a (fun (o) { match o {
       | Ends(v) => match v where
         | Zero => return Void

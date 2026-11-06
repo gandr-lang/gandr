@@ -35,7 +35,7 @@ module Texts : Model(Seeded) where
   def seed = "seven";
 
 /// `consume` opens a counter and reads its seed with its reader.
-def consume(p : Model(Seeded)) -> Integer =
+def consume(p : Model Seeded) -> Integer =
   module m = p
   m.read m.seed
 

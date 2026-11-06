@@ -11,34 +11,34 @@
 /// A stream exposes its head and its successor stream.
 codata Stream(a : Type) : Type[-] where
   head : a;
-  tail : Stream(a);
+  tail : Stream a;
 
 /// The function produces integers from n upward, one observation at a time.
-def rec upward(n : Integer) -> Stream(Integer) =
+def rec upward(n : Integer) -> Stream Integer =
   &{.head => n, .tail => upward[>] (n + 1)}
 
 /// The function produces n forever with its tail clause before its head clause.
-def rec always(n : Integer) -> Stream(Integer) =
+def rec always(n : Integer) -> Stream Integer =
   &{.tail => always[>] n, .head => n}
 
 /// The corecursive constant binds its own name and produces one forever.
-def rec ones() -> Stream(Integer) =
+def rec ones() -> Stream Integer =
   &{.head => 1, .tail => ones[>] ()}
 
 /// The function observes a stream thunk at its head.
-def first(s : +U Stream(Integer)) -> Integer =
+def first(s : +U (Stream Integer)) -> Integer =
   s.head
 
 /// The function observes the head of a stream's tail.
-def second(s : +U Stream(Integer)) -> Integer =
+def second(s : +U (Stream Integer)) -> Integer =
   first s.tail
 
 /// The function combines two streams pointwise with f.
 def rec zipWith(
   f : (Integer, Integer) -> Integer,
-  s : +U Stream(Integer),
-  t : +U Stream(Integer)
-) -> Stream(Integer) =
+  s : +U (Stream Integer),
+  t : +U (Stream Integer)
+) -> Stream Integer =
   &{
     .head => {
       f (first s) (first t)
@@ -68,7 +68,7 @@ def nine() -> Integer =
 def unfolded() -> Integer { second (ones ()) }
 
 /// The function observes the tail by its zero-based declaration position.
-def onward(s : +U Stream(Integer)) -> Integer =
+def onward(s : +U (Stream Integer)) -> Integer =
   first s.1
 
 /// `fourth` observes integers from three by position.
@@ -88,7 +88,7 @@ def tailOfCall() -> Integer { first ((upward 3).1) }
 def headAbove() -> Bool { (upward 3).head >= 1 }
 
 /// The function observes the head of a stream's tail through one chain.
-def secondInline(s : +U Stream(Integer)) -> Integer =
+def secondInline(s : +U (Stream Integer)) -> Integer =
   s.tail.head
 
 /// The function observes two tails and then a head from a call.

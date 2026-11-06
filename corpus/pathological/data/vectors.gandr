@@ -19,17 +19,17 @@ import "../../model/data/vectors.gandr";
 /// One integer said to be two long: `VCons` stands one past its tail, which
 /// is empty.
 @[ refuses("TypeMismatch") ]
-def overstated() -> Vec(Integer, Succ(Succ(Zero))) =
-  VCons Zero 3 (VNil : Vec(Integer, Zero))
+def overstated() -> Vec Integer (Succ (Succ Zero)) =
+  VCons Zero 3 (VNil : Vec Integer Zero)
 
 /// A vector `m` long that claims the length `plus(m, Succ(Zero))`. That sum
 /// computes one past `m`.
 @[ refuses("TypeMismatch") ]
-def overPadded(m : Nat, v : Vec(Integer, m)) -> Vec(Integer, plus(m, Succ(Zero))) =
+def overPadded(m : Nat, v : Vec Integer m) -> Vec Integer plus(m, Succ Zero) =
   v
 
 /// A family whose constructor states its element where its length goes.
 @[ refuses("TypeMismatch") ]
 data Misindexed(a : Type) : Nat -> Type where
   /// An element standing where its length goes.
-  | Wrong : (x : a) --> Misindexed(a, x)
+  | Wrong : (x : a) --> Misindexed a x

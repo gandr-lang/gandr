@@ -18,8 +18,8 @@ theory CatShape where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
 
-  oper id : (a : Ob) --> Hom(a, a);
-  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  oper id : (a : Ob) --> Hom a a;
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
 
   rule unitL : comp (id a) f <=> f;
   rule unitR : comp f (id b) <=> f;

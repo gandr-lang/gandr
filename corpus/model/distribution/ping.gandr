@@ -55,7 +55,7 @@ def pingAnswered() -> String =
 
 /// The entry: serve with no argument, ping the peer the first argument
 /// names otherwise, print what came back, and exit with 0.
-def main(args : List(String)) -> [std.net.Eff, std.io.Console.Eff] Integer =
+def main(args : List String) -> [std.net.Eff, std.io.Console.Eff] Integer =
   match args where
     | #[] => { let got = serve (); std.io.Console.print got; 0 }
     | #[peer, .._] => { let got = ping peer; std.io.Console.print got; 0 }

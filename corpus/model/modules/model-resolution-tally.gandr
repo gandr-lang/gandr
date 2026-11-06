@@ -19,4 +19,4 @@ pub theory ResetCount where
   oper reset : (c : C) --> C;
 
 /// The reading after one step, over any tally the slot names.
-pub def advanced[s : Model(Count)](c : s.C) -> Integer { s.read (s.incr c) }
+pub def advanced[s : Model Count](c : s.C) -> Integer { s.read (s.incr c) }

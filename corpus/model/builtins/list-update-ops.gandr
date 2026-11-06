@@ -11,7 +11,7 @@
 import std.list (List);
 
 /// `tens` is a three-element integer list.
-def tens = (#[10, 20, 30] : List(Integer));
+def tens = (#[10, 20, 30] : List Integer);
 
 /// `replaced` sets the element at position one.
 @[ refuses("OutOfFragment.projection_expression") ]

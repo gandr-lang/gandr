@@ -2,11 +2,11 @@ def raw_rel_monad : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Ty
   +,
   0
 ] = fun (T) {
-  fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } }
+  fun (A) { fun (B) { type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } }
 };
 
 def raw_rel_monad_elided : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) {
-  fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } }
+  fun (A) { fun (B) { type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } }
 };
 
 def unit_and_bind : raw_rel_monad(fun (X) { type(-F (X * X)) }, Integer, Integer) = *{

@@ -28,7 +28,7 @@ def repr(h : Heap) -> Type =
   return type(*{r : T, ok : p(r, h)})
 
 /// The zero tag and its evidence check against the definition's record type.
-def zeroTagged(e : p(Tg(Zero), Emp)) -> repr(Emp) =
+def zeroTagged(e : p(Tg Zero, Emp)) -> repr(Emp) =
   *{Tg Zero, e}
 
 /// What a tag owes of the empty heap, the arm's call closed: `emp(Emp)`.
@@ -43,5 +43,5 @@ def reprClosed(_h : Heap) -> Type =
   return type(*{r : T, ok : owedClosed(r)})
 
 /// The zero tag and its evidence check against the closed form too.
-def zeroTaggedClosed(e : owedClosed(Tg(Zero))) -> reprClosed(Emp) =
+def zeroTaggedClosed(e : owedClosed(Tg Zero)) -> reprClosed(Emp) =
   *{Tg Zero, e}

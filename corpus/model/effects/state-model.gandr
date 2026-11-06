@@ -60,21 +60,21 @@ def shown(c : Unit + (Unit + Unit)) -> Integer =
       | +{.1 = v} => 2
 
 /// `passing` writes the state-passing model as a record.
-def passing : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = *{
+def passing : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = *{
   .get = fun (k) { pure fun (s) { let after = k s; after s } },
   .put = fun (s) { fun (k) { pure fun (_old) { k s } } }
 };
 
 /// `negated` carries the state model along count negation.
-def negated : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = Path.walk
+def negated : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer) = Path.walk
   (fun (x) {
-    type(Model(State.Eff) with sort S = x with sort C = (x -> Integer))
+    type(Model State.Eff with sort S = x with sort C = (x -> Integer))
   })
   countsNegated
   passing;
 
 /// `putGet` runs a model that stores and reads a count.
-def putGet(m : Model(State.Eff) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer)) -> Integer =
+def putGet(m : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer)) -> Integer =
   match m where
     | *{.get = g, .put = p} => {
       let read = g (fun (s) {

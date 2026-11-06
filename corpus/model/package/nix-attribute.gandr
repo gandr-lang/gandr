@@ -36,14 +36,14 @@ pub type Meta = *{
   longDescription : String,
   mainProgram : String,
   name : String,
-  outputsToInstall : List(String),
-  platforms : List(String),
+  outputsToInstall : List String,
+  platforms : List String,
   unfree : Bool,
   unsupported : Bool
 };
 
 /// An attribute: its `meta` and the names of its outputs.
-pub type Attribute = *{meta : Meta, outputs : List(String)};
+pub type Attribute = *{meta : Meta, outputs : List String};
 
 /// `hello` at revision `3ec636362e18`, field by field, its platforms the first twelve.
 def helloAttribute : Attribute = *{

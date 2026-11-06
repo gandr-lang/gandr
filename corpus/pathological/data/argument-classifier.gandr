@@ -8,11 +8,11 @@
 
 /// A list of any type.
 data List(a : Type) : Type where
-  | Nil : List(a)
-  | Cons : (head : a, tail : List(a)) --> List(a)
+  | Nil : List a
+  | Cons : (head : a, tail : List a) --> List a
 
 /// The first of a list of integers, or zero.
-def first(xs : List(Integer)) -> Integer =
+def first(xs : List Integer) -> Integer =
   match xs where
     | Nil => 0
     | Cons(x, _) => x
@@ -23,7 +23,7 @@ def first(xs : List(Integer)) -> Integer =
 def mistyped() -> Integer { first (Cons "no" Nil) }
 
 /// How many elements a list of any type holds.
-def rec size(a : Type, xs : List(a)) -> Integer =
+def rec size(a : Type, xs : List a) -> Integer =
   match xs where
     | Nil => 0
     | Cons(_, rest) => {

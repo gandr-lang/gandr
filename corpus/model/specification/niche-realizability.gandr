@@ -36,7 +36,7 @@ pub data Heap : Type where
   | Cell : (l : Nat, v : Nat, rest : Heap) --> Heap
 
 /// `yes` when the two words are one, `no` otherwise.
-def rec pick(a : Nat, b : Nat, yes : Maybe(Nat), no : Maybe(Nat)) -> Maybe(Nat) =
+def rec pick(a : Nat, b : Nat, yes : Maybe Nat, no : Maybe Nat) -> Maybe Nat =
   match a where
     | Zero => match b where
       | Zero => yes
@@ -46,7 +46,7 @@ def rec pick(a : Nat, b : Nat, yes : Maybe(Nat), no : Maybe(Nat)) -> Maybe(Nat) 
       | Succ(q) => pick[<] p q yes no
 
 /// The word a heap holds at a location, the first cell naming it.
-def rec lookup(h : Heap, x : Nat) -> Maybe(Nat) =
+def rec lookup(h : Heap, x : Nat) -> Maybe Nat =
   match h where
     | Emp => None
     | Cell(l, v, rest) => pick l x (Some v) (lookup[<] rest x)
@@ -70,12 +70,12 @@ pub def pointsTo(l : Nat, v : Nat, h : Heap) -> Type =
 /// One location read through a disjoint union: nothing on the left, and the
 /// union holds what the right part does; or a word on the left, the right
 /// part holding nothing there.
-def union(o : Maybe(Nat), o1 : Maybe(Nat), o2 : Maybe(Nat)) -> Type =
+def union(o : Maybe Nat, o1 : Maybe Nat, o2 : Maybe Nat) -> Type =
   match o1 where
     | None => return Path o o2
     | Some(v) => return type(*{
-      free : Path[.A = Maybe(Nat)](o2, (None : Maybe(Nat))),
-      held : Path[.A = Maybe(Nat)](o, (Some v : Maybe(Nat)))
+      free : Path[.A = Maybe Nat](o2, (None : Maybe Nat)),
+      held : Path[.A = Maybe Nat](o, (Some v : Maybe Nat))
     })
 
 /// The separating conjunction: a split of the heap into two disjoint parts,
@@ -177,9 +177,9 @@ def toOptSome(vt : (Nat, Heap) -> Type, s : Nat, p : Nat, h : Heap) -> (vTag(
 /// `toOptMeets` at a written pair, by its tag.
 def toOptAt(vt : (Nat, Heap) -> Type, t : Nat, p : Nat, h : Heap) -> vTag(
   vt,
-  Tag(t, p),
+  Tag t p,
   h
-) -> vOpt(vt, toOpt(Tag(t, p)), h) =
+) -> vOpt(vt, toOpt(Tag t p), h) =
   match t where
     | Zero => toOptNone vt p h
     | Succ(s) => toOptSome vt s p h
@@ -256,7 +256,7 @@ def unmarshalledSome(vt : (Nat, Heap) -> Type, h : Heap, s : Nat, p : Nat) -> (v
 /// `unmarshalled` at a written pair, by its tag.
 def unmarshalledAt(vt : (Nat, Heap) -> Type, h : Heap, t : Nat, p : Nat) -> vTag(
   vt,
-  Tag(t, p),
+  Tag t p,
   h
 ) -> *{w : Nat, ok : vOpt(vt, w, h)} =
   match t where
@@ -352,7 +352,7 @@ def retrSome(vt : (Nat, Heap) -> Type, h : Heap, s : Nat, p : Nat) -> (ok : vTag
 /// `retrTagged` at a written pair, by its tag.
 def retrAt(vt : (Nat, Heap) -> Type, h : Heap, t : Nat, p : Nat) -> (ok : vTag(
   vt,
-  Tag(t, p),
+  Tag t p,
   h
 )) -> Path[.A = *{r : Tagged, ok : vTag(vt, r, h)}](
   toTagged vt h (fromTagged vt h (*{Tag t p, ok})),
@@ -442,11 +442,11 @@ pub def derefOrSome(
   n : Nat,
   d : Nat,
   h : Heap,
-  r : *{v : Nat, cell : star(pointsToAt(Succ(n), v), realisedAt(vInt, v), h)}
+  r : *{v : Nat, cell : star(pointsToAt(Succ n, v), realisedAt(vInt, v), h)}
 ) -> *{
   v : Nat,
-  cell : star(pointsToAt(Succ(n), v), realisedAt(vInt, v), h),
-  post : keptOpt(Succ(n), v, h)
+  cell : star(pointsToAt(Succ n, v), realisedAt(vInt, v), h),
+  post : keptOpt(Succ n, v, h)
 } =
   match r where
     | *{v, cell} => *{v, *{cell, r}}

@@ -20,7 +20,7 @@ def fourHere : Bridge(4, 4) = Path.here 4;
 
 /// Two lists of different digits are refused, because their fibre is empty.
 @[ refuses("TypeMismatch") ]
-def otherDigits : Bridge[.A = List(Integer)](#[1], #[2]) = *{*{}, *{}};
+def otherDigits : Bridge[.A = List Integer](#[1], #[2]) = *{*{}, *{}};
 
 /// `Hidden` seals the unit type and states no identity system.
 module Hidden :> *{ type T, one : T } where {

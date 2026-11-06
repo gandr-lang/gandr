@@ -16,10 +16,10 @@
 import std.list (List);
 
 /// The function counts strings in a list.
-pub def rec count(xs : List(String)) -> Integer =
+pub def rec count(xs : List String) -> Integer =
   match xs where
     | #[] => 0
     | #[x, ..rest] => { let n = count[<] rest; n + 1 }
 
 /// `main` returns its string argument count as its exit code.
-def main(args : List(String)) -> Integer { count args }
+def main(args : List String) -> Integer { count args }

@@ -32,12 +32,12 @@ def nestings : Path[.A = Type](Unit + (Unit + Unit), (Unit + Unit) + Unit) = equ
 
 /// `countersOn` fixes a counter carrier.
 def countersOn(x : Type) -> Type =
-  return type(Model(Counter) with sort C = x)
+  return type(Model Counter with sort C = x)
 
 /// `oneSharing` transports a manifest model type.
 def oneSharing() -> Path[.A = Type](
-  Model(Counter) with sort C = Unit + (Unit + Unit),
-  Model(Counter) with sort C = (Unit + Unit) + Unit
+  Model Counter with sort C = Unit + (Unit + Unit),
+  Model Counter with sort C = (Unit + Unit) + Unit
 ) { Path.ap countersOn nestings }
 
 /// `onward` advances a three-state counter.
@@ -52,18 +52,18 @@ def first() -> Unit + (Unit + Unit) =
   +{.0 = *{}}
 
 /// `rightward` packages a counter with the right nesting.
-def rightward : Model(Counter) with sort C = Unit + (Unit + Unit) = *{
+def rightward : Model Counter with sort C = Unit + (Unit + Unit) = *{
   .start = first,
   .step = onward
 };
 
 /// `leftward` transports the counter to the left nesting.
-def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = Path.walk (fun (x) {
-  type(Model(Counter) with sort C = x)
+def leftward : Model Counter with sort C = (Unit + Unit) + Unit = Path.walk (fun (x) {
+  type(Model Counter with sort C = x)
 }) nestings rightward;
 
 /// `stepOnce` steps a right-nested counter.
-def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
+def stepOnce(m : Model Counter with sort C = Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
   match m where
     | *{.start = s, .step = t} => t (s ())
 
@@ -72,7 +72,7 @@ def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Unit + (U
 def second() -> Unit + (Unit + Unit) { stepOnce rightward }
 
 /// `stepOnceLeft` steps a left-nested counter.
-def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> (Unit + Unit) + Unit =
+def stepOnceLeft(m : Model Counter with sort C = (Unit + Unit) + Unit) -> (Unit + Unit) + Unit =
   match m where
     | *{.start = s, .step = t} => t (s ())
 
@@ -83,7 +83,7 @@ def secondLeft() -> (Unit + Unit) + Unit { stepOnceLeft leftward }
 /// `inlineLeft` transports the counter inside the call.
 @[ runs("+{.0 = +{.1 = *{}}}") ]
 def inlineLeft() -> (Unit + Unit) + Unit =
-  stepOnceLeft (Path.walk (fun (x) { type(Model(Counter) with sort C = x) }) nestings rightward)
+  stepOnceLeft (Path.walk (fun (x) { type(Model Counter with sort C = x) }) nestings rightward)
 
 /// `Thirds` models a right-nested three-state counter.
 module Thirds : Model(Counter) where
@@ -101,7 +101,7 @@ module Thirds : Model(Counter) where
 def secondThirds() -> Unit + (Unit + Unit) { stepOnce Thirds }
 
 /// `thirds` packages `Thirds` at its manifest type.
-def thirds : Model(Counter) with sort C = Unit + (Unit + Unit) = Thirds;
+def thirds : Model Counter with sort C = Unit + (Unit + Unit) = Thirds;
 
 /// `secondPacked` steps the packed counter.
 @[ runs("+{.1 = +{.0 = *{}}}") ]

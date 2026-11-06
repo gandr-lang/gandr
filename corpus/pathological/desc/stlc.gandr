@@ -56,6 +56,6 @@ def rec envs(g : Ctx, d : Ctx) -> Type =
 /// d)`, which the shape check does not unfold.
 @[ refuses("ShapeMismatch") ]
 def extendEnv(g : Ctx, a : ObjTy, d : Ctx, rho : envs(g, d), v : sem(a, d)) -> envs(
-  Extend(g, a),
+  Extend g a,
   d
 ) { *{rho, v} }

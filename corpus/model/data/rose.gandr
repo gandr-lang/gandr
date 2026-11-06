@@ -31,16 +31,16 @@ import "./recursive-lists.gandr";
 /// The direct form: a node over a list of nodes, nested through `List`'s
 /// strictly positive parameter.
 data Bush : Type where
-  | Sprout : (kids : List(Bush)) --> Bush
+  | Sprout : (kids : List Bush) --> Bush
 
 /// A node without children, written directly.
-def sprig : Bush = Sprout (Nil : List(Bush));
+def sprig : Bush = Sprout (Nil : List Bush);
 
 /// A node over two childless nodes, written directly.
-def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List(Bush)) : List(Bush)) : List(Bush));
+def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List Bush) : List Bush) : List Bush);
 
 /// A list of numbers, summed.
-def rec sum(xs : List(Nat)) -> Nat =
+def rec sum(xs : List Nat) -> Nat =
   match xs where
     | Nil => Zero
     | Cons(x, rest) => plus x (sum[<] rest)
@@ -56,7 +56,7 @@ def rec nodes(t : Bush) -> Nat =
 /// children, each child grown through `map` at its stage.
 def rec grow(t : Bush) -> Bush =
   match t where
-    | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List(Bush))
+    | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List Bush)
 
 /// The shrub's three nodes, its children counted through `map` at the
 /// children's type.

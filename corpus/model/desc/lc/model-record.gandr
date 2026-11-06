@@ -93,7 +93,7 @@ def lcSyntax : *{
 };
 
 /// `lcModel` contains the packed syntax model.
-def lcModel : Model(LC) = lcSyntax;
+def lcModel : Model LC = lcSyntax;
 
 /// The identity application reduces to the identity.
 @[ runs("Lam (Ix Z)") ]

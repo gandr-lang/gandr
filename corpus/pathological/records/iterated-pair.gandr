@@ -141,7 +141,7 @@ def t19 : T19 = *{l = t18, r = t18};
 def t20 : T20 = *{l = t19, r = t19};
 
 /// The let spine: each level is a binder that the next level reads twice.
-def pair20() -> -F T20 =
+def pair20() -> T20 =
   let s0 = pure *{};
   let s1 = pure *{l = s0, r = s0};
   let s2 = pure *{l = s1, r = s1};
@@ -163,4 +163,4 @@ def pair20() -> -F T20 =
   let s18 = pure *{l = s17, r = s17};
   let s19 = pure *{l = s18, r = s18};
   let s20 = pure *{l = s19, r = s19};
-  return s20
+  s20

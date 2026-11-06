@@ -17,7 +17,7 @@ data Two : Type where
 /// `Lop(Two)` stands left of the arrow where no stage reaches.
 @[ refuses("NegativeOccurrence") ]
 data Lop(a : Type) : Type where
-  | MkLop : (f : Lop(Two) -> Two) --> Lop(a)
+  | MkLop : (f : Lop Two -> Two) --> Lop a
 
 /// The same node with its domain written through a definition of its block
 /// : the walk reads `hidden` through to `Hidden`, which stands left of

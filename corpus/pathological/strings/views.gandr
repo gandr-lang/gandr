@@ -14,7 +14,7 @@ import std.process;
 /// lent the view has ended, so the view would outlive its access.
 @[ refuses("ViewEscaped") ]
 def escaped() -> Repr =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { force thunk { resume v v } };
   pure s
 
@@ -22,21 +22,21 @@ def escaped() -> Repr =
 /// after it has nothing to end.
 @[ refuses("ViewSpent") ]
 def endedTwice() -> Unit =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { resume v v; abort v }
 
 /// A view its access never ends: the access would return with neither a
 /// write-back nor an unwind.
 @[ refuses("ViewUnended") ]
 def unended() -> Unit =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { pure *{} }
 
 /// A view kept in the region of the scope around it, forced from a thunk kept
 /// in no region: the kept view would leave its region inside that thunk.
 @[ refuses("KeptEscaped") ]
 def keptPastRegion() -> Integer =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   handle c : std.process.Exit.Eff {
     let k : (() -> Integer) at c = access shared s as w {
       pure thunk { let bs = bytes w; count bs }
@@ -52,7 +52,7 @@ def keptPastRegion() -> Integer =
 /// view would read the string while it is written.
 @[ refuses("HeldKept") ]
 def writtenWhileKept() -> Integer =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   handle c : std.process.Exit.Eff {
     let k : (() -> Integer) at c = access shared s as w {
       pure thunk { let bs = bytes w; count bs }

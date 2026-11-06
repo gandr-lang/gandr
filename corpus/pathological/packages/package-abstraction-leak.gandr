@@ -23,7 +23,7 @@ module Ints : Model(Seeded) where
   def seed = 7;
 
 /// The counter as a value at its model type.
-def ints : Model(Seeded) = Ints;
+def ints : Model Seeded = Ints;
 
 /// Returns the seed at the integers its sort stands for.
 @[ refuses("TypeMismatch") ]

@@ -34,28 +34,28 @@ pub theory CwF where
   /// Types in a context.
   sort Ty(g : Con) : Type;
   /// Terms of a type in a context.
-  sort Tm(g : Con, a : Ty(g)) : Type;
+  sort Tm(g : Con, a : Ty g) : Type;
 
   /// The empty context.
   oper empty : () --> Con;
   /// Comprehension: a context extended by a type in it.
-  oper ext : (g : Con, a : Ty(g)) --> Con;
+  oper ext : (g : Con, a : Ty g) --> Con;
   /// The identity substitution.
-  oper id : (g : Con) --> Sub(g, g);
+  oper id : (g : Con) --> Sub g g;
   /// Composition: `s` after `t`.
-  oper comp : (s : Sub(d, g), t : Sub(e, d)) --> Sub(e, g);
+  oper comp : (s : Sub d g, t : Sub e d) --> Sub e g;
   /// The substitution into the empty context.
   oper eps : (g : Con) --> Sub(g, empty());
   /// Substitution in a type: it moves the type along `s`.
-  oper subTy : (a : Ty(g), s : Sub(d, g)) --> Ty(d);
+  oper subTy : (a : Ty g, s : Sub d g) --> Ty d;
   /// Substitution in a term: it moves the term along `s`, to its moved type.
-  oper subTm : (t : Tm(g, a), s : Sub(d, g)) --> Tm(d, subTy(a, s));
+  oper subTm : (t : Tm g a, s : Sub d g) --> Tm(d, subTy(a, s));
   /// The projection that forgets the newest type.
-  oper p : (a : Ty(g)) --> Sub(ext(g, a), g);
+  oper p : (a : Ty g) --> Sub ext(g, a) g;
   /// The newest variable.
-  oper q : (a : Ty(g)) --> Tm(ext(g, a), subTy(a, p(a)));
+  oper q : (a : Ty g) --> Tm ext(g, a) subTy(a, p(a));
   /// A substitution extended by a term.
-  oper pair : (s : Sub(d, g), t : Tm(d, subTy(a, s))) --> Sub(d, ext(g, a));
+  oper pair : (s : Sub d g, t : Tm(d, subTy(a, s))) --> Sub(d, ext(g, a));
 
   /// The identity on the left.
   rule idl : comp (id g) s ==> s;

@@ -27,7 +27,7 @@ theory Carrier where
 module ValueCarrier : Model(Carrier) where {
   /// The lists at each type, a value type.
   @[ refuses("FamilyTelescope") ]
-  type T(a : Type) = List(a);
+  type T(a : Type) = List a;
 }
 
 /// A carrier into the value types.
@@ -40,5 +40,5 @@ theory ValueSort where
 module ComputationCarrier : Model(ValueSort) where {
   /// A computation returning a list at each type.
   @[ refuses("FamilyTelescope") ]
-  type T(a : Type) = -F List(a);
+  type T(a : Type) = -F List a;
 }

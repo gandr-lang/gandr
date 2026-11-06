@@ -9,7 +9,7 @@ import "../../model/include/monoid.gandr";
 import "../../model/include/reduct.gandr";
 
 /// `absorbs` reads the zero field of a left-zero model.
-def absorbs(z : Model(LeftZero)) -> Integer =
+def absorbs(z : Model LeftZero) -> Integer =
   match z where
     | *{.zero = o} => 0
 

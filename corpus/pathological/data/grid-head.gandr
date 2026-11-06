@@ -16,7 +16,7 @@ import "../../model/data/grid-head.gandr";
 /// The last cell of a grid of any size, with no `GNil` arm. Both `n` and `m`
 /// can be zero, so `GNil` can stand there and the case cannot omit its arm.
 @[ refuses("NotApart") ]
-def anyCell(n : Nat, m : Nat, g : Grid(n, m)) -> Integer =
+def anyCell(n : Nat, m : Nat, g : Grid n m) -> Integer =
   match g where
     | GRow(r, c, cell, rest) => cell
     | GCol(r, c, cell, rest) => cell

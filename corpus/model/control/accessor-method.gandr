@@ -20,13 +20,13 @@ import std.list (List);
 pub module Places where {
   /// The first element.
   @[ checks ]
-  def first[m : Mode](self : m List(Integer)) -> View[m](Integer) { self.#[0] }
+  def first[m : Mode](self : m List Integer) -> View[m](Integer) { self.#[0] }
   /// The element at an index.
   @[ checks ]
-  def nth[m : Mode](self : m List(Integer), i : Integer) -> View[m](Integer) { self.#[i] }
+  def nth[m : Mode](self : m List Integer, i : Integer) -> View[m](Integer) { self.#[i] }
   /// The element after an index: the index is any value, here a sum.
   @[ checks ]
-  def after[m : Mode](self : m List(Integer), i : Integer) -> View[m](Integer) { self.#[i + 1] }
+  def after[m : Mode](self : m List Integer, i : Integer) -> View[m](Integer) { self.#[i + 1] }
 }
 
 /// The first element, read by a call without a block.
@@ -71,7 +71,7 @@ def unheldElement() -> Integer =
   pure y
 
 /// The same read of a parameter's list at an index that a parameter carries.
-def unheldAt(ys : List(Integer), i : Integer) -> Integer =
+def unheldAt(ys : List Integer, i : Integer) -> Integer =
   let y = ys.#[i]
   pure y
 
@@ -90,14 +90,14 @@ def readTwice() -> Integer =
 /// The element at an index written back through a view the block lends
 /// exclusively: the resume asks it, and only that element moved.
 @[ runs("cons 1 (cons 5 nil)") ]
-def raised() -> List(Integer) =
+def raised() -> List Integer =
   var xs = pair
   (xs.nth 1) as w { resume w (w + 3) };
   pure xs
 
 /// An abort asks an exclusive lend as well and writes nothing back.
 @[ runs("cons 1 (cons 2 nil)") ]
-def abandonedView() -> List(Integer) =
+def abandonedView() -> List Integer =
   var xs = pair
   (xs.first ()) as w { abort w };
   pure xs

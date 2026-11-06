@@ -103,8 +103,8 @@ def transported(
   f : Path[.A = A](x, y),
   g : Path[.A = A](y, z),
   h : Path[.A = A](z, w),
-  v : M(x)
-) -> Path[.A = M(w)](
+  v : M x
+) -> Path[.A = M w](
   Path.walk (fun (a) { M a }) (Path.step f (Path.step g h)) v,
   Path.walk (fun (a) { M a }) h (Path.walk (fun (a) { M a }) g (Path.walk (fun (a) { M a }) f v))
 ) =

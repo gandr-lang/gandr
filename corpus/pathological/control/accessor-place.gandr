@@ -2,7 +2,7 @@
 import std.list (List);
 
 /// The list the accesses below hold.
-def pair : List(Integer) = cons 1 (cons 2 nil);
+def pair : List Integer = cons 1 (cons 2 nil);
 
 /// An access at a place of a held integer: an integer has no element at an
 /// index.

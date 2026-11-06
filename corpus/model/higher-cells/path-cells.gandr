@@ -46,9 +46,9 @@ theory Glob where
   sort Hom(dom : Ob, cod : Ob) : Type;
 
   /// `id` is the identity cell at one object.
-  oper id : (a : Ob) --> Hom(a, a);
+  oper id : (a : Ob) --> Hom a a;
   /// `comp` joins two cells end to end.
-  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
 
   /// `unitR` states that `id` is a right unit.
   rule unitR : comp f (id b) <=> f;
@@ -58,10 +58,10 @@ theory Glob where
     b : Ob,
     c : Ob,
     d : Ob,
-    f : Hom(a, b),
-    g : Hom(b, c),
-    h : Hom(c, d)
-  ) -> Path[.A = Hom(a, d)](comp (comp f g) h, comp f (comp g h));
+    f : Hom a b,
+    g : Hom b c,
+    h : Hom c d
+  ) -> Path[.A = Hom a d](comp (comp f g) h, comp f (comp g h));
 
 /// `PathCells` models `Glob` with circle points and paths.
 module PathCells : Model(Glob) where

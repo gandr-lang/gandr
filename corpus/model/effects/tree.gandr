@@ -8,8 +8,8 @@
 
 /// `Either` chooses the first operation or the remaining row.
 pub data Either(l : Type, r : Type) : Type where
-  | Left : (x : l) --> Either(l, r)
-  | Right : (y : r) --> Either(l, r)
+  | Left : (x : l) --> Either l r
+  | Right : (y : r) --> Either l r
 
 /// `StateOp` defines state reads and stores.
 pub data StateOp : Type where
@@ -18,5 +18,5 @@ pub data StateOp : Type where
 
 /// `Prog` holds a result or an operation continuation.
 pub data Prog(e : Type, a : Type) : Type where
-  | Done : (x : a) --> Prog(e, a)
-  | Op : (o : e, k : Integer -> Prog(e, a)) --> Prog(e, a)
+  | Done : (x : a) --> Prog e a
+  | Op : (o : e, k : Integer -> Prog e a) --> Prog e a

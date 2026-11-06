@@ -24,29 +24,29 @@ import "./data-base.gandr";
 /// Vectors of elements of `a`, indexed by their length.
 pub data Vec(a : Type) : Nat -> Type where
   /// The empty vector, at length zero.
-  | VNil : Vec(a, Zero)
+  | VNil : Vec a Zero
   /// An element before a vector `n` long, at one past `n`.
-  | VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n))
+  | VCons : (n : Nat, head : a, tail : Vec a n) --> Vec(a, Succ n)
 
 /// The vector of one integer, one long.
-def single() -> Vec(Integer, Succ(Zero)) =
-  VCons Zero 3 (VNil : Vec(Integer, Zero))
+def single() -> Vec Integer (Succ Zero) =
+  VCons Zero 3 (VNil : Vec Integer Zero)
 
 /// A vector of two integers, two long: each `VCons` one past its tail.
-pub def pair() -> Vec(Integer, Succ(Succ(Zero))) =
+pub def pair() -> Vec Integer (Succ (Succ Zero)) =
   VCons
     (Succ Zero)
     1
-    (VCons Zero 2 (VNil : Vec(Integer, Zero)) : Vec(Integer, Succ(Zero)))
+    (VCons Zero 2 (VNil : Vec Integer Zero) : Vec Integer (Succ Zero))
 
 /// A vector `m` long is `plus(m, Zero)` long. The sum computes `m`.
-def padded(m : Nat, v : Vec(Integer, m)) -> Vec(Integer, plus(m, Zero)) { v }
+def padded(m : Nat, v : Vec Integer m) -> Vec Integer plus(m, Zero) { v }
 
 /// An element before a vector `plus(m, k)` long. Its field writes the length
 /// as the sum that the types write.
 def consPlus(a : Type, m : Nat, k : Nat, x : a, v : Vec(a, plus(m, k))) -> Vec(
   a,
-  Succ(plus(m, k))
+  Succ plus(m, k)
 ) =
   VCons (plus m k) x v
 
@@ -54,6 +54,6 @@ def consPlus(a : Type, m : Nat, k : Nat, x : a, v : Vec(a, plus(m, k))) -> Vec(
 /// sum computes `Succ(plus(m, k))`, the length that `VCons` states.
 def consPlusSucc(a : Type, m : Nat, k : Nat, x : a, v : Vec(a, plus(m, k))) -> Vec(
   a,
-  plus(m, Succ(k))
+  plus(m, Succ k)
 ) =
   VCons (plus m k) x v

@@ -1,9 +1,9 @@
 codata Stream(a : Type) : Type where
   head : a;
-  tail : Stream(a);
+  tail : Stream a;
 
 codata Iter(a : Type) : Type where
-  next : -F (Option(*{item : a, rest : Iter(a)}));
+  next : -F Option *{item : a, rest : Iter a};
 
 codata Fun(a : Type, b : Type) : Type where
   ap : (x : a) --> b;
@@ -13,5 +13,5 @@ codata Session : Type where
 
 codata Colist(a : Type) : Type where
   head : a;
-  tail : Colist(a);
+  tail : Colist a;
   rule : tail x ==> x;

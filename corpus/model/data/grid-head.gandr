@@ -16,33 +16,33 @@ import "./data-base.gandr";
 /// Grids of integers, indexed by their rows and their columns.
 pub data Grid : (r : Nat, c : Nat) --> Type where
   /// The empty grid, at no row and no column.
-  | GNil : Grid(Zero, Zero)
+  | GNil : Grid Zero Zero
   /// A grid and one more row, whose last cell is `cell`.
-  | GRow : (r : Nat, c : Nat, cell : Integer, rest : Grid(r, c)) --> Grid(Succ(r), c)
+  | GRow : (r : Nat, c : Nat, cell : Integer, rest : Grid r c) --> Grid(Succ(r), c)
   /// A grid and one more column, whose last cell is `cell`.
-  | GCol : (r : Nat, c : Nat, cell : Integer, rest : Grid(r, c)) --> Grid(r, Succ(c))
+  | GCol : (r : Nat, c : Nat, cell : Integer, rest : Grid r c) --> Grid(r, Succ c)
 
 /// The last cell of a grid of at least one row. `GNil` stands at no row, and
 /// the case omits its arm at the first index.
-def rowCell(n : Nat, m : Nat, g : Grid(Succ(n), m)) -> Integer =
+def rowCell(n : Nat, m : Nat, g : Grid (Succ n) m) -> Integer =
   match g where
     | GRow(r, c, cell, rest) => cell
     | GCol(r, c, cell, rest) => cell
 
 /// The last cell of a grid of at least one column. `GNil` stands at no
 /// column, and the case omits its arm at the second index.
-def colCell(n : Nat, m : Nat, g : Grid(m, Succ(n))) -> Integer =
+def colCell(n : Nat, m : Nat, g : Grid(m, Succ n)) -> Integer =
   match g where
     | GRow(r, c, cell, rest) => cell
     | GCol(r, c, cell, rest) => cell
 
 /// A grid of one row and one column.
-def corner() -> Grid(Succ(Zero), Succ(Zero)) =
+def corner() -> Grid (Succ Zero) (Succ Zero) =
   GRow
     Zero
     (Succ Zero)
     4
-    (GCol Zero Zero 7 (GNil : Grid(Zero, Zero)) : Grid(Zero, Succ(Zero)))
+    (GCol Zero Zero 7 (GNil : Grid Zero Zero) : Grid Zero (Succ Zero))
 
 /// The last cell of the corner as a row.
 @[ runs("4") ]

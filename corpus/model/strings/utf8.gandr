@@ -23,7 +23,7 @@ import "./string-base.gandr";
 // It uses three bytes below 65536.
 
 // It uses four bytes for each later code point.
-def encode(c : Integer) -> List(Integer) =
+def encode(c : Integer) -> List Integer =
   let one = c < 128
   match one where
     | true => Cons c Nil
@@ -58,27 +58,27 @@ def encode(c : Integer) -> List(Integer) =
     }
 
 /// `encodeAll` encodes each code point in order.
-pub def rec encodeAll(cs : List(Integer)) -> List(Integer) =
+pub def rec encodeAll(cs : List Integer) -> List Integer =
   match cs where
     | Nil => Nil
     | Cons(c, rest) => concat (encode c) (encodeAll[<] rest)
 
 /// This test encodes `$` as one byte.
 @[ runs("Cons 36 Nil") ]
-def dollar() -> List(Integer) { encode 36 }
+def dollar() -> List Integer { encode 36 }
 
 /// This test encodes `é` as two bytes.
 @[ runs("Cons 195 (Cons 169 Nil)") ]
-def eAcute() -> List(Integer) { encode 233 }
+def eAcute() -> List Integer { encode 233 }
 
 /// This test encodes `€` as three bytes.
 @[ runs("Cons 226 (Cons 130 (Cons 172 Nil))") ]
-def euro() -> List(Integer) { encode 8364 }
+def euro() -> List Integer { encode 8364 }
 
 /// This test encodes `😀` as four bytes.
 @[ runs("Cons 240 (Cons 159 (Cons 152 (Cons 128 Nil)))") ]
-def grin() -> List(Integer) { encode 128512 }
+def grin() -> List Integer { encode 128512 }
 
 /// This test encodes `hé` as one byte and two bytes.
 @[ runs("Cons 104 (Cons 195 (Cons 169 Nil))") ]
-def he() -> List(Integer) { encodeAll (Cons 104 (Cons 233 Nil) : List(Integer)) }
+def he() -> List Integer { encodeAll (Cons 104 (Cons 233 Nil) : List Integer) }

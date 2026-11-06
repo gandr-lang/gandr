@@ -18,9 +18,9 @@ data N : Type where
 /// A family indexed by `N`, with an operation and a rule over it.
 data Skip : N -> Type where {
   /// The one constructor, at the index `Z`.
-  | Halt : Skip(Z)
+  | Halt : Skip Z
   /// An operation from the family at `Z` to itself.
-  oper skip : (k : Skip(Z)) --> Skip(Z);
+  oper skip : (k : Skip Z) --> Skip Z;
   /// The rule that reads `skip` as the identity.
   rule : skip k ==> k;
 }

@@ -73,13 +73,13 @@ pub def whiskerRight(
 pub def apd(
   A : Type,
   P : A -> Type,
-  F : (a : A) -> P(a),
+  F : (a : A) -> P a,
   x : A,
   y : A,
   p : Path[.A = A](x, y)
-) -> Path[.A = P(y)](Path.walk (fun (a) { P a }) p (F x), F y) =
+) -> Path[.A = P y](Path.walk (fun (a) { P a }) p (F x), F y) =
   Path.walk
-    ((v : A, k : Path[.A = A](x, v)) -> Path[.A = P(v)](Path.walk (fun (a) { P a }) k (F x), F v))
+    ((v : A, k : Path[.A = A](x, v)) -> Path[.A = P v](Path.walk (fun (a) { P a }) k (F x), F v))
     p
     (Path.here x)
     (Path.here p)

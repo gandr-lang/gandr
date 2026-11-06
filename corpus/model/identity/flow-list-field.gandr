@@ -15,8 +15,8 @@ import std.list (List);
 
 /// The `Roster` module reorders records with list fields.
 module Roster where {
-  type Old = String * List(Integer);
-  type New = List(Integer) * String;
+  type Old = String * List Integer;
+  type New = List Integer * String;
   /// The translator swaps fields and preserves the score list.
   @[ checks ]
   def toNew(old : Old) -> New =
@@ -27,10 +27,10 @@ module Roster where {
   def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
   /// The `wrap` function preserves one integer list.
   @[ checks ]
-  def wrap(xs : List(Integer)) -> List(Integer) =
+  def wrap(xs : List Integer) -> List Integer =
     xs
   @[ checks ]
-  def lists : Flow[.A = Type](List(Integer), List(Integer)) = Flow.into wrap;
+  def lists : Flow[.A = Type](List Integer, List Integer) = Flow.into wrap;
   /// The `moved` function rides one record through the record flow.
   @[ checks ]
   def moved(old : Old) -> New =

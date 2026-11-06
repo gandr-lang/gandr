@@ -69,7 +69,7 @@ module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer where
   def below(a : Integer, b : Integer) -> Bool { a < b }
 
 /// `decide` uses any lawful model.
-def decide[l : Model(Lawful)](a : l.Carrier, b : l.Carrier) -> Bool { l.alike a b }
+def decide[l : Model Lawful](a : l.Carrier, b : l.Carrier) -> Bool { l.alike a b }
 
 /// `twoIsNotThree` passes the order model as a lawful model.
 @[ runs("+{.1 = *{}}") ]

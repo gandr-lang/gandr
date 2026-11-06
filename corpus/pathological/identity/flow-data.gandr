@@ -13,7 +13,7 @@
 
 /// A box of any type: its field names the parameter.
 data Box(a : Type) : Type where
-  | Boxed : (x : a) --> Box(a)
+  | Boxed : (x : a) --> Box a
 
 /// The naturals: the successor's field holds the type itself.
 pub data Nat : Type where
@@ -23,13 +23,13 @@ pub data Nat : Type where
 /// A box of integers repacked as itself.
 module Repack where {
   /// The translator: the field moved back into its constructor.
-  def rebox(box : Box(Integer)) -> Box(Integer) =
+  def rebox(box : Box Integer) -> Box Integer =
     match box where
       | Boxed(x) => Boxed x
   /// A field naming a parameter is covered at the parameters' instance only
   /// once that cover lands, so no flow forwards by it yet.
   @[ refuses("ForwardUnsupported") ]
-  def repacked : Flow[.A = Type](Box(Integer), Box(Integer)) = Flow.into rebox;
+  def repacked : Flow[.A = Type](Box Integer, Box Integer) = Flow.into rebox;
 }
 
 /// The naturals renumbered as themselves.

@@ -8,14 +8,14 @@
 
 /// `ProcTree` holds a result or an exit continuation.
 data ProcTree(a : Type) : Type where
-  | Return : (x : a) --> ProcTree(a)
-  | Exit : (code : Integer, k : Unit -> ProcTree(a)) --> ProcTree(a)
+  | Return : (x : a) --> ProcTree a
+  | Exit : (code : Integer, k : Unit -> ProcTree a) --> ProcTree a
 
 /// `exitThenOne` exits with five and then returns one.
-def exitThenOne : ProcTree(Integer) = Exit 5 (fun (_u) { (Return 1 : ProcTree(Integer)) });
+def exitThenOne : ProcTree Integer = Exit 5 (fun (_u) { (Return 1 : ProcTree Integer) });
 
 /// `resuming` adds one hundred and resumes the continuation.
-def rec resuming(p : ProcTree(Integer)) -> Integer =
+def rec resuming(p : ProcTree Integer) -> Integer =
   match p where
     | Return(x) => x + 100
     | Exit(_code, k) => resuming[<] (k *{})
@@ -25,7 +25,7 @@ def rec resuming(p : ProcTree(Integer)) -> Integer =
 def resumedByFold() -> Integer { resuming exitThenOne }
 
 /// `discarding` returns nine and drops the continuation.
-def rec discarding(p : ProcTree(Integer)) -> Integer =
+def rec discarding(p : ProcTree Integer) -> Integer =
   match p where
     | Return(x) => x + 100
     | Exit(_code, _k) => 9

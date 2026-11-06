@@ -13,7 +13,7 @@ import "../../model/specification/tree-state-wp.gandr";
 /// successor of the initial state to be one, not the state itself.
 @[ refuses("TypeMismatch") ]
 def incrMissesOne : *{
-  m : Prog(Either(StateOp, Void), Unit),
+  m : Prog (Either StateOp Void) Unit,
   meets : (s : Integer, isOne(*{}, s)) -> wp(m, isOne, s)
 } = *{incrTree, fun (s) { fun (h) { h } }};
 

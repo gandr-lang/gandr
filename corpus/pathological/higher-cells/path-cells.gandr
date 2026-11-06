@@ -21,9 +21,9 @@ theory Glob where
   sort Hom(dom : Ob, cod : Ob) : Type;
 
   /// The identity cell at an object.
-  oper id : (a : Ob) --> Hom(a, a);
+  oper id : (a : Ob) --> Hom a a;
   /// The composite of two cells end to end.
-  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
 
   /// The associator, a cell between the two composites of three cells.
   law assoc : (
@@ -31,10 +31,10 @@ theory Glob where
     b : Ob,
     c : Ob,
     d : Ob,
-    f : Hom(a, b),
-    g : Hom(b, c),
-    h : Hom(c, d)
-  ) -> Path[.A = Hom(a, d)](comp (comp f g) h, comp f (comp g h));
+    f : Hom a b,
+    g : Hom b c,
+    h : Hom c d
+  ) -> Path[.A = Hom a d](comp (comp f g) h, comp f (comp g h));
 
 /// The one object.
 data One : Type where

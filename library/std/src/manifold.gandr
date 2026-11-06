@@ -54,6 +54,6 @@ pub theory Manifold where
 /// and a site's key matches it to its file.
 pub data Placement : Type where
   /// The world `name` as one process at the site.
-  | At : (name : String, site : Model(Site)) --> Placement
+  | At : (name : String, site : Model Site) --> Placement
   /// The world `name` as `count` processes at the site.
-  | Instances : (name : String, site : Model(Site), count : Integer) --> Placement
+  | Instances : (name : String, site : Model Site, count : Integer) --> Placement

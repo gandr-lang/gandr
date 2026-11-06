@@ -32,7 +32,7 @@ pub module Str where
     access self as v { let w = pushInPlace v b; let t = written w; resume v t }
   /// `bytes` takes a string and returns its bytes.
   /// No code reads that string later.
-  def bytes(self : consumed Repr) -> List(Integer) =
+  def bytes(self : consumed Repr) -> List Integer =
     match self where
       | Inline(bs) => bs
       | Shared(n, bs) => bs
@@ -41,7 +41,7 @@ pub module Str where
 /// The result is seven.
 @[ runs("7") ]
 def lengths() -> Integer =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   let n = s.len ()
   s.push 33
   let m = s.len ()
@@ -49,35 +49,35 @@ def lengths() -> Integer =
 
 /// This test takes `hi` after it receives `!`.
 @[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))") ]
-def taken() -> List(Integer) =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+def taken() -> List Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   s.push 33
   s.bytes ()
 
 /// `takenInOneArm` uses a separate match hold in each arm.
 /// The match ends both holds.
-def takenInOneArm(t : Repr) -> List(Integer) =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+def takenInOneArm(t : Repr) -> List Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   match t where
     | Inline(bs) => s.bytes ()
     | Shared(n, bs) => bs
 
 /// `takenOnInline` runs the arm that takes the string.
 @[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
-def takenOnInline() -> List(Integer) =
-  takenInOneArm (Inline (Nil : List(Integer)))
+def takenOnInline() -> List Integer =
+  takenInOneArm (Inline (Nil : List Integer))
 
 /// `keptOnShared` runs the arm that preserves the string.
 /// The match ends the `hi` hold.
 @[ runs("Cons 33 Nil") ]
-def keptOnShared() -> List(Integer) =
-  takenInOneArm (Shared 1 (Cons 33 Nil : List(Integer)))
+def keptOnShared() -> List Integer =
+  takenInOneArm (Shared 1 (Cons 33 Nil : List Integer))
 
 /// `readWhereNotTaken` reads a string in the arm that does not take it.
 /// That arm reads the string that its match found.
 @[ runs("3") ]
 def readWhereNotTaken() -> Integer =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  match Shared 1 (Nil : List(Integer)) where
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
+  match Shared 1 (Nil : List Integer) where
     | Inline(bs) => { count (s.bytes ()) }
     | Shared(n, bs) => s.len ()

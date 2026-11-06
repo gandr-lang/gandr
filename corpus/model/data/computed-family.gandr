@@ -17,7 +17,7 @@ import "./data-base.gandr";
 /// The pairs of two types.
 data Both(a : Type, b : Type) : Type where
   /// A value of each type.
-  | MkBoth : (x : a, y : b) --> Both(a, b)
+  | MkBoth : (x : a, y : b) --> Both a b
 
 /// The pair type of two types, which a definition computes.
 def pairOf(a : Type, b : Type) -> Type { return (Both a b) }

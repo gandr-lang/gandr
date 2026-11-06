@@ -5,13 +5,13 @@
 
 /// A family indexed by an integer, with one element at each index.
 data Ix(n : Integer) : Type where
-  | MkIx : Ix(n)
+  | MkIx : Ix n
 
 /// A label a later entry names binds there: the type is a dependent pair.
-def tagged : *{n : Integer, w : Ix(n)} = *{3, (MkIx : Ix(3))};
+def tagged : *{n : Integer, w : Ix n} = *{3, (MkIx : Ix 3)};
 
 /// The first component of a dependent pair, by a match.
-def tag_of(p : *{n : Integer, w : Ix(n)}) -> Integer =
+def tag_of(p : *{n : Integer, w : Ix n}) -> Integer =
   match p where
     | *{m, w} => m
 
@@ -20,7 +20,7 @@ def tag_of(p : *{n : Integer, w : Ix(n)}) -> Integer =
 def tag() -> Integer { tag_of tagged }
 
 /// The first component of a dependent pair, selected by its label.
-def index_of(p : *{n : Integer, w : Ix(n)}) -> Integer =
+def index_of(p : *{n : Integer, w : Ix n}) -> Integer =
   p.n
 
 /// The index of `tagged`.
@@ -103,7 +103,7 @@ def ring_around : Path(ring, ring) = *{
 /// The constant path at `tagged`, the second component's over the first's.
 def tagged_around : Path(tagged, tagged) = *{
   Path.here 3,
-  Path.here (MkIx : Ix(3))
+  Path.here (MkIx : Ix 3)
 };
 
 /// Five, carried along `both` through the constant family.

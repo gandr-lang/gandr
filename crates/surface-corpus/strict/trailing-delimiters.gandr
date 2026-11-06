@@ -1,7 +1,7 @@
 @[ checks, ]
 data Either(a : Type, b : Type,) : Type where
-  | Left : (x : a,) --> Either(a, b,)
-  | Right : (y : b,) --> Either(a, b,)
+  | Left : (x : a,) --> Either a b
+  | Right : (y : b,) --> Either a b
 
 data Color : Type where
   | Red : Color
@@ -9,7 +9,7 @@ data Color : Type where
   | Blue : Color
 
 def from_left() -> Integer =
-  match (Left 5 : Either(Integer, String,)) where
+  match (Left 5 : Either Integer String) where
     | Left(x,) => x
     | Right(y) => 0
 

@@ -28,7 +28,7 @@ import "./comparison.gandr" as comparison;
 
 /// Step `machine` once for each element of `fuel` until it is no longer
 /// `exhausted`, and reply its last verdict.
-pub def rec settle(machine : Integer, fuel : List(Integer)) -> [std.reals.Eff] String =
+pub def rec settle(machine : Integer, fuel : List Integer) -> [std.reals.Eff] String =
   match fuel where
     | #[] => pure "exhausted"
     | #[_, ..rest] => {
@@ -38,10 +38,10 @@ pub def rec settle(machine : Integer, fuel : List(Integer)) -> [std.reals.Eff] S
     }
 
 /// Sixteen quanta of fuel.
-pub def sixteen : List(Integer) = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+pub def sixteen : List Integer = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 /// Whether two lists of three counters agree, place by place.
-pub def agree(first : List(Integer), second : List(Integer)) -> Bool =
+pub def agree(first : List Integer, second : List Integer) -> Bool =
   match first where
     | #[a, b, c] => match second where
       | #[x, y, z] => a == x && b == y && c == z

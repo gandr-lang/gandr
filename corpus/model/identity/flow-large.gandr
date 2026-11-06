@@ -17,11 +17,11 @@ import std.list (List);
 
 /// A `Packed` value carries a list at its stored type.
 data Packed : Type[+, 1] where
-  | Pack : (a : Type, xs : List(a)) --> Packed
+  | Pack : (a : Type, xs : List a) --> Packed
 
 /// A `Boxed` value has the same large-code shape.
 data Boxed : Type[+, 1] where
-  | Box : (a : Type, xs : List(a)) --> Boxed
+  | Box : (a : Type, xs : List a) --> Boxed
 
 /// The `packedKept` flow remains at one large code.
 def packedKept : Flow[.A = Type[+, 1]](Packed, Packed) = Flow.stay Packed;
@@ -52,7 +52,7 @@ def packedRode(p : Packed) -> Packed =
   Flow.ride (fun (X) { X }) packedKept p
 
 /// The list motive decodes the packed-list carrier at its own level.
-def packedLists(ps : List(Packed)) -> List(Packed) =
+def packedLists(ps : List Packed) -> List Packed =
   Path.walk (fun (X) { List X }) packedSame ps
 
 /// The flow ride moves a packed value to `Boxed` through its decode row.
@@ -60,5 +60,5 @@ def packedCarried(f : Flow[.A = Type[+, 1]](Packed, Boxed), p : Packed) -> Boxed
   Flow.ride (fun (X) { X }) f p
 
 /// The list flow ride carries its decode beneath the list row.
-def boxedLists(f : Flow[.A = Type[+, 1]](Packed, Boxed), ps : List(Packed)) -> List(Boxed) =
+def boxedLists(f : Flow[.A = Type[+, 1]](Packed, Boxed), ps : List Packed) -> List Boxed =
   Flow.ride (fun (X) { List X }) f ps

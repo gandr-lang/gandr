@@ -24,7 +24,7 @@ def restricted : Path(
 ) = Path.here endoSemigroup;
 
 /// `multiplies` reads the multiplication field of a semigroup model.
-pub def multiplies(s : Model(Semigroup)) -> Integer =
+pub def multiplies(s : Model Semigroup) -> Integer =
   match s where
     | *{.mul = m} => 0
 
@@ -33,11 +33,11 @@ pub def multiplies(s : Model(Semigroup)) -> Integer =
 def asSemigroup() -> Integer { multiplies endoMonoid }
 
 /// `throughTheDiamond` reads either inclusion route to `Semigroup`.
-def throughTheDiamond(m : Model(UnitAndZero)) -> Integer =
+def throughTheDiamond(m : Model UnitAndZero) -> Integer =
   multiplies m
 
 /// `endoManifest` writes the endomorphism monoid with its carrier.
-pub def endoManifest : Model(Monoid) with sort M = (Integer -> Integer) = *{
+pub def endoManifest : Model Monoid with sort M = (Integer -> Integer) = *{
   Endo.mul,
   *{Endo.one, *{Endo.assoc, *{Endo.unitL, Endo.unitR}}}
 };
@@ -47,5 +47,5 @@ pub def endoManifest : Model(Monoid) with sort M = (Integer -> Integer) = *{
 def manifestAsSemigroup() -> Integer { multiplies endoManifest }
 
 /// `manifestDiamond` reads either manifest inclusion route to `Semigroup`.
-def manifestDiamond(u : Model(UnitAndZero) with sort M = Unit) -> Integer =
+def manifestDiamond(u : Model UnitAndZero with sort M = Unit) -> Integer =
   multiplies u

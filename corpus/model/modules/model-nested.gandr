@@ -13,7 +13,7 @@ theory Answering where
 
 /// The theory of its outer `#{ inner: #{ answer: Integer }, total: Integer }`.
 pub theory Faceted where
-  oper inner : Model(Answering);
+  oper inner : Model Answering;
   oper total : Integer;
 
 /// The facts: the nested answer and the total beside it.
@@ -40,7 +40,7 @@ theory Carrier where
 
 /// The theory of a model that holds a `Carrier` model under `inner`.
 theory Outer where
-  oper inner : Model(Carrier);
+  oper inner : Model Carrier;
 
 /// A model sealed at `Outer`: the nested model's sort is an atom outside.
 pub module Sealed :> Model(Outer) where

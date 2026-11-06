@@ -35,7 +35,7 @@ def neutral : Terms(Mon) = Mon.one;
 
 /// A second declaration asking for the terms states the same cause.
 @[ refuses("RuleNotPresentable") ]
-def product : Terms(Mon) = Mon.mul Mon.one Mon.one;
+def product : Terms Mon = Mon.mul Mon.one Mon.one;
 
 /// A signature of two sorts, a point and a pair of them.
 theory Pair where

@@ -97,7 +97,7 @@ pub def oneCounter : Path(upModel, downModel) = *{
 };
 
 /// The `observe` function reads the value after one step.
-pub def observe(m : Model(Counter)) -> Integer =
+pub def observe(m : Model Counter) -> Integer =
   match m where
     | *{.zero = z, .incr = i, .read = r} => r (i z)
 

@@ -22,7 +22,7 @@ data Count : Type where
 /// A value of the first type with a value of the type it picks.
 data Twin(a : Type, b : a -> Type) : Type where
   /// The two values.
-  | MkTwin : (x : a, y : b(x)) --> Twin(a, b)
+  | MkTwin : (x : a, y : b(x)) --> Twin a b
 
 /// The unit type at each count.
 def unitOfCount(m : Count) -> Type = return Unit
@@ -44,7 +44,7 @@ def nestedTwin(k : Count) -> twinType(Z) =
 
 /// The inner pair at its written type.
 def ascribedTwin(k : Count) -> twinType(Z) =
-  MkTwin Z (MkTwin Z *{} : Twin(Count, unitOfCount))
+  MkTwin Z (MkTwin Z *{} : Twin Count unitOfCount)
 
 /// One pair at a computed type.
 def oneTwin(k : Count) -> oneType(Z) =

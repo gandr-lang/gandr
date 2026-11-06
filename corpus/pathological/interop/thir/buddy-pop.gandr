@@ -28,9 +28,9 @@ def popShared(
   order : Nat,
   b : Nat,
   rest : Ixs,
-  h : Path((Some (SomeV (IntV b)) : Maybe(Val)), nth heads order),
+  h : Path((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
   held : Path(
-    (Some (headOf rest) : Maybe(Val)),
+    (Some (headOf rest) : Maybe Val),
     below (Down b (Down Zero Here)) (Tree blocks)
   ),
   link : chain(rest, blocks),
@@ -38,8 +38,8 @@ def popShared(
 ) -> wpMemFn(
   popBody,
   popEnv(order),
-  popPost(blocks, heads, order, ICons(b, rest)),
-  Own(Zero, Part, buddy(blocks, heads))
+  popPost(blocks, heads, order, ICons b rest),
+  Own Zero Part buddy(blocks, heads)
 ) =
   *{
     SomeV (IntV b),
@@ -54,9 +54,9 @@ def popListedAsEmpty(
   order : Nat,
   b : Nat,
   rest : Ixs,
-  h : Path((Some (SomeV (IntV b)) : Maybe(Val)), nth heads order),
+  h : Path((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
   held : Path(
-    (Some (headOf rest) : Maybe(Val)),
+    (Some (headOf rest) : Maybe Val),
     below (Down b (Down Zero Here)) (Tree blocks)
   ),
   link : chain(rest, blocks),
@@ -65,7 +65,7 @@ def popListedAsEmpty(
   popBody,
   popEnv(order),
   popPost(blocks, heads, order, INil),
-  Own(Zero, Whole, buddy(blocks, heads))
+  Own Zero Whole buddy(blocks, heads)
 ) =
   *{
     SomeV (IntV b),

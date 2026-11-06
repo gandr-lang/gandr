@@ -26,16 +26,16 @@ pub data Pred : (n : Nat) --> Type where
 /// A witness at one natural.
 pub data At : (n : Nat) --> Type where
   /// The witness at `n`.
-  | A : (n : Nat) --> At(n)
+  | A : (n : Nat) --> At n
 
 /// The arm learns `Succ(m) = Succ(n)`. The split gives `m = n`.
-def back(n : Nat, p : Pred(Succ(n))) -> At(n) =
+def back(n : Nat, p : Pred (Succ n)) -> At n =
   match p where
     | Pre(m) => A m
 
 /// The goal reads `n` under a constructor. The split path has the two
 /// fields as its ends, so the later step reads them there too.
-def backSucc(n : Nat, p : Pred(Succ(n))) -> At(Succ(n)) =
+def backSucc(n : Nat, p : Pred (Succ n)) -> At (Succ n) =
   match p where
     | Pre(m) => A (Succ m)
 
@@ -52,27 +52,27 @@ pub data Over : (s : Span) --> Type where
 /// A witness at two naturals.
 pub data At2 : (lo : Nat, hi : Nat) --> Type where
   /// The witness at `lo` and `hi`.
-  | A2 : (lo : Nat, hi : Nat) --> At2(lo, hi)
+  | A2 : (lo : Nat, hi : Nat) --> At2 lo hi
 
 /// The arm learns `Mk(l, h) = Mk(lo, hi)`. The split gives one path for each
 /// field.
-def ends(lo : Nat, hi : Nat, o : Over(Mk(lo, hi))) -> At2(lo, hi) =
+def ends(lo : Nat, hi : Nat, o : Over (Mk lo hi)) -> At2 lo hi =
   match o where
     | O(l, h) => A2 l h
 
 /// The predecessor of two, read back through the arm.
 @[ runs("A (Succ Zero)") ]
-def backTwo() -> At(Succ(Zero)) { back (Succ Zero) (Pre (Succ Zero)) }
+def backTwo() -> At (Succ Zero) { back (Succ Zero) (Pre (Succ Zero)) }
 
 /// The rest of a vector at least one long. The arm learns `m = n` from the
 /// path from `Succ(m)` to `Succ(n)`.
-def tail[a : Type, n : Nat](v : Vec(a, Succ(n))) -> Vec(a, n) =
+def tail[a : Type, n : Nat](v : Vec(a, Succ n)) -> Vec a n =
   match v where
     | VCons(m, _, t) => t
 
 /// Pairs two vectors of one length. The inner arm learns that the two tails
 /// have one length from the path between two `Succ`s.
-pub def rec zip(a : Type, b : Type, n : Nat, xs : Vec(a, n), ys : Vec(b, n)) -> Vec(a * b, n) =
+pub def rec zip(a : Type, b : Type, n : Nat, xs : Vec a n, ys : Vec b n) -> Vec (a * b) n =
   match xs where
     | VNil => match ys { | VNil => VNil }
     | VCons(m, x, xt) => match ys where
@@ -83,23 +83,23 @@ pub data Finite : Nat -> Type where
   /// Zero, below every successor.
   | FZero : (n : Nat) --> Finite(Succ(n))
   /// One past a bound, below the successor of that bound.
-  | FSucc : (n : Nat, i : Finite(n)) --> Finite(Succ(n))
+  | FSucc : (n : Nat, i : Finite n) --> Finite(Succ(n))
 
 /// A bound read back as the natural it is.
-pub def rec toNat(n : Nat, i : Finite(n)) -> Nat =
+pub def rec toNat(n : Nat, i : Finite n) -> Nat =
   match i where
     | FZero(_) => Zero
     | FSucc(m, j) => Succ (toNat[<] m j)
 
 /// The element at a bound below the vector's length. Each inner arm learns
 /// the length of the vector's tail from the path between two successors.
-pub def rec lookup(a : Type, n : Nat, v : Vec(a, n), i : Finite(n)) -> a =
+pub def rec lookup(a : Type, n : Nat, v : Vec a n, i : Finite n) -> a =
   match i where
     | FZero(m) => match v { | VCons(_, h, _) => h }
     | FSucc(m, j) => match v { | VCons(_, _, t) => lookup[<] a m t j }
 
 /// The bound one below two.
-pub def oneOfTwo() -> Finite(Succ(Succ(Zero))) { FSucc (Succ Zero) (FZero Zero) }
+pub def oneOfTwo() -> Finite (Succ (Succ Zero)) { FSucc (Succ Zero) (FZero Zero) }
 
 /// The second element of the vector two long, at the bound one.
 @[ runs("2") ]

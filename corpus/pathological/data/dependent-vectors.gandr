@@ -23,7 +23,7 @@ import "../../model/data/vectors.gandr";
 
 /// The first element, its element type and length implicit. `VNil` stands at
 /// zero, apart from `Succ(n)`, so the case leaves its arm out.
-def head[a : Type, n : Nat](v : Vec(a, Succ(n))) -> a =
+def head[a : Type, n : Nat](v : Vec(a, Succ n)) -> a =
   match v where
     | VCons(_, h, _) => h
 

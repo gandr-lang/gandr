@@ -15,7 +15,7 @@ data Shape : Type where
 
 /// A box over any type: its equality needs its argument's.
 data Box(a : Type) : Type where
-  | Box : (x : a) --> Box(a)
+  | Box : (x : a) --> Box a
 
 /// A point in the plane.
 data Point : Type where

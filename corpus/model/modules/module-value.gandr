@@ -35,13 +35,13 @@ module Up : Model(Ticker) where
 def packed : Model(Ticker) = pack Up at Model(Ticker);
 
 /// `named` writes `Up` as a module name.
-def named : Model(Ticker) = Up;
+def named : Model Ticker = Up;
 
 /// `namedIsPacked` equates both spellings.
 def namedIsPacked() -> Path(named, packed) { Path.here named }
 
 /// `ticked` steps any ticker value.
-def ticked(c : Model(Ticker), n : c.C) -> c.C =
+def ticked(c : Model Ticker, n : c.C) -> c.C =
   let step = c.step
   step n
 

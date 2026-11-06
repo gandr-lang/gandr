@@ -24,23 +24,23 @@
 @[ builtin(irPair) ]
 pub data Sig(a : Type, b : a -> Type) : Type where
   /// A value of the first type with a value of the type it picks.
-  | MkSig : (x : a, y : b(x)) --> Sig(a, b)
+  | MkSig : (x : a, y : b(x)) --> Sig a b
 
 /// The codes over a type of decodes `d`, a large type.
 @[ builtin(irSignature) ]
 pub data IR(d : Type) : Type[+, 1] where
   /// No argument, the decode `e`.
-  | Iota : (e : d) --> IR(d)
+  | Iota : (e : d) --> IR d
   /// A value of the type `a`, and the code the rest reads it by.
-  | SigmaC : (a : Type, f : a -> IR(d)) --> IR(d)
+  | SigmaC : (a : Type, f : a -> IR d) --> IR d
   /// A function from `a` into the family. The rest reads it through its
   /// decodes.
-  | DeltaC : (a : Type, f : (a -> d) -> IR(d)) --> IR(d)
+  | DeltaC : (a : Type, f : (a -> d) -> IR d) --> IR d
 
 /// The arguments a code asks for over a family `x`. The function `t` decodes
 /// the family.
 @[ builtin(irArgs) ]
-pub def rec args(d : Type, c : IR(d), x : Type, t : x -> d) -> Type =
+pub def rec args(d : Type, c : IR d, x : Type, t : x -> d) -> Type =
   match c where
     | Iota(e) => return Unit
     | SigmaC(a, f) => return (Sig a (fun (y) { args[<] d (f y) x t }))
@@ -49,7 +49,7 @@ pub def rec args(d : Type, c : IR(d), x : Type, t : x -> d) -> Type =
 /// The decode of the arguments a code asks for. The code's case refines their
 /// type, since the marked call stages the code.
 @[ builtin(irDecode), form(explicit) ]
-pub def rec decodeArgs(d : Type, c : IR(d), x : Type, t : x -> d, v : args(d, c, x, t)) -> d =
+pub def rec decodeArgs(d : Type, c : IR d, x : Type, t : x -> d, v : args(d, c, x, t)) -> d =
   match c where
     | Iota(e) => e
     | SigmaC(a, f) => match v where

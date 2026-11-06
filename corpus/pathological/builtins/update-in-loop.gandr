@@ -5,7 +5,7 @@
 import std.list (List);
 
 /// Four integers, annotated as a list of them (#1544).
-def steps = (#[1, 2, 3, 4] : List(Integer));
+def steps = (#[1, 2, 3, 4] : List Integer);
 
 /// Each element pushed in a fold, through the `list` namespace's projection
 /// (#1106).

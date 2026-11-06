@@ -10,8 +10,8 @@
 
 /// Lists over any element type.
 data List(a : Type) : Type where
-  | Nil : List(a)
-  | Cons : (x : a, xs : List(a)) --> List(a)
+  | Nil : List a
+  | Cons : (x : a, xs : List a) --> List a
 
 /// The even and odd naturals, each built from the other: two codes of one
 /// sort, each naming the other in a leaf.
