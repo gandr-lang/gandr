@@ -39,22 +39,56 @@ hold_mutants_lock() {
 
 mutants_scope=("$(cd "${BASH_SOURCE[0]%/*}" && pwd)/scope" -p MemoryMax=16G -p MemorySwapMax=0 -p OOMPolicy=continue)
 
+# Lists one crate's mutants and reads its witness items. The caller holds the
+# mutants lock. This starts no test or cargo build. It writes the mutant list,
+# rustdoc items, and group input under `$2`.
+mutants_listed() {
+  local crate=$1 output=$2 package targets doc
+  shift 2
+  local -a docs
+  package=$(cargo metadata --locked --no-deps --format-version 1 | jq -c --arg crate "$crate" '.packages[] | select(.name == $crate)')
+  if [[ -z "$package" ]]; then
+    printf 'no workspace crate named %s\n' "$crate" >&2
+    return 2
+  fi
+  mapfile -t docs < <(jq -r '[.targets[] | select(.kind | index("lib")) | .name] as $libs
+    | .targets[] | select((.kind | index("lib")) or ((.kind | index("bin")) and (.name | IN($libs[]) | not)))
+    | .name | gsub("-"; "_") | "target/evidence/doc/\(.).json"' <<< "$package")
+  targets=$(jq -c '[.targets[] | select(.kind | index("test")) | .name]' <<< "$package")
+  for doc in "${docs[@]}"; do
+    [[ -f "$doc" ]] || { printf 'no rustdoc JSON for %s at %s\n' "$crate" "$doc" >&2; return 2; }
+  done
+  mkdir -p "$output"
+  "${mutants_scope[@]}" cargo mutants --list --json --package "$crate" "$@" > "$output/list.json"
+  for doc in "${docs[@]}"; do jq -f .config/mutants/items.jq "$doc"; done | jq -s 'add // []' > "$output/items.json"
+  jq -n --arg package "$crate" --argjson targets "$targets" \
+    '{package: $package, targets: $targets}' > "$output/group-input.json"
+}
+
+# Groups a listed crate's mutants. The caller can filter `list.json` before it
+# calls this function. It writes the groups and the unwitnessed names.
+mutants_grouped() {
+  local output=$1
+  jq -n --slurpfile mutants "$output/list.json" --slurpfile items "$output/items.json" \
+    --slurpfile input "$output/group-input.json" \
+    '{mutants: $mutants[0], items: $items[0], package: $input[0].package, targets: $input[0].targets}' \
+    | jq -f .config/mutants/groups.jq > "$output/groups.json"
+  jq -r '.[] | select(.filter == null) | .names[]' "$output/groups.json" | sort -u > "$output/unwitnessed.txt"
+}
+
 # The survivors of one witnessed run (`mutants:witnessed`'s outcome directory
-# `$1`) as a Markdown table collapsed under a summary counting them: each
-# missed mutant with its verdict, `missed` or `unwitnessed` (no witness names
-# its function), then each one timed out. A `|` in a name is written `\|`,
-# the escape a table cell reads (#3371), so `replace && with ||` stays one
-# cell. Returns 1 and prints nothing when none survives.
+# `$1`) as a Markdown table collapsed under a summary counting them. It lists
+# each missed mutant, then each timeout. Unwitnessed mutants are a static gap.
+# A `|` in a name is written `\|`, so `replace && with ||` stays in one cell.
+# Returns 1 and prints nothing when no survivor exists.
 mutants_survivors() {
-  local out=$1 name verdict count noun=survivors
+  local out=$1 name count noun=survivors
   [[ -s "$out/missed.txt" || -s "$out/timeout.txt" ]] || return 1
   count=$(cat "$out/missed.txt" "$out/timeout.txt" | wc -l | tr -d ' ')
   (( count != 1 )) || noun=survivor
   printf '\n<details><summary>%s %s — alive</summary>\n\n| mutant | verdict |\n| --- | --- |\n' "$count" "$noun"
   while IFS= read -r name; do
-    verdict=missed
-    ! grep -Fxq -- "$name" "$out/unwitnessed.txt" || verdict=unwitnessed
-    printf '| `%s` | %s |\n' "${name//|/\\|}" "$verdict"
+    printf '| `%s` | missed |\n' "${name//|/\\|}"
   done < "$out/missed.txt"
   while IFS= read -r name; do printf '| `%s` | timeout |\n' "${name//|/\\|}"; done < "$out/timeout.txt"
   printf '\n</details>\n'

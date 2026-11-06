@@ -140,17 +140,14 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
 # that holds it or, with `--no-wait`, refusing at once (#2540), and each
 # group's cargo-mutants runs in its own capped scope
 # (`.config/mise/mutants.bash`).
-# Outcomes land in `mutants.out/<crate>/witnessed` (or `MUTANTS_OUTPUT`):
-# cargo-mutants' `caught`, `missed`, `timeout` and `unviable` lists, merged,
-# `unwitnessed.txt`, each group's log under `logs/`, and a summary line with
-# the wall time. Each group's own outcomes stay under `groups/<key>` as it
-# finishes. The key hashes the group's mutants, the timeout and the tree the
-# lanes test: `HEAD`'s tree, the working tree's changes and its untracked
-# files. A run restarted over the same tree therefore skips every group
-# already resolved and runs only the rest; any change to the tree reruns them
-# all. `--in-diff` keeps only the mutants a diff's added lines hold
-# (cargo-mutants' own `--in-diff`), as `mutants:changed` runs it over a
-# change. The whole-suite `mutants` stays the way to map a crate first.
+# Outcomes land in `mutants.out/<crate>/witnessed` or `MUTANTS_OUTPUT`. The
+# task writes `caught`, `missed`, `timeout`, `unviable`, and `unwitnessed.txt`.
+# `unwitnessed.txt` is a static coverage gap. Its collector owns that gap.
+# The summary gives the wall time. Each group's outcomes stay under
+# `groups/<key>`. The key hashes the group's mutants, timeout, and tested tree.
+# A run on the same tree skips each resolved group. A changed tree reruns them.
+# `--in-diff` keeps only mutants in a diff's added lines. `mutants:changed`
+# uses cargo-mutants' `--in-diff`. The whole-suite `mutants` maps a crate first.
 #
 # `--iterate` carries a crate's outcomes from one run to the next, across
 # trees, as cargo-mutants' own `--iterate` does, in `iterate/` beside the
@@ -214,22 +211,6 @@ if [[ -n "$seed" ]]; then
   [[ -d "$seed" ]] || { printf 'no target directory at %s\n' "$seed" >&2; exit 2; }
   seed=$(cd "$seed" && pwd)
 fi
-package=$(cargo metadata --locked --no-deps --format-version 1 | jq -c --arg crate "$crate" '.packages[] | select(.name == $crate)')
-if [[ -z "$package" ]]; then
-  printf 'no workspace crate named %s\n' "$crate" >&2
-  exit 2
-fi
-# Every library and binary target's rustdoc JSON holds witnesses: a binary's
-# functions name theirs in its own JSON, which the library's does not hold.
-# A binary named as its library is not documented by `cargo doc`, which
-# keeps the library's.
-mapfile -t docs < <(jq -r '[.targets[] | select(.kind | index("lib")) | .name] as $libs
-  | .targets[] | select((.kind | index("lib")) or ((.kind | index("bin")) and (.name | IN($libs[]) | not)))
-  | .name | gsub("-"; "_") | "target/evidence/doc/\(.).json"' <<< "$package")
-targets=$(jq -c '[.targets[] | select(.kind | index("test")) | .name]' <<< "$package")
-for doc in "${docs[@]}"; do
-  [[ -f "$doc" ]] || { printf 'no rustdoc JSON for %s at %s\n' "$crate" "$doc" >&2; exit 2; }
-done
 host=$(rustc -vV | sed -n 's/^host: //p')
 triple=$(tr '[:lower:]-' '[:upper:]_' <<< "$host")
 export "CARGO_TARGET_${triple}_RUSTFLAGS=-Ctarget-cpu=native --cap-lints=warn"
@@ -243,7 +224,7 @@ find "$output" -mindepth 1 -maxdepth 1 ! -name groups ! -name iterate -exec rm -
 [[ "$iterate" == true ]] || rm -rf "$output/iterate"
 mkdir -p "$output/logs"
 started=$SECONDS
-"$scope" cargo mutants --list --json --package "$crate" "${in_diff[@]}" > "$output/list.json"
+mutants_listed "$crate" "$output" "${in_diff[@]}"
 listed=$(jq length "$output/list.json")
 if [[ "$iterate" == true ]]; then
   mkdir -p "$output/iterate"
@@ -253,12 +234,7 @@ if [[ "$iterate" == true ]]; then
     "$output/list.json" > "$output/listed.json"
   mv "$output/listed.json" "$output/list.json"
 fi
-for doc in "${docs[@]}"; do jq -f .config/mutants/items.jq "$doc"; done | jq -s 'add // []' > "$output/items.json"
-jq -n --slurpfile mutants "$output/list.json" --slurpfile items "$output/items.json" \
-  --arg package "$crate" --argjson targets "$targets" \
-  '{mutants: $mutants[0], items: $items[0], package: $package, targets: $targets}' \
-  | jq -f .config/mutants/groups.jq > "$output/groups.json"
-jq -r '.[] | select(.filter == null) | .names[]' "$output/groups.json" > "$output/unwitnessed.txt"
+mutants_grouped "$output"
 revision=$({
   git rev-parse 'HEAD^{tree}'
   git diff --binary HEAD
@@ -353,7 +329,6 @@ for out in "$output"/groups/*; do
   [[ -e "$out" ]] || continue
   jq -e --arg key "${out##*/}" 'any(.[]; .key == $key)' <<< "$witnessed" > /dev/null || rm -rf "$out"
 done
-sort -o "$output/missed.txt" "$output/missed.txt" "$output/unwitnessed.txt"
 if [[ "$iterate" == true ]]; then
   sort -u -o "$output/iterate/settled.txt" "$output/iterate/settled.txt" "$output/caught.txt" "$output/unviable.txt"
   if (( waiting == 0 )); then
@@ -365,29 +340,55 @@ if [[ "$iterate" == true ]]; then
   fi
 fi
 carried=
-[[ "$iterate" != true ]] || carried="; $((listed - $(jq length "$output/list.json"))) settled or tried earlier"
-(( waiting == 0 )) || carried+="; $waiting group(s) wait for the next run"
+[[ "$iterate" != true ]] || carried=" $((listed - $(jq length "$output/list.json"))) mutants settled or tried earlier."
+(( waiting == 0 )) || carried+=" $waiting group(s) wait for the next run."
 count() { wc -l < "$output/$1.txt" | tr -d ' '; }
-printf '%s witnessed: %s mutants in %s groups, %s with a witness; caught %s, missed %s (%s unwitnessed), timeout %s, unviable %s%s; %ss\n' \
+printf '%s witnessed: %s mutants. %s groups. %s with a witness. Caught %s. Missed %s. Unwitnessed %s. Timeout %s. Unviable %s.%s Wall time %ss.\n' \
   "$crate" "$(jq length "$output/list.json")" "$(jq length "$output/groups.json")" "$(jq length <<< "$witnessed")" \
   "$(count caught)" "$(count missed)" "$(count unwitnessed)" "$(count timeout)" "$(count unviable)" "$carried" "$((SECONDS - started))" \
   | tee "$output/summary.txt"
 {% endraw %}
 '''
 
-# The mutants of one change (#1456, lever 2). The diff runs from where HEAD
-# left the base, so work landed on the base since is not read as this change.
-# Each crate whose Rust sources the diff touches, and which holds a mutant on
-# an added line, runs under `mutants:witnessed --in-diff`. A function the
-# change leaves alone contributes no mutant. Outcomes land in
-# `mutants.out/changed/<crate>` (or under `MUTANTS_OUTPUT`), and one report
-# covers them all, `report.md`. It gives each crate's count line and every
-# survivor by name with its verdict, collapsed under a summary counting them:
-# `missed`, `unwitnessed` (no witness names its function) or `timeout`.
-# `survivors.txt` lists the same names, one per line. The task exits 0
-# whatever survives; the report is the verdict. A crate's directory stays
-# from one run to the next, so a run restarted over the same change resumes
-# each crate's groups (`mutants:witnessed`).
+# The static witness gap for one crate. This task reads existing rustdoc JSON.
+# It exits 2 when that JSON is absent. It lists cargo-mutants once and starts
+# no build or test. `ci:mutants-landed --unwitnessed` files its result.
+["mutants:unwitnessed"]
+description = "List one crate's mutants whose functions have no witness"
+tools."cargo:cargo-mutants" = "27.1.0"
+tools.jq = "1.8.1"
+usage = '''
+flag "-p --package <crate>" required=#true help="the crate to list"
+flag "--no-wait" help="refuse at once when another mutants run holds the host"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+crate=${usage_package:?}
+[[ ${usage_no_wait:-false} != true ]] || export MUTANTS_NO_WAIT=1
+output=${MUTANTS_OUTPUT:-mutants.out/$crate/unwitnessed}
+source .config/mise/mutants.bash
+hold_mutants_lock "mise run mutants:unwitnessed -- -p $crate"
+mkdir -p "$output"
+output=$(cd "$output" && pwd)
+find "$output" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+mutants_listed "$crate" "$output"
+mutants_grouped "$output"
+listed=$(jq length "$output/list.json")
+unwitnessed=$(wc -l < "$output/unwitnessed.txt" | tr -d ' ')
+printf '%s unwitnessed: %s of %s mutants name no witness. No builds run.\n' "$crate" "$unwitnessed" "$listed" \
+  | tee "$output/summary.txt"
+{% endraw %}
+'''
+
+# The mutants of one change (#1456, lever 2). The diff starts at HEAD's base.
+# Each crate whose Rust sources the diff touches runs `mutants:witnessed
+# --in-diff` when it has a mutant on an added line. A function outside the diff
+# adds no mutant. `mutants.out/changed/<crate>` or `MUTANTS_OUTPUT` has one
+# `report.md`. It gives each crate's count line and each tested survivor.
+# A survivor is `missed` or `timeout`. `unwitnessed.txt` names static gaps.
+# `survivors.txt` lists the survivors. The task exits zero with survivors.
+# A restart over the same change resumes each crate's groups.
 #
 # The rustdoc JSON the listing reads is built once, for every crate.
 # `--until` bounds the run's wall time from the task's start, that build
