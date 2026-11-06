@@ -1174,8 +1174,17 @@ run = [".config/ledger/cases.bash", ".config/ledger/check.bash"]
 # `UNFILED` (#1207) is gone: an unimplemented refusal names its own issue or
 # does not compile. `.config/tracking/tracking.jq` reads them; each case in
 # `.config/tracking/cases.json` holds an input and the lines it prints, or
-# none. The states are read once through `gh`, after the cases, and every
-# finding is printed before the gate fails.
+# none. After the cases, one query through `gh` reads the states, and the
+# check prints every finding before the gate fails.
+#
+# An issue closed as completed refuses only when a commit in the history of
+# HEAD closes it (#5778). A landed commit keeps its closing keyword through
+# each restack and each rebase of `landing`, and git reads it there. While
+# only a commit on another remote branch closes the issue, the tree does not
+# hold its landing yet: `main` waits for its promotion and still names the
+# issue. Then the issue holds. The check judges an issue that no commit
+# closes on its state. Git reads the history only when the states refuse,
+# and CI runs the check in the format gate, which holds the whole history.
 ["check:tracking"]
 description = "Every tracking issue a refusal names, and every declined ledger row's decision, is open or closed as not planned"
 tools.jq = "1.8.1"
@@ -1198,14 +1207,42 @@ gh api graphql -F query=@"$tmp/query.graphql" --jq '.data.repository | with_entr
       elif has("stateReason") then {kind: "issue", state, reason: .stateReason}
       else {kind: "pull", state} end)' > "$tmp/states.json" \
   || { echo 'tracking: the states of the issues named could not be read through gh' >&2; exit 1; }
-findings=$(jq -n --slurpfile c "$tmp/constants.json" --slurpfile r "$tmp/rows.json" --slurpfile s "$tmp/states.json" \
-  '{constants: $c[0], rows: $r[0], states: $s[0]}' | jq -r -f .config/tracking/tracking.jq)
+: > "$tmp/landed"
+judge() {
+  jq -n --slurpfile c "$tmp/constants.json" --slurpfile r "$tmp/rows.json" --slurpfile s "$tmp/states.json" --rawfile l "$tmp/landed" \
+    '{constants: $c[0], rows: $r[0], states: (reduce ($l | split("\n")[] | select(. != "") | split(" ")) as [$n, $v] ($s[0]; .[$n].landed = ($v == "true")))}' \
+    | jq -r -f .config/tracking/tracking.jq
+}
+findings=$(judge)
+if [[ -n $findings ]]; then
+  jq -r 'to_entries[] | select(.value.kind == "issue" and .value.state == "CLOSED" and (.value.reason // "COMPLETED") == "COMPLETED") | .key' \
+    "$tmp/states.json" > "$tmp/completed"
+  if [[ -s $tmp/completed ]]; then
+    mapfile -t completed < "$tmp/completed"
+    greps=()
+    for n in "${completed[@]}"; do
+      greps+=("--grep=(^|[^[:alnum:]_])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#$n([^0-9]|$)")
+    done
+    git log --format='%B%x1e' --extended-regexp --regexp-ignore-case "${greps[@]}" HEAD > "$tmp/held" \
+      || { echo 'tracking: git could not read the history of HEAD' >&2; exit 1; }
+    git log --format='%B%x1e' --extended-regexp --regexp-ignore-case "${greps[@]}" --remotes --not HEAD > "$tmp/elsewhere" \
+      || { echo 'tracking: git could not read the remote branches' >&2; exit 1; }
+    jq -n -r -L .config/claims --rawfile held "$tmp/held" --rawfile elsewhere "$tmp/elsewhere" '
+      include "targets";
+      def closes($n): split("\u001e") | any(.[]; test("(?i)\\b\(closing):?\\s+#\($n)\\b"));
+      $ARGS.positional[] as $n
+      | if $held | closes($n) then "\($n) true" elif $elsewhere | closes($n) then "\($n) false" else empty end' \
+      --args "${completed[@]}" > "$tmp/landed"
+    findings=$(judge)
+  fi
+fi
 if [[ -n $findings ]]; then
   echo "$findings" >&2
   echo 'tracking check FAILED' >&2
   exit 1
 fi
-echo "tracking check OK: $(jq length .config/tracking/cases.json) cases; $(jq length "$tmp/constants.json") tracking issues and $(jq length "$tmp/rows.json") declined rows each open or decided"
+pending=$(jq -R -r -n '[inputs | select(endswith(" false")) | "#" + split(" ")[0]] | join(", ")' "$tmp/landed")
+echo "tracking check OK: $(jq length .config/tracking/cases.json) cases; $(jq length "$tmp/constants.json") tracking issues and $(jq length "$tmp/rows.json") declined rows each open or decided${pending:+; HEAD holds no closing commit of $pending yet}"
 '''
 
 # The corpus's two roots, run through the driver as an author runs them: the

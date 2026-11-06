@@ -39,7 +39,7 @@
     "output": ""
   },
   {
-    "name": "#2529: a constant naming an issue closed as completed is refused",
+    "name": "#2529: a constant naming an issue closed as completed that no commit closes is refused on its state",
     "input": {
       "constants": [
         {
@@ -57,6 +57,28 @@
       }
     },
     "output": "crates/core-term/src/failure.rs: `TrackingIssue::TYPED_NUMBER` names #1109, which is closed as completed: name the open issue whose landing builds the feature, or the decision closed as not planned"
+  },
+  {
+    "name": "#5778: an issue closed as completed holds a constant and a declined row while only a commit on another remote branch closes it",
+    "input": {
+      "constants": [{ "name": "UNHELD_INDEX", "number": 2670 }],
+      "rows": [{ "id": "unheld-index", "refs": [2670] }],
+      "states": {
+        "2670": { "kind": "issue", "state": "CLOSED", "reason": "COMPLETED", "landed": false }
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#5778: an issue closed as completed refuses the constant naming it once a commit in HEAD closes it",
+    "input": {
+      "constants": [{ "name": "TYPE_SHAPE", "number": 2664 }],
+      "rows": [],
+      "states": {
+        "2664": { "kind": "issue", "state": "CLOSED", "reason": "COMPLETED", "landed": true }
+      }
+    },
+    "output": "crates/core-term/src/failure.rs: `TrackingIssue::TYPE_SHAPE` names #2664, which is closed as completed: name the open issue whose landing builds the feature, or the decision closed as not planned"
   },
   {
     "name": "#4248: an epic its workflow ends as completed refuses the constant naming it, and an open issue beside it holds",
