@@ -453,11 +453,22 @@ allowed = [
 # After the run, each package in `embedded_source.allowed` must still hold a
 # listed source of two or more lines. A package without one is refused, so its
 # entry leaves the list with the unit that moves its last source.
+# Cargo can count a library built from another quenchant revision as fresh,
+# and then each crate's lint results too; `ci.yml` keys its policy caches on
+# the revision for this reason. So the task stamps `target/dylint` with the
+# revision it builds. A run whose pinned revision differs from the stamp
+# starts from an empty `target/dylint`.
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
 rustup component add rustc-dev llvm-tools
 toolchain=$(rustup show active-toolchain | awk '{print $1}')
+revision=$(mise run --quiet workflow:revision)
+if [ "$(cat target/dylint/quenchant-revision 2> /dev/null)" != "$revision" ]; then
+  rm -rf target/dylint
+  mkdir -p target/dylint
+  printf '%s\n' "$revision" > target/dylint/quenchant-revision
+fi
 set -- .config/mise/scope cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets
 if [ ! -x "${DYLINT_DRIVER_PATH:-$HOME/.dylint_drivers}/$toolchain/dylint-driver" ]; then
   channel=$(sed -n 's/^channel = "\([^"]*\)".*/\1/p' rust-toolchain.toml)
