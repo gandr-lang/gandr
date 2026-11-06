@@ -1,8 +1,12 @@
-// An attribute block of two entries before a data block, a signature and a
-// function: each block is read whole, so the unknown `note` refuses its
-// declaration whatever it precedes. An inner block `@![ … ]` can open a
-// module's or a theory's body. It then decorates that module or theory, as a
-// block before it does.
+//! `long-attribute-blocks` decorates declarations with outer and inner blocks.
+//!
+//! An unknown `note` refuses every declaration it decorates. An inner `checks`
+//! block decorates its enclosing module or theory.
+//!
+//! The checker reads each outer block as a whole. It assigns an inner block to
+//! its module or theory body.
+//!
+//! - see: corpus/pathological/attributes/unknown-attribute.gandr
 
 // A colour, its block's second entry unknown.
 @[ refuses("UnknownAttribute"), note("a colour, named by its constructors") ]
