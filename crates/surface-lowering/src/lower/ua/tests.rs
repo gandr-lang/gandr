@@ -24,21 +24,7 @@ use crate::resolve::OperandCount;
 
 /// A magma, the opposite multiplication's translator at its binary corolla
 /// and the identity at its constant one.
-const MAGMA: &str = r"theory Magma where {
-  sort M : Type;
-  oper mul : (x : M, y : M) --> (z : M);
-  oper one : () --> (z : M);
-}
-def exchange(b : Bool) -> -F Bool {
-  match b {
-    | true => return +{.1 = *{}}
-    | false => return +{.0 = *{}}
-  }
-}
-def keep(e : +{Unit}) -> -F +{Unit} {
-  return e
-}
-";
+const MAGMA: &str = include_str!("tests/unformatted/magma.gandr");
 
 /// Text a fixture spells: a statement or a label.
 #[repr(transparent)]
@@ -223,8 +209,8 @@ fn a_statement_the_syntax_cannot_read_is_refused()
 #[test]
 fn a_later_member_named_ua_is_a_forward_reference()
 {
-    let source = "theory S where { sort M : Type; }\nmodule M where { def o = ua[1, 4] S (S (*{})) (*{}); def ua = 1; \
-                  }\n";
+    let source =
+        include_str!("tests/fixtures/a-later-member-named-ua-is-a-forward-reference.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let refused = outcome_of(&module, "o".into());
@@ -248,8 +234,9 @@ fn a_later_member_named_ua_is_a_forward_reference()
 #[test]
 fn a_recursive_function_named_compose_recurses_through_its_claim()
 {
-    let source = "def rec compose(xs : List(Integer)) -> Integer {\n  match xs {\n    | #[] => 0\n    | #[_, \
-                  ..rest] => compose[<] rest\n  }\n}\n";
+    let source = include_str!(
+        "tests/fixtures/a-recursive-function-named-compose-recurses-through-its-claim.gandr"
+    );
     let mut arena = CoreArena::new();
     let source = listing(source);
     let module = listed(&source, &mut arena);
@@ -269,11 +256,15 @@ fn a_description_outside_the_stratum_is_refused_at_its_name()
 {
     for (theory, name) in [
         (
-            "theory Two where {\n  sort Ob : Type;\n  sort Ar : Type;\n  oper f : (a : Ob) --> (b : Ob);\n}\n",
+            include_str!(
+                "tests/fixtures/a-description-outside-the-stratum-is-refused-at-its-name-1.gandr"
+            ),
             "Two",
         ),
         (
-            "theory Old where {\n  sort Nat : Type;\n  oper f(x : Nat) -> Nat;\n  oper g : (a : Nat) --> (b : Nat);\n}\n",
+            include_str!(
+                "tests/fixtures/a-description-outside-the-stratum-is-refused-at-its-name-2.gandr"
+            ),
             "Old",
         ),
     ] {

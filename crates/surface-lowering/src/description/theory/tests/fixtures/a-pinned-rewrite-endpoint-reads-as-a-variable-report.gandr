@@ -1,0 +1,8 @@
+theory Labelled where {
+  sort Nat : Type;
+  oper step : (i : Nat) --> (o : Nat);
+  rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
+    node w1 : p(x) ==> (m);
+    node w2 : step(m) --> (o);
+  };
+}

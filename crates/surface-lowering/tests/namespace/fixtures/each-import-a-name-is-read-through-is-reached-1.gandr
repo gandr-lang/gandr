@@ -1,0 +1,9 @@
+pub data Point : Type where { | One : Point }
+pub module Cancel :> *{
+  notes : String
+} where {
+  def notes = "notes";
+}
+pub module Str where { def len(self : shared Integer) -> -F Integer { pure self } }
+pub def seven : Integer;
+def seven = 7;

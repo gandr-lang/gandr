@@ -1,0 +1,4 @@
+{NAT}def other(n : Nat) -> -F Nat {{ return n }}
+def rec borrowed(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become other[<] p }} }}
+def rec primed(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become add[<] p }} }}
+def rec stray(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become nowhere[<] p }} }}

@@ -1,0 +1,6 @@
+def dbl(x : Integer) -> -F Integer {
+  become x + x
+}
+def same(x : Integer, y : Integer) -> -F Path[.A = Integer](dbl (dbl x), dbl (dbl x)) {
+  return Path.here (dbl (dbl x))
+}

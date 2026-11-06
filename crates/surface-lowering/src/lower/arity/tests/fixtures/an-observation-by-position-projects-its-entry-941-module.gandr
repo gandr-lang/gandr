@@ -1,0 +1,6 @@
+codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }
+def labelled(m : +U &{a : -F Integer, b : -F Integer}) -> -F Integer { become m.b }
+def placed(m : +U &{a : -F Integer, b : -F Integer}) -> -F Integer { become m.1 }
+def chained(m : +U (-F Integer & -F String & -F Integer)) -> -F Integer { become m.2 }
+def named(t : +U Trio) -> -F Integer { become t.b }
+def counted(t : +U Trio) -> -F Integer { become t.1 }

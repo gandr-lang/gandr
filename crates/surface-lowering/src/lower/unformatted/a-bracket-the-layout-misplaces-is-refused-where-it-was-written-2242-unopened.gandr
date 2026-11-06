@@ -1,0 +1,7 @@
+def same(n : Integer) -> -F Integer {
+  if n == 0
+    return 0
+  } else {
+    return n
+  }
+}

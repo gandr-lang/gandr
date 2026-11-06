@@ -1,0 +1,9 @@
+theory NoPort where {
+  sort Nat : Type;
+  oper f : (a : Nat) --> (b : Nat);
+
+  rule stray : (rule p : Nat ==> Nat, data x : Nat) ==> (z : Nat) {
+    node : p(x) ==> (m);
+    node : f(m) --> (z);
+  };
+}

@@ -1,0 +1,6 @@
+def fs : Cap { read, write };
+def peek(c : Cap { read }) -> -F [std.fs.Eff] String { c.read "notes" }
+def granted() -> -F [std.fs.Eff] String { peek fs }
+def save(c : Cap { read, write }) -> -F [std.fs.Eff] Unit { c.write "notes" "x" }
+def denied(c : Cap { read }) -> -F [std.fs.Eff] Unit { c.write "notes" "x" }
+def direct() -> -F [std.fs.Eff] String { fs.read "notes" }

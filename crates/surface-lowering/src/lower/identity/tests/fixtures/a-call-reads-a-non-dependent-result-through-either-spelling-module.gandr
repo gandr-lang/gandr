@@ -1,0 +1,15 @@
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+}
+def up(n : Int) -> -F Int {
+  S n
+}
+def sugared : Int -> Path[.A = Int](Z, Z);
+def thunked : +U (Int -> -F Path[.A = Int](Z, Z));
+def overSugared(a : Int) -> -F Path[.A = Int](S Z, S Z) {
+  Path.step (Path.ap up (sugared a)) (Path.here (S Z))
+}
+def overThunked(a : Int) -> -F Path[.A = Int](S Z, S Z) {
+  Path.step (Path.ap up (thunked a)) (Path.here (S Z))
+}

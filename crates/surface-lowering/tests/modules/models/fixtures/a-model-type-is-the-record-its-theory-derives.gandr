@@ -1,0 +1,14 @@
+theory Toggle where {
+  sort T : Type;
+  oper start : T;
+  oper step : (t : T) --> T;
+  oper read : (t : T) --> Bool;
+}
+theory Based where {
+  oper base : Integer;
+  oper double : Integer;
+}
+def derived : Model(Toggle);
+def written : *{t : Type, start : t, step : t -> t, read : t -> Bool};
+def based : Model(Based);
+def plain : *{base : Integer, double : Integer};

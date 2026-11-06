@@ -14,28 +14,11 @@ use crate::unit::Unit;
 
 /// Two rules rewriting `add(Zero, Zero)` apart: the block is refused at the
 /// later rule, naming the earlier.
-const APART: &str = r#"data NatApart : Type where {
-    | Zero : NatApart
-    | Succ : (n : NatApart) --> NatApart
-    oper add : (m : NatApart, n : NatApart) --> NatApart;
-    rule : add Zero n ==> n;
-    rule : add m Zero ==> Succ m;
-    rule : add (Succ m) n ==> Succ (add m n);
-}"#;
+const APART: &str = include_str!("tests/unformatted/apart.gandr");
 
 /// A group's laws with the left inverse, which completion joins by deriving
 /// rules into the block's store.
-const GROUP: &str = r#"theory Group where {
-    sort G : Type;
-    oper e : G;
-    oper a : G;
-    oper b : G;
-    oper inv : (x : G) --> G;
-    oper mul : (x : G, y : G) --> G;
-    rule unitL : mul (e ()) x <=> x;
-    rule assoc : mul (mul x y) z <=> mul x (mul y z);
-    rule invL : mul (inv x) x <=> e ();
-}"#;
+const GROUP: &str = include_str!("tests/fixtures/group.gandr");
 
 /// The cell report of `source`, its blocks decided through `decisions`.
 ///
@@ -58,7 +41,12 @@ fn a_block_an_edit_moves_is_answered_as_decided_where_it_stands_1547()
     for (block, refused) in [(APART, true), (GROUP, false)] {
         let mut decisions = Decisions::held();
         let first = elaborated(block, &mut decisions);
-        let moved = format!("// An edit above the block.\n{block}");
+        let moved = format!(
+            include_str!(
+                "tests/unformatted/a-block-an-edit-moves-is-answered-as-decided-where-it-stands-1547-moved.gandr"
+            ),
+            block = block
+        );
         let kept = elaborated(moved.as_str(), &mut decisions);
         assert_eq!(
             decisions.kept.len(),

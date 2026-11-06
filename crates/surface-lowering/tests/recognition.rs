@@ -631,7 +631,8 @@ fn a_binder_over_a_builtin_reports_without_shadowing()
 #[test]
 fn a_shadowed_builtin_is_reported_as_a_warning()
 {
-    let source = "def list = 1 ;\ndef used = list ;";
+    let source =
+        include_str!("recognition/fixtures/a-shadowed-builtin-is-reported-as-a-warning.gandr");
     let module = lowered(SourceText::from(source), seeded(ShadowPolicy::WarnAndAllow));
     assert_eq!(
         module.recognition().shadowed(),

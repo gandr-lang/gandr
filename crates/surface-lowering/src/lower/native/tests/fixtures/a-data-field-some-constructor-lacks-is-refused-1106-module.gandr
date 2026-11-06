@@ -1,0 +1,7 @@
+data Shape : Type where {
+  | Dot : (tag : Integer) --> Shape
+  | Line : (start : Integer, tag : Integer) --> Shape
+}
+data Packed : Type[+, 1] where { | Pack : (a : Type, xs : List(a)) --> Packed }
+def startOf(shape : Shape) -> -F Integer { shape.start }
+def sizeOf(packed : Packed) -> -F Integer { let xs = packed.xs; return 0 }

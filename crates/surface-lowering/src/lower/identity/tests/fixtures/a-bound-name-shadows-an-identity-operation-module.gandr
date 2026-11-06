@@ -1,0 +1,3 @@
+def apply(here : Integer -> Integer) -> -F Integer {
+  become here 1
+}

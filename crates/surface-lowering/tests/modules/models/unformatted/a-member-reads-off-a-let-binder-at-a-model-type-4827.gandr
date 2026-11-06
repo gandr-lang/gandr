@@ -1,0 +1,3 @@
+{seeded}def readOff(m : {model}) -> -F Integer {{
+  let s : {model} = m ; let r = s.read ; r(s.seed)
+}}

@@ -1,0 +1,2 @@
+def here(n : Integer) -> Integer { n }
+def bound() -> Integer { here 4 }

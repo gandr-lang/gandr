@@ -1,0 +1,23 @@
+theory State where {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  oper put : (s : S, k : C) --> C;
+}
+theory Typed where {
+  sort VTy : Type;
+  sort CTy : Type;
+  sort VTm(a : VTy) : Type+;
+  sort CTm(b : CTy) : Type;
+  oper lam : (t : pi+ (x : VTm(a)). CTm(b)) --> CTm(b);
+}
+def state : Model(State) with sort S = Integer;
+def stated : *{c : Type, get : +U (Integer -> -F c) -> c, put : (s : Integer, k : c) -> c};
+def typed : Model(Typed);
+def written : *{
+  vty : Type,
+  cty : Type,
+  vtm : (a : vty) -> Type,
+  ctm : (b : cty) -> Type,
+  lam : (a : vty, b : cty, t : +U (vtm(a) -> -F ctm(b))) -> ctm(b)
+};

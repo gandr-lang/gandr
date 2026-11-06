@@ -1,0 +1,5 @@
+{counter}def step(a : Model(Counter), b : {second}, c : a.C) -> -F Integer {{
+  match b {{
+    | *{{.zero = z, .incr = i, .read = r}} => become r (i {count})
+  }}
+}}

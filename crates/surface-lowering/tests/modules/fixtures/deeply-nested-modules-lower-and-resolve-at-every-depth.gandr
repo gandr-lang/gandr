@@ -1,0 +1,2 @@
+}
+def use_outer = Outer.depth_outer;

@@ -25,15 +25,7 @@ use crate::model::ModelForm;
 use crate::unit::Unit;
 
 /// A group presented by its left unit, associativity and left inverse.
-const GROUP: &str = "theory Grp where {
-  sort G : Type;
-  oper e : G;
-  oper inv : (x : G) --> G;
-  oper mul : (x : G, y : G) --> G;
-  rule unitL : mul (e ()) x <=> x;
-  rule assoc : mul (mul x y) z <=> mul x (mul y z);
-  rule invL : mul (inv x) x <=> e ();
-}";
+const GROUP: &str = include_str!("tests/fixtures/group.gandr");
 
 /// [`plan`] of `left <=> right` in the group, named `r`.
 ///

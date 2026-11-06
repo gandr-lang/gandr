@@ -1,0 +1,6 @@
+{NAT}{APPLIED}def rec again(n : Nat) -> -F Nat {{
+  match n {{
+    | Zero => Zero
+    | Succ(p) => Succ (applyAt again[<] n)
+  }}
+}}

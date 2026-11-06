@@ -1,0 +1,11 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+def apply(f : Integer -> Integer, x : Integer) -> Integer { f x }
+def used() -> Integer { apply (fun (y : Integer) { y }) 1 }
+def twice[m : Type, combine : (m, m) -> m](x : m) -> m { combine x x }
+def moved(A : Type, P : A -> Type, x : A, y : A, p : Path[.A = A](x, y), v : P(x)) -> P(y) {
+  Path.walk P p v
+}
+def rec plus : (Nat, Nat) -> Nat where {
+  | Zero, k => k
+  | Succ(j), k => Succ (plus[<] j k)
+}

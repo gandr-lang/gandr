@@ -1,0 +1,9 @@
+rec {
+  data Rose(a : Type) : Type where {
+    | Node : (label : a, kids : Forest(a)) --> Rose(a)
+  }
+  data Forest(a : Type) : Type where {
+    | Empty : Forest(a)
+    | More : (head : Rose(a), tail : Forest(a)) --> Forest(a)
+  }
+}

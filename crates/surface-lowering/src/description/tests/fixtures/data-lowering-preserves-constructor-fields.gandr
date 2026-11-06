@@ -1,0 +1,4 @@
+data List(a : Type) : Type where {
+  | Nil : List(a)
+  | Cons : (head : a, tail : List(a)) --> List(a)
+}

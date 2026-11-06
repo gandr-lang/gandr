@@ -1,0 +1,19 @@
+theory Counter where {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+}
+module Up : Model(Counter) where {
+  type C = Integer;
+  def zero = 0;
+  def incr(c : Integer) -> -F Integer { c + 1 }
+  def read(c : Integer) -> -F Integer { c }
+}
+def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read (s.incr s.zero) }
+def deeper() -> -F Integer {
+  let a = 1;
+  let b = a;
+  let c = b;
+  match c { | _ => match c { | _ => fromZero () } }
+}

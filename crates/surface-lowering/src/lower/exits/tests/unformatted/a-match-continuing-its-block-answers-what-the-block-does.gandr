@@ -1,0 +1,2 @@
+{NAT}def stated(n : Nat) -> -F Nat {{ let m = match n -> (-F Nat) {{ | Zero => return n | Succ(p) => pure p }} ; return m }}
+def taken(n : Nat) -> -F (+U (-F Nat)) {{ let m = match n {{ | Zero => return thunk {{ return n }} | Succ(p) => pure p }} ; return thunk {{ return Succ m }} }}

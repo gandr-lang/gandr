@@ -1,0 +1,4 @@
+module Shapes :> *{ side : Integer } where { type Hidden = Integer; def side = 1; }
+def corner : Shapes.Corner;
+def hidden : Shapes.Hidden;
+def stranger : Nowhere.Side;

@@ -1,0 +1,9 @@
+import text.greet;
+def again : text.greet.Point;
+def again = text.greet.one;
+def lost : Integer;
+def lost = text.greet.two;
+def prefix : text.greet.Point;
+def prefix = text.one;
+def bare : text.greet.Point;
+def bare = one;

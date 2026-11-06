@@ -1,0 +1,6 @@
+{FIRST}def skipped : () -> Integer ;
+def skipped = thunk {{ become first[_, Unit] 5 *{{}} }} ;
+def mixed : () -> Integer ;
+def mixed = thunk {{ become first[Integer, .b = Unit] 5 *{{}} }} ;
+def named : () -> Integer ;
+def named = thunk {{ become first[.a = Integer, .b = Unit] 5 *{{}} }} ;

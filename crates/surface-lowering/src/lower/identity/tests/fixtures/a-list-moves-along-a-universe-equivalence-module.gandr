@@ -1,0 +1,3 @@
+def keep(nil : Integer) -> -F Integer {
+  return nil
+}

@@ -1,0 +1,7 @@
+/// The answer.
+pub def answer = 42;
+/// A point.
+pub data Point : Type where { | P : Point }
+/// First.
+pub @[ doc("Second.") ]
+def both = 1;

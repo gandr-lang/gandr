@@ -1,0 +1,3 @@
+{PLACES}module Unbound where {{
+  def lost[m : Mode](self : k List(Integer)) -> -F View[m](Integer) {{ self.#[0] }}
+}}

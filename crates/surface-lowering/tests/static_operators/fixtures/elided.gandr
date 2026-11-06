@@ -1,0 +1,9 @@
+def raw_rel_monad : (Type -> Type[-]) -> Type -> Type -> Type;
+def raw_rel_monad = fun (T) {
+  fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } }
+};
+def unit_and_bind : raw_rel_monad(fun (X) { -F (X * X) }, Integer, Integer);
+def unit_and_bind_spelled : (Integer -> Integer * Integer) * ((
+  +U (-F (Integer * Integer)),
+  Integer -> Integer * Integer
+) -> Integer * Integer);

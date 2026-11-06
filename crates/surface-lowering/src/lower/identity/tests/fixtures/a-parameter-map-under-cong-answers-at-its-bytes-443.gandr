@@ -1,0 +1,8 @@
+def mapped(
+  f : Integer -> Integer,
+  a : Integer,
+  b : Integer,
+  p : Path[.A = Integer](a, b)
+) -> -F Path[.A = Integer](f a, f b) {
+  become Path.ap f p
+}

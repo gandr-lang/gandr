@@ -1,0 +1,15 @@
+data Two : Type where {
+  | L : Two
+  | R : Two
+}
+
+def laid(t : Two) -> Two =
+  let u = t
+  match u
+    | L => R
+    | R => L
+
+def braced(t : Two) -> Two {
+  let u = t;
+  match u { | L => R | R => L }
+}

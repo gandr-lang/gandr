@@ -1,0 +1,16 @@
+theory Pointed where {
+  include Mag;
+  sort M : Type;
+}
+theory Mag where {
+  sort M : Type;
+  oper e : () --> M;
+}
+theory Unary where {
+  sort M : Type;
+  oper e : (x : M) --> M;
+}
+theory Both where {
+  include Mag;
+  include Unary;
+}

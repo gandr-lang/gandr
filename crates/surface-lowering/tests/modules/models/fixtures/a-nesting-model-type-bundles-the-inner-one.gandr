@@ -1,0 +1,9 @@
+theory Pointed where {
+  sort T : Type;
+  oper z : T;
+}
+theory Outer where {
+  oper inner : Model(Pointed);
+}
+def derived : Model(Outer);
+def written : *{inner : *{t : Type, z : t}};

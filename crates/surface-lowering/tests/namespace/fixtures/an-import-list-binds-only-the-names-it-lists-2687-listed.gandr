@@ -1,0 +1,9 @@
+import text.greet (one, Point, One,);
+def again : Point;
+def again = one;
+def made : Point;
+def made = One;
+def through : text.greet.Point;
+def through = text.greet.two;
+def unlisted : Point;
+def unlisted = two;

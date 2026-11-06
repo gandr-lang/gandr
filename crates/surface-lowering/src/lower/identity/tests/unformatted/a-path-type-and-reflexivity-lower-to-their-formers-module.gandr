@@ -1,0 +1,2 @@
+def p : Path[.A = Integer](4, 4);
+def p = Path.here 4;

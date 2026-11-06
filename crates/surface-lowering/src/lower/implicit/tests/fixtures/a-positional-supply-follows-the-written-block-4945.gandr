@@ -1,0 +1,5 @@
+def pick[i : t, u : Type](t : Type, y : u) -> -F t { return i }
+def named : () -> Integer;
+def named = thunk { become pick[.i = 7, .u = Unit] (Integer) *{} };
+def positional : () -> Integer;
+def positional = thunk { become pick[7, Unit] (Integer) *{} };

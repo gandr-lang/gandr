@@ -1,0 +1,2 @@
+def g(x : Unit) -> -F Integer { match x { | *{} => return 1 } }
+def h(x : Unit) -> -F Integer { match x { | *{} => return 1 } }

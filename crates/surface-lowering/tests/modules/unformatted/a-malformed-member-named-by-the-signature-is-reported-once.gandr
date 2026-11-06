@@ -1,0 +1,2 @@
+module Facts : *{ inner : *{ answer : Integer } } where {
+  module inner : *{ answer : Integer } where {

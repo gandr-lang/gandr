@@ -1,0 +1,8 @@
+data Eight : Type where { | Mid : Eight | left : Mid <-> Mid | right : Mid <-> Mid }
+def swap(x : Eight) -> -F Eight {
+  match x {
+    | Mid => Mid
+    | right => left
+    | left => right
+  }
+}

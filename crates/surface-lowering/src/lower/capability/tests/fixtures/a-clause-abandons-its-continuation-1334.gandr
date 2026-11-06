@@ -1,0 +1,7 @@
+def quit() -> -F Unit {
+  handle c : std.process.Exit.Eff {
+    c.exit 1
+  } with { | pure(x) => pure x | oper exit(code, k) => abandon k }
+}
+def abandon(n : Integer) -> -F Unit { pure *{} }
+def halt() -> -F Unit { abandon 1 }

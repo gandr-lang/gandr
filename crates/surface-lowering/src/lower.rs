@@ -27707,9 +27707,9 @@ mod tests
     #[test]
     fn a_signature_s_types_answer_whatever_its_members_1115()
     {
-        let text = "module Facts : *{ inner : *{ answer : Integer }, total : Integer } where {\n  module \
-                    inner : *{ answer : Integer } where {\n    def answer = 1;\n  }\n  def total = \
-                    inner.answer + 1;\n}\n";
+        let text = include_str!(
+            "lower/unformatted/a-signature-s-types-answer-whatever-its-members-1115.gandr"
+        );
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(text), &mut arena);
         let mut written: Vec<(usize, &str)> = module
@@ -27981,8 +27981,12 @@ mod tests
     fn a_homed_former_reads_through_its_import_s_qualifier_4862()
     {
         for text in [
-            "\nimport std.list ;\ndef xs : std.list.List(Integer) = #[1, 2] ;",
-            "\nimport std.list as l ;\ndef xs : l.List(Integer) = #[1, 2] ;",
+            include_str!(
+                "lower/unformatted/a-homed-former-reads-through-its-import-s-qualifier-4862-2.gandr"
+            ),
+            include_str!(
+                "lower/unformatted/a-homed-former-reads-through-its-import-s-qualifier-4862-1.gandr"
+            ),
         ] {
             let mut arena = CoreArena::new();
             let module = crate::fixture::listed(text, &mut arena);
@@ -28001,7 +28005,9 @@ mod tests
         }
         let mut arena = CoreArena::new();
         let module = crate::fixture::listed(
-            "\nimport std.list as l ;\ndef xs : l.Lists(Integer) = #[1, 2] ;",
+            include_str!(
+                "lower/unformatted/a-homed-former-reads-through-its-import-s-qualifier-4862-module.gandr"
+            ),
             &mut arena,
         );
         assert_eq!(
@@ -28024,7 +28030,9 @@ mod tests
     fn a_buffer_type_resolves_only_through_its_listing_4522()
     {
         let mut arena = CoreArena::new();
-        let source = "\nimport std.buffer (Buf, Web) ;\ndef b = Buf ; def w = Web ;";
+        let source = include_str!(
+            "lower/unformatted/a-buffer-type-resolves-only-through-its-listing-4522.gandr"
+        );
         let module = crate::fixture::listed(source, &mut arena);
         let quoted = |declaration: usize| match arena.value(body_of(outcomes(&module)[declaration]))
         {
@@ -28187,9 +28195,9 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                "module M where {\n  type T = Integer ;\n}\ndef a = Integer ;\ndef b = M.T ;",
-            ),
+            SourceText::from(include_str!(
+                "lower/fixtures/a-qualified-type-argument-is-the-code-its-alias-is-1126-module.gandr"
+            )),
             &mut arena,
         );
         let outcomes = outcomes(&module);
@@ -28318,7 +28326,8 @@ mod tests
     #[test]
     fn a_typed_parameter_binds_its_argument_ascribed_1310()
     {
-        let source = "def x : +U (Integer -> -F Integer) ;\ndef x = thunk { fun (y : Integer) { return y } } ;";
+        let source =
+            include_str!("lower/fixtures/a-typed-parameter-binds-its-argument-ascribed-1310.gandr");
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);
         let body = body_of(outcomes(&module)[0]);
@@ -28372,9 +28381,9 @@ mod tests
 
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                "def x : +U (Integer -> -F Integer) ;\ndef x = thunk { fun (y : Unit) { return 1 } } ;",
-            ),
+            SourceText::from(include_str!(
+                "lower/fixtures/a-typed-parameter-binds-its-argument-ascribed-1310-module.gandr"
+            )),
             &mut arena,
         );
         let report = crate::lower::native::tests::judged(&module, &mut arena);
@@ -28467,9 +28476,8 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(concat!(
-                "def g(x : Unit) -> -F Integer { match x { | *{} => return 1 } }\n",
-                "def h(x : Unit) -> -F Integer { match x { | *{} => return 1 } }\n",
+            SourceText::from(include_str!(
+                "lower/fixtures/the-unit-pattern-is-the-empty-products-815-module.gandr"
             )),
             &mut arena,
         );
@@ -29275,22 +29283,9 @@ mod tests
         use crate::lower::native::tests::judged;
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                r"def counted() -> -F [Partial] Integer {
-  var n = 0;
-  while n < 3 { n += 1; }
-  if n == 3 { n += 10; } else { n += 20; }
-  { n *= 2; }
-  access n as v { resume(v, v + 10) }
-  n -= 1;
-  return n
-}
-def ended() -> -F [Partial] Unit {
-  var n = 0;
-  while n < 3 { n += 1; }
-}
-",
-            ),
+            SourceText::from(include_str!(
+                "lower/fixtures/a-block-like-statement-needs-no-semicolon-module.gandr"
+            )),
             &mut arena,
         );
         assert_accepted(&judged(&module, &mut arena));
@@ -29609,15 +29604,9 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                "data Nat : Type where\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n\ndata Vec(a : \
-                 Type) : Nat -> Type where\n  | VNil : Vec(a, Zero)\n  | VCons : (n : Nat, head : \
-                 a, tail : Vec(a, n)) --> Vec(a, Succ(n))\n\ndef called(v : Vec(Integer, \
-                 Succ(Zero))) -> Vec(Integer, Succ(Zero)) { v }\n\ndef juxtaposed(v : Vec Integer \
-                 (Succ Zero)) -> Vec Integer (Succ Zero) { v }\n\ndata Maybe(a : Type) : Type \
-                 where\n  | Nothing : Maybe(a)\n  | Just : (x : a) --> Maybe(a)\n\ndef opt : Type -> \
-                 Type[-] = fun (A) { -F Maybe A };\n",
-            ),
+            SourceText::from(include_str!(
+                "lower/fixtures/a-type-applies-its-family-by-juxtaposition-5326-module.gandr"
+            )),
             &mut arena,
         );
         let outcome = |name: &str| {
@@ -29685,15 +29674,9 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                "def shared(m n : Integer) -> -F Integer { return m }\ndef apart(m : Integer, n : \
-                 Integer) -> -F Integer { return m }\ndef bound(a : Type, x y : a) -> -F a { \
-                 return y }\ndef bound_apart(a : Type, x : a, y : a) -> -F a { return y }\ndef \
-                 three(b : Bool, k m n : Integer) -> -F Integer { return k }\ndef three_apart(b : \
-                 Bool, k : Integer, m : Integer, n : Integer) -> -F Integer { return k }\ndef \
-                 linked(a : Type, x y : a, p : Path[.A = a](x, y)) -> -F a { return y }\ndef \
-                 linked_apart(a : Type, x : a, y : a, p : Path[.A = a](x, y)) -> -F a { return y }\n",
-            ),
+            SourceText::from(include_str!(
+                "lower/fixtures/a-def-head-s-shared-names-are-its-parameters-written-apart-4853-module.gandr"
+            )),
             &mut arena,
         );
         let completed = |wanted: &str| {
@@ -29754,11 +29737,9 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                "data Two : Type where {\n  | L : Two\n  | R : Two\n}\n\ndef laid(t : Two) -> Two \
-                 =\n  let u = t\n  match u\n    | L => R\n    | R => L\n\ndef braced(t : Two) -> \
-                 Two {\n  let u = t;\n  match u { | L => R | R => L }\n}\n",
-            ),
+            SourceText::from(include_str!(
+                "lower/fixtures/a-laid-out-body-is-the-braced-body-4853-module.gandr"
+            )),
             &mut arena,
         );
         let body = |wanted: &str| {
@@ -30345,13 +30326,9 @@ def ended() -> -F [Partial] Unit {
     #[test]
     fn a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853()
     {
-        let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\ndef apply(f : \
-                      Integer -> Integer, x : Integer) -> Integer { f x }\ndef used() -> \
-                      Integer { apply (fun (y : Integer) { y }) 1 }\ndef twice[m : Type, combine : \
-                      (m, m) -> m](x : m) -> m { combine x x }\ndef moved(A : Type, P : A -> Type, x \
-                      : A, y : A, p : Path[.A = A](x, y), v : P(x)) -> P(y) { Path.walk P p v }\ndef rec \
-                      plus : (Nat, Nat) -> Nat where {\n  | Zero, k => k\n  | Succ(j), k => Succ \
-                      (plus[<] j k)\n}\n";
+        let source = include_str!(
+            "lower/fixtures/a-box-passes-a-lambda-applies-states-a-motive-and-matches-its-columns-4853.gandr"
+        );
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);
         for (name, reason) in [
@@ -31388,9 +31365,9 @@ def ended() -> -F [Partial] Unit {
         );
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                "def pick(a : Type) -> -F Integer { 0 }\ndef chosen = thunk { become pick f64 } ;",
-            ),
+            SourceText::from(include_str!(
+                "lower/fixtures/a-number-takes-float64-from-its-suffix-or-annotation-1830-module.gandr"
+            )),
             &mut arena,
         );
         assert!(
@@ -31608,9 +31585,9 @@ def ended() -> -F [Partial] Unit {
         let pbg = grammar();
         let tree = repaired(
             &pbg,
-            SourceText::from(
-                "def rank() -> -F Integer {\n  match (Green : Color) {\n    | Red => return 0\n",
-            ),
+            SourceText::from(include_str!(
+                "lower/unformatted/a-missing-close-is-reported-at-the-innermost-form-tree.gandr"
+            )),
         );
         assert_eq!(
             refusal_in(&pbg, &tree),
@@ -31633,7 +31610,9 @@ def ended() -> -F [Partial] Unit {
         let pbg = grammar();
         let tree = repaired(
             &pbg,
-            SourceText::from("theory Magma where {\n  sort M : type;\n}\n"),
+            SourceText::from(include_str!(
+                "lower/unformatted/a-keyword-in-a-classifier-slot-is-read-with-its-offer-293-tree.gandr"
+            )),
         );
         let LoweringRefusal::MalformedForm { span, fault, .. } = refusal_in(&pbg, &tree)
         else {
@@ -31665,7 +31644,9 @@ def ended() -> -F [Partial] Unit {
         let pbg = grammar();
         for (source, point, form, tile, why) in [
             (
-                "def a : Integer ;\ndef a = 1 def b : Integer ;\ndef b = 2 ;\n",
+                include_str!(
+                    "lower/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-1.gandr"
+                ),
                 27_usize,
                 "def_value",
                 crate::form::TileName::SEMICOLON,
@@ -31673,7 +31654,9 @@ def ended() -> -F [Partial] Unit {
                  value",
             ),
             (
-                "def s : String ;\ndef s = \"abc ;\n",
+                include_str!(
+                    "lower/unformatted/an-unended-form-names-its-missing-tile-where-it-belongs-2.gandr"
+                ),
                 31_usize,
                 "string",
                 crate::form::TileName::QUOTE,
@@ -31714,7 +31697,9 @@ def ended() -> -F [Partial] Unit {
         let pbg = grammar();
         let tree = repaired(
             &pbg,
-            SourceText::from("def either : Integer + String ;\ndef either = +{0 = 1} ;\n"),
+            SourceText::from(include_str!(
+                "lower/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-1.gandr"
+            )),
         );
         assert_eq!(
             refusal_in(&pbg, &tree),
@@ -31743,7 +31728,9 @@ def ended() -> -F [Partial] Unit {
         );
         let tree = repaired(
             &pbg,
-            SourceText::from("module M where {\n  def a = 1 ;\n  def b = 2 ;\n"),
+            SourceText::from(include_str!(
+                "lower/unformatted/a-closed-form-is-marked-where-it-first-leaves-its-shape-1829-tree-2.gandr"
+            )),
         );
         assert!(
             matches!(refusal_in(&pbg, &tree), LoweringRefusal::MalformedForm {
@@ -31764,8 +31751,9 @@ def ended() -> -F [Partial] Unit {
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
-        let source = "def raised() -> -F Integer =\n  var xs = 0\n  (xs.first () as w { resume(w, \
-                      2) };\n  pure xs\n";
+        let source = include_str!(
+            "lower/unformatted/a-closer-owed-at-two-places-is-marked-over-both-3812.gandr"
+        );
         let after = |written: &str| {
             source
                 .find(written)
@@ -31794,16 +31782,21 @@ def ended() -> -F [Partial] Unit {
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let pbg = grammar();
-        let case = "def same(n : Integer) -> -F Integer {\n  match n {{\n    | zero @ 0 => return \
-                    zero\n    | _ => return n\n  }\n}\n";
-        let access = "def bump() -> -F Integer {\n  var c = 0;\n  access c as v { resume(v, v + \
-                      1) ;\n  pure c\n}\n";
-        let handle = "def quiet(n : Integer) -> -F Integer {\n  handle c : Proc {\n    \
-                      c.exit(1);\n    return n\n  with {\n    pure(x) => pure x,\n    oper \
-                      exit(code, k) => k(*{})\n  }\n}\n";
-        let unopened = "def same(n : Integer) -> -F Integer {\n  if n == 0\n    return 0\n  } \
-                        else {\n    return n\n  }\n}\n";
-        let quoted = "def numbers : List((Integer) ;\ndef numbers = cons(1, nil) ;\n";
+        let case = include_str!(
+            "lower/unformatted/a-bracket-the-layout-misplaces-is-refused-where-it-was-written-2242-case.gandr"
+        );
+        let access = include_str!(
+            "lower/unformatted/a-bracket-the-layout-misplaces-is-refused-where-it-was-written-2242-access.gandr"
+        );
+        let handle = include_str!(
+            "lower/unformatted/a-bracket-the-layout-misplaces-is-refused-where-it-was-written-2242-handle.gandr"
+        );
+        let unopened = include_str!(
+            "lower/unformatted/a-bracket-the-layout-misplaces-is-refused-where-it-was-written-2242-unopened.gandr"
+        );
+        let quoted = include_str!(
+            "lower/unformatted/a-bracket-the-layout-misplaces-is-refused-where-it-was-written-2242-quoted.gandr"
+        );
         let after = |source: &str, written: &str| {
             source
                 .find(written)
@@ -31902,7 +31895,12 @@ def ended() -> -F [Partial] Unit {
             ("retrun", "two letters swapped"),
             ("returnn", "one letter too many"),
         ] {
-            let source = alloc::format!("def f(x : Integer) -> -F Integer {{\n  {written} x\n}}\n");
+            let source = alloc::format!(
+                include_str!(
+                    "lower/unformatted/a-keyword-misspelt-is-refused-at-the-word-2259-1.gandr"
+                ),
+                written = written
+            );
             let start = source.find(written).unwrap_or_default();
             assert_eq!(
                 refusal(SourceText::from(source.as_str())),
@@ -31914,7 +31912,9 @@ def ended() -> -F [Partial] Unit {
                 "`{written}`, {word}, is refused at the word as `return` misspelt"
             );
         }
-        let source = "def f(x : Integer) -> -F Integer {\n  zebra x\n}\n";
+        let source = include_str!(
+            "lower/unformatted/a-keyword-misspelt-is-refused-at-the-word-2259-2.gandr"
+        );
         let start = source.find("zebra").unwrap_or_default();
         assert_eq!(
             refusal(SourceText::from(source)),
@@ -31924,7 +31924,9 @@ def ended() -> -F [Partial] Unit {
             },
             "a word that misspells no keyword is the call of a name nothing defines"
         );
-        let source = "def f(x : Integer) -> -F Integer {\n  here x\n}\n";
+        let source = include_str!(
+            "lower/unformatted/a-keyword-misspelt-is-refused-at-the-word-2259-3.gandr"
+        );
         let start = source.find("here").unwrap_or_default();
         assert_eq!(
             refusal(SourceText::from(source)),
@@ -31948,8 +31950,10 @@ def ended() -> -F [Partial] Unit {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         for (written, operator) in [("∷∷", "∷"), (":::", "::")] {
             let source = alloc::format!(
-                "data Circle : Type where\n  | Base : Circle\n  | loop : Base <-> Base\ndef flipped : \
-                 Path(Base, Base) = back loop {written} Path.here Base ;\n"
+                include_str!(
+                    "lower/unformatted/an-operator-written-twice-is-refused-at-the-run-5301-1.gandr"
+                ),
+                written = written
             );
             let start = source.find(written).unwrap_or_default();
             let mut arena = CoreArena::new();
@@ -31968,8 +31972,9 @@ def ended() -> -F [Partial] Unit {
                 "`{written}` is refused at the run as `{operator}` written twice: {refused:?}"
             );
         }
-        let source = "data Circle : Type where\n  | Base : Circle\n  | loop : Base <-> Base\ndef ∷∷ : \
-                      Integer = 1 ;\ndef flipped : Path(Base, Base) = back loop ∷∷ Path.here Base ;\n";
+        let source = include_str!(
+            "lower/unformatted/an-operator-written-twice-is-refused-at-the-run-5301-2.gandr"
+        );
         let path = source.find("Path.here").unwrap_or_default();
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source), &mut arena);
@@ -31993,8 +31998,9 @@ def ended() -> -F [Partial] Unit {
     fn an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let source = "def same(n : Integer) -> -F Integer =\n  match n\n    | zero @ 0 => return \
-                      zero\n    | _ =>> return n\n";
+        let source = include_str!(
+            "lower/unformatted/an-operator-near-miss-behind-a-zero-width-repair-is-refused-at-the-run-5512.gandr"
+        );
         let start = source.find("=>>").unwrap_or_default();
         let pbg = grammar();
         let tree = repaired(&pbg, SourceText::from(source));
@@ -32057,7 +32063,9 @@ def ended() -> -F [Partial] Unit {
         }
         let tree = parsed(
             &pbg,
-            SourceText::from("def f[a : Type](x : a) -> -F a {\n  zebra x\n}\n"),
+            SourceText::from(include_str!(
+                "lower/unformatted/a-bare-index-that-parses-as-no-argument-is-refused-at-its-bracket-4944-tree.gandr"
+            )),
         );
         assert!(
             matches!(refusal_in(&pbg, &tree), LoweringRefusal::UnresolvedName { span, name }
@@ -32384,11 +32392,15 @@ def ended() -> -F [Partial] Unit {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         for (source, payload) in [
             (
-                "def p : Integer ;\n@[ respects(*{p, 1}) ] def r = 1 ;\n",
+                include_str!(
+                    "lower/unformatted/a-names-payload-holding-other-than-names-is-refused-at-the-payload-1.gandr"
+                ),
                 at(30_usize, 37_usize),
             ),
             (
-                "def p : Integer ;\n@[ respects(#[p]) ] def r = 1 ;\n",
+                include_str!(
+                    "lower/unformatted/a-names-payload-holding-other-than-names-is-refused-at-the-payload-2.gandr"
+                ),
                 at(30_usize, 34_usize),
             ),
         ] {
@@ -32503,7 +32515,9 @@ def ended() -> -F [Partial] Unit {
 
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("@[ builtin(irArgs) ] def a : Integer ;\ndef b : Integer ;"),
+            SourceText::from(include_str!(
+                "lower/fixtures/a-builtin-mark-gives-its-declaration-the-role-3575-module.gandr"
+            )),
             &mut arena,
         );
         let role = |name: &str| {
@@ -32556,9 +32570,9 @@ def ended() -> -F [Partial] Unit {
         };
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                "@[ decomposes(series (event right 0)\n  (parallel (event left 1) (event right 1))) ]\ndef a : Integer ;\ndef b : Integer ;",
-            ),
+            SourceText::from(include_str!(
+                "lower/unformatted/a-spelled-payload-is-read-back-where-it-was-filed-module.gandr"
+            )),
             &mut arena,
         );
         let [declaration, other] = *module.declarations().iter().collect::<Vec<_>>()
@@ -32629,7 +32643,9 @@ def ended() -> -F [Partial] Unit {
         };
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("@[ decomposes(primes  =\n 2) ]\ndef a : Integer ;"),
+            SourceText::from(include_str!(
+                "lower/unformatted/a-named-payload-is-spelled-with-its-name-2077-module.gandr"
+            )),
             &mut arena,
         );
         let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
@@ -32680,9 +32696,9 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                "@[ traces(decomposes a (event left 0)), traces(primes b\n 1) ]\ndef a : Integer ;",
-            ),
+            SourceText::from(include_str!(
+                "lower/fixtures/traces-is-written-once-per-channel-3338-module.gandr"
+            )),
             &mut arena,
         );
         let [declaration] = *module.declarations().iter().collect::<Vec<_>>()
@@ -32770,9 +32786,9 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(
-                "/// Squares, as [cube] cubes.\n/// Twice.\ndef square = 1 ;\n@[ doc(\"Cubes.\") ] def cube = 2 ;\n/// A colour.\ndata Color : Type where { | Red : Color }\ndef plain = 3 ;",
-            ),
+            SourceText::from(include_str!(
+                "lower/fixtures/documentation-is-filed-under-the-declaration-key-module.gandr"
+            )),
             &mut arena,
         );
         let [square, cube, color, plain] = *module.declarations().iter().collect::<Vec<_>>()
@@ -32816,10 +32832,8 @@ def ended() -> -F [Partial] Unit {
     #[test]
     fn each_use_of_a_deprecated_declaration_is_listed()
     {
-        let text = "@[ deprecated(*{ since = \"0.2\", note = \"use cube\" }) ] def square = 1 \
-                    ;\n@[ deprecated ] def old : Integer ;\ndef old = 2 ;\ndef cube = 3 ;\ndef \
-                    a = square ;\ndef b = old ;\ndef c = cube ;\ndef d = square ;\nmodule Holder \
-                    where {\n  @[ deprecated ] def member = 4 ;\n}\ndef e = Holder.member ;";
+        let text =
+            include_str!("lower/fixtures/each-use-of-a-deprecated-declaration-is-listed.gandr");
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(text), &mut arena);
         let listed: Vec<(&str, String, Option<String>, Option<String>)> = module
@@ -32878,7 +32892,9 @@ def ended() -> -F [Partial] Unit {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("/// See [gone].\ndef a = 1 ;\n@[ doc(\"Or [`a`].\") ] def b = 2 ;"),
+            SourceText::from(include_str!(
+                "lower/unformatted/a-link-to-a-missing-name-is-refused-at-the-link-module.gandr"
+            )),
             &mut arena,
         );
         let [stale, linked] = *module.declarations().iter().collect::<Vec<_>>()
@@ -33181,9 +33197,9 @@ def ended() -> -F [Partial] Unit {
     fn a_module_s_documentation_is_filed_under_its_key_1135()
     {
         let pbg = grammar();
-        let text = "/// A module.\nmodule A where {\n  /// A def.\n  def x = 1 ;\n  /// Nested.\n  \
-                    module B where { def y = 2 ; }\n}\n/// Decorated, see [gone].\n@[ explicit_exits \
-                    ]\nmodule C where { def z = 3 ; }\n";
+        let text = include_str!(
+            "lower/fixtures/a-module-s-documentation-is-filed-under-its-key-1135.gandr"
+        );
         let source = SourceText::from(text);
         let tree = parsed(&pbg, source);
         let mut arena = CoreArena::new();
@@ -33221,7 +33237,7 @@ def ended() -> -F [Partial] Unit {
                 (doc.as_str(), match doc.as_str() {
                     "A module." => written.contains("module A where {"),
                     "A def." => written.contains("def x") && !written.contains("module"),
-                    "Nested." => {
+                    "The inner module." => {
                         written.contains("module B where {") && !written.contains("module A")
                     },
                     _ => written.contains("module C where {") && !written.contains("module A"),
@@ -33233,8 +33249,8 @@ def ended() -> -F [Partial] Unit {
             [
                 ("A module.", true),
                 ("A def.", true),
-                ("Nested.", true),
-                ("Decorated, see [gone].", true)
+                ("The inner module.", true),
+                ("An attribute decorates this module. See [gone].", true)
             ],
             "a module's, a member's, a nested module's and a decorated module's documentation \
              each stand under their own form, in source order"
@@ -33261,10 +33277,14 @@ def ended() -> -F [Partial] Unit {
     fn a_source_s_documentation_is_filed_under_the_source_1365()
     {
         let pbg = grammar();
-        let base = "//! The base.\n//! See [b].\ndef a = 1 ;\n";
+        let base = include_str!(
+            "lower/unformatted/a-source-s-documentation-is-filed-under-the-source-1365-base.gandr"
+        );
         let text = format!(
-            "{base}/// Dangling.\n\ndef b = 2 ;\n//! The importer,\n\n//! twice; see \
-             [gone].\ndef c = 3 ;\n"
+            include_str!(
+                "lower/unformatted/a-source-s-documentation-is-filed-under-the-source-1365.gandr"
+            ),
+            base = base
         );
         let unit = crate::unit::Unit::new(alloc::vec![
             crate::unit::UnitSource::new(ByteOffset::from(0_usize), alloc::vec::Vec::new()),
@@ -33296,7 +33316,7 @@ def ended() -> -F [Partial] Unit {
         );
         assert_eq!(
             own(1_usize).as_deref(),
-            Some("The importer,\ntwice; see [gone]."),
+            Some("The importer,\nwith two runs. See [gone]."),
             "a source's two runs join in source order, and a `///` run at the root is no source's"
         );
         assert_eq!(
@@ -33326,8 +33346,9 @@ def ended() -> -F [Partial] Unit {
     fn a_link_resolves_to_a_module_its_member_or_a_constructor()
     {
         let mut arena = CoreArena::new();
-        let source = "/// See [M], [Red] and [x].\ndef a = 1 ;\nmodule M where { def x = 1 ; }\ndata Color \
-                      : Type where { | Red : Color }\n/// Not [gone].\ndef b = 2 ;";
+        let source = include_str!(
+            "lower/fixtures/a-link-resolves-to-a-module-its-member-or-a-constructor.gandr"
+        );
         let module = lowered(SourceText::from(source), &mut arena);
         assert!(
             !matches!(outcome_named(&module, "a"), DeclarationOutcome::Refused(_)),
@@ -33351,9 +33372,8 @@ def ended() -> -F [Partial] Unit {
     fn a_link_keeps_the_declaration_it_resolves_to_4963()
     {
         let mut arena = CoreArena::new();
-        let source = "/// See [b], [M.x], [M], [Red], [b] again and [y].\ndef a = 1 ;\ndef b = 2 \
-                      ;\nmodule M where {\n  /// Inner [x] and [b].\n  def x = 3 ;\n}\nmodule N \
-                      where { def x = 4 ; def y = 5 ; }\ndata Color : Type where { | Red : Color }";
+        let source =
+            include_str!("lower/fixtures/a-link-keeps-the-declaration-it-resolves-to-4963.gandr");
         let module = lowered(SourceText::from(source), &mut arena);
         let declared = module.declarations().iter().collect::<Vec<_>>();
         let [a, b, inner, _, y, ..] = *declared
@@ -33400,7 +33420,9 @@ def ended() -> -F [Partial] Unit {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("@[ checkz ] module M where { def x = 1 ; }\ndef y = 2 ;"),
+            SourceText::from(include_str!(
+                "lower/unformatted/a-module-attribute-refusal-refuses-its-first-member-alone-module.gandr"
+            )),
             &mut arena,
         );
         assert_eq!(
@@ -33840,10 +33862,7 @@ def ended() -> -F [Partial] Unit {
     #[test]
     fn a_type_head_answers_at_what_it_stands_for()
     {
-        let text = "module NatAdd : *{ type M = Integer, zero : M } where {\n  type M = Integer;\n  def \
-                    zero = 0;\n}\n\nmodule MkCounter(S : *{ type T, zero : T }) :> *{ type T, \
-                    seed : T } where {\n  type T = S.T;\n  def seed = S.zero;\n}\n\nmodule Seed where {\n  \
-                    type T = Integer;\n  def zero = 0;\n}\n\nmodule A = MkCounter(Seed) ;\n";
+        let text = include_str!("lower/fixtures/a-type-head-answers-at-what-it-stands-for.gandr");
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(text), &mut arena);
         let standing: Vec<&str> = module
@@ -33956,10 +33975,8 @@ def ended() -> -F [Partial] Unit {
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from(concat!(
-                "theory Scaled where {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\n",
-                "module Misnamed : Model(Scaled) with sort Rate = Integer where {\n",
-                "  type Ratio = Integer;\n  def scale = 2;\n}\n",
+            SourceText::from(include_str!(
+                "lower/fixtures/a-module-refused-at-its-header-is-keyed-at-its-form-2183-module.gandr"
             )),
             &mut arena,
         );

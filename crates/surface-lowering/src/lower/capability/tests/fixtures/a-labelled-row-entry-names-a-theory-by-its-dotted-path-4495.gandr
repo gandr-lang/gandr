@@ -1,0 +1,9 @@
+theory Counter.Eff where {
+  sort C : Type;
+  oper bump : (k : C) --> C;
+}
+def tallied() -> -F [n : Counter.Eff] Integer { n.bump (); pure 0 }
+def handled() -> -F Integer {
+  handle c : Counter.Eff { tallied () } with { | pure(x) => pure x | oper bump(k) => pure 7 }
+}
+def missing() -> -F [n : Counter.Missing] Integer { pure 0 }

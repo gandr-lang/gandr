@@ -1,0 +1,12 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+def rec plus(n : Nat, m : Nat) -> -F Nat {
+  match m {
+    | Zero => n
+    | Succ(p) => Succ (plus[<] n p)
+  }
+}
+def k : +U (Nat -> -F Nat) ;
+def k = thunk { fun (x) { return Succ x } } ;

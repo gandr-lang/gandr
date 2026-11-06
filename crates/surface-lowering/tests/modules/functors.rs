@@ -25,18 +25,14 @@ use super::span_of;
 use super::verdicts;
 
 /// A sealed counter seed: an abstract type, a value of it and a step on it.
-const SEED: &str = "module Seed :> *{ type T, seed : T, next : +U[ω] (T -> -F T) } where {\n  type T = \
-                    Integer ;\n  def seed = 0 ;\n  def next = thunk { fun (n) { return n } } ;\n}\n";
+const SEED: &str = include_str!("functors/unformatted/seed.gandr");
 
 /// The counter functor: over any seed, a sealed seed of its own type, so an
 /// instance is itself an argument.
-const COUNTER: &str = "module MkCounter(S : *{ type T, seed : T, next : +U[ω] (T -> -F T) }) :> *{ \
-                       type T, seed : T, next : +U[ω] (T -> -F T) } where {\n  type T = S.T ;\n  def \
-                       seed = S.seed ;\n  def next = S.next ;\n}\n";
+const COUNTER: &str = include_str!("functors/unformatted/counter.gandr");
 
 /// The counter applied twice to the seed, each instance used at its own type.
-const PAIR: &str = "module A = MkCounter(Seed) ;\nmodule B = MkCounter(Seed) ;\ndef a : A.T ;\ndef \
-                    a = A.seed ;\ndef b : B.T ;\ndef b = B.seed ;\n";
+const PAIR: &str = include_str!("functors/unformatted/pair.gandr");
 
 /// The rows the seed, the counter and [`PAIR`] lower to, in admission order.
 ///
@@ -110,7 +106,9 @@ fn the_classic_functor_pair_checks()
 #[test]
 fn a_parameter_s_abstract_type_answers_at_its_kind_2183()
 {
-    let source = "module Pointed(R : *{ type V, y : V }) where {\n  def w = R.y ;\n}\n";
+    let source = include_str!(
+        "functors/fixtures/a-parameter-s-abstract-type-answers-at-its-kind-2183.gandr"
+    );
     let lowered = lower(source);
     let kinds: Vec<_> = lowered
         .module
@@ -147,7 +145,7 @@ fn two_applications_mint_distinct_atoms()
         SEED,
         COUNTER,
         PAIR,
-        "def mixed : A.T ;\ndef mixed = B.seed ;\n",
+        include_str!("functors/fixtures/two-applications-mint-distinct-atoms.gandr"),
     ]
     .concat();
     let mut lowered = lower(source.as_str());
@@ -232,8 +230,9 @@ fn a_functor_body_never_reaches_the_kernel()
 #[test]
 fn a_type_member_never_reads_its_parameter_s_value()
 {
-    let pinned = "module Pinned(S : *{ type T, z : T }) :> *{ type P, q : P } where {\n  type P = \
-                  Path[.A = S.T](S.z, S.z);\n  def q = Path.here S.z;\n}\n";
+    let pinned = include_str!(
+        "functors/fixtures/a-type-member-never-reads-its-parameter-s-value-pinned.gandr"
+    );
     let found = rows(&lower(pinned));
     let phase = LoweringRefusal::PhaseDependence {
         span: span_of(pinned, "S.z", 0_usize),
@@ -248,8 +247,9 @@ fn a_type_member_never_reads_its_parameter_s_value()
     );
     let squared = [
         SEED,
-        "module Square(S : *{ type T, seed : T }) :> *{ type U, w : U } where {\n  type U = S.T * \
-         S.T;\n  def w = *{S.seed, S.seed};\n}\nmodule Squared = Square(Seed) ;\n",
+        include_str!(
+            "functors/fixtures/a-type-member-never-reads-its-parameter-s-value-squared.gandr"
+        ),
     ]
     .concat();
     let mut lowered = lower(squared.as_str());
@@ -274,8 +274,7 @@ fn an_application_is_bound_before_anything_projects_from_it()
     let projected = [
         SEED,
         COUNTER,
-        "def direct : Integer ;\ndef direct = (MkCounter Seed).seed ;\ndef typed : \
-         MkCounter(Seed).T ;\n",
+        include_str!("functors/fixtures/an-application-is-bound-before-anything-projects-from-it-projected.gandr"),
     ]
     .concat();
     let found = rows(&lower(projected.as_str()));
@@ -299,8 +298,7 @@ fn an_argument_is_matched_against_the_parameter()
 {
     let thin = [
         COUNTER,
-        "module Thin :> *{ type T, seed : T } where { type T = Integer ; def seed = 0 ; }\nmodule A = \
-         MkCounter(Thin) ;\n",
+        include_str!("functors/fixtures/an-argument-is-matched-against-the-parameter-thin.gandr"),
     ]
     .concat();
     let found = rows(&lower(thin.as_str()));
@@ -317,9 +315,9 @@ fn an_argument_is_matched_against_the_parameter()
 
     let mistyped = [
         COUNTER,
-        "module Wrong :> *{ type T, seed : Integer, next : +U[ω] (T -> -F T) } where { type T = Integer \
-         ; def seed = 0 ; def next = thunk { fun (n) { return n } } ; }\nmodule A = \
-         MkCounter(Wrong) ;\n",
+        include_str!(
+            "functors/fixtures/an-argument-is-matched-against-the-parameter-mistyped.gandr"
+        ),
     ]
     .concat();
     let mut lowered = lower(mistyped.as_str());
@@ -369,14 +367,11 @@ fn a_parameter_reads_only_types_and_values()
 }
 
 /// A magma and a model of it, the integers under multiplication.
-const MAGMA: &str = "theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
-                     Times : Model(Mag) where {\n  type M = Integer;\n  def mul(a : Integer, b : \
-                     Integer) -> -F Integer { return a * b }\n}\n";
+const MAGMA: &str = include_str!("functors/fixtures/magma.gandr");
 
 /// Squaring in any magma: the parameter's signature is the one the magma
 /// derives.
-const SQUARE: &str = "module Square(S : Model(Mag)) where {\n  def square(x : S.M) -> -F S.M { become \
-                      S.mul x x }\n}\n";
+const SQUARE: &str = include_str!("functors/fixtures/square.gandr");
 
 #[test]
 fn a_functor_over_a_model_applies_to_one_1226()
@@ -401,8 +396,7 @@ fn a_functor_over_a_model_applies_to_one_1226()
     let halved = [
         MAGMA,
         SQUARE,
-        "module Halves where {\n  type M = Integer;\n  def mul(a : Integer) -> -F Integer { return a \
-         }\n}\nmodule Squared = Square(Halves) ;\n",
+        include_str!("functors/fixtures/a-functor-over-a-model-applies-to-one-1226-halved.gandr"),
     ]
     .concat();
     let mut lowered = lower(halved.as_str());
@@ -414,19 +408,13 @@ fn a_functor_over_a_model_applies_to_one_1226()
 }
 
 /// A semigroup, its law over its own multiplication.
-const SEMI: &str = "theory Semi where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule \
-                    assoc : mul (mul x y) z ==> mul x (mul y z);\n}\n";
+const SEMI: &str = include_str!("functors/unformatted/semi.gandr");
 
 /// Associativity turned round at any model, read off the parameter's law.
-const REASSOCIATING: &str = "module Reassociating(S : Model(Semi)) where {\n  def reassoc(x : S.M, y : \
-                             S.M, z : S.M) -> -F Path[.A = S.M](S.mul x (S.mul y z), \
-                             S.mul (S.mul x y) z) { Path.back (S.assoc x y z) }\n}\n";
+const REASSOCIATING: &str = include_str!("functors/unformatted/reassociating.gandr");
 
 /// The one-point semigroup, its law by computation.
-const ONE_POINT: &str = "module OnePoint : Model(Semi) where {\n  type M = Unit;\n  def mul(a : Unit, \
-                         b : Unit) -> -F Unit { *{} }\n  def assoc(x : Unit, y : Unit, z : \
-                         Unit) -> -F Path[.A = Unit](mul (mul x y) z, mul x (mul y z)) { \
-                         Path.here *{} }\n}\n";
+const ONE_POINT: &str = include_str!("functors/unformatted/one-point.gandr");
 
 #[test]
 fn a_functor_reads_the_laws_of_its_model_parameter_1764()
@@ -463,9 +451,7 @@ fn an_instance_names_its_argument_s_operations_2179()
         SEMI,
         REASSOCIATING,
         ONE_POINT,
-        "module Turned = Reassociating(OnePoint) ;\ndef written : (x : Unit, y : Unit, z : Unit) \
-         -> Path[.A = Unit](OnePoint.mul x (OnePoint.mul y z), OnePoint.mul (OnePoint.mul x y) \
-         z) ;\ndef written = Turned.reassoc ;\n",
+        include_str!("functors/fixtures/an-instance-names-its-argument-s-operations-2179.gandr"),
     ]
     .concat();
     let mut lowered = lower(source.as_str());
@@ -492,8 +478,7 @@ fn an_instance_can_be_an_argument()
         SEED,
         COUNTER,
         PAIR,
-        "module AA = MkCounter(A) ;\ndef aa : AA.T ;\ndef aa = AA.seed ;\ndef crossed : A.T \
-         ;\ndef crossed = AA.seed ;\n",
+        include_str!("functors/fixtures/an-instance-can-be-an-argument.gandr"),
     ]
     .concat();
     let mut lowered = lower(source.as_str());
@@ -515,9 +500,7 @@ fn a_transparent_result_reads_the_argument_through()
 {
     let source = [
         SEED,
-        "module Keep(S : *{ type T, seed : T }) : *{ type T = S.T, seed : T } where { def seed = \
-         S.seed ; }\nmodule K = Keep(Seed) ;\nmodule KK = Keep(K) ;\ndef k : Seed.T ;\ndef k = \
-         K.seed ;\ndef kk : Seed.T ;\ndef kk = KK.seed ;\n",
+        include_str!("functors/fixtures/a-transparent-result-reads-the-argument-through.gandr"),
     ]
     .concat();
     let mut lowered = lower(source.as_str());
@@ -538,7 +521,7 @@ fn a_parameter_is_read_only_inside_its_functor()
     let source = [
         SEED,
         COUNTER,
-        "def outside : Integer ;\ndef outside = S.seed ;\n",
+        include_str!("functors/fixtures/a-parameter-is-read-only-inside-its-functor.gandr"),
     ]
     .concat();
     let found = rows(&lower(source.as_str()));
@@ -552,8 +535,7 @@ fn a_parameter_is_read_only_inside_its_functor()
 
     let missing = [
         SEED,
-        "module Peek(S : *{ type T, seed : T }) where { def wrong = S.missing ; }\nmodule P = \
-         Peek(Seed) ;\n",
+        include_str!("functors/fixtures/a-parameter-is-read-only-inside-its-functor-missing.gandr"),
     ]
     .concat();
     let found = rows(&lower(missing.as_str()));
@@ -569,8 +551,7 @@ fn a_parameter_is_read_only_inside_its_functor()
 
     let deeper = [
         SEED,
-        "module Dig(S : *{ type T, seed : T }) where { def wrong = S.seed.inner ; def typed : S.T.U \
-         ; }\nmodule D = Dig(Seed) ;\n",
+        include_str!("functors/fixtures/a-parameter-is-read-only-inside-its-functor-deeper.gandr"),
     ]
     .concat();
     let found = rows(&lower(deeper.as_str()));
@@ -588,8 +569,7 @@ fn a_parameter_is_read_only_inside_its_functor()
 
     let reached = [
         SEED,
-        "module Reach(S : *{ type T, seed : T }) where { def other = Seed.next ; }\nmodule R = \
-         Reach(Seed) ;\n",
+        include_str!("functors/fixtures/a-parameter-is-read-only-inside-its-functor-reached.gandr"),
     ]
     .concat();
     let found = rows(&lower(reached.as_str()));
@@ -623,10 +603,7 @@ fn a_dotted_argument_reads_the_nested_module_it_names()
 {
     let source = [
         COUNTER,
-        "module Outer where { module Other where { def seed = 1 ; } module Seed :> *{ type T, seed : T, next \
-         : +U[ω] (T -> -F T) } where { type T = Integer ; def seed = 0 ; def next = thunk { fun (n) { \
-         return n } } ; } }\nmodule A = MkCounter(Outer.Seed) ;\nmodule B = \
-         MkCounter(Outer.Nope) ;\n",
+        include_str!("functors/fixtures/a-dotted-argument-reads-the-nested-module-it-names.gandr"),
     ]
     .concat();
     let found = rows(&lower(source.as_str()));
@@ -652,9 +629,9 @@ fn a_type_component_binds_the_argument_type_of_its_own_name()
 {
     let source = [
         COUNTER,
-        "module Two :> *{ type U, type T, seed : T, next : +U[ω] (T -> -F T) } where { type U = String \
-         ; type T = Integer ; def seed = 0 ; def next = thunk { fun (n) { return n } } ; }\nmodule \
-         A = MkCounter(Two) ;\n",
+        include_str!(
+            "functors/fixtures/a-type-component-binds-the-argument-type-of-its-own-name.gandr"
+        ),
     ]
     .concat();
     let mut lowered = lower(source.as_str());
@@ -671,9 +648,9 @@ fn a_type_component_binds_the_argument_type_of_its_own_name()
 #[test]
 fn a_manifest_parameter_component_reads_the_arguments_type()
 {
-    let source = "module Plain where { type T = Integer ; def seed = 1 ; }\nmodule Over(S : *{ type T = \
-                  Integer, seed : T }) where { def get = S.seed ; }\nmodule O = Over(Plain) ;\ndef g : \
-                  Integer ;\ndef g = O.get ;\n";
+    let source = include_str!(
+        "functors/fixtures/a-manifest-parameter-component-reads-the-arguments-type.gandr"
+    );
     let mut lowered = lower(source);
     let g = declaration(&lowered, "g", Role::Declared).constant();
     let judgements = verdicts(&mut lowered);
@@ -691,9 +668,9 @@ fn a_manifest_parameter_component_reads_the_arguments_type()
 #[test]
 fn an_application_copies_the_modules_nested_in_its_body()
 {
-    let source = "module Plain where { type T = Integer ; def seed = 1 ; }\nmodule Over(S : *{ type T, \
-                  seed : T }) where { module inner where { module deeper where { def kept = S.seed ; } } }\nmodule \
-                  O = Over(Plain) ;\ndef g : Plain.T ;\ndef g = O.inner.deeper.kept ;\n";
+    let source = include_str!(
+        "functors/fixtures/an-application-copies-the-modules-nested-in-its-body.gandr"
+    );
     let mut lowered = lower(source);
     let g = declaration(&lowered, "g", Role::Declared).constant();
     let judgements = verdicts(&mut lowered);
@@ -707,9 +684,9 @@ fn an_application_copies_the_modules_nested_in_its_body()
 #[test]
 fn an_application_named_twice_is_refused_naming_the_first()
 {
-    let source = "module Plain where { type T = Integer ; def seed = 1 ; }\nmodule Over(S : *{ type T, \
-                  seed : T }) where { def get = S.seed ; }\nmodule O = Over(Plain) ;\nmodule O = \
-                  Over(Plain) ;\n";
+    let source = include_str!(
+        "functors/fixtures/an-application-named-twice-is-refused-naming-the-first.gandr"
+    );
     let found = rows(&lower(source));
     assert!(
         found.iter().any(|&(_, _, amounts)| amounts
@@ -723,8 +700,7 @@ fn an_application_named_twice_is_refused_naming_the_first()
 }
 
 /// The two signatures the flow tests translate between.
-const VERSIONS: &str = "theory Older where { oper answer : Integer ; oper tag : Integer ; }\ntheory \
-                        Newer where { oper reply : Integer ; oper tag : Integer ; }\n";
+const VERSIONS: &str = include_str!("functors/unformatted/versions.gandr");
 
 #[test]
 fn a_flow_reads_its_domain_s_members_by_name()

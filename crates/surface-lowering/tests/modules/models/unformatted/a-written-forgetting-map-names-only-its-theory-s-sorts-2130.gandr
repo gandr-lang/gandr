@@ -1,0 +1,13 @@
+theory Counter where {
+  sort C : Type;
+  oper zero : C;
+}
+def stray(m : Model(Counter) with sort C = Integer) -> -F Model(Counter) {
+  become forget[sort D = Integer](m) at Model(Counter)
+}
+def unbound(m : Model(Counter) with sort C = Integer) -> -F Model(Counter) {
+  become forget[Integer](m) at Model(Counter)
+}
+def nowhere(m : Model(Counter) with sort C = Integer) -> -F Model(Counter) {
+  become forget[sort C = Integer](m) at Integer
+}

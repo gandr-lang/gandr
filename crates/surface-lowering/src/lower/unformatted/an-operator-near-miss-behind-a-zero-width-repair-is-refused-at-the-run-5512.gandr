@@ -1,0 +1,4 @@
+def same(n : Integer) -> -F Integer =
+  match n
+    | zero @ 0 => return zero
+    | _ =>> return n

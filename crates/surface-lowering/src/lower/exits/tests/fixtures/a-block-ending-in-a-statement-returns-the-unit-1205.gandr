@@ -1,0 +1,6 @@
+def stated() -> -F Unit { pure *{}; }
+def noop() -> -F Unit { return *{} }
+def some(b : Bool) -> -F Unit { match b { | true => return *{} | false => noop () }; }
+def some_by_hand(b : Bool) -> -F Unit {
+  match b { | true => return *{} | false => { noop (); return *{} } }
+}

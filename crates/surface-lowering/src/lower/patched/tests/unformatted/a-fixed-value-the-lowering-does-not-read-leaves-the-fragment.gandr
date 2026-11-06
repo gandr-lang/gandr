@@ -1,0 +1,4 @@
+{CONFIG}def standard : Integer = 443;
+def named(c : Config[.port = standard, .tls = true]) -> Integer {{ c.port }}
+def kept(c : Config[.port = standard, .tls = true]) -> String {{ c.host }}
+def bound(c : Config[secure ↦ standard]) -> Integer {{ 0 }}

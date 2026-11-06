@@ -1,0 +1,6 @@
+def braced(n : Integer) -> Integer { n }
+def equals(n : Integer) -> Integer = n;
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n);
+def half(n : Integer) -> Integer = (divmod n 2).q;
+def stepped(n : Integer) -> (Integer -> Integer) = fun (k : Integer) { n };
+def steppedT : +U (Integer -> -F (+U (Integer -> -F Integer)));

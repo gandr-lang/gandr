@@ -1,0 +1,6 @@
+{NAT}rec {{
+  data Rose : Type where {{ | Node : (kids : Forest) --> Rose }}
+  data Forest : Type where {{ | Empty : Forest | More : (head : Rose, tail : Forest) --> Forest }}
+  def rec size(t : Rose) -> -F Nat {{ match t {{ | Node(kids) => {{ let s = sizes[<] kids; return Succ s }} }} }}
+  def rec sizes(ts : Forest) -> -F Nat {{ match ts {{ | Empty => return Zero | More(t, rest) => {{ let a = size[<] t; sizes[<] rest }} }} }}
+}}

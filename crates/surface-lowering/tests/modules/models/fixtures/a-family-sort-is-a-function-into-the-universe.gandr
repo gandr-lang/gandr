@@ -1,0 +1,7 @@
+theory Graph where {
+  sort V : Type;
+  sort E(s : V, t : V) : Type;
+  oper loop : (v : V) --> E(v, v);
+}
+def derived : Model(Graph);
+def written : *{v : Type, e : (s : v, t : v) -> Type, loop : (x : v) -> e(x, x)};

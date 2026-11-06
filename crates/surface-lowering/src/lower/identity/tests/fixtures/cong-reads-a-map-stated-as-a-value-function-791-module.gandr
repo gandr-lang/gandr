@@ -1,0 +1,16 @@
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
+}
+data Int : Type where {
+  | Z : Int
+}
+def explicit(f : +U (Circle -> -F Int)) -> -F Path[.A = Int](f Base, f Base) {
+  Path.back (Path.ap f loop)
+}
+def sugared(f : Circle -> Int) -> -F Path[.A = Int](f Base, f Base) {
+  Path.back (Path.ap f loop)
+}
+def grouped(f : (Circle -> Int)) -> -F Path[.A = Int](f Base, f Base) {
+  Path.back (Path.ap f loop)
+}

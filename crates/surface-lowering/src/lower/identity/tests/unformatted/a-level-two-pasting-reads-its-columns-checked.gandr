@@ -1,0 +1,6 @@
+def whiskered(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) {
+  compose[4, 9] (chain 2 (1, 0)) (fa, g)
+}
+def stacked(A : Type, x : A, y : A, f : Path[.A = A](x, y), g : Path[.A = A](x, y), h : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f, g), b : Path[.A = Path[.A = A](x, y)](g, h)) -> Path[.A = Path[.A = A](x, y)](f, h) {
+  compose[4, 9] (chain 1 2) (a, b)
+}

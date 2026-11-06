@@ -1,0 +1,4 @@
+data Circle : Type where
+  | Base : Circle
+  | loop : Base <-> Base
+def flipped : Path(Base, Base) = back loop {written} Path.here Base ;

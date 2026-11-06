@@ -1,0 +1,31 @@
+data Circle : Type where { | Base : Circle | loop : Base <-> Base }
+data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }
+def invLooper(x : Circle) -> -F Circle {
+  match x {
+    | Base => Base
+    | loop => Path.back loop
+  }
+}
+module Late where {
+  def kept(x : Circle) -> -F Circle {
+    match x {
+      | later => later
+    }
+  }
+  def later : Circle;
+  def later = Base;
+}
+def twice(x : Circle) -> -F Circle {
+  match x {
+    | Base => Base
+    | loop => loop
+    | loop => Path.back loop
+  }
+}
+def astray(n : Nat) -> -F Nat {
+  match n {
+    | Z => Z
+    | S(m) => m
+    | loop => Z
+  }
+}

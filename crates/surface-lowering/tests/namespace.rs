@@ -1187,8 +1187,7 @@ fn source_import_reaches_the_namespace_engine_and_exposes_its_alias()
         &parsed(
             &pbg,
             SourceText::from(
-                "import \"file:///lib/parse.gandr\" as parse ;\nimport \
-                     \"file:///lib/list.gandr\" as list_ext ;",
+                include_str!("namespace/fixtures/source-import-reaches-the-namespace-engine-and-exposes-its-alias-module.gandr"),
             ),
         ),
     )
@@ -1241,8 +1240,9 @@ fn source_import_reaches_the_namespace_engine_and_exposes_its_alias()
 #[test]
 fn an_import_binds_its_alias_and_resolves_no_address()
 {
-    let source = "import \"file:///no/such/\\\"place\\\".gandr\" as far ;\ndef x : Integer ; def \
-                      x = 3 ;";
+    let source = include_str!(
+        "namespace/unformatted/an-import-binds-its-alias-and-resolves-no-address.gandr"
+    );
     let pbg = grammar();
     let module = lowered(&pbg, &parsed(&pbg, SourceText::from(source))).expect("the module lowers");
     let span = bytes(0_usize, 49_usize);
@@ -1439,16 +1439,15 @@ fn an_unqualified_import_answers_a_name_its_source_declares()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from(
-                "pub data Point : Type where { | One : Point }\npub def one : Point ;\ndef one = One ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-unqualified-import-answers-a-name-its-source-declares-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\ndef again : Point ;\ndef again = one ;\ndef \
-                     made : Point ;\ndef made = One ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-unqualified-import-answers-a-name-its-source-declares-2.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -1506,9 +1505,9 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
     // in an include, and its own `eq` shadows the prelude's; alone, it reads
     // neither.
     let pbg = grammar();
-    let source = "theory Decided where { include Eq; }\ndef same[e : Model(Eq)](a : e.Carrier, b \
-                  : e.Carrier) -> Bool { e.eq a b }\ndef eq(a : Bool) -> Bool { a }\ndef \
-                  mine() -> Bool { eq true }\n";
+    let source = include_str!(
+        "namespace/fixtures/the-prelude-answers-a-name-nothing-written-binds-2302.gandr"
+    );
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
             .expect("a unit of one source lays after the prelude");
@@ -1560,13 +1559,9 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
 fn the_standard_package_theory_is_read_by_its_path_2767()
 {
     let pbg = grammar();
-    let source = "import \"./package.gandr\" ;\nmodule Package : Model(Gandr.Package) where {\n  def \
-                  name : String = \"probe\";\n  def version : String = \"0.1.0\";\n  def authors \
-                  : String = \"Ada\";\n  def licence : String = \"MIT\";\n  def documentation : \
-                  String = \"d\";\n  def endpoint : String = \"e\";\n  def gandr : String = \
-                  \"\";\n  def features : String = \"\";\n  def systems : String = \"\";\n  def \
-                  spelling : String = \"\";\n  def sources : String = \"src\";\n}\nmodule Partial : \
-                  Model(Gandr.Package) where {\n  def name : String = \"partial\";\n}\n";
+    let source = include_str!(
+        "namespace/fixtures/the-standard-package-theory-is-read-by-its-path-2767.gandr"
+    );
     let (text, unit) = laid(&[
         (
             SourceText::from(include_str!("../../../library/std/src/build.gandr")),
@@ -1613,18 +1608,15 @@ fn a_private_theory_in_a_dotted_module_is_refused_to_its_importer_2687()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from(
-                "pub theory Kit.Shown where {\n  oper label : String;\n}\ntheory Kit.Hidden where {\n  oper \
-                 label : String;\n}\n",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-private-theory-in-a-dotted-module-is-refused-to-its-importer-2687-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./kit.gandr\" ;\nmodule Seen : Model(Kit.Shown) where {\n  def label : \
-                 String = \"seen\";\n}\nmodule Unseen : Model(Kit.Hidden) where {\n  def label : \
-                 String = \"unseen\";\n}\n",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-private-theory-in-a-dotted-module-is-refused-to-its-importer-2687-2.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -1670,23 +1662,15 @@ fn an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from(
-                "pub theory Store.Eff where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k \
-                 : pi+ (s : S). C) --> C;\n}\n",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-imported-theory-at-a-dotted-path-is-named-wherever-a-theory-is-4514-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./store.gandr\" ;\ndef read() -> [st : Store.Eff with sort S = Integer] \
-                 Integer { st.get () }\ndef scoped() -> Integer { handle st : Store.Eff with sort S \
-                 = Integer { read () } with { | pure(x) => pure x | oper get(k) => k 4 } }\nmodule \
-                 Fixed : Model(Store.Eff) with sort S = Integer where {\n  type C = Integer;\n  def \
-                 get(k : Integer -> Integer) -> Integer { k 4 }\n}\ndef answered() -> Integer { \
-                 handle st : Store.Eff with sort S = Integer { read () } with Fixed }\ntheory Marks \
-                 where {\n  sort C : Type;\n  oper mark : (k : C) --> C;\n  rule kept : \
-                 mark (mark k) <=> mark k where { | under [Store.Eff | r] };\n}\n",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-imported-theory-at-a-dotted-path-is-named-wherever-a-theory-is-4514-2.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -1707,10 +1691,9 @@ fn an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514()
 fn the_prelude_offers_no_presentation_constructor_2302()
 {
     let pbg = grammar();
-    let source = "data Shape : Type where {\n  | Circle : (r : Integer) --> Shape\n}\ndata Figure : \
-                  Type where {\n  | Round : (r : Integer) --> Figure\n}\ndef toFigure(shape : Shape) \
-                  -> Figure {\n  match shape {\n    | Circle(r) => Round r\n  }\n}\ndef redrawn : \
-                  Flow[.A = Type](Shape, Figure) = Flow.into toFigure ;\n";
+    let source = include_str!(
+        "namespace/fixtures/the-prelude-offers-no-presentation-constructor-2302.gandr"
+    );
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
             .expect("a unit of one source lays after the prelude");
@@ -1731,7 +1714,9 @@ fn the_prelude_offers_no_presentation_constructor_2302()
 fn a_source_s_type_shadows_the_prelude_s_constructor_3287()
 {
     let pbg = grammar();
-    let source = "data One : Type where {\n  | Single : One\n}\ndef same : Path[.A = Type](One, One) = Path.here One ;\n";
+    let source = include_str!(
+        "namespace/fixtures/a-source-s-type-shadows-the-prelude-s-constructor-3287.gandr"
+    );
     let (text, unit) =
         gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
             .expect("a unit of one source lays after the prelude");
@@ -1762,16 +1747,15 @@ fn a_method_of_a_source_not_imported_is_out_of_scope()
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./str.gandr\" ;\ndef measured() -> -F Integer { var s = 1; s.len () }",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-method-of-a-source-not-imported-is-out-of-scope-1.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
         (
-            SourceText::from(
-                "import \"./str.gandr\" ;\nimport \"./bytes.gandr\" ;\ndef both() -> -F Integer \
-                 { var s = 1; s.len () }",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-method-of-a-source-not-imported-is-out-of-scope-2.gandr"
+            )),
             &[
                 ImportTarget::Source(SourceIndex::from(0_usize)),
                 ImportTarget::Source(SourceIndex::from(1_usize)),
@@ -1811,18 +1795,21 @@ fn two_imports_binding_one_name_refuse_its_use()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from("pub def one : Integer ;\ndef one = 1 ;"),
+            SourceText::from(include_str!(
+                "namespace/fixtures/two-imports-binding-one-name-refuse-its-use-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from("pub def one : Integer ;\ndef one = 2 ;"),
+            SourceText::from(include_str!(
+                "namespace/fixtures/two-imports-binding-one-name-refuse-its-use-2.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./left.gandr\" ;\nimport \"./right.gandr\" ;\ndef both : \
-                     Integer ;\ndef both = one ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/two-imports-binding-one-name-refuse-its-use-3.gandr"
+            )),
             &[
                 ImportTarget::Source(SourceIndex::from(0_usize)),
                 ImportTarget::Source(SourceIndex::from(1_usize)),
@@ -1873,24 +1860,27 @@ fn an_imported_top_level_type_member_names_its_type_1834()
         ),
         (SourceText::from("pub type Band = Integer ;"), &[]),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\npub def wide : Band ;\ndef wide = *{low = 1, high = 2} ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-imported-top-level-type-member-names-its-type-1834-1.gandr"
+            )),
             &base,
         ),
         (
-            SourceText::from("import \"./wide.gandr\" ;\ndef far : Band ;\ndef far = wide ;"),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-imported-top-level-type-member-names-its-type-1834-2.gandr"
+            )),
             &imported,
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\nimport \"./other.gandr\" ;\ndef either : Band ;\ndef \
-                 either = 1 ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-imported-top-level-type-member-names-its-type-1834-3.gandr"
+            )),
             &both,
         ),
         (
-            SourceText::from("import \"./other.gandr\" ;\ndef narrow : Band ;\ndef narrow = 3 ;"),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-imported-top-level-type-member-names-its-type-1834-4.gandr"
+            )),
             &other,
         ),
     ]);
@@ -1950,18 +1940,15 @@ fn a_model_of_an_imported_theory_derives_its_signature_726()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from(
-                "pub theory Nat where {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
-                 Nat) --> Nat;\n}",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-model-of-an-imported-theory-derives-its-signature-726-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) where {\n  type Nat = \
-                 Integer;\n  def zero() -> -F Integer { return 0 }\n  def succ(n : Integer) -> \
-                 -F Integer { return n + 1 }\n}",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-model-of-an-imported-theory-derives-its-signature-726-2.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -1998,33 +1985,27 @@ fn a_functor_argument_reads_an_imported_module_1993()
     let (base, both) = ([on(0_usize)], [on(0_usize), on(1_usize)]);
     let (text, unit) = laid(&[
         (
-            SourceText::from(
-                "pub theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\npub \
-                 module Times : Model(Mag) where {\n  type M = Integer;\n  def mul(a : Integer, b : \
-                 Integer) -> -F Integer { become a * b }\n}\npub module Squaring(S : Model(Mag)) where {\n  def \
-                 square(x : S.M) -> -F S.M { become S.mul(x, x) }\n}",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-functor-argument-reads-an-imported-module-1993-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "pub module Times where {\n  type M = Integer;\n  def mul(a : Integer, b : Integer) -> -F \
-                 Integer { become a + b }\n}",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-functor-argument-reads-an-imported-module-1993-2.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\nmodule TimesSquared = Squaring(Times) ;\ndef nine() \
-                 -> -F Integer { become TimesSquared.square 3 }",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-functor-argument-reads-an-imported-module-1993-3.gandr"
+            )),
             &base,
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\nimport \"./other.gandr\" ;\nmodule EitherSquared = \
-                 Squaring(Times) ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-functor-argument-reads-an-imported-module-1993-4.gandr"
+            )),
             &both,
         ),
     ]);
@@ -2079,17 +2060,15 @@ fn a_rule_derived_in_an_imported_theory_is_read_under_its_name()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from(
-                "pub theory Inv where {\n  sort G : Type;\n  oper inv : (x : G) --> G;\n  rule invInv : \
-                 inv(inv(x)) <=> x;\n}",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-rule-derived-in-an-imported-theory-is-read-under-its-name-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\nrule Inv.four : inv (inv (inv (inv x))) <=> x;\ndef \
-                 again = Inv.four ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-rule-derived-in-an-imported-theory-is-read-under-its-name-2.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -2143,41 +2122,38 @@ fn include_faults(module: &LoweredModule<'_>) -> Vec<SignatureFault>
 fn an_include_reads_the_theories_its_source_imports_1224()
 {
     let pbg = grammar();
-    let magma = SourceText::from(
-        "pub theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}",
-    );
-    let pointed = SourceText::from(
-        "import \"./magma.gandr\" ;\ntheory Pointed where {\n  include Mag;\n  oper one : () --> \
-         M;\n}",
-    );
+    let magma = SourceText::from(include_str!(
+        "namespace/fixtures/an-include-reads-the-theories-its-source-imports-1224-magma.gandr"
+    ));
+    let pointed = SourceText::from(include_str!(
+        "namespace/fixtures/an-include-reads-the-theories-its-source-imports-1224-pointed.gandr"
+    ));
     let mag = Name::from("Mag");
     let (text, unit) = laid(&[
         (magma, &[]),
         (pointed, &[ImportTarget::Source(SourceIndex::from(0_usize))]),
         (
-            SourceText::from(
-                "import \"./pointed.gandr\" ;\ntheory Through where {\n  include Mag;\n  oper two : \
-                 () --> M;\n}",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-include-reads-the-theories-its-source-imports-1224-1.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(1_usize))],
         ),
         (
-            SourceText::from(
-                "import \"./magma.gandr\" as magma ;\ntheory Aliased where {\n  include Mag;\n}",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-include-reads-the-theories-its-source-imports-1224-2.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
         (
-            SourceText::from(
-                "pub theory Mag where {\n  sort N : Type;\n  oper add : (x : N, y : N) --> N;\n}",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-include-reads-the-theories-its-source-imports-1224-3.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./magma.gandr\" ;\nimport \"./other.gandr\" ;\ntheory Both where {\n  include \
-                 Mag;\n}",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-include-reads-the-theories-its-source-imports-1224-4.gandr"
+            )),
             &[
                 ImportTarget::Source(SourceIndex::from(0_usize)),
                 ImportTarget::Source(SourceIndex::from(4_usize)),
@@ -2254,16 +2230,12 @@ fn an_include_reads_the_theories_its_source_imports_1224()
 fn a_source_lowers_alike_whatever_follows_it_776()
 {
     let pbg = grammar();
-    let base = SourceText::from(
-        "pub theory Nat where {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
-         Nat) --> Nat;\n}\npub data Point : Type where { | One : Point }\npub def one : Point ;\ndef \
-         one = One ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
-    );
-    let importer = SourceText::from(
-        "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) where {\n  type Nat = Integer;\n  \
-         def zero() -> -F Integer { return 0 }\n  def succ(n : Integer) -> -F Integer { return \
-         n + 1 }\n}\ndef again : Point ;\ndef again = one ;",
-    );
+    let base = SourceText::from(include_str!(
+        "namespace/fixtures/a-source-lowers-alike-whatever-follows-it-776-base.gandr"
+    ));
+    let importer = SourceText::from(include_str!(
+        "namespace/fixtures/a-source-lowers-alike-whatever-follows-it-776-importer.gandr"
+    ));
     let (alone_text, alone_unit) = laid(&[(base, &[])]);
     let (whole_text, whole_unit) = laid(&[
         (base, &[]),
@@ -2336,16 +2308,21 @@ fn a_source_lowers_alike_whatever_follows_it_776()
 fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
 {
     let pbg = grammar();
-    let first =
-        SourceText::from("theory Magma where {\n  sort M : Type;\n  oper one : () --> (z : M);\n}");
-    let counting = "theory Monoid where {\n  sort M : Type;\n  oper one : () --> (z : M);\n}\ndef \
-                    count(presented : Theory) -> -F Integer {\n  match presented {\n    \
-                    | Presents(sorts, opers, rules) => return 1\n    | _ => return 0\n  }\n}";
-    let importing = format!("import \"./base.gandr\" ;\n{counting}");
-    let both = SourceText::from(
-        "import \"./base.gandr\" ;\nimport \"./counting.gandr\" ;\ndef pick(presented : Theory) \
-         -> -F Theory {\n  return presented\n}",
+    let first = SourceText::from(include_str!(
+        "namespace/fixtures/a-theory-lowers-alike-whatever-the-unit-lays-before-it-1078-first.gandr"
+    ));
+    let counting = include_str!(
+        "namespace/fixtures/a-theory-lowers-alike-whatever-the-unit-lays-before-it-1078-counting.gandr"
     );
+    let importing = format!(
+        include_str!(
+            "namespace/unformatted/a-theory-lowers-alike-whatever-the-unit-lays-before-it-1078-importing.gandr"
+        ),
+        counting = counting
+    );
+    let both = SourceText::from(include_str!(
+        "namespace/fixtures/a-theory-lowers-alike-whatever-the-unit-lays-before-it-1078-both.gandr"
+    ));
     let declared = |sources: &[(SourceText<'_>, &[ImportTarget])]| -> Vec<(String, bool)> {
         let (text, unit) = laid(sources);
         lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
@@ -2409,17 +2386,18 @@ fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
 fn a_univalence_statement_reads_only_the_blocks_its_source_sees_1078()
 {
     let pbg = grammar();
-    let monoid = SourceText::from(
-        "pub theory Monoid where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  oper one : \
-         () --> (z : M);\n}",
+    let monoid = SourceText::from(include_str!(
+        "namespace/fixtures/a-univalence-statement-reads-only-the-blocks-its-source-sees-1078-monoid.gandr"
+    ));
+    let stating = include_str!(
+        "namespace/fixtures/a-univalence-statement-reads-only-the-blocks-its-source-sees-1078-stating.gandr"
     );
-    let stating = "theory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
-                   oper one : () --> (z : M);\n}\ndef exchange(b : Bool) -> -F Bool {\n  match b \
-                   {\n    | true => return +{.1 = *{}}\n    | false => return +{.0 = *{}}\n  \
-                   }\n}\ndef keep(e : +{Unit}) -> -F +{Unit} {\n  return e\n}\ndef unnamed = \
-                   ua[1, 4] Monoid Magma (*{mul = exchange, one = keep}) (*{mul = exchange, one \
-                   = keep}) ;";
-    let importing = format!("import \"./base.gandr\" ;\n{stating}");
+    let importing = format!(
+        include_str!(
+            "namespace/unformatted/a-univalence-statement-reads-only-the-blocks-its-source-sees-1078-importing.gandr"
+        ),
+        stating = stating
+    );
     // Whether `unnamed` is refused, and whether at `Monoid` as an unresolved
     // name.
     let unnamed = |sources: &[(SourceText<'_>, &[ImportTarget])]| -> (bool, bool) {
@@ -2474,16 +2452,12 @@ fn a_univalence_statement_reads_only_the_blocks_its_source_sees_1078()
 fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
 {
     let pbg = grammar();
-    let base = SourceText::from(
-        "pub theory Nat where {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
-         Nat) --> Nat;\n}\npub data Point : Type where { | One : Point }\npub def one : Point ;\ndef \
-         one = One ;\ndef pending = ? ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
-    );
-    let importer = SourceText::from(
-        "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) where {\n  type Nat = Integer;\n  \
-         def zero() -> -F Integer { return 0 }\n  def succ(n : Integer) -> -F Integer { return \
-         n + 1 }\n}\ndef again : Point ;\ndef again = one ;\ndef later = ?named ;",
-    );
+    let base = SourceText::from(include_str!(
+        "namespace/fixtures/a-document-resumed-after-its-closure-lowers-as-the-whole-1033-base.gandr"
+    ));
+    let importer = SourceText::from(include_str!(
+        "namespace/fixtures/a-document-resumed-after-its-closure-lowers-as-the-whole-1033-importer.gandr"
+    ));
     let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
     let (text, unit) = laid(&[(base, &[]), (importer, &imports)]);
     let start = unit
@@ -2560,9 +2534,9 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
         "a tree that does not extend the closure's is lowered whole"
     );
     assert_eq!(fallback_arena, text_arena);
-    let refusing = SourceText::from(
-        "import \"./base.gandr\" as B ;\nimport \"./base.gandr\" as B ;\ndef c = ? ;",
-    );
+    let refusing = SourceText::from(include_str!(
+        "namespace/fixtures/a-document-resumed-after-its-closure-lowers-as-the-whole-1033-refusing.gandr"
+    ));
     let twice = [
         ImportTarget::Source(SourceIndex::from(0_usize)),
         ImportTarget::Source(SourceIndex::from(0_usize)),
@@ -2606,44 +2580,11 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
 fn a_document_resumed_after_its_closure_reads_each_table_by_declaration_as_the_whole_3321()
 {
     let pbg = grammar();
-    let base = SourceText::from(concat!(
-        "pub data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\n",
-        "pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> -F Nat {\n  f x\n}\n",
-        "def appliedAt[j : Size, k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> -F Nat {\n",
-        "  applyAt[.i = k] f x\n}\n",
-        "def crossed[s : Region, r : Region](k : (() -> Integer) at r, j : (() -> Integer) \
-         at s) -> -F Integer {\n  force k\n}\n",
-        "pub theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper \
-         read : (c : C) --> Integer; }\n",
-        "pub module Up : Model(Counter) where {\n  type C = Integer;\n  def zero = 0;\n  def incr(c : \
-         Integer) -> -F Integer { c + 1 }\n  def read(c : Integer) -> -F Integer { c }\n}\n",
-        "pub def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read(s.incr(c)) }\n",
-        "def omitted() -> -F Integer { stepped 4 }\n",
-        "pub theory StatePutLaws where {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ \
-         (s : S) . C) --> C;\n  oper put : (s : S, k : C) --> C;\n  rule putGet : put s \
-         (get (bind t . (k t))) <=> put s (k s);\n  rule putPut : put s (put u k) <=> put u \
-         k;\n}\n",
-        "def forgetful() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \
-         st.put 1; st.get () } with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => \
-         k *{} } }\n",
-        "data NatAdd : Type where {\n  | AddZero : NatAdd\n  | AddSucc : (n : NatAdd) --> NatAdd\n  oper \
-         add : (m : NatAdd, n : NatAdd) --> NatAdd;\n  rule : add AddZero n ==> n;\n  rule : \
-         add (AddSucc m) n ==> AddSucc (add m n);\n}\n",
+    let base = SourceText::from(include_str!(
+        "namespace/fixtures/a-document-resumed-after-its-closure-reads-each-table-by-declaration-as-the-whole-3321-base.gandr"
     ));
-    let document = SourceText::from(concat!(
-        "import \"./base.gandr\" ;\n",
-        "def appliedAgain[k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> -F Nat {\n",
-        "  applyAt[.i = k] f x\n}\n",
-        "def crossedAgain[r : Region](k : (() -> Integer) at r) -> -F Integer {\n  force \
-         k\n}\n",
-        "def fixed[s : Model(Counter) with sort C = Integer](c : Integer) -> -F Integer { \
-         s.read (s.incr (c + s.zero)) }\n",
-        "def omittedAgain() -> -F Integer { stepped 5 }\n",
-        "def forgetfulAgain() -> -F Integer { handle st : StatePutLaws with sort S = Integer { \
-         st.put 2; st.get () } with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => \
-         k *{} } }\n",
-        "data Bit : Type where {\n  | Off : Bit\n  | On : Bit\n  oper not : (a : Bit) --> Bit;\n  rule : \
-         not Off ==> On;\n  rule : not On ==> Off;\n}\n",
+    let document = SourceText::from(include_str!(
+        "namespace/fixtures/a-document-resumed-after-its-closure-reads-each-table-by-declaration-as-the-whole-3321-document.gandr"
     ));
     let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
     let (text, unit) = laid(&[(base, &[]), (document, &imports)]);
@@ -2798,9 +2739,9 @@ fn a_closure_whose_unit_refuses_halts_and_answers_the_refusal()
 {
     let pbg = grammar();
     let base = SourceText::from("def one = 1 ;");
-    let refusing = SourceText::from(
-        "import \"./base.gandr\" as B ;\nimport \"./base.gandr\" as B ;\ndef c = ? ;",
-    );
+    let refusing = SourceText::from(include_str!(
+        "namespace/fixtures/a-document-resumed-after-its-closure-lowers-as-the-whole-1033-refusing.gandr"
+    ));
     let twice = [
         ImportTarget::Source(SourceIndex::from(0_usize)),
         ImportTarget::Source(SourceIndex::from(0_usize)),
@@ -2873,13 +2814,12 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
             .collect()
     }
     let pbg = grammar();
-    let base = SourceText::from(
-        "pub data Point : Type where { | One : Point }\npub def one : Point ;\ndef one = One ;\ndef \
-         pending = ? ;",
-    );
-    let importer = SourceText::from(
-        "import \"./base.gandr\" ;\ndef again : Point ;\ndef again = one ;\ndef later = ?named ;",
-    );
+    let base = SourceText::from(include_str!(
+        "namespace/fixtures/a-document-lowered-onto-its-closure-s-arena-follows-its-nodes-776-base.gandr"
+    ));
+    let importer = SourceText::from(include_str!(
+        "namespace/fixtures/a-document-lowered-onto-its-closure-s-arena-follows-its-nodes-776-importer.gandr"
+    ));
     let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
     let (text, unit) = laid(&[(base, &[]), (importer, &imports)]);
     let start = unit
@@ -3057,9 +2997,9 @@ fn a_pending_declaration_is_not_exported()
     let (text, unit) = laid(&[
         (SourceText::from("pub def owed : Integer ;"), &[]),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\ndef again : Integer ;\ndef again = owed ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-pending-declaration-is-not-exported.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -3082,16 +3022,15 @@ fn an_aliased_import_qualifies_its_source_s_names()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from(
-                "pub data Point : Type where { | One : Point }\npub def one : Point ;\ndef one = One ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-unqualified-import-answers-a-name-its-source-declares-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" as base ;\ndef again : base.Point ;\ndef again = \
-                     base.one ;\ndef lost : Integer ;\ndef lost = base.two ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-aliased-import-qualifies-its-source-s-names.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -3134,18 +3073,15 @@ fn a_module_path_import_binds_its_module_qualified_2687()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from(
-                "pub data Point : Type where { | One : Point }\npub def one : Point ;\ndef one = One ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/an-unqualified-import-answers-a-name-its-source-declares-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import text . greet ;\ndef again : text.greet.Point ;\ndef again = \
-                 text.greet.one ;\ndef lost : Integer ;\ndef lost = text.greet.two ;\ndef \
-                 prefix : text.greet.Point ;\ndef prefix = text.one ;\ndef bare : \
-                 text.greet.Point ;\ndef bare = one ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-module-path-import-binds-its-module-qualified-2687.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -3195,17 +3131,16 @@ fn a_module_path_import_binds_its_module_qualified_2687()
 fn a_type_reads_through_a_module_path_of_any_length_2874()
 {
     let pbg = grammar();
-    let token = "pub data Token : Type where { | Tok : Token }\npub def made : Token ;\ndef made = \
-                 Tok ;";
+    let token = include_str!(
+        "namespace/fixtures/a-type-reads-through-a-module-path-of-any-length-2874-token.gandr"
+    );
     let (text, unit) = laid(&[
         (SourceText::from(token), &[]),
         (SourceText::from(token), &[]),
         (
-            SourceText::from(
-                "import a.b.c ;\nimport a.b.c.d ;\ndef three : a.b.c.Token ;\ndef three = \
-                 a.b.c.made ;\ndef four : a.b.c.d.Token ;\ndef four = a.b.c.d.made ;\ndef lost : \
-                 a.b.c.Lost ;\ndef lost = a.b.c.made ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-type-reads-through-a-module-path-of-any-length-2874.gandr"
+            )),
             &[
                 ImportTarget::Source(SourceIndex::from(0_usize)),
                 ImportTarget::Source(SourceIndex::from(1_usize)),
@@ -3249,10 +3184,9 @@ fn a_type_reads_through_a_module_path_of_any_length_2874()
 fn an_import_list_binds_only_the_names_it_lists_2687()
 {
     let pbg = grammar();
-    let imported = SourceText::from(
-        "pub data Point : Type where { | One : Point }\npub def one : Point ;\ndef one = One ;\npub def \
-         two : Point ;\ndef two = One ;\ndef hidden : Point ;\ndef hidden = One ;",
-    );
+    let imported = SourceText::from(include_str!(
+        "namespace/fixtures/an-import-list-binds-only-the-names-it-lists-2687-imported.gandr"
+    ));
     let refusals = |importer: &'static str| -> Vec<(String, String)> {
         let (text, unit) = laid(&[
             (imported, &[]),
@@ -3279,26 +3213,25 @@ fn an_import_list_binds_only_the_names_it_lists_2687()
             .collect()
     };
 
-    let listed = refusals(
-        "import text.greet (one, Point, One,) ;\ndef again : Point ;\ndef again = one ;\ndef \
-         made : Point ;\ndef made = One ;\ndef through : text.greet.Point ;\ndef through = \
-         text.greet.two ;\ndef unlisted : Point ;\ndef unlisted = two ;",
-    );
+    let listed = refusals(include_str!(
+        "namespace/fixtures/an-import-list-binds-only-the-names-it-lists-2687-listed.gandr"
+    ));
     assert!(
         matches!(listed.as_slice(), [(name, refusal)] if name == "unlisted" && refusal.starts_with("UnresolvedName")),
         "the listed names read bare and the path reads qualified; an unlisted name does not \
          read bare: {listed:?}"
     );
-    let quoted = refusals(
-        "import \"./greet.gandr\" (one, Point) ;\ndef again : Point ;\ndef again = one ;\ndef \
-         unlisted : Point ;\ndef unlisted = two ;",
-    );
+    let quoted = refusals(include_str!(
+        "namespace/fixtures/an-import-list-binds-only-the-names-it-lists-2687-quoted.gandr"
+    ));
     assert!(
         matches!(quoted.as_slice(), [(name, refusal)] if name == "unlisted" && refusal.starts_with("UnresolvedName")),
         "an unaliased quoted import with a list binds what it lists and nothing else: \
          {quoted:?}"
     );
-    let missing = refusals("import text.greet (nothing) ;\ndef a : Integer ;\ndef a = 1 ;");
+    let missing = refusals(include_str!(
+        "namespace/fixtures/an-import-list-binds-only-the-names-it-lists-2687-missing.gandr"
+    ));
     assert!(
         matches!(missing.as_slice(), [(name, refusal)] if name == "a"
             && refusal.starts_with("UnknownMember")
@@ -3307,7 +3240,9 @@ fn an_import_list_binds_only_the_names_it_lists_2687()
         "a listed name the module does not declare refuses the importer at the list: \
          {missing:?}"
     );
-    let private = refusals("import text.greet (hidden) ;\ndef a : Integer ;\ndef a = 1 ;");
+    let private = refusals(include_str!(
+        "namespace/fixtures/an-import-list-binds-only-the-names-it-lists-2687-private.gandr"
+    ));
     assert!(
         matches!(private.as_slice(), [(name, refusal)] if name == "a"
             && refusal.starts_with("UnexportedName")
@@ -3324,10 +3259,9 @@ fn a_pending_member_read_through_an_alias_is_refused_at_the_member()
     let (text, unit) = laid(&[
         (SourceText::from("pub def owed : Integer ;"), &[]),
         (
-            SourceText::from(
-                "import \"./base.gandr\" as base ;\ndef again : Integer ;\ndef again = \
-                     base.owed ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-pending-member-read-through-an-alias-is-refused-at-the-member.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -3350,7 +3284,9 @@ fn an_unresolved_import_refuses_its_source()
 {
     let pbg = grammar();
     let (text, unit) = laid(&[(
-        SourceText::from("import \"./nowhere.gandr\" ;\ndef one : Integer ;\ndef one = 1 ;"),
+        SourceText::from(include_str!(
+            "namespace/unformatted/an-unresolved-import-refuses-its-source.gandr"
+        )),
         &[ImportTarget::Unresolved],
     )]);
     let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
@@ -3374,7 +3310,9 @@ fn an_import_closing_a_cycle_refuses_its_source()
 {
     let pbg = grammar();
     let (text, unit) = laid(&[(
-        SourceText::from("import \"./self.gandr\" ;\ndef one : Integer ;\ndef one = 1 ;"),
+        SourceText::from(include_str!(
+            "namespace/unformatted/an-import-closing-a-cycle-refuses-its-source.gandr"
+        )),
         &[ImportTarget::Cycle],
     )]);
     let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
@@ -3403,10 +3341,9 @@ fn a_name_read_through_an_unlocked_alias_is_refused_at_it_3072()
 {
     let pbg = grammar();
     let (text, unit) = laid(&[(
-        SourceText::from(
-            "import hello ;\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two = \
-             hello.welcome ;",
-        ),
+        SourceText::from(include_str!(
+            "namespace/fixtures/a-name-read-through-an-unlocked-alias-is-refused-at-it-3072.gandr"
+        )),
         &[ImportTarget::Unlocked],
     )]);
     let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
@@ -3443,7 +3380,9 @@ fn a_name_read_through_an_unlocked_alias_is_refused_at_it_3072()
 fn an_import_at_a_narrower_signature_settles_3098()
 {
     let pbg = grammar();
-    let exported = "pub def welcome : String = \"hi\" ;\npub def count : Integer = 3 ;";
+    let exported = include_str!(
+        "namespace/fixtures/an-import-at-a-narrower-signature-settles-3098-exported.gandr"
+    );
     let theory = "theory Greeting where { oper welcome : String ; }\n";
     let outcomes = |importer: &str| {
         let (text, unit) = laid(&[
@@ -3476,8 +3415,10 @@ fn an_import_at_a_narrower_signature_settles_3098()
     };
 
     let qualified = outcomes(&format!(
-        "{theory}import \"./base.gandr\" as base : Greeting ;\ndef one : String ;\ndef one = \
-         base.welcome ;\ndef two : Integer ;\ndef two = base.count ;"
+        include_str!(
+            "namespace/unformatted/an-import-at-a-narrower-signature-settles-3098-qualified.gandr"
+        ),
+        theory = theory
     ));
     assert!(
         matches!(
@@ -3491,8 +3432,10 @@ fn an_import_at_a_narrower_signature_settles_3098()
     );
 
     let unqualified = outcomes(&format!(
-        "{theory}import \"./base.gandr\" : Greeting ;\ndef one : String ;\ndef one = welcome \
-         ;\ndef two : Integer ;\ndef two = count ;"
+        include_str!(
+            "namespace/unformatted/an-import-at-a-narrower-signature-settles-3098-unqualified.gandr"
+        ),
+        theory = theory
     ));
     assert!(
         matches!(
@@ -3511,12 +3454,15 @@ fn an_import_at_a_narrower_signature_settles_3098()
 fn an_import_at_a_wider_signature_refuses_its_source_3098()
 {
     let pbg = grammar();
-    let exported = "pub def welcome : String = \"hi\" ;\ndef hidden : String = \"no\" ;\npub \
-                    def bare = \"bare\" ;";
+    let exported = include_str!(
+        "namespace/fixtures/an-import-at-a-wider-signature-refuses-its-source-3098-exported.gandr"
+    );
     let refused = |members: &str| {
         let importer = format!(
-            "theory Wanted where {{ {members} }}\nimport \"./base.gandr\" as base : Wanted ;\ndef \
-             one : Integer ;\ndef one = 1 ;"
+            include_str!(
+                "namespace/unformatted/an-import-at-a-wider-signature-refuses-its-source-3098-importer.gandr"
+            ),
+            members = members
         );
         let (text, unit) = laid(&[
             (SourceText::from(exported), &[]),
@@ -3574,11 +3520,10 @@ fn an_import_at_a_wider_signature_refuses_its_source_3098()
 }
 
 /// The signatures the translation tests read a source at and through.
-const VERSIONS: &str = "theory Older where { oper answer : Integer ; oper tag : Integer ; }\ntheory \
-                        Newer where { oper reply : Integer ; oper label : Integer ; }\n";
+const VERSIONS: &str = include_str!("namespace/unformatted/versions.gandr");
 
 /// The newer source the translation tests import.
-const NEWER: &str = "pub def reply : Integer = 42 ;\npub def label : Integer = 7 ;";
+const NEWER: &str = include_str!("namespace/unformatted/newer.gandr");
 
 /// What the translation tests read of one declaration's outcome.
 ///
@@ -3663,10 +3608,12 @@ fn an_import_via_a_flow_reads_its_source_through_it_3378()
     let pbg = grammar();
     let flow = "flow downgrade : Newer ~~> Older where { def answer = reply ; def tag = 9 ; }\n";
     for reads in [
-        "import \"./base.gandr\" as old : Older via downgrade ;\ndef relayed : Integer ;\ndef \
-         relayed = old.answer ;\ndef tagged : Integer ;\ndef tagged = old.tag ;",
-        "import \"./base.gandr\" : Older via downgrade ;\ndef relayed : Integer ;\ndef relayed \
-         = answer ;\ndef tagged : Integer ;\ndef tagged = tag ;",
+        include_str!(
+            "namespace/fixtures/an-import-via-a-flow-reads-its-source-through-it-3378-2.gandr"
+        ),
+        include_str!(
+            "namespace/fixtures/an-import-via-a-flow-reads-its-source-through-it-3378-1.gandr"
+        ),
     ] {
         let (_, found) = translated(
             &pbg,
@@ -3703,21 +3650,27 @@ fn an_importer_reads_a_declaration_as_its_import_binds_it_3498()
     let flowed = |import: &str| [VERSIONS, flow, import].concat();
     for (importer, expected) in [
         (
-            String::from("import \"./base.gandr\" as base ;\ndef relayed = base.reply ;"),
+            String::from(include_str!(
+                "namespace/fixtures/an-importer-reads-a-declaration-as-its-import-binds-it-3498-1.gandr"
+            )),
             &[("label", "base.*"), ("reply", "base.*")][..],
         ),
         (
-            flowed(
-                "import \"./base.gandr\" as old : Older via downgrade ;\ndef relayed = old.answer ;",
-            ),
+            flowed(include_str!(
+                "namespace/fixtures/an-importer-reads-a-declaration-as-its-import-binds-it-3498-2.gandr"
+            )),
             &[("reply", "old.answer"), ("tag", "old.tag")][..],
         ),
         (
-            flowed("import \"./base.gandr\" : Older via downgrade ;\ndef relayed = answer ;"),
+            flowed(include_str!(
+                "namespace/fixtures/an-importer-reads-a-declaration-as-its-import-binds-it-3498-3.gandr"
+            )),
             &[("reply", "answer"), ("tag", "tag")][..],
         ),
         (
-            String::from("import \"./base.gandr\" ;\ndef relayed = reply ;"),
+            String::from(include_str!(
+                "namespace/fixtures/an-importer-reads-a-declaration-as-its-import-binds-it-3498-4.gandr"
+            )),
             &[][..],
         ),
     ] {
@@ -3765,7 +3718,9 @@ fn a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378()
     let flow =
         "flow downgrade : Newer ~~> Older where { def answer = reply ; def tag = label ; }\n";
     let import = "import \"./base.gandr\" as old : Older via downgrade ;\n";
-    let read = "def relayed : Integer ;\ndef relayed = old.answer ;";
+    let read = include_str!(
+        "namespace/fixtures/a-via-reads-a-flow-declared-before-it-or-published-by-its-source-3378-read.gandr"
+    );
     let refusals = |exported: &str, importer: &str| {
         let (text, found) =
             translated(&pbg, SourceText::from(exported), SourceText::from(importer));
@@ -3782,7 +3737,7 @@ fn a_via_reads_a_flow_declared_before_it_or_published_by_its_source_3378()
             .count();
         (untranslated, others)
     };
-    let published = [VERSIONS, NEWER, "\npub ", flow].concat();
+    let published = [VERSIONS, NEWER, include_str!("namespace/fixtures/a-via-reads-a-flow-declared-before-it-or-published-by-its-source-3378-published.gandr"), flow].concat();
     assert_eq!(
         refusals(&published, &[VERSIONS, import, read].concat()),
         (0_usize, 0_usize),
@@ -3822,7 +3777,9 @@ fn a_translation_is_refused_at_its_domain_or_its_codomain_3378()
             ("Newer", "label", MatchFault::Missing),
         ),
         (
-            "pub def reply : String = \"42\" ;\npub def label : Integer = 7 ;",
+            include_str!(
+                "namespace/fixtures/a-translation-is-refused-at-its-domain-or-its-codomain-3378-1.gandr"
+            ),
             "Older",
             "downgrade",
             ("Newer", "reply", MatchFault::Sort),
@@ -3839,8 +3796,7 @@ fn a_translation_is_refused_at_its_domain_or_its_codomain_3378()
             "theory Wider where { oper answer : Integer ; oper extra : Integer ; }\n",
             flow,
             &format!(
-                "import \"./base.gandr\" as old : {signature} via downgrade ;\ndef one : Integer \
-                 ;\ndef one = 1 ;\ndef read : Integer ;\ndef read = old.answer ;"
+                include_str!("namespace/unformatted/a-translation-is-refused-at-its-domain-or-its-codomain-3378-2.gandr"), signature = signature
             ),
         ]
         .concat();
@@ -3881,7 +3837,9 @@ fn a_constructor_an_import_binds_again_refuses_its_family()
             &[],
         ),
         (
-            SourceText::from("import \"./base.gandr\" ;\ndata Other : Type where { | O : Other }"),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-constructor-an-import-binds-again-refuses-its-family.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -3918,14 +3876,15 @@ fn a_declaration_an_import_binds_again_is_refused()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from("pub def one : Integer ;\ndef one = 1 ;"),
+            SourceText::from(include_str!(
+                "namespace/fixtures/two-imports-binding-one-name-refuse-its-use-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\ndef one : Integer ;\ndef one = 2 ;\ndef two : \
-                     Integer ;\ndef two = 2 ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-declaration-an-import-binds-again-is-refused.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -3962,20 +3921,22 @@ fn one_form_in_two_sources_files_its_attributes_apart_596()
 {
     let pbg = grammar();
     let (text, unit) = laid(&[
-        (SourceText::from("def zero : Integer ;\ndef zero = 0 ;"), &[
-        ]),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\n/// The left two.\n@[ checks ]\ndef two : \
-                     Integer ;\ndef two = 2 ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/one-form-in-two-sources-files-its-attributes-apart-596-1.gandr"
+            )),
+            &[],
+        ),
+        (
+            SourceText::from(include_str!(
+                "namespace/fixtures/one-form-in-two-sources-files-its-attributes-apart-596-2.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\n/// The right two.\n@[ checks ]\ndef two : \
-                     Integer ;\ndef two = 2 ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/one-form-in-two-sources-files-its-attributes-apart-596-3.gandr"
+            )),
             &[ImportTarget::Source(SourceIndex::from(0_usize))],
         ),
     ]);
@@ -4101,10 +4062,9 @@ fn duplicate_source_import_alias_becomes_a_refusal()
         &pbg,
         &parsed(
             &pbg,
-            SourceText::from(
-                "import \"file:///lib/parse.gandr\" as parse ;\nimport \
-                     \"file:///lib/list.gandr\" as parse ;\ndef x = 3 ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/unformatted/duplicate-source-import-alias-becomes-a-refusal-module.gandr"
+            )),
         ),
     )
     .expect("a second import of one alias refuses that import, not the module");
@@ -5178,54 +5138,57 @@ fn each_import_a_name_is_read_through_is_reached()
     let (first, fourth) = (on(0_usize), on(4_usize));
     let (text, unit) = laid(&[
         (
-            SourceText::from(
-                "pub data Point : Type where { | One : Point }\npub module Cancel :> *{\n  notes : \
-                 String\n} where {\n  def notes = \"notes\";\n}\npub module Str where { def len(self : shared \
-                 Integer) -> -F Integer { pure self } }\npub def seven : Integer ;\ndef seven = 7 ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/each-import-a-name-is-read-through-is-reached-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\ndef value : Integer ;\ndef value = seven ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/each-import-a-name-is-read-through-is-reached-2.gandr"
+            )),
             &first,
         ),
         (
-            SourceText::from("import \"./base.gandr\" ;\ndef made = One ;"),
+            SourceText::from(include_str!(
+                "namespace/fixtures/each-import-a-name-is-read-through-is-reached-3.gandr"
+            )),
             &first,
         ),
         (
-            SourceText::from("import \"./base.gandr\" ;\ndef kept(p : Point) -> -F Point { p }"),
+            SourceText::from(include_str!(
+                "namespace/fixtures/each-import-a-name-is-read-through-is-reached-4.gandr"
+            )),
             &first,
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\ndef member : String ;\ndef member = Cancel.notes ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/each-import-a-name-is-read-through-is-reached-5.gandr"
+            )),
             &first,
         ),
         (
-            SourceText::from(
-                "import \"./member.gandr\" ;\ndef far : String ;\ndef far = Cancel.notes ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/each-import-a-name-is-read-through-is-reached-6.gandr"
+            )),
             &fourth,
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" as base ;\ndef aliased : Integer ;\ndef aliased = \
-                 base.seven ;",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/each-import-a-name-is-read-through-is-reached-7.gandr"
+            )),
             &first,
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\ndef measured() -> -F Integer { var s = 1; s.len () }",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/each-import-a-name-is-read-through-is-reached-8.gandr"
+            )),
             &first,
         ),
         (
-            SourceText::from("import \"./base.gandr\" ;\ndef idle : Integer ;\ndef idle = 1 ;"),
+            SourceText::from(include_str!(
+                "namespace/fixtures/each-import-a-name-is-read-through-is-reached-9.gandr"
+            )),
             &first,
         ),
     ]);
@@ -5281,39 +5244,33 @@ fn a_module_path_reads_the_module_its_source_sees_4797()
     let (text, unit) = laid(&[
         (SourceText::from("def shared : Integer = 0;\n"), &[]),
         (
-            SourceText::from(
-                "pub module Seat where {\n  type Task = Integer;\n  def task : Integer = 1;\n}\nmodule \
-                 Quiet where {\n  def hush : Integer = 3;\n}\npub module Stage where {\n  def deep \
-                 : Integer = 5;\n}\n",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-module-path-reads-the-module-its-source-sees-4797-1.gandr"
+            )),
             &[],
         ),
         (
-            SourceText::from(
-                "import \"./shared.gandr\" ;\nimport \"./base.gandr\" ;\ndef first : Integer = \
-                 Seat.task ;\n",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-module-path-reads-the-module-its-source-sees-4797-2.gandr"
+            )),
             &both,
         ),
         (
-            SourceText::from(
-                "import \"./shared.gandr\" ;\nmodule Seat where {\n  def other : Integer = 2;\n}\nmodule \
-                 Quiet where {\n  def loud : Integer = 4;\n}\nmodule Stage where {\n  def shallow : \
-                 Integer = 6;\n}\n",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-module-path-reads-the-module-its-source-sees-4797-3.gandr"
+            )),
             &shared,
         ),
         (
-            SourceText::from(
-                "import \"./base.gandr\" ;\ndef read : Seat.Task ;\ndef read = Seat.task ;\ndef \
-                 hushed : Integer = Quiet.hush ;\n",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-module-path-reads-the-module-its-source-sees-4797-4.gandr"
+            )),
             &base,
         ),
         (
-            SourceText::from(
-                "import \"./read.gandr\" ;\ndef far : Seat.Task ;\ndef far = Stage.deep ;\n",
-            ),
+            SourceText::from(include_str!(
+                "namespace/fixtures/a-module-path-reads-the-module-its-source-sees-4797-5.gandr"
+            )),
             &reader,
         ),
     ]);
@@ -5344,16 +5301,7 @@ fn a_module_path_reads_the_module_its_source_sees_4797()
 /// The base the visibility witnesses import: each form exported by a `pub`
 /// mark on its signature, its definition, before or after its attributes, and
 /// each kept private by none.
-const VISIBLE_BASE: &str = "pub def shown : Integer ;\ndef shown = 2 ;\ndef hidden : Integer \
-                            ;\npub def hidden = 1 ;\n@[ checks ]\npub def checked : Integer ;\ndef \
-                            checked = 4 ;\npub @[ checks ]\ndef early : Integer ;\ndef early = 5 \
-                            ;\ndef secret = 3 ;\npub data Bit : Type where { | O : Bit }\ndata Hid : \
-                            Type where { | H : Hid }\npub theory Pointed where {\n  sort P : Type;\n  oper pt \
-                            : () --> P;\n}\ntheory Closed where {\n  sort Q : Type;\n  oper qt : () \
-                            --> Q;\n}\npub module Open where { def x = 6; }\nmodule Shut where { def y = 7; \
-                            }\npub module Methods where { def width(self : shared Integer) -> -F Integer \
-                            { pure self } }\nmodule Hidden where { def depth(self : shared Integer) -> \
-                            -F Integer { pure self } }";
+const VISIBLE_BASE: &str = include_str!("namespace/fixtures/visible-base.gandr");
 
 /// Each declaration of the unit `base` then `importer` lays, the importer
 /// reading the base unqualified, with its refusal printed, or `None` where it
@@ -5405,13 +5353,9 @@ fn importer_outcomes(importer: SourceText<'_>) -> Vec<(String, Option<String>)>
 #[test]
 fn a_pub_declaration_is_read_by_its_importer_2687()
 {
-    let outcomes = importer_outcomes(SourceText::from(
-        "import \"./base.gandr\" ;\ndef a : Integer ;\ndef a = shown ;\ndef b : Integer ;\ndef b \
-         = hidden ;\ndef c : Integer ;\ndef c = checked ;\ndef d : Integer ;\ndef d = early ;\ndef \
-         e : Bit ;\ndef e = O ;\ndef f : Integer ;\ndef f = Open.x ;\nmodule Pointing : \
-         Model(Pointed) where {\n  type P = Integer;\n  def pt() -> -F Integer { return 0 }\n}\ndef \
-         g() -> -F Integer { var s = 1; s.width () }",
-    ));
+    let outcomes = importer_outcomes(SourceText::from(include_str!(
+        "namespace/fixtures/a-pub-declaration-is-read-by-its-importer-2687-outcomes.gandr"
+    )));
     let refused: Vec<_> = outcomes
         .iter()
         .filter(|&&(_, ref refusal)| refusal.is_some())
@@ -5431,12 +5375,9 @@ fn a_pub_declaration_is_read_by_its_importer_2687()
 #[test]
 fn a_private_declaration_is_refused_to_its_importer_2687()
 {
-    let outcomes = importer_outcomes(SourceText::from(
-        "import \"./base.gandr\" ;\ndef g : Integer ;\ndef g = secret ;\ndef h : Hid ;\ndef h = \
-         1 ;\ndef i = H ;\ndef j : Integer ;\ndef j = Shut.y ;\nmodule Closing : Model(Closed) \
-         where {\n  type Q = Integer;\n  def qt() -> -F Integer { return 0 }\n}\ndef k() -> -F Integer \
-         { var s = 1; s.depth () }\ndef secret = 8 ;",
-    ));
+    let outcomes = importer_outcomes(SourceText::from(include_str!(
+        "namespace/fixtures/a-private-declaration-is-refused-to-its-importer-2687-outcomes.gandr"
+    )));
     let private = |name: &str| format!("name: SurfaceName(SourceFragment(\"{name}\"))");
     let refused_as = |declaration: &str, name: &str| {
         outcomes.iter().any(|&(ref held, ref refusal)| {
@@ -5482,7 +5423,9 @@ fn a_private_declaration_is_refused_to_its_importer_2687()
 fn a_pub_mark_before_no_declaration_is_misplaced_2687()
 {
     let pbg = grammar();
-    let text = "pub import \"./base.gandr\" ;\npub pub def one = 1 ;\npub";
+    let text = include_str!(
+        "namespace/unformatted/a-pub-mark-before-no-declaration-is-misplaced-2687.gandr"
+    );
     let module = lowered(&pbg, &parsed(&pbg, SourceText::from(text))).expect("the source lowers");
     let misplaced: Vec<ByteSpan> = module
         .declarations()
@@ -5546,7 +5489,9 @@ fn a_mark_before_a_stray_word_yields_to_the_word_3495()
 fn documentation_before_a_pub_mark_documents_its_declaration_2687()
 {
     let pbg = grammar();
-    let text = "/// The answer.\npub def answer = 42 ;\n/// A point.\npub data Point : Type where { | P : Point }\n/// First.\npub @[ doc(\"Second.\") ]\ndef both = 1 ;";
+    let text = include_str!(
+        "namespace/fixtures/documentation-before-a-pub-mark-documents-its-declaration-2687.gandr"
+    );
     let module = lowered(&pbg, &parsed(&pbg, SourceText::from(text))).expect("the source lowers");
     let documented = |name: &str| {
         module
@@ -5581,7 +5526,9 @@ fn documentation_before_a_pub_mark_documents_its_declaration_2687()
 fn a_source_s_own_documentation_stays_off_its_marked_declaration_4947()
 {
     let pbg = grammar();
-    let text = "//! A small source.\n\n/// The answer.\npub def answer = 42 ;\n";
+    let text = include_str!(
+        "namespace/fixtures/a-source-s-own-documentation-stays-off-its-marked-declaration-4947.gandr"
+    );
     let module = lowered(&pbg, &parsed(&pbg, SourceText::from(text))).expect("the source lowers");
     let answer = module
         .declarations()
@@ -5617,11 +5564,12 @@ fn a_source_s_own_documentation_stays_off_its_marked_declaration_4947()
 fn documentation_before_a_pub_mark_reaches_a_document_laid_after_its_closure_2687()
 {
     let pbg = grammar();
-    let base = SourceText::from("/// The base.\npub def base = 1 ;");
-    let document = SourceText::from(
-        "import \"./base.gandr\" ;\n/// The answer.\npub def answer = base ;\n/// Plain.\ndef \
-         plain = 2 ;",
-    );
+    let base = SourceText::from(include_str!(
+        "namespace/fixtures/documentation-before-a-pub-mark-reaches-a-document-laid-after-its-closure-2687-base.gandr"
+    ));
+    let document = SourceText::from(include_str!(
+        "namespace/fixtures/documentation-before-a-pub-mark-reaches-a-document-laid-after-its-closure-2687-document.gandr"
+    ));
     let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
     let (text, unit) = laid(&[(base, &[]), (document, &imports)]);
     let start = unit

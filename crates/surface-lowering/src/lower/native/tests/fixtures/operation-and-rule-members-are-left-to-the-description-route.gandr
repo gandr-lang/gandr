@@ -1,0 +1,6 @@
+data NatOp : Type where {
+  | Zero : NatOp
+  | One : NatOp oper add : (m : NatOp, n : NatOp) --> NatOp;
+  rule : add Zero n ==> n;
+}
+data NatRetired : Type where { | Only : NatRetired op stale : (x : NatRetired) --> NatRetired; }

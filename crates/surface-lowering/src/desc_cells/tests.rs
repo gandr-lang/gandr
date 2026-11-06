@@ -21,13 +21,7 @@ use crate::namespace::Recognition;
 use crate::unit::Unit;
 
 /// Two frame-defining constructors and two operation laws.
-const NAT_ADD: &str = r#"data NatAdd : Type where {
-    | Zero : NatAdd
-    | Succ : (n : NatAdd) --> NatAdd
-    oper add : (m : NatAdd, n : NatAdd) --> NatAdd;
-    rule : add Zero n ==> n;
-    rule : add (Succ m) n ==> Succ (add m n);
-}"#;
+const NAT_ADD: &str = include_str!("tests/unformatted/nat-add.gandr");
 
 /// Read descriptions through the production grammar.
 ///
@@ -265,15 +259,9 @@ fn declaration_order_is_the_cell_order()
     let original =
         elaborate_desc_cells(&descriptions(NAT_ADD).declarations, &mut Decisions::none());
     let swapped = elaborate_desc_cells(
-        &descriptions(
-            r#"data NatAdd : Type where {
-    | Zero : NatAdd
-    | Succ : (n : NatAdd) --> NatAdd
-    oper add : (m : NatAdd, n : NatAdd) --> NatAdd;
-    rule : add (Succ m) n ==> Succ (add m n);
-    rule : add Zero n ==> n;
-        }"#,
-        )
+        &descriptions(include_str!(
+            "tests/unformatted/declaration-order-is-the-cell-order-swapped.gandr"
+        ))
         .declarations,
         &mut Decisions::none(),
     );
@@ -307,14 +295,9 @@ fn a_face_declared_twice_is_one_cell()
 #[test]
 fn a_single_redex_block_reaches_the_cell_layer_behind_the_gate()
 {
-    let descriptions = descriptions(
-        r#"data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-        theory Nat where { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
-            rule cong1 : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
-                node : p(x) ==> (xp); node : add(xp, y) --> (z);
-            };
-        }"#,
-    );
+    let descriptions = descriptions(include_str!(
+        "tests/fixtures/a-single-redex-block-reaches-the-cell-layer-behind-the-gate-descriptions.gandr"
+    ));
     assert_eq!(descriptions.diagnostics, []);
     let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
     assert_eq!(cells.diagnostics, []);
@@ -339,13 +322,9 @@ fn a_single_redex_block_reaches_the_cell_layer_behind_the_gate()
 #[test]
 fn a_two_redex_body_declines_with_both_occurrences()
 {
-    let descriptions = descriptions(
-        r#"theory Nat where { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
-        rule cong2 : (rule p : Nat ==> Nat, rule q : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
-            node : p(x) ==> (xp); node : q(y) ==> (yp); node : add(xp, yp) --> (z);
-        };
-    }"#,
-    );
+    let descriptions = descriptions(include_str!(
+        "tests/fixtures/a-two-redex-body-declines-with-both-occurrences-descriptions.gandr"
+    ));
     assert_eq!(descriptions.diagnostics, []);
     let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
     let [CircuitCell::Refused(ref index)] = *cells.declarations[0].circuits.as_slice()
@@ -379,20 +358,14 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
             MemberFault::ResultArity,
         ),
         (
-            r#"theory Shared where { sort Nat : Type; oper f : (a : Nat) --> (b : Nat);
-        rule twice : (rule p : Nat ==> Nat, data x : Nat) ==> (o : Nat) {
-            node : p(x) ==> (m); node : f(x) --> (m);
-        };
-    }"#,
+            include_str!("tests/fixtures/each-cell-fault-is-refused-by-its-own-member-fault.gandr"),
             "rule twice",
             MemberFault::LhsNotOperation,
         ),
         (
-            r#"theory Nat where { sort Nat : Type; oper add : (Nat, Nat) --> Nat;
-        rule cong2 : (rule p : Nat ==> Nat, rule q : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
-            node : p(x) ==> (xp); node : q(y) ==> (yp); node : add(xp, yp) --> (z);
-        };
-    }"#,
+            include_str!(
+                "tests/fixtures/a-two-redex-body-declines-with-both-occurrences-descriptions.gandr"
+            ),
             "rule cong2",
             MemberFault::ParallelRedexes,
         ),

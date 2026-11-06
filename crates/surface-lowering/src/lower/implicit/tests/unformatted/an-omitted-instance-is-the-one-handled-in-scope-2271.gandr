@@ -1,0 +1,4 @@
+{SAY}def resolved() -> -F Integer {{ {} }}
+def named() -> -F Integer {{ {} }}
+def relayed() -> -F [o : std.io.Console.Eff] Unit {{ say () }}
+def relayedNamed() -> -F [o : std.io.Console.Eff] Unit {{ say[.out = o] () }}

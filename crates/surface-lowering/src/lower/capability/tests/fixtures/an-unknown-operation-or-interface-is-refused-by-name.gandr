@@ -1,0 +1,9 @@
+def held : Cap { delete };
+def row(c : Cap { read }) -> -F [Radio] String { c.read "x" }
+def sent(c : Cap { read }) -> -F [std.fs.Eff] String { c.delete "x" }
+def scoped() -> -F Unit { handle c : Radio { pure *{} } with { | pure(x) => pure x } }
+def twice() -> -F Unit {
+  handle c : std.process.Exit.Eff {
+    pure *{}
+  } with { | pure(x) => pure x | pure(y) => pure y | oper exit(code, k) => k *{} }
+}

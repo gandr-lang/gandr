@@ -84,7 +84,9 @@ fn plicity_is_metadata_not_type_structure()
 #[test]
 fn a_forward_reference_from_the_prefix_binds_after_its_target()
 {
-    let source = "def chosen[x : t](t : Type) -> -F t { return x }\ndef twin(t : Type, x : t) -> -F t { return x }\n";
+    let source = include_str!(
+        "tests/fixtures/a-forward-reference-from-the-prefix-binds-after-its-target.gandr"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert_eq!(
@@ -104,7 +106,9 @@ fn a_telescope_names_its_implicits_in_the_merged_order_2267()
 {
     // `x : t` binds after `t`, so the merged telescope is `t` then `x`; `twin`
     // writes no telescope and answers nothing.
-    let source = "def chosen[x : t](t : Type) -> -F t { return x }\ndef twin(t : Type, x : t) -> -F t { return x }\n";
+    let source = include_str!(
+        "tests/fixtures/a-forward-reference-from-the-prefix-binds-after-its-target.gandr"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let constant = |name: &str| {
@@ -127,13 +131,9 @@ fn a_telescope_names_its_implicits_in_the_merged_order_2267()
 #[test]
 fn a_binder_of_an_implicit_s_type_mentions_no_parameter_1350()
 {
-    let source = "\
-def named[m : Type, combine : (x : m) -> m](x : m) -> -F m { become combine x }
-def bare[m : Type, combine : m -> m](x : m) -> -F m { become combine x }
-def twin(m : Type, combine : m -> m, x : m) -> -F m { become combine x }
-def keyed[c : (y : t) -> t](t : Type, v : t) -> -F t { become c v }
-def keyedTwin(t : Type, c : t -> t, v : t) -> -F t { become c v }
-";
+    let source = include_str!(
+        "tests/fixtures/a-binder-of-an-implicit-s-type-mentions-no-parameter-1350.gandr"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     for (implicit, explicit) in [("named", "twin"), ("bare", "twin"), ("keyed", "keyedTwin")] {
@@ -170,7 +170,7 @@ fn a_telescope_cycle_is_refused_naming_the_cycle()
 #[test]
 fn a_stage_telescope_merges_nothing()
 {
-    let source = "def staged[i : Size](x : Integer) -> -F Integer { return x }\ndef stagedRun : () -> Integer ;\ndef stagedRun = thunk { become staged 1 } ;\ndef kept[i : Size, a : Type](n : Integer, y : a) -> -F a { return y }\ndef twin(a : Type, n : Integer, y : a) -> -F a { return y }\n";
+    let source = include_str!("tests/fixtures/a-stage-telescope-merges-nothing.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert_eq!(
@@ -200,7 +200,8 @@ fn a_stage_telescope_merges_nothing()
 fn supply_by_name_is_order_free()
 {
     let source = format!(
-        "{FIRST}def written : () -> Integer ;\ndef written = thunk {{ become first[.a = Integer, .b = Unit] 5 *{{}} }} ;\ndef swapped : () -> Integer ;\ndef swapped = thunk {{ become first[.b = Unit, .a = Integer] 5 *{{}} }} ;\n"
+        include_str!("tests/unformatted/supply-by-name-is-order-free.gandr"),
+        FIRST = FIRST
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -221,7 +222,8 @@ fn a_positional_supply_follows_the_written_block_4945()
 {
     // `i : t` names the explicit `t`, so the merged telescope binds `u`, then
     // `t`, then `i`. A position still counts the block as written: `7` is `i`.
-    let source = "def pick[i : t, u : Type](t : Type, y : u) -> -F t { return i }\ndef named : () -> Integer ;\ndef named = thunk { become pick[.i = 7, .u = Unit] (Integer) *{} } ;\ndef positional : () -> Integer ;\ndef positional = thunk { become pick[7, Unit] (Integer) *{} } ;\n";
+    let source =
+        include_str!("tests/fixtures/a-positional-supply-follows-the-written-block-4945.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert_eq!(
@@ -240,7 +242,10 @@ fn a_positional_supply_follows_the_written_block_4945()
 fn a_wildcard_skips_a_position_and_names_follow_positions_4945()
 {
     let source = format!(
-        "{FIRST}def skipped : () -> Integer ;\ndef skipped = thunk {{ become first[_, Unit] 5 *{{}} }} ;\ndef mixed : () -> Integer ;\ndef mixed = thunk {{ become first[Integer, .b = Unit] 5 *{{}} }} ;\ndef named : () -> Integer ;\ndef named = thunk {{ become first[.a = Integer, .b = Unit] 5 *{{}} }} ;\n"
+        include_str!(
+            "tests/unformatted/a-wildcard-skips-a-position-and-names-follow-positions-4945.gandr"
+        ),
+        FIRST = FIRST
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -273,7 +278,10 @@ fn a_wildcard_skips_a_position_and_names_follow_positions_4945()
 fn a_misplaced_positional_supply_is_refused_at_its_entry_4945()
 {
     let source = format!(
-        "{FIRST}def after : () -> Integer ;\ndef after = thunk {{ become first[.b = Unit, Integer] 5 *{{}} }} ;\ndef past : () -> Integer ;\ndef past = thunk {{ become first[Integer, Unit, Unit] 5 *{{}} }} ;\ndef twice : () -> Integer ;\ndef twice = thunk {{ become first[Integer, .a = Integer] 5 *{{}} }} ;\ndef renamed : () -> Integer ;\ndef renamed = thunk {{ become first[.a = Integer, .a = Integer] 5 *{{}} }} ;\ndef compound : () -> Integer ;\ndef compound = thunk {{ become first[Integer, Unit * Unit] 5 *{{*{{}}, *{{}}}} }} ;\n"
+        include_str!(
+            "tests/unformatted/a-misplaced-positional-supply-is-refused-at-its-entry-4945.gandr"
+        ),
+        FIRST = FIRST
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -298,7 +306,12 @@ fn a_misplaced_positional_supply_is_refused_at_its_entry_4945()
 #[test]
 fn an_unsupplied_implicit_is_refused_with_its_slot_spelling()
 {
-    let source = format!("{SAME}def named : +U (Integer -> -F Integer) ;\ndef named = same ;\n");
+    let source = format!(
+        include_str!(
+            "tests/unformatted/an-unsupplied-implicit-is-refused-with-its-slot-spelling.gandr"
+        ),
+        SAME = SAME
+    );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(
@@ -358,7 +371,8 @@ fn an_omitted_implicit_is_a_nominated_hole()
     // the telescope's order, each recorded with the implicit it stands for;
     // the checker solves both.
     let source = format!(
-        "{FIRST}def omitted : () -> Integer ;\ndef omitted = thunk {{ become first 5 *{{}} }} ;\n"
+        include_str!("tests/unformatted/an-omitted-implicit-is-a-nominated-hole.gandr"),
+        FIRST = FIRST
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -392,11 +406,9 @@ fn a_signature_s_implicit_group_is_supplied_by_the_call_4853()
     // A signature's implicit group is plicity, as a head's is: `pick(5, unit)`
     // and `single(5)` leave out each implicit, and each becomes a hole that
     // names it, in the telescope's order.
-    let source = "def pick : [a : Type, b : Type] (x : a, y : b) -> a ;\ndef pick = thunk { fun \
-                  (a) { fun (b) { fun (x) { fun (y) { return x } } } } } ;\ndef single : [a : \
-                  Type] a -> a ;\ndef single = thunk { fun (a) { fun (x) { return x } } } ;\ndef \
-                  omitted : () -> Integer ;\ndef omitted = thunk { become pick 5 *{} } ;\ndef \
-                  once : () -> Integer ;\ndef once = thunk { become single 5 } ;\n";
+    let source = include_str!(
+        "tests/fixtures/a-signature-s-implicit-group-is-supplied-by-the-call-4853.gandr"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let implicit = |function: &str, name: &str| Omitted::Implicit {
@@ -433,8 +445,8 @@ fn a_wildcard_is_a_nominated_hole_of_its_own()
     // implicit; the checker solves both, `5` forcing the wildcard and `unit`
     // the implicit.
     let source = format!(
-        "{FIRST}def wild : () -> Integer ;\ndef wild = thunk {{ become first[.a = _] 5 *{{}} \
-         }} ;\n"
+        include_str!("tests/unformatted/a-wildcard-is-a-nominated-hole-of-its-own.gandr"),
+        FIRST = FIRST
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -480,9 +492,7 @@ fn a_wildcard_emits_the_body_written_by_hand_528()
     // `idAt(_, 3)` and `idAt(Integer, 3)`: the checker writes the term the
     // wildcard's comparison forces in its place, so the body it accepts is
     // the one the author could have written, the wildcard adding nothing.
-    let source = "def idAt(a : Type, y : a) -> -F a { return y }\ndef forced : () -> Integer \
-                  ;\ndef forced = thunk { become idAt _ 3 } ;\ndef written : () -> Integer ;\n\
-                  def written = thunk { become idAt (Integer) 3 } ;\n";
+    let source = include_str!("tests/fixtures/a-wildcard-emits-the-body-written-by-hand-528.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let report = judged(&module, &mut arena);
@@ -516,7 +526,8 @@ fn a_wildcard_emits_the_body_written_by_hand_528()
 fn an_implicit_in_the_parentheses_is_refused()
 {
     let source = format!(
-        "{SAME}def inside : () -> Integer ;\ndef inside = thunk {{ become same (Integer) 3 }} ;\n"
+        include_str!("tests/unformatted/an-implicit-in-the-parentheses-is-refused.gandr"),
+        SAME = SAME
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -534,7 +545,8 @@ fn an_implicit_in_the_parentheses_is_refused()
 fn a_resident_naming_no_implicit_is_unresolved()
 {
     let source = format!(
-        "{SAME}def stray : () -> Integer ;\ndef stray = thunk {{ become same[.b = Integer] 3 }} ;\n"
+        include_str!("tests/unformatted/a-resident-naming-no-implicit-is-unresolved.gandr"),
+        SAME = SAME
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -551,7 +563,8 @@ fn a_resident_naming_no_implicit_is_unresolved()
 fn a_supplied_function_stands_as_a_value()
 {
     let source = format!(
-        "{SAME}def apply(f : (y : Integer) -> Integer, x : Integer) -> -F Integer {{ become f x }}\ndef passed : () -> Integer ;\ndef passed = thunk {{ become apply same[.a = Integer] 3 }} ;\n"
+        include_str!("tests/unformatted/a-supplied-function-stands-as-a-value.gandr"),
+        SAME = SAME
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -568,7 +581,11 @@ fn a_standing_supply_opens_a_lambda_per_explicit_before_it_1498()
     // Whether every declaration checks with `standing` stated at `v : result`.
     let all_check = |result: &str| {
         let source = format!(
-            "{swap}def standing : +U ((s : Type) -> (t : Type) -> (v : {result}) -> -F {result}) ;\ndef standing = swapAt[.g = fun (y) {{ y }}] ;\n"
+            include_str!(
+                "tests/unformatted/a-standing-supply-opens-a-lambda-per-explicit-before-it-1498.gandr"
+            ),
+            result = result,
+            swap = swap
         );
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -594,7 +611,8 @@ fn a_standing_stage_supply_stands_as_its_call_1498()
 {
     // A stage crosses only at a call's head: `applyAt[.i = k]` passed as a
     // value is `λ f. λ x. applyAt[.i = k] f x`.
-    let source = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }\ndef applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> -F Nat { f x }\ndef apply2[j : Size](g : (f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat, f : Nat[< j] -> Nat, x : Nat[< j]) -> -F Nat { become g f x }\ndef passAt[k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> -F Nat { become apply2[.j = k] applyAt[.i = k] f x }\n";
+    let source =
+        include_str!("tests/fixtures/a-standing-stage-supply-stands-as-its-call-1498.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let report = judged(&module, &mut arena);
@@ -615,24 +633,7 @@ fn a_standing_stage_supply_stands_as_its_call_1498()
 
 /// A counter theory, a counter that also resets, a module of each, and a
 /// step over any counter its model implicit names.
-const STEPPED: &str = "\
-theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
-theory ResetCounter where { include Counter; oper reset : (c : C) --> C; }
-module Up : Model(Counter) where {
-  type C = Integer;
-  def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 1 }
-  def read(c : Integer) -> -F Integer { c }
-}
-module Tens : Model(ResetCounter) where {
-  type C = Integer;
-  def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 10 }
-  def read(c : Integer) -> -F Integer { c }
-  def reset(c : Integer) -> -F Integer { 0 }
-}
-def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read (s.incr c) }
-";
+const STEPPED: &str = include_str!("tests/unformatted/stepped.gandr");
 
 /// Each parameter the declared type `declared` binds, outermost first: its
 /// domain beside whether its arrow is dependent.
@@ -724,9 +725,8 @@ fn a_manifest_model_implicit_binds_no_fixed_sort_739()
     // `[s : Model(Counter) with sort C = Integer]` binds the zero, the step
     // and the reading at `Integer`, and no parameter for the fixed sort.
     let source = format!(
-        "{STEPPED}def fixed[s : Model(Counter) with sort C = Integer](c : Integer) -> -F \
-         Integer {{ s.read (s.incr (c + s.zero)) }}\ndef manifest() -> -F Integer {{ fixed[.s = \
-         Up] 4 }}\n"
+        include_str!("tests/unformatted/a-manifest-model-implicit-binds-no-fixed-sort-739.gandr"),
+        STEPPED = STEPPED
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -825,9 +825,10 @@ fn a_module_supplied_for_a_model_implicit_passes_its_members_739()
     // counter's slot names, and a model implicit of the caller's passes its
     // own components on.
     let source = format!(
-        "{STEPPED}def supplied() -> -F Integer {{ stepped[.s = Up] 4 }}\ndef reduct() -> -F \
-         Integer {{ stepped[.s = Tens] 4 }}\ndef passed[t : Model(Counter)](c : t.C) -> -F \
-         Integer {{ stepped[.s = t] c }}\n"
+        include_str!(
+            "tests/unformatted/a-module-supplied-for-a-model-implicit-passes-its-members-739.gandr"
+        ),
+        STEPPED = STEPPED
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -920,9 +921,10 @@ fn an_omitted_model_implicit_plans_each_module_of_its_theory_739()
     // count the integers `4` forces, so the checker refuses the call naming
     // both places.
     let source = format!(
-        "{STEPPED}theory Lonely where {{ sort L : Type; oper lone : L; }}\nmodule Lone : \
-         Model(Lonely) where {{ type L = Integer; def lone = 0; }}\ndef omitted() -> -F Integer {{ \
-         stepped 4 }}\n"
+        include_str!(
+            "tests/unformatted/an-omitted-model-implicit-plans-each-module-of-its-theory-739.gandr"
+        ),
+        STEPPED = STEPPED
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -959,12 +961,7 @@ fn equality_calls_the_prelude_s_eq_2302()
     // their theory's include, `OrdInteger` and `OrdString` through theirs
     // (#2333), and the operands force one. A source's own `eq` does not
     // capture its `==`; a unit with no prelude keeps the primitive.
-    let source = "\
-def integers() -> Bool { 3 == 3 }
-def strings() -> Bool { \"types\" == \"types\" }
-def eq(a : Bool) -> Bool { a }
-def own() -> Bool { 3 == 4 }
-";
+    let source = include_str!("tests/fixtures/equality-calls-the-prelude-s-eq-2302.gandr");
     let (text, unit) = crate::prelude::lay(
         gandr_surface_syntax::SourceText::from(source),
         &crate::unit::Unit::single(),
@@ -1034,14 +1031,7 @@ fn an_order_calls_the_prelude_s_order_2333()
     // operations, `OrdInteger` and `OrdString` its candidates, and the
     // operands force one. A source's own `lt` does not capture its `<`; a unit
     // with no prelude keeps the primitive.
-    let source = "\
-def below() -> Bool { 3 < 4 }
-def atMost() -> Bool { 3 <= 4 }
-def above() -> Bool { \"beta\" > \"alpha\" }
-def atLeast() -> Bool { \"beta\" >= \"alpha\" }
-def lt(a : Bool) -> Bool { a }
-def own() -> Bool { 4 < 3 }
-";
+    let source = include_str!("tests/fixtures/an-order-calls-the-prelude-s-order-2333.gandr");
     let (text, unit) = crate::prelude::lay(
         gandr_surface_syntax::SourceText::from(source),
         &crate::unit::Unit::single(),
@@ -1075,26 +1065,8 @@ fn a_model_slot_one_module_answers_checks_as_supplied_739()
     // `Up` counts integers and `Flips` flips a flag, a counter through its
     // include: `4` forces `Up`, an annotated flag forces `Flips`, and each
     // call checks as if it named its module.
-    let source = "\
-theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
-theory ResetCounter where { include Counter; oper reset : (c : C) --> C; }
-module Up : Model(Counter) where {
-  type C = Integer;
-  def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 1 }
-  def read(c : Integer) -> -F Integer { c }
-}
-module Flips : Model(ResetCounter) where {
-  type C = Bool;
-  def zero = false;
-  def incr(c : Bool) -> -F Bool { match c { | true => false | false => true } }
-  def read(c : Bool) -> -F Integer { match c { | true => 1 | false => 0 } }
-  def reset(c : Bool) -> -F Bool { false }
-}
-def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read (s.incr c) }
-def counted() -> -F Integer { stepped 4 }
-def flipped() -> -F Integer { stepped (false : Bool) }
-";
+    let source =
+        include_str!("tests/fixtures/a-model-slot-one-module-answers-checks-as-supplied-739.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert_checked(&module, &mut arena);
@@ -1107,23 +1079,9 @@ fn an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317()
     // the integers and `Flips` over flags in scope: the slot binds no hole for
     // `C`, so it files the integers' code and each candidate its own
     // carrier's, and the call checks as `Up` alone answers it.
-    let source = "\
-theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
-module Up : Model(Counter) where {
-  type C = Integer;
-  def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 1 }
-  def read(c : Integer) -> -F Integer { c }
-}
-module Flips : Model(Counter) where {
-  type C = Bool;
-  def zero = false;
-  def incr(c : Bool) -> -F Bool { match c { | true => false | false => true } }
-  def read(c : Bool) -> -F Integer { match c { | true => 1 | false => 0 } }
-}
-def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read (s.incr s.zero) }
-def counted() -> -F Integer { fromZero () }
-";
+    let source = include_str!(
+        "tests/fixtures/an-omitted-manifest-model-implicit-files-its-fixed-sorts-2317.gandr"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let counted = declaration_named(&module, SurfaceName::from("counted"));
@@ -1145,17 +1103,9 @@ fn a_call_deeper_than_its_callee_s_fixed_sort_files_its_slot_4403()
 {
     // `fromZero()` stands under two matches, deeper than `Integer` stands in
     // `fromZero`'s signature: the slot still files the integers' code.
-    let source = "\
-theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
-module Up : Model(Counter) where {
-  type C = Integer;
-  def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 1 }
-  def read(c : Integer) -> -F Integer { c }
-}
-def fromZero[s : Model(Counter) with sort C = Integer]() -> -F Integer { s.read (s.incr s.zero) }
-def deeper() -> -F Integer { let a = 1; let b = a; let c = b; match c { | _ => match c { | _ => fromZero () } } }
-";
+    let source = include_str!(
+        "tests/fixtures/a-call-deeper-than-its-callee-s-fixed-sort-files-its-slot-4403.gandr"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let deeper = declaration_named(&module, SurfaceName::from("deeper"));
@@ -1174,8 +1124,8 @@ fn a_model_implicit_named_alone_is_refused_739()
     // `s` is its components: passed where a model value is asked, it is
     // refused naming it.
     let source = format!(
-        "{STEPPED}def observe(m : Model(Counter)) -> -F Integer {{ 0 }}\ndef \
-         named[s : Model(Counter)] (c : s.C) -> -F Integer {{ observe s }}\n"
+        include_str!("tests/unformatted/a-model-implicit-named-alone-is-refused-739.gandr"),
+        STEPPED = STEPPED
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -1231,7 +1181,8 @@ fn a_row_label_is_an_instance_after_every_parameter_2271()
     // its row, each at a region binder of its own: the type its explicit twin
     // writes. Its row's tail reads `r` past both instances, which no type
     // names, as the twin's reads it past `x` and `y`.
-    let source = "def both[r : Row](s : String) -> -F [x : std.io.Console.Eff, y : std.io.Console.Eff | r] Unit { y.print s }\ndef twin[r : Row, q : Region, q1 : Region](s : String, x : Cap {print} at q, y : Cap {print} at q1) -> -F [q : std.io.Console.Eff, q1 : std.io.Console.Eff | r] Unit { y.print s }\n";
+    let source =
+        include_str!("tests/fixtures/a-row-label-is-an-instance-after-every-parameter-2271.gandr");
     let mut arena = CoreArena::new();
     let text = hosting(source);
     let module = hosted(&text, &mut arena);
@@ -1282,9 +1233,12 @@ fn an_omitted_instance_is_the_one_handled_in_scope_2271()
     // `say()` inside one scope passes its capability, as `say[.out = a]()`
     // does; inside a function whose row labels an instance, it passes that.
     let source = format!(
-        "{SAY}def resolved() -> -F Integer {{ {} }}\ndef named() -> -F Integer {{ {} }}\ndef relayed() -> -F [o : std.io.Console.Eff] Unit {{ say () }}\ndef relayedNamed() -> -F [o : std.io.Console.Eff] Unit {{ say[.out = o] () }}\n",
+        include_str!(
+            "tests/unformatted/an-omitted-instance-is-the-one-handled-in-scope-2271.gandr"
+        ),
         handled("a".into(), SourceText::from("say(); pure 0")),
         handled("a".into(), SourceText::from("say[.out = a](); pure 0")),
+        SAY = SAY,
     );
     let mut arena = CoreArena::new();
     let text = hosting(source.as_str());
@@ -1308,8 +1262,11 @@ fn an_omitted_instance_is_refused_when_none_or_several_stand_2271()
 {
     let inner = handled("b".into(), SourceText::from("say(); pure 0"));
     let source = format!(
-        "{SAY}def none() -> -F [std.io.Console.Eff] Unit {{ say () }}\ndef several() -> -F Integer {{ {} }}\n",
+        include_str!(
+            "tests/unformatted/an-omitted-instance-is-refused-when-none-or-several-stand-2271.gandr"
+        ),
         handled("a".into(), SourceText::from(inner.as_str())),
+        SAY = SAY,
     );
     let mut arena = CoreArena::new();
     let text = hosting(source.as_str());

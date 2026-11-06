@@ -1,0 +1,10 @@
+pub theory Nat where {
+  sort Nat : Type;
+  oper zero : () --> Nat;
+  oper succ : (n : Nat) --> Nat;
+}
+pub data Point : Type where { | One : Point }
+pub def one : Point;
+def one = One;
+def pending = ?;
+def inc(n : Integer) -> -F Integer { return n + 1 }

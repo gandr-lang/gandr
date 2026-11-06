@@ -27,24 +27,11 @@ use crate::unit::Unit;
 
 /// The state theory: a value sort the handler fixes, the carrier, and an
 /// operation reading the value and one writing it.
-const STATE: &str = r"theory State where {
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  oper put : (s : S, k : C) --> C;
-}";
+const STATE: &str = include_str!("tests/unformatted/state.gandr");
 
 /// A cost theory: the cost sort the handler fixes, the carrier, a charge, and
 /// the cost monoid's unit and sum, with decalf's two laws.
-const COST: &str = r"theory Cost where {
-  sort N : Type+;
-  sort C : Type;
-  oper charge : (c : N, k : C) --> C;
-  oper zero : N;
-  oper plus : (a : N, b : N) --> N;
-  rule chargeZero : charge (zero ()) k <=> k;
-  rule chargeTwice : charge a (charge b k) <=> charge (plus a b) k;
-}";
+const COST: &str = include_str!("tests/fixtures/cost.gandr");
 
 /// The members of the one theory `source` declares.
 ///
@@ -153,11 +140,9 @@ fn each_member_out_of_shape_is_refused_by_its_fault_2272()
 {
     let cases: [(&str, &[&str], &str, InterfaceFault); 6] = [
         (
-            r"theory Ix where {
-  sort C : Type;
-  sort V(c : C) : Type;
-  oper get : (k : pi+ (s : C) . C) --> C;
-}",
+            include_str!(
+                "tests/fixtures/each-member-out-of-shape-is-refused-by-its-fault-2272-1.gandr"
+            ),
             &["V"],
             "V",
             InterfaceFault::Indexed,
@@ -165,34 +150,25 @@ fn each_member_out_of_shape_is_refused_by_its_fault_2272()
         (STATE, &["S", "C"], "C", InterfaceFault::Fixed),
         (STATE, &[], "S", InterfaceFault::Unfixed),
         (
-            r"theory Peek where {
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  oper peek : (k : C) --> S;
-}",
+            include_str!(
+                "tests/fixtures/each-member-out-of-shape-is-refused-by-its-fault-2272-2.gandr"
+            ),
             &["S"],
             "peek",
             InterfaceFault::Carrier,
         ),
         (
-            r"theory Ends where {
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  oper put : (k : C, s : S) --> C;
-}",
+            include_str!(
+                "tests/fixtures/each-member-out-of-shape-is-refused-by-its-fault-2272-3.gandr"
+            ),
             &["S"],
             "put",
             InterfaceFault::Continuation,
         ),
         (
-            r"theory Twice where {
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  oper or : (l : C, r : C) --> C;
-}",
+            include_str!(
+                "tests/fixtures/each-member-out-of-shape-is-refused-by-its-fault-2272-4.gandr"
+            ),
             &["S"],
             "or",
             InterfaceFault::Payload,
@@ -214,14 +190,7 @@ fn each_member_out_of_shape_is_refused_by_its_fault_2272()
 }
 
 /// The state theory with both store laws: put-get and put-put.
-const PUT_LAWS: &str = r"theory StatePutLaws where {
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  oper put : (s : S, k : C) --> C;
-  rule putGet : put s (get (bind t . (k t))) <=> put s (k s);
-  rule putPut : put s (put u k) <=> put u k;
-}";
+const PUT_LAWS: &str = include_str!("tests/unformatted/put-laws.gandr");
 
 /// Each law of a theory reads for its handler at its place among the
 /// theory's rules, over the metavariables it names; a law storing what a
@@ -246,13 +215,7 @@ fn a_theory_s_laws_read_for_its_handler_2272()
         ],
         "put-get over `s` and `k`, put-put over `s`, `u` and `k`, in order"
     );
-    let odd = r"theory Odd where {
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  oper put : (s : S, k : C) --> C;
-  rule putPut : put s (put (f s) k) <=> put (f s) k;
-}";
+    let odd = include_str!("tests/fixtures/a-theory-s-laws-read-for-its-handler-2272-odd.gandr");
     let members_of = members(SourceText::from(odd));
     let read_of = operations(&members_of, &fixed).unwrap();
     let Err((named, fault)) = laws(&members_of, &[], &read_of.effects, &read_of.values)
@@ -276,16 +239,9 @@ fn a_theory_s_laws_read_for_its_handler_2272()
 fn a_theory_s_laws_rewrite_its_scope_s_subject_2272()
 {
     let fixed = fixing([Name::from("S")]);
-    let laws_of = r"theory StateLaws where {
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  oper put : (s : S, k : C) --> C;
-  rule getGet : get (bind s . (get (bind t . (k s t)))) <=> get (bind s . (k s s));
-  rule swap : put s (get (bind t . (k t))) <=> get (bind t . (put s (k t)));
-  rule putGet : put s (get (bind t . (k t))) <=> put s (k s);
-  rule putPut : put s (put u k) <=> put u k;
-}";
+    let laws_of = include_str!(
+        "tests/fixtures/a-theory-s-laws-rewrite-its-scope-s-subject-2272-laws-of.gandr"
+    );
     let members_of = members(SourceText::from(laws_of));
     let operations_of = operations(&members_of, &fixed).unwrap();
     let read = |turns: &[RuleTurn]| -> Vec<RuleIndex> {

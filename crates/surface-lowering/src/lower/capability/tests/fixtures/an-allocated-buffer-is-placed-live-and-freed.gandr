@@ -1,0 +1,12 @@
+def ring() -> -F Unit {
+  handle r : std.io.Ring.Eff {
+    let b = r.alloc 4096;
+    r.free b
+  } with { | pure(x) => pure x | oper alloc(n, b, k) => k b | oper free(b, k) => k *{} }
+}
+def named() -> -F Unit {
+  handle c : std.process.Exit.Eff { let code = c.exit 1; pure code } with {
+    | pure(x) => pure x
+    | oper exit(code, k) => k *{}
+  }
+}

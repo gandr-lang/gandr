@@ -1,0 +1,10 @@
+def twice(n : Integer) -> -F Unit {
+  let d = fork (c : &{go : end}) { offer(c) { | go => close(c) | go => close(c) } };
+  select(d, go);
+  close(d)
+}
+def patterned(n : Integer) -> -F Unit {
+  let d = fork (c : &{go : end}) { offer(c) { | 7 => close(c) } };
+  select(d, go);
+  close(d)
+}

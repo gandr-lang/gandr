@@ -1,0 +1,6 @@
+theory Decision where {
+  sort C : Type;
+  oper eq : (a : C, b : C) --> Bool;
+  law refl : (a : C) -> Path[.A = Bool](eq a a, true);
+  law flip : (a : C, b : C, p : Path[.A = Bool](eq a b, true)) -> Path[.A = Bool](eq b a, true);
+}

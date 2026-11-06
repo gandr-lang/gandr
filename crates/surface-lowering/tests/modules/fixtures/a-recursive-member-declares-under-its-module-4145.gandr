@@ -1,0 +1,13 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+module M where {
+  def rec down(n : Nat) -> Nat {
+    match n { | Zero => Zero | Succ(k) => down[<] k }
+  }
+  @[ checks ]
+  def rec again(n : Nat) -> Nat {
+    match n { | Zero => Zero | Succ(k) => again[<] k }
+  }
+}

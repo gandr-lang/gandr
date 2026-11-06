@@ -1,0 +1,70 @@
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
+}
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+}
+def up(n : Int) -> -F Int {
+  S n
+}
+def inBody(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Circle](Base, Base) {
+  Path.back p
+}
+def inType(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](
+  Path.step p loop,
+  Path.step p loop
+) {
+  Path.here (Path.step p loop)
+}
+def twice(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Circle](Base, Base) {
+  Path.step p p
+}
+def overCall(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Circle](Base, Base) {
+  Path.back (twice p)
+}
+def inTypeCall(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](
+  Path.step (twice p) p,
+  Path.step (twice p) p
+) {
+  Path.here (Path.step (twice p) p)
+}
+def later(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](
+  Path.step (twice p) p,
+  Path.step (twice p) p
+) {
+  Path.back (inTypeCall p)
+}
+def sig : (a : Int) -> Path[.A = Int](a, a);
+def overSig(a : Int) -> -F Path[.A = Int](S a, S a) {
+  Path.step (Path.ap up (sig a)) (Path.here (S a))
+}
+def rec descend(b : Int) -> -F Path[.A = Int](b, b) {
+  match b {
+    | Z => Path.here Z
+    | S(x) => Path.step (Path.ap up (descend[<] x)) (Path.here (S x))
+  }
+}
+def mapped(f : +U[ω] (Circle -> -F Int)) -> -F Path[.A = Int](f Base, f Base) {
+  Path.back (Path.ap f loop)
+}
+def pointed(c : Circle) -> -F Path[.A = Circle](Base, Base) {
+  Path.step (Path.back c) loop
+}
+def size(p : Path[.A = Circle](Base, Base)) -> -F Circle {
+  return Base
+}
+def same(c : Circle) -> -F Circle {
+  return c
+}
+def joined : (
+  q : Path[.A = Circle](Base, Base),
+  p : Path[.A = Circle](Base, Base)
+) -> Path[.A = Circle](size (Path.step p q), size (Path.step p q));
+def unjoined(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Circle](
+  same (size (Path.step p p)),
+  same (size (Path.step p p))
+) {
+  Path.back (Path.ap same (joined p p))
+}

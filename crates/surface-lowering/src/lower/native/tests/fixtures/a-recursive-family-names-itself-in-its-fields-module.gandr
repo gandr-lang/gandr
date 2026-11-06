@@ -1,0 +1,5 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+data List(a : Type) : Type where { | Nil : List(a) | Cons : (head : a, tail : List(a)) --> List(a) }
+data Bad : Type where { | MkBad : (f : +U (Bad -> -F Nat)) --> Bad }
+def self_named : Later;
+data Later : Type where { | Now : Later }

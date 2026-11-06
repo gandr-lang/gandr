@@ -1,0 +1,19 @@
+{NAT}module Asked where {{
+@![ explicit_exits ]
+def kept(n : Nat) -> -F Nat {{ n }}
+}}
+module Late where {{
+def first(n : Nat) -> -F Nat {{ Zero }}
+@![ explicit_exits ]
+}}
+module Outer where {{
+module Inner where {{
+@![ explicit_exits ]
+def deep(n : Nat) -> -F Nat {{ Succ n }}
+}}
+}}
+@[ explicit_exits ]
+module Doubled where {{
+@![ explicit_exits ]
+def twice(m : Nat) -> -F Nat {{ m }}
+}}

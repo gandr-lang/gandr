@@ -1,0 +1,4 @@
+pub theory Mag where {
+  sort N : Type;
+  oper add : (x : N, y : N) --> N;
+}

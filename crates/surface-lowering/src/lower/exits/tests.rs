@@ -193,16 +193,10 @@ pub(in crate::lower) fn assert_same_body(
 fn the_paths_of_a_computation_are_surveyed_through_nesting()
 {
     let source = format!(
-        "{NAT}def f(n : Nat) -> -F Nat {{\n\
-         let a = match n {{ | Zero => pure n | Succ(p) => pure p }} ;\n\
-         let b = match n {{ | Zero => return n | Succ(p) => pure p }} ;\n\
-         let c = match n {{ | Zero => pure n | Succ(p) => match p {{ | Zero => return p | Succ(q) => pure q }} }} ;\n\
-         let d = match n {{ | Zero => pure n | Succ(p) => match p {{ | Zero => pure p | Succ(q) => pure q }} }} ;\n\
-         let e = match n {{ | Zero => return n | Succ(p) => match p {{ | Zero => return p | Succ(q) => return q }} }} ;\n\
-         match n {{ | Zero => return n | Succ(p) => return p }}\n\
-         }}\n\
-         def g : +U (-F Nat) ;\ndef g = thunk {{ return Zero }} ;\n\
-         def h : +U (-F Nat & -F Nat) ;\ndef h = thunk {{ &{{.0 => return Succ Zero, .1 => pure Zero}} }} ;\n"
+        include_str!(
+            "tests/unformatted/the-paths-of-a-computation-are-surveyed-through-nesting.gandr"
+        ),
+        NAT = NAT
     );
     assert_surveyed(SourceText::from(source.as_str()), &[
         (
@@ -247,9 +241,8 @@ fn the_paths_of_a_computation_are_surveyed_through_nesting()
 fn a_bound_match_continues_its_block_at_each_local_arm()
 {
     let source = format!(
-        "{NAT}def once(n : Nat) -> -F Nat {{ let m = match n {{ | Zero => return n | Succ(p) => pure p }} ; return Succ m }}\n\
-         def once_by_hand(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => return Succ p }} }}\n\
-         def kept(n : Nat) -> -F Nat {{ let m = match n -> -F Nat {{ | Zero => pure n | Succ(p) => pure p }} ; return Succ m }}\n"
+        include_str!("tests/unformatted/a-bound-match-continues-its-block-at-each-local-arm.gandr"),
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -274,8 +267,10 @@ fn a_bound_match_continues_its_block_at_each_local_arm()
 fn a_bound_match_continues_its_block_through_a_split_arm()
 {
     let source = format!(
-        "{NAT}def split(n : Nat) -> -F Nat {{ let m = match n {{ | Zero => return n | Succ(p) => {{ let *{{a, b}} = *{{p, n}} ; pure a }} }} ; return Succ m }}\n\
-         def split_by_hand(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => {{ let *{{a, b}} = *{{p, n}} ; return Succ a }} }} }}\n"
+        include_str!(
+            "tests/unformatted/a-bound-match-continues-its-block-through-a-split-arm.gandr"
+        ),
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -292,10 +287,8 @@ fn a_bound_match_continues_its_block_through_a_split_arm()
 #[test]
 fn a_block_ending_in_a_statement_returns_the_unit_1205()
 {
-    let source = "def stated() -> -F Unit { pure *{}; }\n\
-         def noop() -> -F Unit { return *{} }\n\
-         def some(b : Bool) -> -F Unit { match b { | true => return *{} | false => noop () }; }\n\
-         def some_by_hand(b : Bool) -> -F Unit { match b { | true => return *{} | false => { noop (); return *{} } } }\n";
+    let source =
+        include_str!("tests/fixtures/a-block-ending-in-a-statement-returns-the-unit-1205.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let returns = |id: ComputationId| matches!(arena.computation(id), Some(Computation::Return(_)));
@@ -367,26 +360,8 @@ fn a_use_a_local_end_replaces_keeps_its_bytes()
 fn an_exit_under_nesting_leaves_its_function()
 {
     let source = format!(
-        "{NAT}def pick(n : Nat) -> -F Nat {{\n\
-         let m = match n {{\n\
-         | Zero => return n\n\
-         | Succ(p) => {{ let q = match p {{ | Zero => return n | Succ(r) => pure r }} ; pure q }}\n\
-         }} ;\n\
-         return Succ m\n\
-         }}\n\
-         def pick_by_hand(n : Nat) -> -F Nat {{\n\
-         match n {{\n\
-         | Zero => return n\n\
-         | Succ(p) => match p {{ | Zero => return n | Succ(r) => return Succ r }}\n\
-         }}\n\
-         }}\n\
-         def deep(n : Nat) -> -F Nat {{\n\
-         let m = match n {{ | Succ(Succ(q)) => return q | Succ(Zero) => pure n | Zero => pure n }} ;\n\
-         return Succ m\n\
-         }}\n\
-         def deep_by_hand(n : Nat) -> -F Nat {{\n\
-         match n {{ | Succ(Succ(q)) => return q | Succ(Zero) => return Succ n | Zero => return Succ n }}\n\
-         }}\n"
+        include_str!("tests/unformatted/an-exit-under-nesting-leaves-its-function.gandr"),
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -434,9 +409,8 @@ fn an_exit_under_nesting_leaves_its_function()
 fn code_no_path_reaches_is_refused()
 {
     let source = format!(
-        "{NAT}def after(n : Nat) -> -F Nat {{ let m = match n {{ | Zero => return n | Succ(p) => return p }} ; let k = m ; return k }}\n\
-         def last(n : Nat) -> -F Nat {{ let m = match n {{ | Zero => return n | Succ(p) => return p }} ; return m }}\n\
-         def nested(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => {{ let q = become pure p ; return Succ q }} }} }}\n"
+        include_str!("tests/unformatted/code-no-path-reaches-is-refused.gandr"),
+        NAT = NAT
     );
     let module = lowered(SourceText::from(source.as_str()), &mut CoreArena::new());
     for (name, unreached) in [
@@ -500,29 +474,10 @@ pub(in crate::lower) fn spelled_within(
 fn a_tail_without_an_exit_takes_the_one_its_polarity_names()
 {
     let source = format!(
-        "{NAT}def value(n : Nat) -> -F Nat {{ n }}\n\
-         def value_by_hand(n : Nat) -> -F Nat {{ return n }}\n\
-         def built(n : Nat) -> -F Nat {{ Succ n }}\n\
-         def built_by_hand(n : Nat) -> -F Nat {{ return Succ n }}\n\
-         def counted(n : Nat) -> -F Integer {{ 3 }}\n\
-         def counted_by_hand(n : Nat) -> -F Integer {{ return 3 }}\n\
-         def paired(n : Nat) -> -F (Nat * Nat) {{ *{{n, n}} }}\n\
-         def paired_by_hand(n : Nat) -> -F (Nat * Nat) {{ return *{{n, n}} }}\n\
-         def annotated(n : Nat) -> -F Nat {{ (Succ n : Nat) }}\n\
-         def annotated_by_hand(n : Nat) -> -F Nat {{ return (Succ n : Nat) }}\n\
-         def called(n : Nat) -> -F Nat {{ value n }}\n\
-         def called_by_hand(n : Nat) -> -F Nat {{ become value n }}\n\
-         def produced(n : Nat) -> -F Nat {{ pure n }}\n\
-         def produced_by_hand(n : Nat) -> -F Nat {{ become pure n }}\n\
-         def produced_returned(n : Nat) -> -F Nat {{ return n }}\n\
-         def arms(n : Nat) -> -F Nat {{ match n {{ | Zero => n | Succ(p) => value p }} }}\n\
-         def arms_by_hand(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become value p }} }}\n\
-         def sequenced(n : Nat) -> -F Nat {{ let m = value n ; Succ m }}\n\
-         def sequenced_by_hand(n : Nat) -> -F Nat {{ let m = value n ; return Succ m }}\n\
-         def early(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => {{ let q = match p {{ | Zero => return p | Succ(r) => pure r }} ; pure q }} }} }}\n\
-         def early_by_hand(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => {{ let q = match p {{ | Zero => return p | Succ(r) => pure r }} ; become pure q }} }} }}\n\
-         def suspended(n : Nat) -> -F (+U (-F Nat)) {{ thunk {{ value n }} }}\n\
-         def suspended_by_hand(n : Nat) -> -F (+U (-F Nat)) {{ return thunk {{ become value n }} }}\n"
+        include_str!(
+            "tests/unformatted/a-tail-without-an-exit-takes-the-one-its-polarity-names.gandr"
+        ),
+        NAT = NAT
     );
     let text = SourceText::from(source.as_str());
     let mut arena = CoreArena::new();
@@ -585,16 +540,8 @@ fn a_tail_without_an_exit_takes_the_one_its_polarity_names()
 fn an_explicit_exits_attribute_asks_within_its_form()
 {
     let source = format!(
-        "{NAT}@[ explicit_exits ]\n\
-         module Asked where {{\n\
-         def kept(n : Nat) -> -F Nat {{ n }}\n\
-         def called(n : Nat) -> -F Nat {{ kept n }}\n\
-         }}\n\
-         @[ explicit_exits ]\n\
-         def marked(n : Nat) -> -F Nat {{ Succ n }}\n\
-         def unmarked(n : Nat) -> -F Nat {{ Zero }}\n\
-         @[ explicit_exits, explicit_exits ]\n\
-         def twice(n : Nat) -> -F Nat {{ pure n }}\n"
+        include_str!("tests/unformatted/an-explicit-exits-attribute-asks-within-its-form.gandr"),
+        NAT = NAT
     );
     let text = SourceText::from(source.as_str());
     let module = lowered(text, &mut CoreArena::new());
@@ -643,25 +590,8 @@ fn an_explicit_exits_attribute_asks_within_its_form()
 fn an_inner_attribute_decorates_its_module()
 {
     let source = format!(
-        "{NAT}module Asked where {{\n\
-         @![ explicit_exits ]\n\
-         def kept(n : Nat) -> -F Nat {{ n }}\n\
-         }}\n\
-         module Late where {{\n\
-         def first(n : Nat) -> -F Nat {{ Zero }}\n\
-         @![ explicit_exits ]\n\
-         }}\n\
-         module Outer where {{\n\
-         module Inner where {{\n\
-         @![ explicit_exits ]\n\
-         def deep(n : Nat) -> -F Nat {{ Succ n }}\n\
-         }}\n\
-         }}\n\
-         @[ explicit_exits ]\n\
-         module Doubled where {{\n\
-         @![ explicit_exits ]\n\
-         def twice(m : Nat) -> -F Nat {{ m }}\n\
-         }}\n"
+        include_str!("tests/unformatted/an-inner-attribute-decorates-its-module.gandr"),
+        NAT = NAT
     );
     let text = SourceText::from(source.as_str());
     let module = lowered(text, &mut CoreArena::new());
@@ -710,21 +640,8 @@ fn an_inner_attribute_decorates_its_module()
 fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
 {
     let source = format!(
-        "{NAT}def succeeded(n : Nat) -> -F Nat {{ return Succ n }}\n\
-         def succeeded_bare(n : Nat) -> -F Nat {{ Succ n }}\n\
-         def arms(m : Nat) -> -F Nat {{ match m {{ | Zero => return m | Succ(p) => return p }} }}\n\
-         def arms_bare(m : Nat) -> -F Nat {{ match m {{ | Zero => m | Succ(p) => p }} }}\n\
-         def early(k : Nat) -> -F Nat {{ match k {{ | Zero => return k | Succ(j) => {{ let q = match j {{ | Zero => return j | Succ(r) => pure r }} ; pure q }} }} }}\n\
-         def computed(n : Nat) -> -F Nat {{ return succeeded n }}\n\
-         def stated(n : Nat) -> -F Nat {{ return n ; }}\n\
-         def grouped(n : Nat) -> -F Nat {{ return (Succ n) }}\n\
-         def quoted(t : Type) -> -F Type {{ return (+U (t -> -F t)) }}\n\
-         def held(c : Nat) -> -F Nat {{ match c {{ | Zero => return c | Succ(s) => return s }} ; }}\n\
-         def holed(n : Nat) -> -F Nat {{ return ?h }}\n\
-         @[ explicit_exits ]\n\
-         def asked(n : Nat) -> -F Nat {{ return n }}\n\
-         @[ explicit_exits, explicit_exits ]\n\
-         def refused(n : Nat) -> -F Nat {{ return n }}\n"
+        include_str!("tests/unformatted/a-tail-return-of-a-value-is-listed-as-elidable-1327.gandr"),
+        NAT = NAT
     );
     let text = SourceText::from(source.as_str());
     let mut arena = CoreArena::new();
@@ -780,8 +697,10 @@ fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
 fn a_match_continuing_its_block_answers_what_the_block_does()
 {
     let source = format!(
-        "{NAT}def stated(n : Nat) -> -F Nat {{ let m = match n -> (-F Nat) {{ | Zero => return n | Succ(p) => pure p }} ; return m }}\n\
-         def taken(n : Nat) -> -F (+U (-F Nat)) {{ let m = match n {{ | Zero => return thunk {{ return n }} | Succ(p) => pure p }} ; return thunk {{ return Succ m }} }}\n"
+        include_str!(
+            "tests/unformatted/a-match-continuing-its-block-answers-what-the-block-does.gandr"
+        ),
+        NAT = NAT
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -808,8 +727,8 @@ fn a_match_continuing_its_block_answers_what_the_block_does()
 #[test]
 fn a_variable_answering_at_its_own_bytes_gains_no_label()
 {
-    let source = "def absent(r : *{n : Integer, s : String}) -> -F Integer {\n  match r {\n    | *{.z = \
-                  m} => return m\n  }\n}\n";
+    let source =
+        include_str!("tests/fixtures/a-variable-answering-at-its-own-bytes-gains-no-label.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let used = spelled(SourceText::from(source), SourceText::from("return m"));
@@ -830,11 +749,8 @@ fn a_variable_answering_at_its_own_bytes_gains_no_label()
 #[test]
 fn a_renamed_parameter_type_stands_in_only_at_other_bytes()
 {
-    let source = "module Seed :> *{ type T, zero : T, next : +U[ω] (T -> -F T) } where {\n  type T = \
-                  Integer;\n  def zero = 0;\n  def next(n : T) -> -F T { become n + 1 }\n}\n\nmodule \
-                  MkCounter(S : *{ type T, zero : T, next : +U[ω] (T -> -F T) }) :> *{ type T, \
-                  seed : T, step : +U[ω] (T -> -F T) } where {\n  type T = S.T;\n  def seed = \
-                  S.zero;\n  def step = S.next;\n}\n\nmodule A = MkCounter(Seed) ;\n";
+    let source =
+        include_str!("tests/fixtures/a-renamed-parameter-type-stands-in-only-at-other-bytes.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let origins = module.origins();

@@ -1,0 +1,3 @@
+def id : (Integer) -> Integer = ~intro assumption;
+def second : (Integer, Unit) -> Integer = ~intro (intro assumption);
+def pick(a : Integer, u : Unit) -> -F Integer { return ~assumption }

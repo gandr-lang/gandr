@@ -1,0 +1,3 @@
+module M where { def twice(n : Integer) -> Integer { n + n } }
+def width(n : Integer) -> Type { return Integer }
+def keep(n : Integer, x : width(M.twice(n))) -> Integer { x }

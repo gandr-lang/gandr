@@ -1,0 +1,6 @@
+theory Doubling where {
+  sort Nat : Type;
+  oper l : (a : Nat) --> (b : Nat);
+  oper r : (a : Nat) --> (b : Nat);
+  oper add : (a : Nat, b : Nat) --> (c : Nat);
+  rule blow : (data w0 : Nat) ==> (w12 : Nat) {

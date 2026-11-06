@@ -1,0 +1,4 @@
+{VARIABLES}def swapped(g : Ctx, a : ObjTy, b : ObjTy, v : Var(g, a)) -> Var(Extend(g, a), b) {{
+let x = There g a b v;
+x
+}}

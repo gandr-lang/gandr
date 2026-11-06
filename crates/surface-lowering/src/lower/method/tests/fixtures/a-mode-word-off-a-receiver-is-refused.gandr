@@ -1,0 +1,5 @@
+def top(x : shared Integer) -> -F Integer { pure x }
+module M where { def second(self : shared Integer, y : consumed Integer) -> -F Integer { pure y } }
+def deduced[m : Mode](x : m Integer) -> -F Integer { pure 0 }
+def nested(xs : List(m Integer)) -> -F Integer { pure 0 }
+def pick(t : Type, x : t) -> -F t { pure x }

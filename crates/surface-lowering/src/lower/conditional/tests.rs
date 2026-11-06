@@ -53,10 +53,8 @@ fn branches(
 #[test]
 fn a_conditional_runs_the_branch_its_condition_selects()
 {
-    let source = "def pick(b : Bool) -> -F Integer { if b { return 1 } else { return 2 } }\n\
-                  def below(n : Integer) -> -F Integer { if n < 3 { 1 } else { 2 } }\n\
-                  def answered(b : Bool) -> -F Integer { if b -> -F Integer { 1 } else { 2 } }\n\
-                  def literal() -> -F Integer { if true { return 1 } else { return 2 } }\n";
+    let source =
+        include_str!("tests/fixtures/a-conditional-runs-the-branch-its-condition-selects.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     for (name, tested) in [
@@ -104,9 +102,8 @@ fn an_else_if_tests_its_own_condition_in_the_false_branch()
 #[test]
 fn a_written_answer_ascribes_the_conditional_2089()
 {
-    let source = "def bound() -> -F Integer {\n  let m = if true -> -F Integer { pure 1 } else { \
-                  pure 2 } ;\n  pure (m + 1)\n}\ndef stated(b : Bool) -> -F Integer { if b { 1 } \
-                  else { 2 } }\n";
+    let source =
+        include_str!("tests/fixtures/a-written-answer-ascribes-the-conditional-2089.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("bound")));

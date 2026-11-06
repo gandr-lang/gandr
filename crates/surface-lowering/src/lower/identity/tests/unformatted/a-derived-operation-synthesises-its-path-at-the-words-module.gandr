@@ -1,0 +1,27 @@
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
+}
+def collapse(x : Circle) -> -F Circle {
+  match x {
+    | Base => Base
+  }
+}
+def two : Path[.A = Circle](Base, Base);
+def two = Path.step loop loop;
+def undone : Path[.A = Circle](Base, Base);
+def undone = Path.back (Path.step loop loop);
+def collapsed : Path[.A = Path[.A = Circle](Base, Base)](Path.ap collapse loop, Path.here Base);
+def unread : Path[.A = Integer](1, 1);
+def unread = Path.back (Path.here 1);
+def pointed : Path[.A = Circle](Base, Base);
+def pointed = Path.ap Base loop;
+def broken(x : Circle) -> -F Bogus {
+  match x {
+    | Base => Base
+  }
+}
+def over_broken : Path[.A = Circle](Base, Base);
+def over_broken = Path.ap broken loop;
+def emptyFirst : Path[.A = Circle](Base, Base);
+def emptyFirst = Path.step (Path.here Base) loop;

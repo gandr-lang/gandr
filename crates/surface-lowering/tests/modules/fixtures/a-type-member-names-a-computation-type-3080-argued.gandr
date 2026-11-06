@@ -1,0 +1,3 @@
+module Q where { type V = -F Integer; }
+module Mk(S : *{ type V }) where { def one() -> Integer { 1 } }
+module J = Mk(Q);

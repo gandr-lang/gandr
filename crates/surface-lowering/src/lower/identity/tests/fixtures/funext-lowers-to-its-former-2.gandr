@@ -1,0 +1,5 @@
+def funext(x : Integer, y : Integer) -> -F Integer {
+  return x
+}
+def call : +U (-F Integer);
+def call = thunk { become funext 1 2 };

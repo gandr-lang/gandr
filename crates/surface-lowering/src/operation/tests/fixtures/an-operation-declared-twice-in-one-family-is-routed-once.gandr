@@ -1,0 +1,7 @@
+data Flag : Type where {
+  | Down : Flag
+  | Up : Flag
+  oper keep : (x : Flag) --> Flag;
+  oper keep : (x : Flag) --> Flag;
+  rule : keep x ==> x;
+}

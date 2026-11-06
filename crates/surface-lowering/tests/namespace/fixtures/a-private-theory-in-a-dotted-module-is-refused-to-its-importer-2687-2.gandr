@@ -1,0 +1,7 @@
+import "./kit.gandr";
+module Seen : Model(Kit.Shown) where {
+  def label : String = "seen";
+}
+module Unseen : Model(Kit.Hidden) where {
+  def label : String = "unseen";
+}
