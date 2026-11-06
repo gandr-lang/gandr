@@ -69,7 +69,8 @@ selected=$(.config/gate-scope/select.bash --landing)
 heavy=$(jq -r --arg selected "$selected" '[.groups[][]] as $heavy | [$selected | split("\n")[] | select(IN($heavy[]))] | length' .config/gate-scope/table.json)
 if (( heavy > 0 )); then
   hold_gate_slot "mise run check"
-  echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane" >&2
+  gate_bound
+  echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $gate_jobs build jobs" >&2
 else
   echo "check: the change selects no Clippy or compiler policy check, so it takes no gate slot" >&2
 fi
@@ -107,9 +108,8 @@ source .config/mise/gate.bash
 if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
 hold_gate_slot "mise run gate:all"
-NEXTEST_TEST_THREADS=$(gate_threads)
-export NEXTEST_TEST_THREADS
-echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads" >&2
+gate_bound
+echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane, $NEXTEST_TEST_THREADS test threads and $gate_jobs build jobs" >&2
 unset GATE_SCOPE
 tree=$(.config/gate-scope/passed.bash tree)
 mapfile -t checks < <(mise tasks ls --json | jq -r '.[] | .name | select(startswith("check:"))')
