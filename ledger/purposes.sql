@@ -666,6 +666,7 @@ INSERT INTO purpose VALUES('core-term','arena::BinderPrecedence','enum','Where a
 INSERT INTO purpose VALUES('core-term','arena::CompTypeId','struct','The arena-relative allocation index of a CompType node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ComputationId','struct','The arena-relative allocation index of a Computation node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::CoreArena','struct','The append-only arena owning every core term and type node of one run, addressed by four typed ids and carrying each node''s support beside it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','arena::ElementFields','struct','The fields an element of a record type or of a patched type holds: the record''s, or the base record''s less the labels the patch fixes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueId','struct','The arena-relative allocation index of a Value node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','arena::ValueTypeId','struct','The arena-relative allocation index of a ValueType node, valid while its node remains live.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','children::Visit','trait','What a walk does with each child of a core node, one method per family, each handed the binders of each zone the former opens over that child.',NULL,'fits','sound',NULL);
@@ -1550,6 +1551,7 @@ INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_QUANTIFIED_EVALUATION','c
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_QUOTE','constant','Node tag: the code of a value type, over one value type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_QUOTE_COMPUTATION','constant','Node tag: the code of a computation type, over one computation type.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_RECORD','constant','Node tag: record literal with counted labels and children.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_RESTRICT','constant','Node tag: a record value restricted to the fields it does not fix, with counted labels, over the record value and the fixed values.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_RETURNED','constant','Node tag: a returned endpoint, the value a pure computation returns, standing where a value is read, over that one computation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_SESSION_FLOW','constant','Node tag: finite session simulation, classifier and payload-proof tuple.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','tags::NODE_V_SESSION_PATH','constant','Node tag: finite bisimulation, classifier and payload-proof tuple.',NULL,'fits','sound',NULL);
@@ -2660,6 +2662,7 @@ INSERT INTO purpose VALUES('surface-lowering','form::Boxed','struct','Names whet
 INSERT INTO purpose VALUES('surface-lowering','form::Ending','enum','Names a form''s ending, so the form''s ending is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::FormName','struct','Names the name a diagnostic writes a form as, so a form''s name is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Former','enum','Names the former a form''s kind is read as, so the form''s kind is dispatched.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::Kinded','struct','Names whether a written type classifies codes, so a kind arrow lowers as the static arrow.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Offer','enum','Names a form''s offer, so the form''s offer is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Piece','enum','Names one piece of a form, a tile or an operand, so a form''s pieces are read in written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Pieces','struct','Holds a form''s pieces in written order, so a reader walks them once.',NULL,'fits','sound',NULL);
@@ -2668,6 +2671,7 @@ INSERT INTO purpose VALUES('surface-lowering','form::Repair','enum','Names a for
 INSERT INTO purpose VALUES('surface-lowering','form::Repaired','struct','Holds a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::StrayKeyword','struct','Holds a stray keyword, so the keyword''s span is named.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::TileName','struct','Names the name a diagnostic writes a tile as, so a tile''s name is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','form::classifies_codes','function','Names whether a written type classifies codes, so a kind arrow lowers as the static arrow and the formatter writes no alias for its thunk.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::former::Absent','enum','Names why a form''s kind is read as no former, so the form''s kind is unadmitted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::former_of','function','Names the former a form''s kind is read as, so the form''s kind is dispatched.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::nested::Absent','enum','Names why a form''s kind is read as no nested form, so the form''s kind is unadmitted.',NULL,'fits','sound',NULL);

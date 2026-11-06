@@ -297,6 +297,93 @@ pub struct ArenaWatermark
     words: WordMark,
 }
 
+/// The fields an element of a record type or of a patched type holds.
+///
+/// [`CoreArena::element_fields`] reads them: a record type's fields, or a
+/// patched type's base record's fields less the labels the patch fixes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ElementFields<'arena>
+{
+    /// The record's fields: the base's, for a patched type.
+    fields: &'arena alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueTypeId>,
+    /// The fields a patched type fixes, with their values; nothing for a
+    /// record type.
+    fixed: Option<&'arena alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>>,
+}
+
+impl<'arena> ElementFields<'arena>
+{
+    /// The type of the field `label` an element holds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the field's type when the record holds `label` and the patch
+    ///   does not fix it; nothing otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a free field, a fixed field and a label the base
+    ///   lacks.
+    /// - witness: `arena::tests::an_element_of_a_patched_type_holds_its_free_fields`
+    #[must_use]
+    #[inline]
+    #[spec(ensures: |ret| ret.is_none() || !self.fixed.is_some_and(|fixed| fixed.contains_key(label)))]
+    pub fn get(
+        self,
+        label: &gandr_kernel_term::FieldLabel,
+    ) -> Option<ValueTypeId>
+    {
+        if self.fixed.is_some_and(|fixed| fixed.contains_key(label)) {
+            return None;
+        }
+        self.fields.get(label).copied()
+    }
+
+    /// Each field an element holds, with its type, least label first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each label the record holds and the patch does not fix, once
+    ///   and in label order, with its type.
+    /// - panics: none.
+    /// - executable: none — the specification facade cannot expand an opaque
+    ///   iterator return type; the witness reads every field it yields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record's fields, and a patched type's fields less
+    ///   the one it fixes.
+    /// - witness: `arena::tests::an_element_of_a_patched_type_holds_its_free_fields`
+    #[must_use]
+    #[inline]
+    pub fn iter(
+        self
+    ) -> impl DoubleEndedIterator<Item = (&'arena gandr_kernel_term::FieldLabel, ValueTypeId)>
+    {
+        let fixed = self.fixed;
+        self.fields
+            .iter()
+            .filter(move |&(label, _)| fixed.is_none_or(|fixed| !fixed.contains_key(label)))
+            .map(|(label, &field)| (label, field))
+    }
+
+    /// The fields the patch fixes, with their values; nothing for a record
+    /// type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn fixed(
+        self
+    ) -> Option<&'arena alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>>
+    {
+        self.fixed
+    }
+}
+
 /// A node beside the slot its support is kept in: one row of its family's
 /// table.
 ///
@@ -2561,6 +2648,45 @@ impl CoreArena
             return base;
         }
         self.alloc_value_type(ValueType::Patched { base, fixed })
+    }
+
+    /// The fields an element of the type `ty` holds, when `ty` is a record
+    /// type or a patched type of one.
+    ///
+    /// # Specification
+    /// - requires: `ty` is a node of this arena.
+    /// - ensures: a record type's fields; a patched type's base record's fields
+    ///   less the labels it fixes; nothing for any other type, and for a
+    ///   patched type whose base is no record type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record, a patch of one of its two fields, a patch
+    ///   whose base is no record, and a type that is no record.
+    /// - witness: `arena::tests::an_element_of_a_patched_type_holds_its_free_fields`
+    #[must_use]
+    #[inline]
+    #[spec(ensures: |ret| ret.is_some() == (matches!(*ty, ValueType::Record(_)) || matches!(*ty, ValueType::Patched { base, .. } if matches!(self.value_type(base), Some(&ValueType::Record(_))))))]
+    pub fn element_fields<'arena>(
+        &'arena self,
+        ty: &'arena ValueType,
+    ) -> Option<ElementFields<'arena>>
+    {
+        if let ValueType::Record(ref fields) = *ty {
+            return Some(ElementFields {
+                fields,
+                fixed: None,
+            });
+        }
+        if let ValueType::Patched { base, ref fixed } = *ty
+            && let Some(&ValueType::Record(ref fields)) = self.value_type(base)
+        {
+            return Some(ElementFields {
+                fields,
+                fixed: Some(fixed),
+            });
+        }
+        None
     }
 
     /// Introduce a nominal constructor of `family` with explicit application

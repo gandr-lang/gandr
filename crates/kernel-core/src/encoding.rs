@@ -2009,6 +2009,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         requires: match *value {
             Value::Constructor { datatype, ref fields, .. } => matches!(self.placed.get(AnyNode::ValueType(datatype)), Maybe::Present(_)) && fields.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
             Value::Record(ref fields) => fields.values().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
+            Value::Restrict { value: restricted, ref fixed } => matches!(self.placed.get(AnyNode::Value(restricted)), Maybe::Present(_)) && fixed.values().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
             Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => matches!(self.placed.get(AnyNode::ValueType(classifier)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(payload_paths)), Maybe::Present(_)),
             Value::PathEquiv { path_type, forward, backward, .. } => matches!(self.placed.get(AnyNode::ValueType(path_type)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(forward)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(backward)), Maybe::Present(_)),
             Value::ListNil | Value::Variable(_) | Value::Literal(_) => true,
@@ -2033,6 +2034,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         ensures: record.0.get(entry_len) == Some(&u32::from(u8::from(match *value {
             Value::Constructor { .. } => gandr_kernel_term::NODE_V_CONSTRUCTOR,
             Value::Record(_) => gandr_kernel_term::NODE_V_RECORD,
+            Value::Restrict { .. } => gandr_kernel_term::NODE_V_RESTRICT,
             Value::SessionPath { .. } => gandr_kernel_term::NODE_V_SESSION_PATH,
             Value::SessionFlow { .. } => gandr_kernel_term::NODE_V_SESSION_FLOW,
             Value::PathRefl(_) => gandr_kernel_term::NODE_V_PATH_REFL,
@@ -2092,6 +2094,18 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_V_RECORD);
                 record.put_count(ComponentCount(fields.len()));
                 for (label, value) in fields {
+                    record.put_text(EncodedText(label.as_ref()));
+                    record.put_content(self.content_of(AnyNode::Value(*value)));
+                }
+            },
+            Value::Restrict {
+                value: restricted,
+                ref fixed,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_RESTRICT);
+                record.put_count(ComponentCount(fixed.len()));
+                record.put_content(self.content_of(AnyNode::Value(restricted)));
+                for (label, value) in fixed {
                     record.put_text(EncodedText(label.as_ref()));
                     record.put_content(self.content_of(AnyNode::Value(*value)));
                 }
@@ -3022,6 +3036,7 @@ fn constant_name(
         AnyNode::Value(id) => match arena.value(id) { Some(matched_native_node) => match *matched_native_node {
 Value::Constructor { datatype, ref fields, .. } => opened.eq((core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))).map(Some)),
 Value::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::Value)).map(Some)),
+Value::Restrict { value: restricted, ref fixed } => opened.eq((core::iter::once(AnyNode::Value(restricted)).chain(fixed.values().copied().map(AnyNode::Value))).map(Some)),
 Value::ListNil | Value::Variable(_) | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
 Value::Constant(index) => match constant_name(constants, index) {
     ConstantName::Definition { declared, body, .. } => opened.eq([AnyNode::ValueType(declared), AnyNode::Value(body)].into_iter().map(Some)),
@@ -3109,6 +3124,14 @@ fn push_children(
             Some(&Value::Record(ref fields)) => {
                 tasks.extend((fields.values().copied().map(AnyNode::Value)).map(EncodeTask::Open));
             },
+            Some(&Value::Restrict {
+                value: restricted,
+                ref fixed,
+            }) => tasks.extend(
+                (core::iter::once(AnyNode::Value(restricted))
+                    .chain(fixed.values().copied().map(AnyNode::Value)))
+                .map(EncodeTask::Open),
+            ),
             None | Some(&Value::ListNil | &Value::Variable(_) | &Value::Literal(_)) => {},
             Some(&Value::Constant(index)) => match constant_name(constants, index) {
                 ConstantName::Definition { declared, body, .. } => {

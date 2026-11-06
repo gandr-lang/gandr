@@ -2206,12 +2206,13 @@ fi
 # names, or `debug:test` when it names none: the observation starts in the
 # debugger. It reads the pick from GitHub again and takes the order again with
 # that reading, passing over a pick another run claimed meanwhile (#4660).
-# It then adds `status:claimed`, writes the lane's claim marker after any
-# other lane's (`.config/claims/claimed.jq`), and reads the body once more:
-# when another lane's marker stands first, the earlier claim keeps the issue,
-# and the run takes its own marker off and claims its next pick. It prints
-# the claim as `#n <title>`; `--dry-run` reads the pick again and prints it
-# without claiming.
+# It then adds `status:claimed` and writes the lane's claim marker: after any
+# other lane's when its read shows the label, else alone, as a marker without
+# the label holds no claim (`.config/claims/claimed.jq`, #5531). It reads the
+# body once more: when another lane's marker stands first, the earlier claim
+# keeps the issue, and the run takes its own marker off and claims its next
+# pick. It prints the claim as `#n <title>`; `--dry-run` reads the pick again
+# and prints it without claiming.
 #
 # One claim is in hand at a time (#3915): a lane holding a claimed issue that
 # no open pull request names claims nothing, each such issue printed on
@@ -2293,11 +2294,13 @@ printf '{}\n' > "$board/live.json"
 # its write (#4660): the board is as old as the run, so a run that read it
 # before another lane's claim landed would claim the same issue. The order is
 # taken again with each reading, until the pick it gives is one already read.
-# The write keeps another lane's claim marker standing before its own
-# (`claimed.jq`), so two runs that both reread before either writes see the
-# earlier claim after their writes: it keeps the issue, and the later run
-# takes its marker off and its next pick. Readings reach jq through files, an
-# issue body being past the argument limit at its largest (#2671, #5292).
+# Under `status:claimed`, the write keeps another lane's claim marker standing
+# before its own (`claimed.jq`), so two runs that both reread before either
+# writes see the earlier claim after their writes: it keeps the issue, and
+# the later run takes its marker off and its next pick. Without the label, no
+# marker is live, and the write keeps none (#5531). Readings reach jq through
+# files, an issue body being past the argument limit at its largest (#2671,
+# #5292).
 printf '{}\n' > "$board/reread.json"
 claimed=false
 while :; do
@@ -2322,8 +2325,8 @@ while :; do
     continue
   fi
   [[ ${usage_dry_run:-false} == false ]] || break
-  gh api "repos/$repo/issues/$number" --jq '{body}' \
-    | jq -c --arg lane "$lane" '{lane: $lane, step: "write", body}' \
+  gh api "repos/$repo/issues/$number" --jq '{labels: [.labels[].name], body}' \
+    | jq -c --arg lane "$lane" '{lane: $lane, step: "write", labels, body}' \
     | jq -c -L "$claims" -f "$claims/claimed.jq" > "$board/marked.json"
   claim_mark "$repo" "$number" "$lane" "$board/read.json" < "$board/marked.json"
   if [[ $claim_kept == true ]]; then
@@ -2416,9 +2419,10 @@ fi
 
 # A lane claims the unit it works (#5146): `claim:take <n>` adds
 # `status:claimed` to issue n and writes the lane's claim marker after any
-# other lane's (`.config/claims/claimed.jq`), as `claim:next` does for its
-# pick, and reads the body once more: when another lane's marker stands first,
-# that lane keeps the issue, and the run takes its own marker off and exits 1.
+# other lane's, or alone when its read shows no label (`.config/claims/
+# taken.jq`, #5531), as `claim:next` does for its pick. It reads the body once
+# more: when another lane's marker stands first, that lane keeps the issue,
+# and the run takes its own marker off and exits 1.
 # Both tasks write the claim through `claim_mark` (`.config/claims/mark.bash`,
 # #5175).
 # The lane is `--lane`, else the lane of the branch it runs on,

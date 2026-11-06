@@ -1377,6 +1377,255 @@ fn record_width_depth_projection_and_absent_fields()
     );
 }
 
+/// The decimal digits of a non-negative integer literal.
+#[repr(transparent)]
+struct Digits(&'static str);
+
+/// A builder of the value that a fixture restricts.
+type Restricted<'built> = dyn Fn(&mut TermArena) -> ValueId + 'built;
+
+/// The integer literal that `digits` spell.
+///
+/// # Specification
+/// trivial.
+fn integer_literal(
+    arena: &mut TermArena,
+    digits: &Digits,
+) -> ValueId
+{
+    arena.value_literal(gandr_kernel_term::Literal::Integer(
+        gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            gandr_kernel_term::Magnitude::from_decimal_text(String::from(digits.0))
+                .expect("decimal digits"),
+        ),
+    ))
+}
+
+/// The labels `host`, `port` and `tls` of an endpoint record.
+///
+/// # Specification
+/// trivial.
+fn endpoint_labels() -> [FieldLabel; 3]
+{
+    ["host", "port", "tls"].map(|name| FieldLabel::from(String::from(name)))
+}
+
+/// The endpoint record `{host = 1, port = 443, tls = 1}`.
+///
+/// # Specification
+/// trivial.
+fn endpoint(arena: &mut TermArena) -> ValueId
+{
+    let fields = endpoint_labels()
+        .into_iter()
+        .zip([Digits("1"), Digits("443"), Digits("1")])
+        .map(|(label, digits)| (label, integer_literal(arena, &digits)))
+        .collect();
+    arena.value_record(fields)
+}
+
+/// Admit `base : {host, port, tls : Integer}` as the endpoint record and
+/// record its declaration in `declarations`.
+///
+/// # Specification
+/// trivial.
+fn admit_endpoint(
+    environment: &mut Environment,
+    declarations: &mut Vec<MarkedDeclaration>,
+) -> ConstantIndex
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let declared = arena.value_type_record(
+        endpoint_labels()
+            .into_iter()
+            .map(|label| (label, integer))
+            .collect(),
+    );
+    let body = endpoint(arena);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+    declarations.push(MarkedDeclaration::new(
+        AdmissionMark::Checked,
+        declaration.declaration().clone(),
+    ));
+    environment
+        .add_decl(declaration)
+        .expect("the endpoint record checks at its record type")
+        .position()
+}
+
+/// Admit the restriction of the value `restricted` builds, fixing each label
+/// of `fixed` at the integer its digits spell, at the record of the integer
+/// fields `free`.
+///
+/// # Specification
+/// trivial.
+fn admit_restriction(
+    environment: &mut Environment,
+    restricted: &Restricted<'_>,
+    fixed: &[(&FieldLabel, &Digits)],
+    free: &[&FieldLabel],
+) -> Result<(), KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let value = restricted(arena);
+    let fixed = fixed
+        .iter()
+        .map(|&(label, digits)| (label.clone(), integer_literal(arena, digits)))
+        .collect();
+    let body = arena.value_restrict(value, fixed);
+    let declared =
+        arena.value_type_record(free.iter().map(|&label| (label.clone(), integer)).collect());
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+    environment.add_decl(declaration).map(|_admitted| ())
+}
+
+/// A restriction that fixes `port = 443` checks at the record of the other
+/// two fields, over an admitted record and over a record literal; a
+/// projection of a kept field reads the field of the record value.
+#[test]
+fn a_restriction_checks_at_the_record_of_its_free_fields_5613()
+{
+    let mut environment = Environment::new();
+    let [host, port, tls] = endpoint_labels();
+    let base = admit_endpoint(&mut environment, &mut Vec::new());
+    let named = |arena: &mut TermArena| arena.value_constant(base);
+    let restricted: [(&Restricted<'_>, &str); 2] = [
+        (&named, "an admitted record"),
+        (&endpoint, "a record literal"),
+    ];
+    for (restricted, why) in restricted {
+        assert_eq!(
+            admit_restriction(&mut environment, restricted, &[(&port, &Digits("443"))], &[
+                &host, &tls
+            ]),
+            Ok(()),
+            "{why}"
+        );
+    }
+
+    let mut arena = environment.arena().clone();
+    let record = endpoint(&mut arena);
+    let fixed = integer_literal(&mut arena, &Digits("443"));
+    let restriction = arena.value_restrict(record, BTreeMap::from([(port, fixed)]));
+    let projection = arena.computation_record_projection(restriction, host);
+    let one = integer_literal(&mut arena, &Digits("1"));
+    let result = arena.computation_return(one);
+    let trace = [ConversionDecision::ComparedShared {
+        left: ReplayNode::Other,
+        right: ReplayNode::Other,
+    }];
+    assert_eq!(
+        replay(
+            &mut arena,
+            &Unfoldings::default(),
+            ReplaySides::Computations(projection, result),
+            EngineClaim::Convertible,
+            trace,
+            ReplayBudget::default()
+        ),
+        KernelVerdict::Convertible
+    );
+}
+
+/// A restriction is refused by the label of the field it gets wrong: a fixed
+/// value apart from its field, a fixed label the record lacks, a field the
+/// free-field record holds and the restriction fixes, and a field the
+/// restriction keeps although the patched type fixes it.
+#[test]
+fn a_restriction_is_refused_by_the_label_it_gets_wrong_5613()
+{
+    let mut environment = Environment::new();
+    let [host, port, tls] = endpoint_labels();
+    let mtu = FieldLabel::from(String::from("mtu"));
+    let base = admit_endpoint(&mut environment, &mut Vec::new());
+    let named = |arena: &mut TermArena| arena.value_constant(base);
+    for (fixed, free, refusal, why) in [
+        (
+            &[(&port, &Digits("80"))][..],
+            &[&host, &tls][..],
+            KernelError::FixedFieldDiffers {
+                label: port.clone(),
+            },
+            "the fixed value 80 does not convert with the field 443",
+        ),
+        (
+            &[(&mtu, &Digits("9000"))][..],
+            &[&host, &port, &tls][..],
+            KernelError::AbsentRecordField { label: mtu.clone() },
+            "the record has no field mtu to fix",
+        ),
+        (
+            &[(&port, &Digits("443"))][..],
+            &[&host, &port, &tls][..],
+            KernelError::AbsentRecordField {
+                label: port.clone(),
+            },
+            "the restriction fixes a field the free-field record holds",
+        ),
+        (
+            &[(&port, &Digits("443"))][..],
+            &[&host][..],
+            KernelError::KeptRecordField { label: tls.clone() },
+            "the patched type also fixes tls, which the restriction keeps",
+        ),
+    ] {
+        assert_eq!(
+            admit_restriction(&mut environment, &named, fixed, free),
+            Err(refusal),
+            "{why}"
+        );
+    }
+}
+
+/// A restriction survives the kernel's canonical encoding: its bytes decode
+/// and re-encode alike, and the decoded body is the restriction of `base`
+/// with its fixed label.
+#[test]
+fn a_restriction_round_trips_the_canonical_encoding_5613()
+{
+    let mut environment = Environment::new();
+    let mut declarations = Vec::new();
+    let [host, port, tls] = endpoint_labels();
+    let base = admit_endpoint(&mut environment, &mut declarations);
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let named = arena.value_constant(base);
+    let fixed = integer_literal(arena, &Digits("443"));
+    let body = arena.value_restrict(named, BTreeMap::from([(port.clone(), fixed)]));
+    let declared = arena.value_type_record(BTreeMap::from([(host, integer), (tls, integer)]));
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+    declarations.push(MarkedDeclaration::new(
+        AdmissionMark::Checked,
+        declaration.declaration().clone(),
+    ));
+    environment
+        .add_decl(declaration)
+        .expect("the restriction checks at the record of its free fields");
+    let bytes = encode(environment.arena(), &declarations);
+    let decoded = decode(bytes.as_image()).expect("the canonical reader reads a restriction");
+    assert_eq!(encode(decoded.arena(), decoded.declarations()), bytes);
+    let DeclarationContent::Def { body, .. } = *(decoded.declarations()[1].declaration().content())
+    else {
+        panic!("the restriction's definition was not decoded");
+    };
+    let Some(&gandr_kernel_term::Value::Restrict { value, ref fixed }) =
+        decoded.arena().value(body)
+    else {
+        panic!("the decoded body is not a restriction");
+    };
+    assert_eq!(
+        decoded.arena().value(value),
+        Some(&gandr_kernel_term::Value::Constant(base))
+    );
+    assert!(fixed.keys().eq([&port]));
+}
+
 #[test]
 fn native_declarations_and_eliminators_survive_canonical_decode()
 {

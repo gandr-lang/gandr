@@ -256,6 +256,7 @@ fn walk(
                     Value::QuoteComputation(quoted) => pending.push(Visit::Comp(quoted, sign, at)),
                     Value::Constructor { .. }
                     | Value::Record(_)
+                    | Value::Restrict { .. }
                     | Value::SessionPath { .. }
                     | Value::SessionFlow { .. }
                     | Value::Stay { .. }

@@ -791,6 +791,7 @@ const fn introduced_shape(value: Option<&Value>) -> Option<ExpectedValueShape>
         | Value::Lift { .. }
         | Value::Quote(_)
         | Value::QuoteComputation(_)
+        | Value::Restrict { .. }
         | Value::StaticApplication(..) => None,
     }
 }
@@ -2709,6 +2710,22 @@ enum Frame
     /// A value mode switch: the value synthesized; convert against the held
     /// expected type.
     ConvertValue(ValueTypeId),
+    /// A restriction: its record value's type is synthesized; each fixed
+    /// value checks at its field's type, then each fixed field converts.
+    SynthRestrict(ValueId),
+    /// A restriction: its fixed values checked; each field of its record
+    /// value converts with the value fixed at its label, and the restriction
+    /// synthesizes `kept`, the record type of the other fields.
+    RestrictConverts
+    {
+        /// The restriction.
+        restriction: ValueId,
+        /// The record type of the fields it does not fix.
+        kept: ValueTypeId,
+    },
+    /// A restriction checked at a type: its type is synthesized; a label the
+    /// two records do not share is refused by name before they convert.
+    CheckRestricted(ValueTypeId),
     /// An application: the head is synthesized; the argument source is held.
     SynthApply(ValueId),
     /// An application of a fixpoint in checking position: the argument is
@@ -3588,6 +3605,12 @@ where
                         }
                         Produced::ValueType(arena.value_type_record(fields))
                     },
+                    // A restriction synthesizes its record value's type first.
+                    Value::Restrict { value, .. } => {
+                        frames.push(Frame::SynthRestrict(id));
+                        goal = Goal::SynthValue(value);
+                        continue 'expand;
+                    },
                     Value::SessionPath {
                         path_type,
                         ref evidence,
@@ -4461,6 +4484,13 @@ where
                             remaining,
                         });
                         Produced::Checked
+                    },
+                    // A restriction's type is exact: it is compared with the
+                    // expected record label by label before it converts.
+                    Value::Restrict { .. } => {
+                        frames.push(Frame::CheckRestricted(expected));
+                        goal = Goal::SynthValue(id);
+                        continue 'expand;
                     },
                     Value::Constructor { .. }
                     | Value::Returned(_)
@@ -5867,6 +5897,7 @@ where
                         ),
                         Value::Constructor { .. }
                         | Value::Record(_)
+                        | Value::Restrict { .. }
                         | Value::SessionPath { .. }
                         | Value::SessionFlow { .. }
                         | Value::Stay { .. }
@@ -6341,6 +6372,99 @@ where
                         }
                     }
                     produced = Produced::Checked;
+                },
+                Frame::SynthRestrict(restriction) => {
+                    let record_type = produced.value_type()?;
+                    let Value::Restrict { ref fixed, .. } = *read_value(arena, restriction)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Some(&ValueType::Record(ref fields)) = arena.value_type(record_type)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Record,
+                            record_type,
+                        ));
+                    };
+                    if let Some(label) = fixed.keys().find(|&label| !fields.contains_key(label)) {
+                        return Err(KernelError::AbsentRecordField {
+                            label: label.clone(),
+                        });
+                    }
+                    let kept: alloc::collections::BTreeMap<_, _> = fields
+                        .iter()
+                        .filter(|&(label, _)| !fixed.contains_key(label))
+                        .map(|(label, &ty)| (label.clone(), ty))
+                        .collect();
+                    let mut goals = fixed
+                        .iter()
+                        .rev()
+                        .filter_map(|(label, &value)| {
+                            fields.get(label).map(|&ty| Goal::CheckValue(value, ty))
+                        })
+                        .collect::<Vec<_>>();
+                    let kept = arena.value_type_record(kept);
+                    frames.push(Frame::RestrictConverts { restriction, kept });
+                    if let Some(next) = goals.pop() {
+                        frames.push(Frame::Pending(goals, Produced::Checked));
+                        goal = next;
+                        continue 'expand;
+                    }
+                    produced = Produced::Checked;
+                },
+                // Each fixed field replays its conversion here: the kernel
+                // never trusts the checker's comparison. A field of a record
+                // literal is read off it, and any other record value's by
+                // its projection, with the admitted definitions unfolding.
+                Frame::RestrictConverts { restriction, kept } => {
+                    let Value::Restrict { value, ref fixed } = *read_value(arena, restriction)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let fixed: Vec<_> = fixed
+                        .iter()
+                        .map(|(label, &held)| (label.clone(), held))
+                        .collect();
+                    for (label, held) in fixed {
+                        let written = match arena.value(value) {
+                            Some(&Value::Record(ref fields)) => fields.get(&label).copied(),
+                            Some(_) | None => None,
+                        };
+                        let field = written.unwrap_or_else(|| {
+                            let projection =
+                                arena.computation_record_projection(value, label.clone());
+                            arena.value_returned(projection)
+                        });
+                        if read_returned(arena, judgement, ConversionGoal::Value(field, held))?
+                            != EndpointReading::Converts
+                        {
+                            return Err(KernelError::FixedFieldDiffers { label });
+                        }
+                    }
+                    produced = Produced::ValueType(kept);
+                },
+                Frame::CheckRestricted(expected) => {
+                    let synthesized = produced.value_type()?;
+                    if let (
+                        Some(&ValueType::Record(ref kept)),
+                        Some(&ValueType::Record(ref wanted)),
+                    ) = (arena.value_type(synthesized), arena.value_type(expected))
+                    {
+                        if let Some(label) = wanted.keys().find(|&label| !kept.contains_key(label))
+                        {
+                            return Err(KernelError::AbsentRecordField {
+                                label: label.clone(),
+                            });
+                        }
+                        if let Some(label) = kept.keys().find(|&label| !wanted.contains_key(label))
+                        {
+                            return Err(KernelError::KeptRecordField {
+                                label: label.clone(),
+                            });
+                        }
+                    }
+                    frames.push(Frame::ConvertValue(expected));
                 },
                 Frame::FixpointArgument(head, expected) => {
                     let domain = produced.value_type()?;

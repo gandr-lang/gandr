@@ -464,6 +464,16 @@ impl TermArena
                 fields.values().map(|&id| self.value_support(id)),
                 Binders::NONE,
             ),
+            Value::Restrict {
+                value: restricted,
+                ref fixed,
+            } => joined(
+                Reads::closed(),
+                core::iter::once(restricted)
+                    .chain(fixed.values().copied())
+                    .map(|id| self.value_support(id)),
+                Binders::NONE,
+            ),
             Value::Variable(index) => Reads::variable(index),
             Value::ListNil | Value::Constant(_) | Value::Literal(_) => Reads::closed(),
             Value::Tuple(ref components) => values(components),

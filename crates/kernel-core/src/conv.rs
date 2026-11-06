@@ -1426,6 +1426,7 @@ fn converge(
                         Endpoints::Structural | Endpoints::Weakening { .. } => false,
                     },
                     Value::Record(_)
+                    | Value::Restrict { .. }
                     | Value::SessionPath { .. }
                     | Value::SessionFlow { .. }
                     | Value::Stay { .. }
@@ -1504,6 +1505,11 @@ fn converge(
                     | (&Value::Record(ref a), &Value::Record(ref b)) => {
                         if a.len() != b.len() || !a.keys().eq(b.keys()) { return Convertibility::Distinct; }
                         stack.extend(a.values().zip(b.values()).map(|(a, b)| ConversionGoal::Value(*a, *b)));
+                    },
+                    | (&Value::Restrict { value: one, fixed: ref xs }, &Value::Restrict { value: other, fixed: ref ys }) => {
+                        if xs.len() != ys.len() || !xs.keys().eq(ys.keys()) { return Convertibility::Distinct; }
+                        stack.push(ConversionGoal::Value(one, other));
+                        stack.extend(xs.values().zip(ys.values()).map(|(a, b)| ConversionGoal::Value(*a, *b)));
                     },
                     | (&Value::SessionPath { path_type: one_type, payload_paths: one_paths, evidence: ref one }, &Value::SessionPath { path_type: other_type, payload_paths: other_paths, evidence: ref other })
                     | (&Value::SessionFlow { flow_type: one_type, payload_paths: one_paths, evidence: ref one }, &Value::SessionFlow { flow_type: other_type, payload_paths: other_paths, evidence: ref other }) => {
@@ -1678,7 +1684,7 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one, other));
                     },
                     | (
-                        &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::SessionFlow { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. } | &Value::Univalence { .. }
+                        &Value::Constructor { .. } | &Value::Record(_) | &Value::Restrict { .. } | &Value::SessionPath { .. } | &Value::SessionFlow { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. } | &Value::Univalence { .. }
                         | &Value::Here { .. } | &Value::Stay { .. } | &Value::ForwardFlow { .. } | &Value::FunctionFlow { .. } | &Value::Then { .. } | &Value::FlowProduct(..)
                         | &Value::Returned(_) | &Value::Higher { .. } | &Value::HigherEvaluation { .. } | &Value::QuantifiedEvaluation { .. }
                         | &Value::Variable(_)

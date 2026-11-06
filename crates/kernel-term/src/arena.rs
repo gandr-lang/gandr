@@ -1738,6 +1738,7 @@ impl TermArena
         requires: match value {
             Value::Constructor { datatype, ref fields, .. } => self.value_type(datatype).is_some() && fields.iter().all(|field| self.value(*field).is_some()),
             Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
+            Value::Restrict { value: restricted, ref fixed } => self.value(restricted).is_some() && fixed.values().all(|field| self.value(*field).is_some()),
             Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::Then { first, second, .. } => self.value(first).is_some() && self.value(second).is_some(),
             Value::Tuple(ref components) => components.iter().all(|component| self.value(*component).is_some()),
             Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Univalence(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } => self.value(body).is_some(),
@@ -2076,7 +2077,7 @@ impl TermArena
                 && self.value_types.len() == before.0.value_types
                 && self.comp_types.len() == before.0.comp_types
                 && ret.0 == u32::try_from(before.0.values).unwrap_or(u32::MAX)
-                && self.values.last().is_some_and(|node| match *node { Value::Literal(ref actual) => actual.base_type() == before.1, Value::Constructor { .. } | Value::Record(_) | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Univalence { .. } | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticApplication(..) => false }),
+                && self.values.last().is_some_and(|node| match *node { Value::Literal(ref actual) => actual.base_type() == before.1, Value::Constructor { .. } | Value::Record(_) | Value::Restrict { .. } | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Univalence { .. } | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticApplication(..) => false }),
     )]
     #[inline]
     pub fn value_literal(
@@ -4041,6 +4042,7 @@ impl TermArena
         AnyNode::Value(id) => self.value(id).map_or(ret.is_empty(), |matched_native_node| match *matched_native_node {
 Value::Constructor { datatype, ref fields, .. } => ret.iter().copied().eq(core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))),
 Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(AnyNode::Value)),
+Value::Restrict { value: restricted, ref fixed } => ret.iter().copied().eq(core::iter::once(AnyNode::Value(restricted)).chain(fixed.values().copied().map(AnyNode::Value))),
 Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => ret.is_empty(),
 Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied().map(AnyNode::Value)),
 Value::PathEquiv { path_type, forward, backward, .. } =>
@@ -4129,6 +4131,13 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 },
                 Some(&Value::Record(ref fields)) => {
                     children.extend(fields.values().copied().map(AnyNode::Value));
+                },
+                Some(&Value::Restrict {
+                    value: restricted,
+                    ref fixed,
+                }) => {
+                    children.push(AnyNode::Value(restricted));
+                    children.extend(fixed.values().copied().map(AnyNode::Value));
                 },
                 Some(
                     &Value::ListNil
@@ -4663,6 +4672,20 @@ impl TermArena
     ) -> ValueId
     {
         self.alloc_value(Value::Record(fields))
+    }
+
+    /// Mint a restriction of a record value to the fields it does not fix.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_restrict(
+        &mut self,
+        value: ValueId,
+        fixed: alloc::collections::BTreeMap<crate::FieldLabel, ValueId>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Restrict { value, fixed })
     }
 
     /// Mint a case whose motive binds its scrutinee and branches bind fields,

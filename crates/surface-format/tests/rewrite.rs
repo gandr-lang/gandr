@@ -965,6 +965,23 @@ fn a_thunk_type_a_body_returns_takes_the_alias_838()
     ));
 }
 
+/// #5528: before the fix, the value-function sugar wrote a thunk over a kind
+/// arrow, `+U (Type -> -F Type)`, as the static arrow `Type -> Type`. That
+/// lowers otherwise, so the formatter withdrew every rewrite of the
+/// declaration, and the value function beside it kept its thunk. Now the thunk
+/// over a kind arrow keeps its spelling, and the value function is sugared.
+#[test]
+fn a_thunk_over_a_kind_arrow_keeps_its_spelling_beside_a_value_function_5528()
+{
+    let grammar = grammar();
+    let source = "def kinded(e : *{c : +U ((x : Integer) -> -F Integer), b : +U (Type -> -F Type)}) -> Integer { 0 }\n";
+    assert_eq!(
+        spelled(&grammar, source, Form::Sugared, Selection::Every),
+        "def kinded(e : *{c : Integer -> Integer, b : +U (Type -> -F Type)}) -> Integer { 0 }\n",
+        "the thunk over the kind arrow keeps its spelling, and the value function is sugared"
+    );
+}
+
 /// An explicit source with comments inside its declarations, sugared: each
 /// comment stays in its role before or after the construct it annotated.
 #[test]

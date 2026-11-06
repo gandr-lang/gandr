@@ -686,6 +686,18 @@ pub enum KernelError
     {
         label: gandr_kernel_term::FieldLabel,
     },
+    /// A restriction fixes a field at a value that its record value's field
+    /// does not convert with.
+    FixedFieldDiffers
+    {
+        label: gandr_kernel_term::FieldLabel,
+    },
+    /// A restriction keeps a field that the record type it is checked at
+    /// does not hold: the restriction does not fix the field.
+    KeptRecordField
+    {
+        label: gandr_kernel_term::FieldLabel,
+    },
     /// A tuple projection names a component past the product's last, or a
     /// lazy projection one past the lazy product's last.
     AbsentTupleComponent
@@ -1030,6 +1042,12 @@ impl core::fmt::Display for KernelError
                 f.write_str("a stage signature marked an occurrence that is no data type")
             },
             Self::AbsentRecordField { .. } => f.write_str("a required record field was absent"),
+            Self::FixedFieldDiffers { .. } => {
+                f.write_str("a restriction fixed a field at another value than the field holds")
+            },
+            Self::KeptRecordField { .. } => {
+                f.write_str("a restriction kept a field that the record type does not hold")
+            },
             Self::AbsentTupleComponent { .. } => {
                 f.write_str("a projection named a component the product does not have")
             },
@@ -1394,6 +1412,12 @@ mod tests
             KernelError::StageNotCarried,
             KernelError::StageUnplaced,
             KernelError::AbsentRecordField {
+                label: FieldLabel::from(String::from("a")),
+            },
+            KernelError::FixedFieldDiffers {
+                label: FieldLabel::from(String::from("a")),
+            },
+            KernelError::KeptRecordField {
                 label: FieldLabel::from(String::from("a")),
             },
             KernelError::AbsentTupleComponent {

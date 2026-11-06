@@ -172,6 +172,20 @@
     "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=sorts -->\n" }
   },
   {
+    "name": "#5531: claim:take claims a body whose lapsed claim left another lane's marker and no status:claimed, and writes its own marker alone",
+    "input": {
+      "step": "take",
+      "lane": "workflow",
+      "issue": {
+        "number": 5238,
+        "state": "open",
+        "labels": ["kind:defect"],
+        "body": "Text.\n\n<!-- claim: lane=floor -->\n"
+      }
+    },
+    "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=workflow -->\n" }
+  },
+  {
     "name": "claim:take does nothing for an issue the lane holds",
     "input": {
       "step": "take",

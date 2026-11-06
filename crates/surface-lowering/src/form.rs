@@ -1738,11 +1738,12 @@ pub struct Kinded(pub bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Boxed(pub bool);
 
-/// Whether the type written at `at` classifies codes, by its syntax: a
-/// universe, the row kind, or an arrow whose domain and codomain both
-/// classify codes, through parentheses. `scratch` is a reused reading buffer.
-/// `known` keeps each node's answer across calls, so the arrows of a chain
-/// read the chain once between them.
+/// Whether the type written at `at` classifies codes, by its syntax.
+///
+/// A universe, the row kind and an arrow whose domain and codomain both
+/// classify codes classify codes, through parentheses. `scratch` is a reused
+/// reading buffer. `known` keeps each node's answer across calls, so the
+/// arrows of a chain read the chain once between them.
 ///
 /// # Specification
 /// - requires: each answer in `known` is this function's answer at its node
@@ -1770,6 +1771,7 @@ pub struct Boxed(pub bool);
 /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
 /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
 /// - witness: `lower::tests::an_arrow_from_a_universe_to_a_value_type_is_the_box_5203`
+#[inline]
 pub fn classifies_codes<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,

@@ -10,9 +10,11 @@
 # claim ages by its label, never by the issue's last update (#3915). It
 # lets `decide.jq` pick the claims that come off, removes the
 # label from each and prints one line per removal; nothing is posted for a
-# removal. A merge then writes a release marker on each open issue it
-# advanced, naming the lane its branch opens with (`markers.jq`), so that lane
-# claims the continuation first for 2 hours (`next.jq`, #3915). It ticks the
+# removal. A silent claim's lapse also takes its lane's claim marker off the
+# body, so the body agrees with the label (#5531). A merge then writes a
+# release marker on each open issue it advanced, naming the lane its branch
+# opens with (`markers.jq`), so that lane claims the continuation first for 2
+# hours (`next.jq`, #3915). It ticks the
 # rows of each `collector` it advances and closes one it leaves with no open
 # row (#3732). `--dry-run` prints the removals, the releases and the rows
 # without making them.
@@ -48,8 +50,12 @@ if [[ $mode == merged && -n $base && $base != "${CLAIMS_DEFAULT_BRANCH:-main}" ]
   done
 fi
 
+# Each claim's lane is its body's first claim marker at this reading (#5531).
+# The listing keeps the lane and drops the body, so each later reading of the
+# listing stays small.
 listed=$(gh api --paginate "repos/$repo/issues?state=all&labels=$label&per_page=100" \
-  --jq '[.[] | select(.pull_request == null) | {number, state, labels: [.labels[].name], created_at, updated_at}]' | jq -s 'add // []')
+  --jq '[.[] | select(.pull_request == null) | {number, state, labels: [.labels[].name], created_at, updated_at, body}]' \
+  | jq -s -L "$here" 'include "markers"; add // [] | map(.lane = (.body | claim_lane) | del(.body))')
 open_prs=$(gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \
   --jq '[.[] | {number, body: (.body // ""), head: .head.ref}]' | jq -s 'add // []')
 # The claims whose label's age the sweep reads from their events (#5078):
@@ -84,6 +90,34 @@ done | jq -s .)
 removals=$(jq -rn --argjson now "$(date +%s)" --argjson claimed "$claimed" --argjson open_prs "$open_prs" --argjson merged "$merged" \
   '{now: $now, claimed: $claimed, open_prs: $open_prs, merged_body: $merged}' | jq -r -L "$here" -f "$here/decide.jq")
 
+# unmark <number>: takes the claim marker of the lane whose silent claim
+# lapsed off the body, after its label comes off (#5531). The lane is the one
+# the listing read. The body is read again after the label comes off: a lane
+# that claims the issue in between writes its marker alone, so the lapse
+# step finds no marker of the lapsed lane and writes nothing. A failed read or
+# write leaves the marker, which holds no claim without the label, and the
+# next claim of the issue drops it.
+unmark() {
+  local number=$1 held body
+  held=$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .lane // empty' <<< "$listed")
+  [[ -n $held ]] || return 0
+  if [[ "$dry" == --dry-run ]]; then
+    printf 'would unmark #%s: %s\n' "$number" "$held"
+    return 0
+  fi
+  if ! body=$(gh api "repos/$repo/issues/$number" --jq '{body}' \
+    | jq -c --arg lane "$held" '{lane: $lane, step: "lapse", body}' | jq -c -L "$here" -f "$here/claimed.jq"); then
+    echo "could not read #$number to unmark $held" >&2
+    return 0
+  fi
+  [[ $(jq '.body != null' <<< "$body") == true ]] || return 0
+  if gh api -X PATCH "repos/$repo/issues/$number" --input - <<< "$body" > /dev/null; then
+    printf 'unmarked #%s: %s\n' "$number" "$held"
+  else
+    echo "could not unmark #$number: $held" >&2
+  fi
+}
+
 count=0
 while IFS=$'\t' read -r number reason; do
   [[ -n "$number" ]] || continue
@@ -99,6 +133,9 @@ while IFS=$'\t' read -r number reason; do
   fi
   printf 'unclaimed #%s: %s\n' "$number" "$reason"
   count=$((count + 1))
+  if [[ $reason == silent ]]; then
+    unmark "$number"
+  fi
 done <<< "$removals"
 printf '%s: %d of %d claims removed\n' "$mode" "$count" "$(jq length <<< "$claimed")"
 

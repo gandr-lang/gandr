@@ -66,7 +66,8 @@ elif .step == "take" then
       | if $holder == $lane then {verdict: "held"}
         elif $holder != null then
           {verdict: "refused", line: "claim:take: \($holder) holds the claim of #\(.issue.number); the coordinator decides which lane works it"}
-        else {verdict: "write", body: (.issue.body | claiming($lane))}
+        # A body without the label keeps no lapsed lane's marker (#5531).
+        else {verdict: "write", body: (.issue as $issue | $issue.body | claiming($lane; $issue.labels))}
         end
     end
 else error("taken.jq: no step `\(.step)`")

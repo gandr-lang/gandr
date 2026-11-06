@@ -20,7 +20,10 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Spelling as GrammarSpelling;
 use gandr_surface_grammar::UNRESTRICTED;
 use gandr_surface_lowering::Boxed;
+use gandr_surface_lowering::Kinded;
 use gandr_surface_lowering::Pieces;
+use gandr_surface_lowering::Placed;
+use gandr_surface_lowering::classifies_codes;
 use gandr_surface_lowering::writes_box;
 use gandr_surface_lowering::written_children;
 use gandr_surface_syntax::ByteOffset;
@@ -2224,14 +2227,7 @@ impl<'source> Respelling<'_, 'source>
                 Band::Atom
             },
             (RewriteName::ValueFunction, Direction::Sugar) => {
-                // A thunk over a kind arrow, `+U (Type -> -F Type)`, sugars
-                // to the static arrow `Type -> Type`, which reads otherwise.
-                let kinded = split(parts).1.first().is_some_and(|&thunked| {
-                    matches!(self.stripped(thunked), Child::Node(arrow)
-                        if self.rule(arrow) == Some(MoldName("function_type"))
-                            && self.boxes(arrow) == Boxed(false))
-                });
-                if self.context(at) == Context::Kind || kinded {
+                if self.context(at) == Context::Kind {
                     return None;
                 }
                 self.alias(&mut out, parts, self.context(at))?;
@@ -2357,9 +2353,10 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Whether the arrow at `at` is the box, a function value's type, as the
-    /// lowering reads it: an arrow whose domain classifies codes, `Type ->
-    /// Type`, is a static arrow, a type operator's classifier, and no box; a
-    /// form the reading cannot place is no box either, so no rewrite moves it.
+    /// lowering reads it: an arrow whose domain and codomain both classify
+    /// codes, `Type -> Type`, is a static arrow, a type operator's classifier,
+    /// and no box; a form the reading cannot place is no box either, so no
+    /// rewrite moves it.
     ///
     /// # Specification
     /// trivial.
@@ -2530,14 +2527,16 @@ impl<'source> Respelling<'_, 'source>
     /// Write the value-function alias the thunk type whose parts are `parts`
     /// spells, its grade the default `ω` whether written or not, or nothing
     /// when its body is not a chain of arrows ending in a pure returner or
-    /// its grade is another. A domain that binds a name keeps it, `(x : A, …)
-    /// -> C`, where a later domain or the result reads it, and is written
-    /// bare otherwise, as the printer writes the dependent alias. Where a
-    /// value is read, a transport's family among them, every spelling but
-    /// the empty domain list is written, since the parser reads a group
-    /// followed by `->` as the alias's domains and `() -> A` as an
-    /// expression. A theory's judgment and a rule's outputs write `A -> B`
-    /// and no other alias, a `(` there opening a port group.
+    /// its grade is another. Nothing is written for a thunk over a kind arrow
+    /// either, `+U (Type -> -F Type)`: its alias, `Type -> Type`, is the static
+    /// arrow, which the lowering reads otherwise (#5528). A domain that binds a
+    /// name keeps it, `(x : A, …) -> C`, where a later domain or the result
+    /// reads it, and is written bare otherwise, as the printer writes the
+    /// dependent alias. Where a value is read, a transport's family among
+    /// them, every spelling but the empty domain list is written, since the
+    /// parser reads a group followed by `->` as the alias's domains and
+    /// `() -> A` as an expression. A theory's judgment and a rule's outputs
+    /// write `A -> B` and no other alias, a `(` there opening a port group.
     ///
     /// # Specification
     /// trivial.
@@ -2593,7 +2592,44 @@ impl<'source> Respelling<'_, 'source>
                 _ => return None,
             }
         };
+        if self.kind_arrow(&domains, result) == Kinded(true) {
+            return None;
+        }
         self.aliased(out, domains, result, context)
+    }
+
+    /// Whether the value-function alias over `domains` and `result` is a kind
+    /// arrow as the lowering reads it, `Type -> Type`: each of its types
+    /// classifies codes, through parentheses, and a leaf classifies none. The
+    /// result is read first, so an alias to a value type reads one type.
+    ///
+    /// # Specification
+    /// trivial.
+    fn kind_arrow(
+        &self,
+        domains: &[Domain<'source>],
+        result: Child<'source>,
+    ) -> Kinded
+    {
+        let mut scratch = Pieces::default();
+        let mut known = BTreeMap::new();
+        let mut classifies = |child: Child<'source>| {
+            let Child::Node(at) = child
+            else {
+                return false;
+            };
+            self.tree.node(at).is_some_and(|node| {
+                classifies_codes(
+                    self.grammar,
+                    self.tree,
+                    Placed::of(at, node),
+                    &mut scratch,
+                    &mut known,
+                )
+                .is_ok_and(|kinded| kinded.0)
+            })
+        };
+        Kinded(classifies(result) && domains.iter().all(|domain| classifies(domain.ty)))
     }
 
     /// Write the value-function alias over `domains` and `result`, as

@@ -446,6 +446,7 @@ pub(super) fn constructor(
             ..
         } => (family, *datatype, *tag, fields.len()),
         &Value::Record(_)
+        | &Value::Restrict { .. }
         | &Value::SessionPath { .. }
         | &Value::SessionFlow { .. }
         | &Value::Stay { .. }

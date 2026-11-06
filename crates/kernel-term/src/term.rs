@@ -256,6 +256,18 @@ pub enum Value
     },
     /// A structural record in canonical label order.
     Record(alloc::collections::BTreeMap<crate::FieldLabel, ValueId>),
+    /// A record value restricted to the fields it does not fix: `value` is a
+    /// record whose field at each label of `fixed` converts with the value
+    /// `fixed` holds there. Its type is the record of the other fields, and
+    /// a projection at one of them reads the projection of `value`.
+    Restrict
+    {
+        /// The record value.
+        value: ValueId,
+        /// Each fixed label with the value it fixes, in canonical label
+        /// order.
+        fixed: alloc::collections::BTreeMap<crate::FieldLabel, ValueId>,
+    },
     /// A session bisimulation inhabiting a native `Path_U` classifier.
     SessionPath
     {
@@ -472,7 +484,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Constructor { .. } | Self::Record(_) | Self::SessionPath { .. } | Self::SessionFlow { .. } | Self::Stay { .. } | Self::ForwardFlow { .. } | Self::FunctionFlow { .. } | Self::Then { .. } | Self::FlowProduct(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Univalence { .. } | Self::Here { .. } | Self::Returned(_) | Self::Higher { .. } | Self::HigherEvaluation { .. } | Self::QuantifiedEvaluation { .. } | Self::Variable(_) | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticApplication(..) => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Constructor { .. } | Self::Record(_) | Self::Restrict { .. } | Self::SessionPath { .. } | Self::SessionFlow { .. } | Self::Stay { .. } | Self::ForwardFlow { .. } | Self::FunctionFlow { .. } | Self::Then { .. } | Self::FlowProduct(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Univalence { .. } | Self::Here { .. } | Self::Returned(_) | Self::Higher { .. } | Self::HigherEvaluation { .. } | Self::QuantifiedEvaluation { .. } | Self::Variable(_) | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticApplication(..) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>
@@ -481,6 +493,7 @@ impl Value
             Self::Tuple(ref components) => Some(components),
             Self::Constructor { .. }
             | Self::Record(_)
+            | Self::Restrict { .. }
             | Self::SessionPath { .. }
             | Self::SessionFlow { .. }
             | Self::Stay { .. }

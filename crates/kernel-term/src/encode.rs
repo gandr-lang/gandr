@@ -1568,6 +1568,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
         AnyNode::Value(id) => match arena.value(id) {
             Some(&Value::Constructor { .. }) => tags::NODE_V_CONSTRUCTOR,
             Some(&Value::Record(_)) => tags::NODE_V_RECORD,
+            Some(&Value::Restrict { .. }) => tags::NODE_V_RESTRICT,
             Some(&Value::SessionPath { .. }) => tags::NODE_V_SESSION_PATH,
             Some(&Value::SessionFlow { .. }) => tags::NODE_V_SESSION_FLOW,
             Some(&Value::Stay { .. }) => tags::NODE_V_STAY,
@@ -1764,6 +1765,13 @@ fn encode_entry(
                     out.put_tag(tags::NODE_V_RECORD);
                     out.put_uvarint(WireU64::from(WireUsize::from(fields.len())));
                     for label in fields.keys() {
+                        encode_text(&mut out, ArtifactText::from(label.as_ref()));
+                    }
+                },
+                Value::Restrict { ref fixed, .. } => {
+                    out.put_tag(tags::NODE_V_RESTRICT);
+                    out.put_uvarint(WireU64::from(WireUsize::from(fixed.len())));
+                    for label in fixed.keys() {
                         encode_text(&mut out, ArtifactText::from(label.as_ref()));
                     }
                 },
