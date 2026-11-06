@@ -3401,58 +3401,70 @@ enum Argument
     Other,
 }
 
+/// What the argument `at` of the former `node` is.
+///
+/// # Specification
+/// trivial.
+fn argument_kind<S>(
+    source: &S,
+    node: S::Node,
+    at: Component,
+) -> Argument
+where
+    S: Source + ?Sized,
+{
+    let Some(argument) = source.component(node, at)
+    else {
+        return Argument::Other;
+    };
+    let former = source.read(argument);
+    if matches!(former, Former::Variable { .. }) {
+        Argument::Variable
+    }
+    else if matches!(
+        former,
+        Former::Application(..)
+            | Former::StaticApplication(..)
+            | Former::Nested(_)
+            | Former::Returned(_)
+    ) || matches!(former, Former::Primitive { arity, .. } if usize::from(arity) > 0_usize)
+    {
+        Argument::Call
+    }
+    else {
+        Argument::Other
+    }
+}
+
 /// How the former `node`, spelled `name`, applied to `arity` arguments, is
 /// written: in its call form under a module-qualified head,
 /// `Shapes.Box(Integer)`, until #5753, and where a call follows a bound
 /// variable, `Vec(a, plus(m, k))`, which the type grammar reads as the moded
-/// type `a plus(m, k)`. Juxtaposed otherwise, with each argument's kind for
-/// the join, which keeps the call form where an argument in parentheses
-/// follows a bound variable.
+/// type `a plus(m, k)`. Juxtaposed otherwise; the join keeps the call form
+/// where an argument in parentheses follows a bound variable.
 ///
 /// # Specification
 /// trivial.
 fn family_form<S>(
     source: &S,
     node: S::Node,
-    (name, arity): (&str, Arity),
-) -> (FamilyForm, Vec<Argument>)
+    (name, arity): (&Written, Arity),
+) -> FamilyForm
 where
     S: Source + ?Sized,
 {
-    let kind = |argument: S::Node| {
-        let former = source.read(argument);
-        if matches!(former, Former::Variable { .. }) {
-            Argument::Variable
-        }
-        else if matches!(
-            former,
-            Former::Application(..)
-                | Former::StaticApplication(..)
-                | Former::Nested(_)
-                | Former::Returned(_)
-        ) || matches!(former, Former::Primitive { arity, .. } if usize::from(arity) > 0_usize)
-        {
-            Argument::Call
-        }
-        else {
-            Argument::Other
-        }
-    };
-    let kinds: Vec<Argument> = (0_usize .. arity.0)
-        .map(|at| {
-            source
-                .component(node, Component::from(at))
-                .map_or(Argument::Other, kind)
-        })
-        .collect();
-    let moded = kinds
-        .windows(2_usize)
-        .any(|pair| matches!(*pair, [Argument::Variable, Argument::Call]));
-    if name.contains('.') || moded {
-        (FamilyForm::Called, kinds)
+    let mut before = Argument::Other;
+    let mut moded = false;
+    for at in 0_usize .. arity.0 {
+        let kind = argument_kind(source, node, Component::from(at));
+        moded = moded || (before == Argument::Variable && kind == Argument::Call);
+        before = kind;
+    }
+    if name.0.contains('.') || moded {
+        FamilyForm::Called
     }
     else {
-        (FamilyForm::Juxtaposed, kinds)
+        FamilyForm::Juxtaposed
     }
 }
 
@@ -5221,17 +5233,18 @@ impl Parts
     /// trivial.
     fn family_over(
         &mut self,
-        kinds: &[Argument],
+        kinds: impl ExactSizeIterator<Item = Argument>,
         surface: Surface,
     ) -> &mut Self
     {
+        let count = kinds.len();
         match surface {
-            Surface::Expression => self.juxtaposed(Arity(kinds.len())),
-            Surface::Type | Surface::Enclosed if kinds.is_empty() => {
+            Surface::Expression => self.juxtaposed(Arity(count)),
+            Surface::Type | Surface::Enclosed if count == 0_usize => {
                 self.juxtaposed(Arity(0_usize))
             },
             Surface::Type | Surface::Enclosed => {
-                for &kind in kinds {
+                for kind in kinds {
                     let _ = self.part(Part::Argument(kind));
                 }
                 self
@@ -12173,7 +12186,9 @@ impl Walk<'_, '_>
                     .and_then(|_| source.declaration(node));
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
                 let count = Arity(usize::from(arity));
-                let (form, kinds) = family_form(source, node, (&*name.0, count));
+                let form = family_form(source, node, (&name, count));
+                let kinds =
+                    (0_usize .. count.0).map(|at| argument_kind(source, node, Component::from(at)));
                 // A family the lowering names as a call, a theory's terms
                 // `Terms(Mag)`, is written as the application it names.
                 let minted = (count.0 == 0_usize)
@@ -12196,7 +12211,7 @@ impl Walk<'_, '_>
                     type_applied(self.surface, Production("type_application"))
                 }
                 else {
-                    let _ = parts.family_over(&kinds, self.surface);
+                    let _ = parts.family_over(kinds, self.surface);
                     family_applied(self.surface)
                 }
             },
@@ -12221,7 +12236,9 @@ impl Walk<'_, '_>
                 let calls = usize::from(arity) > 0_usize || called.is_some();
                 let name = called.unwrap_or(spelled);
                 let count = Arity(usize::from(arity));
-                let (form, kinds) = family_form(source, node, (&*name.0, count));
+                let form = family_form(source, node, (&name, count));
+                let kinds =
+                    (0_usize .. count.0).map(|at| argument_kind(source, node, Component::from(at)));
                 if annotated {
                     let _ = parts.text("(");
                 }
@@ -12230,7 +12247,7 @@ impl Walk<'_, '_>
                     let _ = parts.applied(count, self.surface);
                 }
                 else if count.0 > 0_usize {
-                    let _ = parts.family_over(&kinds, self.surface);
+                    let _ = parts.family_over(kinds, self.surface);
                 }
                 if annotated {
                     let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
@@ -13783,39 +13800,28 @@ impl Walk<'_, '_>
                 }
                 // A family a type reads applied is its call form where an
                 // argument that takes parentheses follows a bound variable.
+                // One whose first argument takes parentheses binds as a
+                // prefix: the type grammar reads `-F Var (Extend a b) c` as
+                // the call `Var(Extend a b)` applied to `c`.
                 let consumed = parts.iter().filter(|part| {
                     matches!(
                         **part,
                         Part::Piece(_) | Part::Spliced(_) | Part::Argument(_)
                     )
                 });
-                let arguments: Vec<(Argument, Binding)> = consumed
-                    .zip(children.iter().rev())
-                    .filter_map(|(part, piece)| match *part {
-                        Part::Argument(kind) => Some((kind, piece.binding)),
-                        Part::Text(_)
-                        | Part::Named(..)
-                        | Part::Piece(_)
-                        | Part::Last(_)
-                        | Part::Spliced(_)
-                        | Part::Binder(_)
-                        | Part::Endpoint(_)
-                        | Part::Space
-                        | Part::Tight
-                        | Part::Line
-                        | Part::Open
-                        | Part::Close => None,
-                    })
-                    .collect();
-                let called = arguments.windows(2_usize).any(|pair| {
-                    matches!(*pair, [(Argument::Variable, _), (_, after)] if after > Binding::Atom)
-                });
-                // One whose first argument takes parentheses binds as a
-                // prefix: the type grammar reads `-F Var (Extend a b) c` as
-                // the call `Var(Extend a b)` applied to `c`.
-                let led = arguments
-                    .first()
-                    .is_some_and(|&(_, first)| first > Binding::Atom);
+                let mut arguments = 0_usize;
+                let mut before = Argument::Other;
+                let mut called = false;
+                let mut led = false;
+                for (part, piece) in consumed.zip(children.iter().rev()) {
+                    if let Part::Argument(kind) = *part {
+                        let enclosed = piece.binding > Binding::Atom;
+                        led = led || (arguments == 0_usize && enclosed);
+                        called = called || (before == Argument::Variable && enclosed);
+                        before = kind;
+                        arguments = arguments.saturating_add(1_usize);
+                    }
+                }
                 let binding = if called {
                     Binding::Atom
                 }
@@ -13861,7 +13867,7 @@ impl Walk<'_, '_>
                             }
                             current.push(self.bare_up_to(piece, Binding::ARGUMENT)?);
                             written = written.saturating_add(1_usize);
-                            if written == arguments.len() {
+                            if written == arguments {
                                 let head =
                                     self.builder.concat_all(&core::mem::take(&mut current))?;
                                 current.push(self.none_or_break(head)?);

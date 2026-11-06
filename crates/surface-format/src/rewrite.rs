@@ -906,27 +906,36 @@ enum Enclosed
     Yes,
 }
 
+/// Whether an argument that binds at `band` takes parentheses as an argument
+/// of a juxtaposition, `inner` the band of the entry inside the parentheses
+/// it keeps: it binds looser than an atom, or it keeps parentheses around an
+/// entry that binds looser than an atom.
+///
+/// # Specification
+/// trivial.
+fn enclosure(
+    band: Band,
+    inner: Option<Band>,
+) -> Enclosed
+{
+    if inner.is_none_or(|inner| inner > Band::Atom) && (band > Band::Atom || inner.is_some()) {
+        Enclosed::Yes
+    }
+    else {
+        Enclosed::No
+    }
+}
+
 impl Operand<'_>
 {
     /// Whether the operand takes parentheses as an argument of a
-    /// juxtaposition: it binds looser than an atom, or it keeps parentheses
-    /// around an entry that binds looser than an atom.
+    /// juxtaposition, as [`enclosure`] reads its bands.
     ///
     /// # Specification
     /// trivial.
     fn enclosed(&self) -> Enclosed
     {
-        if self
-            .inner
-            .as_ref()
-            .is_none_or(|&(_, band)| band > Band::Atom)
-            && (self.band > Band::Atom || self.inner.is_some())
-        {
-            Enclosed::Yes
-        }
-        else {
-            Enclosed::No
-        }
+        enclosure(self.band, self.inner.as_ref().map(|&(_, band)| band))
     }
 }
 
@@ -3531,18 +3540,62 @@ impl<'source> Respelling<'_, 'source>
             return Band::of(rule);
         }
         let mut operands = parts.iter().filter_map(|part| match part.role {
-            Role::Operand(child) => Some(self.operand(child)),
+            Role::Operand(child) => Some(child),
             Role::Own(_) | Role::Comment => None,
         });
         match (operands.next(), operands.next()) {
-            (Some(head), Some(first))
-                if head.band == Band::Bridge
-                    || (head.band <= Band::Atom && first.enclosed() == Enclosed::Yes) =>
-            {
-                Band::Bridge
+            (Some(head), Some(first)) => {
+                let (head, _) = self.bands(head);
+                let (band, inner) = self.bands(first);
+                if head == Band::Bridge
+                    || (head <= Band::Atom && enclosure(band, inner) == Enclosed::Yes)
+                {
+                    Band::Bridge
+                }
+                else {
+                    Band::Application
+                }
             },
-            (Some(_), Some(_) | None) | (None, _) => Band::Application,
+            (Some(_), None) | (None, _) => Band::Application,
         }
+    }
+
+    /// The band the operand `child` binds at, and the band of the entry
+    /// inside the parentheses it keeps, as [`Self::operand`] reads them,
+    /// with no leaf copied.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bands(
+        &self,
+        child: Child<'source>,
+    ) -> (Band, Option<Band>)
+    {
+        let band_of = |child: Child<'source>| match child {
+            Child::Leaf(_) => Some(Band::Atom),
+            Child::Node(at) => self.spelled.get(&at).map(|spelled| spelled.band),
+        };
+        let Some(band) = band_of(child)
+        else {
+            return (Band::Loose, None);
+        };
+        let braced = match child {
+            Child::Node(at) => self
+                .spelled
+                .get(&at)
+                .and_then(|spelled| match spelled.shape {
+                    Shape::Braced { band, .. } => Some(band),
+                    Shape::Other
+                    | Shape::Parenthesized { .. }
+                    | Shape::Arrow { .. }
+                    | Shape::Returner { .. } => None,
+                }),
+            Child::Leaf(_) => None,
+        };
+        (
+            band,
+            braced.or_else(|| self.unwrapped(child).and_then(band_of)),
+        )
     }
 }
 
