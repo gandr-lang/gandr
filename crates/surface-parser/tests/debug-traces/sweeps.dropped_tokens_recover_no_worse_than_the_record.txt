@@ -1,0 +1,73 @@
+test: sweeps::dropped_tokens_recover_no_worse_than_the_record
+package: gandr-surface-parser
+command: mise run debug:test gandr-surface-parser sweeps::dropped_tokens_recover_no_worse_than_the_record --break recovers$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-parser/52678fd27553eab0/out/tests-52678fd27553eab0"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-parser/52678fd27553eab0/out/tests-52678fd27553eab0' (arm64).
+(lldb) settings set -- target.run-args  "sweeps::dropped_tokens_recover_no_worse_than_the_record" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex recovers$
+Breakpoint 1: where = tests-52678fd27553eab0`tests::sweeps::recovers + 188 at sweeps.rs:203:9, address = 0x0000000100046594
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-52678fd27553eab0`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x0000000101693f28
+(lldb) run
+
+running 1 test
+test sweeps::dropped_tokens_recover_no_worse_than_the_record ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 5925 launched: 'target/debug-trace/debug/build/gandr-surface-parser/52678fd27553eab0/out/tests-52678fd27553eab0' (arm64)
+Process 5925 stopped
+* thread #2, name = 'sweeps::dropped_tokens_recover_no_worse_than_the_record', stop reason = breakpoint 1.1
+       frame #0: 0x0000000100046594 tests-52678fd27553eab0`tests::sweeps::recovers(portion=Fixed) at sweeps.rs:203:9
+   200 	    /// How many moved or worse rows a failure lists.
+   201 	    const LISTED: usize = 16;
+   202 	
+-> 203 	    let pbg = built();
+    	        ^
+   204 	    let mut spellings: Vec<String> = Vec::new();
+   205 	    let mut ranks: Vec<(&str, &str, usize)> = Vec::new();
+   206 	    for (id, def) in pbg.iter_molds() {
+(lldb) bt 24
+* thread #2, name = 'sweeps::dropped_tokens_recover_no_worse_than_the_record', stop reason = breakpoint 1.1
+   * frame #0: 0x0000000100046594 tests-52678fd27553eab0`tests::sweeps::recovers(portion=Fixed) at sweeps.rs:203:9
+     frame #1: 0x0000000100049c30 tests-52678fd27553eab0`tests::sweeps::dropped_tokens_recover_no_worse_than_the_record at sweeps.rs:176:5
+     frame #2: 0x0000000100040b2c tests-52678fd27553eab0`tests::sweeps::dropped_tokens_recover_no_worse_than_the_record::{closure#0}((null)={}) at sweeps.rs:174:57
+     frame #3: 0x00000001000c8618 tests-52678fd27553eab0`<tests::sweeps::dropped_tokens_recover_no_worse_than_the_record::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x00000001000d5318 tests-52678fd27553eab0`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #5: 0x00000001000d5310 tests-52678fd27553eab0`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #6: 0x00000001000e0834 tests-52678fd27553eab0`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #7: 0x00000001000e0828 tests-52678fd27553eab0`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #8: 0x00000001000e0828 tests-52678fd27553eab0`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #9: 0x00000001000e0824 tests-52678fd27553eab0`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #10: 0x00000001000e0824 tests-52678fd27553eab0`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #11: 0x00000001000e0824 tests-52678fd27553eab0`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #12: 0x00000001000e0818 tests-52678fd27553eab0`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #13: 0x00000001000db228 tests-52678fd27553eab0`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #14: 0x00000001000db1c4 tests-52678fd27553eab0`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #15: 0x00000001000e2cf8 tests-52678fd27553eab0`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #16: 0x00000001000e2ce8 tests-52678fd27553eab0`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #17: 0x00000001000e2ce8 tests-52678fd27553eab0`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #18: 0x00000001000e2ce4 tests-52678fd27553eab0`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #19: 0x00000001000e2ce4 tests-52678fd27553eab0`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #20: 0x00000001000e2ce4 tests-52678fd27553eab0`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #21: 0x00000001000e2cd4 tests-52678fd27553eab0`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #22: 0x000000010166a7b8 tests-52678fd27553eab0`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #23: 0x000000010166a7ac tests-52678fd27553eab0`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+(lldb) frame variable --depth 3
+(gandr_workflow_sweep::Portion) portion = Fixed
+(lldb) up
+frame #1: 0x0000000100049c30 tests-52678fd27553eab0`tests::sweeps::dropped_tokens_recover_no_worse_than_the_record at sweeps.rs:176:5
+   173 	#[test]
+   174 	fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error>>
+   175 	{
+-> 176 	    recovers(Portion::Fixed)
+    	    ^
+   177 	}
+   178 	
+   179 	/// The change's sources beside the fixed set (#4654).
+(lldb) frame variable --depth 3
