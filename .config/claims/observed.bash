@@ -9,7 +9,9 @@
 # under a crate's `tests/debug-traces/`, every path it touches and the
 # `.config` cases it adds, and prints what `observed.jq` makes of them. Each
 # input reaches jq through a file, never an argument, so a transcript of any
-# size passes (#3871).
+# size passes (#3871). The paths leave out a Rust file whose diff changes
+# only comments (`comments.jq`, #5498): such a file has no test for lldb to
+# stop in, as a change that touches no Rust has none.
 set -euo pipefail
 base=$1
 body=$2
@@ -20,7 +22,8 @@ trap 'rm -rf "$scratch"' EXIT
 git diff --name-only --diff-filter=AM "$base" HEAD -- 'crates/*/tests/debug-traces/*.txt' \
   | while IFS= read -r path; do jq -Rs --arg path "$path" '{path: $path, text: .}' "$path"; done \
   | jq -s . > "$scratch/transcripts.json"
-git diff --name-only "$base" HEAD | jq -R . | jq -s . > "$scratch/paths.json"
+git diff -U0 --no-renames --no-color "$base" HEAD -- '*.rs' | jq -Rs -f "$here/comments.jq" > "$scratch/comments.json"
+git diff --name-only "$base" HEAD | jq -R . | jq -s --slurpfile comments "$scratch/comments.json" '. - $comments[0]' > "$scratch/paths.json"
 # A change touching no Rust is witnessed by a `.config` case it adds (#3784):
 # every name a JSON file under `.config` holds at HEAD and did not hold at the
 # base, and every `fail "#<n>: …"` line a `cases.bash` under `.config` adds,

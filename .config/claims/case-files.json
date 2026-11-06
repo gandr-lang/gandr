@@ -19,5 +19,29 @@
     "text": "fail \"the probe holds\"\n",
     "regressions": [],
     "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#5498: a change whose Rust edit is a module doc counts as no Rust, so its JSON case witnesses #7",
+    "file": ".config/probe/probe.json",
+    "text": "[{\"name\": \"#7: the probe holds\"}]\n",
+    "rust": {
+      "path": "crates/p/benches/hotpath.rs",
+      "base": "//! It runs twice.\nfn main() {}\n",
+      "head": "//! It runs three times.\n//!\n//! The third run measures bytes.\nfn main() {}\n"
+    },
+    "regressions": [".config/probe/probe.json"],
+    "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `.config/probe/probe.json` records `#7: the probe holds`, the change touching no Rust.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#5498: a change whose Rust edit changes code still owes a transcript, its JSON case aside",
+    "file": ".config/probe/probe.json",
+    "text": "[{\"name\": \"#7: the probe holds\"}]\n",
+    "rust": {
+      "path": "crates/p/src/lib.rs",
+      "base": "/// One.\npub const N: u8 = 1;\n",
+      "head": "/// Two.\npub const N: u8 = 2;\n"
+    },
+    "regressions": [".config/probe/probe.json"],
+    "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
   }
 ]
