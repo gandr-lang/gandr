@@ -19,7 +19,10 @@ use core::ops::ControlFlow;
 use std::path::PathBuf;
 
 use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_kernel_term::DecodeError;
+use gandr_kernel_term::MalformedSite;
 use gandr_kernel_term::decode;
+use gandr_storage_artifact::ArtifactError;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::Composed;
@@ -53,6 +56,11 @@ struct Sources
     /// The fixture sources read, the pending set among them.
     fixture: usize,
 }
+
+/// The sources whose kernel artifact passes the decoder's cap on expanded
+/// work, so that the session stores no checkpoint for them.
+/// - see: #5797 — the decoder refuses such an artifact as malformed.
+const PAST_THE_WORK_CAP: [&str; 1] = ["pathological/records/iterated-pair.gandr"];
 
 /// The corpus submission sweep: each visited source submitted to a fresh
 /// session molding at `three` threads, against the walk's step for it.
@@ -170,9 +178,11 @@ mod sweeps
 /// - requires: `step` is a source step, the walk reaching it without a fault.
 /// - ensures: the submission's kernel checkpoint reads back as the decoding of
 ///   the kernel artifact it carries, or the source is refused whole and stores
-///   none; the submission's step stands at the walk's path and root with the
-///   source's own text and standing, and prints the walk's entries under
-///   `check` and `test`; `sources` counts the step under its root.
+///   none, or the source is held past the decoder's work cap and its checkpoint
+///   fails as malformed; the submission's step stands at the walk's path and
+///   root with the source's own text and standing, and prints the walk's
+///   entries under `check` and `test`; `sources` counts the step under its
+///   root.
 /// - panics: when `step` is a fault, the session faults, or the submission
 ///   disagrees with the walk.
 /// - executable: none — the outcome is the panic or the return; the function
@@ -243,6 +253,15 @@ fn submits_as_composed(
             path.display()
         ),
         (&Composed::Refused(_), Maybe::Absent(admitted::Absent::RefusedWhole)) => {},
+        (
+            &Composed::Settled { .. },
+            Maybe::Present(&KernelCheckpoint::Failed(ArtifactError::Kernel {
+                refusal:
+                    DecodeError::Malformed {
+                        site: MalformedSite::ExpandedWork,
+                    },
+            })),
+        ) if PAST_THE_WORK_CAP.iter().any(|held| path.ends_with(held)) => {},
         (_, checkpoint) => panic!(
             "{}: the kernel checkpoint does not match the composition: {checkpoint:?}",
             path.display()
