@@ -1,25 +1,25 @@
-// Including an imported theory: a theory is a named presentation a
-// client imports, so `include` names a block of a source its source imports
-// unqualified as it names one of its own. The imported monoid is extended by
-// a chosen element; a model of the extension gives the monoid's members and
-// the element, and runs.
-//
-// - see: #1224
+//! `imported` includes a theory from another source.
+//!
+//! `PointedMonoid` extends the imported `Monoid` with `point`. `Successor`
+//! models the extension with an integer successor.
+//!
+//! `pointed` applies the chosen element, then doubles it.
+//!
+//! - see: #1224
 
-// The semigroup and the monoid.
+// The source imports the semigroup and monoid theories.
 import "./monoid.gandr";
 
-/// A monoid with a chosen element.
+/// `PointedMonoid` adds a chosen element to `Monoid`.
 theory PointedMonoid where
   include Monoid;
   oper point : () --> M;
 
-/// The functions on the integers under composition, pointed at the
-/// successor.
+/// `Successor` models `PointedMonoid` with the integer successor.
 module Successor : Model(PointedMonoid) where
   type M = Integer -> Integer;
 
-  /// `f` then `g`, applied.
+  /// `andThen` composes `f` then `g`.
   def andThen(
     f : Integer -> Integer,
     g : Integer -> Integer,
@@ -27,10 +27,10 @@ module Successor : Model(PointedMonoid) where
   ) -> Integer =
     g (f x)
 
-  /// The identity function.
+  /// `ident` returns its input.
   def ident(x : Integer) -> Integer { x }
 
-  /// The successor.
+  /// `succ` adds one.
   def succ(x : Integer) -> Integer { x + 1 }
 
   def mul(
@@ -43,7 +43,7 @@ module Successor : Model(PointedMonoid) where
 
   def point() -> Integer -> Integer { succ }
 
-  /// Associativity, included through the monoid.
+  /// `assoc` verifies the included associativity law.
   def assoc(
     f : Integer -> Integer,
     g : Integer -> Integer,
@@ -51,21 +51,21 @@ module Successor : Model(PointedMonoid) where
   ) -> Path(mul (mul f g) h, mul f (mul g h)) =
     Path.here (thunk { andThen f (thunk { andThen g h }) })
 
-  /// The left unit law, included.
+  /// `unitL` verifies the included left unit law.
   def unitL(f : Integer -> Integer) -> Path(
     mul (one ()) f,
     f
   ) =
     Path.here f
 
-  /// The right unit law, included.
+  /// `unitR` verifies the included right unit law.
   def unitR(f : Integer -> Integer) -> Path(
     mul f (one ()),
     f
   ) =
     Path.here f
 
-/// The chosen element, then doubling, at three.
+/// `pointed` applies the chosen element, then doubles it.
 @[ runs("8") ]
 def pointed() -> Integer =
   let p = Successor.point ()

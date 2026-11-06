@@ -1,28 +1,25 @@
-// The obligation `include` creates: the included theory's rules join
-// the including block's, and the union is completed as one block. Each block
-// below completes alone; the union leaves a critical pair whose two normal
-// forms are one call with its arguments swapped, which the path order
-// orients neither way, so the including block is refused by name.
-//
-// - see: #738
+//! `rules-join` refuses an incomplete join of included rules.
+//!
+//! Each include adds rules to one completed block. `Swapped` leaves a critical
+//! pair with incomparable normal forms. The checker refuses the block by name.
+//!
+//! - see: #738
 
-/// Choosing is combining, left to right.
+/// `Choice` defines two binary operations.
 theory Choice where
   sort M : Type;
   oper plus : (x : M, y : M) --> M;
   oper pick : (x : M, y : M) --> M;
   rule first : pick x y ==> plus x y;
 
-/// Choosing against the unit combines the other way round: with the
-/// included rule, `pick(one(), y)` reads `plus(one(), y)` and `plus(y,
-/// one())`.
+/// `Swapped` conflicts with an included rule after it adds a unit.
 @[ refuses("RulesUncompleted") ]
 theory Swapped where
   include Choice;
   oper one : () --> M;
   rule flip : pick (one ()) y ==> plus y (one ());
 
-/// An include of a theory no earlier block of the source presents.
+/// `Orphan` includes a theory that no source presents.
 @[ refuses("MalformedForm") ]
 theory Orphan where
   include Unwritten;
