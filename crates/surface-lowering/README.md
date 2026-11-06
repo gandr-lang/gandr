@@ -18,7 +18,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and whether a declaration that failed to lower failed because the author erred, because the fragment cannot represent it, or because the engine was misused — so no failure the engine refuses is mistaken for an obligation the author owes.
 
-**How.** Each node is dispatched on the named kind its mold resolves to (`Pbg::named_kind`); a collection pass pairs signatures with definitions, and two sweeps over the tree laid out by form, neither recursive and both under one `LoweringBudget`, plan every node and then mint it. The crate rustdoc's _The grammar names every form_ and _Two sweeps, no recursion_ hold the mechanism.
+**How.** The crate rustdoc holds the mechanism: the dispatch on each mold's named kind (_The grammar names every form_), and the two sweeps that plan and mint every node under one `LoweringBudget` (_Two sweeps, no recursion_).
 
 ## Provided features
 
@@ -128,6 +128,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
 - `vault:01a178aa-e578-7e31-8903-9f223de2dd91` — anchor: the ornaments design — a mutual block reads as one description.
 - `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: the data design — a sibling field is a recursive occurrence.
+- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the implicit-arguments design — a telescope on no function is malformed source.
 
 ## License
 

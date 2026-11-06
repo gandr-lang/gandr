@@ -250,8 +250,6 @@ impl TrackingIssue
     /// A derivation over an indexed sort or a nested model, or a peak
     /// variable no term of its sort stands for.
     pub const DERIVE_INDEXED: Self = Self(2667);
-    /// An implicit telescope on a declaration that is no function.
-    pub const IMPLICIT_TELESCOPE: Self = Self(2668);
     /// A value lift, a numeric literal, the numeric atom or a universe over a
     /// sort parameter, which the judgement has no rule for.
     pub const JUDGEMENT_FORMER: Self = Self(2669);

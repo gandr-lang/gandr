@@ -1409,11 +1409,11 @@ pub enum LoweringRefusal<'source>
         parameter: SurfaceName<'source>,
     },
 
-    /// A declaration whose header binds parameters in an implicit telescope
-    /// `@[…]` an entry of which is out of shape: an entry is a lower-case name
-    /// and its sort, `a : Type` or the stage binder `i : Size`, or a stage's
-    /// bound `i < n`, and a telescope binding a value stands before a
-    /// function's parameters.
+    /// A declaration whose implicit telescope `[…]` is out of shape. An entry
+    /// is a lower-case name and its sort, `a : Type` or the stage binder
+    /// `i : Size`, or a stage's bound `i < n`. Only a function takes a
+    /// telescope, before its parameters: implicits are the prefix of a
+    /// function type, so a declaration that is no function has none.
     ImplicitTelescope
     {
         /// The bytes the declaration covers.
@@ -2263,10 +2263,9 @@ impl fmt::Display for LoweringRefusal<'_>
                  `let` states no type"
             ),
             Self::ImplicitTelescope { .. } => f.write_str(
-                "this declaration's implicit telescope `@[…]` has an entry out of shape: an entry \
-                 is a lower-case name and its sort, `a : Type` or a stage `i : Size`, or a \
-                 stage's bound `i < n`, and a telescope binding a value stands before a \
-                 function's parameters",
+                "this declaration's implicit telescope `[…]` is out of shape: an entry is a \
+                 lower-case name and its sort, `a : Type` or a stage `i : Size`, or a stage's \
+                 bound `i < n`, and only a function takes a telescope, before its parameters",
             ),
             Self::TelescopeCycle { first, second, .. } => write!(
                 f,

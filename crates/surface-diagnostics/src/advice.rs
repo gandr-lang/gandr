@@ -394,6 +394,10 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::FamilyTelescope { .. } => {
             String::from("write a member kind that matches its parameters and result")
         },
+        LoweringRefusal::ImplicitTelescope { .. } => String::from(
+            "write the telescope before a function's parameters, as in `def f[a : Type]() -> \
+             Integer { 1 }`",
+        ),
         LoweringRefusal::ImplicitUnsupplied { .. }
         | LoweringRefusal::ImplicitInParentheses { .. } => {
             String::from("supply the implicit by name in square brackets")
@@ -544,7 +548,6 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         | LoweringRefusal::UnreadCells { .. }
         | LoweringRefusal::UnstatedComponent { .. }
         | LoweringRefusal::UndescribedMember { .. }
-        | LoweringRefusal::ImplicitTelescope { .. }
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
@@ -1324,7 +1327,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 237] = [
+    const WORDED: [&str; 238] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1450,6 +1453,7 @@ mod tests
         "ForwardMemberReference",
         "GenericUncovered",
         "HoldElsewhere",
+        "ImplicitTelescope",
         "ImplicitInParentheses",
         "ImplicitUnsupplied",
         "ImportShadows",

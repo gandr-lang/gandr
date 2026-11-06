@@ -665,9 +665,8 @@ fn lowered(
              no type"
         ),
         LoweringRefusal::ImplicitTelescope { .. } => f.write_str(
-            "this implicit telescope `@[…]` has an entry out of shape: write `a : Type` for an \
-             implicit, `i : Size` for a stage and `i < n` for its bound, before the function's \
-             parameters",
+            "this implicit telescope `[…]` is out of shape: an entry is not `a : Type`, `i : Size` \
+             or `i < n`, or the declaration is no function",
         ),
         LoweringRefusal::TelescopeCycle { first, second, .. } => write!(
             f,
