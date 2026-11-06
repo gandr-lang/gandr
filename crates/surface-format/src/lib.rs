@@ -939,6 +939,13 @@ pub fn format_beside(
         ending.physical(),
     )?;
     let mut reports: Vec<Withdrawal> = Vec::new();
+    // The whole source, as the span where every type application keeps its
+    // call form once no narrower span does.
+    let everywhere = ByteSpan::new(
+        ByteOffset::from(0_usize),
+        ByteOffset::from(<&str>::from(source).len()),
+    )
+    .ok();
     if let (Some(chosen), false) = (chosen, refused.is_empty()) {
         let any = composite::Composites::any();
         let every = tail::Tails::any();
@@ -947,26 +954,34 @@ pub fn format_beside(
         let unlisted = linear::Runs::default();
         let unthunked = thunk::Thunks::default();
         let unapplied = Reducts::default();
-        let unchecked = write(
-            grammar,
-            tree,
-            &flat,
-            (
-                Some(rewrite::Rewrites {
-                    chosen,
-                    withdrawn: &[],
-                    composites: &any,
-                    tails: &every,
-                    runs: &unlisted,
-                    thunks: &unthunked,
-                    reducts: &unapplied,
-                    unreduced: &[],
-                }),
-                &merge::Apart::default(),
-            ),
-            &layout,
-            ending,
-        )?;
+        let whole: Vec<ByteSpan> = everywhere.into_iter().collect();
+        let unchecked = |called: &[ByteSpan]| {
+            write(
+                grammar,
+                tree,
+                &flat,
+                (
+                    Some(rewrite::Rewrites {
+                        chosen,
+                        withdrawn: &[],
+                        composites: &any,
+                        tails: &every,
+                        runs: &unlisted,
+                        thunks: &unthunked,
+                        reducts: &unapplied,
+                        unreduced: &[],
+                        called,
+                    }),
+                    &merge::Apart::default(),
+                ),
+                &layout,
+                ending,
+            )
+        };
+        let unchecked = match unchecked(&[]) {
+            Err(FormatError::Unbalanced) => unchecked(&whole),
+            written => written,
+        }?;
         let respelled: BTreeSet<NodeIndex> = unchecked.respelled.iter().copied().collect();
         for declaration in refused {
             if top_forms(tree, &declaration.keys)
@@ -984,6 +999,12 @@ pub fn format_beside(
     let mut apart = merge::Apart::default();
     let mut parted: Vec<ByteSpan> = Vec::new();
     let mut unjoined: Vec<ByteSpan> = Vec::new();
+    // The forms whose type applications keep their call form, and those a
+    // pass moves there: a juxtaposition the type grammar reads otherwise is
+    // written back as the call before the declaration's rewrites are
+    // withdrawn.
+    let mut called: Vec<ByteSpan> = Vec::new();
+    let mut recalled: Vec<ByteSpan> = Vec::new();
     loop {
         let spans = forms_of(tree, &withdrawn);
         let rewrites = match (chosen, lowered.as_ref()) {
@@ -996,10 +1017,23 @@ pub fn format_beside(
                 thunks: &thunks,
                 reducts: &reducts,
                 unreduced: unreduced.as_slice(),
+                called: called.as_slice(),
             }),
             (Some(_) | None, _) => None,
         };
-        let laid = write(grammar, tree, &flat, (rewrites, &apart), &layout, ending)?;
+        // A call's parentheses that a layout block reads, `match t -> -F
+        // List(Integer) where`, are kept: every type application is written
+        // back as the call before the layout is refused.
+        let laid = match write(grammar, tree, &flat, (rewrites, &apart), &layout, ending) {
+            Err(FormatError::Unbalanced)
+                if let Some(whole) = everywhere
+                    && !called.contains(&whole) =>
+            {
+                called = Vec::from([whole]);
+                continue;
+            },
+            written => written?,
+        };
         let text = SourceText::from(laid.text.as_str());
         let Some(ref lowered) = lowered
         else {
@@ -1035,6 +1069,7 @@ pub fn format_beside(
                 parted.clear();
                 unjoined.clear();
                 stuck.clear();
+                recalled.clear();
                 for declaration in differing {
                     let forms = forms_of(tree, &declaration.keys);
                     if checker.is_some()
@@ -1066,6 +1101,13 @@ pub fn format_beside(
                         unjoined.extend(forms);
                         continue;
                     }
+                    if !forms.iter().all(|form| {
+                        called.binary_search(form).is_ok()
+                            || everywhere.is_some_and(|whole| called.contains(&whole))
+                    }) {
+                        recalled.extend(forms);
+                        continue;
+                    }
                     fresh.clear();
                     fresh.extend(
                         declaration
@@ -1087,6 +1129,7 @@ pub fn format_beside(
                     || !reduced.is_empty()
                     || !parted.is_empty()
                     || !unjoined.is_empty()
+                    || !recalled.is_empty()
                 {
                     thunks.keep(&retried);
                     unreduced.append(&mut reduced);
@@ -1094,6 +1137,9 @@ pub fn format_beside(
                     unreduced.dedup();
                     apart.keep(&parted, merge::OneForm::Function);
                     apart.keep(&unjoined, merge::OneForm::Joined);
+                    called.append(&mut recalled);
+                    called.sort_unstable();
+                    called.dedup();
                     continue;
                 }
                 if withdrawn.len() == before {
@@ -1110,10 +1156,27 @@ pub fn format_beside(
                     }
                 }
                 if withdrawn.len() == before {
-                    return Err(FormatError::Changed(Change::Meaning));
+                    // A declaration no form of its own holds, a theory's
+                    // operation among them, still lowers otherwise: every
+                    // type application is written back as the call before
+                    // the text is refused.
+                    match everywhere {
+                        Some(whole) if !called.contains(&whole) => {
+                            called = Vec::from([whole]);
+                        },
+                        Some(_) | None => return Err(FormatError::Changed(Change::Meaning)),
+                    }
                 }
             },
-            Agreement::Unpaired => return Err(FormatError::Changed(Change::Meaning)),
+            // A juxtaposed type application the type grammar reads as no form
+            // there, `Twisted (Twisted a)` as a codata observation's type, is
+            // written back as the call everywhere before the text is refused.
+            Agreement::Unpaired => match everywhere {
+                Some(whole) if !called.contains(&whole) => {
+                    called = Vec::from([whole]);
+                },
+                Some(_) | None => return Err(FormatError::Changed(Change::Meaning)),
+            },
         }
     }
 }
@@ -1738,9 +1801,11 @@ fn verify_rewritten(
     let tree = whole
         .as_ref()
         .map_or_else(|| reparsed.tree(), ParseResult::tree);
+    // A text that lowers as no module pairs with nothing: the caller writes
+    // its type applications back as calls before it refuses it.
     let Some(respelled) = meaning::lowered(grammar, tree, unit, arena)
     else {
-        return Err(FormatError::Changed(Change::Meaning));
+        return Ok(Agreement::Unpaired);
     };
     let base = ByteOffset::from(before.len());
     let agreement = meaning::agree(arena, (lowered, &respelled), base, None);

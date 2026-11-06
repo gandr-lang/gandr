@@ -1364,6 +1364,10 @@ pub enum Notation
     /// then its tree as nested brackets. The source writes a pasting only
     /// as a chain or a level-two shape.
     Tree,
+    /// A path, a bridge or a homed type former inside an expression, written
+    /// juxtaposed, `Path d a`: no spelling of it reads back there until #5750
+    /// and #5753.
+    TypeApplication,
 }
 
 /// A part of a node the presentation leaves out: the text stands for the

@@ -864,8 +864,9 @@ fn n_ary_products_and_sums_spell_between_their_braces()
 }
 
 /// #4835: a homed type former spells bare by default, and after the name its
-/// source records for its head otherwise, `std.list.List Integer`, its
-/// argument where the bare spelling writes it.
+/// source records for its head otherwise, `std.list.List(Integer)`, its
+/// argument where the bare spelling writes it. A qualified head keeps the call
+/// form until #5753.
 #[test]
 fn a_homed_former_spells_as_its_reader_reads_it_4835()
 {
@@ -878,8 +879,8 @@ fn a_homed_former_spells_as_its_reader_reads_it_4835()
     let homed = CoreSource::new(&core, &[]).homing(&homes);
     for (source, root, spelling) in [
         (&bare, list, "List Integer"),
-        (&homed, list, "std.list.List Integer"),
-        (&homed, nested, "std.list.List (std.list.List Integer)"),
+        (&homed, list, "std.list.List(Integer)"),
+        (&homed, nested, "std.list.List(std.list.List(Integer))"),
     ] {
         assert_eq!(
             spelled(source, Root::Type(CoreNode::ValueType(root))),
@@ -1802,9 +1803,9 @@ fn every_type_former_spells_as_the_grammar_writes_it()
 }
 
 /// #2246: a type the source records as written `Model(T)` or `Model(T) with
-/// sort C = A …` spells as written in both forms, its sorts in the order
-/// written, a carrier looser than a sum parenthesized, and quoted where an
-/// expression stands as `type(…)`; the same record unrecorded spells as the
+/// sort C = A …` spells juxtaposed in both forms, `Model T`, its sorts in the
+/// order written, a carrier looser than a sum parenthesized, and quoted where
+/// an expression stands as `type(…)`; the same record unrecorded spells as the
 /// record.
 #[test]
 fn a_model_type_spells_as_written_2246()
@@ -1848,16 +1849,16 @@ fn a_model_type_spells_as_written_2246()
     };
     let modelled = CoreSource::new(&core, &names).writing(&forms);
     for (root, sugared, explicit) in [
-        (plain, "Model(Counter)", "Model(Counter)"),
+        (plain, "Model Counter", "Model Counter"),
         (
             fixed,
-            "Model(Counter) with sort C = Integer + String",
-            "Model(Counter) with sort C = +{Integer, String}",
+            "Model Counter with sort C = Integer + String",
+            "Model Counter with sort C = +{Integer, String}",
         ),
         (
             chained,
-            "Model(ReadCounter) with sort R = (Integer -> String) with sort C = Integer",
-            "Model(ReadCounter) with sort R = (Integer -> String) with sort C = Integer",
+            "Model ReadCounter with sort R = (Integer -> String) with sort C = Integer",
+            "Model ReadCounter with sort R = (Integer -> String) with sort C = Integer",
         ),
     ] {
         for (form, spelling) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -1876,8 +1877,8 @@ fn a_model_type_spells_as_written_2246()
         }
     }
     for (root, spelling) in [
-        (quoted, "type(Model(Counter))"),
-        (argument, "Flow.stay type(Model(Counter))"),
+        (quoted, "type(Model Counter)"),
+        (argument, "Flow.stay type(Model Counter)"),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
             let presented =
@@ -3434,7 +3435,7 @@ fn a_binder_the_print_leaves_out_moves_no_name_5402()
         (
             CoreNode::CompType(plain),
             CoreNode::CompType(unnamed),
-            "Unit -> -F (Picked Unit (fun (a) { pure Unit }))",
+            "Unit -> -F Picked Unit (fun (a) { pure Unit })",
         ),
         (
             CoreNode::ValueType(plain_thunk),
@@ -5992,7 +5993,7 @@ fn a_definition_writes_its_implicits_in_its_telescope_2267()
 }
 
 /// A function quantifying over a model spells whole with the model implicit
-/// in its telescope, `[s : Model(S) with sort C = A]`, in place of the
+/// in its telescope, `[s : Model S with sort C = A]`, in place of the
 /// parameters its components bind, each component read by its path, `s.x`,
 /// and passed on to a callee's slot by the implicit's name (#2364).
 #[test]
@@ -6037,7 +6038,7 @@ fn a_definition_writes_its_model_implicit_whole_2364()
         declared_whole(&source, (ty, defined), PageWidth::from(100_u32)),
         Maybe::Present((
             String::from(
-                "def down[s : Model(Counter) with sort C = Nat](a : Nat) -> Nat {\n  \
+                "def down[s : Model Counter with sort C = Nat](a : Nat) -> Nat {\n  \
                  stepped[.t = s] a\n}"
             ),
             Fidelity::Faithful

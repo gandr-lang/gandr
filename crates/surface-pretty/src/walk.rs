@@ -2070,6 +2070,33 @@ fn juxtaposed_name(
     }
 }
 
+/// `written`, a family's name the lowering mints as a call, `Terms(Mag)`,
+/// juxtaposed where a type reads it, `Terms Mag`, or nothing where it stands
+/// as written: an expression, or a name that is no capitalised head over one
+/// name.
+///
+/// # Specification
+/// trivial.
+fn juxtaposed_family(
+    written: &Written,
+    surface: Surface,
+) -> Option<Written>
+{
+    match surface {
+        Surface::Expression => None,
+        Surface::Type | Surface::Enclosed => {
+            let (head, rest) = written.0.split_once('(')?;
+            let operand = rest.strip_suffix(')')?;
+            let named = !operand.is_empty()
+                && operand
+                    .chars()
+                    .all(|letter| letter.is_alphanumeric() || matches!(letter, '_' | '.' | '\''));
+            (head.starts_with(char::is_uppercase) && !head.contains(' ') && named)
+                .then(|| Written(Cow::Owned(format!("{head} {operand}"))))
+        },
+    }
+}
+
 /// Whether a child piece stands inside a quote the type grammar reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Quoted
@@ -2095,7 +2122,7 @@ fn quoted_piece(
     let inside = core::iter::once(None)
         .chain(parts.iter().map(Some))
         .zip(parts.iter())
-        .filter(|&(_, part)| matches!(*part, Part::Piece(_) | Part::Spliced(_)))
+        .filter(|&(_, part)| matches!(*part, Part::Piece(_) | Part::Spliced(_) | Part::Argument(_)))
         .nth(usize::from(index))
         .is_some_and(|(before, _)| matches!(before, Some(Part::Text(text)) if text == "type("));
     if inside {
@@ -3334,10 +3361,9 @@ const fn type_applied(
 }
 
 /// How a family or a constructor applied to its operands binds in
-/// `surface`, as [`Parts::family`] writes them: an application where an
-/// expression or a type is read, `Maybe A` the juxtaposed `type_application`
-/// there, and an atom with its operands between its own parentheses where an
-/// expression a type encloses is read.
+/// `surface`, as [`Parts::family`] writes them: an application, `Maybe A` the
+/// juxtaposed `type_application` where a type or an expression a type
+/// encloses is read, whose grammar reads a capitalised head juxtaposed.
 ///
 /// # Specification
 /// trivial.
@@ -3346,11 +3372,87 @@ const fn family_applied(surface: Surface) -> Binding
 {
     match surface {
         Surface::Expression => writes(Production("application_expression"), Binding::Application),
-        Surface::Type => writes(
+        Surface::Type | Surface::Enclosed => writes(
             Production("type_application.juxtaposed"),
             Binding::Application,
         ),
-        Surface::Enclosed => writes(Production("type_application"), Binding::Atom),
+    }
+}
+
+/// How a family applied to its arguments is written.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FamilyForm
+{
+    /// Its arguments juxtaposed with its head, `Maybe A`.
+    Juxtaposed,
+    /// Its call form, `F(a, b)`, where no juxtaposition reads back.
+    Called,
+}
+
+/// What one argument of an applied former is, as [`family_form`] reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Argument
+{
+    /// A bound variable, written as its name.
+    Variable,
+    /// A call of a function or of a primitive, written `f(a)`.
+    Call,
+    /// Any other argument.
+    Other,
+}
+
+/// How the former `node`, spelled `name`, applied to `arity` arguments, is
+/// written: in its call form under a module-qualified head,
+/// `Shapes.Box(Integer)`, until #5753, and where a call follows a bound
+/// variable, `Vec(a, plus(m, k))`, which the type grammar reads as the moded
+/// type `a plus(m, k)`. Juxtaposed otherwise, with each argument's kind for
+/// the join, which keeps the call form where an argument in parentheses
+/// follows a bound variable.
+///
+/// # Specification
+/// trivial.
+fn family_form<S>(
+    source: &S,
+    node: S::Node,
+    (name, arity): (&str, Arity),
+) -> (FamilyForm, Vec<Argument>)
+where
+    S: Source + ?Sized,
+{
+    let kind = |argument: S::Node| {
+        let former = source.read(argument);
+        if matches!(former, Former::Variable { .. }) {
+            Argument::Variable
+        }
+        else if matches!(
+            former,
+            Former::Application(..)
+                | Former::StaticApplication(..)
+                | Former::Nested(_)
+                | Former::Returned(_)
+        ) || matches!(former, Former::Primitive { arity, .. } if usize::from(arity) > 0_usize)
+        {
+            Argument::Call
+        }
+        else {
+            Argument::Other
+        }
+    };
+    let kinds: Vec<Argument> = (0_usize .. arity.0)
+        .map(|at| {
+            source
+                .component(node, Component::from(at))
+                .map_or(Argument::Other, kind)
+        })
+        .collect();
+    let moded = kinds
+        .windows(2_usize)
+        .any(|pair| matches!(*pair, [Argument::Variable, Argument::Call]));
+    if name.contains('.') || moded {
+        (FamilyForm::Called, kinds)
+    }
+    else {
+        (FamilyForm::Juxtaposed, kinds)
     }
 }
 
@@ -4882,6 +4984,13 @@ enum Part
     /// a child visited after the rest, so the binders it opens are the ones
     /// the join names, though it is written before them.
     Last(Binding),
+    /// The next child's piece, an argument of a family a type reads applied,
+    /// which this names: after a space, bare when it binds at most as an atom.
+    /// Where an argument that takes parentheses follows a bound variable, the
+    /// join writes every argument of the form between the family's own
+    /// parentheses, `F(a, G b)`: the type grammar reads a lowercase name before
+    /// a parenthesis, `a (G b)`, as the call `a(G b)`.
+    Argument(Argument),
     /// The next child's piece, a text literal written inside the string
     /// around it: the piece is taken and this, its escaped content, written
     /// in its place.
@@ -4926,7 +5035,10 @@ impl Parts
         part: Part,
     ) -> &mut Self
     {
-        if matches!(part, Part::Piece(_) | Part::Last(_) | Part::Spliced(_)) {
+        if matches!(
+            part,
+            Part::Piece(_) | Part::Last(_) | Part::Spliced(_) | Part::Argument(_)
+        ) {
             self.pieces = self.pieces.saturating_add(1_usize);
         }
         self.parts.push(part);
@@ -5076,10 +5188,10 @@ impl Parts
     }
 
     /// Appends a family's or a constructor's `count` operands as `surface`
-    /// reads them: juxtaposed where an expression or a type is read, as the
-    /// type grammar reads `Maybe A` (#5326), and between parentheses where an
-    /// expression a type encloses is read, whose glued `f x` the type grammar
-    /// reads as the moded type `m T`.
+    /// reads them: juxtaposed, as the type grammar reads `Maybe A` (#5326)
+    /// and an expression a type encloses reads `Tag Zero b`. The type
+    /// grammar reads a capitalised head juxtaposed, though it reads a glued
+    /// `f x` as the moded type `m T`.
     ///
     /// # Specification
     /// trivial.
@@ -5090,8 +5202,40 @@ impl Parts
     ) -> &mut Self
     {
         match surface {
-            Surface::Expression | Surface::Type => self.juxtaposed(count),
-            Surface::Enclosed => self.arguments(count),
+            Surface::Expression => self.juxtaposed(count),
+            Surface::Type | Surface::Enclosed if count.0 == 0_usize => self.juxtaposed(count),
+            Surface::Type | Surface::Enclosed => {
+                for _ in 0_usize .. count.0 {
+                    let _ = self.part(Part::Argument(Argument::Other));
+                }
+                self
+            },
+        }
+    }
+
+    /// Appends a family's or a constructor's operands, one for each of
+    /// `kinds`, as [`Self::family`] appends them, each argument named by what
+    /// it is.
+    ///
+    /// # Specification
+    /// trivial.
+    fn family_over(
+        &mut self,
+        kinds: &[Argument],
+        surface: Surface,
+    ) -> &mut Self
+    {
+        match surface {
+            Surface::Expression => self.juxtaposed(Arity(kinds.len())),
+            Surface::Type | Surface::Enclosed if kinds.is_empty() => {
+                self.juxtaposed(Arity(0_usize))
+            },
+            Surface::Type | Surface::Enclosed => {
+                for &kind in kinds {
+                    let _ = self.part(Part::Argument(kind));
+                }
+                self
+            },
         }
     }
 
@@ -6623,27 +6767,40 @@ impl Walk<'_, '_>
         ))
     }
 
-    /// The surface a path or a bridge type writes its endpoints on: a type's
-    /// where an expression reads a type, as the type grammar reads
-    /// `Path(x, y)` and no juxtaposed path, and the walk's own elsewhere.
+    /// How a path, a bridge or a homed type former applied to its operands
+    /// binds on the walk's surface, as [`type_applied`] states, noting the
+    /// juxtaposed form such a type inside an expression takes.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `Surface::Type` on the expression surface where `admits`
-    ///   reads a type; the walk's surface otherwise.
-    /// - provides: the one way a path or a bridge type chooses its form.
+    /// - ensures: [`type_applied`]'s binding for the walk's surface and `rule`;
+    ///   on the expression surface where `admits` reads a type,
+    ///   `Notation::TypeApplication` is among the notes, since no spelling of
+    ///   the type reads back there until #5750 and #5753. A value the
+    ///   expression grammar reads, `pure (Vec MkIx)`, takes no note.
+    /// - provides: the one way these formers choose their applied binding.
     /// - panics: none.
-    /// - executable: none — one comparison.
+    /// - executable: none — the binding is `type_applied`'s, and the note is
+    ///   one call.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `endForced`'s ascription to `Path(3, _)` inside an
     ///   expression is held by the body parity sweep, and `pure (Vec MkIx)`
     ///   stays faithful.
     /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
-    fn endpoint_surface(
-        &self,
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a path, a bridge or a homed type former inside an expression reads back \
+                      in no spelling until #5750 and #5753: written in the printer's notation"
+        )
+    )]
+    fn applied_type(
+        &mut self,
+        rule: Production,
         admits: Admits,
-    ) -> Surface
+    ) -> Binding
     {
         if self.surface == Surface::Expression
             && matches!(
@@ -6651,11 +6808,9 @@ impl Walk<'_, '_>
                 Admits::Type | Admits::ValueType | Admits::CompType | Admits::Thunked
             )
         {
-            Surface::Type
+            self.note(Unspelled::Notation(Notation::TypeApplication));
         }
-        else {
-            self.surface
-        }
+        type_applied(self.surface, rule)
     }
 
     /// Pushes a finished atom holding `glyphs`.
@@ -11798,7 +11953,7 @@ impl Walk<'_, '_>
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
             && matches!(ret, Join::Form { pieces: Arity(count), .. }
-                if self.forms.last().is_some_and(|parts| parts.iter().filter(|part| matches!(**part, Part::Piece(_) | Part::Last(_) | Part::Spliced(_))).count() == count)),
+                if self.forms.last().is_some_and(|parts| parts.iter().filter(|part| matches!(**part, Part::Piece(_) | Part::Last(_) | Part::Spliced(_) | Part::Argument(_))).count() == count)),
     )]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -11880,18 +12035,17 @@ impl Walk<'_, '_>
         let binding = match *former {
             // `Path(x, y)` and `Bridge(x, y)`: a carrier the source omitted
             // reads back as nothing, and each spells through its own
-            // production, its endpoints terms, in the call form wherever a
-            // type is read. A flow is a type application, juxtaposed as a
-            // family's, `Flow x y`.
+            // production, its endpoints terms. Neither reads back juxtaposed
+            // in a type until #5750, so a type keeps the call form, and an
+            // expression keeps the printer's notation. A flow is a type
+            // application, juxtaposed as a family's, `Flow x y`.
             Former::Path { carrier: None, .. } => {
-                let surface = self.endpoint_surface(admits);
-                let _ = parts.text("Path").applied(Arity(2_usize), surface);
-                type_applied(surface, Production("path_type"))
+                let _ = parts.text("Path").applied(Arity(2_usize), self.surface);
+                self.applied_type(Production("path_type"), admits)
             },
             Former::Bridge { carrier: None, .. } => {
-                let surface = self.endpoint_surface(admits);
-                let _ = parts.text("Bridge").applied(Arity(2_usize), surface);
-                type_applied(surface, Production("bridge_type"))
+                let _ = parts.text("Bridge").applied(Arity(2_usize), self.surface);
+                self.applied_type(Production("bridge_type"), admits)
             },
             Former::Flow { carrier: None, .. } => {
                 let _ = parts.text("Flow").family(Arity(2_usize), self.surface);
@@ -11935,7 +12089,7 @@ impl Walk<'_, '_>
                 }
             },
             Former::Model { theory, sorts } => {
-                let _ = parts.text(format!("Model({})", theory.as_ref()));
+                let _ = parts.text(format!("Model {}", theory.as_ref()));
                 for &(sort, _) in sorts {
                     let _ = writes(
                         Production("manifest_sort"),
@@ -11946,7 +12100,10 @@ impl Walk<'_, '_>
                     );
                 }
                 if sorts.is_empty() {
-                    writes(Production("type_application"), Binding::Atom)
+                    writes(
+                        Production("type_application.juxtaposed"),
+                        Binding::Application,
+                    )
                 }
                 else {
                     writes(Production("manifest_type"), Binding::Relation)
@@ -12015,16 +12172,32 @@ impl Walk<'_, '_>
                     .filter(|&written| unwritable(written, self.spelling).is_none())
                     .and_then(|_| source.declaration(node));
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let count = Arity(usize::from(arity));
+                let (form, kinds) = family_form(source, node, (&*name.0, count));
+                // A family the lowering names as a call, a theory's terms
+                // `Terms(Mag)`, is written as the application it names.
+                let minted = (count.0 == 0_usize)
+                    .then(|| juxtaposed_family(&name, self.surface))
+                    .flatten();
+                let applies = minted.is_some();
+                let name = minted.unwrap_or(name);
                 let _ = match declared {
                     Some(constant) => parts.named(name, constant),
                     None => parts.text(name),
                 };
-                if usize::from(arity) > 0_usize {
-                    let _ = parts.family(Arity(usize::from(arity)), self.surface);
+                if applies {
                     family_applied(self.surface)
                 }
-                else {
+                else if count.0 == 0_usize {
                     writes(Production("type_identifier"), Binding::Atom)
+                }
+                else if form == FamilyForm::Called {
+                    let _ = parts.applied(count, self.surface);
+                    type_applied(self.surface, Production("type_application"))
+                }
+                else {
+                    let _ = parts.family_over(&kinds, self.surface);
+                    family_applied(self.surface)
                 }
             },
             Former::Constructor {
@@ -12035,8 +12208,9 @@ impl Walk<'_, '_>
             } => {
                 // Where the spelling is source a reader reads back, a
                 // parameterised constructor is written against its family,
-                // `(MkIx : Ix(3))`, which its lowering needs, unless its
-                // position states its type.
+                // `(MkIx : Ix 3)`, which its lowering needs, unless its
+                // position states its type. A constructor a type states is
+                // written juxtaposed, `Succ n`, as a family is.
                 let annotated = classifier.is_some()
                     && self.bodies == Bodies::Spelled
                     && admits != Admits::Stated;
@@ -12046,19 +12220,27 @@ impl Walk<'_, '_>
                 // to its components is.
                 let calls = usize::from(arity) > 0_usize || called.is_some();
                 let name = called.unwrap_or(spelled);
+                let count = Arity(usize::from(arity));
+                let (form, kinds) = family_form(source, node, (&*name.0, count));
                 if annotated {
                     let _ = parts.text("(");
                 }
                 let _ = parts.text(name);
-                if usize::from(arity) > 0_usize {
-                    let _ = parts.family(Arity(usize::from(arity)), self.surface);
+                if count.0 > 0_usize && form == FamilyForm::Called {
+                    let _ = parts.applied(count, self.surface);
+                }
+                else if count.0 > 0_usize {
+                    let _ = parts.family_over(&kinds, self.surface);
                 }
                 if annotated {
                     let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
                 }
                 let applied = match (calls, annotated) {
                     (true, true) => writes(Production("application_expression"), Binding::Atom),
-                    (true, false) => family_applied(self.surface),
+                    (true, false) if count.0 > 0_usize && form == FamilyForm::Juxtaposed => {
+                        family_applied(self.surface)
+                    },
+                    (true, false) => type_applied(self.surface, Production("type_application")),
                     (false, _) => writes(Production("constructor.expression"), Binding::Atom),
                 };
                 if annotated {
@@ -12727,8 +12909,8 @@ impl Walk<'_, '_>
                 writes(Production("parenthesized_expression"), Binding::Atom)
             },
             // A homed type former written through its home's path: the path,
-            // then its one argument, `std.list.List A`, which the type grammar
-            // reads as `M.T A` applies `M.T` (#5326).
+            // then its one argument, `std.list.List(A)`. A qualified head reads
+            // back juxtaposed nowhere until #5753, so it keeps the call form.
             Former::List(_)
             | Former::RunType(_)
             | Former::PrefixType(_)
@@ -12737,8 +12919,8 @@ impl Walk<'_, '_>
             {
                 let _ = parts
                     .text(String::from(head.as_ref()))
-                    .family(Arity(1_usize), self.surface);
-                family_applied(self.surface)
+                    .applied(Arity(1_usize), self.surface);
+                self.applied_type(Production("type_path"), admits)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
@@ -13010,8 +13192,10 @@ impl Walk<'_, '_>
                     // reads as.
                     Join::Sigma if piece.binding == Binding::Product => Binding::Product,
                     // A record's product link is braced where its fields hold
-                    // a dependent pair, and the product otherwise.
-                    Join::RecordProduct if piece.binding == Binding::Atom => Binding::Atom,
+                    // a dependent pair, and the product otherwise. A family a
+                    // type reads applied is its call form, an atom, where a
+                    // juxtaposition would read as a call.
+                    Join::RecordProduct | Join::Form { .. } if piece.binding == Binding::Atom => Binding::Atom,
                     Join::RecordProduct => Infix::Product.binding(),
                     Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
@@ -13021,6 +13205,9 @@ impl Walk<'_, '_>
                     Join::Apply(_) if self.surface != Surface::Expression => Binding::Atom,
                     Join::Apply(_) | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) => Binding::Application,
                     Join::Braced { .. } | Join::Update(_) | Join::Patch(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,
+                    // A family whose first argument takes parentheses binds
+                    // as a prefix, so a returner encloses it.
+                    Join::Form { binding: Binding::Application, .. } if piece.binding == Binding::Prefix => Binding::Prefix,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -13094,7 +13281,19 @@ impl Walk<'_, '_>
             },
             Join::Prefix(prefix) => {
                 let operand = self.pop()?;
-                let operand = self.bare_up_to(operand, Binding::Atom)?;
+                // The type grammar reads `-F Maybe A` as `-F (Maybe A)`, and
+                // `+U Maybe A` as a misplaced tile: a returner takes an
+                // application, and every other prefix an atom.
+                let loosest = match prefix {
+                    Prefix::Returner => Binding::Application,
+                    Prefix::Thunk
+                    | Prefix::Pure
+                    | Prefix::Return
+                    | Prefix::Become
+                    | Prefix::Force
+                    | Prefix::Run => Binding::Atom,
+                };
+                let operand = self.bare_up_to(operand, loosest)?;
                 let head = self.leaf(match prefix {
                     Prefix::Thunk => Glyphs("+U "),
                     Prefix::Returner => Glyphs("-F "),
@@ -13582,6 +13781,51 @@ impl Walk<'_, '_>
                 for _ in lasts .. count {
                     children.push(self.pop()?);
                 }
+                // A family a type reads applied is its call form where an
+                // argument that takes parentheses follows a bound variable.
+                let consumed = parts.iter().filter(|part| {
+                    matches!(
+                        **part,
+                        Part::Piece(_) | Part::Spliced(_) | Part::Argument(_)
+                    )
+                });
+                let arguments: Vec<(Argument, Binding)> = consumed
+                    .zip(children.iter().rev())
+                    .filter_map(|(part, piece)| match *part {
+                        Part::Argument(kind) => Some((kind, piece.binding)),
+                        Part::Text(_)
+                        | Part::Named(..)
+                        | Part::Piece(_)
+                        | Part::Last(_)
+                        | Part::Spliced(_)
+                        | Part::Binder(_)
+                        | Part::Endpoint(_)
+                        | Part::Space
+                        | Part::Tight
+                        | Part::Line
+                        | Part::Open
+                        | Part::Close => None,
+                    })
+                    .collect();
+                let called = arguments.windows(2_usize).any(|pair| {
+                    matches!(*pair, [(Argument::Variable, _), (_, after)] if after > Binding::Atom)
+                });
+                // One whose first argument takes parentheses binds as a
+                // prefix: the type grammar reads `-F Var (Extend a b) c` as
+                // the call `Var(Extend a b)` applied to `c`.
+                let led = arguments
+                    .first()
+                    .is_some_and(|&(_, first)| first > Binding::Atom);
+                let binding = if called {
+                    Binding::Atom
+                }
+                else if led && binding == Binding::Application {
+                    Binding::Prefix
+                }
+                else {
+                    binding
+                };
+                let mut written = 0_usize;
                 let mut current = Vec::new();
                 let mut heads = Vec::new();
                 for part in parts {
@@ -13603,6 +13847,32 @@ impl Walk<'_, '_>
                         Part::Last(loosest) => {
                             let piece = last.pop().ok_or(PresentationError::Unbalanced)?;
                             current.push(self.bare_up_to(piece, loosest)?);
+                        },
+                        Part::Argument(_) if called => {
+                            let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
+                            if written == 0_usize {
+                                current.push(self.leaf(Glyphs("("))?);
+                            }
+                            else {
+                                current.push(self.leaf(Glyphs(","))?);
+                                let head =
+                                    self.builder.concat_all(&core::mem::take(&mut current))?;
+                                current.push(self.space_or_break(head)?);
+                            }
+                            current.push(self.bare_up_to(piece, Binding::ARGUMENT)?);
+                            written = written.saturating_add(1_usize);
+                            if written == arguments.len() {
+                                let head =
+                                    self.builder.concat_all(&core::mem::take(&mut current))?;
+                                current.push(self.none_or_break(head)?);
+                                current.push(self.leaf(Glyphs(")"))?);
+                            }
+                        },
+                        Part::Argument(_) => {
+                            let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
+                            let head = self.builder.concat_all(&core::mem::take(&mut current))?;
+                            current.push(self.space_or_break(head)?);
+                            current.push(self.bare_up_to(piece, Binding::Atom)?);
                         },
                         Part::Binder(offset) => current.push(self.binder(OpenBinders(offset))?),
                         Part::Endpoint(index) => {

@@ -690,12 +690,13 @@ fn a_composite_s_cells_are_not_a_tuple_3957()
 /// An arrow written under a thunk inside a type quote is the computation
 /// arrow, and so is its codomain arrow. The explicit form keeps both as
 /// written and braces the product of the two thunks, as the printer does. The
-/// sugared form writes the product back (#5207).
+/// sugared form writes the product back (#5207). Each application is written
+/// juxtaposed, `T A` (#5708).
 #[test]
 fn a_product_of_thunks_in_a_type_quote_is_braced_5207()
 {
     let grammar = grammar();
-    let quoted = "type(*{+U (A -> T(A)), +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))})";
+    let quoted = "type(*{+U (A -> T A), +U (+U (T A) -> +U (A -> T B) -> T B)})";
     let source = "def raw : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) { fun (A) { fun (B) { \
                   type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } };\n";
     let form = |source: &str, form: Form| {
@@ -719,7 +720,7 @@ fn a_product_of_thunks_in_a_type_quote_is_braced_5207()
     );
     let sugared = form(&explicit, Form::Sugared);
     assert!(
-        sugared.contains("type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)))"),
+        sugared.contains("type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B))"),
         "the product of the thunks sugars back: {sugared}"
     );
 }
@@ -918,9 +919,8 @@ fn a_manifest_carrier_is_parenthesised_as_the_printer_writes_it_2246()
         "rewrite/unformatted/a-manifest-carrier-is-parenthesised-as-the-printer-writes-it-2246-theory.gandr"
     );
     let explicit =
-        format!("{theory}def endo : Model(Pointed) with sort M = +U (Integer -> -F Integer);\n");
-    let sugared =
-        format!("{theory}def endo : Model(Pointed) with sort M = (Integer -> Integer);\n");
+        format!("{theory}def endo : Model Pointed with sort M = +U (Integer -> -F Integer);\n");
+    let sugared = format!("{theory}def endo : Model Pointed with sort M = (Integer -> Integer);\n");
     for (source, form, expected) in [
         (&explicit, Form::Sugared, &sugared),
         (&sugared, Form::Explicit, &explicit),
@@ -2103,6 +2103,75 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
         def add : (Integer, Integer) -> Integer = fun (a) { fun (b) { a + b } };
     "#]]
     .assert_eq(&laid(Form::Sugared, None));
+}
+
+/// The formatter writes a type application juxtaposed in either form, as the
+/// printer does: `Parcel(Integer)` is `Parcel Integer`. A product argument
+/// keeps its parentheses under the sugar, `Parcel (Integer * Integer)`, and
+/// its stars under the explicit form, `Parcel *{Integer, Integer}`. A call
+/// whose argument in parentheses follows a type variable keeps its call form,
+/// `Pair(a, Parcel Integer)`, since the type grammar reads `a (Parcel
+/// Integer)` as the call `a(Parcel Integer)`; after a type's name the
+/// argument is juxtaposed, `Pair Integer (Parcel Integer)`. A returner
+/// encloses a juxtaposition whose first argument takes parentheses, `-F (Pair
+/// (Parcel Integer) Integer)`, since the type grammar reads `-F Pair (Parcel
+/// Integer) Integer` as the call `Pair(Parcel Integer)` applied on (#5708).
+#[test]
+fn a_type_application_is_written_juxtaposed_5708()
+{
+    let grammar = grammar();
+    let data = "data Parcel(a : Type) : Type where\n  | Enclosed : (x : a) --> Parcel a\n\ndata Pair(a : Type, b : Type) : Type where\n  | Paired : (x : a, y : b) --> Pair a b\n\n";
+    for (parameter, form, expected) in [
+        ("Parcel(Integer)", Form::Sugared, "Parcel Integer"),
+        ("Parcel(Integer)", Form::Explicit, "Parcel Integer"),
+        (
+            "Parcel(Integer * Integer)",
+            Form::Sugared,
+            "Parcel (Integer * Integer)",
+        ),
+        (
+            "Parcel(Integer * Integer)",
+            Form::Explicit,
+            "Parcel *{Integer, Integer}",
+        ),
+        (
+            "Parcel *{Integer, Integer}",
+            Form::Sugared,
+            "Parcel (Integer * Integer)",
+        ),
+        (
+            "Parcel (Integer * Integer)",
+            Form::Explicit,
+            "Parcel *{Integer, Integer}",
+        ),
+        (
+            "Pair(Integer, Parcel(Integer))",
+            Form::Sugared,
+            "Pair Integer (Parcel Integer)",
+        ),
+        (
+            "Pair(a, Parcel(Integer))",
+            Form::Sugared,
+            "Pair(a, Parcel Integer)",
+        ),
+        (
+            "Pair(Parcel(Integer), Integer)",
+            Form::Sugared,
+            "Pair (Parcel Integer) Integer",
+        ),
+        (
+            "+U (Integer -> -F Pair(Parcel(Integer), Integer))",
+            Form::Explicit,
+            "+U (Integer -> -F (Pair (Parcel Integer) Integer))",
+        ),
+    ] {
+        let source = format!("{data}def taken(a : Type, x : {parameter}) -> Integer {{ 0 }}\n");
+        assert_eq!(
+            spelled(&grammar, source.as_str(), form, Selection::Every),
+            format!("{data}def taken(a : Type, x : {expected}) -> Integer {{ 0 }}\n"),
+            "{parameter} as {form}"
+        );
+    }
 }
 
 /// The rewrites' sweep: every corpus source formats into either form, the

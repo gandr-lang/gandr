@@ -671,22 +671,23 @@ impl Band
             // A manifest sort's carrier binds no looser than a sum wherever
             // the sort is fixed, as the printer writes it (#2246, #3715).
             (_, Position::Carrier) | ("lazy_product_type", _) => Self::Sum,
+            // The type grammar reads `-F Maybe A` as `-F (Maybe A)`, and
+            // `+U Maybe A` as a misplaced tile.
             (
-                "u_type"
-                | "f_type"
+                "f_type"
                 | "f_type.row"
                 | "f_type.result"
                 | "f_type.row.labelled"
-                | "f_type.result.labelled"
-                | "at_type",
+                | "f_type.result.labelled",
                 _,
             )
+            | ("application_expression" | "type_application.juxtaposed", Position::First) => {
+                Self::Application
+            },
+            ("u_type" | "at_type", _)
             | ("send_session_type" | "receive_session_type", Position::First)
             | ("application_expression" | "type_application.juxtaposed", Position::Later) => {
                 Self::Atom
-            },
-            ("application_expression" | "type_application.juxtaposed", Position::First) => {
-                Self::Application
             },
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
@@ -895,6 +896,40 @@ struct Operand<'source>
     inner: Option<(Vec<Leaf<'source>>, Band)>,
 }
 
+/// Whether an argument of a juxtaposition takes parentheses.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Enclosed
+{
+    /// It is written bare.
+    No,
+    /// It is written in parentheses.
+    Yes,
+}
+
+impl Operand<'_>
+{
+    /// Whether the operand takes parentheses as an argument of a
+    /// juxtaposition: it binds looser than an atom, or it keeps parentheses
+    /// around an entry that binds looser than an atom.
+    ///
+    /// # Specification
+    /// trivial.
+    fn enclosed(&self) -> Enclosed
+    {
+        if self
+            .inner
+            .as_ref()
+            .is_none_or(|&(_, band)| band > Band::Atom)
+            && (self.band > Band::Atom || self.inner.is_some())
+        {
+            Enclosed::Yes
+        }
+        else {
+            Enclosed::No
+        }
+    }
+}
+
 /// One top-level form's respelling.
 struct Respelling<'run, 'source>
 {
@@ -923,6 +958,9 @@ struct Respelling<'run, 'source>
     reducts: &'source Reducts,
     /// The spans of the top-level forms whose reducts stay as written.
     unreduced: &'run [ByteSpan],
+    /// The spans of the top-level forms whose type applications keep their
+    /// call form.
+    called: &'run [ByteSpan],
     /// Each nested form respelled, by position.
     spelled: BTreeMap<NodeIndex, Spelled<'source>>,
     /// Each node's extent: its first leaf's start to its last leaf's end.
@@ -1035,6 +1073,10 @@ pub struct Rewrites<'run, 'source>
     pub reducts: &'source Reducts,
     /// The spans of the top-level forms whose reducts stay as written.
     pub unreduced: &'run [ByteSpan],
+    /// The spans of the top-level forms whose type applications keep their
+    /// call form: a juxtaposition there lowered otherwise, or the text no
+    /// longer parsed.
+    pub called: &'run [ByteSpan],
 }
 
 /// The top-level form `form` of `tree`, whose leaves are `leaves`, respelled
@@ -1084,6 +1126,7 @@ pub fn respell<'source>(
         thunks: rewrites.thunks,
         reducts: rewrites.reducts,
         unreduced: rewrites.unreduced,
+        called: rewrites.called,
         spelled: BTreeMap::new(),
         extents: BTreeMap::new(),
         parents: BTreeMap::new(),
@@ -1846,7 +1889,7 @@ impl<'source> Respelling<'_, 'source>
         }
         Spelled {
             leaves: out.leaves,
-            band: Band::of(rule),
+            band: self.band_over(rule, parts),
             shape,
             commented,
             rewritten,
@@ -2319,8 +2362,14 @@ impl<'source> Respelling<'_, 'source>
                 Band::Application
             },
             (RewriteName::TypeApplication, Direction::Sugar | Direction::Desugar) => {
-                self.juxtaposed_type(&mut out, parts)?;
-                Band::Application
+                if self
+                    .called
+                    .iter()
+                    .any(|span| span.start() <= extent.start() && extent.end() <= span.end())
+                {
+                    return None;
+                }
+                self.juxtaposed_type(&mut out, parts)?
             },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
@@ -3128,7 +3177,9 @@ impl<'source> Respelling<'_, 'source>
         }
         out.token(Spelling("-F"));
         out.gap(Spelling(" "));
-        out.place(&self.operand(codomain), Band::Atom);
+        // A returner takes an application, `-F Maybe A`, as the printer
+        // writes it.
+        out.place(&self.operand(codomain), Band::Application);
         out.token(CLOSE_PAREN);
         Some(())
     }
@@ -3395,7 +3446,14 @@ impl<'source> Respelling<'_, 'source>
     /// juxtaposition `F a b`, each argument an atom or in its parentheses.
     /// Nothing is written for a head that is a type variable, which
     /// juxtaposed reads as the moded type `m T`, a list of no argument, a
-    /// second list, or a comment among the parts.
+    /// second list, or a comment among the parts. Nothing is written either
+    /// where an argument in parentheses, or a call, follows a lowercase name,
+    /// as the printer keeps the call form there: the type grammar reads
+    /// `a (G b)` as the call `a(G b)`, and `a plus(m, k)` as the moded type
+    /// `a T`. The band of the juxtaposition is returned. One whose first
+    /// argument takes parentheses binds as a bridge, so a returner encloses
+    /// it, as the printer does: the type grammar reads `-F Var (Extend a b) c`
+    /// as the call `Var(Extend a b)` applied to `c`.
     ///
     /// # Specification
     /// trivial.
@@ -3403,7 +3461,7 @@ impl<'source> Respelling<'_, 'source>
         &self,
         out: &mut Builder<'source>,
         parts: &[Part<'source>],
-    ) -> Option<()>
+    ) -> Option<Band>
     {
         if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
             return None;
@@ -3421,12 +3479,70 @@ impl<'source> Respelling<'_, 'source>
         {
             return None;
         }
-        out.fragment(head);
-        for operand in operands {
-            out.gap(Spelling(" "));
-            out.place(&self.operand(operand), Band::Atom);
+        let operands: Vec<Operand<'source>> = operands
+            .into_iter()
+            .map(|operand| self.operand(operand))
+            .collect();
+        let enclosed = |operand: &Operand<'source>| operand.enclosed() == Enclosed::Yes;
+        let words = |operand: &Operand<'source>| {
+            operand
+                .leaves
+                .iter()
+                .filter(|leaf| leaf.material != Material::Whitespace)
+                .map(|leaf| <&str>::from(leaf.text))
+                .filter(|word| !word.is_empty())
+                .collect::<Vec<&str>>()
+        };
+        let lowered = |word: &&str| word.starts_with(char::is_lowercase);
+        let named = |operand: &Operand<'source>| matches!(words(operand).as_slice(), [word] if lowered(word));
+        let called = |operand: &Operand<'source>| {
+            let words = words(operand);
+            words.first().is_some_and(lowered) && words.last() == Some(&CLOSE_PAREN.0)
+        };
+        if operands.windows(2_usize).any(|pair| {
+            matches!(pair, [before, after] if named(before) && (enclosed(after) || called(after)))
+        }) {
+            return None;
         }
-        Some(())
+        let led = operands.first().is_some_and(enclosed);
+        out.fragment(head);
+        for operand in &operands {
+            out.gap(Spelling(" "));
+            out.place(operand, Band::Atom);
+        }
+        Some(if led { Band::Bridge } else { Band::Application })
+    }
+
+    /// The band a form of the rule `rule` over `parts` binds at: the rule's
+    /// own band, but a bridge for a type juxtaposition whose first argument
+    /// takes parentheses, `Var (Extend a b) c`, as [`Self::juxtaposed_type`]
+    /// writes it. The juxtaposition nests to the left, so its head is the
+    /// first operand and its first argument the second.
+    ///
+    /// # Specification
+    /// trivial.
+    fn band_over(
+        &self,
+        rule: MoldName,
+        parts: &[Part<'source>],
+    ) -> Band
+    {
+        if rule.0 != "type_application.juxtaposed" {
+            return Band::of(rule);
+        }
+        let mut operands = parts.iter().filter_map(|part| match part.role {
+            Role::Operand(child) => Some(self.operand(child)),
+            Role::Own(_) | Role::Comment => None,
+        });
+        match (operands.next(), operands.next()) {
+            (Some(head), Some(first))
+                if head.band == Band::Bridge
+                    || (head.band <= Band::Atom && first.enclosed() == Enclosed::Yes) =>
+            {
+                Band::Bridge
+            },
+            (Some(_), Some(_) | None) | (None, _) => Band::Application,
+        }
     }
 }
 
@@ -3535,7 +3651,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 34] = [
+const RULES: [MoldName; 36] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -3561,6 +3677,8 @@ const RULES: [MoldName; 34] = [
     MoldName("manifest_type"),
     MoldName("manifest_sort"),
     APPLICATION,
+    MoldName("type_application"),
+    MoldName("type_application.juxtaposed"),
     MoldName("forget_model_expression"),
     MoldName("path_type"),
     MoldName("type_quote_expression"),
