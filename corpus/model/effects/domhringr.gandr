@@ -1,21 +1,12 @@
-// What a domhringr stage performs besides its session's moves, each effect a
-// theory of its operations with its first-order laws. A session's protocol
-// stays a session type: the ordered, linear channel is not an effect.
+// This source defines non-session effects of a domhringr stage.
 //
-// Each theory's documentation states what it commutes with. Every row is a
-// set whatever commutes; the commutation table decides which operations the
-// fusion pass may reorder. A commutation past an operation that answers a
-// value is a law over continuations, each operation taking what runs after
-// it and `bind x . …` binding the value it answers; those laws follow the
-// effects, one theory per law. An effect commuting with nothing has no law
-// to write.
+// A row names each effect instance. A session remains a linear channel type.
 //
-// The instance an effect is performed at (a store, a task's journal, a
-// sink) is the label a row names it by, not a second theory.
+// The commutation rules state which operations fusion may reorder.
+//
+// - see: `../../pathological/effects/domhringr.gandr` — invalid continuation ports
 
-/// The record plane's content-addressed values: a put answers the value's
-/// digest, and the digest gets the value back. A put is idempotent, so the
-/// store commutes with every effect. One instance.
+/// `Store` puts values and gets them by digest.
 theory Store where
   sort Value : Type;
   sort Digest : Type;
@@ -23,10 +14,7 @@ theory Store where
   oper get : (d : Digest) --> Value;
   rule getPut : get (put v) ==> v;
 
-/// A fold's entries, appended in order: an append answers the entry's
-/// index, and the index reads the entry back. Two appends do not commute,
-/// so a journal commutes with nothing of its own kind. One instance per
-/// task.
+/// `Journal` appends entries and reads them by index.
 theory Journal where
   sort Entry : Type;
   sort Index : Type;
@@ -34,26 +22,19 @@ theory Journal where
   oper read : (i : Index) --> Entry;
   rule readAppend : read (append e) ==> e;
 
-/// An outside oracle asked a question, answering a readout. No law holds of
-/// an outside endpoint: an answer repeats only under a pinned seed and
-/// model. A judge commutes with `Store` and `Trace`, not with `Clock`. One
-/// instance per endpoint.
+/// `Judge` asks an external endpoint for a readout.
 theory Judge where
   sort Question : Type;
   sort Readout : Type;
   oper ask : (q : Question) --> Readout;
 
-/// A read-only lookup of a name's claim, such as a host's address or a
-/// tree's identity. Reading twice is reading once, and a witness commutes
-/// with every effect but `Clock`. One instance.
+/// `Witness` retrieves a claim by name.
 theory Witness where
   sort Name : Type;
   sort Claim : Type;
   oper lookup : (n : Name) --> Claim;
 
-/// The time now, and a token that expires after a duration. `now` does not
-/// commute with any operation that takes time, so a clock commutes with
-/// nothing. One instance.
+/// `Clock` creates instants and deadline tokens.
 theory Clock where
   sort Instant : Type;
   sort Duration : Type;
@@ -61,36 +42,28 @@ theory Clock where
   oper now : () --> Instant;
   oper deadline : (d : Duration) --> Token;
 
-/// A draw from a distribution. No law holds of a draw; an instance under a
-/// fixed seed is deterministic, as a `Store` is. A draw commutes with every
-/// effect. One instance per seed.
+/// `Random` samples a distribution.
 theory Random where
   sort Distribution : Type;
   sort Draw : Type;
   oper sample : (d : Distribution) --> Draw;
 
-/// A write-only sink of events. An emit commutes with every read, and two
-/// emits to one sink do not commute. One instance per sink.
+/// `Trace` emits events to a sink.
 theory Trace where
   sort Event : Type;
   oper emit : (e : Event) --> Unit;
 
-/// A refused dispatch or a dead seat: a raise answers nothing, its result the
-/// empty type `Void`, so nothing after it runs, and under linearity whatever
-/// unwinds releases its holds. A raise commutes with nothing. One instance
-/// per protocol.
+/// `Fail` raises a reason and returns `Void`.
 theory Fail where
   sort Reason : Type;
   oper raise : (r : Reason) --> Void;
 
-/// An asynchronous interruption of the work a token names: the response is
-/// decoupled from the call, so an interrupt commutes with nothing. One
-/// instance per dispatch.
+/// `Cancel` interrupts the work named by a token.
 theory Cancel where
   sort Token : Type;
   oper interrupt : (t : Token) --> Unit;
 
-/// A put is idempotent: putting a value twice is putting it once.
+/// `StoreIdempotent` collapses two equal puts.
 theory StoreIdempotent where
   sort Value : Type+;
   sort Digest : Type+;
@@ -98,7 +71,7 @@ theory StoreIdempotent where
   oper put : (v : Value, k : pi+ (d : Digest). C) --> C;
   rule idem : put v (bind d. (put v k)) <=> put v k;
 
-/// A lookup is read-only: looking a name up twice is looking it up once.
+/// `WitnessIdempotent` collapses two equal lookups.
 theory WitnessIdempotent where
   sort Name : Type+;
   sort Claim : Type+;
@@ -106,8 +79,7 @@ theory WitnessIdempotent where
   oper lookup : (n : Name, k : pi+ (c : Claim). C) --> C;
   rule idem : lookup n (bind c. (lookup n k)) <=> lookup n k;
 
-/// The store commutes with every effect, a lookup among them: a put before
-/// a lookup is the lookup before the put.
+/// `StoreWitness` commutes a put and a lookup.
 theory StoreWitness where
   sort Value : Type+;
   sort Digest : Type+;
@@ -120,7 +92,7 @@ theory StoreWitness where
     n
     (bind c. (put v (bind d. (k d c))));
 
-/// An emit commutes with every read, a lookup among them.
+/// `TraceWitness` commutes an emit and a lookup.
 theory TraceWitness where
   sort Event : Type+;
   sort Name : Type+;
@@ -130,7 +102,7 @@ theory TraceWitness where
   oper lookup : (n : Name, k : pi+ (c : Claim). C) --> C;
   rule commute : emit e (lookup n k) <=> lookup n (bind c. (emit e (k c)));
 
-/// An emit commutes with a journal's read, though appends do not commute.
+/// `TraceJournal` commutes an emit and a journal read.
 theory TraceJournal where
   sort Event : Type+;
   sort Index : Type+;
@@ -140,7 +112,7 @@ theory TraceJournal where
   oper read : (i : Index, k : pi+ (x : Entry). C) --> C;
   rule commute : emit e (read i k) <=> read i (bind x. (emit e (k x)));
 
-/// A judge commutes with the store: asking before a put is asking after it.
+/// `JudgeStore` commutes an ask and a put.
 theory JudgeStore where
   sort Question : Type+;
   sort Readout : Type+;
@@ -153,8 +125,7 @@ theory JudgeStore where
     v
     (bind d. (ask q (bind r. (k r d))));
 
-/// A judge commutes with a trace: an emit before the question is an emit
-/// after it.
+/// `JudgeTrace` commutes an ask and an emit.
 theory JudgeTrace where
   sort Question : Type+;
   sort Readout : Type+;
@@ -164,7 +135,7 @@ theory JudgeTrace where
   oper emit : (e : Event, k : C) --> C;
   rule commute : emit e (ask q k) <=> ask q (bind r. (emit e (k r)));
 
-/// A draw commutes with every effect, an emit among them.
+/// `RandomTrace` commutes a sample and an emit.
 theory RandomTrace where
   sort Distribution : Type+;
   sort Draw : Type+;

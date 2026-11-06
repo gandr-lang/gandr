@@ -1,24 +1,19 @@
-// Hello, world: a program printing a line through `std`, handed the ambient
-// authority by `gandr run`.
+// This source runs a greeting through standard output.
 //
-// Authority enters a program in one place, as `main`'s parameter, and the
-// program prints through a capability opened from it. Nothing reaches the
-// standard streams through the ambient `std.io.Console.Eff` interface.
+// `gandr run` passes `Authority` to `main`. The program opens a console from
+// that authority.
 //
-// `console` narrows the authority to the standard streams, and `print` writes
-// one line through them. `gandr run hello.gandr` prints `hello, world!` and
-// exits 0.
+// `print` emits one line through the console.
 //
-// - see: `../../../library/std/src/authority.gandr` — `Authority` and
-//   `console`
+// - see: `../../../library/std/src/authority.gandr` — `Authority`, `console`
 // - see: `../../../library/std/src/io.gandr` — `print`
-// - see: #2970 — `std.authority` and `std.io`
+// - see: #2970 — `std.authority`, `std.io`
 
-// The authority `main` is handed, and the console it opens.
+// `main` gets `Authority`. It opens a console.
 import std.authority (Authority, console);
-// Standard output, through the console.
+// `print` sends output through the console.
 import std.io (print);
 
-/// The entry: it opens the console from its authority and prints its greeting.
+/// `main` opens its console and prints a greeting.
 def main(authority : Authority) -> [std.io.Console.Eff] Unit =
   print (console authority) "hello, world!"
