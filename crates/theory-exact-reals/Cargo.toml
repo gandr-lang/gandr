@@ -23,8 +23,9 @@ path = "tests/lib.rs"
 # operations at four operand widths, one timing a plan's canonical form, its
 # bytes and their reading back, one timing the refinement and the replay of
 # certificates, one timing a turn of the refinement machine, one timing the
-# search and the replay of bounded quantifiers, and one timing the
-# checked-result cache, each with percentiles and allocations.
+# search and the replay of bounded quantifiers, one timing the checked-result
+# cache, and one timing cut elimination, each with percentiles and
+# allocations.
 [[bench]]
 harness = false
 name = "arithmetic"
@@ -54,6 +55,11 @@ path = "benches/quantifier.rs"
 harness = false
 name = "cache"
 path = "benches/cache.rs"
+
+[[bench]]
+harness = false
+name = "elimination"
+path = "benches/elimination.rs"
 
 [dependencies]
 anodized.workspace = true

@@ -16,6 +16,8 @@ mod dovetail;
 #[cfg(test)]
 mod dyadic;
 #[cfg(test)]
+mod elimination;
+#[cfg(test)]
 mod interval;
 #[cfg(test)]
 mod oracle;

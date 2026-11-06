@@ -507,6 +507,10 @@ fn decide(
         Open::Top => BilateralApprox::TRUE,
         Open::Bottom => BilateralApprox::FALSE,
         Open::Less(left, right) => compared(real_at(slots, left), real_at(slots, right)),
+        // A point lies in the lower cut of a cut exactly when it lies below the
+        // cut's value, so the enclosures approximate the cut as a comparison.
+        Open::LowerCut(cut, point) => compared(real_at(slots, point), real_at(slots, cut)),
+        Open::UpperCut(cut, point) => compared(real_at(slots, cut), real_at(slots, point)),
         Open::Meet(left, right) => open_at(slots, left).meet(open_at(slots, right)),
         Open::Join(left, right) => open_at(slots, left).join(open_at(slots, right)),
         Open::Exists(_) | Open::Forall(_) => BilateralApprox::UNDECIDED,

@@ -21,6 +21,7 @@
 //! | [`Check::DomainHull`] | an interval domain that is dual or unbounded, or compact evidence on a hull that is not closed |
 //! | [`Check::UnknownEvidence`], [`Check::EvidenceKind`] | an evidence reference that the [`EvidenceTable`] does not register, or registers for another judgement |
 //! | [`Check::DomainEvidence`] | a quantifier whose evidence differs from the evidence its interval domain states |
+//! | [`Check::CutOperand`] | a lower or an upper cut whose first operand is not a cut |
 //!
 //! # Items
 //!
@@ -355,6 +356,8 @@ pub enum Check
     },
     /// A quantifier's evidence differs from its interval domain's.
     DomainEvidence,
+    /// The first operand of a lower cut or an upper cut is not a cut.
+    CutOperand,
 }
 
 impl fmt::Display for Check
@@ -409,6 +412,9 @@ impl fmt::Display for Check
             Self::DomainEvidence => f.write_str(
                 "a quantifier's evidence differs from the evidence of its interval domain",
             ),
+            Self::CutOperand => {
+                f.write_str("the first operand of a lower or an upper cut is not a cut")
+            },
         };
     }
 }
@@ -721,6 +727,11 @@ fn payload(
         },
         Node::Open(ref open) => match *open {
             Open::Top | Open::Bottom | Open::Less(..) | Open::Meet(..) | Open::Join(..) => {},
+            Open::LowerCut(cut, _) | Open::UpperCut(cut, _) => {
+                if !matches!(plan.node(cut.node()), Ok(&Node::Real(Real::Cut(_)))) {
+                    return Err(Check::CutOperand);
+                }
+            },
             Open::Exists(quantifier) => {
                 expect(quantifier.evidence, Judgement::Overt)?;
                 slot(quantifier.dual, Judgement::Compact)?;
