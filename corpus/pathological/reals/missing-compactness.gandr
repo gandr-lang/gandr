@@ -1,0 +1,32 @@
+// A program hands the host a universal whose domain states no compactness,
+// and `admit` refuses the plan.
+//
+// The plan is the plan of `∀ x ∈ [0, 1] (x · x < 2)` in `forall.gandr`,
+// except for its domain. The domain states its overtness at the reference 1,
+// and no compactness. A universal holds only by a cover of a compact domain,
+// so it names the compactness at the reference 2 as its evidence. The domain
+// does not state that evidence, so the validation pass refuses the plan at
+// the universal, node 5, by the check `DomainEvidence`.
+//
+// `gandr run missing-compactness.gandr` writes the refusal as one line on
+// standard error. The run stops at `admit`, and it prints nothing.
+//
+// - see: `corpus/model/reals/forall.gandr` — the universal with its evidence
+// - see: `crates/theory-exact-reals/src/validate.rs` — the checks of a plan
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+
+/// The canonical bytes of the plan of `∀ x ∈ [0, 1] (x · x < 2)` whose
+/// domain states no compactness: 6 nodes in 106 bytes.
+pub def uncovered : String = "47585250010006000000000000002000010000000000000000000000000001000000000100000000000000010001010000000001000000000501000000010000000201000000010000000000000001120200000003000000160000000004000000020000000101000000";
+
+/// The entry: admit the plan and decide its root. The host declines
+/// `admit`, so the run stops there and prints nothing.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let held = std.reals.admit uncovered
+  let *{verdict, machine} = std.reals.decide held 16
+  std.io.Console.print verdict
+  0

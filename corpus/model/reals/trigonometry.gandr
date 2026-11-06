@@ -28,6 +28,8 @@ import std.io;
 import std.reals;
 // The join of two strings.
 import std.string (concat);
+// The subject's shared declarations: `decided` and `enclosed`.
+import "./reals-base.gandr";
 
 /// The canonical bytes of the plan of `7071 < 10000 · cos (π · 1/4)` in
 /// lowercase hexadecimal: 8 nodes in 91 bytes, the magic `GXRP` first.
@@ -49,12 +51,6 @@ pub def sineBelow : String = "47585250010008000000000000000204000000020000000000
 /// `α₃ = 1/2`: 21 nodes in 193 bytes.
 pub def betaOne : String = "4758525001001500000000000000020000000001000000000000000102ffffffff0100000000000000010500000000010000000a020000000300000000010000000504000000010000000a050000000503000000060000000b020000000405000000010000000a0900000005080000000a0000000c070000000b0000000b0500000005030000000d000000020000000000000000000000000b09000000050800000010000000040f000000110000000c0e00000012000000030c00000013000000";
 
-/// The verdict on the open root of `plan` after at most `quanta` quanta.
-pub def decided(plan : String, quanta : Integer) -> [std.reals.Eff] String =
-  let held = std.reals.admit plan
-  let *{verdict, machine} = std.reals.decide held quanta
-  verdict
-
 /// The verdicts on the four bounds, a space between each two.
 pub def bounds() -> [std.reals.Eff] String =
   let first = decided cosineAbove 16
@@ -62,13 +58,6 @@ pub def bounds() -> [std.reals.Eff] String =
   let third = decided sineAbove 16
   let fourth = decided sineBelow 16
   concat first (concat " " (concat second (concat " " (concat third (concat " " fourth)))))
-
-/// The ends of an enclosure of the root of `plan` no wider than `2^-k`, the
-/// lower end first and a space between them.
-pub def enclosed(plan : String, k : Integer) -> [std.reals.Eff] String =
-  let held = std.reals.admit plan
-  let *{lower, upper} = std.reals.enclose held k
-  concat lower (concat " " upper)
 
 /// `bounds` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.
@@ -90,7 +79,7 @@ def boundsModelled() -> String =
 /// `enclosed` under a handler of this source, a second model of
 /// `std.reals.Eff` that answers each enclosure with `0` and `1/2`.
 @[ runs("\"0p0 1p-1\"") ]
-def enclosedModelled() -> String =
+def angleModelled() -> String =
   handle r : std.reals.Eff {
     enclosed betaOne 16
   } with {
