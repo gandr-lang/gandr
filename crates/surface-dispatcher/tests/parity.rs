@@ -26,9 +26,9 @@ use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::model_slots;
+use gandr_surface_diagnostics::modelled;
+use gandr_surface_diagnostics::named_forms;
 use gandr_surface_diagnostics::telescopes;
-use gandr_surface_diagnostics::written_entry_names;
-use gandr_surface_diagnostics::written_names;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::classify;
@@ -46,7 +46,6 @@ use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::ScopeAnswer;
 use gandr_surface_lowering::Unit;
-use gandr_surface_lowering::WrittenModel;
 use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::Lexeme;
@@ -69,6 +68,7 @@ use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Unreadable;
 use gandr_surface_pretty::Unspelled;
+use gandr_surface_pretty::WrittenForms;
 use gandr_surface_pretty::present_definition;
 use gandr_surface_pretty::present_type;
 use gandr_surface_pretty::present_whole;
@@ -861,23 +861,6 @@ fn laid(
     (laid.text, laid.unit, laid.base)
 }
 
-/// The model type, or the capability scope's theory, `model` records, as the
-/// printer spells it: the theory and each sort beside its type.
-///
-/// # Specification
-/// trivial.
-fn modelled(model: &WrittenModel) -> Modelled<'_>
-{
-    Modelled {
-        theory: Name::from(model.theory.as_ref()),
-        sorts: model
-            .sorts
-            .iter()
-            .map(|&(ref sort, carrier)| (Name::from(sort.as_ref()), CoreNode::ValueType(carrier)))
-            .collect(),
-    }
-}
-
 /// What the body parity reads of a source: each declaration it spells
 /// whole, each it holds and why, and each the printer spells unfaithfully
 /// for a reason no issue holds.
@@ -1024,35 +1007,24 @@ fn read(
     let implicits = telescopes(&module);
     let slots = model_slots(&module);
     // Each dependent pair's binder and second label as the source writes
-    // them, as the language server's spellings name them (#3278), and each
-    // labelled sum's and lazy product's labels (#4395).
+    // them, as the language server's spellings name them (#3278), each
+    // labelled sum's and lazy product's labels (#4395), and each model type.
     let naming = Naming::of(&module, SourceText::from(text.as_str()));
-    let pairs: Vec<_> = written_names(naming.pairs().iter().copied(), naming.text()).collect();
-    let seconds: Vec<_> = written_names(naming.seconds().iter().copied(), naming.text()).collect();
-    let sum_labels: Vec<_> = written_entry_names(
-        naming
-            .sum_labels()
-            .iter()
-            .map(|&(sum, ref spans)| (sum, spans.iter().copied())),
-        naming.text(),
-    )
-    .collect();
-    let with_labels: Vec<_> = written_entry_names(
-        naming
-            .with_labels()
-            .iter()
-            .map(|&(with, ref spans)| (with, spans.iter().copied())),
-        naming.text(),
-    )
-    .collect();
+    let named = named_forms(naming.forms(), naming.text());
+    let forms = WrittenForms {
+        pairs: named.pairs,
+        seconds: named.seconds,
+        sum_labels: named.sum_labels,
+        with_labels: named.with_labels,
+        models,
+        ..WrittenForms::new()
+    };
     let source = CoreSource::new(&arena, &names)
         .naming(&constructors)
-        .naming_pairs(&pairs, &seconds)
-        .naming_entries(&sum_labels, &with_labels)
+        .writing(&forms)
         .crossing(&crossings)
         .forgetting(&forgettings)
         .forgetting_maps(&maps)
-        .modeling(&models)
         .scoping(&scopes)
         .answering(&answers)
         .manifesting(&rows)

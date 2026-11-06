@@ -15,7 +15,6 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Carried;
-use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -23,13 +22,13 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Origin;
+use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::SplitComponent;
 use gandr_surface_lowering::WrittenModel;
@@ -37,8 +36,10 @@ use gandr_surface_pretty::BinderIndex;
 use gandr_surface_pretty::ChildSlot;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Scopes;
+use gandr_surface_pretty::WrittenForms;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 
@@ -85,30 +86,9 @@ pub struct Naming
     /// Each split component with the name it binds, ascending by split and
     /// component.
     components: Vec<((ComputationId, SplitComponent), Named)>,
-    /// Each dependent arrow with where the name it binds is written,
-    /// ascending by id.
-    arrows: Vec<(CompTypeId, ByteSpan)>,
-    /// Each dependent pair a dependent record's field opens with where the
-    /// field's label is written, ascending by id.
-    pairs: Vec<(ValueTypeId, ByteSpan)>,
-    /// Each such pair with where the label of its second component is
-    /// written, ascending by id.
-    seconds: Vec<(ValueTypeId, ByteSpan)>,
-    /// Each sum written over labels with where each label is written, in
-    /// written order, ascending by id.
-    sum_labels: Vec<(ValueTypeId, Vec<ByteSpan>)>,
-    /// Each lazy product written over labels with where each label is
-    /// written, in written order, ascending by id.
-    with_labels: Vec<(CompTypeId, Vec<ByteSpan>)>,
-    /// Each type written as a relation between types, with the relation,
-    /// ascending by id.
-    relations: Vec<(ValueTypeId, Relation)>,
-    /// Each type written as a model type, `Model(T)` or `Model(T) with sort
-    /// C = A …`, with the theory and sorts written, ascending by id.
-    models: Vec<(ValueTypeId, WrittenModel)>,
-    /// Each record type written by the name of a type member, with where
-    /// the name is written, ascending by id.
-    members: Vec<(ValueTypeId, ByteSpan)>,
+    /// The forms the source writes that the core erases, each with where its
+    /// names are written, each list ascending by its node.
+    forms: WrittenForms<ByteSpan, WrittenModel>,
     /// Each written use of a variable with where a name for its binder is
     /// written: first where the origin table records the binder a use
     /// resolves to, then the use itself, which a type's variables have and no
@@ -127,11 +107,10 @@ impl Naming
     /// # Specification
     /// - requires: `module` was lowered from `source`.
     /// - ensures: the source text, each value declaration's roots by its
-    ///   constant, the origin table's binders, split components, dependent
-    ///   arrows, dependent record pairs and their second labels, relations and
-    ///   model types, its bindings then its written values as uses, and the
-    ///   path each model implicit's component is read by, `s.x`, at its
-    ///   position in its declaration's telescope.
+    ///   constant, the origin table's binders, split components and written
+    ///   forms, its bindings then its written values as uses, and the path each
+    ///   model implicit's component is read by, `s.x`, at its position in its
+    ///   declaration's telescope.
     /// - provides: the input of [`Self::scoped`].
     /// - fails: never.
     /// - panics: none.
@@ -206,41 +185,7 @@ impl Naming
                     .map(|&(variable, origin)| (variable, origin.span())),
             )
             .collect();
-        let arrows = origins
-            .arrows()
-            .iter()
-            .map(|&(arrow, origin)| (arrow, origin.span()))
-            .collect();
-        let pairs = origins
-            .pairs()
-            .iter()
-            .map(|&(pair, origin)| (pair, origin.span()))
-            .collect();
-        let seconds = origins
-            .seconds()
-            .iter()
-            .map(|&(pair, origin)| (pair, origin.span()))
-            .collect();
-        let sum_labels = origins
-            .sum_labels()
-            .iter()
-            .map(|&(sum, ref labels)| (sum, labels.iter().map(Origin::span).collect()))
-            .collect();
-        let with_labels = origins
-            .with_labels()
-            .iter()
-            .map(|&(with, ref labels)| (with, labels.iter().map(Origin::span).collect()))
-            .collect();
-        let mut relations = origins.relations().to_vec();
-        relations.sort_by_key(|&(related, _)| related);
-        let mut models = origins.models().to_vec();
-        models.sort_by_key(|&(modelled, _)| modelled);
-        let mut members: Vec<(ValueTypeId, ByteSpan)> = origins
-            .members()
-            .iter()
-            .map(|&(member, origin)| (member, origin.span()))
-            .collect();
-        members.sort_by_key(|&(member, _)| member);
+        let forms = written_spans(origins);
         let qualified = roots
             .iter()
             .filter_map(|&(constant, _)| {
@@ -266,14 +211,7 @@ impl Naming
             roots,
             openers,
             components,
-            arrows,
-            pairs,
-            seconds,
-            sum_labels,
-            with_labels,
-            relations,
-            models,
-            members,
+            forms,
             uses,
             qualified,
         }
@@ -335,99 +273,16 @@ impl Naming
         self.roots.iter().copied()
     }
 
-    /// Each dependent arrow with where the name it binds is written,
-    /// ascending by arrow.
+    /// The forms the source writes that the core erases, each with where its
+    /// names are written, each list ascending by its node.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn arrows(&self) -> &[(CompTypeId, ByteSpan)]
+    pub const fn forms(&self) -> &WrittenForms<ByteSpan, WrittenModel>
     {
-        &self.arrows
-    }
-
-    /// Each dependent pair with where the label of its binder is written,
-    /// ascending by pair.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn pairs(&self) -> &[(ValueTypeId, ByteSpan)]
-    {
-        &self.pairs
-    }
-
-    /// Each dependent pair with where the label of its second component is
-    /// written, ascending by pair.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn seconds(&self) -> &[(ValueTypeId, ByteSpan)]
-    {
-        &self.seconds
-    }
-
-    /// Each sum written over labels with where each label is written, in
-    /// written order, ascending by sum.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn sum_labels(&self) -> &[(ValueTypeId, Vec<ByteSpan>)]
-    {
-        &self.sum_labels
-    }
-
-    /// Each lazy product written over labels with where each label is
-    /// written, in written order, ascending by product.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn with_labels(&self) -> &[(CompTypeId, Vec<ByteSpan>)]
-    {
-        &self.with_labels
-    }
-
-    /// Each type written as a relation between types, ascending by type.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn relations(&self) -> &[(ValueTypeId, Relation)]
-    {
-        &self.relations
-    }
-
-    /// Each type written as a model type, with the theory and sorts written,
-    /// ascending by type.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn models(&self) -> &[(ValueTypeId, WrittenModel)]
-    {
-        &self.models
-    }
-
-    /// Each record type written by the name of a type member, with where the
-    /// name is written, ascending by type.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn members(&self) -> &[(ValueTypeId, ByteSpan)]
-    {
-        &self.members
+        &self.forms
     }
 
     /// This record with each node in `carried` named as the node it copies:
@@ -436,9 +291,8 @@ impl Naming
     /// # Specification
     /// - requires: `carried` is in the order its copies were minted.
     /// - ensures: every list stays ascending by its key; each copy whose source
-    ///   is a written arrow, pair, labelled sum or lazy product, relation,
-    ///   model type or type member's record is kept as that source, as
-    ///   [`carry_labels`] reads it.
+    ///   is a written form is kept as that source, as [`carry_labels`] reads
+    ///   it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -446,8 +300,8 @@ impl Naming
     ///   copy already labelled separate the first source's label from its own.
     /// - witness: `binders::tests::a_copy_takes_its_source_s_first_label`
     #[spec(
-        captures: [arrows = self.arrows.len(), pairs = self.pairs.len(), seconds = self.seconds.len()],
-        ensures: self.arrows.len() >= arrows && self.pairs.len() >= pairs && self.seconds.len() >= seconds,
+        captures: [arrows = self.forms.arrows.len(), pairs = self.forms.pairs.len(), seconds = self.forms.seconds.len()],
+        ensures: self.forms.arrows.len() >= arrows && self.forms.pairs.len() >= pairs && self.forms.seconds.len() >= seconds,
     )]
     #[inline]
     pub fn carrying<Copies>(
@@ -456,24 +310,8 @@ impl Naming
     ) where
         Copies: IntoIterator<Item = Carried>,
     {
-        carry_labels(carried, &mut WrittenLabels {
-            arrows: &mut self.arrows,
-            pairs: &mut self.pairs,
-            seconds: &mut self.seconds,
-            sum_labels: &mut self.sum_labels,
-            with_labels: &mut self.with_labels,
-            relations: &mut self.relations,
-            models: &mut self.models,
-            members: &mut self.members,
-        });
-        self.arrows.sort_by_key(|&(arrow, _)| arrow);
-        self.pairs.sort_by_key(|&(pair, _)| pair);
-        self.seconds.sort_by_key(|&(pair, _)| pair);
-        self.sum_labels.sort_by_key(|&(sum, _)| sum);
-        self.with_labels.sort_by_key(|&(with, _)| with);
-        self.relations.sort_by_key(|&(related, _)| related);
-        self.models.sort_by_key(|&(modelled, _)| modelled);
-        self.members.sort_by_key(|&(member, _)| member);
+        carry_labels(carried, &mut self.forms);
+        self.forms.sort();
     }
 
     /// The binders of one declaration, whose declared type and body are
@@ -584,11 +422,11 @@ impl Naming
                     },
                     CoreNode::ValueType(opener) => {
                         split = None;
-                        let labelled = self
-                            .pairs
+                        let pairs = &self.forms.pairs;
+                        let labelled = pairs
                             .binary_search_by_key(&opener, |&(held, _)| held)
                             .ok()
-                            .and_then(|at| self.pairs.get(at))
+                            .and_then(|at| pairs.get(at))
                             .and_then(|&(_, span)| self.written(span));
                         (labelled, false)
                     },
@@ -717,87 +555,103 @@ impl Naming
     }
 }
 
-/// Each id of `written` with the name `text` writes at its span.
+/// The forms `origins` records as written, each with where its names are
+/// written, each list ascending by its node. The entries of one node keep the
+/// order the lowering recorded them in.
 ///
-/// The ids stay in `written`'s order; an id whose span `text` does not hold
-/// is left out. The lists [`Naming`] keeps, read this way, are what
-/// [`CoreSource`] names a dependent arrow's or pair's binder by.
-///
-/// # Specification
-/// trivial.
-#[inline]
-pub fn written_names<Id, Written>(
-    written: Written,
-    text: SourceText<'_>,
-) -> impl Iterator<Item = (Id, Name<'_>)>
-where
-    Written: IntoIterator<Item = (Id, ByteSpan)>,
-{
-    written.into_iter().filter_map(move |(id, span)| {
-        let fragment = text.fragment(span).ok()?;
-        Some((id, Name::from(<&str>::from(fragment))))
-    })
-}
-
-/// Each id of `written` with the names `text` writes at its spans, in order.
-///
-/// The ids stay in `written`'s order; an id one of whose spans `text` does
-/// not hold is left out. The lists [`Naming`] keeps for a labelled sum and a
-/// labelled lazy product, read this way, are what [`CoreSource`] spells
-/// their entries' labels by.
+/// Every reader of the written forms crosses the origin table here: the
+/// [`Naming`] record, and each face that spells a node as the source writes
+/// it.
 ///
 /// # Specification
 /// trivial.
 #[inline]
-pub fn written_entry_names<Id, Spans, Written>(
-    written: Written,
-    text: SourceText<'_>,
-) -> impl Iterator<Item = (Id, Vec<Name<'_>>)>
-where
-    Spans: IntoIterator<Item = ByteSpan>,
-    Written: IntoIterator<Item = (Id, Spans)>,
+#[must_use]
+pub fn written_spans(origins: &OriginTable) -> WrittenForms<ByteSpan, WrittenModel>
 {
-    written.into_iter().filter_map(move |(id, spans)| {
-        let names: Option<Vec<Name<'_>>> = spans
-            .into_iter()
-            .map(|span| {
-                let fragment = text.fragment(span).ok()?;
-                Some(Name::from(<&str>::from(fragment)))
-            })
-            .collect();
-        names.map(|names| (id, names))
-    })
+    let spans = |labels: &[Origin]| -> Vec<ByteSpan> { labels.iter().map(Origin::span).collect() };
+    let mut forms = WrittenForms {
+        arrows: origins
+            .arrows()
+            .iter()
+            .map(|&(arrow, origin)| (arrow, origin.span()))
+            .collect(),
+        pairs: origins
+            .pairs()
+            .iter()
+            .map(|&(pair, origin)| (pair, origin.span()))
+            .collect(),
+        seconds: origins
+            .seconds()
+            .iter()
+            .map(|&(pair, origin)| (pair, origin.span()))
+            .collect(),
+        sum_labels: origins
+            .sum_labels()
+            .iter()
+            .map(|&(sum, ref labels)| (sum, spans(labels)))
+            .collect(),
+        with_labels: origins
+            .with_labels()
+            .iter()
+            .map(|&(with, ref labels)| (with, spans(labels)))
+            .collect(),
+        relations: origins.relations().to_vec(),
+        models: origins.models().to_vec(),
+        members: origins
+            .members()
+            .iter()
+            .map(|&(member, origin)| (member, origin.span()))
+            .collect(),
+    };
+    forms.sort();
+    forms
 }
 
-/// The lists a reader names written arrows, pairs, labelled types,
-/// relations, model types and type members' records by.
+/// The forms of `forms` as [`CoreSource`] spells them: each name as the text
+/// `text` writes at its span, and each model type as [`modelled`] reads it.
 ///
-/// Each list holds its entries beside their ids: an arrow's binder name as
-/// `Arrow`, and a pair's label, its second component's, each label of a sum
-/// or a lazy product and a type member's name as `Label`.
-#[derive(Debug)]
-pub struct WrittenLabels<'lists, Arrow, Label>
+/// Each list keeps its order; a form one of whose spans `text` does not hold
+/// is left out.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn named_forms<'source>(
+    forms: &'source WrittenForms<ByteSpan, WrittenModel>,
+    text: SourceText<'source>,
+) -> WrittenForms<Name<'source>, Modelled<'source>>
 {
-    /// Each dependent arrow with the name it binds.
-    pub arrows: &'lists mut Vec<(CompTypeId, Arrow)>,
-    /// Each dependent record pair with its field's label.
-    pub pairs: &'lists mut Vec<(ValueTypeId, Label)>,
-    /// Each such pair with the label of its second component.
-    pub seconds: &'lists mut Vec<(ValueTypeId, Label)>,
-    /// Each sum written over labels with its labels in written order.
-    pub sum_labels: &'lists mut Vec<(ValueTypeId, Vec<Label>)>,
-    /// Each lazy product written over labels with its labels in written
-    /// order.
-    pub with_labels: &'lists mut Vec<(CompTypeId, Vec<Label>)>,
-    /// Each type written as a relation between types, with the relation.
-    pub relations: &'lists mut Vec<(ValueTypeId, Relation)>,
-    /// Each type written as a model type, with the theory and sorts written.
-    pub models: &'lists mut Vec<(ValueTypeId, WrittenModel)>,
-    /// Each record type written by the name of a type member, with the name.
-    pub members: &'lists mut Vec<(ValueTypeId, Label)>,
+    forms.map(
+        |&span| {
+            let fragment = text.fragment(span).ok()?;
+            Some(Name::from(<&str>::from(fragment)))
+        },
+        |model| Some(modelled(model)),
+    )
 }
 
-/// Give each node `carried` copied the name its source has in `labelled`.
+/// The model type `model` records, as [`CoreSource`] spells it: the theory,
+/// and each sort beside the type node of its carrier, in the order written.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn modelled(model: &WrittenModel) -> Modelled<'_>
+{
+    Modelled {
+        theory: Name::from(model.theory.as_ref()),
+        sorts: model
+            .sorts
+            .iter()
+            .map(|&(ref sort, carrier)| (Name::from(sort.as_ref()), CoreNode::ValueType(carrier)))
+            .collect(),
+    }
+}
+
+/// Give each node `carried` copied the name its source has in `forms`.
 ///
 /// A shift or a settle copies a written type to fresh nodes, which no origin
 /// records. Each copy is appended to every list holding its source, with the
@@ -817,19 +671,18 @@ pub struct WrittenLabels<'lists, Arrow, Label>
 ///   copy's own, and none.
 /// - witness: `binders::tests::a_copy_takes_its_source_s_first_label`
 #[spec(
-    captures: [arrows = labelled.arrows.len(), pairs = labelled.pairs.len()],
-    ensures: labelled.arrows.len() >= arrows && labelled.pairs.len() >= pairs,
+    captures: [arrows = forms.arrows.len(), pairs = forms.pairs.len()],
+    ensures: forms.arrows.len() >= arrows && forms.pairs.len() >= pairs,
 )]
 #[inline]
-pub fn carry_labels<Copies, Arrow, Label>(
+pub fn carry_labels<Copies, Label>(
     carried: Copies,
-    labelled: &mut WrittenLabels<'_, Arrow, Label>,
+    forms: &mut WrittenForms<Label, WrittenModel>,
 ) where
     Copies: IntoIterator<Item = Carried>,
-    Arrow: Clone,
     Label: Clone,
 {
-    let WrittenLabels {
+    let WrittenForms {
         ref mut arrows,
         ref mut pairs,
         ref mut seconds,
@@ -838,7 +691,7 @@ pub fn carry_labels<Copies, Arrow, Label>(
         ref mut relations,
         ref mut models,
         ref mut members,
-    } = *labelled;
+    } = *forms;
     let mut named = firsts(arrows);
     let mut binders = firsts(pairs);
     let mut labels = firsts(seconds);
@@ -1211,7 +1064,7 @@ mod tests
     use gandr_core_term::ValueTypeId;
     use gandr_kernel_term::BaseType;
 
-    use super::WrittenLabels;
+    use super::WrittenForms;
     use super::carry_labels;
 
     /// A copy takes its source's first label, and a copy of a copy its first
@@ -1233,14 +1086,14 @@ mod tests
         };
         let arrow = arena.comp_type_returner(written);
         let arrow_copy = arena.comp_type_returner(copy);
-        let mut arrows = Vec::from([(arrow, "r")]);
-        let mut pairs = Vec::from([(written, "x"), (written, "later"), (labelled, "own")]);
-        let mut seconds = Vec::from([(written, "y")]);
-        let mut sum_labels = Vec::from([(copy, Vec::from(["ok", "err"]))]);
-        let mut with_labels = Vec::from([(arrow, Vec::from(["get", "put"]))]);
-        let mut relations = Vec::new();
-        let mut models = Vec::new();
-        let mut members = Vec::new();
+        let mut forms = WrittenForms {
+            arrows: Vec::from([(arrow, "r")]),
+            pairs: Vec::from([(written, "x"), (written, "later"), (labelled, "own")]),
+            seconds: Vec::from([(written, "y")]),
+            sum_labels: Vec::from([(copy, Vec::from(["ok", "err"]))]),
+            with_labels: Vec::from([(arrow, Vec::from(["get", "put"]))]),
+            ..WrittenForms::new()
+        };
         carry_labels(
             [
                 Carried::ValueType(written, copy),
@@ -1249,17 +1102,18 @@ mod tests
                 Carried::ValueType(unwritten, image),
                 Carried::CompType(arrow, arrow_copy),
             ],
-            &mut WrittenLabels {
-                arrows: &mut arrows,
-                pairs: &mut pairs,
-                seconds: &mut seconds,
-                sum_labels: &mut sum_labels,
-                with_labels: &mut with_labels,
-                relations: &mut relations,
-                models: &mut models,
-                members: &mut members,
-            },
+            &mut forms,
         );
+        let WrittenForms {
+            arrows,
+            pairs,
+            seconds,
+            sum_labels,
+            with_labels,
+            relations,
+            models,
+            ..
+        } = forms;
         assert_eq!(
             pairs,
             [
