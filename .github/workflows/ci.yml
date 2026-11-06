@@ -58,6 +58,11 @@ on:
         description: Run as the integration cycle, the lanes of a merge group on Linux alone
         type: boolean
         default: false
+      runner:
+        description: The runner of the integration cycle's lanes; the cycle step chooses it
+        type: choice
+        options: [hosted, integration]
+        default: hosted
   # The push to main reruns no Linux check: the merge-group run already
   # tested this exact commit, so a rerun could only disagree through its
   # environment. It promotes caches instead. Queue refs cannot warm sibling
@@ -148,11 +153,13 @@ jobs:
     # can runs on arm64; macOS's runners are arm64 too. coverage.yml's x86-64
     # Linux run is the one job that compiles and runs the emitter's x86-64
     # patcher and memory placement, so the image is published for both.
-    # The integration cycle runs on the runner that the repository variable
-    # `GANDR_INTEGRATION_RUNNER` names, the local runner with the label
-    # `integration` once it is online. Until then the variable stays unset,
-    # and a hosted runner runs the cycle (#5440).
-    runs-on: &linux ${{ inputs.cycle && vars.GANDR_INTEGRATION_RUNNER || 'ubuntu-24.04-arm' }}
+    # The integration cycle runs on the self-hosted runner with the label
+    # `integration` when its step reads such a runner online, and on a hosted
+    # runner otherwise (#5526). The input is a choice, and only a run on
+    # `integration` takes the label, so no dispatch of another branch runs
+    # on the self-hosted runner. A pull request, a merge group and a push
+    # set no input.
+    runs-on: &linux ${{ inputs.cycle && inputs.runner == 'integration' && github.ref == 'refs/heads/integration' && fromJSON('["self-hosted", "integration"]') || 'ubuntu-24.04-arm' }}
     # Private-GHCR consumers need package reads on the job; the workflow floor
     # stays `contents: read` for every job that pulls no image.
     permissions: &image-read-permissions

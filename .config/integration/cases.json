@@ -570,5 +570,197 @@
       "on": true,
       "line": "main lags landing: cycles 1 of at most 2, hours 12.1 of at most 12. The brake holds the landings."
     }
+  },
+  {
+    "name": "an online runner with the label integration runs the suite, busy or not",
+    "program": "runner.jq",
+    "input": {
+      "runners": [
+        {
+          "id": 1,
+          "name": "factory-runner",
+          "os": "Linux",
+          "status": "online",
+          "busy": false,
+          "labels": [
+            {
+              "id": 1,
+              "name": "self-hosted",
+              "type": "read-only"
+            },
+            {
+              "id": 2,
+              "name": "Linux",
+              "type": "read-only"
+            },
+            {
+              "id": 3,
+              "name": "X64",
+              "type": "read-only"
+            },
+            {
+              "id": 4,
+              "name": "factory",
+              "type": "custom"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "name": "integration-runner",
+          "os": "Linux",
+          "status": "online",
+          "busy": true,
+          "labels": [
+            {
+              "id": 1,
+              "name": "self-hosted",
+              "type": "read-only"
+            },
+            {
+              "id": 2,
+              "name": "Linux",
+              "type": "read-only"
+            },
+            {
+              "id": 3,
+              "name": "X64",
+              "type": "read-only"
+            },
+            {
+              "id": 4,
+              "name": "integration",
+              "type": "custom"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "runner": "integration",
+      "line": "The suite runs on the self-hosted runner: 1 online with the label integration."
+    }
+  },
+  {
+    "name": "a runner with the label integration that is offline leaves the suite on the hosted runner",
+    "program": "runner.jq",
+    "input": {
+      "runners": [
+        {
+          "id": 1,
+          "name": "factory-runner",
+          "os": "Linux",
+          "status": "online",
+          "busy": false,
+          "labels": [
+            {
+              "id": 1,
+              "name": "self-hosted",
+              "type": "read-only"
+            },
+            {
+              "id": 2,
+              "name": "Linux",
+              "type": "read-only"
+            },
+            {
+              "id": 3,
+              "name": "X64",
+              "type": "read-only"
+            },
+            {
+              "id": 4,
+              "name": "factory",
+              "type": "custom"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "name": "integration-runner",
+          "os": "Linux",
+          "status": "offline",
+          "busy": false,
+          "labels": [
+            {
+              "id": 1,
+              "name": "self-hosted",
+              "type": "read-only"
+            },
+            {
+              "id": 2,
+              "name": "Linux",
+              "type": "read-only"
+            },
+            {
+              "id": 3,
+              "name": "X64",
+              "type": "read-only"
+            },
+            {
+              "id": 4,
+              "name": "integration",
+              "type": "custom"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "runner": "hosted",
+      "line": "The suite runs on the hosted runner: no runner with the label integration is online."
+    }
+  },
+  {
+    "name": "an online runner without the label integration leaves the suite on the hosted runner",
+    "program": "runner.jq",
+    "input": {
+      "runners": [
+        {
+          "id": 1,
+          "name": "factory-runner",
+          "os": "Linux",
+          "status": "online",
+          "busy": false,
+          "labels": [
+            {
+              "id": 1,
+              "name": "self-hosted",
+              "type": "read-only"
+            },
+            {
+              "id": 2,
+              "name": "Linux",
+              "type": "read-only"
+            },
+            {
+              "id": 3,
+              "name": "X64",
+              "type": "read-only"
+            },
+            {
+              "id": 4,
+              "name": "factory",
+              "type": "custom"
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "runner": "hosted",
+      "line": "The suite runs on the hosted runner: no runner with the label integration is online."
+    }
+  },
+  {
+    "name": "a list the cycle cannot read leaves the suite on the hosted runner",
+    "program": "runner.jq",
+    "input": {
+      "runners": null
+    },
+    "output": {
+      "runner": "hosted",
+      "line": "The suite runs on the hosted runner: the cycle cannot read the self-hosted runners."
+    }
   }
 ]

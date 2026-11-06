@@ -29,9 +29,10 @@ gandr-theory-nominal-automata.workspace = true
 gandr-theory-stone-duality.workspace = true
 quenchant-shape.workspace = true
 
-# The cover probe glues a face cover over the graded poset of its faces and
-# their meets.
+# The cover probe glues a face cover through a cellular sheaf over the
+# graded poset of its faces and their meets.
 [dev-dependencies]
+gandr-theory-cellular-sheaves.workspace = true
 gandr-theory-graded-posets.workspace = true
 
 [lints]

@@ -107,7 +107,7 @@ jobs:
       - name: mint the App's token
         id: app
         if: ${{ env.LANDING_APP_ID != '' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: &app-token actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.LANDING_APP_ID }}
           private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
@@ -116,6 +116,18 @@ jobs:
           permission-contents: write
           permission-actions: write
           permission-issues: write
+      # The list of self-hosted runners needs `Administration: read` (#5526).
+      # An App installation without it refuses this token, and the cycle's
+      # suite runs on the hosted runner, as before.
+      - name: mint the token that reads the runners
+        id: runners
+        if: ${{ env.LANDING_APP_ID != '' }}
+        continue-on-error: true
+        uses: *app-token
+        with:
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
+          permission-administration: read
       # No cache, as in pr-title.yml: the shared cache holds every tool of
       # CI, and this job installs none of mise.toml's.
       - name: install mise
@@ -128,6 +140,7 @@ jobs:
         if: ${{ env.LANDING_APP_ID != '' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          RUNNERS_TOKEN: ${{ steps.runners.outputs.token }}
           GH_REPO: ${{ github.repository }}
           CYCLE_FILE: "true"
         run: mise run ci:cycle
