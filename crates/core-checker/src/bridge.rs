@@ -2865,13 +2865,16 @@ enum Erased
 ///   but an admission, save what is admitted first: the assumptions for the
 ///   values its receives read and the choices its offers take, the signature of
 ///   each native operation it is the first declaration to read, each an axiom
-///   the audit of whatever reads it names, and the free model of each effect it
-///   is the first declaration to handle. The replayed verdicts are returned
-///   beside the outcome, and beside them the time `stopwatch` read around the
-///   kernel's admission of the offer: [`timed::Absent::Unoffered`] when the
-///   offer never reached [`Environment::add_decl`]. A native signature or a
-///   free model the kernel rejects is the declaration's [`Outcome::Rejected`],
-///   its offer never made.
+///   the audit of whatever reads it names, the free model of each effect it is
+///   the first declaration to handle, and the witnesses of the formation of
+///   each patched type it is the first declaration to hold, each one entry and
+///   one export and at least one for each such type. A formation that fails
+///   keeps the witnesses that crossed before it. The replayed verdicts are
+///   returned beside the outcome, and beside them the time `stopwatch` read
+///   around the kernel's admission of the offer: [`timed::Absent::Unoffered`]
+///   when the offer never reached [`Environment::add_decl`]. A native signature
+///   or a free model the kernel rejects is the declaration's
+///   [`Outcome::Rejected`], its offer never made.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -2885,23 +2888,32 @@ enum Erased
 /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
 /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
+/// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
 #[spec(
-    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len())],
-    ensures: |ret| match ret.0 {
-        | Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } | Outcome::Assumed { admitted, .. } =>
-            usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
-            && usize::from(positions.exports.len()).checked_sub(usize::from(exports)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
-            && positions.admitted.len().checked_sub(crossed) == Some(1)
-            && positions.admitted.get(&constant) == Some(&admitted.position())
-            && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
-            && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible)
-            && ret.2 != UNOFFERED,
-        | Outcome::Refused(_) | Outcome::Rejected(_) =>
-            usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)
-            && usize::from(positions.exports.len()).checked_sub(usize::from(exports)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)
-            && positions.admitted.len() == crossed
-            && (matches!(ret.0, Outcome::Rejected(_)) || ret.2 == UNOFFERED),
-        | Outcome::Marked(_) | Outcome::Suspended | Outcome::Static => false,
+    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()), formations = positions.formed.len()],
+    ensures: |ret| {
+        let fresh = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms);
+        let grew = usize::from(environment.entries().len()).checked_sub(usize::from(entries));
+        let counted = |own: usize, exact: bool| grew == usize::from(positions.exports.len()).checked_sub(usize::from(exports))
+            && match (fresh, positions.formed.len().checked_sub(formations), grew) {
+                | (Some(fresh), Some(0), Some(grew)) if exact => grew == fresh.saturating_add(own),
+                | (Some(fresh), Some(formed), Some(grew)) => grew >= fresh.saturating_add(formed).saturating_add(own),
+                | _ => false,
+            };
+        match ret.0 {
+            | Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } | Outcome::Assumed { admitted, .. } =>
+                counted(1, true)
+                && positions.admitted.len().checked_sub(crossed) == Some(1)
+                && positions.admitted.get(&constant) == Some(&admitted.position())
+                && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
+                && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible)
+                && ret.2 != UNOFFERED,
+            | Outcome::Refused(_) | Outcome::Rejected(_) =>
+                counted(0, false)
+                && positions.admitted.len() == crossed
+                && (matches!(ret.0, Outcome::Rejected(_)) || ret.2 == UNOFFERED),
+            | Outcome::Marked(_) | Outcome::Suspended | Outcome::Static => false,
+        }
     },
 )]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
