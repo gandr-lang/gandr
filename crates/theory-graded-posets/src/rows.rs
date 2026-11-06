@@ -632,10 +632,11 @@ impl<'poset> CellRow<'poset>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two edges between the same two points overlap at two
-    ///   least cells, which the sheaf reads through this meet, and a meet that
-    ///   keeps a boundary's own cell would lose them.
-    /// - witness: `tests::sheaf::an_overlap_with_two_least_cells_compares_at_each`
+    /// - hypothesis: L3 — the boundary of a square's whole cell holds each
+    ///   other cell and not the whole, so a meet that keeps a boundary's own
+    ///   cell fails the witness. The sheaf reads the least cells of an overlap
+    ///   through this meet.
+    /// - witness: `tests::graded::a_square_ranks_its_cells_by_their_longest_chain`
     #[spec(ensures: |ref ret| ret.elements().all(|cell| set.contains(cell) == Membership::Inside
         && self.contains(cell) == Membership::Inside))]
     #[must_use]
