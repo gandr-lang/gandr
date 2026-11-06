@@ -3461,12 +3461,16 @@ fi
 # The pull request's title becomes the header of its merge commit on main,
 # and the PR title workflow lints it with the commit rules: a conventional
 # header of at most 72 characters, its type and scope from
-# commitlint.config.mjs. The body carries the change's prose obligations as
-# its `## Re-verification` section, written into the body file here
-# (`evidence:obligations --body`) with any ticks the file already holds;
-# `gh pr create` waits until every box is ticked, so the pull request's first
-# obligations lane reads them. Tick one box per obligation in the file and run
-# `pr:open` again.
+# commitlint.config.mjs.
+#
+# The head opens on a tree the landing's gate passed on (#5076, #5458): where
+# no gate passed on its tree, the task runs `mise run check`, the light
+# checks and Clippy with the compiler policy over the packages the change
+# reaches. It runs no test, no sweep and no specification obligation, since
+# the merge group runs them on each group. A defect's observation is the
+# author's to give, so the body's `### Observed` box is written and read here
+# (`evidence:obligations --observed-only`). Commit the transcript it asks for,
+# then run `pr:open` again.
 #
 # The body names the issues it works, one per line: `Closes #n` for an issue
 # the pull request finishes (GitHub closes it on merge), `Advances #n` for a
@@ -3482,16 +3486,16 @@ fi
 # already carries (`own_fork`, #1298), and every commit below the one the
 # branch was last stacked on, recorded in the worktree's git directory
 # (`stack_base`, #3877). So a rerun after the top moved never carries another
-# pull request's change. Its obligations are measured against
+# pull request's change. Its own commits are read against
 # the top's head, and it opens with the top's branch as its base, linked into
 # the top's stack (`gh stack link`). Above members already in the merge queue
 # only the open members are linked (#1988); where GitHub refuses that link,
 # as it does over a pull request queued on its own (#1353), the pull request
 # waits unlinked on the top, and GitHub moves it to main when the queued one
 # merges. The task prints which path it took. With nothing open it opens
-# against main. The top is read again once the obligations are measured: a
-# new top stacked above the measured one that changes none of the branch's
-# paths takes the branch without a new measurement, and any other move is
+# against main. The top is read again just before the push: a
+# new top stacked above the read one that changes none of the branch's
+# paths takes the branch without a new gate, and any other move is
 # refused (`restack_moved`, `moved.jq`, #3849).
 #
 # Every new pull request targets the top of the latest stack, queued or not
@@ -3509,8 +3513,8 @@ fi
 # waited out (`await_top`), never the queue: once the prefix is queued the
 # label is gone and the new pull request opens on the queued top. The top is
 # read at the start and again just before the push
-# (#1601): the obligations step between takes about a minute, and a landing
-# started inside it holds and queues the top. A top changed or restacked by
+# (#1601): a landing started between the two reads holds and queues the
+# top. A top changed or restacked by
 # then is refused, to be opened again.
 #
 # A top can lack a change of the trunk that the new pull request builds on
@@ -3538,10 +3542,6 @@ fi
 # auto-merge so it queues on its own (#1353). The body must name #n. Once it
 # merges, `pr:land` from the red stack restacks it onto main. Every
 # other second bottom is refused.
-#
-# A change that reaches the recovery records (the parser, its grammar, its
-# syntax tree or a corpus source) is swept whole before it opens, and a stale
-# record refuses it, naming `corpus:goldens` (#2101).
 #
 # The body must work the branch's issue: a branch `<lane>-<n>-<slug>` is
 # refused unless the body says `Advances #n` or closes #n, and a branch with
@@ -3572,8 +3572,8 @@ fi
 # GitHub closes the issue it names on merge. Every body answers
 # `## Refactoring` (#2884): `yes`, `maybe` or `no`, and for the first two a
 # table `| Kind | Where | Observation |`, each `Where` resolved by
-# `check:refactoring` against the rustdoc JSON once `evidence:obligations`
-# has built it. A body answers its issues' `## Engineering` with measured
+# `check:refactoring` against the rustdoc JSON, which it builds when a
+# `Where` needs it. A body answers its issues' `## Engineering` with measured
 # numbers, and a `spec_clause_traversal` waiver or an `economy:` ceiling the
 # change adds cites the open issue that removes it (#5039,
 # `.config/claims/ceilings.bash`). The rule is
@@ -3604,10 +3604,10 @@ fi
 # `hold:owner` with the reason commented (`pr:hold --owner`), unlinked,
 # which nothing lands until `pr:release`.
 ["pr:open"]
-description = "Open the pull request on the server's top once its body acknowledges every prose obligation"
+description = "Open the pull request on the server's top once its tree passes the landing's gate"
 usage = '''
 arg "<title>" help="the pull request title: a conventional header"
-arg "<body>" help="the body file; its re-verification section is written in place"
+arg "<body>" help="the body file; a defect's observation block is written in place"
 flag "--unblocks <number>" help="the open pull request this fix unblocks: open on main and queue on its own"
 flag "--hold <reason>" help="the owner holds it: open it as a draft labelled `hold:owner` (`pr:hold --owner`), unlinked"
 '''
@@ -3627,14 +3627,6 @@ if existing=$(gh pr view "$own" -R "$repo" --json number,state --jq 'select(.sta
   echo "$own already has PR #$existing open; land it with \`pr:land\`" >&2
   exit 2
 fi
-# A head opens only on a tree a gate passed on, with every check its change
-# selects (#5076, `.config/gate-scope/passed.bash`): CI otherwise finds what
-# the gate finds. A reworded commit or a rebase that changes nothing keeps
-# its tree, so its gate counts. This first read refuses before any GitHub
-# call. The stack below can rebase the branch onto its top; the gate on this
-# head then carries to the head that is pushed (#5091, `passed.bash carry`).
-"$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:open HEAD || exit 2
-gated=$(git rev-parse HEAD)
 claims=$(git rev-parse --show-toplevel)/.config/claims
 issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$body" \
   | while IFS= read -r number; do gh api "repos/$repo/issues/$number" --jq '{number, body: (.body // ""), labels: [.labels[].name]}'; done \
@@ -3725,8 +3717,8 @@ if [[ -n "$findings" ]]; then
   echo "$findings" >&2
 fi
 # The title and the body name nothing private and keep the body rules before
-# anything is built (#3849), so a long sentence costs no measurement; they
-# are read again as posted, once the re-verification is written.
+# anything is built (#3849), so a long sentence costs no gate; they are read
+# again as posted, once the observation block is written.
 mise run --quiet body:check --title "${usage_title:?}" "$body"
 mise run --quiet body:prose "$body"
 # The features ledger rows the body names against those the change touches
@@ -3739,10 +3731,40 @@ fi
 if ! reserved=$(mise run --quiet ledger:reserved "$from" 2> /dev/null); then
   printf '%s\n' "${reserved:-ledger:reserved failed to read the ledger}" | sed 's/^/note: /' >&2
 fi
+# A defect's observation in the running program (#3758) is the author's to
+# give, so it is read here with no Rust evidence built
+# (`evidence:obligations --observed-only`). The cheap reads go first.
+status=0
+mise run evidence:obligations --body "$body" --require-acknowledged --observed-only "$from" || status=$?
+if (( status == 2 )); then
+  echo "commit the transcript that the open \`### Observed\` box in $body asks for, then run \`pr:open\` again" >&2
+  exit 2
+fi
+(( status == 0 )) || exit "$status"
+# Every `Where` of the body's `## Refactoring` names an item of the
+# workspace's rustdoc JSON, built by `check:refactoring` when a `Where` needs
+# it, or a tracked path (#2884, `check:refactoring`).
+mise run --quiet check:refactoring "$body" \
+  || { echo "name each \`## Refactoring\` \`Where\` as the workspace carries it, then run \`pr:open\` again" >&2; exit 2; }
 # Landed worktrees go before anything else, and under the disk floor the
 # task refuses (`wt:sweep --guard`).
 mise run wt:sweep --guard
 stacking_current || exit 2
+# The head is gated where no gate passed on its tree (#5458, `mise run
+# check`): the light checks, and Clippy with the compiler policy over the
+# packages the change reaches. It is gated on its own fork, before the stack
+# below adds its commits to the change. A reworded commit or a rebase that
+# changes nothing keeps its tree, so its gate counts (#5076,
+# `.config/gate-scope/passed.bash`). The gate reads the work, so work that
+# HEAD does not hold is refused first.
+passed=$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash
+if ! "$passed" require pr:open HEAD 2> /dev/null; then
+  [[ $("$passed" tree) == "$(git rev-parse 'HEAD^{tree}')" ]] \
+    || { echo "the work holds changes that HEAD does not; commit or drop them, then run \`pr:open\` again" >&2; exit 2; }
+  mise run check
+  "$passed" require pr:open HEAD || exit 2
+fi
+gated=$(git rev-parse HEAD)
 unblocks=${usage_unblocks:-}
 if [[ -n "$unblocks" ]]; then
   [[ "$unblocks" =~ ^[0-9]+$ && $(gh pr view "$unblocks" -R "$repo" --json state --jq .state 2> /dev/null) == OPEN ]] \
@@ -3780,29 +3802,7 @@ if foreign=$(git diff --no-renames --name-only --diff-filter=A "$measured" HEAD 
   printf 'the change adds files named as residue; drop them from its commits, then run `pr:open` again:\n%s\n' "$(sed 's/^/  /' <<< "$foreign")" >&2
   exit 2
 fi
-status=0
-mise run evidence:obligations --body "$body" --require-acknowledged "$measured" || status=$?
-if (( status == 2 )); then
-  echo "tick one box per prose obligation, and the lint assessment's and the hotpath verdict's boxes once their verdicts are written, in $body's ## Re-verification section; commit the transcript an open \`### Observed\` box asks for; then run \`pr:open\` again" >&2
-  exit 2
-fi
-(( status == 0 )) || exit "$status"
-# Every `Where` of the body's `## Refactoring` names an item of the
-# workspace's rustdoc JSON, built by `evidence:obligations` for a Rust change
-# and by `check:refactoring` when a `Where` needs it, or a tracked path
-# (#2884, `check:refactoring`).
-mise run --quiet check:refactoring "$body" \
-  || { echo "name each \`## Refactoring\` \`Where\` as the workspace carries it, then run \`pr:open\` again" >&2; exit 2; }
-# A change that reaches the recovery records, as prepare's `parser` filter
-# reads it, sweeps them whole first (`ci:recovery`, about two minutes
-# plain): a stale record is refused here rather than met in the queue
-# (#2101).
-if git diff --no-renames --name-only "$measured" HEAD \
-  | grep -qE '^(crates/surface-(parser|grammar|syntax)/|corpus/.*\.gandr$)'; then
-  mise run ci:recovery \
-    || { echo "a recovery record the change reaches is stale; re-record with \`mise run corpus:goldens\`, commit, and run \`pr:open\` again" >&2; exit 1; }
-fi
-# A top that moved while the obligations were measured is restacked onto
+# A top that moved since it was read is restacked onto
 # when it stands above the measured fork and shares no path with the change,
 # and refused otherwise (#3849, `restack_moved`).
 # A branch stacked past a top no seat rebases stays where it stacked
@@ -3825,14 +3825,14 @@ fi
 # (`body:check`, #2530) and keep the body rules (`body:prose`, #3591).
 mise run --quiet body:check --title "${usage_title:?}" "$body"
 mise run --quiet body:prose "$body"
-# The head that is pushed carries the gate (#5091): a stack or a restack
-# above rebases the branch onto the top and changes its tree. The gate on the
-# branch's own commits counts while the rebase keeps their patches
-# (`passed.bash carry`), and the merge queue checks the combination. The
-# stack is first come, first served: no `pr:open` waits on another, and no
-# seat gates again because another seat opened first.
-"$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || exit 2
-"$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:open HEAD || exit 2
+# The head that is pushed carries the gate (#5091): a restack above rebases
+# the branch onto the top and changes its tree. The gate on the branch's own
+# commits counts while the rebase keeps their patches (`passed.bash carry`),
+# and the merge queue checks the combination. The stack is first come, first
+# served: no `pr:open` waits on another, and no seat gates again because
+# another seat opened first. A rebase that changes a patch gates the new head.
+"$passed" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || mise run check
+"$passed" require pr:open HEAD || exit 2
 git push --quiet --force-with-lease -u origin HEAD
 hold=${usage_hold:-}
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})
@@ -3859,7 +3859,8 @@ if [[ -z "$unblocks" && -z "$stacked_past" ]]; then
       top=$stacked_top
       base=$(jq -r .head <<< "$top")
       top_number=$(jq -r .number <<< "$top")
-      "$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || exit 2
+      "$passed" carry "$gated" HEAD "$(git merge-base HEAD "origin/$base")" || mise run check
+      "$passed" require pr:open HEAD || exit 2
       git push --quiet --force-with-lease origin HEAD
       gh pr edit "$number" -R "$repo" --base "$base" > /dev/null
       echo "#$number opened beside #$beside on one base; it moves onto #$top_number"
@@ -3869,7 +3870,7 @@ if [[ -z "$unblocks" && -z "$stacked_past" ]]; then
     fi
   fi
 fi
-# A stack of one means its top merged after the obligations' check and before
+# A stack of one means its top merged after its first reading and before
 # this reading: GitHub moves the pull request to the trunk, and `gh stack
 # link` takes no chain of one, so nothing is linked (#3817). The next landing
 # queues it.
@@ -3938,11 +3939,11 @@ fi
 # comes back unmergeable is restacked by `pr:watch`.
 #
 # Before the landing, when the checked-out branch is the pull request's own,
-# the prose obligations are written into its body against its base, its
-# ticks carried, and the landing is refused while a box is unticked; its own
-# labels join its targets' for the lint assessment, and its head's red
-# hotpath checks owe the hotpath verdict. Once every box is ticked, a failed
-# obligations lane is rerun so it reads the ticks.
+# its head queues only on a tree the landing's gate passed on (#5458). A
+# rebase that changes the tree leaves no gate on it, so the task runs
+# `mise run check` on the head again; a tree a gate passed on is not gated
+# again. It reads no specification obligation: the merge group runs the tests
+# on each group.
 #
 # A queued stack member leaves the queue alone only by being closed and
 # reopened: `dequeuePullRequest` looks for a queue on the member's own base
@@ -4089,36 +4090,19 @@ if [[ -n $absorbing ]]; then
   exit 2
 fi
 
-# The prose obligations are measured on the checked-out tree when it is the
-# pull request's own branch, against its base, and written into its body, its
-# ticks carried; the landing is refused while a box is unticked, and a failed
-# obligations lane is rerun once every box is ticked, so it reads the ticks.
-# A pull request landed from elsewhere is landed on its required checks,
-# which hold the obligations lane.
+# A pull request landed from its own branch queues only on a tree the
+# landing's gate passed on (#5076, `passed.bash`). A rebase that changes the
+# head's tree, as a restack does, leaves no gate on it, so the head is gated
+# again here when it is the checked-out commit (#5458, `mise run check`). A
+# pull request landed from elsewhere is landed on its required checks.
 own=$(gh pr view --json number --jq .number 2> /dev/null) || own=
 if [[ "$own" == "$number" ]]; then
-  # The head queues only on a tree a gate passed on (#5076, `passed.bash`).
-  "$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash" require pr:land "origin/$ledger_head" || exit 2
-  base=$(gh pr view "$number" -R "$repo" --json baseRefName --jq .baseRefName)
-  git fetch --quiet origin "$base"
-  measured=origin/$base
-  if [[ "$base" == "$trunk" ]]; then measured=$(mise run --quiet evidence:base); fi
-  body=$(mktemp)
-  gh pr view "$number" -R "$repo" --json body --jq .body > "$body"
-  cp "$body" "$body.read"
-  status=0
-  mise run evidence:obligations "$measured" --body "$body" --pr "$number" --require-acknowledged || status=$?
-  if (( status != 0 && status != 2 )); then rm -f "$body" "$body.read"; exit "$status"; fi
-  if ! cmp -s "$body" "$body.read"; then gh pr edit "$number" -R "$repo" --body-file "$body" > /dev/null; fi
-  rm -f "$body" "$body.read"
-  if (( status == 2 )); then
-    echo "PR #$number: tick one box per prose obligation, and the lint assessment's and the hotpath verdict's boxes once their verdicts are written, in its body's ## Re-verification section, then run \`pr:land\` again" >&2
-    exit 2
-  fi
-  lane=$(gh pr checks "$number" -R "$repo" --json name,bucket,link --jq '.[] | select(.name == "re-verify obligated specifications (linux)" and .bucket == "fail") | .link')
-  if [[ -n "$lane" ]]; then
-    run_id=${lane#*/runs/}
-    gh run rerun "${run_id%%/*}" -R "$repo" --job "${lane##*/job/}"
+  passed=$(git rev-parse --show-toplevel)/.config/gate-scope/passed.bash
+  if ! "$passed" require pr:land "origin/$ledger_head" 2> /dev/null; then
+    if [[ $(git rev-parse HEAD) == "$(git rev-parse "origin/$ledger_head")" && $("$passed" tree) == "$(git rev-parse 'HEAD^{tree}')" ]]; then
+      mise run check
+    fi
+    "$passed" require pr:land "origin/$ledger_head" || exit 2
   fi
 fi
 

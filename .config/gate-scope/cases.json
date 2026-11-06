@@ -166,6 +166,42 @@
     "output": ["check:claims", "check:typos"]
   },
   {
+    "name": "#5458: the landing's gate keeps, of a crate's whole wall, the light checks and Clippy with the compiler policy",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:doc",
+        "check:extension",
+        "check:fmt",
+        "check:landing",
+        "check:tests-enforcing",
+        "check:typos"
+      ],
+      "changed": ["crates/core-term/src/lib.rs"],
+      "landing": true
+    },
+    "output": ["check:claims", "check:landing", "check:typos"]
+  },
+  {
+    "name": "#5458: the landing's gate runs no corpus or extension check, and no Rust check for a corpus source",
+    "program": "select.jq",
+    "input": {
+      "tasks": [
+        "check:claims",
+        "check:corpus",
+        "check:extension",
+        "check:landing",
+        "check:typos",
+        "check:vscode-smoke"
+      ],
+      "changed": ["corpus/model/basics/definitions.gandr", "contrib/gandr-vscode/src/extension.ts"],
+      "landing": true
+    },
+    "output": ["check:claims", "check:typos"]
+  },
+  {
     "name": "#4911: a check building the toolchain outside every group is a finding",
     "program": "unmapped.jq",
     "input": {
@@ -224,6 +260,15 @@
       "tasks": [{ "name": "check:tests", "run": ["cargo nextest run"], "depends": [] }]
     },
     "output": "rust: it names check:test-groups, which is no check task"
+  },
+  {
+    "name": "#5458: a landing list naming no check task is a finding",
+    "program": "unmapped.jq",
+    "input": {
+      "table": { "groups": { "rust": ["check:landing"] }, "landing": ["check:lands"], "paths": [] },
+      "tasks": [{ "name": "check:landing", "run": ["echo ok"], "depends": [] }]
+    },
+    "output": "landing: it names check:lands, which is no check task"
   },
   {
     "name": "#5014: #5007's diff, one test file and its transcript in one package, scopes the Rust checks to that package",

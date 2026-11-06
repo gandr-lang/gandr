@@ -1419,14 +1419,12 @@ jobs:
   # A change owes re-verification by every specification naming a changed
   # item (`evidence:obligations`). A pull request reruns only the obligated
   # witnesses, specifications enforced, and lists them in one comment it
-  # updates in place; the merge queue still runs every test. The prose
-  # clauses to re-read are the pull request body's `## Re-verification`
-  # section (`pr:open` and `pr:land` write it), and the lane fails while one
-  # of its boxes is unticked, the lint assessment a performance fix owes and
-  # the verdict a red hotpath check owes among them. A stack member's pull
-  # request skips it (#2045). Dispatches run the lane too, against the
-  # parent commit and without a body, so `ci:act` exercises it. A fork's
-  # read-only token cannot comment: its witnesses stay in the log. The
+  # updates in place; the merge queue still runs every test. The lane informs
+  # and does not gate: `pr:open` and `pr:land` run no specification obligation
+  # (#5458), so the body holds no ticks for the lane to require. A stack
+  # member's pull request skips it (#2045). Dispatches run the lane too,
+  # against the parent commit and without a body, so `ci:act` exercises it. A
+  # fork's read-only token cannot comment: its witnesses stay in the log. The
   # comment is posted after the lane, from a bare runner, so the job running
   # the change's code holds no write token.
   obligations:
@@ -1502,10 +1500,8 @@ jobs:
           done
           printf '::error::the head and %s share no commit within the fetched history\n' "$BASE_REF"
           exit 1
-      # Exit 2 is an unticked box: the witnesses still rerun and the comment
-      # is still posted, and the last step fails the lane. The read-only token
-      # reads the labels the lint assessment is owed under and the head's
-      # hotpath checks the hotpath verdict is owed under.
+      # The read-only token reads the labels the lint assessment is owed under
+      # and the head's hotpath checks the hotpath verdict is owed under.
       - name: list the re-verification obligations
         id: obligations
         shell: bash
@@ -1519,15 +1515,9 @@ jobs:
         run: |
           extra=()
           if [[ $OBLIGATIONS_BODY == true ]]; then
-            extra=(--previous target/evidence/body.md --pr "$PR_NUMBER" --require-acknowledged)
+            extra=(--previous target/evidence/body.md --pr "$PR_NUMBER")
           fi
-          status=0
-          mise run evidence:obligations ${CI_OBLIGATIONS_BASE:+"$CI_OBLIGATIONS_BASE"} "${extra[@]}" || status=$?
-          if (( status == 2 )); then
-            printf 'open=true\n' >> "$GITHUB_OUTPUT"
-          elif (( status != 0 )); then
-            exit "$status"
-          fi
+          mise run evidence:obligations ${CI_OBLIGATIONS_BASE:+"$CI_OBLIGATIONS_BASE"} "${extra[@]}"
       - name: rerun the obligated witnesses
         env:
           NEXTEST_PROFILE: ci-enforcing
@@ -1542,12 +1532,6 @@ jobs:
           name: obligations-comment
           path: target/evidence/comment.md
           if-no-files-found: error
-      - name: require every prose obligation acknowledged
-        if: ${{ !cancelled() && steps.obligations.outputs.open == 'true' }}
-        shell: bash
-        run: |
-          printf '::error::a prose obligation is unticked in the body'"'"'s ## Re-verification section; tick its box (`mise run pr:land` writes the section), then rerun this job\n'
-          exit 1
       - *upload-test-report
       - *lane-state
 
