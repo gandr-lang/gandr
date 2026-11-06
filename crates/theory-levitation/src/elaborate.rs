@@ -785,6 +785,7 @@ pub enum CircuitElaborationError
     | Err(CircuitElaborationError::Derivation(CircuitDerivationError::NodeBudget { budget })) => budget == CircuitNodeBudget::DEFAULT,
     | Err(CircuitElaborationError::Derivation(CircuitDerivationError::CyclicWiring(ref port))) => body.nodes.iter().any(|node| node.outs().contains(port)),
     | Err(CircuitElaborationError::Derivation(CircuitDerivationError::SplitOutputs(ref port))) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
+    | Err(CircuitElaborationError::Derivation(CircuitDerivationError::SharedPort(ref port))) => body.nodes.iter().flat_map(CircuitNode::outs).filter(|out| *out == port).count() >= 2,
     | Err(CircuitElaborationError::PositionOffBoundary { ref rewrite, .. }) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Redex(ref redex) if &redex.rewrite == rewrite)),
 })]
 pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElaborationError>
@@ -965,7 +966,8 @@ fn whisker_along(
 ///   contributes two entries.
 /// - provides: the positions a two-redex body's applications sit at, for the
 ///   instantiation site that earns their identification.
-/// - fails: [`CircuitDerivationError::CyclicWiring`] on a port reachable from
+/// - fails: [`CircuitDerivationError::SharedPort`] on a port that two bindings
+///   name; [`CircuitDerivationError::CyclicWiring`] on a port reachable from
 ///   itself other than as a redex's own opaque endpoint, and
 ///   [`CircuitDerivationError::SplitOutputs`] on one output of a many-out node
 ///   read on its own — the same guards the derivation runs, so the walk stays
@@ -997,6 +999,7 @@ fn whisker_along(
     | Err(CircuitDerivationError::NodeBudget { budget }) => budget == CircuitNodeBudget::DEFAULT,
     | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.outs().contains(port)),
     | Err(CircuitDerivationError::SplitOutputs(ref port)) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.outs.len() > 1 && frame.outs.contains(port))),
+    | Err(CircuitDerivationError::SharedPort(ref port)) => body.nodes.iter().flat_map(CircuitNode::outs).filter(|out| *out == port).count() >= 2,
 })]
 pub fn redex_occurrences(body: &CircuitBody)
 -> Result<Vec<RedexOccurrence>, CircuitDerivationError>
@@ -1051,7 +1054,7 @@ pub fn redex_occurrences(body: &CircuitBody)
         }
     }
 
-    let producers = body.producers();
+    let producers = body.producers()?;
     let ceiling = usize::from(CircuitNodeBudget::DEFAULT);
     let mut visited: usize = 0;
     let mut path: BTreeSet<&Name> = BTreeSet::new();
