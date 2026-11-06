@@ -92,7 +92,7 @@ Value::PathEquiv { .. } => 3,
 Value::Tuple(ref components) => components.len(),
 Value::StaticApplication(..) | Value::PathProduct(..) | Value::ListCons(..) => 2,
 Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) | Value::Univalence(_) => 1,
-Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 0,
+Value::Restrict { .. } | Value::SessionPath { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 0,
 }),
         AnyNode::Computation(id) => arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
 Computation::DataCase {ref branches,..} => branches.len().saturating_add(2),
@@ -139,7 +139,8 @@ fn children(
             Value::SessionPath { .. } | Value::SessionFlow { .. } => {
                 panic!("session evidence has a separate finite producer")
             },
-            Value::Here { .. }
+            Value::Restrict { .. }
+            | Value::Here { .. }
             | Value::Stay { .. }
             | Value::ForwardFlow { .. }
             | Value::FunctionFlow { .. }
@@ -481,7 +482,8 @@ fn translate(
                     Value::SessionPath { .. } | Value::SessionFlow { .. } => {
                         panic!("session evidence has a separate finite producer")
                     },
-                    Value::Here { .. }
+                    Value::Restrict { .. }
+                    | Value::Here { .. }
                     | Value::Univalence { .. }
                     | Value::Stay { .. }
                     | Value::ForwardFlow { .. }

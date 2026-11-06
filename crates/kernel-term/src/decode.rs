@@ -3043,6 +3043,24 @@ fn decode_entry(
                 )
             }
         },
+        tags::NODE_V_RESTRICT => {
+            let count = usize::from(reader.read_usize()?);
+            let mut labels = Vec::new();
+            for _ in 0 .. count {
+                labels.push(crate::FieldLabel::from(
+                    reader.read_text(MalformedSite::LiteralPayload)?,
+                ));
+            }
+            let restricted = read_value(reader, table, this, &mut children)?;
+            let mut fixed = alloc::collections::BTreeMap::new();
+            for label in labels {
+                fixed.insert(label, read_value(reader, table, this, &mut children)?);
+            }
+            (
+                DecodedNode::Value(table.arena.value_restrict(restricted, fixed)),
+                Family::Value,
+            )
+        },
         tags::NODE_V_CONSTRUCTOR => {
             let constructor_family = ConstantIndex::from(usize::from(reader.read_usize()?));
             let tag = crate::ConstructorTag::from(usize::from(reader.read_usize()?));

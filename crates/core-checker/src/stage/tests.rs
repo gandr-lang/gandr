@@ -41,6 +41,7 @@ fn value(
         },
         ref other @ (Value::Constructor { .. }
         | Value::Record(_)
+        | Value::Restrict { .. }
         | Value::SessionPath { .. }
         | Value::SessionFlow { .. }
         | Value::Stay { .. }

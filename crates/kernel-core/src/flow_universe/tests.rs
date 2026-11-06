@@ -324,6 +324,7 @@ fn lowered(
             },
             gandr_kernel_term::Value::Constructor { .. }
             | gandr_kernel_term::Value::Record(_)
+            | gandr_kernel_term::Value::Restrict { .. }
             | gandr_kernel_term::Value::SessionPath { .. }
             | gandr_kernel_term::Value::SessionFlow { .. }
             | gandr_kernel_term::Value::FlowProduct(..)
