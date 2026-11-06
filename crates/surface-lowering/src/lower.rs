@@ -615,7 +615,9 @@ use crate::form::KeywordOpening;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
+use crate::form::Repair;
 use crate::form::Run;
+use crate::form::RunReading;
 use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::applied_word;
@@ -625,7 +627,9 @@ use crate::form::misspelt_keyword;
 use crate::form::misspelt_operator;
 use crate::form::opens_expression;
 use crate::form::read_pieces;
+use crate::form::run_reading;
 use crate::form::shape_of;
+use crate::form::tile_label;
 use crate::import::ImportResolution;
 use crate::import::ImportSignature;
 use crate::import::ModuleImports;
@@ -7687,6 +7691,145 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.scratch = scratch;
     }
 
+    /// Record the tile at `position`, covering `span`, among the names the
+    /// lowering refused as unresolved, when it is an identifier that reads as
+    /// an operator written wrong ([`RunReading::Operator`]) and no declaration
+    /// answers it where the module's declarations are read. The lowering never
+    /// reaches a name that a repair stands before, so
+    /// [`Self::record_runs_behind_repairs`] offers such a name here.
+    ///
+    /// # Specification
+    /// - requires: the node that holds `position` has its owner.
+    /// - ensures: `(position, span)` joins `self.unresolved` exactly when the
+    ///   tile is an identifier, its text is operator-shaped and the name
+    ///   resolves to nothing; nothing else changes.
+    /// - fails: never; a budget refusal records nothing.
+    /// - panics: none.
+    /// - executable: none — the clause restates the resolution.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `=>>` behind a repair, with no declaration of that
+    ///   name, is recorded and then refused at the run.
+    /// - witness: `lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
+    fn record_unresolved_run(
+        &mut self,
+        position: NodeIndex,
+        span: ByteSpan,
+    )
+    {
+        let identifier = self
+            .tree
+            .node(position)
+            .is_some_and(|node| tile_label(self.pbg, node) == Maybe::Present(TileName::IDENTIFIER));
+        let at = Placed {
+            node: position,
+            span,
+        };
+        if !identifier || run_reading(self.text_at(at)) != RunReading::Operator {
+            return;
+        }
+        let site = Site {
+            at,
+            name: FormName::DECLARATION,
+            reading: Reading::Value(Frame::Outermost),
+        };
+        if let Ok(Maybe::Absent(_)) = self.resolve_name(site, Frame::Outermost, self.name_at(at)) {
+            self.unresolved.push((position, span));
+        }
+    }
+
+    /// Offer the tile that starts just after each zero-width refusal of a
+    /// declaration of the current source, with only white space between, to
+    /// [`Self::record_unresolved_run`]. A repair inside a body refuses the
+    /// declaration while the body lowers, so the lowering never resolves a
+    /// name after the repair.
+    ///
+    /// # Specification
+    /// - requires: every pass that refuses a declaration of the current source
+    ///   has run.
+    /// - ensures: for each slot of the current source whose refusal is zero
+    ///   width and inside a half, the tile inside that half that starts where
+    ///   the white space after the refusal ends is offered; each node on the
+    ///   way down to it takes the declaration as its owner where it had none;
+    ///   nothing else changes.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the descent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the `=>>` of a match arm after the repair that stands
+    ///   for its `=>` is offered and recorded.
+    /// - witness: `lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
+    fn record_runs_behind_repairs(&mut self)
+    {
+        let tree = self.tree;
+        // Only a zero-width refusal yields an entry, so a source whose
+        // declarations all lower allocates nothing.
+        let behind: Vec<(NodeIndex, ByteOffset)> = self
+            .collected
+            .slots
+            .iter()
+            .skip(self.current.slots)
+            .filter_map(|slot| {
+                let Maybe::Present((_, ref refusal)) = slot.refusal
+                else {
+                    return None;
+                };
+                let Maybe::Present(refused) = refusal.span()
+                else {
+                    return None;
+                };
+                if refused.start() != refused.end() {
+                    return None;
+                }
+                [slot.signature, slot.definition]
+                    .into_iter()
+                    .find_map(|half| match half {
+                        Maybe::Present(half)
+                            if half.declaration.span.start() <= refused.start()
+                                && refused.end() <= half.declaration.span.end() =>
+                        {
+                            let rest: &str = tree
+                                .spanned(
+                                    ByteSpan::new(refused.end(), half.declaration.span.end())
+                                        .ok()?,
+                                )?
+                                .into();
+                            let name = ByteOffset::from(usize::from(refused.end()).saturating_add(
+                                rest.len().saturating_sub(rest.trim_start().len()),
+                            ));
+                            Some((half.declaration.node, name))
+                        },
+                        Maybe::Present(_) | Maybe::Absent(_) => None,
+                    })
+            })
+            .collect();
+        for (declaration, name) in behind {
+            let mut at = declaration;
+            loop {
+                // The lowering never reached this node, so it takes its owner
+                // here: a name resolves only where a declaration owns it.
+                self.inherit_owner(at);
+                let Some((child, node)) = tree.children(at).find_map(|child| {
+                    tree.node(child)
+                        .filter(|node| node.span().start() <= name && name < node.span().end())
+                        .map(|node| (child, node))
+                })
+                else {
+                    break;
+                };
+                if matches!(node.label(), NodeLabel::Meld(_)) {
+                    at = child;
+                    continue;
+                }
+                if node.span().start() == name {
+                    self.record_unresolved_run(child, node.span());
+                }
+                break;
+            }
+        }
+    }
+
     /// Move each refusal of a declaration of the current source that the
     /// parser repaired to the first bracket the declaration's layout places
     /// elsewhere ([`misplaced()`]), when that bracket comes before it: the
@@ -7896,20 +8039,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: every pass that refuses a declaration of the current source
     ///   has run.
-    /// - ensures: each refused slot of the current source whose half holds such
-    ///   a name at or before the start of its refusal is refused at the name
-    ///   instead. The refusal keeps its node, names the form of the half that
-    ///   holds the name, and names the operator the name misspells. Every other
-    ///   refusal is unchanged.
+    /// - ensures: first, as [`Self::record_runs_behind_repairs`]. Then each
+    ///   refused slot of the current source whose half holds such a name at or
+    ///   before the start of its refusal is refused at the name instead. A
+    ///   zero-width refusal also yields to such a name that starts after it
+    ///   with only white space between, and the tile its repair names wins
+    ///   among the operators the name is one edit from. The refusal keeps its
+    ///   node, names the form of the half that holds the name, and names the
+    ///   operator the name misspells. Every other refusal is unchanged.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause restates the walk over the slots.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`misspelt_operator`].
+    /// - hypothesis: L3 — as [`misspelt_operator`], and a repair the parser
+    ///   mints just before the name yields to it.
     /// - witness: `lower::tests::an_operator_written_twice_is_refused_at_the_run_5301`
+    /// - witness: `lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
     fn place_misspelt_operator(&mut self)
     {
+        self.record_runs_behind_repairs();
         let pbg = self.pbg;
         let tree = self.tree;
         let unresolved = self.unresolved.as_slice();
@@ -7927,7 +8076,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             // The name stands in the half that holds the refusal, at or
             // before the refusal's start: the refused name itself, or an
-            // operand before a refusal deeper in the tree.
+            // operand before a refusal deeper in the tree. A zero-width
+            // refusal is a repair the parser mints, and the name can stand
+            // just after it, with only white space between. The tile the
+            // repair says the form writes there names the operator.
+            let expected = if let LoweringRefusal::MalformedForm {
+                fault:
+                    FormFault::Repaired(
+                        Repair::Diverged(crate::form::Ending::Tile(tile))
+                        | Repair::Unended(crate::form::Ending::Tile(tile)),
+                    ),
+                ..
+            } = *refusal
+            {
+                Some(tile)
+            }
+            else {
+                None
+            };
             let found = [slot.signature, slot.definition]
                 .into_iter()
                 .find_map(|half| match half {
@@ -7935,9 +8101,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         if half.declaration.span.start() <= refused.start()
                             && refused.end() <= half.declaration.span.end() =>
                     {
+                        let end = half.declaration.span.end();
                         let reach =
                             ByteSpan::new(half.declaration.span.start(), refused.end()).ok()?;
-                        misspelt_operator(pbg, tree, reach, unresolved).map(|found| (half, found))
+                        let behind = || {
+                            if refused.start() != refused.end() {
+                                return None;
+                            }
+                            let rest: &str = tree
+                                .spanned(ByteSpan::new(refused.end(), end).ok()?)?
+                                .into();
+                            let name = ByteOffset::from(usize::from(refused.end()).saturating_add(
+                                rest.len().saturating_sub(rest.trim_start().len()),
+                            ));
+                            misspelt_operator(
+                                pbg,
+                                tree,
+                                ByteSpan::new(name, end).ok()?,
+                                unresolved,
+                                expected,
+                            )
+                            .filter(|&(word, _)| word.start() == name)
+                        };
+                        misspelt_operator(pbg, tree, reach, unresolved, None)
+                            .filter(|&(word, _)| word.start() <= refused.start())
+                            .or_else(behind)
+                            .map(|found| (half, found))
                     },
                     Maybe::Present(_) | Maybe::Absent(_) => None,
                 });
@@ -7945,9 +8134,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 continue;
             };
-            if refused.start() < word.start() {
-                continue;
-            }
             let form = if half.operand == Operand::Function {
                 FormName::FUNCTION
             }
@@ -31484,6 +31670,33 @@ def ended() -> -F [Partial] Unit {
             ),
             "a declared `∷∷` keeps its reading as the name, and the refusal stays at the path: \
              {refused:?}"
+        );
+    }
+
+    /// #5512: the parser mints a zero-width repair just before an operator
+    /// written with one glyph too many, and the run reads as a name nothing
+    /// declares. The repair yields to the run, so the refusal is at the run,
+    /// naming the operator.
+    #[test]
+    fn an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let source = "def same(n : Integer) -> -F Integer =\n  match n\n    | zero @ 0 => return \
+                      zero\n    | _ =>> return n\n";
+        let start = source.find("=>>").unwrap_or_default();
+        let pbg = grammar();
+        let tree = repaired(&pbg, SourceText::from(source));
+        let refused = refusal_in(&pbg, &tree);
+        assert!(
+            matches!(
+                refused,
+                LoweringRefusal::MalformedForm {
+                    span: found,
+                    fault: FormFault::MisspeltOperator(misspelt),
+                    ..
+                } if found == at(start, start.saturating_add(3)) && misspelt.as_ref() == "=>"
+            ),
+            "`=>>` is refused at the run as `=>`: {refused:?}"
         );
     }
 

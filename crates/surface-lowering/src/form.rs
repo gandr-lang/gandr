@@ -3651,36 +3651,36 @@ pub fn misspelt_keyword(
 /// identifier in source order that the lowering refused as unresolved, that
 /// holds no letter, digit, `_` or `'`, and that one deletion, or one swap of
 /// two neighbours, turns into an operator tile `pbg` spells or the ASCII
-/// token of one. A name a declaration in scope binds is never refused as
-/// unresolved, so it keeps its reading.
+/// token of one. When one edit reaches the tile `expected` names, the tile a
+/// repair before the name says the form writes there, that tile wins: `=>>`
+/// after a match arm's repaired `=>` reads as `=>`, not as `>>`. A name a
+/// declaration in scope binds is never refused as unresolved, so it keeps its
+/// reading.
 ///
 /// # Specification
 /// - requires: `within` is a span of `tree`; `unresolved` holds the node and
 ///   span of each name the lowering refused as unresolved.
 /// - ensures: the first such identifier inside `within`, with the operator tile
-///   as the source spells it, `::` for `∷`; `None` when no identifier there is
-///   such a near miss.
+///   as the source spells it, `::` for `∷`: `expected` when one edit reaches
+///   it, else the first tile of each deletion, then each swap; `None` when no
+///   identifier there is such a near miss.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `∷∷` and `:::` read as `∷` and `::`; a declared `∷∷`
-///   reads as none.
+///   reads as none; `=>>` with `=>` expected reads as `=>`.
 /// - witness: `lower::tests::an_operator_written_twice_is_refused_at_the_run_5301`
+/// - witness: `lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
 pub fn misspelt_operator(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
     within: ByteSpan,
     unresolved: &[(NodeIndex, ByteSpan)],
+    expected: Option<TileName>,
 ) -> Option<(ByteSpan, TileName)>
 {
-    let symbolic = |text: &str| {
-        !text.is_empty()
-            && text
-                .chars()
-                .all(|glyph| !(glyph.is_alphanumeric() || glyph == '_' || glyph == '\''))
-    };
     // An operator tile `pbg` spells, or the ASCII token that stands for one,
     // named as written: `::` for `∷`.
     let spelt = |text: &str| {
@@ -3698,36 +3698,44 @@ pub fn misspelt_operator(
             })
     };
     // Each deletion, then each swap of two unequal neighbours, written into
-    // one buffer. Both keep a run of symbols a run of symbols.
+    // one buffer. Both keep a run of symbols a run of symbols. With no tile
+    // expected, the first candidate a tile spells wins at once.
     let operator = |written: &str| {
         let mut candidate = String::with_capacity(written.len());
+        let mut first = None;
         for (at, glyph) in written.char_indices() {
             candidate.clear();
             candidate.push_str(written.get(.. at)?);
             candidate.push_str(written.get(at.saturating_add(glyph.len_utf8()) ..)?);
             if let Some(tile) = spelt(&candidate) {
-                return Some(tile);
+                if expected.is_none_or(|expected| expected == tile) {
+                    return Some(tile);
+                }
+                first.get_or_insert(tile);
             }
         }
         let mut glyphs = written.char_indices().peekable();
-        while let Some((at, first)) = glyphs.next() {
+        while let Some((at, first_glyph)) = glyphs.next() {
             let Some(&(next, second)) = glyphs.peek()
             else {
                 break;
             };
-            if first == second {
+            if first_glyph == second {
                 continue;
             }
             candidate.clear();
             candidate.push_str(written.get(.. at)?);
             candidate.push(second);
-            candidate.push(first);
+            candidate.push(first_glyph);
             candidate.push_str(written.get(next.saturating_add(second.len_utf8()) ..)?);
             if let Some(tile) = spelt(&candidate) {
-                return Some(tile);
+                if expected.is_none_or(|expected| expected == tile) {
+                    return Some(tile);
+                }
+                first.get_or_insert(tile);
             }
         }
-        None
+        first
     };
     unresolved
         .iter()
@@ -3738,13 +3746,45 @@ pub fn misspelt_operator(
             {
                 return None;
             }
-            let written: &str = tree.fragment(position).map_or("", <&str>::from);
-            if written.chars().nth(1).is_none() || !symbolic(written) {
+            let written = tree.fragment(position)?;
+            if run_reading(written) != RunReading::Operator {
                 return None;
             }
-            operator(written).map(|tile| (span, tile))
+            operator(written.into()).map(|tile| (span, tile))
         })
         .min_by_key(|&(span, _)| span.start())
+}
+
+/// How a run of glyphs reads: as an operator written wrong, or not.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RunReading
+{
+    /// Two glyphs or more, none of them a letter, a digit, `_` or `'`. The
+    /// labeler reads such a run as one name when its operator table does not
+    /// hold it.
+    Operator,
+    /// Any other run, such as a word or one glyph.
+    Other,
+}
+
+/// How `written` reads ([`RunReading`]).
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn run_reading(written: SourceFragment<'_>) -> RunReading
+{
+    let written = <&str>::from(written);
+    let operator = written.chars().nth(1).is_some()
+        && written
+            .chars()
+            .all(|glyph| !(glyph.is_alphanumeric() || glyph == '_' || glyph == '\''));
+    if operator {
+        RunReading::Operator
+    }
+    else {
+        RunReading::Other
+    }
 }
 
 /// Whether a keyword opens a form where an expression stands.
