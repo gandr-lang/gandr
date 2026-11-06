@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# The one runner for the jq-over-cases checks (#3039). A cases file is a JSON
-# array; each case holds a `name`, an `input`, and either the `output` the
-# program gives for it or `"fails": true` when the program must refuse it. A
-# case may hold `args`, each passed as `--argjson`, and, under `--programs`,
-# the `program` it runs. The program reads the input on standard input and
-# includes modules from its own directory and each `-L`. An `output` string is
-# compared as the text the program prints; any other output as its compact
-# JSON.
+# The shared runner executes jq checks over cases (#3039). A cases file is a
+# JSON array. Each case has a `name` and an `input`. It has an `output` or
+# `"fails": true`. The runner expects refusal when `fails` is true. A case may
+# have `args`. The runner passes each arg as `--argjson`. A case under
+# `--programs` has a `program`. The program reads input on standard input.
+# The runner includes its directory and each `-L` directory. It compares string
+# output as printed text. It compares another output as compact JSON.
 #
 # Usage: run.bash <kind> <cases> (--program <file> | --programs <dir>)
 #   [--mode r|c|j] [--raw <program>]... [-L <dir>]...
-# `--mode` prints raw text (`r`, the default), compact JSON (`c`), or compact
-# JSON and raw text without a newline (`j`); `--raw` prints the named program
-# of a `--programs` file as raw text. Prints each failing case under its kind
-# and program, and exits 1 on any; 2 on a malformed invocation.
+# `--mode` prints raw text in `r` mode. It prints compact JSON in `c` mode.
+# It prints compact JSON and raw text with no newline in `j` mode. `--raw`
+# prints its named program in a `--programs` directory as raw text. It prints
+# each failing case under its kind and program. It exits 1 on any failure. It
+# exits 2 on a malformed invocation or a cases file that is not a JSON array.
 set -euo pipefail
 usage() {
   echo 'usage: run.bash <kind> <cases> (--program <file> | --programs <dir>) [--mode r|c|j] [--raw <program>]... [-L <dir>]...' >&2
@@ -41,6 +41,10 @@ while (( $# )); do
   shift 2
 done
 [[ -n $program || -n $programs ]] || usage
+if ! jq -e 'type == "array"' "$file" > /dev/null; then
+  printf 'runner refuses cases file that is not a JSON array: %s\n' "$file" >&2
+  exit 2
+fi
 err=$(mktemp)
 trap 'rm -f "$err"' EXIT
 failed=0
