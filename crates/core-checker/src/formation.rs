@@ -489,6 +489,7 @@ pub fn level_of(
                 ValueTypeView::List(element)
                 | ValueTypeView::Staged { base: element, .. }
                 | ValueTypeView::Kept { value: element, .. }
+                | ValueTypeView::Patched { base: element, .. }
                 | ValueTypeView::Path {
                     carrier: element, ..
                 }

@@ -3,17 +3,18 @@
 //! v, …}]` fixes the fields of the face `f` that the type member `T` names,
 //! `type T = *{…} where face f = { … }`.
 //!
-//! # A patched type is the record of its free fields
+//! # A patched type is a core former over its base
 //!
 //! The base `T` is a record type: a type member whose definition is a record,
-//! or a record written in place. The patched type lowers to the record of the
-//! fields the bracket leaves free, each at the type the base writes for it
-//! ([`Plan::Patched`]). Each fixed value is read as a value where the bracket
-//! stands, so its names resolve there. A field's value is written as a type
-//! takes a value as a call's argument: a number, a boolean, a name or a call.
-//! A face's value is an expression, the record of the face's fields. The core
-//! type holds no fixed value: a value of the patched type is the record of its
-//! free fields.
+//! or a record written in place. The patched type lowers to the core's patched
+//! type over the record the base writes, fixing each label the bracket names at
+//! the value the bracket writes for it ([`Plan::Patched`]). Each fixed value is
+//! read as a value where the bracket stands, so its names resolve there. A
+//! field's value is written as a type takes a value as a call's argument: a
+//! number, a boolean, a name or a call. A face's value is an expression, the
+//! record of the face's fields, and each of its fields' values is read. The
+//! checker checks each fixed value at its field's type, and a value of the
+//! patched type is the record of its free fields.
 //!
 //! # A fixed field reads its value back
 //!
@@ -35,9 +36,8 @@
 //!   back where its value is no literal, leave the fragment
 //!   ([`Unbuilt::FixedValue`]). So does a base with a field whose type names an
 //!   earlier field ([`Unbuilt::DependentPatch`]).
-//! - The checker reads no fixed value. It does not check a fixed value at its
-//!   field's type, and it does not coerce a value of the base to the patched
-//!   type: the core holds no patched type of its own.
+//! - The checker does not coerce a value of the base to the patched type, nor a
+//!   value of the patched type to its base.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -51,11 +51,13 @@ use gandr_theory_shapes::Membership;
 use quenchant_shape::shape::Maybe;
 
 use super::Frame;
+use super::Lowered;
 use super::Lowerer;
 use super::Plan;
 use super::Produced;
 use super::Reading;
 use super::Resolved;
+use super::Sink;
 use super::Site;
 use super::arity::Arranged;
 use super::arity::Entry;
@@ -67,6 +69,7 @@ use super::arity::arrange;
 use super::arity::separated;
 use super::closed;
 use super::exhausted;
+use super::lowered;
 use super::parse_literal;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -81,6 +84,7 @@ use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::module::SlotIndex;
 use crate::module::TypeMeaning;
+use crate::origin::Origin;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
 
@@ -156,6 +160,33 @@ pub(super) fn bracket_of(pieces: &[Piece]) -> Written
     else {
         Written::Stage
     }
+}
+
+/// The value each labelled entry of a bracket writes, by label.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one value node per labelled entry, keyed by its label; an entry
+///   by position or by index holds none.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field form and a face form each fix two fields.
+/// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
+#[spec(ensures: |ret| ret.len() <= entries.len())]
+fn fixed_values(entries: &[Entry<'_>]) -> BTreeMap<FieldLabel, NodeIndex>
+{
+    entries
+        .iter()
+        .filter_map(|entry| match entry.key {
+            Key::Label(label, _) => Some((
+                FieldLabel::from(String::from(label.as_ref())),
+                entry.held.at().node,
+            )),
+            Key::Index(..) | Key::Positional => None,
+        })
+        .collect()
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -246,9 +277,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is a staged type read as a value type under `frame`;
     ///   `fixed` is its bracket's field form.
     /// - ensures: the base is read as a value type and each fixed value as a
-    ///   value, both under `frame`; the type is planned as the record of the
-    ///   base's fields no entry of `fixed` names.
-    /// - fails: as [`Self::free_fields`].
+    ///   value, both under `frame`; the type is planned over the base's fields
+    ///   and the value each entry of `fixed` writes.
+    /// - fails: as [`Self::base_fields`].
     /// - panics: none.
     ///
     /// # Errors
@@ -259,7 +290,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   each patched at two of three fields, and a field the base lacks.
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::patched::tests::a_bracket_naming_what_its_base_lacks_is_refused_by_the_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Patched(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Patched { .. })))]
     pub(super) fn patched_fields(
         &mut self,
         site: Site,
@@ -276,12 +307,13 @@ impl<'source> Lowerer<'_, 'source>
                 Key::Index(..) | Key::Positional => None,
             })
             .collect();
-        let free = self.free_fields(site, &entries, &labels)?;
+        let fields = self.base_fields(site, &entries, &labels)?;
         self.read(base.node, Reading::ValueType(frame));
         for entry in fixed {
             self.read(entry.held.at().node, Reading::Value(frame));
         }
-        self.plan(site, Plan::Patched(free));
+        let fixed = fixed_values(fixed);
+        self.plan(site, Plan::Patched { fields, fixed });
 
         Ok(())
     }
@@ -295,14 +327,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   fixes it at.
     /// - ensures: for a face the base's type member names, whose value is a
     ///   record written in place over exactly the face's labels: the base is
-    ///   read as a value type and the value as a value, both under `frame`, and
-    ///   the type is planned as the record of the base's fields outside the
-    ///   face.
+    ///   read as a value type and each of the record's values as a value, all
+    ///   under `frame`, and the type is planned over the base's fields and the
+    ///   value the record writes for each of the face's labels.
     /// - fails: the unresolved-name refusal for a face the type member does not
     ///   name, a base that is no type member, and a label of the value the face
     ///   does not hold; a form fault for a value that omits a label of the
     ///   face; [`Unbuilt::FixedValue`] for a value that is no record written in
-    ///   place; as [`Self::free_fields`].
+    ///   place; as [`Self::base_fields`].
     /// - panics: none.
     ///
     /// # Errors
@@ -313,7 +345,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   does not name.
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::patched::tests::a_bracket_naming_what_its_base_lacks_is_refused_by_the_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Patched(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Patched { .. })))]
     pub(super) fn patched_face(
         &mut self,
         site: Site,
@@ -370,10 +402,13 @@ impl<'source> Lowerer<'_, 'source>
                 fault: FormFault::MissingOperand,
             });
         }
-        let free = self.free_fields(site, &entries, &fixed)?;
+        let fields = self.base_fields(site, &entries, &fixed)?;
         self.read(base.node, Reading::ValueType(frame));
-        self.read(value.node, Reading::Value(frame));
-        self.plan(site, Plan::Patched(free));
+        for entry in &written {
+            self.read(entry.held.at().node, Reading::Value(frame));
+        }
+        let fixed = fixed_values(&written);
+        self.plan(site, Plan::Patched { fields, fixed });
 
         Ok(())
     }
@@ -436,13 +471,13 @@ impl<'source> Lowerer<'_, 'source>
         Ok((entries, held))
     }
 
-    /// The record of the base's fields `fixed` leaves free: each field's label
-    /// and the node of the type the base writes for it.
+    /// The base's fields, each label with the node of the type the base
+    /// writes for it, once every label `fixed` holds is one of them.
     ///
     /// # Specification
     /// - requires: `entries` are the labelled entries of the base's record;
     ///   `fixed` holds each fixed label with where it is written.
-    /// - ensures: every entry whose label `fixed` does not hold, by label.
+    /// - ensures: every labelled entry, by label.
     /// - fails: the unresolved-name refusal for the least fixed label no entry
     ///   writes; [`Unbuilt::DependentPatch`] when an entry's type names an
     ///   earlier label; the budget refusal.
@@ -452,12 +487,12 @@ impl<'source> Lowerer<'_, 'source>
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two of three fields fixed leave the third, and a
-    ///   label the record lacks is refused by its name.
+    /// - hypothesis: L3 — two of three fields fixed over a record of three, and
+    ///   a label the record lacks is refused by its name.
     /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `lower::patched::tests::a_bracket_naming_what_its_base_lacks_is_refused_by_the_name`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |free| free.len() <= entries.len()))]
-    fn free_fields(
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |fields| fields.len() <= entries.len()))]
+    fn base_fields(
         &mut self,
         site: Site,
         entries: &[Entry<'source>],
@@ -486,9 +521,52 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(written
             .into_iter()
-            .filter(|&(ref label, _)| !fixed.contains_key(label))
             .map(|(label, node)| (FieldLabel::from(String::from(label.as_ref())), node))
             .collect())
+    }
+
+    /// Mint a patched type over the record of `fields`, fixing each label of
+    /// `fixed` at its value.
+    ///
+    /// # Specification
+    /// - requires: every field type and every fixed value is already minted or
+    ///   absent.
+    /// - ensures: the patched type of the record of `fields` at the values of
+    ///   `fixed`, the record and the patched type each with the written origin;
+    ///   nothing when a field or a value did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type member's record patched at two of three
+    ///   fields.
+    /// - witness: `lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
+    pub(super) fn mint_patched_type(
+        &self,
+        fields: &BTreeMap<FieldLabel, NodeIndex>,
+        fixed: &BTreeMap<FieldLabel, NodeIndex>,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let base = match self.mint_record_type(fields, sink, origin) {
+            Maybe::Present(Lowered::ValueType(base)) => base,
+            minted @ (Maybe::Present(_) | Maybe::Absent(_)) => return minted,
+        };
+        let mut values = BTreeMap::new();
+        for (label, &value) in fixed {
+            match self.value_at(value) {
+                Maybe::Present(id) => {
+                    let _first = values.insert(label.clone(), id);
+                },
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.value_type_patched(base, values);
+        sink.origins.record_value_type(id, origin);
+
+        Maybe::Present(Lowered::ValueType(id))
     }
 
     /// The entries of the record a face's value writes in place, `*{.l = v,

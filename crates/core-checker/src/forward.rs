@@ -526,6 +526,7 @@ fn first_order(
             },
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
@@ -664,6 +665,7 @@ fn leaves(
                 continue;
             },
             ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
@@ -839,6 +841,7 @@ fn natural(
                 }
             },
             ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }

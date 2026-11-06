@@ -102,6 +102,30 @@ fn a_stage_refines_its_base_once()
 }
 
 #[test]
+fn a_patch_that_fixes_nothing_is_its_base()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let label = gandr_kernel_term::FieldLabel::from(alloc::string::String::from("port"));
+    let record = arena.value_type_record([(label.clone(), integer)].into());
+    assert_eq!(
+        arena.value_type_patched(record, alloc::collections::BTreeMap::new()),
+        record,
+        "an empty patch mints no node"
+    );
+    let port = arena.value_unit();
+    let patched = arena.value_type_patched(record, [(label.clone(), port)].into());
+    assert_eq!(
+        arena.value_type(patched),
+        Some(&ValueType::Patched {
+            base: record,
+            fixed: [(label, port)].into(),
+        }),
+        "a patch that fixes a field keeps its base and its value"
+    );
+}
+
+#[test]
 fn a_decoded_quote_is_the_quoted_type()
 {
     let mut arena = CoreArena::new();

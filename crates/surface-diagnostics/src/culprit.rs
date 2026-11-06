@@ -376,6 +376,7 @@ fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::AbsentRecordField(_) => "no field of the record type",
         CheckRefusal::AbsentTupleComponent(_) => "no component of the product type",
         CheckRefusal::MissingRecordField { .. } => "a required field is missing",
+        CheckRefusal::PatchOutsideBase { .. } => "no field of the base record",
         CheckRefusal::UnknownOperation { .. } => "not an operation of the interface",
         CheckRefusal::HandlerCoverage { .. } => "not every operation once",
         CheckRefusal::HandlerUnlawful { .. } => "not shown to satisfy a law of its theory",

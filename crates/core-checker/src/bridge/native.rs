@@ -212,6 +212,21 @@ impl Erasure<'_, '_>
                     ValueType::Record(ref fields) => self
                         .frames
                         .extend(fields.values().rev().copied().map(value_type)),
+                    // A patched type crosses as the record of its free fields:
+                    // only those fields' types cross.
+                    ValueType::Patched { base, ref fixed } => {
+                        let Some(&ValueType::Record(ref fields)) = self.arena.value_type(base)
+                        else {
+                            return Err(Refusal::MachineInvariant);
+                        };
+                        self.frames.extend(
+                            fields
+                                .iter()
+                                .rev()
+                                .filter(|&(label, _)| !fixed.contains_key(label))
+                                .map(|(_, &field)| value_type(field)),
+                        );
+                    },
                     ValueType::Product(ref components) | ValueType::Sum(ref components) => self
                         .frames
                         .extend(components.iter().rev().copied().map(value_type)),
@@ -563,6 +578,20 @@ impl Erasure<'_, '_>
                             })
                             .collect::<Result<_, _>>()?;
                         target.value_type_record(fields)
+                    },
+                    ValueType::Patched { base, ref fixed } => {
+                        let Some(&ValueType::Record(ref fields)) = self.arena.value_type(base)
+                        else {
+                            return Err(Refusal::MachineInvariant);
+                        };
+                        let free = fields
+                            .iter()
+                            .filter(|&(label, _)| !fixed.contains_key(label))
+                            .map(|(label, &field)| {
+                                value_type(field).map(|image| (label.clone(), image))
+                            })
+                            .collect::<Result<_, _>>()?;
+                        target.value_type_record(free)
                     },
                     ValueType::Product(ref components) => {
                         let components = components

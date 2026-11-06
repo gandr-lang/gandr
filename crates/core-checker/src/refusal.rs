@@ -831,6 +831,16 @@ pub enum CheckRefusal
         /// The required record type.
         expected: ValueTypeId,
     },
+    /// A patched type fixes a label its base does not hold: the base is a
+    /// record type without the label, or no record type.
+    PatchOutsideBase
+    {
+        /// The patched type.
+        at: ValueTypeId,
+        /// The value the patched type fixes at the label its base does not
+        /// hold; the label is the one the patched type keys it by.
+        value: ValueId,
+    },
     /// A perform names no operation in its supplied interface.
     UnknownOperation
     {
@@ -1630,7 +1640,7 @@ impl CheckRefusal
         | Self::MachineInvariant | Self::TacticRefused { fault: TacticFault::Forged, .. } => matches!(ret, FailureClass::EngineFault),
         | Self::Undecided { .. } | Self::LoopUndecided { .. }
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. } | Self::ComposeNotAShape { .. } | Self::ComposeDoesNotFill { .. } | Self::NoFiller { .. }
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::BridgeAtSealedType { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::BridgeAtSealedType { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. } | Self::PatchOutsideBase { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. } | Self::HandlerUnlawful { .. }
@@ -1686,6 +1696,7 @@ impl CheckRefusal
             | Self::AbsentRecordField(_)
             | Self::AbsentTupleComponent(_)
             | Self::MissingRecordField { .. }
+            | Self::PatchOutsideBase { .. }
             | Self::TypeMismatch(_)
             | Self::EffectSignatureConflict { .. }
             | Self::UnknownOperation { .. }
@@ -1915,6 +1926,7 @@ impl CheckRefusal
             | Self::UncertifiedStratum { code: found, .. }
             | Self::OutsideFold { code: found, .. }
             | Self::BridgeAtSealedType { at: found, .. }
+            | Self::PatchOutsideBase { at: found, .. }
             | Self::SessionMismatch { state: found, .. }
             | Self::UnassertedLaw { at: found }
             | Self::UndischargedLaw { at: found }

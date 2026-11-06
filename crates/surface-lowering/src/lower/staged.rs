@@ -556,7 +556,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::staged::tests::a_stage_outside_a_signature_leaves_the_fragment`
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Patched(_) | Plan::Atom(TypeAtom::Integer)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Patched { .. } | Plan::Atom(TypeAtom::Integer)))))]
     pub(super) fn staged_type(
         &mut self,
         site: Site,

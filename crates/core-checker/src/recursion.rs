@@ -843,6 +843,7 @@ pub fn constructor_owes(
         })),
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }

@@ -1491,6 +1491,7 @@ pub fn decode_bridge(
         | ValueTypeView::Web
         | ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Sum(..)
         | ValueTypeView::List(_)
         | ValueTypeView::Stack { .. }
@@ -2012,6 +2013,29 @@ fn convert(
                         pending.extend(a.values().zip(b.values()).map(|(&a, &b)| values(a, b)));
                         true
                     },
+                    // Two patched types convert when their bases convert and
+                    // they fix the same labels at values that convert.
+                    (
+                        ValueTypeView::Patched {
+                            base: left_base,
+                            fixed: left_fixed,
+                        },
+                        ValueTypeView::Patched {
+                            base: right_base,
+                            fixed: right_fixed,
+                        },
+                    ) => {
+                        if left_fixed.len() != right_fixed.len()
+                            || !left_fixed.keys().eq(right_fixed.keys())
+                        {
+                            return Ok(Agreement::Apart);
+                        }
+                        pending.extend(left_fixed.values().zip(right_fixed.values()).map(
+                            |(&left_value, &right_value)| Pairing::Terms(left_value, right_value),
+                        ));
+                        pending.push(values(left_base, right_base));
+                        true
+                    },
                     (
                         ValueTypeView::Stack {
                             input: a,
@@ -2332,6 +2356,7 @@ fn convert(
                         | ValueTypeView::Web
                         | ValueTypeView::Data { .. }
                         | ValueTypeView::Record(_)
+                        | ValueTypeView::Patched { .. }
                         | ValueTypeView::Sum(..)
                         | ValueTypeView::List(_)
                         | ValueTypeView::Stack { .. }
@@ -3041,6 +3066,7 @@ fn value_head(
         },
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
+        | ValueTypeView::Patched { .. }
         | ValueTypeView::Stack { .. }
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
@@ -3308,6 +3334,7 @@ fn relocated_values(
         (
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }

@@ -4775,6 +4775,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 },
                 ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
+                | ValueTypeView::Patched { .. }
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Buffer
@@ -5104,6 +5105,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Web
                     | ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
+                    | ValueTypeView::Patched { .. }
                     | ValueTypeView::Sum(..)
                     | ValueTypeView::List(_)
                     | ValueTypeView::Stack { .. }

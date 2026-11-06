@@ -1084,6 +1084,20 @@ pub enum ValueType
     },
     /// A structural record classifier, in exact UTF-8 label order.
     Record(BTreeMap<FieldLabel, ValueTypeId>),
+    /// The patched type `T[.l = v, …]`: the record type `base` with the fields
+    /// `fixed` names fixed at their values. Its elements are the records of
+    /// the fields of `base` that `fixed` leaves free, so a fixed field takes
+    /// no storage. Formation admits a base whose head is a record type, a
+    /// label of `fixed` only where the base holds that field, and each value
+    /// only at the type of its field.
+    Patched
+    {
+        /// The record type the patch fixes fields of.
+        base: ValueTypeId,
+        /// Each fixed field's label with its value, in exact UTF-8 label
+        /// order.
+        fixed: BTreeMap<FieldLabel, ValueId>,
+    },
     /// Certified equivalences between two quoted closed first-order codes.
     PathUniverse(ValueId, ValueId),
     /// Element identity `Path[.A = A](a, b)`: the type of paths from `a` to `b`
@@ -3983,11 +3997,12 @@ fn computation_formers(
 /// # Specification
 /// - ensures: [`CertificateEquality::Equal`] for two value types of one former
 ///   that agree in each payload the enumeration does not hand on: a datatype's
-///   declaration and arity, a record's labels, a product's or sum's width, a
-///   lift's or element's target, a stage, a region, a session's protocol and
-///   state, a world's shape, and a base type, universe, abstract type, unknown
-///   type or buffer whole. [`CertificateEquality::Different`] otherwise, and
-///   for two capabilities, which [`pair_step`] pairs itself.
+///   declaration and arity, a record's labels, a patched type's fixed labels, a
+///   product's or sum's width, a lift's or element's target, a stage, a region,
+///   a session's protocol and state, a world's shape, and a base type,
+///   universe, abstract type, unknown type or buffer whole.
+///   [`CertificateEquality::Different`] otherwise, and for two capabilities,
+///   which [`pair_step`] pairs itself.
 /// - panics: none.
 /// - executable: none — this is the structural comparison's former rule.
 ///
@@ -4014,6 +4029,14 @@ fn value_type_formers(
         (&ValueType::Record(ref left), &ValueType::Record(ref right)) => {
             left.len() == right.len() && left.keys().eq(right.keys())
         },
+        (
+            &ValueType::Patched {
+                fixed: ref left, ..
+            },
+            &ValueType::Patched {
+                fixed: ref right, ..
+            },
+        ) => left.len() == right.len() && left.keys().eq(right.keys()),
         (&ValueType::Product(ref left), &ValueType::Product(ref right))
         | (&ValueType::Sum(ref left), &ValueType::Sum(ref right)) => left.len() == right.len(),
         (
@@ -6611,6 +6634,30 @@ mod tests
             )
         });
         cases.push((twin, same, alloc::vec![other_label, wider], "a record type"));
+        let fields = arena.value_type_record(
+            ["a", "b"]
+                .into_iter()
+                .map(|name| (label(name), unit_type))
+                .collect(),
+        );
+        let [twin, same, other_label, wider] = [
+            alloc::vec!["a"],
+            alloc::vec!["a"],
+            alloc::vec!["b"],
+            alloc::vec!["a", "b"],
+        ]
+        .map(|labels| {
+            arena.value_type_patched(
+                fields,
+                labels.into_iter().map(|name| (label(name), unit)).collect(),
+            )
+        });
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_label, wider],
+            "a patched type",
+        ));
         let [twin, same, wider] =
             [1_usize, 1, 2].map(|count| arena.value_type_product(&alloc::vec![unit_type; count]));
         cases.push((twin, same, alloc::vec![wider], "a product type"));

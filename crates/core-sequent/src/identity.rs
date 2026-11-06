@@ -558,7 +558,9 @@ fn head(node: &ValueType) -> MotiveHead
 {
     match *node {
         ValueType::Data { .. } => MotiveHead::Data,
-        ValueType::Record(_) => MotiveHead::Record,
+        // A patched type is a record type with fields fixed, so its head is a
+        // record's.
+        ValueType::Record(_) | ValueType::Patched { .. } => MotiveHead::Record,
         ValueType::PathUniverse(..) => MotiveHead::PathUniverse,
         ValueType::Path { .. } => MotiveHead::Path,
         ValueType::Flow { .. } => MotiveHead::Flow,
@@ -707,6 +709,7 @@ fn row(
         ValueType::Run(code) if family == Family::Path => Row::Run(run_session(core, code)?),
         ValueType::Data { .. }
         | ValueType::Record(_)
+        | ValueType::Patched { .. }
         | ValueType::PathUniverse(..)
         | ValueType::Path { .. }
         | ValueType::Bridge { .. }

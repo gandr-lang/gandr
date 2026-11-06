@@ -2262,6 +2262,91 @@ fn record_width_depth_and_projection()
     assert!(crossed.audit().axioms().is_empty());
 }
 
+/// A patched type forms over a record holding every label it fixes, each
+/// fixed value at its field's type. Its values are the records of its free
+/// fields, a free field projects at its type, a fixed one projects nothing,
+/// and the kernel admits each checked declaration at the record of the free
+/// fields.
+#[test]
+fn a_patched_type_forms_over_its_base_and_types_its_free_fields()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| FieldLabel::from(String::from(name));
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let base = arena.value_type_record(BTreeMap::from([
+        (label("host"), integer),
+        (label("port"), integer),
+        (label("tls"), integer),
+    ]));
+    let fixed = three(&mut arena);
+    let patched = arena.value_type_patched(
+        base,
+        BTreeMap::from([(label("port"), fixed), (label("tls"), fixed)]),
+    );
+    let host = three(&mut arena);
+    let record = arena.value_record(BTreeMap::from([(label("host"), host)]));
+    let projecting = |arena: &mut CoreArena, field: &str| {
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let projection = arena.computation_record_projection(variable, label(field));
+        let lambda = arena.computation_lambda(projection);
+        let result = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(patched, result);
+        (arena.value_type_thunk(arrow), arena.value_thunk(lambda))
+    };
+    let (free_type, free_body) = projecting(&mut arena, "host");
+    let (fixed_type, fixed_body) = projecting(&mut arena, "port");
+    let unit = arena.value_unit();
+    let mistyped = arena.value_type_patched(base, BTreeMap::from([(label("port"), unit)]));
+    let outside = arena.value_type_patched(base, BTreeMap::from([(label("mode"), fixed)]));
+    let declarations = [
+        definition(ConstantIndex::from(0_usize), patched, record),
+        definition(ConstantIndex::from(1_usize), free_type, free_body),
+        definition(ConstantIndex::from(2_usize), fixed_type, fixed_body),
+        definition(ConstantIndex::from(3_usize), mistyped, record),
+        definition(ConstantIndex::from(4_usize), outside, record),
+    ];
+    let (report, crossed) = run(&mut arena, &declarations);
+    for position in 0 .. 2_usize {
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "{position}: {:?}",
+            report.judged()[position].verdict()
+        );
+        assert!(
+            matches!(
+                crossed.readmitted()[position].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the kernel admits {position} at the record of the free fields: {:?}",
+            crossed.readmitted()[position].outcome()
+        );
+    }
+    assert!(
+        matches!(
+            report.judged()[2].verdict(),
+            Verdict::Refused(CheckRefusal::AbsentRecordField(_))
+        ),
+        "a fixed field projects nothing: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(
+        matches!(
+            report.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "a fixed value checks at its field's type: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert_eq!(
+        report.judged()[4].verdict(),
+        Verdict::Refused(CheckRefusal::PatchOutsideBase {
+            at: outside,
+            value: fixed,
+        }),
+        "a label outside the base is refused at the value it fixes"
+    );
+}
+
 #[test]
 fn term_indices_are_structural_in_both_checkers()
 {

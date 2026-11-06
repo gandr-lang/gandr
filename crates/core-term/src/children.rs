@@ -562,6 +562,12 @@ pub fn of_value_type<Walk>(
                 visit.value_type(field, at);
             }
         },
+        ValueType::Patched { base, ref fixed } => {
+            visit.value_type(base, at);
+            for &value in fixed.values() {
+                visit.value(value, at);
+            }
+        },
         ValueType::PathUniverse(source, target) => {
             visit.value(source, at);
             visit.value(target, at);

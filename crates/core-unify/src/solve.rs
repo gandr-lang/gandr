@@ -1081,6 +1081,7 @@ const fn value_type_head(value_type: &ValueType) -> TypeHead<'_>
         | ValueType::Dialogue(_)
         | ValueType::Web
         | ValueType::Staged { .. }
+        | ValueType::Patched { .. }
         | ValueType::Stack { .. }
         | ValueType::Session(_)
         | ValueType::Capability { .. }

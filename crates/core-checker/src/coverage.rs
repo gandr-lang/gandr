@@ -686,6 +686,7 @@ impl Walker<'_, '_, '_>
             Some(&ValueType::Unknown) => Ok(Kind::Unknown),
             Some(
                 &(ValueType::Record(_)
+                | ValueType::Patched { .. }
                 | ValueType::List(_)
                 | ValueType::Stack { .. }
                 | ValueType::Capability { .. }
