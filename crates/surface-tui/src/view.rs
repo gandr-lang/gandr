@@ -474,7 +474,7 @@ mod tests
         use ratatui::text::Span;
 
         let block = super::TranscriptBlock {
-            source: "αb\ncdé".into(),
+            source: include_str!("view/unformatted/wide-glyphs.gandr").into(),
             source_hl: [
                 (1_usize, 2_usize, HlRole::Number),
                 (2, 6, HlRole::Keyword),

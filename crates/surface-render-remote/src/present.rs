@@ -1225,7 +1225,7 @@ mod tests
     {
         // Bytes: a=1 at 0, é=2 at 1, €=3 at 3, 𝄞=4 at 6, b=1 at 10, \n at 11,
         // z at 12. UTF-16 units: a, é and € one each, 𝄞 two, b one.
-        let source = "aé€𝄞b\nz";
+        let source = include_str!("present/unformatted/multibyte-boundary.gandr");
         let index = LineIndex::new(SourceText::from(source));
         let starts = [
             (0_usize, At(0, 0)),
@@ -1270,7 +1270,9 @@ mod tests
     fn a_row_is_read_without_its_column()
     {
         // Rows: "a" ended by \r\n, "b" by a lone \r, "c" by \n, then "d".
-        let index = LineIndex::new(SourceText::from("a\r\nb\rc\nd"));
+        let index = LineIndex::new(SourceText::from(include_str!(
+            "present/unformatted/mixed-terminators.gandr"
+        )));
         let rows = [0_usize, 1, 2, 3, 4, 5, 6, 7, 8, 99]
             .map(|byte| usize::from(index.row_of_byte(ByteOffset::from(byte))));
         assert_eq!(
@@ -1278,7 +1280,9 @@ mod tests
             [0, 0, 0, 1, 1, 2, 2, 3, 3, 3],
             "a terminator is on the row it ends, and the end is on the last row"
         );
-        let astral = LineIndex::new(SourceText::from("x\n𝄞y"));
+        let astral = LineIndex::new(SourceText::from(include_str!(
+            "present/unformatted/astral-second-row.gandr"
+        )));
         assert_eq!(
             usize::from(astral.row_of_byte(ByteOffset::from(3_usize))),
             1,
@@ -1290,7 +1294,7 @@ mod tests
     fn utf16_rows_end_at_every_protocol_terminator()
     {
         // Rows: "a" ended by \r\n, "b" by a lone \r, "c" by \n, then "d".
-        let source = "a\r\nb\rc\nd";
+        let source = include_str!("present/unformatted/mixed-terminators.gandr");
         let index = LineIndex::new(SourceText::from(source));
         let rows = [
             (0_usize, Bytes(0, 1)),
@@ -1341,7 +1345,9 @@ mod tests
     #[test]
     fn utf16_positions_clamp_past_the_end()
     {
-        let index = LineIndex::new(SourceText::from("ab\ncd"));
+        let index = LineIndex::new(SourceText::from(include_str!(
+            "present/unformatted/two-rows.gandr"
+        )));
         assert_eq!(
             Ok(utf16(At(1, 2))),
             index.utf16_pos_of_byte(ByteOffset::from(999_usize)),
@@ -1592,7 +1598,7 @@ mod tests
     #[test]
     fn positions_round_trip_on_ascii()
     {
-        let text = SourceText::from("def x = 1;\ndef y = 2;");
+        let text = SourceText::from(include_str!("present/fixtures/ascii-rows.gandr"));
         let source: &str = text.into();
         for (byte, _) in source.char_indices() {
             let at = pos_of_byte(text, ByteOffset::from(byte))
@@ -1609,7 +1615,7 @@ mod tests
     fn positions_round_trip_on_multibyte_text()
     {
         // Two-, three- and four-byte characters on either side of a newline.
-        let text = SourceText::from("é€\n𝄞z𝄞");
+        let text = SourceText::from(include_str!("present/unformatted/multibyte-rows.gandr"));
         let source: &str = text.into();
         for (byte, character) in source.char_indices() {
             let at =
@@ -1638,7 +1644,9 @@ mod tests
     #[test]
     fn positions_count_characters_not_bytes()
     {
-        let text = SourceText::from("é×é\nz");
+        let text = SourceText::from(include_str!(
+            "present/unformatted/characters-not-bytes.gandr"
+        ));
         // Bytes: é=2, ×=2, é=2, \n=1, z=1.
         assert_eq!(
             Ok(pos(At(0, 0))),
@@ -1687,7 +1695,7 @@ mod tests
     #[test]
     fn out_of_range_positions_clamp()
     {
-        let text = SourceText::from("ab\ncd");
+        let text = SourceText::from(include_str!("present/unformatted/two-rows.gandr"));
         assert_eq!(
             Ok(pos(At(1, 2))),
             pos_of_byte(text, ByteOffset::from(999_usize)),
@@ -1739,7 +1747,7 @@ mod tests
     #[test]
     fn the_end_of_the_source_is_a_position()
     {
-        let text = SourceText::from("ab\ncd");
+        let text = SourceText::from(include_str!("present/unformatted/two-rows.gandr"));
         assert_eq!(
             Ok(pos(At(1, 2))),
             pos_of_byte(text, ByteOffset::from(5_usize)),
@@ -1767,7 +1775,9 @@ mod tests
     #[test]
     fn adjacent_terminators_preserve_empty_rows_and_crlf_clamping()
     {
-        let index = LineIndex::new(SourceText::from("\r\n\r\né\r\n\r"));
+        let index = LineIndex::new(SourceText::from(include_str!(
+            "present/unformatted/adjacent-terminators.gandr"
+        )));
         for (row, bytes) in [
             Bytes(0, 0),
             Bytes(2, 2),

@@ -575,9 +575,7 @@ fn layout_takes_a_role_only_as_a_comment_or_a_shebang() -> Result<(), Box<dyn Er
 {
     let pbg = built_in()?;
     let table = RoleTable::build(&pbg)?;
-    let source = SourceText::from(
-        "#!/usr/bin/env gandr\n// a note\n  /* outer /* inner */ */\n\ndef x = 1;\n",
-    );
+    let source = SourceText::from(include_str!("highlight/unformatted/layout-comments.gandr"));
     let parsed = parse(&pbg, source)?;
     let spans = table.highlight(parsed.tree())?;
     let read: Vec<(&str, HlRole)> = spans
