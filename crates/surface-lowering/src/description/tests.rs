@@ -1749,6 +1749,8 @@ fn every_member_fault_renders_its_own_message()
         MemberFault::IllSorted,
         MemberFault::RewrittenIndex,
         MemberFault::UnderivedWiring,
+        MemberFault::UnwiredDiagram,
+        MemberFault::SpiderBudget,
         MemberFault::ParallelRedexes,
         MemberFault::OffBoundary,
     ]

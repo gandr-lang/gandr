@@ -757,7 +757,9 @@ fn undescribed(fault: MemberFault) -> FailureClass
         | MemberFault::ResultArity
         | MemberFault::MixedPolarity
         | MemberFault::IllSorted
-        | MemberFault::UnderivedWiring => FailureClass::MalformedSource,
+        | MemberFault::UnderivedWiring
+        | MemberFault::UnwiredDiagram
+        | MemberFault::SpiderBudget => FailureClass::MalformedSource,
     }
 }
 
@@ -1578,6 +1580,8 @@ mod tests
             (MemberFault::MixedPolarity, FailureClass::MalformedSource),
             (MemberFault::IllSorted, FailureClass::MalformedSource),
             (MemberFault::UnderivedWiring, FailureClass::MalformedSource),
+            (MemberFault::UnwiredDiagram, FailureClass::MalformedSource),
+            (MemberFault::SpiderBudget, FailureClass::MalformedSource),
             (MemberFault::OffBoundary, FailureClass::EngineFault),
             (MemberFault::NativeDecode, FailureClass::EngineFault),
         ];

@@ -1,0 +1,11 @@
+error[MalformedForm]: a keyword or symbol of this def value is out of place
+   ╭▸ corpus/pathological/circuit/spiders-unmarked.gandr:7:3
+   │
+ 7 │ ┏   rule merge : (data x : Q, data y : Q) <=> (z : Q) {
+ 8 │ ┃     node : f(x) --> (z);
+ 9 │ ┃     node : g(y) --> (z);
+10 │ ┃   };
+   │ ┗━━━┛ out of place
+   │
+   ├ note: `Unmarked` is refused with MalformedForm, as its expectation states
+   ╰ help: move the keyword or symbol to its place in the def value

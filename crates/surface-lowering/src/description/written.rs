@@ -605,6 +605,9 @@ pub struct WrittenMembers
     pub faces: Vec<WrittenFace>,
     /// The circuit rules.
     pub circuits: Vec<WrittenCircuit>,
+    /// The circuit rules a `theory` reads as diagrams, parallel to its
+    /// presentation's diagrams.
+    pub diagrams: Vec<WrittenCircuit>,
     /// For a `theory`, its stated laws, those of the theories it includes
     /// first.
     pub laws: Vec<WrittenLaw>,

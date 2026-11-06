@@ -46,6 +46,25 @@
 //! `description::theory::tests::a_refused_theory_block_states_its_refusal`,
 //! `description::theory::tests::a_fed_port_no_node_reads_is_refused_at_the_feed`.
 //!
+//! # Spiders
+//!
+//! A sort member marked `@[ frobenius ]` carries a special commutative
+//! Frobenius algebra. On a wire of that sort, a circuit rule may merge wires
+//! and split them: its wire map repeats a name, and its body writes no node
+//! for the spider. A circuit rule reads after every member of its block, so an
+//! operation after the rule can give a wire its sort. A rule that merges or
+//! splits a marked wire reads through the seam of `circuit::embed` to its
+//! spider canon, within `SpiderBudget::DEFAULT`. The presentation keeps the
+//! rule as a diagram, and the description holds no term sphere for it. A merge
+//! on an unmarked wire keeps the boundary reading, which refuses the port that
+//! two nodes bind. The two refusals of the seam stand at the rule: a wiring it
+//! cannot assemble, and a tie past the budget. The mark stands only on an
+//! unindexed sort. Witnesses:
+//! `description::theory::tests::a_frobenius_mark_stands_on_an_unindexed_sort_5763`,
+//! `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`,
+//! `description::theory::tests::an_unmarked_merge_keeps_the_boundary_reading_5763`,
+//! `description::theory::tests::a_seam_refusal_stands_at_its_rule_5763`.
+//!
 //! # Second-order members
 //!
 //! A sort member classified `Type+` is representable, and an operation's
@@ -174,6 +193,13 @@
 //! `description::theory::tests::a_refused_top_level_operation_states_its_refusal`,
 //! `description::theory::tests::a_top_level_operation_declines_its_filler_by_name`,
 //! `description::theory::tests::a_decorated_top_level_operation_is_refused_at_itself_3073`.
+//!
+//! # References
+//!
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — newest: the ruling that a
+//!   circuit rule over a marked sort checks as a diagram.
+//! - `vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199` — newest: the boxless spider,
+//!   a wire map that repeats a name.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -187,6 +213,7 @@ use anodized::spec;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
+use gandr_theory_circuit_algebras::SpiderBudget;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::CircuitBody;
 use gandr_theory_levitation::CircuitFeed;
@@ -270,6 +297,8 @@ use crate::SurfaceName;
 use crate::circuit::ArrowRow;
 use crate::circuit::OutputCount;
 use crate::circuit::SignatureFault;
+use crate::circuit::embed::CircuitReading;
+use crate::circuit::embed::circuit_canon;
 use crate::description::DescribedDeclaration as Earlier;
 use crate::description::Visible;
 use crate::form::Cursor;
@@ -280,10 +309,12 @@ use crate::form::TileName;
 use crate::model::Binder;
 use crate::model::Hypothesis;
 use crate::model::Included;
+use crate::model::Members;
 use crate::model::ModelFault;
 use crate::model::Placement;
 use crate::model::Presentation;
 use crate::model::PresentedCircuit;
+use crate::model::PresentedDiagram;
 use crate::model::SortTerm;
 use crate::model::StatedLaw;
 use crate::model::presentation;
@@ -421,8 +452,47 @@ enum RuleMember
     /// A written face `rule name : lhs ==> rhs`, its name tile and its whole
     /// member.
     Face(TheoryRule, Placed, ByteSpan, WrittenFace),
-    /// A circuit rule whose sphere its wiring derives.
-    Circuit(CircuitRule, PresentedCircuit, WrittenCircuit),
+    /// A circuit rule read up to its wiring.
+    Circuit(ReadCircuit),
+}
+
+/// A circuit rule read up to its wiring.
+///
+/// The rule reads to a sphere or to a diagram after the block's members are
+/// all read. An operation after the rule can give a wire its sort.
+struct ReadCircuit
+{
+    /// The rule's name tile.
+    named: Placed,
+    /// The whole member.
+    span: ByteSpan,
+    /// The body, rooted at the declared outputs.
+    body: CircuitBody,
+    /// The declared input ports, in telescope order.
+    inputs: Vec<Name>,
+    /// The rewrite ports.
+    rewrites: Vec<RewritePort>,
+    /// Where the rule is written.
+    written: WrittenCircuit,
+}
+
+/// What a circuit rule reads as.
+enum CircuitMember
+{
+    /// A rule whose sphere its wiring derives.
+    Boundary(CircuitRule, PresentedCircuit, WrittenCircuit),
+    /// A rule that merges or splits a marked wire, with its spider canon.
+    Diagram(PresentedDiagram, WrittenCircuit),
+}
+
+/// The attribute a theory member opens with, at the bytes of its name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MemberMark
+{
+    /// `@[ inert ]`, which stands on an operation.
+    Inert(ByteSpan),
+    /// `@[ frobenius ]`, which stands on an unindexed sort.
+    Frobenius(ByteSpan),
 }
 
 impl Reader<'_, '_>
@@ -446,7 +516,11 @@ impl Reader<'_, '_>
     ///   it, where this block's refusal of it is placed. An `ext` member's
     ///   generated operations and laws follow the written ones, each placed at
     ///   the member's keyword. The stated laws are the included presentations'
-    ///   then the block's own, in written order.
+    ///   then the block's own, in written order. Each circuit rule reads after
+    ///   every member, by [`Self::circuit_member`]: a rule that merges or
+    ///   splits a wire of a sort the block or an include marks `@[ frobenius ]`
+    ///   is a diagram of the presentation, and every other rule a circuit of
+    ///   the description.
     /// - fails: a malformed signature head refuses the whole declaration; an
     ///   `include` that names no visible block, names two, or whose members
     ///   clash with the presentation's, an `ext` member the block cannot
@@ -469,7 +543,8 @@ impl Reader<'_, '_>
     ///   an include of an unknown or clashing block is refused at the member,
     ///   as is an included member the including block refuses and the included
     ///   one reads; an extension generates the signature a hand-written block
-    ///   states.
+    ///   states; a marked merge is a diagram, and a mark an include brings
+    ///   stands on the including block.
     /// - witness: `description::theory::tests::a_declined_rule_member_leaves_the_members_after_it_intact`
     /// - witness: `description::theory::tests::an_unreadable_member_keeps_its_own_report`
     /// - witness: `description::theory::tests::the_description_is_read_off_the_value`
@@ -478,6 +553,8 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::an_included_member_is_refused_at_its_include_2752`
     /// - witness: `description::theory::tests::an_extension_generates_its_signature`
     /// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
+    /// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
+    /// - witness: `description::theory::tests::a_frobenius_mark_stands_on_an_unindexed_sort_5763`
     pub(super) fn signature(
         &self,
         at: Placed,
@@ -503,7 +580,8 @@ impl Reader<'_, '_>
         // A member's inner blocks `@![ … ]` come off its front first:
         // one that only inner blocks precede decorates the theory, and one
         // after a member is the lowering's to refuse. Then its attribute
-        // blocks come off; only `@[ inert ]` stands there, on an operation.
+        // blocks come off: `@[ inert ]` on an operation, and `@[ frobenius ]`
+        // on an unindexed sort.
         let mut members = Vec::new();
         let mut inner = Vec::new();
         let mut late_inner = Vec::new();
@@ -529,6 +607,7 @@ impl Reader<'_, '_>
             }
         }
         let mut inert = BTreeSet::new();
+        let mut frobenius = BTreeSet::new();
         let mut parts = TheoryParts::default();
         let mut placement = Placement::default();
         let mut scope = BTreeMap::new();
@@ -540,6 +619,9 @@ impl Reader<'_, '_>
         let mut operation_spans = Vec::new();
         let mut circuits = Vec::new();
         let mut presented_circuits = Vec::new();
+        let mut diagrams = Vec::new();
+        // Each circuit rule the block writes, read once every member is.
+        let mut read_circuits = Vec::new();
         let mut inclusions = Vec::new();
         let mut included_circuits = BTreeSet::new();
         let mut extensions = Vec::new();
@@ -633,6 +715,12 @@ impl Reader<'_, '_>
                     written.circuits.push(wired.clone());
                 }
             }
+            for (diagram, wired) in presented.diagrams.iter().zip(&declaration.written.diagrams) {
+                if included_circuits.insert(&diagram.circuit.name) {
+                    diagrams.push(diagram.clone());
+                    written.diagrams.push(wired.clone());
+                }
+            }
             // A law two includes reach through one theory is held once; a
             // different law under a held name clashes.
             for (law, sides) in presented.laws.iter().zip(&declaration.written.laws) {
@@ -652,6 +740,7 @@ impl Reader<'_, '_>
                 }
             }
             inert.extend(presented.inert.iter().cloned());
+            frobenius.extend(presented.frobenius.iter().cloned());
             inclusions.push(Included {
                 theory: declaration.description.id.clone(),
                 inclusion,
@@ -665,7 +754,7 @@ impl Reader<'_, '_>
         {
             diagnostics.push(run.signature_fault(SignatureFault::AmbiguousJoin(fault)));
         }
-        for &(_, member) in &members {
+        for &(marked, member) in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
             let kind = if reading.eat(Spelling("oper")).0 {
@@ -727,6 +816,19 @@ impl Reader<'_, '_>
             }
             match self.signature_sort(&mut reading) {
                 Ok((sort, tile, member)) => {
+                    // A spider merges wires of one sort, and an indexed sort
+                    // gives no wire a sort alone.
+                    if let Some(MemberMark::Frobenius(mark)) = marked {
+                        if sort.indices.is_empty() {
+                            let _fresh = frobenius.insert(sort.name.clone());
+                        }
+                        else {
+                            diagnostics.push(DescriptionDiagnostic {
+                                span: mark,
+                                fault: DescriptionFault::Malformed,
+                            });
+                        }
+                    }
                     parts.sorts.push(sort);
                     placement.sorts.push(tile);
                     written.sorts.push(member);
@@ -750,9 +852,12 @@ impl Reader<'_, '_>
         for (marked, member) in members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
-            if let Some(tile) = marked
-                && !reading.at(Spelling("oper")).0
-            {
+            let misplaced = match marked {
+                Some(MemberMark::Inert(tile)) if !reading.at(Spelling("oper")).0 => Some(tile),
+                Some(MemberMark::Frobenius(tile)) if !reading.at(Spelling("sort")).0 => Some(tile),
+                Some(MemberMark::Inert(_) | MemberMark::Frobenius(_)) | None => None,
+            };
+            if let Some(tile) = misplaced {
                 diagnostics.push(DescriptionDiagnostic {
                     span: tile,
                     fault: DescriptionFault::Malformed,
@@ -780,7 +885,7 @@ impl Reader<'_, '_>
                         if !unread_include {
                             diagnostics.extend(undeclared_ports(&operation, &ports, &parts.sorts));
                         }
-                        if marked.is_some() {
+                        if matches!(marked, Some(MemberMark::Inert(_))) {
                             let _fresh = inert.insert(operation.name.clone());
                         }
                         parts.operations.push(operation);
@@ -792,11 +897,7 @@ impl Reader<'_, '_>
             else if reading.eat(Spelling("rule")).0 {
                 self.signature_rule(&mut reading, &parts.sorts, &scope, visible)
                     .map(|member| match member {
-                        RuleMember::Circuit(rule, presented, wired) => {
-                            circuits.push(rule);
-                            presented_circuits.push(presented);
-                            written.circuits.push(wired);
-                        },
+                        RuleMember::Circuit(read) => read_circuits.push(read),
                         RuleMember::Face(face, tile, whole, sides) => {
                             parts.rules.push(face);
                             placement.laws.push(tile);
@@ -859,14 +960,40 @@ impl Reader<'_, '_>
         // An abstraction a rule writes at a binding port is the binding field
         // that port binds, read against every operation the parts hold.
         parts.bind_fields();
-        let presentation = Presentation {
+        let mut presentation = Presentation {
             value: TheoryValue::encode(&parts),
             placement,
-            circuits: presented_circuits,
+            circuits: Vec::new(),
+            diagrams: Vec::new(),
             inclusions,
             laws,
             inert,
+            frobenius,
         };
+        // A circuit rule reads once every member is read. A block that marks
+        // no sort reads no diagram, so it does not decode its members.
+        let members = if presentation.frobenius.is_empty() {
+            None
+        }
+        else {
+            presentation.members().ok()
+        };
+        for read in read_circuits {
+            match self.circuit_member(read, members.as_ref(), &presentation.frobenius) {
+                Ok(CircuitMember::Boundary(rule, presented, wired)) => {
+                    circuits.push(rule);
+                    presented_circuits.push(presented);
+                    written.circuits.push(wired);
+                },
+                Ok(CircuitMember::Diagram(diagram, wired)) => {
+                    diagrams.push(diagram);
+                    written.diagrams.push(wired);
+                },
+                Err(diagnostic) => diagnostics.push(diagnostic),
+            }
+        }
+        presentation.circuits = presented_circuits;
+        presentation.diagrams = diagrams;
         diagnostics.extend(unstated(
             &presentation,
             presentation.laws.get(own_laws ..).unwrap_or_default(),
@@ -899,15 +1026,16 @@ impl Reader<'_, '_>
         })
     }
 
-    /// Read the attribute blocks a theory member opens with, `@[ inert ]`.
+    /// Read the attribute blocks a theory member opens with: `@[ inert ]` or
+    /// `@[ frobenius ]`.
     ///
     /// # Specification
-    /// - ensures: the member past its blocks, beside the `inert` name's bytes
-    ///   when a block lists it; a member written with no block, whole and
+    /// - ensures: the member past its blocks, beside the mark that a block
+    ///   lists, at its name's bytes; a member written with no block, whole and
     ///   unmarked.
-    /// - fails: a name other than `inert`, `inert` written twice or with a
-    ///   payload, and a block its `]` does not close, malformed at the name or
-    ///   the member.
+    /// - fails: a name other than `inert` and `frobenius`, a second mark or a
+    ///   mark with a payload, and a block its `]` does not close, malformed at
+    ///   the name or the member.
     /// - panics: none.
     ///
     /// # Errors
@@ -916,27 +1044,39 @@ impl Reader<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — an operation marked inert, one unmarked, an unknown
     ///   name, and the mark on a sort, each asserted as the exact presentation
-    ///   or refusal.
+    ///   or refusal; a sort marked `frobenius`, and the mark on an operation
+    ///   and on an indexed sort.
     /// - witness: `description::theory::tests::an_inert_operation_is_marked_on_its_presentation_3029`
+    /// - witness: `description::theory::tests::a_frobenius_mark_stands_on_an_unindexed_sort_5763`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.1.len() <= member.len()))]
     fn member_attributes<'pieces>(
         &self,
         member: &'pieces [Piece],
         span: ByteSpan,
-    ) -> Result<(Option<ByteSpan>, &'pieces [Piece]), DescriptionDiagnostic>
+    ) -> Result<(Option<MemberMark>, &'pieces [Piece]), DescriptionDiagnostic>
     {
         let mut reading = Run::new(member, span);
         let mut marked = None;
         while reading.eat(Spelling("@[")).0 {
             loop {
                 let name = reading.take()?;
-                if self.text(name).0 != INERT || marked.is_some() {
+                let mark = match self.text(name).0 {
+                    INERT => MemberMark::Inert(name.span),
+                    FROBENIUS => MemberMark::Frobenius(name.span),
+                    _ => {
+                        return Err(DescriptionDiagnostic {
+                            span: name.span,
+                            fault: DescriptionFault::Malformed,
+                        });
+                    },
+                };
+                if marked.is_some() {
                     return Err(DescriptionDiagnostic {
                         span: name.span,
                         fault: DescriptionFault::Malformed,
                     });
                 }
-                marked = Some(name.span);
+                marked = Some(mark);
                 if reading.eat(Spelling("]")).0 {
                     break;
                 }
@@ -2287,36 +2427,32 @@ impl Reader<'_, '_>
     }
 
     /// Read a rule member: a written face between two terms, with the
-    /// freshness conditions its `where` clause states, or a circuit body
-    /// whose sphere is derived from the written wiring.
+    /// freshness conditions its `where` clause states, or a circuit body read
+    /// up to its wiring.
     ///
     /// # Specification
     /// - ensures: a member whose first side is a term is the face `lhs ==> rhs`
     ///   it writes, each `a # q` of its `where` clause a condition on it in
     ///   written order; a member whose first side is a port group is a circuit
-    ///   rule whose source and target are derived, never fabricated for a
-    ///   failed body, with one root per declared output and one port per output
-    ///   of each frame.
-    /// - fails: malformed, cyclic, oversized and unrepresentable bodies are
-    ///   located; a redex binds exactly one port; a member with no body whose
-    ///   first side is a parenthesized composite, a cell between composites of
-    ///   cells, is a fillerless higher cell.
+    ///   rule read up to its wiring, with one root per declared output and one
+    ///   port per output of each frame, which [`Self::circuit_member`] reads
+    ///   on.
+    /// - fails: malformed and unrepresentable bodies are located; a redex binds
+    ///   exactly one port; a member with no body whose first side is a
+    ///   parenthesized composite, a cell between composites of cells, is a
+    ///   fillerless higher cell.
     /// - panics: none.
-    /// - executable: none — the derived sphere is checked by the derivation it
-    ///   comes from; restating it would derive it again.
+    /// - executable: none — the body is checked by the reading of
+    ///   [`Self::circuit_member`]; restating it would read it again.
     ///
     /// # Errors
-    /// Returns syntax, interface, instantiation or boundary-derivation
-    /// failures.
+    /// Returns syntax, interface or instantiation failures.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a readable body, a cycle, a body past the node
-    ///   ceiling, a written face, a face with two conditions and a two-rooted
-    ///   body over a many-out frame separate a derived sphere, a written one,
-    ///   its conditions and the two refusals.
+    /// - hypothesis: L3 — a readable body, a written face, a face with two
+    ///   conditions and a two-rooted body over a many-out frame separate a read
+    ///   body, a written face and its conditions.
     /// - witness: `description::theory::tests::a_ruled_theory_block_lowers_its_members_into_a_description`
-    /// - witness: `description::theory::tests::a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal`
-    /// - witness: `description::theory::tests::a_doubling_body_declines_on_the_derivation_node_budget`
     /// - witness: `description::theory::tests::the_cat_shape_laws_are_written_faces`
     /// - witness: `description::theory::tests::a_many_out_frame_binds_every_port_and_roots_the_body`
     /// - witness: `description::theory::tests::a_coherence_between_composites_is_a_higher_cell`
@@ -2558,10 +2694,6 @@ impl Reader<'_, '_>
             .map(|output| output.name.clone())
             .collect();
         let body = CircuitBody::rooted(nodes, roots).with_feeds(feeds);
-        let derived = derive_boundaries(&body)
-            .map_err(|error| run.signature_fault(SignatureFault::Derivation(error)))?;
-        let vars = derive_cell_var_meta(&derived.source);
-        let sphere = RuleFace::new(derived.source, derived.target, vars, surface_span(run.span));
         let ports = boundary
             .inputs
             .iter()
@@ -2587,18 +2719,103 @@ impl Reader<'_, '_>
                 },
             })
             .collect();
-        Ok(RuleMember::Circuit(
-            CircuitRule::new(self.text(name).0, sphere, body).with_ports(boundary.rewrites),
-            PresentedCircuit {
-                name: self.text(name).0.into(),
-                named: name,
-            },
-            WrittenCircuit {
+        Ok(RuleMember::Circuit(ReadCircuit {
+            named: name,
+            span: run.span,
+            body,
+            inputs: boundary
+                .inputs
+                .iter()
+                .map(|port| port.name.clone())
+                .collect(),
+            rewrites: boundary.rewrites,
+            written: WrittenCircuit {
                 named: name.span,
                 ports,
                 rewrites: boundary.written_rewrites,
                 frames,
             },
+        }))
+    }
+
+    /// Read a circuit rule once the block's members are all read: as a
+    /// diagram when its body merges or splits a marked wire, and otherwise as
+    /// the sphere its wiring derives.
+    ///
+    /// # Specification
+    /// - requires: `members` holds the block's members when `frobenius` is not
+    ///   empty.
+    /// - ensures: a body that merges or splits a wire of a sort in `frobenius`
+    ///   reads through [`circuit_canon`] to its spider canon, within
+    ///   [`SpiderBudget::DEFAULT`]. Every other body derives its source and
+    ///   target, never fabricated for a failed body.
+    /// - fails: [`SignatureFault::Diagram`] when the seam refuses the body, and
+    ///   [`SignatureFault::Derivation`] when the boundary reading refuses it;
+    ///   each at the rule's member.
+    /// - panics: none.
+    /// - executable: none — the canon and the sphere are checked by the
+    ///   readings they come from; restating them would read the body again.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marked merge, the same merge unmarked, a cycle, a
+    ///   marked tie past the budget and a marked body with an unmarked merge
+    ///   separate a diagram, a derived sphere, a refused shared port and the
+    ///   two refusals of the seam.
+    /// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
+    /// - witness: `description::theory::tests::an_unmarked_merge_keeps_the_boundary_reading_5763`
+    /// - witness: `description::theory::tests::a_seam_refusal_stands_at_its_rule_5763`
+    /// - witness: `description::theory::tests::a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal`
+    /// - witness: `description::theory::tests::a_doubling_body_declines_on_the_derivation_node_budget`
+    fn circuit_member(
+        &self,
+        read: ReadCircuit,
+        members: Option<&Members>,
+        frobenius: &BTreeSet<Name>,
+    ) -> Result<CircuitMember, DescriptionDiagnostic>
+    {
+        let at_rule = |fault| DescriptionDiagnostic {
+            span: read.span,
+            fault: DescriptionFault::Signature(fault),
+        };
+        let presented = PresentedCircuit {
+            name: self.text(read.named).0.into(),
+            named: read.named,
+        };
+        if let Some(members) = members {
+            let spiders: BTreeMap<Name, Name> = members
+                .wire_sorts(&read.written)
+                .into_iter()
+                .filter(|&(_, ref sort)| frobenius.contains(sort))
+                .collect();
+            let reading = CircuitReading::new(&read.body, &read.inputs, &spiders);
+            if let Some(spidered) = reading.spidered() {
+                let canon = circuit_canon(spidered, SpiderBudget::DEFAULT)
+                    .map_err(|error| at_rule(SignatureFault::Diagram(error)))?;
+                return Ok(CircuitMember::Diagram(
+                    PresentedDiagram {
+                        circuit: presented,
+                        canon,
+                    },
+                    read.written,
+                ));
+            }
+        }
+        let derived = derive_boundaries(&read.body)
+            .map_err(|error| at_rule(SignatureFault::Derivation(error)))?;
+        let vars = derive_cell_var_meta(&derived.source);
+        let sphere = RuleFace::new(
+            derived.source,
+            derived.target,
+            vars,
+            surface_span(read.span),
+        );
+        Ok(CircuitMember::Boundary(
+            CircuitRule::new(self.text(read.named).0, sphere, read.body).with_ports(read.rewrites),
+            presented,
+            read.written,
         ))
     }
 
@@ -3268,6 +3485,12 @@ fn undeclared_ports(
 /// manifest step reads and no other declaration does. It is no declaration's
 /// attribute, so the declaration registry does not hold it.
 const INERT: &str = "inert";
+
+/// The attribute a theory's sort takes, `@[ frobenius ]`: the sort carries a
+/// special commutative Frobenius algebra, so a circuit rule may merge and
+/// split its wires. It is no declaration's attribute, so the declaration
+/// registry does not hold it.
+const FROBENIUS: &str = "frobenius";
 
 /// The prefix of the private name the reader mints for an anonymous port,
 /// which a written name cannot begin with.

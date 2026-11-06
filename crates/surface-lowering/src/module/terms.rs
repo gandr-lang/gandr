@@ -120,7 +120,7 @@ pub fn term_generators(presentation: &Presentation) -> Result<TermGenerators, Un
         return Err(Unbuilt::LawTerms);
     }
     let outside = Err(Unbuilt::TermsType);
-    if !presentation.circuits.is_empty() {
+    if presentation.wired().next().is_some() {
         return outside;
     }
     let Ok(members) = presentation.members()

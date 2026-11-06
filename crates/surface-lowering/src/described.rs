@@ -1412,7 +1412,7 @@ impl Typer<'_>
         else {
             return;
         };
-        let model = derive_members(&members, &presentation.circuits, &presentation.laws);
+        let model = derive_members(&members, presentation.wired(), &presentation.laws);
         self.members = members
             .sorts
             .iter()
@@ -1692,7 +1692,7 @@ impl Typer<'_>
                 );
             }
         }
-        for member in &written.circuits {
+        for member in written.circuits.iter().chain(&written.diagrams) {
             self.circuit(&scope, &members, member, &declared.heads);
         }
         self.members.clear();
@@ -1993,17 +1993,11 @@ impl Typer<'_>
     ///
     /// # Specification
     /// - requires: `scope` binds the theory's sorts and operations.
-    /// - ensures: a wire's sort is the first its ports, its rewrite port or an
-    ///   operation's port it meets give it, where that sort is one the theory
-    ///   declares unindexed; each name written at a sorted wire answers at that
-    ///   sort.
+    /// - ensures: a wire's sort is the one [`Members::wire_sorts`] gives it;
+    ///   each name written at a sorted wire answers at that sort.
     /// - fails: never; a wire no sort reaches records nothing.
     /// - panics: none.
     /// - executable: none — as [`Self::theory`].
-    ///
-    /// # Termination
-    /// Each round over the node lines sorts a wire or stops, and there are
-    /// finitely many wires.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `cong1`'s wires `x`, `x′`, `y` and `z` answer at
@@ -2027,85 +2021,7 @@ impl Typer<'_>
                 .any(|held| held.name == *sort && held.indices.is_empty())
         };
         let names: Vec<Name> = members.sorts.iter().map(|sort| sort.name.clone()).collect();
-        let mut wires: BTreeMap<Name, Name> = BTreeMap::new();
-        for port in &circuit.ports {
-            if declared(&port.sort) {
-                let _first = wires.insert(port.name.clone(), port.sort.clone());
-            }
-        }
-        let mut rewrites: BTreeMap<Name, (&Name, &Name)> = BTreeMap::new();
-        for rewrite in &circuit.rewrites {
-            let _first = rewrites.insert(
-                rewrite.named.name.clone(),
-                (&rewrite.left.name, &rewrite.right.name),
-            );
-        }
-        let mut operations = BTreeMap::new();
-        for operation in &members.operations {
-            let _first = operations.entry(&operation.name).or_insert(operation);
-        }
-        for _round in 0 ..= circuit.frames.len().saturating_add(circuit.rewrites.len()) {
-            let before = wires.len();
-            for &(left, right) in rewrites.values() {
-                let shared = wires.get(left).or_else(|| wires.get(right)).cloned();
-                if let Some(sort) = shared {
-                    for side in [left, right] {
-                        if !declared(side) {
-                            let _held = wires.entry(side.clone()).or_insert_with(|| sort.clone());
-                        }
-                    }
-                }
-            }
-            for frame in &circuit.frames {
-                let reads: Vec<Option<Name>> =
-                    if let Some(&(left, right)) = rewrites.get(&frame.head.name) {
-                        let sort = if declared(left) {
-                            Some(left.clone())
-                        }
-                        else {
-                            wires
-                                .get(left)
-                                .or_else(|| wires.get(right))
-                                .cloned()
-                                .or_else(|| {
-                                    frame
-                                        .arguments
-                                        .iter()
-                                        .chain(&frame.outputs)
-                                        .find_map(|wire| wires.get(&wire.name).cloned())
-                                })
-                        };
-                        frame
-                            .arguments
-                            .iter()
-                            .chain(&frame.outputs)
-                            .map(|_| sort.clone())
-                            .collect()
-                    }
-                    else if let Some(operation) = operations.get(&frame.head.name) {
-                        operation
-                            .inputs
-                            .iter()
-                            .chain(&operation.outputs)
-                            .map(|port| {
-                                (port.sort.indices.is_empty() && declared(&port.sort.sort))
-                                    .then(|| port.sort.sort.clone())
-                            })
-                            .collect()
-                    }
-                    else {
-                        Vec::new()
-                    };
-                for (wire, sort) in frame.arguments.iter().chain(&frame.outputs).zip(reads) {
-                    if let Some(sort) = sort {
-                        let _held = wires.entry(wire.name.clone()).or_insert(sort);
-                    }
-                }
-            }
-            if wires.len() == before {
-                break;
-            }
-        }
+        let wires = members.wire_sorts(circuit);
         let context = self.context(scope);
         let wire = |typer: &mut Self, name: &Name, span: ByteSpan, role: DescribedRole| {
             if let Some(sort) = wires.get(name) {

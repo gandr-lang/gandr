@@ -94,6 +94,18 @@ wrapper! {
     pub struct SpiderBudget(usize);
 }
 
+impl SpiderBudget
+{
+    /// The standing ceiling a spider canon runs under.
+    ///
+    /// A tie of `k` legs needs `k!` trials. This ceiling admits a tie of six
+    /// legs, 720 trials. A split into six equal nodes takes 1.5 ms at p99 in a
+    /// release build. That is far below the keystroke budget of 16 ms. A tie
+    /// of seven legs needs 5,040 trials, and the canon refuses it before the
+    /// first trial.
+    pub const DEFAULT: Self = Self(720);
+}
+
 wrapper! {
     /// How many trials a spider canon ran, or would run.
     #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]

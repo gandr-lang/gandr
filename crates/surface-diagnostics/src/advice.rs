@@ -365,6 +365,14 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             fault: MemberFault::NoUniverse,
             ..
         } => String::from("classify the sort by `Type`, `Type+`, `Type[-]` or `Atom`"),
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::UnwiredDiagram,
+            ..
+        } => String::from("give each wire of an unmarked sort one producer and one consumer"),
+        LoweringRefusal::UndescribedMember {
+            fault: MemberFault::SpiderBudget,
+            ..
+        } => String::from("split the rule into rules with fewer tied legs"),
         LoweringRefusal::UnguardedCorecursion { .. } => {
             String::from("write the productive self-call as a copattern arm's whole body")
         },
