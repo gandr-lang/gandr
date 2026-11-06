@@ -1108,7 +1108,12 @@ fn a_definition_s_own_recursion_reads_back_as_the_definition()
     let mut core = CoreArena::new();
     let constant = ConstantIndex::from(0_usize);
     let nat = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
-    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let on_zero = core.computation_return(zero);
     let recursive = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
     let recursion = core.computation_force(recursive);
@@ -1134,7 +1139,12 @@ fn a_definition_s_own_recursion_reads_back_as_the_definition()
     let named = core.value_constant(constant);
     let forced = core.computation_force(named);
     let free = core.value_variable(Zone::Intuitionistic, innermost());
-    let successor = core.value_constructor(nat, ConstructorTag::from(1_usize), Vec::from([free]));
+    let successor = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        Vec::from([free]),
+    );
     let run = core.computation_application(forced, successor);
     let run = core.value_returned(run);
     let run = core.computation_return(run);
@@ -1201,7 +1211,12 @@ fn a_recursion_under_a_uniform_parameter_reads_back_as_the_definition_applied()
     let mut core = CoreArena::new();
     let constant = ConstantIndex::from(0_usize);
     let nat = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
-    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let on_zero = core.computation_return(zero);
     // Under `p`, `u` and `rec`: `rec` is 2.
     let recursive = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
@@ -1238,7 +1253,12 @@ fn a_recursion_under_a_uniform_parameter_reads_back_as_the_definition_applied()
     let v = variable(&mut core, 0);
     let at_d = core.computation_application(forced, d);
     let at_e = core.computation_application(at_d, e);
-    let successor = core.value_constructor(nat, ConstructorTag::from(1_usize), Vec::from([v]));
+    let successor = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        Vec::from([v]),
+    );
     let run = core.computation_application(at_e, successor);
     let returned = |core: &mut CoreArena, call: ComputationId| {
         let call = core.value_returned(call);

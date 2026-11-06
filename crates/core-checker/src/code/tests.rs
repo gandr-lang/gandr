@@ -839,12 +839,18 @@ fn the_loose_reach_descends_every_former_and_subtracts_only_its_binders()
         (value(arena.value_nested(reads)), 6, "a nested computation"),
         (value(arena.value_run(reads)), 6, "a run"),
         (
-            value(arena.value_constructor(data_at_five, ConstructorTag::from(0_usize), Vec::new())),
+            value(arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                data_at_five,
+                ConstructorTag::from(0_usize),
+                Vec::new(),
+            )),
             6,
             "a constructor's datatype",
         ),
         (
             value(arena.value_constructor(
+                ConstantIndex::from(0_usize),
                 integer,
                 ConstructorTag::from(0_usize),
                 Vec::from([five]),

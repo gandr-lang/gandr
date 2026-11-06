@@ -5159,6 +5159,7 @@ fn each_former_refuses_a_classifier_of_another_shape_by_name()
     );
     let list_case = arena.computation_list_case(zero, fine, fine);
     let constructed = arena.value_constructor(
+        ConstantIndex::from(0_usize),
         integer,
         gandr_kernel_term::ConstructorTag::from(0_usize),
         Vec::from([zero]),

@@ -416,6 +416,7 @@ fn spells(
             datatype,
             tag: written,
             ref fields,
+            ..
         }) = arena.value(at)
         else {
             return Spelling::Apart;
@@ -704,6 +705,7 @@ pub(crate) fn normal_form(
                 datatype,
                 tag,
                 ref fields,
+                ..
             }) if own(arena, id) => {
                 term.push(RuleTerm::Constructor {
                     tag,
@@ -745,7 +747,9 @@ pub(crate) fn normal_form(
                     },
                     Origin::Rewritten => None,
                 };
-                built.push(kept.unwrap_or_else(|| arena.value_constructor(datatype, tag, fields)));
+                built.push(kept.unwrap_or_else(|| {
+                    arena.value_constructor(declaration, datatype, tag, fields)
+                }));
             },
         }
     }
@@ -831,6 +835,7 @@ fn node(
             datatype,
             tag,
             fields: ref written,
+            ..
         }) if matches!(
             arena.value_type(datatype),
             Some(&ValueType::Data { declaration: found, .. }) if found == declaration
@@ -1050,16 +1055,31 @@ mod tests
         let mut cloned = environment.arena().clone();
         let arena = &mut cloned;
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let written = arena.value_constructor(own, Letter::Loop.tag(), alloc::vec![variable]);
-        let unlooped = arena.value_constructor(own, Letter::Unloop.tag(), alloc::vec![written]);
-        let word = arena.value_constructor(own, Letter::Loop.tag(), alloc::vec![unlooped]);
+        let written = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Loop.tag(),
+            alloc::vec![variable],
+        );
+        let unlooped = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Unloop.tag(),
+            alloc::vec![written],
+        );
+        let word = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Loop.tag(),
+            alloc::vec![unlooped],
+        );
         let mut fuel = RewriteFuel::from(1_000_u64);
         let normal = super::normal_form(arena, &presentations, word, &mut fuel)
             .expect("the word normalizes within its fuel");
         assert!(
             matches!(
                 arena.value(normal),
-                Some(gandr_kernel_term::Value::Constructor { datatype, tag, fields })
+                Some(gandr_kernel_term::Value::Constructor { datatype, tag, fields, .. })
                     if *datatype == own && *tag == Letter::Loop.tag() && fields.as_slice() == [variable]
             ),
             "`loop(unloop(loop(x)))` is `loop(x)`: the outer `loop` rebuilt over the variable \
@@ -1075,8 +1095,18 @@ mod tests
             Ok(written),
             "a reduced word is its own normal form"
         );
-        let looped = arena.value_constructor(own, Letter::Loop.tag(), alloc::vec![written]);
-        let cancelled = arena.value_constructor(own, Letter::Unloop.tag(), alloc::vec![looped]);
+        let looped = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Loop.tag(),
+            alloc::vec![written],
+        );
+        let cancelled = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Unloop.tag(),
+            alloc::vec![looped],
+        );
         assert_eq!(
             super::normal_form(arena, &presentations, cancelled, &mut fuel),
             Ok(written),
@@ -1133,23 +1163,49 @@ mod tests
         let circled = staging
             .arena()
             .value_type_data(ConstantIndex::from(0_usize), Vec::new());
-        let point = staging
-            .arena()
-            .value_constructor(circled, Letter::Base.tag(), Vec::new());
-        let body = staging
-            .arena()
-            .value_constructor(circled, Letter::Loop.tag(), alloc::vec![point]);
+        let point = staging.arena().value_constructor(
+            ConstantIndex::from(0_usize),
+            circled,
+            Letter::Base.tag(),
+            Vec::new(),
+        );
+        let body = staging.arena().value_constructor(
+            ConstantIndex::from(0_usize),
+            circled,
+            Letter::Loop.tag(),
+            alloc::vec![point],
+        );
         let staged = staging.def(LevelSignature::monomorphic(), circled, body);
         let _named = environment
             .add_decl(staged)
             .expect("a definition of `loop(base)` admits");
         let mut cloned = environment.arena().clone();
         let arena = &mut cloned;
-        let base = arena.value_constructor(own, Letter::Base.tag(), Vec::new());
-        let looped = arena.value_constructor(own, Letter::Loop.tag(), alloc::vec![base]);
-        let unlooped = arena.value_constructor(own, Letter::Unloop.tag(), alloc::vec![looped]);
+        let base = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Base.tag(),
+            Vec::new(),
+        );
+        let looped = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Loop.tag(),
+            alloc::vec![base],
+        );
+        let unlooped = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Unloop.tag(),
+            alloc::vec![looped],
+        );
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let open = arena.value_constructor(own, Letter::Loop.tag(), alloc::vec![variable]);
+        let open = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Loop.tag(),
+            alloc::vec![variable],
+        );
         let entries = environment.entries();
         let circle = ConstantIndex::from(0_usize);
         assert_eq!(
@@ -1171,10 +1227,24 @@ mod tests
             Ok(Apartness::Apart),
             "a reference to `loop(base)` is read as its definition"
         );
-        let free_base = arena.value_constructor(free, Letter::Base.tag(), Vec::new());
-        let free_looped = arena.value_constructor(free, Letter::Loop.tag(), alloc::vec![free_base]);
-        let free_unlooped =
-            arena.value_constructor(free, Letter::Unloop.tag(), alloc::vec![free_looped]);
+        let free_base = arena.value_constructor(
+            ConstantIndex::from(1_usize),
+            free,
+            Letter::Base.tag(),
+            Vec::new(),
+        );
+        let free_looped = arena.value_constructor(
+            ConstantIndex::from(1_usize),
+            free,
+            Letter::Loop.tag(),
+            alloc::vec![free_base],
+        );
+        let free_unlooped = arena.value_constructor(
+            ConstantIndex::from(1_usize),
+            free,
+            Letter::Unloop.tag(),
+            alloc::vec![free_looped],
+        );
         assert_eq!(
             super::apart(
                 arena,
@@ -1230,9 +1300,19 @@ mod tests
     ) -> gandr_kernel_term::ValueId
     {
         let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-        let mut built = arena.value_constructor(own, Letter::Base.tag(), Vec::new());
+        let mut built = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            Letter::Base.tag(),
+            Vec::new(),
+        );
         for &letter in letters.iter().rev() {
-            built = arena.value_constructor(own, letter.tag(), alloc::vec![built]);
+            built = arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                own,
+                letter.tag(),
+                alloc::vec![built],
+            );
         }
         built
     }
@@ -1532,22 +1612,26 @@ mod tests
         let own = arena.value_type_data(sort, Vec::new());
         let other = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
         let side = [Letter::Loop.node(), Letter::Base.node()];
-        let word = |arena: &mut TermArena, datatype, tag: Letter| {
-            let base = arena.value_constructor(own, Letter::Base.tag(), Vec::new());
-            arena.value_constructor(datatype, tag.tag(), alloc::vec![base])
+        let word = |arena: &mut TermArena, (family, datatype), tag: Letter| {
+            let base = arena.value_constructor(sort, own, Letter::Base.tag(), Vec::new());
+            arena.value_constructor(family, datatype, tag.tag(), alloc::vec![base])
         };
-        let spelled = word(&mut arena, own, Letter::Loop);
+        let spelled = word(&mut arena, (sort, own), Letter::Loop);
         assert_eq!(
             super::spells(&arena, sort, spelled, &side),
             super::Spelling::Spelled
         );
         for (value, what) in [
             (
-                word(&mut arena, other, Letter::Loop),
+                word(
+                    &mut arena,
+                    (ConstantIndex::from(1_usize), other),
+                    Letter::Loop,
+                ),
                 "the tag over another sort",
             ),
             (
-                word(&mut arena, own, Letter::Unloop),
+                word(&mut arena, (sort, own), Letter::Unloop),
                 "another tag over the sort",
             ),
         ] {
@@ -1572,8 +1656,8 @@ mod tests
         let presentations = super::Presentations::of(environment.entries());
         let mut arena = environment.arena().clone();
         let carrier = arena.value_type_data(sort, Vec::new());
-        let point = arena.value_constructor(carrier, Letter::Base.tag(), Vec::new());
-        let again = arena.value_constructor(carrier, Letter::Base.tag(), Vec::new());
+        let point = arena.value_constructor(sort, carrier, Letter::Base.tag(), Vec::new());
+        let again = arena.value_constructor(sort, carrier, Letter::Base.tag(), Vec::new());
         let open = arena.value_variable(DeBruijnIndex::from(0_u32));
         let word_type = arena.value_type_data(words_at, Vec::new());
         assert_eq!(
@@ -1600,16 +1684,19 @@ mod tests
         // `loop : Path[.A = S](base, base)`, the word of one letter.
         let path_at = |arena: &mut TermArena| {
             let carrier = arena.value_type_data(sort, Vec::new());
-            let point = arena.value_constructor(carrier, Letter::Base.tag(), Vec::new());
+            let point = arena.value_constructor(sort, carrier, Letter::Base.tag(), Vec::new());
             arena.value_type_path(carrier, point, point)
         };
         let mut staging = environment.stage();
         let arena = staging.arena();
         let declared = path_at(arena);
         let words = arena.value_type_data(words_at, Vec::new());
-        let empty = arena.value_constructor(words, ConstructorTag::from(0_usize), Vec::new());
+        let empty =
+            arena.value_constructor(words_at, words, ConstructorTag::from(0_usize), Vec::new());
         let letter =
-            arena.value_constructor(words, ConstructorTag::from(1_usize), alloc::vec![empty]);
+            arena.value_constructor(words_at, words, ConstructorTag::from(1_usize), alloc::vec![
+                empty
+            ]);
         let staged = staging.def(LevelSignature::monomorphic(), declared, letter);
         let loop_at = environment
             .add_decl(staged)
@@ -1636,7 +1723,8 @@ mod tests
         let path = path_at(arena);
         let words = arena.value_type_data(words_at, Vec::new());
         let motive = arena.comp_type_returner(path);
-        let empty = arena.value_constructor(words, ConstructorTag::from(0_usize), Vec::new());
+        let empty =
+            arena.value_constructor(words_at, words, ConstructorTag::from(0_usize), Vec::new());
         let nil = arena.computation_return(empty);
         let mut arm = |tag: usize| {
             let recursive = arena.value_variable(DeBruijnIndex::from(2_u32));
@@ -1645,7 +1733,9 @@ mod tests
             let folded = arena.computation_application(forced, field);
             let result = arena.value_variable(DeBruijnIndex::from(0_u32));
             let rebuilt =
-                arena.value_constructor(words, ConstructorTag::from(tag), alloc::vec![result]);
+                arena.value_constructor(words_at, words, ConstructorTag::from(tag), alloc::vec![
+                    result
+                ]);
             let returned = arena.computation_return(rebuilt);
             let sequenced = arena.computation_bind(folded, returned);
             arena.computation_lambda(sequenced)

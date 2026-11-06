@@ -923,7 +923,15 @@ fn doubling(
     evidence: gandr_kernel_term::FixpointEvidence,
 ) -> gandr_core_term::ComputationId
 {
+    let Some(&gandr_core_term::ValueType::Data {
+        declaration: family,
+        ..
+    }) = core.value_type(nat)
+    else {
+        panic!("`nat` is a data type");
+    };
     let zero = core.value_constructor(
+        family,
         nat,
         gandr_kernel_term::ConstructorTag::from(0_usize),
         Vec::new(),
@@ -936,8 +944,8 @@ fn doubling(
     let call = core.computation_application(forced, field);
     let result = core.value_variable(Zone::Intuitionistic, innermost());
     let successor = gandr_kernel_term::ConstructorTag::from(1_usize);
-    let once = core.value_constructor(nat, successor, Vec::from([result]));
-    let twice = core.value_constructor(nat, successor, Vec::from([once]));
+    let once = core.value_constructor(family, nat, successor, Vec::from([result]));
+    let twice = core.value_constructor(family, nat, successor, Vec::from([once]));
     let returned = core.computation_return(twice);
     let bound = core.computation_bind(call, returned);
     let on_successor = core.computation_lambda(bound);
@@ -961,14 +969,35 @@ fn a_fixpoint_unfolds_at_a_constructor_and_sticks_at_a_neutral()
     let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let successor = gandr_kernel_term::ConstructorTag::from(1_usize);
     let zero = core.value_constructor(
+        ConstantIndex::from(0_usize),
         nat,
         gandr_kernel_term::ConstructorTag::from(0_usize),
         Vec::new(),
     );
-    let one = core.value_constructor(nat, successor, Vec::from([zero]));
-    let two = core.value_constructor(nat, successor, Vec::from([one]));
-    let three = core.value_constructor(nat, successor, Vec::from([two]));
-    let four = core.value_constructor(nat, successor, Vec::from([three]));
+    let one = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        successor,
+        Vec::from([zero]),
+    );
+    let two = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        successor,
+        Vec::from([one]),
+    );
+    let three = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        successor,
+        Vec::from([two]),
+    );
+    let four = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        successor,
+        Vec::from([three]),
+    );
     let fixpoint = doubling(
         &mut core,
         nat,
@@ -1017,6 +1046,13 @@ fn counting(
     nat: gandr_core_term::ValueTypeId,
 ) -> gandr_core_term::ComputationId
 {
+    let Some(&gandr_core_term::ValueType::Data {
+        declaration: family,
+        ..
+    }) = core.value_type(nat)
+    else {
+        panic!("`nat` is a data type");
+    };
     let successor = gandr_kernel_term::ConstructorTag::from(1_usize);
     let returner = core.comp_type_returner(nat);
     let accumulated = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
@@ -1024,7 +1060,7 @@ fn counting(
     let recursive = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
     let forced = core.computation_force(recursive);
     let accumulator = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
-    let grown = core.value_constructor(nat, successor, Vec::from([accumulator]));
+    let grown = core.value_constructor(family, nat, successor, Vec::from([accumulator]));
     let leading = core.computation_application(forced, grown);
     let field = core.value_variable(Zone::Intuitionistic, innermost());
     let call = core.computation_application(leading, field);
@@ -1052,12 +1088,23 @@ fn a_fixpoint_staged_past_its_first_binder_carries_its_leading_arguments_626()
     let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let successor = gandr_kernel_term::ConstructorTag::from(1_usize);
     let zero = core.value_constructor(
+        ConstantIndex::from(0_usize),
         nat,
         gandr_kernel_term::ConstructorTag::from(0_usize),
         Vec::new(),
     );
-    let one = core.value_constructor(nat, successor, Vec::from([zero]));
-    let two = core.value_constructor(nat, successor, Vec::from([one]));
+    let one = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        successor,
+        Vec::from([zero]),
+    );
+    let two = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        successor,
+        Vec::from([one]),
+    );
     let fixpoint = counting(&mut core, nat);
     let taken = core.computation_application(fixpoint, zero);
     let applied = core.computation_application(taken, two);
@@ -2391,8 +2438,12 @@ fn native_records_and_cases_compute()
     let motive = core.comp_type_returner(record_type);
     let datatype = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
     let fields = [unit, left, right, pair, empty];
-    let constructor =
-        core.value_constructor(datatype, ConstructorTag::from(1_usize), Vec::from(fields));
+    let constructor = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        datatype,
+        ConstructorTag::from(1_usize),
+        Vec::from(fields),
+    );
     let cased = core.computation_data_case(
         constructor,
         motive,
@@ -2470,8 +2521,12 @@ fn native_records_and_cases_compute()
             .map(gandr_kernel_term::FieldCount::from)
             .to_vec(),
     );
-    let unknown =
-        core.value_constructor(datatype, ConstructorTag::from(2_usize), Vec::from(fields));
+    let unknown = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        datatype,
+        ConstructorTag::from(2_usize),
+        Vec::from(fields),
+    );
     let unknown = core.computation_data_case(
         unknown,
         motive,
@@ -2550,8 +2605,12 @@ fn native_records_and_cases_compute()
     // value fields. Readback must substitute that captured value index.
     let bound = core.value_variable(Zone::Intuitionistic, innermost());
     let indexed = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([bound]));
-    let constructor =
-        core.value_constructor(indexed, ConstructorTag::from(0_usize), Vec::from([source]));
+    let constructor = core.value_constructor(
+        ConstantIndex::from(3_usize),
+        indexed,
+        ConstructorTag::from(0_usize),
+        Vec::from([source]),
+    );
     let returned = core.computation_return(constructor);
     let lambda = core.computation_lambda(returned);
     let applied = core.computation_application(lambda, unit);
@@ -2619,8 +2678,12 @@ fn an_indexed_case_supplies_its_equations()
     let unit_type = core.value_type_unit();
     let motive = core.comp_type_returner(unit_type);
     let datatype = core.value_type_data(ConstantIndex::from(2_usize), Vec::from([unit]));
-    let constructor =
-        core.value_constructor(datatype, ConstructorTag::from(0_usize), Vec::from([left]));
+    let constructor = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        datatype,
+        ConstructorTag::from(0_usize),
+        Vec::from([left]),
+    );
     let cased = core.computation_data_case_with_equations(
         constructor,
         motive,
@@ -2985,17 +3048,27 @@ fn native_cases_reapply_when_head_unfolds()
     let field = core.value_injection(Side::Right.into(), unit);
     let label = FieldLabel::from(String::from("field"));
     let data = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
-    let constructor =
-        core.value_constructor(data, ConstructorTag::from(0_usize), Vec::from([field]));
+    let constructor = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        data,
+        ConstructorTag::from(0_usize),
+        Vec::from([field]),
+    );
     let record = core.value_record(BTreeMap::from([(label.clone(), field)]));
     let bound = core.value_variable(Zone::Intuitionistic, innermost());
     let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let motive_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([bound]));
     let motive = core.comp_type_returner(motive_type);
-    let index = core.value_constructor(data, ConstructorTag::from(0_usize), Vec::from([bound]));
+    let index = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        data,
+        ConstructorTag::from(0_usize),
+        Vec::from([bound]),
+    );
     let result_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([index]));
     let pair = core.value_tuple(&[outer, bound]);
     let result = core.value_constructor(
+        ConstantIndex::from(3_usize),
         result_type,
         ConstructorTag::from(0_usize),
         Vec::from([pair]),

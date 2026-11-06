@@ -2436,7 +2436,15 @@ impl Typer<'_>
                         return None;
                     }
                     let fields = built.split_off(start);
-                    built.push(self.arena.value_constructor(family, tag, fields));
+                    let Some(&gandr_core_term::ValueType::Data { declaration, .. }) =
+                        self.arena.value_type(family)
+                    else {
+                        return None;
+                    };
+                    built.push(
+                        self.arena
+                            .value_constructor(declaration, family, tag, fields),
+                    );
                 },
             }
         }

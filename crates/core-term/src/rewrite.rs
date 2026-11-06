@@ -3162,6 +3162,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
         };
         match *node {
             Value::Constructor {
+                family,
                 datatype,
                 tag,
                 ref fields,
@@ -3182,6 +3183,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 }
                 else {
                     self.arena.value_constructor(
+                        family,
                         rewritten_type,
                         tag,
                         changed.unwrap_or_else(|| fields.clone()),

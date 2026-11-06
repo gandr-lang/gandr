@@ -1496,7 +1496,7 @@ fn converge(
                     continue;
                 }
                 match (left, right) {
-                    | (&Value::Constructor { datatype: a, tag: one, fields: ref xs }, &Value::Constructor { datatype: b, tag: other, fields: ref ys }) => {
+                    | (&Value::Constructor { datatype: a, tag: one, fields: ref xs, .. }, &Value::Constructor { datatype: b, tag: other, fields: ref ys, .. }) => {
                         if one != other || xs.len() != ys.len() { return Convertibility::Distinct; }
                         stack.push(ConversionGoal::ValueType(a, b));
                         stack.extend(xs.iter().zip(ys).map(|(a, b)| ConversionGoal::Value(*a, *b)));

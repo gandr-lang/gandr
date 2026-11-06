@@ -1344,7 +1344,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
-        | (Some(&Value::Constructor { datatype, tag, ref fields }), Former::Constructor { name, arity, placement, classifier }) =>
+        | (Some(&Value::Constructor { datatype, tag, ref fields, .. }), Former::Constructor { name, arity, placement, classifier }) =>
             usize::from(arity) == fields.len() && name == self.family(datatype)
                 .and_then(|family| self.constructors.constructor(family, Component::from(usize::from(tag))))
                 .map(|(held, _)| held)
@@ -1429,6 +1429,7 @@ impl<'arena> CoreSource<'arena>
                 datatype,
                 tag,
                 ref fields,
+                ..
             } => {
                 let family = self.family(datatype);
                 Former::Constructor {
@@ -3903,8 +3904,9 @@ mod tests
         let bare = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
         let applied = arena.value_type_data(ConstantIndex::from(0_usize), Vec::from([unit]));
         let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
-        let of_bare = arena.value_constructor(bare, tag, Vec::new());
-        let of_applied = arena.value_constructor(applied, tag, Vec::new());
+        let of_bare = arena.value_constructor(ConstantIndex::from(0_usize), bare, tag, Vec::new());
+        let of_applied =
+            arena.value_constructor(ConstantIndex::from(0_usize), applied, tag, Vec::new());
         let source = CoreSource::new(&arena, &[]);
         assert!(
             matches!(
@@ -3933,8 +3935,10 @@ mod tests
         let computed = arena.value_type_element(code, gandr_kernel_strata::Level::zero());
         let family = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
         let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
-        let at_computed = arena.value_constructor(computed, tag, Vec::new());
-        let at_family = arena.value_constructor(family, tag, Vec::new());
+        let at_computed =
+            arena.value_constructor(ConstantIndex::from(0_usize), computed, tag, Vec::new());
+        let at_family =
+            arena.value_constructor(ConstantIndex::from(0_usize), family, tag, Vec::new());
         let source = CoreSource::new(&arena, &[]);
         assert_eq!(
             (

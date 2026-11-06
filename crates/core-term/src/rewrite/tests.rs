@@ -413,10 +413,12 @@ fn native_motives_preserve_binder_and_field_order()
         })
     );
 
-    let constructor =
-        arena.value_constructor(datatype, gandr_kernel_term::ConstructorTag::from(1), vec![
-            zero, one,
-        ]);
+    let constructor = arena.value_constructor(
+        nominal,
+        datatype,
+        gandr_kernel_term::ConstructorTag::from(1),
+        vec![zero, one],
+    );
     let label = gandr_kernel_term::FieldLabel::from(alloc::string::String::from("field"));
     let record = arena.value_record(alloc::collections::BTreeMap::from([(
         label.clone(),
@@ -3488,6 +3490,7 @@ fn a_decision_no_term_reaches_is_unenclosed()
     let nested = arena.value_nested(computation);
     let indexed = arena.value_type_element(nested, Level::zero());
     let constructed = arena.value_constructor(
+        ConstantIndex::from(0_usize),
         indexed,
         gandr_kernel_term::ConstructorTag::from(0_usize),
         alloc::vec::Vec::new(),
@@ -4622,6 +4625,7 @@ pub fn formers() -> Vec<Witnessed>
         ("constructor", |a, c| {
             let unit_type = a.value_type_unit();
             a.value_constructor(
+                ConstantIndex::from(0_usize),
                 unit_type,
                 gandr_kernel_term::ConstructorTag::from(0_usize),
                 vec![c],

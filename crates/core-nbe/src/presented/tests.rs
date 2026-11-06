@@ -102,9 +102,19 @@ fn core_word(
 ) -> gandr_core_term::ValueId
 {
     let own = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let mut built = core.value_constructor(own, ConstructorTag::from(0_usize), Vec::new());
+    let mut built = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     for &letter in letters.iter().rev() {
-        built = core.value_constructor(own, letter.tag(), alloc::vec![built]);
+        built = core.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            letter.tag(),
+            alloc::vec![built],
+        );
     }
     built
 }
@@ -119,9 +129,19 @@ fn kernel_word(
 ) -> gandr_kernel_term::ValueId
 {
     let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let mut built = arena.value_constructor(own, ConstructorTag::from(0_usize), Vec::new());
+    let mut built = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        own,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     for &letter in letters.iter().rev() {
-        built = arena.value_constructor(own, letter.tag(), alloc::vec![built]);
+        built = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            letter.tag(),
+            alloc::vec![built],
+        );
     }
     built
 }
@@ -267,7 +287,10 @@ fn a_held_call_under_a_presented_constructor_reads_as_what_it_returns()
         let forced = core.computation_force(head);
         let applied = core.computation_application(forced, back);
         let leaf = core.value_returned(applied);
-        let word = core.value_constructor(own, Loop.tag(), alloc::vec![leaf]);
+        let word =
+            core.value_constructor(ConstantIndex::from(0_usize), own, Loop.tag(), alloc::vec![
+                leaf
+            ]);
         let base = core_word(&mut core, &[]);
         let mut chain = DefinitionChain::new();
         let _height = chain
@@ -341,7 +364,9 @@ fn a_held_call_under_a_presented_constructor_reads_as_what_it_returns()
     let applied = arena.computation_application(forced, back);
     let leaf = arena.value_returned(applied);
     let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let word = arena.value_constructor(own, Loop.tag(), alloc::vec![leaf]);
+    let word = arena.value_constructor(ConstantIndex::from(0_usize), own, Loop.tag(), alloc::vec![
+        leaf
+    ]);
     let base = kernel_word(&mut arena, &[]);
     let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque, Unfoldable::Body(ident)])
         .presenting(Presentations::of(environment.entries()));

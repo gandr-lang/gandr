@@ -338,42 +338,48 @@ pub(super) fn respected(
     for (index, rule) in presentation.rules().iter().enumerate() {
         let refusal = KernelError::RuleNotRespected(RuleIndex::from(index));
         let watermark = arena.watermark();
-        let decided =
-            obligation(arena, (head, datatype), reading, rule, &arities).and_then(|obliged| {
-                let sides = ReplaySides::Computations(obliged.left, obliged.right);
-                if crate::replay::convert(arena, unfoldings, sides, ReplayBudget::DEFAULT)
-                    == KernelVerdict::Convertible
-                {
-                    return Ok(());
-                }
-                if first
-                    && let Reading::Fold { arrow, .. } = reading
-                    && parallel_in_a_set(
+        let decided = obligation(
+            arena,
+            (head, declaration, datatype),
+            reading,
+            rule,
+            &arities,
+        )
+        .and_then(|obliged| {
+            let sides = ReplaySides::Computations(obliged.left, obliged.right);
+            if crate::replay::convert(arena, unfoldings, sides, ReplayBudget::DEFAULT)
+                == KernelVerdict::Convertible
+            {
+                return Ok(());
+            }
+            if first
+                && let Reading::Fold { arrow, .. } = reading
+                && parallel_in_a_set(
+                    arena,
+                    (entries, unfoldings),
+                    (arrow, rule.variables()),
+                    obliged.sides,
+                ) == Related::Related
+            {
+                return Ok(());
+            }
+            match (reading, laws.get(index).filter(|_| first)) {
+                (Reading::Fold { arrow, .. }, Some(&law)) => {
+                    let related = lawful(
                         arena,
                         (entries, unfoldings),
-                        (arrow, rule.variables()),
-                        obliged.sides,
-                    ) == Related::Related
-                {
-                    return Ok(());
-                }
-                match (reading, laws.get(index).filter(|_| first)) {
-                    (Reading::Fold { arrow, .. }, Some(&law)) => {
-                        let related = lawful(
-                            arena,
-                            (entries, unfoldings),
-                            (obliged, arrow),
-                            (rule, signature, declaration),
-                            law,
-                        )?;
-                        match related {
-                            Related::Related => Ok(()),
-                            Related::Apart => Err(refusal),
-                        }
-                    },
-                    (Reading::Fold { .. } | Reading::Case { .. }, _) => Err(refusal),
-                }
-            });
+                        (obliged, arrow),
+                        (rule, signature, declaration),
+                        law,
+                    )?;
+                    match related {
+                        Related::Related => Ok(()),
+                        Related::Apart => Err(refusal),
+                    }
+                },
+                (Reading::Fold { .. } | Reading::Case { .. }, _) => Err(refusal),
+            }
+        });
         arena.truncate_to(watermark);
         decided?;
     }
@@ -411,7 +417,7 @@ enum Related
 ///
 /// # Specification
 /// - requires: `head` is the fixpoint or the case `reading` names, and
-///   `datatype` its data application.
+///   `datatype` its data application of the family `declaration`.
 /// - ensures: `F(l)` and `F(r)` beneath one fresh binder per leading argument
 ///   of a fold and, inside those, one per pattern variable, with `l` and `r`
 ///   themselves, `head` and `datatype` shifted past them all: the shifted
@@ -430,7 +436,7 @@ enum Related
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::ArenaFault)))]
 fn obligation(
     arena: &mut TermArena,
-    (head, datatype): (ComputationId, ValueTypeId),
+    (head, declaration, datatype): (ComputationId, ConstantIndex, ValueTypeId),
     reading: Reading,
     rule: &PresentedRule,
     arities: &[FieldCount],
@@ -474,7 +480,9 @@ fn obligation(
             RuleNode::Variable(variable) => {
                 arena.value_variable(pattern_binder(rule.variables(), variable))
             },
-            RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
+            RuleNode::Constructor(tag) => {
+                arena.value_constructor(declaration, datatype, tag, fields)
+            },
         })
         .map_err(|_fault| KernelError::ArenaFault)
     };

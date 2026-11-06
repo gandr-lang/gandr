@@ -373,7 +373,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
                 tag: ConstructorTag::Data {
                     tag: gandr_kernel_term::ConstructorTag::from(0_usize),
                     arity: ProducerArity::TWO,
-                    family: None,
+                    family: gandr_kernel_term::ConstantIndex::from(0_usize),
                 },
                 producers: Box::from([second, first]),
                 consumers: Box::from([]),
@@ -444,7 +444,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
                         tag: ConstructorTag::Data {
                             tag: gandr_kernel_term::ConstructorTag::from(1_usize),
                             arity: ProducerArity::from(1_usize),
-                            family: None,
+                            family: gandr_kernel_term::ConstantIndex::from(0_usize),
                         },
                         producers: Box::from([point]),
                         consumers: Box::from([]),
@@ -467,7 +467,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
                             constructor: ConstructorTag::Data {
                                 tag: gandr_kernel_term::ConstructorTag::from(0_usize),
                                 arity: ProducerArity::ZERO,
-                                family: None,
+                                family: gandr_kernel_term::ConstantIndex::from(0_usize),
                             },
                             body,
                         },
@@ -475,7 +475,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
                             constructor: ConstructorTag::Data {
                                 tag: gandr_kernel_term::ConstructorTag::from(1_usize),
                                 arity: ProducerArity::ZERO,
-                                family: None,
+                                family: gandr_kernel_term::ConstantIndex::from(0_usize),
                             },
                             body: other,
                         },

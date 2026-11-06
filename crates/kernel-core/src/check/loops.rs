@@ -173,7 +173,7 @@ fn point(
         .to_vec();
     let mut open = false;
     let built = build_side(cells.point(), &arities, |node, fields| match node {
-        RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
+        RuleNode::Constructor(tag) => arena.value_constructor(cells.sort(), datatype, tag, fields),
         RuleNode::Variable(_) => {
             open = true;
             arena.value_unit()
@@ -196,8 +196,13 @@ fn letter(
 ) -> ValueId
 {
     let words = arena.value_type_data(owed.words, Vec::new());
-    let empty = arena.value_constructor(words, FreeCells::nil(), Vec::new());
-    arena.value_constructor(words, FreeCells::letter(owed.cell), Vec::from([empty]))
+    let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
+    arena.value_constructor(
+        owed.words,
+        words,
+        FreeCells::letter(owed.cell),
+        Vec::from([empty]),
+    )
 }
 
 /// The parts of a loop's obligation at a case.
@@ -254,7 +259,7 @@ fn sides(
     let carried = answer(arena, at, (motive, branches));
     let word = letter(arena, owed);
     let words = arena.value_type_data(owed.words, Vec::new());
-    let empty = arena.value_constructor(words, FreeCells::nil(), Vec::new());
+    let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
     let transported = arena.computation_path_transport(family, word, carried);
     let stayed = arena.computation_path_transport(family, empty, carried);
     Ok(Sides {
@@ -449,6 +454,7 @@ pub(super) fn respected(
                 let (mut left, mut right) = (transported, stayed);
                 for (variable, &tag) in held.iter().zip(&tags) {
                     let instance = arena.value_constructor(
+                        variable.family,
                         variable.datatype,
                         ConstructorTag::from(tag),
                         Vec::new(),
@@ -512,6 +518,8 @@ struct Held
 {
     /// The variable's index in the case's context.
     index: DeBruijnIndex,
+    /// The family that declares the variable's sort.
+    family: ConstantIndex,
     /// The variable's sort.
     datatype: ValueTypeId,
     /// The sort's constructors, all without fields.
@@ -600,8 +608,13 @@ fn scrutinees(
         else {
             break;
         };
+        let Some(&ValueType::Data { declaration, .. }) = arena.value_type(nested)
+        else {
+            break;
+        };
         found.push(Held {
             index,
+            family: declaration,
             datatype: nested,
             constructors,
         });

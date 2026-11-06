@@ -120,8 +120,8 @@ fn one(
 ) -> ValueId
 {
     let nat_type = arena.value_type_data(nat, vec![]);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
-    arena.value_constructor(nat_type, ConstructorTag::from(1), vec![zero])
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![zero])
 }
 
 /// Admit `ones : U (Stream ⌜Nat⌝) = thunk (fix s. return 1 & force s)`.
@@ -211,7 +211,8 @@ fn a_single_observation_reads_as_a_lazy_product_of_one()
         let own = arena.comp_type_codata(machine, vec![]);
         let declared = arena.value_type_thunk(own);
         let argument = arena.value_variable(DeBruijnIndex::from(0));
-        let successor = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![argument]);
+        let successor =
+            arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![argument]);
         let returned = arena.computation_return(successor);
         (declared, arena.computation_lambda(returned))
     };

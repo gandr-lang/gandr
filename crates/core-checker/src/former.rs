@@ -574,6 +574,7 @@ fn node(
             datatype,
             tag,
             fields: ref written,
+            ..
         }) if matches!(
             arena.value_type(datatype),
             Some(&ValueType::Data { declaration: found, .. }) if found == declaration
@@ -1302,6 +1303,10 @@ pub fn branch_type(
 ) -> Result<CompTypeId, CheckRefusal>
 {
     let signature = signature(context, datatype)?;
+    let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(datatype)
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
     let fields = signature
         .constructors()
         .get(usize::from(tag))
@@ -1320,7 +1325,7 @@ pub fn branch_type(
         .collect();
     let constructor = context
         .arena_mut()
-        .value_constructor(shifted_type, tag, values);
+        .value_constructor(declaration, shifted_type, tag, values);
     let shifted = gandr_core_term::shift_comp_type_under(
         context.arena_mut(),
         motive,

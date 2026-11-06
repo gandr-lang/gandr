@@ -348,7 +348,7 @@ impl HostHandler for ScriptedHost<'_>
                         tag: ConstructorTag::Data {
                             tag: gandr_kernel_term::ConstructorTag::from(0_usize),
                             arity: ProducerArity::ZERO,
-                            family: Some(ConstantIndex::from(0_usize)),
+                            family: ConstantIndex::from(0_usize),
                         },
                         fields: Box::new([]),
                     },
@@ -932,6 +932,7 @@ fn a_host_built_reply_of_a_tabled_kind_is_the_answer()
     let opaque = core.value_constant(ConstantIndex::from(7_usize));
     let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let zero = core.value_constructor(
+        ConstantIndex::from(0_usize),
         nat,
         gandr_kernel_term::ConstructorTag::from(0_usize),
         Vec::new(),

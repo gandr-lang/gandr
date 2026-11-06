@@ -813,7 +813,8 @@ pub fn named() -> Vec<Named>
     let two = integer(&mut core, Integer(2));
     let seven = integer(&mut core, Integer(7));
     let datatype = core.value_type_data(0_usize.into(), Vec::new());
-    let scrutinee = core.value_constructor(datatype, 0_usize.into(), vec![one, two]);
+    let scrutinee =
+        core.value_constructor(0_usize.into(), datatype, 0_usize.into(), vec![one, two]);
     let first = core.value_variable(Zone::Intuitionistic, 2_u32.into());
     let argument = innermost(&mut core);
     let paired = core.value_tuple(&[first, argument]);
@@ -835,12 +836,14 @@ pub fn named() -> Vec<Named>
     let one = integer(&mut core, Integer(1));
     let two = integer(&mut core, Integer(2));
     let datatype = core.value_type_data(0_usize.into(), Vec::new());
-    let built = core.value_constructor(datatype, 0_usize.into(), vec![one, two]);
+    let built = core.value_constructor(0_usize.into(), datatype, 0_usize.into(), vec![one, two]);
     let bound = core.computation_return(built);
     let scrutinee = innermost(&mut core);
     let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
     let second = innermost(&mut core);
-    let rebuilt = core.value_constructor(datatype, 0_usize.into(), vec![second, first]);
+    let rebuilt = core.value_constructor(0_usize.into(), datatype, 0_usize.into(), vec![
+        second, first,
+    ]);
     let answered = core.computation_return(rebuilt);
     let inner = core.computation_lambda(answered);
     let branch = core.computation_lambda(inner);

@@ -2425,6 +2425,7 @@ fn a_constructor_applies_to_its_fields()
         datatype,
         tag,
         ref fields,
+        ..
     }) = arena.value(body_named(&module, SurfaceName::from("green")))
     else {
         panic!("a bare constructor is a constructor value");
@@ -6113,6 +6114,7 @@ fn a_word_conses_its_letters_and_matches_them()
         datatype,
         tag,
         ref fields,
+        ..
     }) = arena.value(body_named(&module, SurfaceName::from("empty")))
     else {
         panic!("`Path.here Base` at the loop's point is a word");
@@ -6127,6 +6129,7 @@ fn a_word_conses_its_letters_and_matches_them()
         datatype,
         tag,
         ref fields,
+        ..
     }) = arena.value(body_named(&module, SurfaceName::from("word")))
     else {
         panic!("a cons is a word");

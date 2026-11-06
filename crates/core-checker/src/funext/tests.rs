@@ -365,6 +365,7 @@ fn a_data_domain_covers_as_its_constructors()
                 datatype,
                 tag,
                 ref fields,
+                ..
             }) = context.arena().value(pattern.left)
             else {
                 panic!("a constructor pattern");

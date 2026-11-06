@@ -1472,9 +1472,19 @@ fn an_ascribed_binary_natural_spells_as_its_numeral_3287()
     let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let pos = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
     let other = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
-    let one = core.value_constructor(pos, ConstructorTag::from(0_usize), Vec::new());
+    let one = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        pos,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let digit = |core: &mut CoreArena, tag: usize, above| {
-        core.value_constructor(pos, ConstructorTag::from(tag), vec![above])
+        core.value_constructor(
+            ConstantIndex::from(1_usize),
+            pos,
+            ConstructorTag::from(tag),
+            vec![above],
+        )
     };
     let two = digit(&mut core, 1, one);
     let five = digit(&mut core, 2, two);
@@ -1482,10 +1492,21 @@ fn an_ascribed_binary_natural_spells_as_its_numeral_3287()
     for _ in 0_usize .. 31_usize {
         power = digit(&mut core, 1, power);
     }
-    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let unended = digit(&mut core, 1, zero);
-    let [five, power, unended] = [five, power, unended]
-        .map(|positive| core.value_constructor(nat, ConstructorTag::from(1_usize), vec![positive]));
+    let [five, power, unended] = [five, power, unended].map(|positive| {
+        core.value_constructor(
+            ConstantIndex::from(0_usize),
+            nat,
+            ConstructorTag::from(1_usize),
+            vec![positive],
+        )
+    });
     let rows = [
         (zero, nat, "(0 : Nat)"),
         (five, nat, "(5 : Nat)"),
@@ -1921,9 +1942,24 @@ fn each_glyph_former_is_written_in_the_spelling_asked_782()
     ];
     relations.sort_unstable_by_key(|&(id, _)| id);
     let loops = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let nil = core.value_constructor(loops, ConstructorTag::from(0_usize), Vec::new());
-    let once = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![nil]);
-    let word = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![once]);
+    let nil = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        loops,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let once = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        loops,
+        ConstructorTag::from(1_usize),
+        vec![nil],
+    );
+    let word = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        loops,
+        ConstructorTag::from(1_usize),
+        vec![once],
+    );
     let mut constructors = Constructors::default();
     constructors.words(
         FamilyKey::Named(Name::from("Loops")),
@@ -3856,13 +3892,43 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
         );
     }
     let nat = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
-    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
-    let one = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![zero]);
+    let zero = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let one = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        vec![zero],
+    );
     let loops = core.value_type_data(ConstantIndex::from(3_usize), Vec::new());
-    let nil = core.value_constructor(loops, ConstructorTag::from(0_usize), Vec::new());
-    let once = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![nil]);
-    let word = core.value_constructor(loops, ConstructorTag::from(2_usize), vec![once]);
-    let counted = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![word]);
+    let nil = core.value_constructor(
+        ConstantIndex::from(3_usize),
+        loops,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let once = core.value_constructor(
+        ConstantIndex::from(3_usize),
+        loops,
+        ConstructorTag::from(1_usize),
+        vec![nil],
+    );
+    let word = core.value_constructor(
+        ConstantIndex::from(3_usize),
+        loops,
+        ConstructorTag::from(2_usize),
+        vec![once],
+    );
+    let counted = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        vec![word],
+    );
     let mut constructors = Constructors::default();
     constructors.family(FamilyKey::Named(Name::from("Nat")), [
         (Name::from("Zero"), Arity::from(0_usize)),
@@ -4559,8 +4625,18 @@ fn a_composite_of_flows_spells_as_a_call()
     let composite = core.value_then(kept, exchanged);
     let nested = core.value_then(composite, kept);
     let loops = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
-    let base = core.value_constructor(loops, ConstructorTag::from(0_usize), Vec::new());
-    let word = core.value_constructor(loops, ConstructorTag::from(1_usize), vec![base]);
+    let base = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        loops,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let word = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        loops,
+        ConstructorTag::from(1_usize),
+        vec![base],
+    );
     let consed_first = core.value_then(word, kept);
     let consed_second = core.value_then(kept, word);
     let names = [
@@ -4859,7 +4935,12 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     let opened = core.computation_lambda(split);
     let nat = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
     let returns_nat = core.comp_type_returner(nat);
-    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let returns_zero = core.computation_return(zero);
     let field = core.computation_lambda(returned);
     let data_case = core.computation_data_case(
@@ -5412,7 +5493,12 @@ fn a_recursive_definition_spells_as_written_941()
     let (staged_case, staged) = two_parameters(&mut core, FixpointEvidence::Staged {
         position: StagedPosition::from(1_usize),
     });
-    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let mut constructors = Constructors::default();
     constructors.family(FamilyKey::Named(Name::from("Nat")), [
         (Name::from("Zero"), Arity::from(0_usize)),
@@ -6285,7 +6371,12 @@ fn a_case_nothing_types_writes_its_motive_815()
     let returned = core.computation_return(bound);
     let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let returns_nat = core.comp_type_returner(nat);
-    let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let zero = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let returns_zero = core.computation_return(zero);
     let field = core.computation_lambda(returned);
     let case = core.computation_data_case(
@@ -6303,12 +6394,22 @@ fn a_case_nothing_types_writes_its_motive_815()
     // thunk a constructor holds.
     let matched = core.computation_lambda(case);
     let held = core.value_thunk(matched);
-    let succ = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![held]);
+    let succ = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        vec![held],
+    );
     let holding = core.computation_return(succ);
     // `Succ(fun (a) { case a -> -F Nat { … } })`: nor does a lambda nested
     // where a value is read, which the checker wraps in its thunk.
     let nested = core.value_nested(matched);
-    let nesting = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![nested]);
+    let nesting = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(1_usize),
+        vec![nested],
+    );
     let holding_nested = core.computation_return(nesting);
     // `pure (pure Zero)`: the nested computation returned, its `pure` kept.
     let nested_zero = core.value_nested(returns_zero);
@@ -6414,9 +6515,24 @@ fn a_family_spells_by_its_declaration_past_a_namesake_3125()
     let mut core = CoreArena::new();
     let first = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
     let second = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
-    let field = core.value_constructor(first, ConstructorTag::from(1_usize), Vec::new());
-    let inside = core.value_constructor(second, ConstructorTag::from(0_usize), Vec::new());
-    let on_heap = core.value_constructor(second, ConstructorTag::from(1_usize), Vec::new());
+    let field = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        first,
+        ConstructorTag::from(1_usize),
+        Vec::new(),
+    );
+    let inside = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        second,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let on_heap = core.value_constructor(
+        ConstantIndex::from(1_usize),
+        second,
+        ConstructorTag::from(1_usize),
+        Vec::new(),
+    );
     let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let returns_second = core.comp_type_returner(second);
     let swapped = [on_heap, inside].map(|value| core.computation_return(value));
@@ -6953,7 +7069,12 @@ fn a_parameterised_constructor_is_written_against_its_family_where_source_reads_
     let mut core = CoreArena::new();
     let three = integer(&mut core, Sign::NonNegative, Written("3"));
     let ix = core.value_type_data(ConstantIndex::from(0_usize), vec![three]);
-    let made = core.value_constructor(ix, ConstructorTag::from(0_usize), Vec::new());
+    let made = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        ix,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let returned = core.computation_return(made);
     let indexed = core.value_type_data(ConstantIndex::from(1_usize), vec![made]);
     let quoted = core.value_quote(indexed);
@@ -6993,7 +7114,12 @@ fn a_definition_writes_its_constructors_against_their_family_815()
     let mut core = CoreArena::new();
     let three = integer(&mut core, Sign::NonNegative, Written("3"));
     let ix = core.value_type_data(ConstantIndex::from(0_usize), vec![three]);
-    let made = core.value_constructor(ix, ConstructorTag::from(0_usize), Vec::new());
+    let made = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        ix,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     let returned = core.computation_return(three);
     let thunked = core.value_thunk(returned);
     let pair = core.value_tuple(&[made, thunked]);

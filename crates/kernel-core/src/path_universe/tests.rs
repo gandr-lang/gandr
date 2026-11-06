@@ -458,10 +458,12 @@ fn translate(
             AnyNode::Value(id) => {
                 let value = match *(arena.value(id).expect("fixture value")) {
                     Value::Constructor {
+                        family,
                         ref datatype,
                         ref tag,
                         ref fields,
                     } => core.value_constructor(
+                        family,
                         types[datatype],
                         *tag,
                         fields.iter().map(|field| values[field]).collect(),

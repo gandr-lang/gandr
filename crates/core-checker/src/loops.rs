@@ -264,7 +264,7 @@ pub fn respected(
         let arena = context.arena_mut();
         let word = letter(arena, owed);
         let words = arena.value_type_data(owed.words, Vec::new());
-        let empty = arena.value_constructor(words, FreeCells::nil(), Vec::new());
+        let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
         let carried =
             gandr_core_term::identity::answer_at(arena, point, motive, &branches, &arities);
         let transported = arena.computation_path_transport(family, word, carried);
@@ -465,6 +465,10 @@ fn scrutinees(
             return Ok(held);
         };
         let signature = crate::former::signature(context, sort)?;
+        let Some(&ValueType::Data { declaration, .. }) = context.arena().value_type(sort)
+        else {
+            return Ok(held);
+        };
         if signature
             .constructors()
             .iter()
@@ -477,7 +481,9 @@ fn scrutinees(
         arities.resize(signature.constructors().len(), FieldCount::from(0_usize));
         let arena = context.arena_mut();
         let points = (0 .. arities.len())
-            .map(|tag| arena.value_constructor(sort, ConstructorTag::from(tag), Vec::new()))
+            .map(|tag| {
+                arena.value_constructor(declaration, sort, ConstructorTag::from(tag), Vec::new())
+            })
             .collect();
         let slot = usize::try_from(u32::from(index))
             .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
@@ -666,7 +672,7 @@ pub fn point(
     let arena = context.arena_mut();
     let mut open = false;
     let point = build_side(cells.point(), arities, |node, fields| match node {
-        RuleNode::Constructor(tag) => arena.value_constructor(datatype, tag, fields),
+        RuleNode::Constructor(tag) => arena.value_constructor(cells.sort(), datatype, tag, fields),
         RuleNode::Variable(_) => {
             open = true;
             arena.value_unit()
@@ -746,6 +752,11 @@ pub fn letter(
 ) -> ValueId
 {
     let words = arena.value_type_data(owed.words, Vec::new());
-    let empty = arena.value_constructor(words, FreeCells::nil(), Vec::new());
-    arena.value_constructor(words, FreeCells::letter(owed.cell), Vec::from([empty]))
+    let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
+    arena.value_constructor(
+        owed.words,
+        words,
+        FreeCells::letter(owed.cell),
+        Vec::from([empty]),
+    )
 }

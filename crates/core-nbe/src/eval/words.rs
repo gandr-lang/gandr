@@ -588,12 +588,14 @@ pub(super) fn relettered(
     rest: DomainValueId,
 ) -> Result<DomainValueId, EvalFault>
 {
-    let Some(&DomainValue::Constructor { datatype, .. }) = domain.value(letter)
+    let Some(&DomainValue::Constructor {
+        family, datatype, ..
+    }) = domain.value(letter)
     else {
         return Err(EvalFault::MachineInvariant);
     };
     let fields = domain.hold_fields([rest]);
-    Ok(domain.value_constructor(datatype, tag, fields, TermFace::Reduced))
+    Ok(domain.value_constructor(family, datatype, tag, fields, TermFace::Reduced))
 }
 
 /// The inverse of a closed word: its letters inverted, last first.
@@ -1218,12 +1220,15 @@ pub(super) fn transport(
         Head::Other => return Ok(Moved::Unmoved),
     };
     if head(core, domain, machine, rest)? != Head::Empty {
-        let Some(&DomainValue::Constructor { datatype, .. }) = domain.value(path)
+        let Some(&DomainValue::Constructor {
+            family, datatype, ..
+        }) = domain.value(path)
         else {
             return Err(EvalFault::MachineInvariant);
         };
         let none = domain.hold_fields([]);
-        let empty = domain.value_constructor(datatype, FreeCells::nil(), none, TermFace::Reduced);
+        let empty =
+            domain.value_constructor(family, datatype, FreeCells::nil(), none, TermFace::Reduced);
         let first = relettered(domain, path, tag, empty)?;
         let onward = domain.native_continuation(CompBody::AlongWord { motive, rest });
         machine.tasks.push(Task::BindClosure(onward));
@@ -1635,7 +1640,7 @@ fn point(
     };
     let datatype = domain.value_closure_node(ValueBody::ValueType(carrier), Environment::new());
     let none = domain.hold_fields([]);
-    Some(domain.value_constructor(datatype, tag, none, TermFace::Reduced))
+    Some(domain.value_constructor(declaration, datatype, tag, none, TermFace::Reduced))
 }
 
 /// The value the family's binder is bound to while the arguments off a route

@@ -653,7 +653,12 @@ fn the_fragment_postpones_by_name()
     let definition = arena.value_constant(ConstantIndex::from(0_usize));
     let around_b = arena.value_tuple(&[hole_b, three]);
     let family = arena.value_type_data(ConstantIndex::from(1_usize), vec![]);
-    let built = arena.value_constructor(family, ConstructorTag::from(0_usize), vec![]);
+    let built = arena.value_constructor(
+        ConstantIndex::from(1_usize),
+        family,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
     let unknown = arena.value_type_unknown();
     let integer = arena.value_type_base(BaseType::Integer);
     // A prefix type and a run type: formers the fragment does not decompose.
@@ -809,7 +814,12 @@ fn every_value_former_decomposes_into_its_parts()
         }),
         ("a constructor", |arena, part| {
             let family = arena.value_type_data(ConstantIndex::from(1_usize), vec![part]);
-            arena.value_constructor(family, ConstructorTag::from(0_usize), vec![part])
+            arena.value_constructor(
+                ConstantIndex::from(1_usize),
+                family,
+                ConstructorTag::from(0_usize),
+                vec![part],
+            )
         }),
         ("a record", |arena, part| {
             arena.value_record(field(Label::Size, part))
@@ -858,16 +868,36 @@ fn differing_value_formers_clash()
         ("two constructor tags", |arena| {
             let family = arena.value_type_data(ConstantIndex::from(1_usize), vec![]);
             (
-                arena.value_constructor(family, ConstructorTag::from(0_usize), vec![]),
-                arena.value_constructor(family, ConstructorTag::from(1_usize), vec![]),
+                arena.value_constructor(
+                    ConstantIndex::from(1_usize),
+                    family,
+                    ConstructorTag::from(0_usize),
+                    vec![],
+                ),
+                arena.value_constructor(
+                    ConstantIndex::from(1_usize),
+                    family,
+                    ConstructorTag::from(1_usize),
+                    vec![],
+                ),
             )
         }),
         ("two constructor field counts", |arena| {
             let family = arena.value_type_data(ConstantIndex::from(1_usize), vec![]);
             let three = arena.value_literal(literal(Numeral::Three));
             (
-                arena.value_constructor(family, ConstructorTag::from(0_usize), vec![three]),
-                arena.value_constructor(family, ConstructorTag::from(0_usize), vec![three, three]),
+                arena.value_constructor(
+                    ConstantIndex::from(1_usize),
+                    family,
+                    ConstructorTag::from(0_usize),
+                    vec![three],
+                ),
+                arena.value_constructor(
+                    ConstantIndex::from(1_usize),
+                    family,
+                    ConstructorTag::from(0_usize),
+                    vec![three, three],
+                ),
             )
         }),
         ("two record labels", |arena| {
@@ -1416,7 +1446,12 @@ fn a_metavariable_under_any_introduction_form_is_refuted()
         }),
         ("a constructor", |arena, part| {
             let family = arena.value_type_data(ConstantIndex::from(1_usize), vec![]);
-            arena.value_constructor(family, ConstructorTag::from(0_usize), vec![part])
+            arena.value_constructor(
+                ConstantIndex::from(1_usize),
+                family,
+                ConstructorTag::from(0_usize),
+                vec![part],
+            )
         }),
         ("a record", |arena, part| {
             arena.value_record(field(Label::Size, part))

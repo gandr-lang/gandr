@@ -163,7 +163,12 @@ fn a_presented_constructor_is_set_aside_on_either_side()
     let presentations = crate::presented::Presentations::of(environment.entries());
     let mut arena = environment.arena().clone();
     let own = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec::Vec::new());
-    let base = arena.value_constructor(own, ConstructorTag::from(0_usize), alloc::vec::Vec::new());
+    let base = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        own,
+        ConstructorTag::from(0_usize),
+        alloc::vec::Vec::new(),
+    );
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
     for (left, right) in [(variable, base), (base, variable)] {
         let mut pending = alloc::vec::Vec::new();
@@ -944,7 +949,12 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
     // Values: tags, record labels, programs, evidence and component
     // counts, step shapes, child counts, lift levels.
     let constructor = |arena: &mut TermArena, tag: usize| {
-        arena.value_constructor(unit_type, ConstructorTag::from(tag), Vec::new())
+        arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            unit_type,
+            ConstructorTag::from(tag),
+            Vec::new(),
+        )
     };
     let record = |arena: &mut TermArena, name: &str| {
         arena.value_record(BTreeMap::from([(label(name), unit)]))

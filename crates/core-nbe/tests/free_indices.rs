@@ -317,6 +317,7 @@ fn values() -> [Former; 18]
                     a.value_type_data(ConstantIndex::from(0_usize), Vec::from([argument]));
                 let field = x(a, Index(1));
                 CoreTerm::Value(a.value_constructor(
+                    ConstantIndex::from(0_usize),
                     datatype,
                     ConstructorTag::from(0_usize),
                     Vec::from([field]),

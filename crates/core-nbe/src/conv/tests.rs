@@ -640,6 +640,7 @@ fn each_former_agrees_with_its_twin_at_another_id()
     let constructor = |domain: &mut DomainArena, tag: usize| {
         let fields = domain.hold_fields([thunk]);
         domain.value_constructor(
+            gandr_kernel_term::ConstantIndex::from(0_usize),
             datatype,
             ConstructorTag::from(tag),
             fields,

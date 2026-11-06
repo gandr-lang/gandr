@@ -203,8 +203,12 @@ impl Fixture
         color: Color,
     ) -> ValueId
     {
-        self.core
-            .value_constructor(self.datatype, color.tag(), Vec::new())
+        self.core.value_constructor(
+            ConstantIndex::from(0_usize),
+            self.datatype,
+            color.tag(),
+            Vec::new(),
+        )
     }
 
     /// Ask the checkpoint against the fixture's current arm table.

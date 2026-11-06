@@ -2537,19 +2537,22 @@ impl CoreArena
         self.alloc_value_type(ValueType::Record(fields))
     }
 
-    /// Introduce a nominal constructor with explicit application and fields.
+    /// Introduce a nominal constructor of `family` with explicit application
+    /// and fields.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub fn value_constructor(
         &mut self,
+        family: gandr_kernel_term::ConstantIndex,
         datatype: ValueTypeId,
         tag: gandr_kernel_term::ConstructorTag,
         fields: alloc::vec::Vec<ValueId>,
     ) -> ValueId
     {
         self.alloc_value(Value::Constructor {
+            family,
             datatype,
             tag,
             fields,

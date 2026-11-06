@@ -97,8 +97,12 @@ fn program(schema: Schema) -> Program
         (FieldLabel::from(String::from("x")), unit),
         (FieldLabel::from(String::from("y")), unit),
     ]));
-    let constructor =
-        arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![record]);
+    let constructor = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        datatype,
+        ConstructorTag::from(0_usize),
+        vec![record],
+    );
     let value = Declaration::new(
         ConstantIndex::from(1_usize),
         Maybe::Present(datatype),

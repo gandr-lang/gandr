@@ -631,6 +631,7 @@ fn a_constructor_pattern_matches_its_own_tag_at_its_own_arity()
     let field = domain.value_unit(crate::TermFace::Reduced);
     let fields = domain.hold_fields([field]);
     let scrutinee = domain.value_constructor(
+        gandr_kernel_term::ConstantIndex::from(0_usize),
         datatype,
         ConstructorTag::from(1_usize),
         fields,

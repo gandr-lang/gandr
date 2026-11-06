@@ -865,7 +865,7 @@ impl Linker<'_>
                         values.push((*self.minted.get(field.0)?)?);
                     }
                     let datatype = arena.value_type_data(family, Vec::new());
-                    arena.value_constructor(datatype, tag, values)
+                    arena.value_constructor(family, datatype, tag, values)
                 },
             };
             *self.minted.get_mut(position.0)? = Some(value);

@@ -6820,9 +6820,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Pair,
             /// Inject the image on top.
             Inject(Summand),
-            /// Apply the constructor of this data type and tag to this many
-            /// images on top, the last field on top.
+            /// Apply the constructor of this family, at this data type and tag,
+            /// to this many images on top, the last field on top.
             Construct(
+                gandr_kernel_term::ConstantIndex,
                 gandr_kernel_term::ValueTypeId,
                 gandr_kernel_term::ConstructorTag,
                 usize,
@@ -6857,6 +6858,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                             continue;
                         },
                         Value::Constructor {
+                            family,
                             datatype,
                             tag,
                             ref fields,
@@ -6866,7 +6868,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                             else {
                                 return Err(Refusal::MachineInvariant);
                             };
-                            tasks.push(Task::Construct(image, tag, fields.len()));
+                            let position = self
+                                .data_position(family)
+                                .ok_or(Refusal::MachineInvariant)?;
+                            tasks.push(Task::Construct(position, image, tag, fields.len()));
                             tasks.extend(fields.iter().rev().copied().map(Task::Visit));
                             continue;
                         },
@@ -6952,7 +6957,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     };
                     built.push((target.value_injection(summand, payload), evidence));
                 },
-                Task::Construct(datatype, tag, arity) => {
+                Task::Construct(family, datatype, tag, arity) => {
                     let start = built
                         .len()
                         .checked_sub(arity)
@@ -6964,7 +6969,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     let evidence = evidence.unwrap_or_else(|| target.value_unit());
                     let images = parts.iter().map(|&(image, _)| image).collect();
                     built.truncate(start);
-                    built.push((target.value_constructor(datatype, tag, images), evidence));
+                    built.push((
+                        target.value_constructor(family, datatype, tag, images),
+                        evidence,
+                    ));
                 },
             }
         }
@@ -9065,6 +9073,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         let datatype = program(self.arena, past(1)?);
         let returned = variable(self.arena, 0);
         let returned = self.arena.value_constructor(
+            model,
             datatype,
             gandr_kernel_term::ConstructorTag::from(0_usize),
             Vec::from([returned]),
@@ -9139,6 +9148,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     let rest = self.arena.value_thunk(rest);
                     let datatype = program(self.arena, past(depth)?);
                     let requested = self.arena.value_constructor(
+                        model,
                         datatype,
                         gandr_kernel_term::ConstructorTag::from(tag),
                         Vec::from([payload, rest]),

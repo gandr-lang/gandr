@@ -2534,11 +2534,13 @@ fn convert(
                                 datatype: ref a,
                                 tag: ref at,
                                 fields: ref af,
+                                ..
                             } = *matched_left_value
                                 && let Value::Constructor {
                                     datatype: ref b,
                                     tag: ref bt,
                                     fields: ref bf,
+                                    ..
                                 } = *matched_right_value
                             {
                                 {

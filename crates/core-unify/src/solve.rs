@@ -945,11 +945,13 @@ fn rigid_values(
                 datatype: one_type,
                 tag: one_tag,
                 fields: ref one_fields,
+                ..
             },
             &Value::Constructor {
                 datatype: other_type,
                 tag: other_tag,
                 fields: ref other_fields,
+                ..
             },
         ) => {
             if one_tag != other_tag || one_fields.len() != other_fields.len() {

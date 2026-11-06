@@ -229,9 +229,8 @@ pub enum ConstructorTag
         tag: gandr_kernel_term::ConstructorTag,
         /// The number of fields the constructor carries.
         arity: ProducerArity,
-        /// The declaration of the family, when the core's classifier names
-        /// one.
-        family: Option<gandr_kernel_term::ConstantIndex>,
+        /// The declaration of the family that declares the constructor.
+        family: gandr_kernel_term::ConstantIndex,
     },
     /// A recorded run: its moves in order, each send's and receive's payload
     /// a producer field in move order. A choice's label and a close live in

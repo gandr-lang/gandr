@@ -972,12 +972,12 @@ fn case_on_argument(
 /// trivial.
 fn two_deep(
     arena: &mut TermArena,
-    (nat_type, returner, returned): (ValueTypeId, CompTypeId, ComputationId),
+    (nat, nat_type, returner, returned): (ConstantIndex, ValueTypeId, CompTypeId, ComputationId),
     field: DeBruijnIndex,
 ) -> ComputationId
 {
     let field = arena.value_variable(field);
-    let rebuilt = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![field]);
+    let rebuilt = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![field]);
     let recursive = arena.value_variable(DeBruijnIndex::from(3));
     let forced = arena.computation_force(recursive);
     let called = arena.computation_application(forced, rebuilt);
@@ -1040,7 +1040,7 @@ fn claim(
     let nat_type = arena.value_type_data(nat, vec![]);
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
     let returned = arena.computation_return(zero);
     // Under the fixpoint's body: `rec` is 0. Under its λ: `x` 0, `rec`
     // 1. Under the `succ` branch's field: `p` 0, `x` 1, `rec` 2.
@@ -1064,12 +1064,12 @@ fn claim(
         },
         Claim::Rebuilt => two_deep(
             arena,
-            (nat_type, returner, returned),
+            (nat, nat_type, returner, returned),
             DeBruijnIndex::from(0),
         ),
         Claim::RebuiltAtScrutinee => two_deep(
             arena,
-            (nat_type, returner, returned),
+            (nat, nat_type, returner, returned),
             DeBruijnIndex::from(1),
         ),
         Claim::NullaryUnderField => {
@@ -1270,7 +1270,8 @@ fn plus(
     // `m_s = thunk (λp. λih. λn. r ← (force ih) n; return (succ r))`.
     let forced = arena.computation_force(first);
     let call = arena.computation_application(forced, innermost);
-    let successor = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![innermost]);
+    let successor =
+        arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![innermost]);
     let returned = arena.computation_return(successor);
     let bound = arena.computation_bind(call, returned);
     let over_n = arena.computation_lambda(bound);
@@ -1391,12 +1392,13 @@ fn length(
     let measured = arena.comp_type_arrow(list_type, returner);
     let classifier = arena.comp_type_pi(universe, measured);
     // `m_nil = thunk (return zero)`.
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
     let returned_zero = arena.computation_return(zero);
     let nil_method = arena.value_thunk(returned_zero);
     // `m_cons = thunk (λa. λt. λih. r ← force ih; return (succ r))`.
     let forced = arena.computation_force(innermost);
-    let successor = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![innermost]);
+    let successor =
+        arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![innermost]);
     let returned = arena.computation_return(successor);
     let bound = arena.computation_bind(forced, returned);
     let over_hypothesis = arena.computation_lambda(bound);
@@ -1508,14 +1510,14 @@ fn double(
 {
     let nat_type = arena.value_type_data(nat, vec![]);
     let returner = arena.comp_type_returner(nat_type);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
     let on_zero = arena.computation_return(zero);
     let field = arena.value_variable(DeBruijnIndex::from(0));
     let recursive = arena.value_variable(DeBruijnIndex::from(2));
     let forced = arena.computation_force(recursive);
     let call = arena.computation_application(forced, field);
-    let once = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![field]);
-    let twice = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![once]);
+    let once = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![field]);
+    let twice = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![once]);
     let returned = arena.computation_return(twice);
     let bound = arena.computation_bind(call, returned);
     let on_successor = arena.computation_lambda(bound);
@@ -1533,11 +1535,11 @@ fn numerals(
 ) -> [ValueId; 5]
 {
     let nat_type = arena.value_type_data(nat, vec![]);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
-    let one = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![zero]);
-    let two = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![one]);
-    let three = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![two]);
-    let four = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![three]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let one = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![zero]);
+    let two = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![one]);
+    let three = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![two]);
+    let four = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![three]);
     [zero, one, two, three, four]
 }
 
@@ -1588,7 +1590,9 @@ fn dependent_fields_are_admitted()
         let code = arena.value_quote(unit);
         let second = if quoted { code } else { arena.value_unit() };
         let constructor =
-            arena.value_constructor(datatype, ConstructorTag::from(0), vec![code, second]);
+            arena.value_constructor(position, datatype, ConstructorTag::from(0), vec![
+                code, second,
+            ]);
         let declaration = staging.def(LevelSignature::monomorphic(), datatype, constructor);
         environment.add_decl(declaration).map(|_admitted| ())
     };
@@ -1826,8 +1830,8 @@ fn a_nested_occurrence_through_a_strictly_positive_parameter_declares()
     let own = arena.value_type_data(rose, vec![]);
     let code = arena.value_quote(own);
     let kids = arena.value_type_data(list, vec![code]);
-    let none = arena.value_constructor(kids, ConstructorTag::from(0), vec![]);
-    let sprig = arena.value_constructor(own, ConstructorTag::from(0), vec![none]);
+    let none = arena.value_constructor(list, kids, ConstructorTag::from(0), vec![]);
+    let sprig = arena.value_constructor(rose, own, ConstructorTag::from(0), vec![none]);
     let declaration = staging.def(LevelSignature::monomorphic(), own, sprig);
     let defined = environment.add_decl(declaration);
     assert!(defined.is_ok(), "{defined:?}");
@@ -1898,7 +1902,7 @@ fn map(
     let on_nil = {
         let b = arena.value_variable(DeBruijnIndex::from(3));
         let to = arena.value_type_data(list, vec![b]);
-        let nil = arena.value_constructor(to, ConstructorTag::from(0), vec![]);
+        let nil = arena.value_constructor(list, to, ConstructorTag::from(0), vec![]);
         arena.computation_return(nil)
     };
     let on_cons = {
@@ -1913,7 +1917,7 @@ fn map(
         let to = arena.value_type_data(list, vec![element]);
         let image = arena.value_variable(DeBruijnIndex::from(1));
         let images = arena.value_variable(DeBruijnIndex::from(0));
-        let cons = arena.value_constructor(to, ConstructorTag::from(1), vec![image, images]);
+        let cons = arena.value_constructor(list, to, ConstructorTag::from(1), vec![image, images]);
         let returned = arena.computation_return(cons);
         let inner = arena.computation_bind(recursed, returned);
         let outer = arena.computation_bind(mapped, inner);
@@ -1978,17 +1982,17 @@ fn size(
     let classifier = arena.comp_type_arrow(rose_type, returner);
     let rose_code = arena.value_quote(rose_type);
     let nat_code = arena.value_quote(nat_type);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
-    let one = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![zero]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let one = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![zero]);
     let counted = arena.computation_return(one);
     // The node's arm under `kids` 0, `t` 1, `s` 2.
     let listed = match children {
         Children::Field => arena.value_variable(DeBruijnIndex::from(0)),
         Children::Forged => {
             let kids = arena.value_type_data(list, vec![rose_code]);
-            let nil = arena.value_constructor(kids, ConstructorTag::from(0), vec![]);
+            let nil = arena.value_constructor(list, kids, ConstructorTag::from(0), vec![]);
             let node = arena.value_variable(DeBruijnIndex::from(1));
-            arena.value_constructor(kids, ConstructorTag::from(1), vec![node, nil])
+            arena.value_constructor(list, kids, ConstructorTag::from(1), vec![node, nil])
         },
     };
     let claim = arena.value_variable(DeBruijnIndex::from(2));
@@ -2078,7 +2082,7 @@ fn count(
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
     let nat_code = arena.value_quote(nat_type);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
     let returned = arena.computation_return(zero);
     let claim = arena.value_variable(DeBruijnIndex::from(2));
     let handed = arena.value_variable(handed);
@@ -2169,13 +2173,13 @@ fn predecessor(
     let nat_type = arena.value_type_data(nat, vec![]);
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
     let returned = arena.computation_return(zero);
     let value = match returning {
         Returning::Field => arena.value_variable(DeBruijnIndex::from(0)),
         Returning::Successor => {
             let argument = arena.value_variable(DeBruijnIndex::from(1));
-            arena.value_constructor(nat_type, ConstructorTag::from(1), vec![argument])
+            arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![argument])
         },
     };
     let given = arena.computation_return(value);
@@ -2209,7 +2213,7 @@ fn halve_through(
     let nat_type = arena.value_type_data(nat, vec![]);
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
     let returned = arena.computation_return(zero);
     let head = arena.value_constant(pred);
     let field = arena.value_variable(DeBruijnIndex::from(0));
@@ -2338,7 +2342,7 @@ fn telescoped(
     let nat_type = arena.value_type_data(nat, vec![]);
     let one = arena.value_type_unit();
     let returner = arena.comp_type_returner(nat_type);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
     let returned = arena.computation_return(zero);
     // Under the successor's field `p`: `p` 0, the inner parameter 1, the
     // outer 2, `rec` 3.
@@ -2501,7 +2505,7 @@ fn a_nullary_argument_is_judged_in_each_branch_s_own_scope()
     let nat_type = arena.value_type_data(swapped, vec![]);
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
-    let zero = arena.value_constructor(nat_type, ConstructorTag::from(1), vec![]);
+    let zero = arena.value_constructor(swapped, nat_type, ConstructorTag::from(1), vec![]);
     // Under the `succ` branch's field: `p` 0, `x` 1, `rec` 2; under the
     // `zero` branch: `x` 0, `rec` 1.
     let under_field = call(arena, DeBruijnIndex::from(2), zero);
@@ -2568,7 +2572,7 @@ fn thunked_call(
     let diverging = arena.computation_fixpoint(forced, FixpointEvidence::Partial);
     let lambda = arena.computation_lambda(diverging);
     let thunked = arena.value_thunk(lambda);
-    let built = arena.value_constructor(own, ConstructorTag::from(0), vec![thunked]);
+    let built = arena.value_constructor(position, own, ConstructorTag::from(0), vec![thunked]);
     // Under λt: `t` 0, `rec` 1.
     let called = call(arena, DeBruijnIndex::from(1), built);
     let body = arena.computation_lambda(called);
@@ -2867,7 +2871,7 @@ fn universe(
         let mut staging = environment.stage();
         let arena = staging.arena();
         let own = arena.value_type_data(family, vec![]);
-        let nat_code = arena.value_constructor(own, ConstructorTag::from(0), vec![]);
+        let nat_code = arena.value_constructor(family, own, ConstructorTag::from(0), vec![]);
         members.push(staging.def(LevelSignature::monomorphic(), own, nat_code));
     }
     environment.add_block(members)

@@ -4611,19 +4611,22 @@ impl TermArena
         self.alloc_value_type(ValueType::Record(fields))
     }
 
-    /// Mint a constructor without claiming its tag, arity or field types.
+    /// Mint a constructor of `family` without claiming its tag, arity or field
+    /// types.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub fn value_constructor(
         &mut self,
+        family: crate::ConstantIndex,
         datatype: ValueTypeId,
         tag: crate::ConstructorTag,
         fields: Vec<ValueId>,
     ) -> ValueId
     {
         self.alloc_value(Value::Constructor {
+            family,
             datatype,
             tag,
             fields,

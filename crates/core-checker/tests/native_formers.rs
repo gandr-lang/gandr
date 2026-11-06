@@ -103,12 +103,16 @@ fn data_declarations_and_refusals_agree_with_kernel()
     );
     let datatype = arena.value_type_data(first, vec![]);
     let other = arena.value_type_data(second, vec![]);
-    let good = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![unit]);
-    let bad_tag = arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![unit]);
-    let bad_fields = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
+    let good = arena.value_constructor(first, datatype, ConstructorTag::from(0_usize), vec![unit]);
+    let bad_tag =
+        arena.value_constructor(first, datatype, ConstructorTag::from(1_usize), vec![unit]);
+    let bad_fields =
+        arena.value_constructor(first, datatype, ConstructorTag::from(0_usize), vec![]);
     let bad_arguments = arena.value_type_data(first, vec![unit]);
     let bad_application =
-        arena.value_constructor(bad_arguments, ConstructorTag::from(0_usize), vec![unit]);
+        arena.value_constructor(first, bad_arguments, ConstructorTag::from(0_usize), vec![
+            unit,
+        ]);
     let declarations = vec![
         bad,
         one,
@@ -214,9 +218,14 @@ fn word(
 ) -> ValueId
 {
     let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
-    let mut built = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![]);
+    let mut built = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        own,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
     for &letter in letters.iter().rev() {
-        built = arena.value_constructor(own, letter, vec![built]);
+        built = arena.value_constructor(ConstantIndex::from(0_usize), own, letter, vec![built]);
     }
     built
 }
@@ -581,7 +590,8 @@ fn a_fold_nesting_its_call_is_judged_on_the_bind_it_elaborates_to()
             let called = arena.computation_application(forced, field);
             let mut built = arena.value_nested(called);
             for _ in 0_usize .. count {
-                built = arena.value_constructor(own, letter, vec![built]);
+                built =
+                    arena.value_constructor(ConstantIndex::from(0_usize), own, letter, vec![built]);
             }
             let result = arena.computation_return(built);
             arena.computation_lambda(result)
@@ -657,7 +667,8 @@ fn a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint()
             let recursive = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
             let field = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
             let state = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-            let wound = arena.value_constructor(own, letter, vec![state]);
+            let wound =
+                arena.value_constructor(ConstantIndex::from(0_usize), own, letter, vec![state]);
             let forced = arena.computation_force(recursive);
             let called = arena.computation_application(forced, field);
             let passed = arena.computation_application(called, wound);
@@ -727,7 +738,7 @@ fn a_loop_is_a_word_at_its_path_in_both_checkers()
     let (sort, words) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
     let carrier = arena.value_type_data(sort, vec![]);
     let own = arena.value_type_data(words, vec![]);
-    let point = arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![]);
+    let point = arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), vec![]);
     let path = arena.value_type_path(carrier, point, point);
     let base =
         || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
@@ -747,8 +758,8 @@ fn a_loop_is_a_word_at_its_path_in_both_checkers()
         OriginToken::from(1_usize),
     );
     // `loop : Path[.A = S](base, base)`, the word of its one letter.
-    let empty = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![]);
-    let letter = arena.value_constructor(own, ConstructorTag::from(1_usize), vec![empty]);
+    let empty = arena.value_constructor(words, own, ConstructorTag::from(0_usize), vec![]);
+    let letter = arena.value_constructor(words, own, ConstructorTag::from(1_usize), vec![empty]);
     // Read back at the words' own type.
     let named = arena.value_constant(ConstantIndex::from(2_usize));
     // `fix f. λp. case p { here ⇒ return here; g ∷ q ⇒ r ← f(q); return
@@ -761,7 +772,7 @@ fn a_loop_is_a_word_at_its_path_in_both_checkers()
         let forced = arena.computation_force(recursive);
         let folded = arena.computation_application(forced, field);
         let result = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let rebuilt = arena.value_constructor(own, ConstructorTag::from(tag), vec![result]);
+        let rebuilt = arena.value_constructor(words, own, ConstructorTag::from(tag), vec![result]);
         let returned = arena.computation_return(rebuilt);
         let sequenced = arena.computation_bind(folded, returned);
         arena.computation_lambda(sequenced)
@@ -869,14 +880,14 @@ fn one_loop(arena: &mut CoreArena) -> (Vec<Declaration>, OneLoop)
     let (sort, words) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
     let carrier = arena.value_type_data(sort, vec![]);
     let own = arena.value_type_data(words, vec![]);
-    let point = arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![]);
+    let point = arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), vec![]);
     let path = arena.value_type_path(carrier, point, point);
     let base =
         || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
     let cells = FreeCells::new(sort, vec![FreeCell::new(base(), base())]);
-    let empty = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![]);
-    let letter = arena.value_constructor(own, ConstructorTag::from(1_usize), vec![empty]);
-    let inverse = arena.value_constructor(own, ConstructorTag::from(2_usize), vec![empty]);
+    let empty = arena.value_constructor(words, own, ConstructorTag::from(0_usize), vec![]);
+    let letter = arena.value_constructor(words, own, ConstructorTag::from(1_usize), vec![empty]);
+    let inverse = arena.value_constructor(words, own, ConstructorTag::from(2_usize), vec![empty]);
     let named = arena.value_constant(ConstantIndex::from(2_usize));
     let declarations = vec![
         Declaration::data(
@@ -1097,7 +1108,11 @@ fn base(
     carrier: ValueTypeId,
 ) -> ValueId
 {
-    arena.value_constructor(carrier, ConstructorTag::from(0_usize), vec![])
+    let Some(&gandr_core_term::ValueType::Data { declaration, .. }) = arena.value_type(carrier)
+    else {
+        panic!("the carrier is a data type");
+    };
+    arena.value_constructor(declaration, carrier, ConstructorTag::from(0_usize), vec![])
 }
 
 /// The fibre a nested witness answers in, over the sort's point `a`.
@@ -1591,7 +1606,8 @@ fn an_absurd_case_rests_on_apart_endpoints_in_both_checkers()
     // `λx. λe. case e {}` at `(x : Circle) → Path[.A = Circle](Loop(x), Base)
     // → F Empty`: an endpoint holds a variable of the circle.
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let open_word = arena.value_constructor(own, looped, vec![variable]);
+    let open_word =
+        arena.value_constructor(ConstantIndex::from(0_usize), own, looped, vec![variable]);
     let (inner, arrow, open_case) = absurd(&mut arena, open_word, base);
     let outer = arena.computation_lambda(inner);
     let open = arena.value_thunk(outer);
@@ -2020,14 +2036,16 @@ fn dependent_data_parameters_and_case_motives()
         DataSignature::new(vec![datatype], vec![vec![]], kind).into(),
         OriginToken::from(1_usize),
     );
-    let scrutinee = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![unit]);
+    let scrutinee =
+        arena.value_constructor(family, datatype, ConstructorTag::from(0_usize), vec![unit]);
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let motive_type = arena.value_type_data(indexed, vec![bound]);
     let motive = arena.comp_type_returner(motive_type);
     let branch_index =
-        arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![bound]);
+        arena.value_constructor(family, datatype, ConstructorTag::from(0_usize), vec![bound]);
     let branch_type = arena.value_type_data(indexed, vec![branch_index]);
-    let branch_value = arena.value_constructor(branch_type, ConstructorTag::from(0_usize), vec![]);
+    let branch_value =
+        arena.value_constructor(indexed, branch_type, ConstructorTag::from(0_usize), vec![]);
     let returned = arena.computation_return(branch_value);
     let branch = arena.computation_lambda(returned);
     let case = arena.computation_data_case(
@@ -2285,10 +2303,10 @@ fn term_indices_are_structural_in_both_checkers()
     let named_type = arena.value_type_data(data, vec![reference]);
     let named_copy_type = arena.value_type_data(data, vec![reference_copy]);
     let tag = ConstructorTag::from(0_usize);
-    let copied_value = arena.value_constructor(copied_type, tag, vec![]);
-    let redex_value = arena.value_constructor(redex_type, tag, vec![]);
-    let named_value = arena.value_constructor(named_type, tag, vec![]);
-    let named_copy_value = arena.value_constructor(named_copy_type, tag, vec![]);
+    let copied_value = arena.value_constructor(data, copied_type, tag, vec![]);
+    let redex_value = arena.value_constructor(data, redex_type, tag, vec![]);
+    let named_value = arena.value_constructor(data, named_type, tag, vec![]);
+    let named_copy_value = arena.value_constructor(data, named_copy_type, tag, vec![]);
     let (report, crossed) = run(&mut arena, &[
         identity_definition,
         declaration,
@@ -2358,7 +2376,7 @@ fn a_family_argument_written_as_a_call_converts_with_its_value_3579()
     let yes_type = arena.value_type_data(data, vec![yes]);
     let no_type = arena.value_type_data(data, vec![no]);
     let tag = ConstructorTag::from(0_usize);
-    let called_value = arena.value_constructor(called_type, tag, vec![]);
+    let called_value = arena.value_constructor(data, called_type, tag, vec![]);
     let (report, crossed) = run(&mut arena, &[
         definition(ConstantIndex::from(0_usize), asked, answered),
         declaration,
@@ -2432,9 +2450,9 @@ fn a_constructor_annotated_at_a_call_meets_its_stated_index_3627()
     let at_call = arena.value_type_data(indexed, vec![call]);
     let at_yes = arena.value_type_data(indexed, vec![yes]);
     let at_call_no = arena.value_type_data(indexed, vec![call_no]);
-    let made_at_call = arena.value_constructor(at_call, tag, vec![]);
-    let made_at_yes = arena.value_constructor(at_yes, tag, vec![]);
-    let made_at_call_no = arena.value_constructor(at_call_no, tag, vec![]);
+    let made_at_call = arena.value_constructor(indexed, at_call, tag, vec![]);
+    let made_at_yes = arena.value_constructor(indexed, at_yes, tag, vec![]);
+    let made_at_call_no = arena.value_constructor(indexed, at_call_no, tag, vec![]);
     let (report, crossed) = run(&mut arena, &[
         definition(ConstantIndex::from(0_usize), asked, answered),
         family,
@@ -2620,11 +2638,11 @@ fn a_constructor_field_written_as_a_call_meets_its_annotation_3625()
     // `Count : Nat -> Type { None : Count(Z); More : (n : Nat, c : Count(n))
     // --> Count(S(n)); }`: `More`'s count is read by its tail's type and by
     // its stated index.
-    let zero = arena.value_constructor(nat, zeroth, vec![]);
+    let zero = arena.value_constructor(natural, nat, zeroth, vec![]);
     let under_one = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let counted = arena.value_type_data(count, vec![under_one]);
     let under_both = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-    let stated = arena.value_constructor(nat, first, vec![under_both]);
+    let stated = arena.value_constructor(natural, nat, first, vec![under_both]);
     let counts = Declaration::data(
         count,
         DataSignature::new(vec![], vec![vec![], vec![nat, counted]], kind)
@@ -2639,7 +2657,7 @@ fn a_constructor_field_written_as_a_call_meets_its_annotation_3625()
     let tail_type = arena.value_type_data(count, vec![in_tail]);
     let in_result = called(&mut arena, 1);
     let in_result = arena.value_returned(in_result);
-    let successor = arena.value_constructor(nat, first, vec![in_result]);
+    let successor = arena.value_constructor(natural, nat, first, vec![in_result]);
     let result_type = arena.value_type_data(count, vec![successor]);
     let returns = arena.comp_type_returner(result_type);
     let inner = arena.comp_type_pi(tail_type, returns);
@@ -2648,7 +2666,7 @@ fn a_constructor_field_written_as_a_call_meets_its_annotation_3625()
     let field = called(&mut arena, 1);
     let field = arena.value_nested(field);
     let tail = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let more = arena.value_constructor(result_type, first, vec![field, tail]);
+    let more = arena.value_constructor(count, result_type, first, vec![field, tail]);
     let body = arena.computation_return(more);
     let body = arena.computation_lambda(body);
     let body = arena.computation_lambda(body);
@@ -2703,7 +2721,7 @@ fn an_arm_is_refined_by_its_index_equation_in_both_checkers_3483()
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
     let (boxed, indexed) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
-    let yes = arena.value_constructor(code, yes_tag, vec![]);
+    let yes = arena.value_constructor(ConstantIndex::from(0_usize), code, yes_tag, vec![]);
     // `I : T -> Type { Made : I(Yes); }`: an arm on `Made` binds the equation
     // `Path[.A = T](Yes, t)` past its fields.
     let family = Declaration::data(
@@ -2729,7 +2747,7 @@ fn an_arm_is_refined_by_its_index_equation_in_both_checkers_3483()
     let picked_type = arena.comp_type_pi(code, picked_type);
     let picked_type = arena.value_type_thunk(picked_type);
     let at_yes = arena.value_type_data(indexed, vec![yes]);
-    let made = arena.value_constructor(at_yes, yes_tag, vec![]);
+    let made = arena.value_constructor(indexed, at_yes, yes_tag, vec![]);
     let returned = arena.computation_return(made);
     let arm = arena.computation_lambda(returned);
     let t_in_motive = variable(&mut arena, 2);
@@ -2823,7 +2841,7 @@ fn an_arm_is_refined_through_the_injectivity_of_its_constructor_3403()
     // `I : Nat -> Type { Made : (m : Nat) --> I(S(m)) }`: an arm on `Made`
     // binds `m` and the equation `Path(Nat, S(m), S(n))`.
     let field = variable(&mut arena, 0);
-    let stated = arena.value_constructor(nat, first, vec![field]);
+    let stated = arena.value_constructor(natural, nat, first, vec![field]);
     let family = Declaration::data(
         indexed,
         DataSignature::new(vec![], vec![vec![nat]], kind)
@@ -2838,7 +2856,7 @@ fn an_arm_is_refined_through_the_injectivity_of_its_constructor_3403()
     // `m = n` only from `S(m) = S(n)`.
     let wrap = |arena: &mut CoreArena, inside: bool, at: ValueId| {
         if inside {
-            arena.value_constructor(nat, first, vec![at])
+            arena.value_constructor(natural, nat, first, vec![at])
         }
         else {
             at
@@ -2846,7 +2864,7 @@ fn an_arm_is_refined_through_the_injectivity_of_its_constructor_3403()
     };
     let [(pred_type, pred), (whole_type, whole)] = [false, true].map(|inside| {
         let n_outer = variable(&mut arena, 0);
-        let successor = arena.value_constructor(nat, first, vec![n_outer]);
+        let successor = arena.value_constructor(natural, nat, first, vec![n_outer]);
         let at_successor = arena.value_type_data(indexed, vec![successor]);
         let n_under = variable(&mut arena, 1);
         let n_under = wrap(&mut arena, inside, n_under);
@@ -2858,7 +2876,7 @@ fn an_arm_is_refined_through_the_injectivity_of_its_constructor_3403()
         let m = variable(&mut arena, 1);
         let m = wrap(&mut arena, inside, m);
         let box_at_m = arena.value_type_data(boxed, vec![m]);
-        let made = arena.value_constructor(box_at_m, zeroth, vec![]);
+        let made = arena.value_constructor(boxed, box_at_m, zeroth, vec![]);
         let returned = arena.computation_return(made);
         let arm = arena.computation_lambda(returned);
         let arm = arena.computation_lambda(arm);
@@ -2909,7 +2927,7 @@ fn a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483()
     let (yes_tag, mut arena) = (ConstructorTag::from(0_usize), CoreArena::new());
     let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
     let boxed = ConstantIndex::from(1_usize);
-    let yes = arena.value_constructor(code, yes_tag, vec![]);
+    let yes = arena.value_constructor(ConstantIndex::from(0_usize), code, yes_tag, vec![]);
     let variable = |arena: &mut CoreArena, at: u32| {
         arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
     };
@@ -2948,7 +2966,7 @@ fn a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483()
     let back_type = arena.comp_type_pi(box_at_u, answer);
     let back_type = arena.comp_type_pi(code, back_type);
     let back_type = arena.value_type_thunk(back_type);
-    let made = arena.value_constructor(box_at_yes, ConstructorTag::from(0_usize), vec![]);
+    let made = arena.value_constructor(boxed, box_at_yes, ConstructorTag::from(0_usize), vec![]);
     let made = arena.computation_return(made);
     let case = arena.computation_data_case(scrutinee, answer, vec![returned, made], no_fields);
     let back = arena.computation_lambda(case);
@@ -3083,7 +3101,7 @@ fn a_sum_arm_reads_its_goal_at_its_injection_in_both_checkers_5036()
         let own = variable(arena, 0);
         let injected = arena.value_injection(gandr_core_term::Summand::from(summand), own);
         let tag = arena.value_type_data(tags, vec![injected]);
-        let made = arena.value_constructor(tag, ConstructorTag::from(0_usize), vec![]);
+        let made = arena.value_constructor(tags, tag, ConstructorTag::from(0_usize), vec![]);
         arena.computation_return(made)
     };
     let (first, second) = (made(&mut arena, 0), made(&mut arena, 1));
@@ -3125,7 +3143,7 @@ fn a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483()
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
     let (boxed, indexed) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
-    let yes = arena.value_constructor(code, yes_tag, vec![]);
+    let yes = arena.value_constructor(ConstantIndex::from(0_usize), code, yes_tag, vec![]);
     let family = Declaration::data(
         indexed,
         DataSignature::new(vec![], vec![vec![]], kind)
@@ -3208,8 +3226,13 @@ fn a_refusal_inside_a_refined_arm_names_the_written_term_3694()
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
     let (boxed, indexed) = (ConstantIndex::from(1_usize), ConstantIndex::from(2_usize));
-    let yes = arena.value_constructor(code, yes_tag, vec![]);
-    let no = arena.value_constructor(code, ConstructorTag::from(1_usize), vec![]);
+    let yes = arena.value_constructor(ConstantIndex::from(0_usize), code, yes_tag, vec![]);
+    let no = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        code,
+        ConstructorTag::from(1_usize),
+        vec![],
+    );
     let family = Declaration::data(
         indexed,
         DataSignature::new(vec![], vec![vec![]], kind)
@@ -3484,8 +3507,13 @@ fn a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631()
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
     let wrapped = ConstantIndex::from(2_usize);
-    let yes = arena.value_constructor(code, yes_tag, vec![]);
-    let no = arena.value_constructor(code, ConstructorTag::from(1_usize), vec![]);
+    let yes = arena.value_constructor(ConstantIndex::from(0_usize), code, yes_tag, vec![]);
+    let no = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        code,
+        ConstructorTag::from(1_usize),
+        vec![],
+    );
     let variable = |arena: &mut CoreArena, at: u32| {
         arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
     };
@@ -3626,7 +3654,7 @@ fn a_stage_is_carried_across_a_set_and_not_along_a_loop_3631()
         DataSignature::new(vec![], vec![vec![], vec![nat]], kind).into(),
         OriginToken::from(3_usize),
     ));
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+    let zero = arena.value_constructor(naturals, nat, ConstructorTag::from(0_usize), vec![]);
     let variable = |arena: &mut CoreArena, at: u32| {
         arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
     };
@@ -3831,7 +3859,10 @@ fn native_signature_support_and_adoption()
     );
     let datatype = arena.value_type_data(constant, vec![]);
     let unit = arena.value_unit();
-    let constructor = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![unit]);
+    let constructor =
+        arena.value_constructor(constant, datatype, ConstructorTag::from(0_usize), vec![
+            unit,
+        ]);
     let use_site = definition(ConstantIndex::from(1_usize), datatype, constructor);
     let fresh = {
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
@@ -4046,11 +4077,11 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
     // `Count : Nat -> Type { None : Count(Z); More : (n : Nat, c : Count(n))
     // --> Count(S(n)); }`: `n` is the variable 0 under the first field and 1
     // under both.
-    let zero = arena.value_constructor(nat, zeroth, vec![]);
+    let zero = arena.value_constructor(natural, nat, zeroth, vec![]);
     let under_one = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let counted = arena.value_type_data(count, vec![under_one]);
     let under_both = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-    let stated = arena.value_constructor(nat, first, vec![under_both]);
+    let stated = arena.value_constructor(natural, nat, first, vec![under_both]);
     let counts = Declaration::data(
         count,
         DataSignature::new(vec![], vec![vec![], vec![nat, counted]], kind)
@@ -4058,14 +4089,14 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
             .into(),
         OriginToken::from(1_usize),
     );
-    let one = arena.value_constructor(nat, first, vec![zero]);
-    let two = arena.value_constructor(nat, first, vec![one]);
+    let one = arena.value_constructor(natural, nat, first, vec![zero]);
+    let two = arena.value_constructor(natural, nat, first, vec![one]);
     let at_zero = arena.value_type_data(count, vec![zero]);
     let at_one = arena.value_type_data(count, vec![one]);
     let at_two = arena.value_type_data(count, vec![two]);
-    let none = arena.value_constructor(at_zero, zeroth, vec![]);
-    let more = arena.value_constructor(at_one, first, vec![zero, none]);
-    let overstated = arena.value_constructor(at_two, first, vec![zero, none]);
+    let none = arena.value_constructor(count, at_zero, zeroth, vec![]);
+    let more = arena.value_constructor(count, at_one, first, vec![zero, none]);
+    let overstated = arena.value_constructor(count, at_two, first, vec![zero, none]);
     let answer = arena.comp_type_returner(nat);
     let returned = arena.computation_return(zero);
     // Each branch binds, past its fields, its equation at the one index.
@@ -4110,7 +4141,7 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
     );
     let code = arena.value_quote(nat);
     let at_zeros = arena.value_type_data(paired, vec![code, zero, zero]);
-    let made = arena.value_constructor(at_zeros, zeroth, vec![]);
+    let made = arena.value_constructor(paired, at_zeros, zeroth, vec![]);
     let declarations = [
         naturals,
         counts,
@@ -4215,7 +4246,7 @@ fn a_constructor_at_a_computed_type_checks_at_its_family_3570()
     let code = arena.value_quote(box_type);
     let boxed = arena.value_constant(ConstantIndex::from(1_usize));
     let computed = arena.value_type_element(boxed, Level::zero());
-    let made = arena.value_constructor(computed, ConstructorTag::from(0_usize), vec![unit]);
+    let made = arena.value_constructor(boxes, computed, ConstructorTag::from(0_usize), vec![unit]);
     let (report, crossed) = run(&mut arena, &[
         Declaration::data(
             boxes,

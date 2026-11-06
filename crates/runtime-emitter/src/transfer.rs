@@ -765,9 +765,7 @@ fn allocate(
         Kind::Data => constructed(ConstructorTag::Data {
             tag: gandr_kernel_term::ConstructorTag::from(usize::from(header.tag())),
             arity: ProducerArity::from(arity),
-            family: usize::try_from(header.family())
-                .ok()
-                .map(ConstantIndex::from),
+            family: ConstantIndex::from(entry?),
         })?,
         Kind::Closure => {
             let code = field(object, Field(1));

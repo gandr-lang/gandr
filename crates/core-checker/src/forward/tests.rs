@@ -814,13 +814,28 @@ fn data_shapes_are_read_constructor_by_constructor()
     let near = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let far = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let rectangle = |arena: &mut CoreArena, fields: &[ValueId]| {
-        arena.value_constructor(shape, ConstructorTag::from(1_usize), fields.to_vec())
+        arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            shape,
+            ConstructorTag::from(1_usize),
+            fields.to_vec(),
+        )
     };
     let labelled = rectangle(&mut arena, &[far, near]);
     let swapped = rectangle(&mut arena, &[near, far]);
     let short = rectangle(&mut arena, &[far]);
-    let past = arena.value_constructor(shape, ConstructorTag::from(2_usize), Vec::new());
-    let circle = arena.value_constructor(shape, ConstructorTag::from(0_usize), Vec::from([far]));
+    let past = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        shape,
+        ConstructorTag::from(2_usize),
+        Vec::new(),
+    );
+    let circle = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        shape,
+        ConstructorTag::from(0_usize),
+        Vec::from([far]),
+    );
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     for (position, signature) in [shapes, naturals].into_iter().enumerate() {
         context

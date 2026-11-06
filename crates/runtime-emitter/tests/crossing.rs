@@ -299,7 +299,7 @@ fn every_head(store: &mut Store) -> Vec<HeapValueId>
         )
         .max(&atom(3));
     values.push(constructed(store, Head::Lift(join), &[one]));
-    for family in [None, Some(ConstantIndex::from(7_usize))] {
+    for family in [ConstantIndex::from(0_usize), ConstantIndex::from(7_usize)] {
         values.push(constructed(
             store,
             Head::Data {

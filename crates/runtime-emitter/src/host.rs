@@ -2131,9 +2131,7 @@ impl Laying<'_>
                     } => (
                         Kind::Data,
                         usize::from(constructor),
-                        family.map_or(Ok(Family::UNNAMED), |family| {
-                            Family::try_from(usize::from(family)).map_err(width)
-                        })?,
+                        Family::try_from(usize::from(family)).map_err(width)?,
                     ),
                     ConstructorTag::Record(_)
                     | ConstructorTag::ListNil

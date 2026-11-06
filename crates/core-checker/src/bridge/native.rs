@@ -274,6 +274,39 @@ impl Erasure<'_, '_>
         }
     }
 
+    /// The kernel position of the data declaration `declaration`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the position this admission's crossing gives `declaration`,
+    ///   else its admitted position, else the position of the model it
+    ///   declares; `None` when none of them names it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::finish_native`], whose data types and
+    ///   constructors cross by it.
+    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    #[spec(ensures: |ret| ret.is_some() || !self.positions.admitted.contains_key(&declaration))]
+    pub(super) fn data_position(
+        &self,
+        declaration: gandr_kernel_term::ConstantIndex,
+    ) -> Option<gandr_kernel_term::ConstantIndex>
+    {
+        self.crossing
+            .iter()
+            .find(|&&(member, _)| member == declaration)
+            .map(|&(_, kernel)| kernel)
+            .or_else(|| self.positions.admitted.get(&declaration).copied())
+            .or_else(|| {
+                self.positions
+                    .models
+                    .iter()
+                    .find(|model| model.declaration == declaration)
+                    .map(|model| model.position)
+            })
+    }
+
     /// Assemble a native node from the memoized images of all its children.
     ///
     /// # Specification
@@ -325,17 +358,22 @@ impl Erasure<'_, '_>
             CoreNode::Term(TermNode::Value(at)) => {
                 let image = match *(self.arena.value(at).ok_or(dangling)?) {
                     Value::Constructor {
+                        family,
                         ref datatype,
                         ref tag,
                         ref fields,
                     } => {
+                        let position = self.data_position(family).ok_or(Refusal::WithheldData {
+                            at: TypeNode::Value(*datatype),
+                            constant: family,
+                        })?;
                         let datatype = value_type(*datatype)?;
                         let fields = fields
                             .iter()
                             .copied()
                             .map(value)
                             .collect::<Result<_, _>>()?;
-                        target.value_constructor(datatype, *tag, fields)
+                        target.value_constructor(position, datatype, *tag, fields)
                     },
                     Value::Record(ref fields) => {
                         let fields = fields
@@ -504,23 +542,12 @@ impl Erasure<'_, '_>
                         ref declaration,
                         ref arguments,
                     } => {
-                        let crossing = self
-                            .crossing
-                            .iter()
-                            .find(|&&(member, _)| member == *declaration)
-                            .map(|&(_, kernel)| kernel)
-                            .or_else(|| self.positions.admitted.get(declaration).copied())
-                            .or_else(|| {
-                                self.positions
-                                    .models
-                                    .iter()
-                                    .find(|model| model.declaration == *declaration)
-                                    .map(|model| model.position)
-                            });
-                        let position = crossing.ok_or(Refusal::WithheldData {
-                            at: TypeNode::Value(at),
-                            constant: *declaration,
-                        })?;
+                        let position =
+                            self.data_position(*declaration)
+                                .ok_or(Refusal::WithheldData {
+                                    at: TypeNode::Value(at),
+                                    constant: *declaration,
+                                })?;
                         let arguments = arguments
                             .iter()
                             .copied()

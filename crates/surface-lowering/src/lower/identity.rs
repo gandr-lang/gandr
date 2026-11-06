@@ -4999,6 +4999,7 @@ impl<'source> Lowerer<'_, 'source>
                     datatype,
                     tag,
                     ref fields,
+                    ..
                 }) = sink.arena.value(at)
                 else {
                     return false;
@@ -5020,7 +5021,7 @@ impl<'source> Lowerer<'_, 'source>
         let word = sink.arena.value_type_data(own, Vec::new());
         Some(
             sink.arena
-                .value_constructor(word, gandr_core_term::FreeCells::nil(), Vec::new()),
+                .value_constructor(own, word, gandr_core_term::FreeCells::nil(), Vec::new()),
         )
     }
 

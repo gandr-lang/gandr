@@ -2172,18 +2172,56 @@ fn a_static_family_round_trips_in_wire_order()
     );
 }
 
+/// A constructor's family crosses the wire beside its classifier. The two
+/// constructors share their classifier, their tag and their fields. Only
+/// their families differ. A decoder that drops the family, or reads it from
+/// the classifier, gives the two constructors one family.
+#[test]
+fn a_constructor_keeps_its_family_across_the_wire()
+{
+    let mut arena = TermArena::new();
+    let declared = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+    let own = arena.value_constructor(ConstantIndex::from(0_usize), declared, tag, vec![]);
+    let namesake = arena.value_constructor(ConstantIndex::from(1_usize), declared, tag, vec![]);
+    let declarations = vec![
+        definition_over(&mut arena, declared, own),
+        definition_over(&mut arena, declared, namesake),
+    ];
+
+    let bytes = encode(&arena, &declarations);
+    let artifact = decode(bytes.as_image()).expect("the constructors decode");
+    assert_eq!(
+        Vec::from(bytes),
+        Vec::from(encode(artifact.arena(), artifact.declarations())),
+        "the decoded artifact re-encodes to the bytes it came from"
+    );
+    let family = |position| {
+        let body = decoded_body(&artifact, Position(position)).expect("the body decodes");
+        match artifact.arena().value(body) {
+            Some(&Value::Constructor { family, .. }) => family,
+            other => panic!("the body decodes to a constructor, not {other:?}"),
+        }
+    };
+    assert_eq!(
+        (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize)),
+        (family(0), family(1)),
+        "each constructor reads back its own family"
+    );
+}
+
 #[test]
 fn the_empty_sequence_encodes_to_a_bare_header()
 {
     let arena = TermArena::new();
     let bytes = encode(&arena, &[]);
-    // Hand check of the version field: the version is 8, which as a
-    // little-endian sixteen-bit field is the low byte 0x08 first and the
+    // Hand check of the version field: the version is 9, which as a
+    // little-endian sixteen-bit field is the low byte 0x09 first and the
     // high byte 0x00 after. The header is the four-byte magic, that
     // two-byte field, the empty atom table as one varint zero and the
     // declaration count as one varint zero.
     assert_eq!(
-        vec![b'G', b'K', b'X', b'1', 0x08, 0x00, 0x00, 0x00],
+        vec![b'G', b'K', b'X', b'1', 0x09, 0x00, 0x00, 0x00],
         Vec::from(bytes.clone()),
         "the empty artifact is the magic, the version, an empty atom table and a zero count"
     );
@@ -2711,10 +2749,19 @@ fn a_predecessor_version_is_refused_by_name()
         "the version that predates the formers of several results is refused rather than misread"
     );
 
-    let future = raw_artifact(Version(9), &[], &[]);
+    let without_constructor_family = raw_artifact(Version(8), &[], &[]);
     assert_eq!(
         Err(DecodeError::UnsupportedVersion {
-            found: FormatVersion::from(9),
+            found: FormatVersion::from(8),
+        }),
+        decode(ArtifactImage::from(without_constructor_family.as_ref())),
+        "the version whose constructor holds no family is refused rather than misread"
+    );
+
+    let future = raw_artifact(Version(10), &[], &[]);
+    assert_eq!(
+        Err(DecodeError::UnsupportedVersion {
+            found: FormatVersion::from(10),
         }),
         decode(ArtifactImage::from(future.as_ref())),
         "a later version is refused with the version it declared"
@@ -3159,7 +3206,7 @@ fn a_child_of_the_wrong_polarity_is_refused()
 ///   surrounding record.
 /// - witness: `tests::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
 #[spec(
-        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 8, 0, 1, 0, 2, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 2, 3, 0, 0, 0, 0].as_slice(),
+        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 9, 0, 1, 0, 2, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 2, 3, 0, 0, 0, 0].as_slice(),
     )]
 fn sealed_artifact() -> EncodedArtifact
 {
@@ -3213,7 +3260,7 @@ fn sealed_artifact() -> EncodedArtifact
 /// - witness: `tests::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
 #[spec(
         ensures: |ret| ret.0.starts_with(b"GKX1")
-                && ret.0.get(4 .. 6) == Some([8_u8, 0].as_slice())
+                && ret.0.get(4 .. 6) == Some([9_u8, 0].as_slice())
                 && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
             let valid_count = { let scalar = count;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);

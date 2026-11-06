@@ -9593,6 +9593,7 @@ fn step_constructor(
 ) -> Result<(), EvalFault>
 {
     let Some(&Value::Constructor {
+        family,
         datatype,
         tag,
         ref fields,
@@ -9618,7 +9619,7 @@ fn step_constructor(
     }
     let fields = domain.hold_fields(machine.values.drain(start ..));
     let datatype = domain.value_closure_node(crate::ValueBody::ValueType(datatype), captured);
-    let value = domain.value_constructor(datatype, tag, fields, composite_face(kept, term));
+    let value = domain.value_constructor(family, datatype, tag, fields, composite_face(kept, term));
     machine.values.push(value);
     Ok(())
 }

@@ -630,6 +630,9 @@ pub enum DomainValue
     /// A nominal constructor, with a closure retaining its classifier's scope.
     Constructor
     {
+        /// Admission position of the data family that declares the
+        /// constructor, the name its tag counts in.
+        family: gandr_kernel_term::ConstantIndex,
         /// A native type quotation closed over the classifier's environment.
         datatype: ValueClosureId,
         /// Its declaration-local constructor ordinal.

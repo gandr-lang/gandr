@@ -4462,6 +4462,7 @@ where
                 },
                 Walk::Rebuild(id) => {
                     let Some(&Value::Constructor {
+                        family,
                         datatype,
                         tag,
                         ref fields,
@@ -4479,7 +4480,7 @@ where
                     }
                     else {
                         let read = built.split_off(start);
-                        let rebuilt = self.arena.value_constructor(datatype, tag, read);
+                        let rebuilt = self.arena.value_constructor(family, datatype, tag, read);
                         built.push(rebuilt);
                     }
                 },
@@ -5956,7 +5957,7 @@ where
     /// - witness: `replay::tests::two_reflexivities_decompose_to_their_points`
     /// - witness: `replay::tests::the_forced_loop_compares_children_only_where_the_shapes_agree`
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (self.arena.value(left), self.arena.value(right));
-if let Some(matched_left_node) = matched_left_value && let Value::Constructor { datatype:a,tag:a_tag,fields:ref a_fields } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Constructor { datatype:b,tag:b_tag,fields:ref b_fields } = *matched_right_node { {
+if let Some(matched_left_node) = matched_left_value && let Value::Constructor { datatype:a,tag:a_tag,fields:ref a_fields, .. } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Constructor { datatype:b,tag:b_tag,fields:ref b_fields, .. } = *matched_right_node { {
             if a_tag != b_tag || a_fields.len() != b_fields.len() { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
             else { matches!(&ret,Ok(Structure::Premises(premises)) if premises.len() == a_fields.len().saturating_add(1_usize)
                 && premises.first().is_some_and(|premise| matches!((premise.left,premise.right), (Term::Value(left),Term::Value(right)) if self.arena.value(left) == Some(&Value::Quote(a)) && self.arena.value(right) == Some(&Value::Quote(b))))
@@ -5996,11 +5997,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     datatype: a,
                     tag: one_tag,
                     fields: ref a_fields,
+                    ..
                 },
                 &Value::Constructor {
                     datatype: b,
                     tag: other_tag,
                     fields: ref b_fields,
+                    ..
                 },
             ) => {
                 if one_tag != other_tag || a_fields.len() != b_fields.len() {
@@ -7705,6 +7708,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     datatype,
                                     tag,
                                     ref fields,
+                                    ..
                                 }) => {
                                     let branch =
                                         *branches.get(usize::from(tag)).ok_or_else(unreadable)?;

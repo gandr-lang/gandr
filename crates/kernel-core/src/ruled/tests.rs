@@ -92,7 +92,8 @@ fn admit_or(
     let booleans = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
     let motive = arena.comp_type_returner(booleans);
     let [false_false, false_true, true_any] = leaves.map(|tag| {
-        let constructed = arena.value_constructor(booleans, tag, vec![]);
+        let constructed =
+            arena.value_constructor(ConstantIndex::from(0_usize), booleans, tag, vec![]);
         arena.computation_return(constructed)
     });
     let second = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -367,7 +368,12 @@ fn admit_add(
     let declared = arena.value_type_thunk(signature);
     // At the `zero` leaf: `y` 0, `x` 1, `rec` 2.
     let on_zero = if departure == Departure::Leaf {
-        let zero = arena.value_constructor(naturals, ConstructorTag::from(ZERO), vec![]);
+        let zero = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            naturals,
+            ConstructorTag::from(ZERO),
+            vec![],
+        );
         arena.computation_return(zero)
     }
     else {
@@ -384,13 +390,23 @@ fn admit_add(
             let on_p = arena.computation_application(forced, p);
             let called = arena.computation_application(on_p, y);
             let result = arena.value_variable(DeBruijnIndex::from(0_u32));
-            let after = arena.value_constructor(naturals, ConstructorTag::from(SUCC), vec![result]);
+            let after = arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                naturals,
+                ConstructorTag::from(SUCC),
+                vec![result],
+            );
             let returned = arena.computation_return(after);
             arena.computation_bind(called, returned)
         },
         Recursion::Tail => {
             let on_p = arena.computation_application(forced, p);
-            let next = arena.value_constructor(naturals, ConstructorTag::from(SUCC), vec![y]);
+            let next = arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                naturals,
+                ConstructorTag::from(SUCC),
+                vec![y],
+            );
             arena.computation_application(on_p, next)
         },
     };

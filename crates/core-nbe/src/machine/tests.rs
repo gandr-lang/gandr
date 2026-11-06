@@ -1060,6 +1060,7 @@ fn canonical(
                     CoreTerm::Value(id) => {
                         let key = match core.value(id).expect("a reached value resolves").clone() {
                             Value::Constructor {
+                                family,
                                 datatype,
                                 tag,
                                 mut fields,
@@ -1068,6 +1069,7 @@ fn canonical(
                                     *field = value(*field);
                                 }
                                 Value::Constructor {
+                                    family,
                                     datatype,
                                     tag,
                                     fields,
@@ -2336,13 +2338,14 @@ impl Kernel
             Node::Value(id) => {
                 let copy = match *(core.value(id).expect("a fixture value resolves")) {
                     Value::Constructor {
+                        family,
                         ref datatype,
                         ref tag,
                         ref fields,
                     } => {
                         let datatype = self.value_types[datatype];
                         let fields = fields.iter().map(|field| value(self, *field)).collect();
-                        self.arena.value_constructor(datatype, *tag, fields)
+                        self.arena.value_constructor(family, datatype, *tag, fields)
                     },
                     Value::Record(ref fields) => {
                         let fields = fields
@@ -7427,16 +7430,26 @@ fn native_records_cases_and_traces_agree()
     let data = core.value_type_data(ConstantIndex::from(2_usize), Vec::from([unit]));
     let repeated_type = core.value_type_data(ConstantIndex::from(2_usize), Vec::from([other_unit]));
     let other_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([unit]));
-    let constructor =
-        core.value_constructor(data, ConstructorTag::from(0_usize), Vec::from([record]));
+    let constructor = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        data,
+        ConstructorTag::from(0_usize),
+        Vec::from([record]),
+    );
     let repeated_constructor = core.value_constructor(
+        ConstantIndex::from(2_usize),
         repeated_type,
         ConstructorTag::from(0_usize),
         Vec::from([repeated_record]),
     );
-    let other_tag =
-        core.value_constructor(data, ConstructorTag::from(1_usize), Vec::from([record]));
+    let other_tag = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        data,
+        ConstructorTag::from(1_usize),
+        Vec::from([record]),
+    );
     let other_constructor = core.value_constructor(
+        ConstantIndex::from(3_usize),
         other_type,
         ConstructorTag::from(0_usize),
         Vec::from([record]),
@@ -7464,16 +7477,22 @@ fn native_records_cases_and_traces_agree()
     let rigid = core.value_constant(Name::Rigid.constant());
     let motive_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([bound]));
     let dependent_motive = core.comp_type_returner(motive_type);
-    let reconstructed =
-        core.value_constructor(data, ConstructorTag::from(0_usize), Vec::from([bound]));
+    let reconstructed = core.value_constructor(
+        ConstantIndex::from(2_usize),
+        data,
+        ConstructorTag::from(0_usize),
+        Vec::from([bound]),
+    );
     let result_type =
         core.value_type_data(ConstantIndex::from(3_usize), Vec::from([reconstructed]));
     let result = core.value_constructor(
+        ConstantIndex::from(3_usize),
         result_type,
         ConstructorTag::from(0_usize),
         Vec::from([unit]),
     );
     let different_result = core.value_constructor(
+        ConstantIndex::from(3_usize),
         result_type,
         ConstructorTag::from(1_usize),
         Vec::from([unit]),

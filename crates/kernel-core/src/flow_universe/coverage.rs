@@ -435,8 +435,8 @@ enum Cover
     /// apart.
     Product(usize),
     /// Take the product of this many fields' shapes under this constructor of
-    /// this data type, renaming leaves apart.
-    Constructor(ValueTypeId, ConstructorTag, usize),
+    /// this data type of this family, renaming leaves apart.
+    Constructor(ConstantIndex, ValueTypeId, ConstructorTag, usize),
     /// Join the shapes of this many constructors and close this data
     /// declaration, which opened them.
     Data(ConstantIndex, usize),
@@ -529,6 +529,7 @@ fn patterns(
                     pending.push(Cover::Data(declaration, constructors.len()));
                     for (tag, fields) in constructors.iter().enumerate().rev() {
                         pending.push(Cover::Constructor(
+                            declaration,
                             id,
                             ConstructorTag::from(tag),
                             fields.len(),
@@ -570,7 +571,7 @@ fn patterns(
             // shapes; the earlier components' leaves shift past the new
             // component's, so every leaf stays distinct. A constructor crosses
             // its fields the same way and applies itself to them.
-            Cover::Product(arity) | Cover::Constructor(_, _, arity) => {
+            Cover::Product(arity) | Cover::Constructor(_, _, _, arity) => {
                 let start = results.len().checked_sub(arity).ok_or(FlowError::Arena)?;
                 let mut tuples = Vec::from([(Vec::<ValueId>::new(), Vec::<Leaf>::new())]);
                 for component in results.drain(start ..) {
@@ -607,8 +608,8 @@ fn patterns(
                     .into_iter()
                     .map(|(values, leaves)| Pattern {
                         value: match task {
-                            Cover::Constructor(datatype, tag, _) => {
-                                arena.value_constructor(datatype, tag, values)
+                            Cover::Constructor(declaration, datatype, tag, _) => {
+                                arena.value_constructor(declaration, datatype, tag, values)
                             },
                             Cover::Visit(_)
                             | Cover::Sum(_)
@@ -1251,6 +1252,7 @@ mod tests
                 datatype,
                 tag: found,
                 ref fields,
+                ..
             }) = arena.value(pattern.value)
             else {
                 panic!("a constructor pattern");
@@ -1269,9 +1271,18 @@ mod tests
         let leaves = rectangle.leaves.clone();
         let width = arena.value_variable(DeBruijnIndex::from(1_u32));
         let height = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let swapped =
-            arena.value_constructor(shape, ConstructorTag::from(1_usize), vec![height, width]);
-        let circle = arena.value_constructor(shape, ConstructorTag::from(0_usize), vec![width]);
+        let swapped = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            shape,
+            ConstructorTag::from(1_usize),
+            vec![height, width],
+        );
+        let circle = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            shape,
+            ConstructorTag::from(0_usize),
+            vec![width],
+        );
         for output in [swapped, circle] {
             assert_eq!(
                 natural(
@@ -1286,8 +1297,18 @@ mod tests
                 "a constructor of the target over its own fields"
             );
         }
-        let short = arena.value_constructor(shape, ConstructorTag::from(1_usize), vec![width]);
-        let past = arena.value_constructor(shape, ConstructorTag::from(2_usize), Vec::new());
+        let short = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            shape,
+            ConstructorTag::from(1_usize),
+            vec![width],
+        );
+        let past = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            shape,
+            ConstructorTag::from(2_usize),
+            Vec::new(),
+        );
         for output in [short, past] {
             assert_eq!(
                 natural(

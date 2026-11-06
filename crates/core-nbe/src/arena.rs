@@ -1776,7 +1776,8 @@ impl DomainArena
             .ok_or(DomainFault::Dangling)
     }
 
-    /// Retain a nominal constructor without copying its fields or classifier.
+    /// Retain a nominal constructor of `family` without copying its fields or
+    /// classifier.
     ///
     /// The classifier is a suspended type, so its guard is flexible like a
     /// code's.
@@ -1786,6 +1787,7 @@ impl DomainArena
     #[inline]
     pub fn value_constructor(
         &mut self,
+        family: gandr_kernel_term::ConstantIndex,
         datatype: ValueClosureId,
         tag: gandr_core_term::ConstructorTag,
         fields: FieldSpan,
@@ -1794,6 +1796,7 @@ impl DomainArena
     {
         self.alloc_value(
             DomainValue::Constructor {
+                family,
                 datatype,
                 tag,
                 fields,

@@ -192,9 +192,9 @@ enum Cover
     /// Form every tuple of this many components' patterns, renaming base
     /// variables apart.
     Product(usize),
-    /// Form every application of this constructor of this data type to this
-    /// many fields' patterns, renaming base variables apart.
-    Constructor(ValueTypeId, ConstructorTag, usize),
+    /// Form every application of this constructor of this family, at this data
+    /// type, to this many fields' patterns, renaming base variables apart.
+    Constructor(ConstantIndex, ValueTypeId, ConstructorTag, usize),
     /// Join the patterns of this many constructors and close this data
     /// declaration, which opened them.
     Data(ConstantIndex, usize),
@@ -295,6 +295,7 @@ fn patterns(
                         pending.push(Cover::Data(declaration, constructors.len()));
                         for (tag, fields) in constructors.iter().enumerate().rev() {
                             pending.push(Cover::Constructor(
+                                declaration,
                                 id,
                                 ConstructorTag::from(tag),
                                 fields.len(),
@@ -337,7 +338,7 @@ fn patterns(
             // patterns; the earlier components' base variables shift past the
             // new component's, so every variable stays distinct. A constructor
             // crosses its fields the same way and applies itself to them.
-            Cover::Product(arity) | Cover::Constructor(_, _, arity) => {
+            Cover::Product(arity) | Cover::Constructor(_, _, _, arity) => {
                 let start = results.len().checked_sub(arity).ok_or(PathError::Arena)?;
                 let mut tuples = Vec::from([(Vec::<ValueId>::new(), 0_u32)]);
                 for component in results.drain(start ..) {
@@ -369,8 +370,8 @@ fn patterns(
                     .into_iter()
                     .map(|(values, binders)| Pattern {
                         value: match task {
-                            Cover::Constructor(datatype, tag, _) => {
-                                arena.value_constructor(datatype, tag, values)
+                            Cover::Constructor(declaration, datatype, tag, _) => {
+                                arena.value_constructor(declaration, datatype, tag, values)
                             },
                             Cover::Visit(_)
                             | Cover::Sum(_)
@@ -666,6 +667,7 @@ mod tests
                 datatype,
                 tag: found,
                 ref fields,
+                ..
             }) = arena.value(pattern.value)
             else {
                 panic!("a constructor pattern");

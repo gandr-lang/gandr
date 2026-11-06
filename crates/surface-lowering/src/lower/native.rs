@@ -9430,8 +9430,12 @@ impl<'source> Lowerer<'_, 'source>
             for cell in at_point() {
                 for side in cell.sides.chunks(words.point.len().max(1)) {
                     spelled.clear();
-                    let _point =
-                        spelled_point(sink.arena, carrier, (&words.point, &arities), &mut spelled);
+                    let _point = spelled_point(
+                        sink.arena,
+                        (family, carrier),
+                        (&words.point, &arities),
+                        &mut spelled,
+                    );
                     for (&value, written) in spelled.iter().zip(side.iter().rev()) {
                         sink.origins
                             .record_value(value, Origin::new(written.node, written.span));
@@ -9450,12 +9454,16 @@ impl<'source> Lowerer<'_, 'source>
                     },
                 });
             }
-            let nil =
-                sink.arena
-                    .value_constructor(word, gandr_core_term::FreeCells::nil(), Vec::new());
+            let nil = sink.arena.value_constructor(
+                own,
+                word,
+                gandr_core_term::FreeCells::nil(),
+                Vec::new(),
+            );
             sink.origins.record_value(nil, origin);
             for (generator, &bound) in words.loops.iter().enumerate() {
                 let letter = sink.arena.value_constructor(
+                    own,
                     word,
                     gandr_core_term::FreeCells::letter(gandr_core_term::CellIndex::from(generator)),
                     Vec::from([nil]),
@@ -9537,8 +9545,13 @@ impl<'source> Lowerer<'_, 'source>
             .map(|generator| gandr_kernel_term::FieldCount::from(generator.fields.len()))
             .collect();
         let mut minted = Vec::new();
-        spelled_point(arena, carrier, (&words.point, &arities), &mut minted)
-            .map(|point| (carrier, point))
+        spelled_point(
+            arena,
+            (family.constant, carrier),
+            (&words.point, &arities),
+            &mut minted,
+        )
+        .map(|point| (carrier, point))
     }
 
     /// The words a constant is a word of: a loop's, or the words' own.
@@ -10056,14 +10069,14 @@ impl<'source> Lowerer<'_, 'source>
         };
         let Some(classifier) = own
         else {
-            let id = sink
-                .arena
-                .value_constructor(written, constructed.tag, fields);
+            let id =
+                sink.arena
+                    .value_constructor(constructed.family, written, constructed.tag, fields);
             return Maybe::Present(sink.value(id, origin));
         };
-        let id = sink
-            .arena
-            .value_constructor(classifier, constructed.tag, fields);
+        let id =
+            sink.arena
+                .value_constructor(constructed.family, classifier, constructed.tag, fields);
         sink.origins.record_value(id, origin);
         let ascribed = sink.arena.value_ascribe(id, written);
 
@@ -12161,8 +12174,12 @@ impl<'source> Lowerer<'_, 'source>
                 return unminted;
             };
             let classifier = sink.arena.value_type_data(carrier, Vec::new());
-            let Maybe::Present(at) =
-                spelled_point(sink.arena, classifier, (point, &arities), &mut Vec::new())
+            let Maybe::Present(at) = spelled_point(
+                sink.arena,
+                (carrier, classifier),
+                (point, &arities),
+                &mut Vec::new(),
+            )
             else {
                 return unminted;
             };
@@ -13221,18 +13238,18 @@ pub(super) fn constructed(
 ) -> ValueId
 {
     let classifier = arena.value_type_data(family, Vec::new());
-    arena.value_constructor(classifier, tag, fields)
+    arena.value_constructor(family, classifier, tag, fields)
 }
 
 /// The closed constructor term the prefix-ordered `point` spells over
-/// `carrier`, whose constructors take `arities` fields, every value it mints
-/// reported to `minted` in mint order.
+/// `carrier`, the application of `family`, whose constructors take `arities`
+/// fields, every value it mints reported to `minted` in mint order.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the term whose prefix reading is `point`'s constructor nodes,
-///   each a constructor of `carrier` over the terms after it; the unminted
-///   absence for an empty point.
+///   each a constructor of `family` at `carrier` over the terms after it; the
+///   unminted absence for an empty point.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -13247,7 +13264,7 @@ pub(super) fn constructed(
 #[spec(captures: before = minted.len(), ensures: |ret| minted.len() >= before && matches!(ret, Maybe::Absent(_)) == (minted.len() == before))]
 fn spelled_point(
     arena: &mut CoreArena,
-    carrier: ValueTypeId,
+    (family, carrier): (ConstantIndex, ValueTypeId),
     (point, arities): (
         &[gandr_core_term::RuleNode],
         &[gandr_kernel_term::FieldCount],
@@ -13269,7 +13286,7 @@ fn spelled_point(
             .drain(built.len().saturating_sub(arity) ..)
             .rev()
             .collect();
-        let value = arena.value_constructor(carrier, tag, fields);
+        let value = arena.value_constructor(family, carrier, tag, fields);
         minted.push(value);
         built.push(value);
     }

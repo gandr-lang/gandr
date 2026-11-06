@@ -1228,7 +1228,12 @@ fn constructed(
 ) -> ValueId
 {
     let datatype = core.value_type_data(ConstantIndex::from(declaration.0), Vec::new());
-    core.value_constructor(datatype, ordinal.0.into(), fields)
+    core.value_constructor(
+        ConstantIndex::from(declaration.0),
+        datatype,
+        ordinal.0.into(),
+        fields,
+    )
 }
 
 /// The numeral with `count` successors on zero.

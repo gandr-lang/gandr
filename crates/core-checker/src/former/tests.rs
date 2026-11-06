@@ -224,7 +224,9 @@ fn a_dependent_field_checks_at_the_value_of_the_field_it_names()
     let boxed = ConstantIndex::from(0_usize);
     let boxes = Arc::new(DataSignature::new(vec![], vec![vec![kind, element]], large));
     let datatype = arena.value_type_data(boxed, vec![]);
-    let put = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![code, code]);
+    let put = arena.value_constructor(boxed, datatype, ConstructorTag::from(0_usize), vec![
+        code, code,
+    ]);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     context.adopt_data(boxed, boxes).expect("the box forms");
     assert_eq!(
@@ -283,7 +285,7 @@ fn a_field_that_reads_a_lambda_field_reads_its_thunk_5374()
     let answered = arena.computation_return(quoted);
     let lambda = arena.computation_lambda(answered);
     let written = arena.value_nested(lambda);
-    let put = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![
+    let put = arena.value_constructor(boxed, datatype, ConstructorTag::from(0_usize), vec![
         written, quoted,
     ]);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);

@@ -424,7 +424,9 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// [`NODE_C_WITH`] carry an inline component count, and [`NODE_C_PROJECT`]
 /// an inline component position where it carried a side byte. Version eight
 /// admits the formers of several results: [`NODE_CT_RETURNS`],
-/// [`NODE_C_RETURN_ALL`] and [`NODE_C_BIND_ALL`].
+/// [`NODE_C_RETURN_ALL`] and [`NODE_C_BIND_ALL`]. Version nine gives
+/// [`NODE_V_CONSTRUCTOR`] an inline family before its ordinal: the position of
+/// the data family that declares the constructor.
 ///
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
@@ -447,7 +449,7 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(8);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(9);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);
@@ -969,7 +971,7 @@ pub const RULE_RESULTS: WireTag = WireTag(3);
 pub const NODE_VT_DATA: WireTag = WireTag(0x5d);
 /// Node tag: structural record classifier with counted labels and children.
 pub const NODE_VT_RECORD: WireTag = WireTag(0x5e);
-/// Node tag: constructor ordinal and counted field vector.
+/// Node tag: constructor family, ordinal and counted field vector.
 pub const NODE_V_CONSTRUCTOR: WireTag = WireTag(0x5f);
 /// Node tag: record literal with counted labels and children.
 pub const NODE_V_RECORD: WireTag = WireTag(0x60);
@@ -1715,8 +1717,12 @@ mod tests
             label.clone(),
             unit_type,
         )]));
-        let constructor =
-            arena.value_constructor(datatype, crate::ConstructorTag::from(0), alloc::vec![unit]);
+        let constructor = arena.value_constructor(
+            ConstantIndex::from(0),
+            datatype,
+            crate::ConstructorTag::from(0),
+            alloc::vec![unit],
+        );
         let record =
             arena.value_record(alloc::collections::BTreeMap::from([(label.clone(), unit)]));
         let data_case = arena.computation_data_case(constructor, returner, alloc::vec![ret]);

@@ -841,8 +841,18 @@ fn codes_agree_exactly_where_their_parts_do()
             "an injection",
         ),
         (
-            arena.value_constructor(unit, ConstructorTag::from(0_usize), vec![zero]),
-            arena.value_constructor(unit, ConstructorTag::from(0_usize), vec![zero]),
+            arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                unit,
+                ConstructorTag::from(0_usize),
+                vec![zero],
+            ),
+            arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                unit,
+                ConstructorTag::from(0_usize),
+                vec![zero],
+            ),
             "a constructor",
         ),
         (
@@ -895,12 +905,22 @@ fn codes_agree_exactly_where_their_parts_do()
         ),
         (
             twins[3].0,
-            arena.value_constructor(unit, ConstructorTag::from(1_usize), vec![zero]),
+            arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                unit,
+                ConstructorTag::from(1_usize),
+                vec![zero],
+            ),
             "constructors with different tags",
         ),
         (
             twins[3].0,
-            arena.value_constructor(unit, ConstructorTag::from(0_usize), vec![zero, zero]),
+            arena.value_constructor(
+                ConstantIndex::from(0_usize),
+                unit,
+                ConstructorTag::from(0_usize),
+                vec![zero, zero],
+            ),
             "constructors with different field counts",
         ),
         (
@@ -1400,6 +1420,7 @@ fn a_path_type_is_apart_from_data_it_does_not_read_as()
     let carrier = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
     let unrelated = arena.value_type_data(ConstantIndex::from(1_usize), alloc::vec![]);
     let point = arena.value_constructor(
+        ConstantIndex::from(0_usize),
         carrier,
         gandr_kernel_term::ConstructorTag::from(0_usize),
         alloc::vec![],

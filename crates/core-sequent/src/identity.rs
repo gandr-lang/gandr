@@ -1249,6 +1249,7 @@ fn rebuilt(
             Ok(scratch.value_record(labels.keys().cloned().zip(fields).collect()))
         },
         Value::Constructor {
+            family: own,
             datatype,
             tag,
             fields: ref written,
@@ -1258,7 +1259,7 @@ fn rebuilt(
                 return Err(invariant);
             };
             let family = scratch.value_type_data(declaration, Vec::new());
-            Ok(scratch.value_constructor(family, tag, fields))
+            Ok(scratch.value_constructor(own, family, tag, fields))
         },
         Value::Tuple(_)
         | Value::Record(_)

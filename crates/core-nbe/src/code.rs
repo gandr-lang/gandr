@@ -2443,6 +2443,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     ref datatype,
                     ref tag,
                     ref fields,
+                    ..
                 } => Ok(FirstOrder::Constructor {
                     datatype: Node::ValueType(*datatype, place),
                     tag: *tag,

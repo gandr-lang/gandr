@@ -235,8 +235,8 @@ enum Task
     /// Cross the coverages of this many components, the last on top.
     Product(usize),
     /// Cross the coverages of this many fields, the last on top, under this
-    /// constructor of this data type.
-    Constructor(ValueTypeId, ConstructorTag, usize),
+    /// constructor of this family at this data type.
+    Constructor(ConstantIndex, ValueTypeId, ConstructorTag, usize),
     /// Join the coverages of this many constructors, the last on top, and
     /// close this data declaration, which opened them.
     Data(ConstantIndex, usize),
@@ -626,6 +626,7 @@ pub fn coverage(
                         tasks.push(Task::Data(declaration, signature.constructors().len()));
                         for (tag, fields) in signature.constructors().iter().enumerate().rev() {
                             tasks.push(Task::Constructor(
+                                declaration,
                                 head,
                                 ConstructorTag::from(tag),
                                 fields.len(),
@@ -690,7 +691,7 @@ pub fn coverage(
             // patterns; the earlier components' variables shift past the new
             // component's, so every variable stays distinct. A constructor
             // crosses its fields the same way and applies itself to them.
-            Task::Product(arity) | Task::Constructor(_, _, arity) => {
+            Task::Product(arity) | Task::Constructor(_, _, _, arity) => {
                 let start = built
                     .len()
                     .checked_sub(arity)
@@ -732,8 +733,8 @@ pub fn coverage(
                     .map(|(values, binders, tail)| Pattern {
                         binders,
                         value: match task {
-                            Task::Constructor(datatype, tag, _) => {
-                                arena.value_constructor(datatype, tag, values)
+                            Task::Constructor(declaration, datatype, tag, _) => {
+                                arena.value_constructor(declaration, datatype, tag, values)
                             },
                             Task::Cover(_)
                             | Task::Sum(_)

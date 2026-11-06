@@ -199,11 +199,36 @@ fn list(
 fn numerals(arena: &mut CoreArena) -> [ValueId; 5]
 {
     let nat = nat(arena);
-    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
-    let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![zero]);
-    let two = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![one]);
-    let three = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![two]);
-    let four = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![three]);
+    let zero = arena.value_constructor(
+        ConstantIndex::from(at::NAT),
+        nat,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
+    let one = arena.value_constructor(
+        ConstantIndex::from(at::NAT),
+        nat,
+        ConstructorTag::from(1_usize),
+        vec![zero],
+    );
+    let two = arena.value_constructor(
+        ConstantIndex::from(at::NAT),
+        nat,
+        ConstructorTag::from(1_usize),
+        vec![one],
+    );
+    let three = arena.value_constructor(
+        ConstantIndex::from(at::NAT),
+        nat,
+        ConstructorTag::from(1_usize),
+        vec![two],
+    );
+    let four = arena.value_constructor(
+        ConstantIndex::from(at::NAT),
+        nat,
+        ConstructorTag::from(1_usize),
+        vec![three],
+    );
     [zero, one, two, three, four]
 }
 
@@ -218,11 +243,19 @@ fn list_of(
 ) -> ValueId
 {
     let datatype = list(arena, code);
-    let mut built = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
+    let mut built = arena.value_constructor(
+        ConstantIndex::from(at::LIST),
+        datatype,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
     for &element in elements.iter().rev() {
-        built = arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![
-            element, built,
-        ]);
+        built = arena.value_constructor(
+            ConstantIndex::from(at::LIST),
+            datatype,
+            ConstructorTag::from(1_usize),
+            vec![element, built],
+        );
     }
     built
 }
@@ -366,7 +399,12 @@ fn program(arena: &mut CoreArena) -> Vec<Declaration>
         let k = var(arena, DeBruijnIndex::from(0));
         let recursive = call(arena, hypothesis, &[k]);
         let result = var(arena, DeBruijnIndex::from(0));
-        let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![result]);
+        let successor = arena.value_constructor(
+            ConstantIndex::from(at::NAT),
+            nat,
+            ConstructorTag::from(1_usize),
+            vec![result],
+        );
         let returned = arena.computation_return(successor);
         let bound = arena.computation_bind(recursive, returned);
         function(arena, Binders::from(3), bound)
@@ -405,7 +443,12 @@ fn program(arena: &mut CoreArena) -> Vec<Declaration>
         let hypothesis = var(arena, DeBruijnIndex::from(0));
         let recursive = arena.computation_force(hypothesis);
         let result = var(arena, DeBruijnIndex::from(0));
-        let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![result]);
+        let successor = arena.value_constructor(
+            ConstantIndex::from(at::NAT),
+            nat,
+            ConstructorTag::from(1_usize),
+            vec![result],
+        );
         let returned = arena.computation_return(successor);
         let bound = arena.computation_bind(recursive, returned);
         function(arena, Binders::from(3), bound)
@@ -461,8 +504,12 @@ fn program(arena: &mut CoreArena) -> Vec<Declaration>
         let datatype = list(arena, code);
         let head = var(arena, DeBruijnIndex::from(4));
         let rest = var(arena, DeBruijnIndex::from(0));
-        let cons =
-            arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![head, rest]);
+        let cons = arena.value_constructor(
+            ConstantIndex::from(at::LIST),
+            datatype,
+            ConstructorTag::from(1_usize),
+            vec![head, rest],
+        );
         let returned = arena.computation_return(cons);
         let bound = arena.computation_bind(recursive, returned);
         function(arena, Binders::from(4), bound)
@@ -519,7 +566,12 @@ fn program(arena: &mut CoreArena) -> Vec<Declaration>
     let on_nil = {
         let code = var(arena, DeBruijnIndex::from(1));
         let datatype = list(arena, code);
-        let nil = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
+        let nil = arena.value_constructor(
+            ConstantIndex::from(at::LIST),
+            datatype,
+            ConstructorTag::from(0_usize),
+            vec![],
+        );
         let returned = arena.computation_return(nil);
         function(arena, Binders::from(2), returned)
     };
@@ -538,10 +590,12 @@ fn program(arena: &mut CoreArena) -> Vec<Declaration>
         let datatype = list(arena, code);
         let mapped_head = var(arena, DeBruijnIndex::from(1));
         let mapped_rest = var(arena, DeBruijnIndex::from(0));
-        let cons = arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![
-            mapped_head,
-            mapped_rest,
-        ]);
+        let cons = arena.value_constructor(
+            ConstantIndex::from(at::LIST),
+            datatype,
+            ConstructorTag::from(1_usize),
+            vec![mapped_head, mapped_rest],
+        );
         let returned = arena.computation_return(cons);
         let inner = arena.computation_bind(rest, returned);
         let outer = arena.computation_bind(image, inner);
@@ -596,7 +650,12 @@ fn program(arena: &mut CoreArena) -> Vec<Declaration>
         let hypothesis = var(arena, DeBruijnIndex::from(0));
         let recursive = call(arena, hypothesis, &[zero]);
         let result = var(arena, DeBruijnIndex::from(0));
-        let successor = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![result]);
+        let successor = arena.value_constructor(
+            ConstantIndex::from(at::NAT),
+            nat,
+            ConstructorTag::from(1_usize),
+            vec![result],
+        );
         let returned = arena.computation_return(successor);
         let bound = arena.computation_bind(recursive, returned);
         function(arena, Binders::from(2), bound)
@@ -633,17 +692,31 @@ fn program(arena: &mut CoreArena) -> Vec<Declaration>
     ));
     let on_zero = {
         let indexed = arena.value_type_data(ConstantIndex::from(at::IS_NAT), vec![zero]);
-        let here = arena.value_constructor(indexed, ConstructorTag::from(0_usize), vec![]);
+        let here = arena.value_constructor(
+            ConstantIndex::from(at::IS_NAT),
+            indexed,
+            ConstructorTag::from(0_usize),
+            vec![],
+        );
         let returned = arena.computation_return(here);
         arena.value_thunk(returned)
     };
     let on_successor = {
         // Under `p ih`: p 1.
         let predecessor = var(arena, DeBruijnIndex::from(1));
-        let successor =
-            arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![predecessor]);
+        let successor = arena.value_constructor(
+            ConstantIndex::from(at::NAT),
+            nat,
+            ConstructorTag::from(1_usize),
+            vec![predecessor],
+        );
         let indexed = arena.value_type_data(ConstantIndex::from(at::IS_NAT), vec![successor]);
-        let here = arena.value_constructor(indexed, ConstructorTag::from(0_usize), vec![]);
+        let here = arena.value_constructor(
+            ConstantIndex::from(at::IS_NAT),
+            indexed,
+            ConstructorTag::from(0_usize),
+            vec![],
+        );
         let returned = arena.computation_return(here);
         function(arena, Binders::from(2), returned)
     };
@@ -1348,8 +1421,13 @@ fn a_nested_occurrence_through_a_strictly_positive_parameter_declares()
     let own = arena.value_type_data(rose, vec![]);
     let code = arena.value_quote(own);
     let kids = list(&mut arena, code);
-    let none = arena.value_constructor(kids, ConstructorTag::from(0_usize), vec![]);
-    let node = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![none]);
+    let none = arena.value_constructor(
+        ConstantIndex::from(at::LIST),
+        kids,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
+    let node = arena.value_constructor(rose, own, ConstructorTag::from(0_usize), vec![none]);
     let declarations = [
         data(ConstantIndex::from(at::NAT), nat),
         data(ConstantIndex::from(at::LIST), list_signature),
@@ -1626,17 +1704,32 @@ fn definitions_by_eliminator_normalise()
 
     let depth = arena.value_constant(ConstantIndex::from(at::DEPTH));
     let tree_type = arena.value_type_data(ConstantIndex::from(at::TREE), vec![]);
-    let leaf = arena.value_constructor(tree_type, ConstructorTag::from(0_usize), vec![]);
+    let leaf = arena.value_constructor(
+        ConstantIndex::from(at::TREE),
+        tree_type,
+        ConstructorTag::from(0_usize),
+        vec![],
+    );
     let leaves = {
         let returned = arena.computation_return(leaf);
         function(&mut arena, Binders::from(1), returned)
     };
-    let node = arena.value_constructor(tree_type, ConstructorTag::from(1_usize), vec![leaves]);
+    let node = arena.value_constructor(
+        ConstantIndex::from(at::TREE),
+        tree_type,
+        ConstructorTag::from(1_usize),
+        vec![leaves],
+    );
     let deeper = {
         let returned = arena.computation_return(node);
         function(&mut arena, Binders::from(1), returned)
     };
-    let root = arena.value_constructor(tree_type, ConstructorTag::from(1_usize), vec![deeper]);
+    let root = arena.value_constructor(
+        ConstantIndex::from(at::TREE),
+        tree_type,
+        ConstructorTag::from(1_usize),
+        vec![deeper],
+    );
     let measured = call(&mut arena, depth, &[root]);
     assert_eq!(
         normalises_to(&mut arena, &report, measured, returned[2]),
@@ -1741,9 +1834,11 @@ fn the_kernel_replays_a_conversion_through_a_definition_by_eliminator()
     let nat = positions[&ConstantIndex::from(at::NAT)];
     let nat_type = kernel.value_type_data(nat, vec![]);
     let kernel_numeral = |kernel: &mut gandr_kernel_term::TermArena, n: usize| {
-        let mut built = kernel.value_constructor(nat_type, ConstructorTag::from(0_usize), vec![]);
+        let mut built =
+            kernel.value_constructor(nat, nat_type, ConstructorTag::from(0_usize), vec![]);
         for _step in 0 .. n {
-            built = kernel.value_constructor(nat_type, ConstructorTag::from(1_usize), vec![built]);
+            built =
+                kernel.value_constructor(nat, nat_type, ConstructorTag::from(1_usize), vec![built]);
         }
         built
     };
@@ -1837,7 +1932,7 @@ fn universe(
         let arrow = arena.comp_type_arrow(decoded, returner);
         arena.value_type_thunk(arrow)
     };
-    let nat_code = arena.value_constructor(own, ConstructorTag::from(0_usize), vec![]);
+    let nat_code = arena.value_constructor(family, own, ConstructorTag::from(0_usize), vec![]);
     let fields = match decoded {
         Decoded::Below => {
             let earlier = var(arena, DeBruijnIndex::from(0));
@@ -2288,7 +2383,9 @@ fn derived_equalities_are_admitted_readmitted_and_decide_2302()
     let numerals = numerals(&mut arena);
     let mark_type = arena.value_type_data(mark_at, vec![]);
     let mark_of = |arena: &mut CoreArena, at: ValueId, flag: ValueId| {
-        arena.value_constructor(mark_type, ConstructorTag::from(0_usize), vec![flag, at])
+        arena.value_constructor(mark_at, mark_type, ConstructorTag::from(0_usize), vec![
+            flag, at,
+        ])
     };
     let (two_up, three_up, two_down) = (
         mark_of(&mut arena, numerals[2], truth),
@@ -2389,7 +2486,9 @@ fn a_case_over_a_held_native_call_meets_the_derived_equality_binding_it_2378()
     let cased = arena.computation_application(forced, held);
     let cased = arena.value_returned(cased);
     let point_type = arena.value_type_data(point_at, vec![]);
-    let point = arena.value_constructor(point_type, ConstructorTag::from(0_usize), vec![x1, x2]);
+    let point = arena.value_constructor(point_at, point_type, ConstructorTag::from(0_usize), vec![
+        x1, x2,
+    ]);
     let equality = arena.value_constant(equality_at);
     let forced = arena.computation_force(equality);
     let applied = arena.computation_application(forced, point);

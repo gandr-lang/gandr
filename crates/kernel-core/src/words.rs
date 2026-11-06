@@ -324,6 +324,7 @@ fn head(
             datatype,
             tag,
             ref fields,
+            ..
         }) => {
             let Some(&ValueType::Data {
                 declaration: words, ..
@@ -427,11 +428,13 @@ fn relettered(
     rest: ValueId,
 ) -> Option<ValueId>
 {
-    let Some(&Value::Constructor { datatype, .. }) = arena.value(letter)
+    let Some(&Value::Constructor {
+        family, datatype, ..
+    }) = arena.value(letter)
     else {
         return None;
     };
-    Some(arena.value_constructor(datatype, tag, Vec::from([rest])))
+    Some(arena.value_constructor(family, datatype, tag, Vec::from([rest])))
 }
 
 /// The inverse of a closed word: its letters inverted, last first.
@@ -720,7 +723,7 @@ pub fn point(
     let sort = arena.value_type_data(cells.sort(), Vec::new());
     let mut open = false;
     let built = build_side(cells.point(), arities, |node, fields| match node {
-        RuleNode::Constructor(tag) => arena.value_constructor(sort, tag, fields),
+        RuleNode::Constructor(tag) => arena.value_constructor(cells.sort(), sort, tag, fields),
         RuleNode::Variable(_) => {
             open = true;
             arena.value_unit()
@@ -1385,12 +1388,14 @@ where
         Head::Other => return appended(arena, unfoldings, term),
     };
     if words.is_some() && head(arena, presentations, rest) != Head::Empty {
-        let Some(&Value::Constructor { datatype, .. }) = arena.value(path)
+        let Some(&Value::Constructor {
+            family, datatype, ..
+        }) = arena.value(path)
         else {
             return Reduction::Stuck;
         };
-        let empty = arena.value_constructor(datatype, FreeCells::nil(), Vec::new());
-        let first = arena.value_constructor(datatype, tag, Vec::from([empty]));
+        let empty = arena.value_constructor(family, datatype, FreeCells::nil(), Vec::new());
+        let first = arena.value_constructor(family, datatype, tag, Vec::from([empty]));
         let step = arena.computation_path_transport(motive, first, value);
         let one = BinderDepth::from(1_u32);
         let lifted = shift_value_type(arena, table, memo, motive, one, one);
@@ -1633,13 +1638,15 @@ pub fn appended(
             Reduction::Reduced(arena.computation_return(path))
         },
         Head::Letter { tag, rest, .. } => {
-            let Some(&Value::Constructor { datatype, .. }) = arena.value(value)
+            let Some(&Value::Constructor {
+                family, datatype, ..
+            }) = arena.value(value)
             else {
                 return Reduction::Stuck;
             };
             let moved = arena.computation_path_transport(motive, path, rest);
             let held = arena.value_returned(moved);
-            let prefixed = arena.value_constructor(datatype, tag, Vec::from([held]));
+            let prefixed = arena.value_constructor(family, datatype, tag, Vec::from([held]));
             Reduction::Reduced(arena.computation_return(prefixed))
         },
         Head::Other => named(arena, unfoldings, value).map_or(Reduction::Stuck, |body| {

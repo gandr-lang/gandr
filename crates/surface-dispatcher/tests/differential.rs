@@ -485,6 +485,7 @@ fn rebuilt(
     let read = |part: &ValueId| erasure.get(part).copied().unwrap_or(*part);
     match core.value(node) {
         Some(&Value::Constructor {
+            family: declared,
             datatype,
             tag,
             ref fields,
@@ -496,7 +497,7 @@ fn rebuilt(
                 },
                 Some(_) | None => datatype,
             };
-            core.value_constructor(family, tag, fields)
+            core.value_constructor(declared, family, tag, fields)
         },
         Some(&Value::Tuple(ref components)) => {
             let components: Vec<ValueId> = components.iter().map(read).collect();

@@ -1597,7 +1597,7 @@ fn data_case_selects_arm_returns_three()
                 integer(&mut core, Digits("4"))
             ],
         };
-        let scrutinee = core.value_constructor(datatype, ordinal.into(), fields);
+        let scrutinee = core.value_constructor(0_usize.into(), datatype, ordinal.into(), fields);
         let zero = integer(&mut core, Digits("0"));
         let fieldless = core.computation_return(zero);
         let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -1634,7 +1634,8 @@ fn data_case_on_non_ctor_is_stuck()
     let unit = core.value_unit();
     let injected = core.value_injection(Side::Left.into(), unit);
     let datatype = core.value_type_unknown();
-    let beyond = core.value_constructor(datatype, 1_usize.into(), alloc::vec![five]);
+    let beyond =
+        core.value_constructor(0_usize.into(), datatype, 1_usize.into(), alloc::vec![five]);
     let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let returned = core.computation_return(own);
     let branch = core.computation_lambda(returned);
@@ -1801,17 +1802,17 @@ fn a_recursive_thunk_computes_through_its_own_binding()
 {
     let mut core = CoreArena::new();
     let nat = core.value_type_unknown();
-    let zero = core.value_constructor(nat, 0_usize.into(), alloc::vec![]);
-    let one = core.value_constructor(nat, 1_usize.into(), alloc::vec![zero]);
-    let two = core.value_constructor(nat, 1_usize.into(), alloc::vec![one]);
+    let zero = core.value_constructor(0_usize.into(), nat, 0_usize.into(), alloc::vec![]);
+    let one = core.value_constructor(0_usize.into(), nat, 1_usize.into(), alloc::vec![zero]);
+    let two = core.value_constructor(0_usize.into(), nat, 1_usize.into(), alloc::vec![one]);
     let base = core.computation_return(zero);
     let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
     let predecessor = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let recurse = core.computation_force(own);
     let descent = core.computation_application(recurse, predecessor);
     let result = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let once = core.value_constructor(nat, 1_usize.into(), alloc::vec![result]);
-    let twice = core.value_constructor(nat, 1_usize.into(), alloc::vec![once]);
+    let once = core.value_constructor(0_usize.into(), nat, 1_usize.into(), alloc::vec![result]);
+    let twice = core.value_constructor(0_usize.into(), nat, 1_usize.into(), alloc::vec![once]);
     let rebuilt = core.computation_return(twice);
     let bound = core.computation_bind(descent, rebuilt);
     let step = core.computation_lambda(bound);

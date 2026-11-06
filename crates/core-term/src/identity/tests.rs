@@ -236,12 +236,14 @@ fn a_case_answers_at_a_point_by_the_value_its_branch_returns()
         alloc::vec::Vec::new(),
     );
     let point = arena.value_constructor(
+        gandr_kernel_term::ConstantIndex::from(0_usize),
         sort,
         gandr_kernel_term::ConstructorTag::from(0_usize),
         alloc::vec::Vec::new(),
     );
     let field = arena.value_unit();
     let fielded = arena.value_constructor(
+        gandr_kernel_term::ConstantIndex::from(0_usize),
         sort,
         gandr_kernel_term::ConstructorTag::from(1_usize),
         alloc::vec![field],

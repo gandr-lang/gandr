@@ -610,6 +610,9 @@ pub enum Value
     /// A constructor of a nominal application, with declaration-ordered fields.
     Constructor
     {
+        /// Admission position of the data family that declares the
+        /// constructor, the name its tag counts in.
+        family: ConstantIndex,
         /// The complete nominal classifier, including its arguments.
         datatype: ValueTypeId,
         /// The constructor's ordinal in its declaration.
@@ -2792,6 +2795,7 @@ fn empty_word(
             datatype,
             tag,
             ref fields,
+            ..
         }),
     ) = (arena.value(here), arena.value(word))
     else {
@@ -2874,6 +2878,7 @@ fn spells(
             datatype,
             tag: written,
             ref fields,
+            ..
         }) = arena.value(at)
         else {
             return Spelling::Apart;
@@ -4771,7 +4776,8 @@ mod tests
         let (sort, words) = (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize));
         let carrier = arena.value_type_data(sort, alloc::vec![]);
         let own = arena.value_type_data(words, alloc::vec![]);
-        let point = arena.value_constructor(carrier, ConstructorTag::from(0_usize), alloc::vec![]);
+        let point =
+            arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), alloc::vec![]);
         let base = || -> alloc::boxed::Box<[RuleNode]> {
             [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
         };
@@ -4812,8 +4818,9 @@ mod tests
         // The point is spelled by its constructor of its own sort: another
         // constructor, or the same tag of another datatype, is off it.
         let other_tag =
-            arena.value_constructor(carrier, ConstructorTag::from(1_usize), alloc::vec![]);
-        let foreign = arena.value_constructor(own, ConstructorTag::from(0_usize), alloc::vec![]);
+            arena.value_constructor(sort, carrier, ConstructorTag::from(1_usize), alloc::vec![]);
+        let foreign =
+            arena.value_constructor(words, own, ConstructorTag::from(0_usize), alloc::vec![]);
         for endpoint in [other_tag, foreign] {
             assert_eq!(
                 identified_words(&arena, &signatures, carrier, (point, endpoint)),
@@ -4822,7 +4829,8 @@ mod tests
             );
         }
         // A word's own type, alone and as the carrier of a path between words.
-        let empty = arena.value_constructor(own, ConstructorTag::from(0_usize), alloc::vec![]);
+        let empty =
+            arena.value_constructor(words, own, ConstructorTag::from(0_usize), alloc::vec![]);
         let over_words = arena.value_type_path(own, empty, empty);
         let over_path = arena.value_type_path(at_point, empty, empty);
         for (left, right, what) in [
@@ -6172,6 +6180,7 @@ mod tests
         let [twin, same, other_tag, wider] =
             [(0, 1), (0, 1), (1, 1), (0, 2)].map(|(tag, width)| {
                 arena.value_constructor(
+                    ConstantIndex::from(0_usize),
                     unit_type,
                     ConstructorTag::from(tag),
                     alloc::vec![unit; width],
