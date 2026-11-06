@@ -20,16 +20,22 @@
 #   {act: "open", title, body, labels}
 #                                  the area has no open collector: the title
 #                                  `refactor(<area>): verdicts`, the body the
-#                                  table under `## Observation` and
-#                                  `from: #<pr>`, the labels `kind:refactor`,
-#                                  `collector` and `area:<area>` (no `area:`
-#                                  when none is read; `issue:file` then
-#                                  refuses it, and the stall detector pages
-#                                  the coordinator).
+#                                  sentence that says what it is (#3596), then
+#                                  the table under `## Observation` and a
+#                                  one-sentence lead, and `from: #<pr>`, the
+#                                  labels `kind:refactor`, `collector` and
+#                                  `area:<area>` (no `area:` when none is
+#                                  read; `issue:file` then refuses it, and
+#                                  the stall detector pages the
+#                                  coordinator).
 
 include "sections";
 
 def collector_title($area): "refactor(\($area // "unplaced")): verdicts";
+def opening($area):
+  if $area == null then "This issue collects the refactoring verdicts of the merged pull requests whose unit names no area."
+  else "This issue collects the refactoring verdicts of the merged pull requests in the `\($area)` area." end;
+def lead: "The table gives each row that a verdict names.";
 
 . as $in
 | ($in.pr.body | refactoring) as $r
@@ -46,13 +52,13 @@ def collector_title($area): "refactor(\($area // "unplaced")): verdicts";
         | ([range(0; $lines | length) | select($lines[.] | test("^\\s*\\|"))] | last) as $end
         | {act: "update", issue: $collector.number,
            body: ((if $new == [] then $lines
-                   elif $end == null then ["## Observation", "", ($new | table), ""] + $lines
+                   elif $end == null then ["## Observation", "", lead, "", ($new | table), ""] + $lines
                    else $lines[:$end + 1] + [$new[].line] + $lines[$end + 1:] end)
                   | join("\n") | sub("\n*$"; "") + "\nfrom: #\($in.pr.number)\n")}
       else
         {act: "open",
          title: $title,
-         body: "## Observation\n\n\($r.rows | table)\n\nfrom: #\($in.pr.number)\n",
+         body: "\(opening($in.pr.area))\n\n## Observation\n\n\(lead)\n\n\($r.rows | table)\n\nfrom: #\($in.pr.number)\n",
          labels: (["kind:refactor", "collector"] + (if $in.pr.area == null then [] else ["area:\($in.pr.area)"] end))}
       end)
   end

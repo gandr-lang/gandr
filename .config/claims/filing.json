@@ -24,7 +24,7 @@
     "output": "{\"act\":\"none\"}"
   },
   {
-    "name": "a `yes` with rows and no open collector of its area opens the area's collector: the table verbatim, its area and `collector`",
+    "name": "#3596: a `yes` with rows and no open collector of its area opens the area's collector: the sentence that says what it is, the table verbatim under a lead, its area and `collector`",
     "input": {
       "pr": {
         "number": 11,
@@ -33,7 +33,7 @@
       },
       "issues": []
     },
-    "output": "{\"act\":\"open\",\"title\":\"refactor(workflow): verdicts\",\"body\":\"## Observation\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"collector\",\"area:workflow\"]}"
+    "output": "{\"act\":\"open\",\"title\":\"refactor(workflow): verdicts\",\"body\":\"This issue collects the refactoring verdicts of the merged pull requests in the `workflow` area.\\n\\n## Observation\\n\\nThe table gives each row that a verdict names.\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"collector\",\"area:workflow\"]}"
   },
   {
     "name": "an issue already carrying the pull request's `from:` line is the filing, so a retry files nothing",
@@ -115,7 +115,7 @@
         }
       ]
     },
-    "output": "{\"act\":\"open\",\"title\":\"refactor(workflow): verdicts\",\"body\":\"## Observation\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"collector\",\"area:workflow\"]}"
+    "output": "{\"act\":\"open\",\"title\":\"refactor(workflow): verdicts\",\"body\":\"This issue collects the refactoring verdicts of the merged pull requests in the `workflow` area.\\n\\n## Observation\\n\\nThe table gives each row that a verdict names.\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"collector\",\"area:workflow\"]}"
   },
   {
     "name": "of two open collectors of one area, the earlier is joined",
@@ -152,6 +152,6 @@
       },
       "issues": []
     },
-    "output": "{\"act\":\"open\",\"title\":\"refactor(unplaced): verdicts\",\"body\":\"## Observation\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"collector\"]}"
+    "output": "{\"act\":\"open\",\"title\":\"refactor(unplaced): verdicts\",\"body\":\"This issue collects the refactoring verdicts of the merged pull requests whose unit names no area.\\n\\n## Observation\\n\\nThe table gives each row that a verdict names.\\n\\n| Kind | Where | Observation |\\n| --- | --- | --- |\\n| duplicate | `crates/a/src/x.rs`, `crates/b/src/y.rs` | two copies of the parser |\\n| split | `crates/c/src/z.rs` | a module doing two things |\\n\\nfrom: #11\\n\",\"labels\":[\"kind:refactor\",\"collector\"]}"
   }
 ]
