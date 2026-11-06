@@ -108,5 +108,17 @@
       "report": "<!-- gandr-mutants -->\n| Crate | Mutant |\n| --- | --- |\n| `crates/core-term` | replace len -> usize with 0 |\n\n1 survivor(s).\n"
     },
     "output": "This issue lists the mutants of the lines of #5100 that no witness catches.\n\nEach survivor needs a witness, or a `- witness:` bullet that its function lacks. The last mutants report of #5100 follows.\n\n| Crate | Mutant |\n| --- | --- |\n| `crates/core-term` | replace len -> usize with 0 |\n\n1 survivor(s)."
+  },
+  {
+    "name": "#3211: an unwitnessed collector escapes a table cell",
+    "program": "unwitnessed.jq",
+    "input": {
+      "crate": "gandr-core-checker",
+      "mutants": [
+        "crates/core-checker/src/check.rs:8: replace check -> bool with false",
+        "crates/core-checker/src/check.rs:9: replace left | right with left"
+      ]
+    },
+    "output": "This issue lists the mutants of `gandr-core-checker` that no witness names.\n\nNo build starts. Each row is a static coverage gap.\n\n| mutant |\n| --- |\n| `crates/core-checker/src/check.rs:8: replace check -> bool with false` |\n| `crates/core-checker/src/check.rs:9: replace left \\| right with left` |\n\n2 unwitnessed mutant(s)."
   }
 ]

@@ -1097,13 +1097,58 @@ fi
 # (#3596, its cases held by `check:mutants`): the sentence that says what it
 # is, then the report. A commit without a pull request number, or a pull
 # request without a report, files nothing. GH_REPO names the repository.
+# `--unwitnessed` reads one static list for one crate. It reads one page of
+# open collectors. It creates or updates `test: <crate> has <n> unwitnessed
+# mutant(s)`. `.config/mutants/unwitnessed.jq` writes that collector body.
 ["ci:mutants-landed"]
 description = "File each landed pull request's surviving mutants on one issue"
 tools.jq = "1.8.1"
+usage = '''
+flag "-p --package <crate>" help="the crate that owns an unwitnessed list"
+flag "--unwitnessed <file>" help="a static unwitnessed-mutants list"
+'''
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 repo=${GH_REPO:?}
+file_unwitnessed() {
+  local unwitnessed=$1 crate=$2 area scratch count title key issue url
+  local -a labels
+  [[ -n $crate ]] || { echo '--unwitnessed needs --package' >&2; return 2; }
+  [[ -f $unwitnessed ]] || { printf 'no unwitnessed list at %s\n' "$unwitnessed" >&2; return 2; }
+  area=${crate#gandr-}
+  area=${area%%-*}
+  case "$area" in
+    ci | core | distribution | editor | kernel | lsp | program-logic | runtime | storage | surface | theory | ux | workflow) ;;
+    *) printf 'no area for crate %s\n' "$crate" >&2; return 2 ;;
+  esac
+  scratch=$(mktemp -d)
+  trap 'rm -rf "$scratch"' EXIT
+  jq -R -s --arg crate "$crate" '{crate: $crate, mutants: [split("\n")[] | select(length > 0)]}' "$unwitnessed" > "$scratch/input.json"
+  count=$(jq '.mutants | length' "$scratch/input.json")
+  if (( count == 0 )); then
+    printf '%s names no unwitnessed mutant\n' "$crate"
+    return 0
+  fi
+  jq -r -f .config/mutants/unwitnessed.jq "$scratch/input.json" > "$scratch/body.md"
+  title="test: $crate has $count unwitnessed mutant(s)"
+  key="test: $crate has "
+  issue=$(gh issue list --repo "$repo" --state open --label collector --limit 100 --search "\"${key% }\" in:title" --json number,title \
+    | jq -r --arg key "$key" '[.[] | select(.title | startswith($key))] | first | .number // empty')
+  labels=(--label kind:gap --label collector --label "area:$area" --label priority:medium --label effort:unknown)
+  if [[ -n $issue ]]; then
+    gh issue edit "$issue" --repo "$repo" --title "$title" --body-file "$scratch/body.md" "${labels[@]/#--label/--add-label}" > /dev/null
+    printf '%s: updated #%s (%s unwitnessed mutant(s))\n' "$crate" "$issue" "$count"
+  else
+    url=$(gh issue create --repo "$repo" --title "$title" --body-file "$scratch/body.md" "${labels[@]}")
+    printf '%s: opened %s (%s unwitnessed mutant(s))\n' "$crate" "$url" "$count"
+  fi
+}
+unwitnessed=${usage_unwitnessed:-}
+if [[ -n $unwitnessed ]]; then
+  file_unwitnessed "$unwitnessed" "${usage_package:-}"
+  exit 0
+fi
 before=${MUTANTS_PUSH_BEFORE:-}
 if [[ -n $before && ! $before =~ ^0+$ ]]; then
   landings=$(gh api "repos/$repo/compare/$before...$(git rev-parse HEAD)" \
