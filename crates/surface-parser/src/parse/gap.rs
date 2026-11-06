@@ -77,6 +77,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::TileLabel;
@@ -567,6 +568,243 @@ fn gaps<'text>(
     places
 }
 
+/// What separates the operand after a head that is no function from the
+/// head, in the repair a refusal of their application names.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Separation
+{
+    /// A `,` between two items of a group.
+    Item,
+    /// The operand's line at its layout block's column, where it starts a
+    /// statement.
+    Statement,
+}
+
+/// The repair a refusal of an application whose head is no function names:
+/// the bytes it replaces and the text written in their place.
+///
+/// # Specification
+/// - requires: nothing to construct this data; [`juxtaposed`] makes it over the
+///   text it reads.
+/// - ensures: the span lies inside that text, and the replacement is a `,` or a
+///   slice of that text.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`juxtaposed`].
+/// - witness: `parse::gap::tests::a_head_that_is_no_function_names_what_separates_its_operand_5474`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Juxtaposition<'text>
+{
+    /// What the repair separates the operand from the head by.
+    pub separation: Separation,
+    /// The bytes it replaces: none, at the head's end, for a `,`; the
+    /// indentation of the operand's line for a statement.
+    pub span: ByteSpan,
+    /// The text written in their place: a `,`, or the indentation of the
+    /// block's first line.
+    pub replacement: SourceText<'text>,
+}
+
+/// The repair a refusal names when the head at `head` is no function.
+///
+/// Two operands side by side directly inside a group take the `,` the
+/// sibling signal places between them. An operand that begins a line right of
+/// its layout block's column continues the statement above it, and it takes
+/// that line moved to the block's column, where it starts a statement.
+///
+/// # Specification
+/// - requires: `head` lies in `text`.
+/// - ensures: [`Separation::Item`], an empty span at `head`'s end and `,`, when
+///   [`gaps`] gives a sibling place at `head`'s end in the top-level form
+///   [`form_around`] gives for `head`'s start. Otherwise
+///   [`Separation::Statement`] when the first token after `head` begins a line,
+///   the layout pass writes no token between them, and the innermost open
+///   bracket there is a layout block whose first token begins its own line at a
+///   column left of that token's: the span from that line's start to the token,
+///   and the indentation of the block's first line. Otherwise `None`.
+/// - fails: never.
+/// - panics: none.
+/// - intension: labels the one top-level form the head stands in.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `7` in `#[7 8]` names a `,` after it; `x` in a `let`
+///   whose next line continues it one column right names that line at the
+///   block's column; a head whose operand stands on its own line inside no
+///   group, and a head in a bracket that its operand's line continues, name
+///   nothing.
+/// - witness: `parse::gap::tests::a_head_that_is_no_function_names_what_separates_its_operand_5474`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret.is_none_or(|found| usize::from(found.span.end()) <= <&str>::from(text).len()
+    && (found.separation == Separation::Statement || <&str>::from(found.replacement) == ",")))]
+pub fn juxtaposed<'text>(
+    text: SourceText<'text>,
+    head: ByteSpan,
+) -> Option<Juxtaposition<'text>>
+{
+    let (start, end) = form_around(text, head.start());
+    let region =
+        SourceText::from(<&'text str>::from(text).get(usize::from(start) .. usize::from(end))?);
+    let at = ByteOffset::from(usize::from(head.end()).checked_sub(usize::from(start))?);
+    let tokens = label(SourceFragment::from(<&str>::from(region)));
+    if gaps(region, &tokens)
+        .siblings
+        .iter()
+        .any(|gap| gap.at == at)
+    {
+        return Some(Juxtaposition {
+            separation: Separation::Item,
+            span: ByteSpan::new(head.end(), head.end()).ok()?,
+            replacement: SourceText::from(","),
+        });
+    }
+    let (indentation, replacement) = continued(region, &tokens, at)?;
+    let shift = |offset: ByteOffset| {
+        ByteOffset::from(usize::from(offset).saturating_add(usize::from(start)))
+    };
+    Some(Juxtaposition {
+        separation: Separation::Statement,
+        span: ByteSpan::new(shift(indentation.start()), shift(indentation.end())).ok()?,
+        replacement,
+    })
+}
+
+/// Where a layout block's first token stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum First
+{
+    /// No token follows the block's opener yet.
+    Unread,
+    /// The first token begins a line: where the line starts, and where the
+    /// token does.
+    Leads(u32, u32),
+    /// The first token follows the opener on its line.
+    Inline,
+}
+
+/// One open bracket, as [`continued`] reads it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Opened
+{
+    /// A bracket the source writes.
+    Written,
+    /// A block the layout pass opens.
+    Laid(First),
+}
+
+/// The indentation of the line the first token at or after `at` begins, and
+/// the indentation of its layout block's first line, when that line
+/// continues the statement above it in the block.
+///
+/// # Specification
+/// - requires: `tokens` label `text`.
+/// - ensures: as [`juxtaposed`]'s statement, over `text`.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`juxtaposed`].
+/// - witness: `parse::gap::tests::a_head_that_is_no_function_names_what_separates_its_operand_5474`
+fn continued<'text>(
+    text: SourceText<'text>,
+    tokens: &[Token],
+    at: ByteOffset,
+) -> Option<(ByteSpan, SourceText<'text>)>
+{
+    let at = u32::try_from(usize::from(at)).ok()?;
+    let mut open: Vec<Opened> = Vec::new();
+    let mut line_start = 0_u32;
+    let mut broken = false;
+    for &token in tokens {
+        match token.lexeme {
+            Lexeme::Space => {
+                if let Some(last) = <&str>::from(spelling(text, token)).rfind('\n') {
+                    broken = true;
+                    line_start = token
+                        .start
+                        .saturating_add(u32::try_from(last).unwrap_or(u32::MAX))
+                        .saturating_add(1);
+                }
+                continue;
+            },
+            Lexeme::LayoutOpen | Lexeme::LayoutSemi | Lexeme::LayoutClose if token.start >= at => {
+                return None;
+            },
+            Lexeme::LayoutOpen => {
+                open.push(Opened::Laid(First::Unread));
+                continue;
+            },
+            Lexeme::LayoutSemi => continue,
+            Lexeme::LayoutClose => {
+                let _closed = open.pop();
+                continue;
+            },
+            Lexeme::LowerWord
+            | Lexeme::UpperWord
+            | Lexeme::Number
+            | Lexeme::TypedNumber
+            | Lexeme::Character
+            | Lexeme::Quote
+            | Lexeme::StringFragment
+            | Lexeme::ShellStringFragment
+            | Lexeme::EscapeSequence
+            | Lexeme::Punct
+            | Lexeme::ShellWord
+            | Lexeme::EnvAssign
+            | Lexeme::SingleQuotedContent
+            | Lexeme::VariableName
+            | Lexeme::SubshellOpen
+            | Lexeme::SubshellClose
+            | Lexeme::FileDescriptor
+            | Lexeme::ArmBar
+            | Lexeme::Unknown => {},
+        }
+        let leads = core::mem::replace(&mut broken, false);
+        if token.start >= at {
+            let Some(&Opened::Laid(First::Leads(first_line, first))) = open.last()
+            else {
+                return None;
+            };
+            let column = token.start.checked_sub(line_start)?;
+            if !leads || column <= first.checked_sub(first_line)? {
+                return None;
+            }
+            let indentation = ByteSpan::new(
+                ByteOffset::from(usize::try_from(line_start).ok()?),
+                ByteOffset::from(usize::try_from(token.start).ok()?),
+            )
+            .ok()?;
+            let block = <&'text str>::from(text)
+                .get(usize::try_from(first_line).ok()? .. usize::try_from(first).ok()?)?;
+            return Some((indentation, SourceText::from(block)));
+        }
+        if let Some(&mut Opened::Laid(ref mut first)) = open.last_mut()
+            && *first == First::Unread
+        {
+            *first = if leads {
+                First::Leads(line_start, token.start)
+            }
+            else {
+                First::Inline
+            };
+        }
+        match class(text, token).bracketing {
+            Bracketing::Opens(_) => open.push(Opened::Written),
+            Bracketing::Closes => {
+                let _closed = open.pop();
+            },
+            Bracketing::Neither => {},
+        }
+    }
+    None
+}
+
 /// A copy of a form or of the source with places written in, as [`written`]
 /// answers it.
 #[derive(Debug)]
@@ -1032,11 +1270,16 @@ fn minted<'source>(
 mod tests
 {
     use alloc::boxed::Box;
+    use alloc::string::String;
     use core::error::Error;
 
     use gandr_surface_grammar::built_in;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::SourceText;
 
+    use super::Separation;
+    use super::juxtaposed;
     use crate::oblig::Oblig;
     use crate::parse;
 
@@ -1304,6 +1547,64 @@ mod tests
             owed(SourceText::from(reset.join("\n").as_str()))?,
             [(Oblig::MissingTile, Line(2)), (Oblig::MissingTile, Line(2))],
             "a word at column zero stays a declaration's first line"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_head_that_is_no_function_names_what_separates_its_operand_5474()
+    -> Result<(), Box<dyn Error>>
+    {
+        // The head is the first byte of the first place `context` is written.
+        let repaired =
+            |source: &str, context: &str| -> Result<Option<(Separation, String)>, Box<dyn Error>> {
+                let start = source.find(context).ok_or("the head is written")?;
+                let head = ByteSpan::new(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(1)),
+                )?;
+                Ok(juxtaposed(SourceText::from(source), head).map(|found| {
+                    let mut copy = String::from(source);
+                    copy.replace_range(
+                        usize::from(found.span.start()) .. usize::from(found.span.end()),
+                        <&str>::from(found.replacement),
+                    );
+                    (found.separation, copy)
+                }))
+            };
+        assert_eq!(
+            repaired("def two() -> Integer =\n  shortLength (#[7 8])\n", "7 8")?,
+            Some((
+                Separation::Item,
+                String::from("def two() -> Integer =\n  shortLength (#[7, 8])\n")
+            )),
+            "two items side by side in a list take the `,` between them"
+        );
+        assert_eq!(
+            repaired(
+                "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n   y\n  a\n",
+                "x\n"
+            )?,
+            Some((
+                Separation::Statement,
+                String::from(
+                    "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n  y\n  a\n"
+                )
+            )),
+            "a line that continues a statement one column right moves to its block's column"
+        );
+        assert_eq!(
+            repaired(
+                "def g(x : Integer) -> Integer =\n  let a = x y\n  a\n",
+                "x y"
+            )?,
+            None,
+            "an operand on its head's line inside no group names nothing"
+        );
+        assert_eq!(
+            repaired("def g(x : Integer) -> Integer =\n  f (x\n   y)\n", "x\n")?,
+            None,
+            "an operand whose line a bracket continues names nothing"
         );
         Ok(())
     }

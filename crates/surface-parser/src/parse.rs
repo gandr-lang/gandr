@@ -194,6 +194,10 @@ use crate::oblig::ObligationInstance;
 mod gap;
 mod place;
 
+pub use self::gap::Juxtaposition;
+pub use self::gap::Separation;
+pub use self::gap::juxtaposed;
+
 /// What a form run's molding depends on, spelled out.
 ///
 /// The spelling is whether the run starts the source, its length in tokens,

@@ -266,6 +266,7 @@ pub use crate::compose::positioned;
 pub use crate::compose::tabled;
 pub use crate::entry::Entries;
 pub use crate::entry::Refusals;
+pub use crate::entry::Repairs;
 pub use crate::entry::entries;
 pub use crate::evaluate::Captured;
 pub use crate::evaluate::Console;

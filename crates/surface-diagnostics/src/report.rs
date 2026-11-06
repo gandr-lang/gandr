@@ -105,7 +105,9 @@ use std::path::Path;
 
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::Failure;
+use gandr_core_checker::FrameRole;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
 use gandr_core_term::effect::Purity;
@@ -125,6 +127,8 @@ use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::RunOperand;
 use gandr_surface_lowering::RunSpelling;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
+use gandr_surface_parser::Separation;
+use gandr_surface_parser::juxtaposed;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -148,6 +152,7 @@ use crate::model::AnnotationKind;
 use crate::model::Compared;
 use crate::model::Diagnostic;
 use crate::model::DiagnosticAnnotation;
+use crate::model::DiagnosticContext;
 use crate::model::DiagnosticDetail;
 use crate::model::Excerpt;
 use crate::model::Fix;
@@ -159,6 +164,7 @@ use crate::model::Severity;
 use crate::model::expression;
 use crate::model::fix;
 use crate::model::producer;
+use crate::model::repair;
 use crate::obstruction::PartingPair;
 use crate::obstruction::obstructed;
 use crate::spelled::Spellings;
@@ -529,6 +535,7 @@ impl Report<'_>
     ///   inside the text and past it, observe the expression and fix guards.
     /// - witness: `report::tests::only_a_one_line_term_is_quoted_as_the_expression`
     /// - witness: `report::tests::a_finding_past_the_text_proposes_no_fix`
+    /// - witness: `tests::diagnostics::a_head_that_is_no_function_names_its_repair_5474`
     fn diagnostic(&self) -> Diagnostic
     {
         let annotations = self.annotations();
@@ -577,6 +584,7 @@ impl Report<'_>
             | Subject::Deprecated(_)
             | Subject::Ledger { .. } => (Vec::new(), Vec::new()),
         };
+        let repaired = self.repaired(span, &contexts);
         let expression = match span {
             Maybe::Present(span) => match self.text.fragment(span) {
                 Ok(fragment) if !fragment.as_ref().contains('\n') => {
@@ -604,7 +612,7 @@ impl Report<'_>
             Maybe::Present(spelled) => Maybe::Present(String::from(spelled)),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
-        Diagnostic {
+        let mut diagnostic = Diagnostic {
             path: self.path.to_path_buf(),
             severity: match self.subject {
                 Subject::Goal(_) => Severity::Goal,
@@ -786,7 +794,86 @@ impl Report<'_>
                 | Subject::Deprecated(_)
                 | Subject::Ledger { .. } => Maybe::Absent(fix::Absent::Unproposed),
             },
+            repair: Maybe::Absent(repair::Absent::Unnamed),
+        };
+        if let Some((help, named)) = repaired {
+            diagnostic.help = Maybe::Present(help);
+            diagnostic.repair = Maybe::Present(named);
         }
+        diagnostic
+    }
+
+    /// The help and the repair the report names when its refusal applies a
+    /// head that is no function to the operand beside it.
+    ///
+    /// # Specification
+    /// - requires: `span` and `contexts` are the report's primary span and
+    ///   contexts.
+    /// - ensures: when the subject is a refused declaration that rests on no
+    ///   upstream refusal, its refusal is a [`CheckRefusal::ShapeMismatch`]
+    ///   that wants a thunk or an arrow, its innermost context synthesises the
+    ///   head of an application that starts at `span` and runs past it, and
+    ///   `span` lies on one line: the repair [`juxtaposed`] names at `span`,
+    ///   with a help that says what the repair writes. Otherwise none.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the match the body makes on the
+    ///   subject and the innermost context.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two list items with no `,` between them name the `,`;
+    ///   a line that continues a `let` one column right names that line at its
+    ///   block's column.
+    /// - witness: `tests::diagnostics::a_head_that_is_no_function_names_its_repair_5474`
+    fn repaired(
+        &self,
+        span: Maybe<ByteSpan, report_span::Absent>,
+        contexts: &[DiagnosticContext],
+    ) -> Option<(String, Fix)>
+    {
+        let Subject::Refused {
+            refusal:
+                Refusal::Checking(CheckRefusal::ShapeMismatch {
+                    wanted: ExpectedShape::Thunk | ExpectedShape::Arrow,
+                    ..
+                }),
+            upstream: Maybe::Absent(_),
+            ..
+        } = self.subject
+        else {
+            return None;
+        };
+        let Maybe::Present(head) = span
+        else {
+            return None;
+        };
+        let applied = contexts.last()?;
+        let Maybe::Present(ref locus) = applied.locus
+        else {
+            return None;
+        };
+        let written = self.text.fragment(head).ok()?;
+        if applied.role != FrameRole::ApplicationHead
+            || locus.span.start() != head.start()
+            || locus.span.end() <= head.end()
+            || written.as_ref().contains('\n')
+        {
+            return None;
+        }
+        let found = juxtaposed(self.text, head)?;
+        let written = written.as_ref();
+        let help = match found.separation {
+            Separation::Item => {
+                alloc::format!("add a `,` after `{written}` to separate the two items")
+            },
+            Separation::Statement => alloc::format!(
+                "move the line after `{written}` to its block's column to start a statement"
+            ),
+        };
+        Some((help, Fix {
+            span: found.span,
+            replacement: String::from(<&str>::from(found.replacement)),
+        }))
     }
 
     /// What the report is about, and whose fact it records.

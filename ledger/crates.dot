@@ -192,6 +192,7 @@ digraph crates {
   "surface-diagnostics" -> "kernel-term";
   "surface-diagnostics" -> "surface-corpus";
   "surface-diagnostics" -> "surface-lowering";
+  "surface-diagnostics" -> "surface-parser";
   "surface-diagnostics" -> "surface-pretty";
   "surface-diagnostics" -> "surface-syntax";
   "surface-diagnostics" -> "theory-sites";
