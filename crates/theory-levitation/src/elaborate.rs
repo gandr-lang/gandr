@@ -1911,7 +1911,7 @@ mod tests
                     "later",
                     FreeTerm::var("w"),
                     FreeTerm::var("u"),
-                    "w",
+                    "v",
                 )),
             ],
             "w",
