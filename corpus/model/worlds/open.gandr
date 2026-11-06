@@ -1,28 +1,14 @@
-//! What is open crosses back from a migration as bytes.
+//! This fixture returns open values from a migration.
 //!
-//! A crossing asks two judgements. Mobility is authority: nothing the value
-//! holds is meaningful only where it was made. Openness is representation:
-//! the value names no location, so its bytes read the same at every world.
-//! They agree on data and part at a handle, which is mobile always and open
-//! when what it holds is.
+//! An open value has the same representation at each world.
 //!
-//! Each declaration below migrates to the seat and returns its result to the
-//! operator. Data of integers is open, and so is a handle to it. A closed
-//! thunk is open too, since it captures nothing. A field the operator reads
-//! from what comes back reads as it does in place.
+//! Each declaration migrates to the seat and returns to the operator.
 //!
-//! - cites:
-//!   [Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory],
-//!   § 5.1, openness
-//! - cites: [Vii-2007-typesafe_distributed_programming_ml5], § 3
-//! - see: `pathological/worlds/open.gandr` — what is not open stays
-//! - see: #3275 — `projectedDone`, `projectedInner` and `forcedLater`, a
-//!   field read from a record a migration answers
+//! - cites: [Vii-2007-typesafe_distributed_programming_ml5]
 //!
-//! [Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory]: https://doi.org/10.1145/3828688 "Rainey et al., LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory"
 //! [Vii-2007-typesafe_distributed_programming_ml5]: https://doi.org/10.1007/978-3-540-78663-4_9 "Murphy, Crary and Harper, Type-Safe Distributed Programming with ML5"
 
-// The operator's and the seat's worlds, each declaration's entry.
+// The operator and seat worlds define each entry.
 import "./seat-and-operator.gandr";
 
 /// A point the seat measures, two integers.
@@ -62,7 +48,6 @@ def heldCounts() -> -F (*{done : Integer, left : Integer} at seat) =
 def heldThunk() -> -F ((() -> Integer) at seat) =
   migrate [seat] { (hold thunk { pure 3 }) }
 
-/// A handle to a record holding a closed thunk comes back, each field open.
 @[ entry(*{operator, seat}), runs("*{.done = 3, .later = thunk { 4 }}") ]
 def heldRecord() -> -F (*{done : Integer, later : () -> Integer} at seat) =
   migrate [seat] { (hold *{done = 3, later = thunk { pure 4 }}) }
