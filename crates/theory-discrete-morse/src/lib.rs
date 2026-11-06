@@ -14,7 +14,8 @@
 //! class of each cell itself, as Brown's collapsing scheme does on a bar
 //! complex. [`collapse`] checks such a scheme on a set of cells and keeps
 //! their critical cells. [`greedy`] builds an acyclic matching on a finite
-//! complex.
+//! complex. [`reduct`] builds the complex of the critical cells, with the
+//! boundary that the gradient paths give.
 //!
 //! # Items
 //!
@@ -24,7 +25,8 @@
 //! | [`Scheme`], [`Class`] | a matching that gives the class of each cell, and the class: critical, or paired up or down |
 //! | [`collapse`], [`Collapse`], [`Faults`], [`Budget`], [`Count`] | the check of a scheme on a set of cells, its critical cells and its faults |
 //! | [`greedy`], [`Matching`], [`Matched`] | the greedy acyclic matching on a finite complex, and the matching read as a scheme |
-//! | [`MorseError`] | every refusal: the caller's own fault, or a walk past its budget |
+//! | [`reduct`], [`Reduct`], [`Place`] | the reduct along an acyclic matching: the critical cells, the Morse boundary of each and the walk of its gradient |
+//! | [`MorseError`] | every refusal: the caller's own fault, a walk past its budget, or a sum past the integers |
 //!
 //! A [`GradedPoset`] is a [`Complex`]: the faces of a cell are the cells of
 //! its boundary one rank down, each with the incidence one.
@@ -95,6 +97,7 @@ mod error;
 mod gradient;
 mod greedy;
 mod poset;
+mod reduct;
 
 pub use collapse::Budget;
 pub use collapse::Class;
@@ -108,6 +111,9 @@ pub use complex::Incidence;
 pub use complex::Invertibility;
 pub use complex::Standing;
 pub use error::MorseError;
+pub use gradient::Place;
 pub use greedy::Matched;
 pub use greedy::Matching;
 pub use greedy::greedy;
+pub use reduct::Reduct;
+pub use reduct::reduct;

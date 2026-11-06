@@ -35,6 +35,8 @@ INSERT INTO reference VALUES('Cherubini-2024-foundation_synthetic_stone_duality'
 INSERT INTO reference VALUES('Cockx-2018-elaborating_dependent_copattern_matching','core-checker','solution','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-core','replay','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology','theory-cellular-sheaves','reduce','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Curry-2015-discrete_morse_theory_computing_cellular_sheaf_cohomology','theory-discrete-morse','reduct','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells','exemplar',NULL,NULL,NULL);

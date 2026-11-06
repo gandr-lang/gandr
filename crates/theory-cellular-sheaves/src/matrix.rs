@@ -122,7 +122,7 @@ impl Rational
     ///   square.
     /// - witness: `tests::towers::each_bonding_map_induces_an_isomorphism_on_cohomology`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |value| value.denominator > 0))]
-    fn plus(
+    pub(crate) fn plus(
         self,
         other: Self,
     ) -> Result<Self, SheafError>
@@ -159,7 +159,7 @@ impl Rational
     ///   on every level of both towers.
     /// - witness: `tests::towers::every_level_of_both_towers_has_the_cohomology_of_its_space`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |value| value.denominator > 0))]
-    fn times(
+    pub(crate) fn times(
         self,
         other: Self,
     ) -> Result<Self, SheafError>

@@ -30,6 +30,8 @@ use gandr_theory_cellular_sheaves::Sheaf;
 use gandr_theory_cellular_sheaves::SheafError;
 use gandr_theory_cellular_sheaves::Tower;
 use gandr_theory_cellular_sheaves::Width;
+use gandr_theory_discrete_morse::Budget;
+use gandr_theory_discrete_morse::greedy;
 use gandr_theory_graded_posets::GradedPoset;
 use gandr_theory_graded_posets::Rank;
 use gandr_theory_stone_duality::Comparison;
@@ -38,16 +40,16 @@ use gandr_theory_stone_duality::Element;
 use gandr_theory_stone_duality::ElementCount;
 
 /// The last level the graded poset holds.
-const LAST_LEVEL: usize = 5;
+pub const LAST_LEVEL: usize = 5;
 
 /// A point of a level, numbered from zero.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Point(usize);
+pub struct Point(pub usize);
 
 /// A cell of a level.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Cell
+pub enum Cell
 {
     /// A point.
     Vertex(Point),
@@ -57,7 +59,7 @@ enum Cell
 
 /// The space a tower presents.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Space
+pub enum Space
 {
     /// The interval: each level a path.
     Interval,
@@ -107,7 +109,7 @@ fn cells(
 ///
 /// # Specification
 /// trivial.
-fn poset(
+pub fn poset(
     space: Space,
     level: Level,
 ) -> Result<GradedPoset<Cell>, DualityError>
@@ -131,7 +133,7 @@ fn poset(
 ///
 /// # Specification
 /// trivial.
-fn constant(
+pub fn constant(
     space: Space,
     level: Level,
 ) -> Sheaf<Cell>
@@ -150,7 +152,7 @@ fn constant(
 ///
 /// # Specification
 /// trivial.
-fn oriented(
+pub fn oriented(
     face: &Cell,
     cell: &Cell,
 ) -> Incidence
@@ -231,7 +233,7 @@ const SPACES: [Space; 2] = [Space::Interval, Space::Circle];
 ///
 /// # Specification
 /// trivial.
-fn expected(
+pub fn expected(
     space: Space,
     degree: Rank,
 ) -> Dimension
@@ -295,6 +297,38 @@ fn every_level_of_both_towers_has_the_cohomology_of_its_space()
             tower.cohomology(past).map(|_| ()),
             Err(SheafError::LevelOutside(past))
         );
+    }
+}
+
+#[test]
+fn every_level_of_both_towers_keeps_its_cohomology_on_its_reduct()
+{
+    // The greedy matching on each oriented level pairs each vertex but the
+    // last with the edge that leaves it. The interval keeps one vertex, and
+    // the circle keeps one vertex and the edge that closes the cycle.
+    for space in SPACES {
+        for level in (0 ..= LAST_LEVEL).map(Level::from) {
+            let sheaf = constant(space, level);
+            let count = usize::from(sheaf.poset().count());
+            let cells: Vec<Element> = (0 .. count).map(Element::from).collect();
+            let matching = greedy(&mut sheaf.oriented(oriented), &cells).expect("the level reads");
+            let reduced = sheaf
+                .reduce(&matching, oriented, Budget::from(count))
+                .expect("the matching is compatible");
+            let critical = match space {
+                Space::Interval => 1_usize,
+                Space::Circle => 2_usize,
+            };
+            assert_eq!(reduced.cells().len(), critical, "{space:?} at {level:?}");
+            let cohomology = reduced.cochains().cohomology().expect("the cohomology");
+            for degree in (0 ..= 1_usize).map(Rank::from) {
+                assert_eq!(
+                    cohomology.dimension(degree),
+                    expected(space, degree),
+                    "{space:?} at {level:?} in {degree:?}"
+                );
+            }
+        }
     }
 }
 
