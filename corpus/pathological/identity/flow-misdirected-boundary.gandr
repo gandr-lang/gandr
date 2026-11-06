@@ -3,7 +3,7 @@ module Schema where {
   type New = Integer * String;
   @[ checks ]
   def toNew(old : Old) -> New =
-    match old
+    match old where
       | *{name, age} => *{age, name}
   @[ checks ]
   def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;

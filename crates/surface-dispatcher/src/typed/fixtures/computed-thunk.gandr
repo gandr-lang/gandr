@@ -4,7 +4,7 @@ data IR(d : Type) : Type[+, 1] where
   | Iota : (e : d) --> IR(d)
   | DeltaC : (a : Type, f : +U (+U (a -> -F d) -> -F IR(d))) --> IR(d)
 def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type =
-  match c
+  match c where
     | Iota(e) => return Unit
     | DeltaC(a, f) => return (Sig (+U (a -> -F x)) (thunk {
       fun (h) { args[<] d (f (thunk { fun (z) { t (h z) } })) x t }
@@ -19,5 +19,5 @@ def delta(
   t : +U (x -> -F d),
   v : args(d, (DeltaC(a, f) : IR(d)), x, t)
 ) -> Unit =
-  match v
+  match v where
     | MkSig(h, r) => keep d (f (thunk { fun (z) { t (h z) } })) x t r

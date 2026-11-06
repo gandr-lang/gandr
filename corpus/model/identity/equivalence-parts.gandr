@@ -11,20 +11,20 @@ import "./equivalence.gandr";
 
 /// The `backOf` match reads the quasi-inverse backward map.
 def backOf(a : Type, b : Type, i : a ≅ b) -> b -> a =
-  match i
+  match i where
     | *{t, k, s, r} => k
 
 /// The `leftOf` match reads the equivalence left inverse.
 def leftOf(a : Type, b : Type, e : a ≃ b) -> b -> a =
-  match e
+  match e where
     | *{t, *{g, s}, *{h, r}} => g
 
 /// The label pattern reads the quasi-inverse backward map.
 def fromByLabel(a : Type, b : Type, i : a ≅ b) -> b -> a =
-  match i
+  match i where
     | *{.from = k} => k
 
 /// The label pattern binds the backward map as `into`.
 def fromAsInto(a : Type, b : Type, i : a ≅ b) -> b -> a =
-  match i
+  match i where
     | *{.from = into} => into

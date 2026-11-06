@@ -12,7 +12,7 @@ def tagged : *{n : Integer, w : Ix(n)} = *{3, (MkIx : Ix(3))};
 
 /// The first component of a dependent pair, by a match.
 def tag_of(p : *{n : Integer, w : Ix(n)}) -> Integer =
-  match p
+  match p where
     | *{m, w} => m
 
 /// The tag of `tagged`.
@@ -49,7 +49,7 @@ def rebuilt(p : *{
   n : Integer,
   v : Path[.A = Integer](n, n)
 }) -> Path(p, p) =
-  match p
+  match p where
     | *{.n = m, .v = w} => Path.here (*{m, w})
 
 /// A record of three over a type parameter, split under a motive reading the
@@ -60,7 +60,7 @@ def againAt(
   b : Type,
   w : *{x : b, y : b, p : Path[.A = b](x, y)}
 ) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)}](w, w) =
-  match w
+  match w where
     | *{.x = u, .y = v, .p = q} => Path.here (*{u, *{v, q}})
 
 /// A record of three over a type parameter is equivalent to itself; each
@@ -81,7 +81,7 @@ def selfEquiv(b : Type) -> *{x : b, y : b, p : Path[.A = b](x, y)} ≃ *{
 /// A record of three nests its links; a labelled pattern binds the entries it
 /// names, the later one's type reading the earlier.
 def middle(t : *{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> Integer =
-  match t
+  match t where
     | *{.a = x, .c = z} => x
 
 /// A path between pairs is a path between the first components and, over

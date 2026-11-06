@@ -23,14 +23,14 @@ import "./copy-on-write.gandr";
 /// `pushInPlace` appends `b` and skips the holder count.
 /// It writes inline or heap bytes in place.
 pub def pushInPlace(s : Repr, b : Integer) -> Written =
-  match s
+  match s where
     | Inline(bs) => push s b
     | Shared(n, bs) => Written (Shared n (beforeZero bs b)) 0
 
 /// `holders` counts strings that hold a string's bytes.
 /// Inline bytes have one holder.
 def holders(s : Repr) -> Integer =
-  match s
+  match s where
     | Inline(bs) => 1
     | Shared(n, bs) => n
 

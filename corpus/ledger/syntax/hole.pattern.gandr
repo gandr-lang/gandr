@@ -3,5 +3,5 @@
 /// filled.
 @[ refuses("UndecidedCoverage") ]
 def classify(n : Integer) -> -F Integer =
-  match n
+  match n where
     | ?branch => return 1

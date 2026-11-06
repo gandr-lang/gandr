@@ -150,7 +150,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
 118 │ │┌    handle r : std.io.Ring.Eff {
 119 │ ││      let b = r.alloc 4096;
     │ ││      ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf
-120 │ ││┌     match flag
+120 │ ││┌     match flag where
 121 │ │││       | true => r.free b
 122 │ │││       | false => pure *{}
     │ │││                  ┯━━━━━━│

@@ -20,7 +20,7 @@ pub module Schema where {
   /// The translator swaps fields and adds a flag.
   @[ checks ]
   def toNew(old : Old) -> New =
-    match old
+    match old where
       | *{name, age} => *{age, name, +{.0 = *{}}}
   /// The translator defines the schema flow.
   @[ checks ]

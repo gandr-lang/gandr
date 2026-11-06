@@ -5,8 +5,8 @@ error[LoopUndecided]: deciding whether this case respects its sort's loops ran p
    │    │          ─ checked against `(x : Circle) -> -F Path[.A = Circle](x, x)`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │
-22 │ │┏   match x
-23 │ │┃     | Base => match power (power (Succ (Succ (Succ Zero))))
+22 │ │┏   match x where
+23 │ │┃     | Base => match power (power (Succ (Succ (Succ Zero)))) where
 24 │ │┃       | Zero => Path.here Base
 25 │ │┃       | Succ(p) => Path.here Base
    │ │┃                                 ╿

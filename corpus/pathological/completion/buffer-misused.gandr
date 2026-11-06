@@ -117,7 +117,7 @@ def receivedReturnedTwice() -> Unit =
 def freedInOneArm(flag : Bool) -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;
-    match flag
+    match flag where
       | true => r.free b
       | false => pure *{}
   } with {

@@ -6,6 +6,6 @@ import std.list (List);
 /// The first element of a list, or zero for the empty list.
 @[ checks ]
 def head(xs : List(Integer)) -> -F Integer =
-  match xs
+  match xs where
     | #[x, ..rest] => return x
     | #[] => return 0

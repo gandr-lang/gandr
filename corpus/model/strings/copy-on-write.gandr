@@ -24,16 +24,16 @@ pub data Written : Type where
 
 /// `copy` preserves inline bytes or shares a buffer with one new holder.
 pub def copy(s : Repr) -> Repr =
-  match s
+  match s where
     | Inline(bs) => Inline bs
     | Shared(n, bs) => Shared (n + 1) bs
 
 /// The bytes with `b` written before the terminating zero.
 pub def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) =
-  match bs
+  match bs where
     | Nil => Nil
     | Cons(x, rest) => {
-      match rest
+      match rest where
         | Nil => (Cons b (Cons x Nil) : List(Integer))
         | Cons(y, more) => (Cons x (beforeZero[<] rest b) : List(Integer))
     }
@@ -42,30 +42,30 @@ pub def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) =
 /// It moves a full inline string to the heap, writes an unshared buffer in
 /// place and copies a shared buffer.
 pub def push(s : Repr, b : Integer) -> Written =
-  match s
+  match s where
     | Inline(bs) => {
       let grown = beforeZero bs b;
       let stored = store grown;
-      match stored
+      match stored where
         | Inline(kept) => Written stored 0
         | Shared(n, moved) => Written stored 1
     }
     | Shared(n, bs) => {
       let grown = beforeZero bs b;
       let alone = n == 1;
-      match alone
+      match alone where
         | true => Written (Shared 1 grown) 0
         | false => Written (Shared 1 grown) 1
     }
 
 /// The buffers a write filled anew.
 pub def copies(w : Written) -> Integer =
-  match w
+  match w where
     | Written(s, n) => n
 
 /// The written string.
 pub def written(w : Written) -> Repr =
-  match w
+  match w where
     | Written(s, n) => s
 
 /// `long` builds a string with twenty-four bytes and a terminating zero.

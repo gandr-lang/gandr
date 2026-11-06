@@ -13,7 +13,7 @@ data List(a : Type) : Type where
 
 /// The first of a list of integers, or zero.
 def first(xs : List(Integer)) -> Integer =
-  match xs
+  match xs where
     | Nil => 0
     | Cons(x, _) => x
 
@@ -24,7 +24,7 @@ def mistyped() -> Integer { first (Cons "no" Nil) }
 
 /// How many elements a list of any type holds.
 def rec size(a : Type, xs : List(a)) -> Integer =
-  match xs
+  match xs where
     | Nil => 0
     | Cons(_, rest) => {
       let n = size[<] a rest;

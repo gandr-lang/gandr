@@ -36,7 +36,7 @@ module Rename where {
   /// The translator moves the field to the target constructor.
   @[ checks ]
   def toOther(old : Old) -> Other =
-    match old
+    match old where
       | Mk(n) => Make n
   /// The translator defines the flow from `Old` to `Other`.
   @[ checks ]
@@ -55,7 +55,7 @@ pub module Shapes where {
   /// The translator swaps rectangle sides.
   @[ checks ]
   def toFigure(shape : Shape) -> Figure =
-    match shape
+    match shape where
       | Circle(r) => Round r
       | Rect(w, h) => Box h w
   /// The translator defines the flow from shapes to figures.

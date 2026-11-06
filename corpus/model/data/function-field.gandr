@@ -37,7 +37,7 @@ def zeroAt(u : Unit) -> Unary = Z
 /// A family that calls its function argument: the unit when the call
 /// returns zero, and the naturals past it.
 def callsAtZero(f : Unit -> Unary) -> Type =
-  match f *{}
+  match f *{} where
     | Z => return Unit
     | S(m) => return Unary
 

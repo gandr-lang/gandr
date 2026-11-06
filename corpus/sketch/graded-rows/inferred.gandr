@@ -32,7 +32,7 @@ pub def parsePair(a : Token, b : Token) -> [Cost <= 2] *{Node, Node} =
 pub def sum(xs : List(Integer)) -> [Cost <= xs.length] Integer #spec{
   measure { cost xs.length }
 } {
-  match xs
+  match xs where
     | Nil => 0
     | Cons(x, rest) =>
       charge 1;

@@ -13,7 +13,7 @@ data Nat : Type where
 /// one held before the match.
 def shadowed(rounds : Nat) -> Integer =
   var c = 100
-  let settled = match rounds
+  let settled = match rounds where
     | Zero => return 7
     | Succ(fewer) => { var c = 1; access c as v { resume v (v + 1) }; pure c }
   pure c
@@ -30,14 +30,14 @@ def shadowedExited : () -> Integer = shadowed Zero;
 /// the held count, not the end.
 def forked(rounds : Nat) -> Integer =
   var c = 100
-  let settled = match rounds
+  let settled = match rounds where
     | Zero => return 7
     | Succ(fewer) => { let desk = fork (seat : end) { close seat }; close desk }
   pure c
 
 /// A fork in an arm whose block ends at the unit the match settles.
 def forkPastAnExit(rounds : Nat) -> Unit =
-  let settled = match rounds
+  let settled = match rounds where
     | Zero => return *{}
     | Succ(fewer) => { let desk = fork (seat : end) { close seat }; close desk }
   settled

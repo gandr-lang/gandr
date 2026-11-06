@@ -24,7 +24,7 @@ import "../../model/data/vectors.gandr";
 /// The first element, its element type and length implicit. `VNil` stands at
 /// zero, apart from `Succ(n)`, so the case leaves its arm out.
 def head[a : Type, n : Nat](v : Vec(a, Succ(n))) -> a =
-  match v
+  match v where
     | VCons(_, h, _) => h
 
 /// The head of the vector two long. The solver does not take apart the `Succ`

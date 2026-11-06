@@ -20,16 +20,16 @@ data Nat : Type where
 module Counting where {
   /// Doubles a count.
   def rec double(n : Nat) -> Nat =
-    match n
+    match n where
       | Zero => Zero
       | Succ(k) => Succ (Succ (double[<] k))
 
   /// Halves a count down to the nearest whole. Its attribute stands before it.
   @[ checks ]
   def rec half(n : Nat) -> Nat =
-    match n
+    match n where
       | Zero => Zero
-      | Succ(m) => match m
+      | Succ(m) => match m where
         | Zero => Zero
         | Succ(k) => Succ (half[<] k)
 }
@@ -53,7 +53,7 @@ theory Stepping where
 module Iterating(S : Model(Stepping)) where
   /// Steps `x` once per successor of `n`.
   def rec times(n : Nat, x : S.M) -> S.M =
-    match n
+    match n where
       | Zero => x
       | Succ(k) => S.step (times[<] k x)
 

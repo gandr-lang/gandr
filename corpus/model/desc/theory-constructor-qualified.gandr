@@ -19,7 +19,7 @@ theory Pointed where
 /// One for `Theory`'s application link, zero for every other: the pattern
 /// names `Theory`'s `App`, which the bare name does not reach here.
 def isApplication(link : Theory) -> Integer =
-  match link
+  match link where
     | Theory.App(head, arguments) => 1
     | _ => 0
 

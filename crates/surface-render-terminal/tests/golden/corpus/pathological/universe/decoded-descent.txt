@@ -5,13 +5,13 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │       │                   ─ checked against `(a : UL) -> -F (elL(a) -> Nat)`; while checking the body of this function; binds c : UL
    │ ┌─────┘
    │ │
-24 │ │┌      match c
+24 │ │┌      match c where
 25 │ ││        | NatL => thunk { fun (v) { v } }
 26 │ ││        | ListL(a) => thunk { fun (v) {
    │ ││ ┌────────────────────│───────┘
    │ ││┌│────────────────────┘
    │ ││││
-27 │ ││││┌       match v -> -F Nat
+27 │ ││││┌       match v -> -F Nat where
 28 │ │││││         | Nil => Zero
 29 │ │││││         | Cons(h, t) => {
 30 │ │││││           let each = totalDirect[<] a;

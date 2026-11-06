@@ -56,7 +56,7 @@ def downAlong(a : Int, x : Int, e : Path[.A = Int](plus a x, plus x a)) -> Path[
 /// The `plusCommAlong` recursion proves that addition commutes.
 /// At `S(P(x))`, the set rule identifies its equal integer paths.
 def rec plusCommAlong(a : Int, b : Int) -> Path[.A = Int](plus a b, plus b a) =
-  match b
+  match b where
     | Z => Path.back (plusZ a)
     | S(x) => upAlong a x (plusCommAlong[<] a x)
     | P(x) => downAlong a x (plusCommAlong[<] a x)
@@ -65,7 +65,7 @@ def rec plusCommAlong(a : Int, b : Int) -> Path[.A = Int](plus a b, plus b a) =
 /// At `S(P(x))`, the checker refuses unequal loops.
 @[ refuses("RuleNotRespected") ]
 def rec turned(b : Int) -> Path[.A = Circle](Base, Base) =
-  match b
+  match b where
     | Z => Path.here Base
     | S(x) => Path.step (turned[<] x) loop
     | P(x) => turned[<] x
@@ -73,7 +73,7 @@ def rec turned(b : Int) -> Path[.A = Circle](Base, Base) =
 /// The `rewound` recursion gives each word a path to itself.
 /// The set rule equates the inverse arm with its endpoint path.
 def rec rewound(w : Words) -> Path[.A = Words](w, w) =
-  match w
+  match w where
     | Nil => Path.here Nil
     | Loop(x) => Path.ap around (rewound[<] x)
     | Unloop(x) => Path.here (Unloop x)

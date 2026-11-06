@@ -11,7 +11,7 @@
 
 /// The `isoToEquiv` function uses one backward map as both inverses.
 pub def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b =
-  match i
+  match i where
     | *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}}
 
 /// The left and right inverse laws identify the two inverse maps at `y`.
@@ -29,7 +29,7 @@ def leftRetraction(
 
 /// The `equivToIso` function derives a quasi-inverse from a bi-invertible map.
 def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b =
-  match e
+  match e where
     | *{t, *{g, s}, *{h, r}} => *{
       t,
       *{g, *{s, fun (y) { leftRetraction a b t g h y (s (h y)) (r y) }}}

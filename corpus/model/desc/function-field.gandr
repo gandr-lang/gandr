@@ -26,7 +26,7 @@ pub data Program : Type where {
 /// a store runs the rest from the state it stores. The fold reaches a
 /// read's rest by applying its continuation, one stage below the read.
 def rec final(p : Program, s : Integer) -> Integer =
-  match p
+  match p where
     | Done(x) => x
     | Get(k) => final[<] (k s) s
     | Put(t, k) => final[<] k t

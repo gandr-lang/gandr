@@ -24,14 +24,14 @@ pub module Up : Model(Counter) where {
   /// One count more.
   @[ checks ]
   def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
-    match c
+    match c where
       | +{.0 = u} => +{.1 = +{.0 = u}}
       | +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}}
       | +{.1 = +{.1 = u}} => +{.0 = u}
   /// The count as an integer.
   @[ checks ]
   def read(c : Unit + (Unit + Unit)) -> Integer =
-    match c
+    match c where
       | +{.0 = u} => 0
       | +{.1 = +{.0 = u}} => 1
       | +{.1 = +{.1 = u}} => 2
@@ -46,14 +46,14 @@ module Down : Model(Counter) where {
   /// One count less.
   @[ checks ]
   def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
-    match c
+    match c where
       | +{.0 = u} => +{.1 = +{.1 = u}}
       | +{.1 = +{.0 = u}} => +{.0 = u}
       | +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
   /// The negated count as an integer.
   @[ checks ]
   def read(c : Unit + (Unit + Unit)) -> Integer =
-    match c
+    match c where
       | +{.0 = u} => 0
       | +{.1 = +{.0 = u}} => 2
       | +{.1 = +{.1 = u}} => 1
@@ -67,7 +67,7 @@ pub def downModel : Model(Counter) = pack Down at Model(Counter);
 
 /// The `negateCount` function keeps zero and exchanges one with two.
 def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
-  match c
+  match c where
     | +{.0 = u} => +{.0 = u}
     | +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}}
     | +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
@@ -98,7 +98,7 @@ pub def oneCounter : Path(upModel, downModel) = *{
 
 /// The `observe` function reads the value after one step.
 pub def observe(m : Model(Counter)) -> Integer =
-  match m
+  match m where
     | *{.zero = z, .incr = i, .read = r} => r (i z)
 
 /// The consumer reads the upward counter.

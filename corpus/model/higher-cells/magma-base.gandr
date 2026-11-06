@@ -18,7 +18,7 @@ pub theory Magma where
 
 /// `exchange` swaps booleans. It translates the binary corolla.
 pub def exchange(b : Bool) -> Bool =
-  match b
+  match b where
     | true => +{.1 = *{}}
     | false => +{.0 = *{}}
 

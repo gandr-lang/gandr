@@ -20,12 +20,12 @@ module Versions where {
   /// The first translator: the fields swapped.
   @[ checks ]
   def toV2(record : V1) -> V2 =
-    match record
+    match record where
       | *{name, age} => *{age, name}
   /// The second translator: a flag added.
   @[ checks ]
   def toV3(record : V2) -> V3 =
-    match record
+    match record where
       | *{age, name} => *{+{.1 = *{}}, age, name}
   /// The flow from the first version to the second.
   @[ checks ]

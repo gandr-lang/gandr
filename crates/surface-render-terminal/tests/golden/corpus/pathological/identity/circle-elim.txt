@@ -5,7 +5,7 @@ error[LoopNotRespected]: this case might tell a loop apart from staying put: car
    │    │                ─ checked against `(x : Circle) -> -F Path[.A = Circle](Base, x)`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │
-20 │ │┏   match x
+20 │ │┏   match x where
 21 │ │┃     | Base => Path.here Base
    │ │┃                            ╿
    │ └┃────────────────────────────│
@@ -23,8 +23,8 @@ error[LoopNotRespected]: this case answers at its loop's point by a case over an
    │    │           │
    │ ┌──┘           checked against `(a : Circle) -> Circle -> -F *{around : Path[.A = Circle](a, a), centre : Circle}`; while checking the body of this function; binds a : Circle
    │ │
-29 │ │┏   match a
-30 │ │┃     | Base => match b
+29 │ │┏   match a where
+30 │ │┃     | Base => match b where
 31 │ │┃       | Base => *{centre = Base, around = loop}
    │ │┃                                               ╿
    │ └┃───────────────────────────────────────────────│
@@ -41,7 +41,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │    │             ─ checked against `(x : Circle) -> -F Path[.A = Circle](Base, x)`; while checking the body of this function; binds x : Circle
    │ ┌──┘
    │ │
-46 │ │┌   match x
+46 │ │┌   match x where
 47 │ ││     | Base => Path.here Base
    │ ││               ────────────── an endpoint the point does not convert to
 48 │ ││     | loop => Path.here (Path.here Base)

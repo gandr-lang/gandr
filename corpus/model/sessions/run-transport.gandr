@@ -19,25 +19,25 @@ pub data Answer : Type where
 
 /// A bit read as an answer.
 def decode(b : Bit) -> Answer =
-  match b
+  match b where
     | Zero => No
     | One => Yes
 
 /// An answer written as a bit.
 def encode(a : Answer) -> Bit =
-  match a
+  match a where
     | No => Zero
     | Yes => One
 
 /// Encoding a decoded bit gives the bit back.
 def encoded(b : Bit) -> Path(encode (decode b), b) =
-  match b
+  match b where
     | Zero => Path.here Zero
     | One => Path.here One
 
 /// Decoding an encoded answer gives the answer back.
 def decoded(a : Answer) -> Path(decode (encode a), a) =
-  match a
+  match a where
     | No => Path.here No
     | Yes => Path.here Yes
 

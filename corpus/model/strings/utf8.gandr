@@ -18,11 +18,11 @@ import "./string-base.gandr";
 /// 65536 and four up to the last code point.
 def encode(c : Integer) -> List(Integer) =
   let one = c < 128
-  match one
+  match one where
     | true => Cons c Nil
     | false => {
       let two = c < 2048;
-      match two
+      match two where
         | true => {
           let lead = int.div c 64;
           let low = int.mod c 64;
@@ -30,7 +30,7 @@ def encode(c : Integer) -> List(Integer) =
         }
         | false => {
           let three = c < 65536;
-          match three
+          match three where
             | true => {
               let lead = int.div c 4096;
               let rest = int.mod c 4096;
@@ -52,7 +52,7 @@ def encode(c : Integer) -> List(Integer) =
 
 /// `encodeAll` encodes each code point in order.
 pub def rec encodeAll(cs : List(Integer)) -> List(Integer) =
-  match cs
+  match cs where
     | Nil => Nil
     | Cons(c, rest) => concat (encode c) (encodeAll[<] rest)
 

@@ -7,7 +7,7 @@
 
 /// The lower bound of a span, its upper bound bound by label and unread.
 def lower_bound(span : *{lower : Integer, upper : Integer}) -> Integer =
-  match span
+  match span where
     | *{.upper = stop, .lower = start} => start
 
 /// The span from three to nine starts at three.
@@ -16,7 +16,7 @@ def span_start : () -> Integer = lower_bound (*{lower = 3, upper = 9});
 
 /// The same bound with both fields bound by position, the second unread.
 def first_bound(span : *{lower : Integer, upper : Integer}) -> Integer =
-  match span
+  match span where
     | *{start, stop} => start
 
 /// The span from four to six starts at four.

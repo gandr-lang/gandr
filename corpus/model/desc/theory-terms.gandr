@@ -52,7 +52,7 @@ data Ticks : Type where
 
 /// Joins two counts on the left.
 def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
-  match m
+  match m where
     | NoTick => n
     | Tick(k) => Tick (joinLeft[<] k n)
 
@@ -61,7 +61,7 @@ def tick(n : Ticks) -> Ticks { Tick n }
 
 /// No tick on the right, by induction.
 def rec noTickRight(n : Ticks) -> Path(joinLeft n NoTick, n) =
-  match n
+  match n where
     | NoTick => Path.here NoTick
     | Tick(k) => Path.ap tick (noTickRight[<] k)
 
@@ -81,7 +81,7 @@ module Counts : Model(Mag) where
 /// The fold into the counts, which respects the counts' laws.
 @[ respects(*{Counts.unitL, Counts.unitR}) ]
 def rec intoCounts(t : Terms(Mag)) -> Ticks =
-  match t
+  match t where
     | Mag.one => Counts.one ()
     | Mag.mul(x, y) => Counts.mul (intoCounts[<] x) (intoCounts[<] y)
 

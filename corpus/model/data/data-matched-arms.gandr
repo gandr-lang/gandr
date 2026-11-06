@@ -12,13 +12,13 @@ import "./data-base.gandr";
 
 /// Red apart from the rest: one arm, then a wildcard for the others.
 def notRed(c : Color) -> Integer =
-  match c
+  match c where
     | Red => 0
     | _ => 1
 
 /// The warm colours, two constructors sharing one arm.
 def warm(c : Color) -> Integer =
-  match c
+  match c where
     | Red | Green => 1
     | Blue => 0
 
@@ -35,7 +35,7 @@ data Outer : Type where
 /// The integer two constructors down, or zero: the first arm's pattern nests
 /// `Yes` inside `Some`.
 def depth(m : Outer) -> Integer =
-  match m
+  match m where
     | Some(Yes(n)) => n
     | Some(No) => 0
     | None => 0

@@ -13,7 +13,7 @@
 def spin(x : Bool) -> [Partial] Bool =
   let y = loop {
     let below = 1 < 0;
-    match below
+    match below where
       | true => break(x)
       | false => continue
   };

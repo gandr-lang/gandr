@@ -14,7 +14,7 @@ data Shade : Type where
 /// A hole between two arms.
 @[ refuses("UndecidedCoverage") ]
 def rank(c : Shade) -> Integer =
-  match c
+  match c where
     | Crimson => 0
     | ? => 1
     | Navy => 2
@@ -27,7 +27,7 @@ data Option : Type where
 /// A hole inside a payload.
 @[ refuses("UndecidedCoverage") ]
 def weigh(m : Option) -> Integer =
-  match m
+  match m where
     | Value(?) => 100
     | NoValue => 200
 

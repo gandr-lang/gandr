@@ -1718,11 +1718,11 @@ mod tests
         // its arms in two nested arm blocks.
         let lines = [
             "def rec pick(a : Nat, b : Nat, yes : Maybe(Nat), no : Maybe(Nat)) -> Maybe(Nat) =",
-            "  match a",
-            "    | Zero => match b",
+            "  match a where",
+            "    | Zero => match b where",
             "      | Zero => yes",
             "      | Succ(_q) => no",
-            "    | Succ(p) => match b",
+            "    | Succ(p) => match b where",
             "      | Zero => no",
             "      | Succ(q) => pick[<] p q yes no",
             "",

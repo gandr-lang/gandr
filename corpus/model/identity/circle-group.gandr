@@ -34,7 +34,7 @@ def rec spinHom(
   a : Int,
   b : Int
 ) -> Path[.A = Path[.A = Circle](Base, Base)](spin (plus a b), Path.step (spin b) (spin a)) =
-  match b
+  match b where
     | Z => Path.here (spin a)
     | S(x) => Path.ap loopOn (spinHom[<] a x)
     | P(x) => Path.ap unloopOn (spinHom[<] a x)
@@ -44,7 +44,7 @@ def rec windHom(
   q : Path[.A = Circle](Base, Base),
   p : Path[.A = Circle](Base, Base)
 ) -> Path[.A = Int](wind (Path.step p q), plus (wind q) (wind p)) =
-  match p
+  match p where
     | here => Path.here (wind q)
     | loop ∷ r => Path.ap up (windHom[<] q r)
     | back(loop) ∷ r => Path.ap down (windHom[<] q r)

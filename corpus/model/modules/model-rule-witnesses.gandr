@@ -38,19 +38,19 @@ def tick(n : Ticks) -> Ticks { Tick n }
 
 /// Joins two counts by recursion on the left one.
 def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
-  match m
+  match m where
     | NoTick => n
     | Tick(k) => Tick (joinLeft[<] k n)
 
 /// Joins two counts by recursion on the right one.
 def rec joinRight(m : Ticks, n : Ticks) -> Ticks =
-  match n
+  match n where
     | NoTick => m
     | Tick(k) => Tick (joinRight[<] m k)
 
 /// Joining no tick on the left leaves a count as it is, by induction on it.
 def rec noTickJoinsRight(n : Ticks) -> Path(joinRight NoTick n, n) =
-  match n
+  match n where
     | NoTick => Path.here NoTick
     | Tick(k) => Path.ap tick (noTickJoinsRight[<] k)
 

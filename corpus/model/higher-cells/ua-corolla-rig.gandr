@@ -27,7 +27,7 @@ theory Semi where
 /// `rename` relabels four corolla elements. It is natural along their
 /// automorphisms.
 def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
-  match e
+  match e where
     | +{.0 = u} => +{.2 = u}
     | +{.1 = u} => +{.3 = u}
     | +{.2 = u} => +{.0 = u}
@@ -35,7 +35,7 @@ def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
 
 /// `cross` relabels four corolla elements without naturality.
 def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
-  match e
+  match e where
     | +{.0 = u} => +{.2 = u}
     | +{.1 = u} => +{.1 = u}
     | +{.2 = u} => +{.0 = u}
@@ -60,13 +60,13 @@ def twice = ua[1, 4] Rig Rig (*{.plus = rename, .times = rename}) (*{.plus = ren
 
 /// `widen` maps booleans into four corolla elements.
 def widen(b : Bool) -> Unit + Unit + Unit + Unit =
-  match b
+  match b where
     | true => +{.0 = *{}}
     | false => +{.1 = *{}}
 
 /// `narrow` maps four corolla elements onto booleans.
 def narrow(e : Unit + Unit + Unit + Unit) -> Bool =
-  match e
+  match e where
     | +{.0 = u} => +{.0 = u}
     | +{.1 = u} => +{.1 = u}
     | +{.2 = u} => +{.0 = u}

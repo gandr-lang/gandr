@@ -23,7 +23,7 @@ import "./unique-write.gandr";
 pub module Str where
   /// `len` reads a string that a shared receiver lends.
   def len(self : shared Repr) -> Integer =
-    match self
+    match self where
       | Inline(bs) => count bs
       | Shared(n, bs) => count bs
   /// `push` writes `b` before the terminating zero.
@@ -33,7 +33,7 @@ pub module Str where
   /// `bytes` takes a string and returns its bytes.
   /// No code reads that string later.
   def bytes(self : consumed Repr) -> List(Integer) =
-    match self
+    match self where
       | Inline(bs) => bs
       | Shared(n, bs) => bs
 
@@ -58,7 +58,7 @@ def taken() -> List(Integer) =
 /// The match ends both holds.
 def takenInOneArm(t : Repr) -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  match t
+  match t where
     | Inline(bs) => s.bytes ()
     | Shared(n, bs) => bs
 
@@ -78,6 +78,6 @@ def keptOnShared() -> List(Integer) =
 @[ runs("3") ]
 def readWhereNotTaken() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  match Shared 1 (Nil : List(Integer))
+  match Shared 1 (Nil : List(Integer)) where
     | Inline(bs) => { count (s.bytes ()) }
     | Shared(n, bs) => s.len ()

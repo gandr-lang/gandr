@@ -27,7 +27,7 @@ data Program : Type where {
 /// The state-passing handler, reaching a read's rest through its
 /// continuation.
 def rec final(p : Program, s : Integer) -> Integer =
-  match p
+  match p where
     | Done(x) => x
     | Get(k) => final[<] (k s) s
     | Put(t, k) => final[<] k t

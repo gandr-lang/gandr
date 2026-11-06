@@ -22,7 +22,7 @@ data Code : Type where
 
 /// A family over the codes.
 def fam(c : Code) -> Type =
-  match c
+  match c where
     | A => return Unit
     | B => return Unit
 
@@ -31,6 +31,6 @@ def pred(c : Code, v : fam(c)) -> Type = return Unit
 
 /// The goal reads `c` and `v`, and the type of `v` reads `c`.
 def go(c : Code, v : fam(c)) -> pred(c, v) =
-  match c
+  match c where
     | A => *{}
     | B => *{}
