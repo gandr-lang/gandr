@@ -1,5 +1,9 @@
-// A model of a `theory` block another source declares: `Model(S)` reads an
-// imported block as it reads a local one.
+// A `Model(S)` can read a theory that another source declares.
+//
+// `Model(S)` reads an imported theory as it reads a local theory.
+//
+// The imported theory provides the signature.
+// The module below provides one model of that signature.
 //
 // - see: #726
 

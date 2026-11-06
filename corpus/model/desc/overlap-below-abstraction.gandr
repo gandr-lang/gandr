@@ -1,13 +1,14 @@
-// Two rules of a nominal theory that overlap below an abstraction. A rule's
-// abstraction is one head at any depth, so the checker finds the pair there
-// as the kernel does.
+// Two nominal rules can overlap below an abstraction.
+//
+// A rule abstraction has one head at each depth.
+//
+// The checker finds the pair at that depth.
+// The kernel finds the same pair.
 //
 // - see: #1709
 
-/// `inner` rewrites the restriction inside `nu(bind a . nu(bind b . z()))` to
-/// `nu(bind a . w())`, a normal form, while `outer` rewrites the whole term to
-/// `z()`. The completion orients the two reducts into a rule of their own, and
-/// the kernel replays it from the pair.
+/// `inner` and `outer` produce different reducts, and completion derives a
+/// rule that joins them.
 theory Nested where
   sort Name : Atom;
   sort P : Type;

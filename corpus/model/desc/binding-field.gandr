@@ -1,22 +1,17 @@
-//! The binding field in rule terms
-//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics].
-//! At a port written `pi+ (x : S) . T` a rule writes `bind x . t` for the field
-//! the port binds: `x` is a variable of the representable sort `S`, which
-//! substitution instantiates. At a port written `bind (a : N) . T` the same
-//! spelling abstracts the atom `a` (`bind-term.gandr`), which swapping renames.
-//! The port decides which: the value of `Theory` keeps a field as `Bind` and
-//! its variable as `Bvar`, an abstraction as `Abs` and its atom as `Occ`, so a
-//! program tells the two binders apart by `case`.
+//! A rule term can bind a variable in a field.
+//!
+//! A `pi+ (x : S) . T` port accepts `bind x . t`. Substitution instantiates
+//! the variable `x`.
+//!
+//! A `bind (a : N) . T` port abstracts atom `a`. A swap renames it.
+//! A `Theory` value stores fields as `Bind` nodes and abstractions as `Abs`
+//! nodes. A program distinguishes the nodes by `case`.
 //!
 //! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
 //!
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
 
-/// A receive on a restricted channel: `nu` abstracts the channel `c`, and
-/// `listen`'s continuation is a field binding the value `x` received on it.
-/// No process outside the restriction can name `c` to send on it, so the
-/// receive never fires. The checker orients the law and the kernel replays
-/// the verdict.
+/// The `listen` port binds a received value under restricted channel `c`.
 theory Deaf where
   sort Name : Atom;
   sort Val : Type+;
@@ -27,18 +22,15 @@ theory Deaf where
   oper listen : (c : Name, k : pi+ (x : Val). Proc) --> Proc;
   rule deaf : nu (bind c. (listen c (bind x. (out x (nil ()))))) ==> nil ();
 
-/// A field whose variable the body does not take: `q` is a metavariable
-/// written without `x` as an argument, so no instance of it names `x`, and
-/// the law needs no freshness condition where an abstraction's atom would
-/// (`freshness.gandr`): a field binds for substitution, never for swapping.
+/// The field variable `x` does not occur in `q`, so this law needs no atom
+/// freshness condition.
 theory Vacuous where
   sort Val : Type+;
   sort Proc : Type;
   oper new : (body : pi+ (x : Val). Proc) --> Proc;
   rule gc : new (bind x. q) <=> q;
 
-/// Structural recursion over a rule term: one per `Bind` node, the binding
-/// fields; an `Abs` node counts none of its own.
+/// This recursion counts `Bind` nodes in a rule term. It ignores `Abs` nodes.
 def rec fieldsOf(term : Theory) -> Integer =
   match term where
     | Bind(var, body) => {
@@ -54,8 +46,7 @@ def rec fieldsOf(term : Theory) -> Integer =
     }
     | _ => 0
 
-/// Structural recursion over a rule term: one per `Abs` node, the atom
-/// abstractions; a `Bind` node counts none of its own.
+/// This recursion counts `Abs` nodes in a rule term. It ignores `Bind` nodes.
 def rec abstractionsOf(term : Theory) -> Integer =
   match term where
     | Abs(atom, body) => {
@@ -71,8 +62,7 @@ def rec abstractionsOf(term : Theory) -> Integer =
     }
     | _ => 0
 
-/// `deaf`'s left side writes `bind` twice: once a field, `bind x`, read at
-/// `listen`'s `pi+` port.
+/// `deaf` uses `bind x` at the `listen` port.
 @[ runs("1") ]
 def deafFields() -> Integer { match Deaf {
   | Presents(sorts, opers, rules) => match rules where
@@ -81,7 +71,7 @@ def deafFields() -> Integer { match Deaf {
   | _ => 0
 } }
 
-/// And once an abstraction, `bind c`, read at `nu`'s `bind` port.
+/// `deaf` uses `bind c` at the `nu` port.
 @[ runs("1") ]
 def deafAbstractions() -> Integer { match Deaf {
   | Presents(sorts, opers, rules) => match rules where

@@ -1,36 +1,35 @@
-// A source's own constructor named like one of `Theory`'s keeps its name
-// beside a `theory` block. The block's code is minted all the same,
-// and each constructor of `Theory` the source does not name reads as it does
-// anywhere: `App` is declared before the block, `Sort` after it, and a generic
-// program still reads the block by `Oper` and `Presents`.
+// A source constructor can have the name of a `Theory` constructor.
+//
+// A `theory` block still mints its code.
+//
+// An unshadowed `Theory` constructor keeps its ordinary meaning.
+// A generic program reads the block through `Oper` and `Presents`.
 //
 // - see: #2348
 
-/// λ-terms with de Bruijn indices, whose application is named as `Theory`'s
-/// is.
+/// `Bruijn` has an application constructor named `App`.
 data Bruijn : Type where
   | Ix : (n : Integer) --> Bruijn
   | Abst : (t : Bruijn) --> Bruijn
   | App : (t : Bruijn, u : Bruijn) --> Bruijn
 
-/// A monoid's signature presented as data, in a source that already declares
-/// `App`.
+/// This monoid source already declares `App`.
 theory Mon where
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
 
-/// One kind, named as `Theory`'s sort link is, declared after the block.
+/// `Kind` has a constructor named `Sort`.
 data Kind : Type where
   | Sort : Kind
 
-/// One per `Oper` link of a presentation's operation chain, zero at its end.
+/// This recursion counts `Oper` links.
 def rec opsOf(chain : Theory) -> Integer =
   match chain where
     | Oper(name, inputs, outputs, rest) => { let r = opsOf[<] rest; r + 1 }
     | _ => 0
 
-/// The block read by `Presents`: two operations, `mul` and `one`.
+/// `Presents` reads the two operations of `Mon`.
 @[ runs("2") ]
 def presentedOps() -> Integer =
   match Mon where

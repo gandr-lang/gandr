@@ -1,18 +1,16 @@
-//! A signature stated over a finite shape. The member `boundary Square { … }`
-//! names the carrier the signature's cells are stated over, one name per point,
-//! and each `face` member a face a cell may be fixed on, the subshape of the
-//! names it holds
-//! [Nuyts-2026-facett_generalization_intensional_type_systems_glue]: the shape
-//! parameter `ft` and its subshapes. The points run in name order. The block's
-//! value codes the shape at the head of its sort chain, so a program reads it
-//! back by `case`.
+//! A signature can use a finite shape.
+//!
+//! `boundary Square { … }` names a carrier for signature cells.
+//!
+//! Each `face` member names a subshape that fixes a cell.
+//! Points use name order. A block value puts the shape at its sort-chain head.
+//! A program reads the shape by `case`.
 //!
 //! - cites: [Nuyts-2026-facett_generalization_intensional_type_systems_glue]
 //!
 //! [Nuyts-2026-facett_generalization_intensional_type_systems_glue]: https://types2026.cse.chalmers.se/files/book-of-abstracts.pdf "Schönlank, Nuyts and Devriese, Towards FaceTT: A Generalization of Intensional Type Systems with Glue"
 
-/// Cells over a square of four corners, top left to bottom right: its left
-/// and right sides, its top and bottom, one corner and the empty face.
+/// `Cells` declares a square, its six faces and a cell sort.
 theory Cells where
   boundary Square { tl, tr, bl, br };
   face left = {tl, bl};

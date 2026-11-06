@@ -1,14 +1,10 @@
-// A theory's closed terms as a type, `Terms(S)`, and a fold out of them into
-// one of the theory's models.
+// `Terms(S)` is the type of closed terms of theory `S`.
 //
-// A theory has models, `Model(S)`, and the initial one is its terms. Without
-// `Terms(S)` a source writes the theory twice: once as the signature its
-// models meet, and again as a data block for the terms.
+// A theory has models. The initial model contains its terms.
 //
-// `Terms(S)` derives one data declaration per theory, one constructor per
-// operation, named `S.op` in a term and in a pattern. The theory's rules
-// orient as the data block's own, and the block's presentation check judges
-// them. A fold into a model module respects that model's laws.
+// `Terms(S)` avoids a second declaration for the terms of a theory.
+// `Terms(S)` derives one data declaration for each theory. Each operation
+// gives one constructor. A fold into a model respects the model laws.
 //
 // - see: `pathological/desc/theory-terms.gandr` — a monoid's terms, refused
 // - owes: #4148 — the terms as a model, and a derived fold

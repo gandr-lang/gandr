@@ -1,16 +1,13 @@
-// The simply typed lambda calculus as a theory. A context and a type index
-// each of its terms. Its syntax is a first-order model of the signature
-// (Kaposi and Xie, _Second-order generalised algebraic theories_,
-// doi:10.4230/LIPIcs.FSCD.2024.10). This source is the first rung of
-// normalisation by evaluation as a model.
+// The simply typed lambda calculus is a theory.
 //
-// The object types, the contexts, the variables and the terms are indexed
-// families. A renaming sends each variable of one context to a variable of
-// another. The semantic type of an arrow is the Kripke function space over
-// renamings. A recursion computes it from the object type.
+// Context and type indices classify its terms. Its syntax is a first-order
+// model of the signature.
 //
-// The evaluator, reflection and reification stop at four refusals. The twin
-// in the pathological corpus names each of them.
+// Object types, contexts, variables and terms are indexed families. A renaming
+// maps variables from one context to another.
+// The semantic type of an arrow is a Kripke function space. A recursion reads
+// the semantic type from the object type. The pathological twin names four
+// refused steps.
 //
 // - see: #5032
 

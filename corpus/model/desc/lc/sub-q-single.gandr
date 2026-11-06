@@ -1,12 +1,16 @@
-// Law 1 of the single-substitution calculus, `sub(q, single(b)) = b`: the
-// newest variable under the single substitution of `b` is `b`. It holds by
-// computation: the lookup at index zero of a cons is its head, under no
-// binder.
+//! Law 1 substitutes for the newest variable.
+//!
+//! `sub(q, single(b))` equals `b`.
+//!
+//! A cons lookup at index zero gives its head. The law holds by computation
+//! under no binder.
+//!
+//! - see: #640
 
-// The naturals; the syntax and its substitution.
+// This source imports naturals and substitution syntax.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 
-/// Substituting `b` for the newest variable at that variable is `b`.
+/// At the newest variable, the substitution of `b` is `b`.
 pub def subQSingle(b : Term) -> Path(subst (Ix Z) (Cons b (Shift Z)), b) =
   Path.here b

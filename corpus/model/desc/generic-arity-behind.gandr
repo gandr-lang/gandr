@@ -1,24 +1,23 @@
-// The generic program of `generic-arity.gandr` laid behind another source's
-// presentation. `magma-base.gandr`'s block stands first in this closure and
-// `generic-arity.gandr` imports nothing of it, so its block takes the code
-// `Magma`'s minted and names it as its own: a unit holds one `Theory`, whatever
-// it lays before a source.
+// A generic program can read a presentation from another source.
+//
+// `magma-base.gandr` starts this closure. `generic-arity.gandr` does not import
+// that source.
+//
+// The `Magma` block keeps the code that its source minted.
+// A unit holds one `Theory`. The order of source files does not change that
+// value.
 //
 // - see: #1078 — `counted_behind`, `counted_across`
 
-// A presentation `generic-arity.gandr` does not import, laid first.
+// This import provides the presentation that `generic-arity.gandr` does not import.
 import "../higher-cells/magma-base.gandr";
-// The generic program over presentations, laid after it.
+// This import provides the generic program over presentations.
 import "./generic-arity.gandr";
 
-/// `Monoid`'s two operations, counted by `arity` behind `Magma`'s
-/// block. That block's code was every block's, and `generic-arity.gandr`
-/// could not name it, so `arity` was refused at `Theory` and this count with
-/// it.
+/// `arity` counts `Monoid` through `Magma`'s presentation.
 @[ runs("2") ]
 def counted_behind() -> Integer { arity Monoid }
 
-/// `Magma`'s two operations, counted by the program the other source
-/// declares: both blocks' presentations inhabit the one `Theory`.
+/// `arity` counts `Magma` through the generic program.
 @[ runs("2") ]
 def counted_across() -> Integer { arity Magma }

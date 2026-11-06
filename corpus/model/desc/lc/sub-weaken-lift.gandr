@@ -1,21 +1,20 @@
-// Law 3 of the single-substitution calculus, `sub(sub(b, p), lift(s)) =
-// sub(sub(b, s), p)`: weakening then a lifted substitution is the
-// substitution then weakening. It does not hold by computation — at a
-// variable `b` the substitution is stuck — and is proved by induction on
-// `b`, `substSquare`, from the agreement of the two composites at every
-// index: a lookup under the lift is the weakened lookup, and the
-// substitution shifting by one is weakening.
+//! Law 3 moves a lifted substitution past weakening.
+//!
+//! `sub(sub(b, p), lift(s))` equals `sub(sub(b, s), p)`.
+//!
+//! The law does not hold by direct computation. An induction on `b` proves
+//! the law. The proof compares lookups at every index.
+//!
+//! - see: #640
 
-// The naturals; the syntax; the weakened lookup, the composites' square and
-// the substitution that renames.
+// This source imports syntax and weakening lemmas.
 import "../model-in-source.gandr";
 import "./syntax.gandr";
 import "./lookup-weaken.gandr";
 import "./subst-subst.gandr";
 import "./subst-as-rename.gandr";
 
-/// A lookup under one binder is the lookup under the substitution shifting
-/// by one.
+/// A lookup under one binder is the lookup after substitution by shift one.
 def lookShiftedOnce(
   s : Env,
   n : N
@@ -34,7 +33,7 @@ def weakenLiftAgree(
     | Z => lookShiftedOnce s Z
     | S(j) => lookShiftedOnce s (S j)
 
-/// Weakening then a lifted substitution is the substitution then weakening.
+/// The lift of a substitution after `wk` equals `wk` after the substitution.
 pub def subWeakenLift(
   b : Term,
   s : Env

@@ -1,11 +1,12 @@
-//! The nominal binding port
-//! [Pitts-2013-nominal_sets_names_symmetry_computer_science], ch. 4, and
-//! [Gabbay-2009-nominal_universal_algebra]. `bind (a : N) . T` abstracts an
-//! atom of the atom sort `N` over a port of sort `T`: swapping renames the atom
-//! and it may escape, where `pi+ (x : S) . T` binds a variable that
-//! substitution instantiates. Each block is a value of `Theory` that keeps an
-//! abstracting port as an `Abstracted` link of its operation's port chain, so a
-//! program reads it back by `case`.
+//! A nominal binding port abstracts an atom over a term.
+//!
+//! `bind (a : N) . T` abstracts an atom of atom sort `N` over a port of sort
+//! `T`.
+//!
+//! A swap renames the atom. The atom can escape its binding port.
+//! A `pi+` port binds a variable for substitution. Each `Theory` value stores
+//! an abstracting port as an `Abstracted` link. A program reads the link by
+//! `case`.
 //!
 //! - cites: [Pitts-2013-nominal_sets_names_symmetry_computer_science]
 //! - cites: [Gabbay-2009-nominal_universal_algebra]
@@ -13,8 +14,7 @@
 //! [Pitts-2013-nominal_sets_names_symmetry_computer_science]: https://doi.org/10.1017/CBO9781139084673 "Pitts, Nominal Sets: Names and Symmetry in Computer Science"
 //! [Gabbay-2009-nominal_universal_algebra]: https://doi.org/10.1093/logcom/exp033 "Gabbay and Mathijssen, Nominal (Universal) Algebra: Equational Logic with Names and Binding"
 
-/// The π-calculus's processes: `nu` restricts a channel name over a process,
-/// abstracting it.
+/// `nu` restricts a channel name over a process. The port abstracts that name.
 pub theory Restriction where
   sort Name : Atom;
   sort Proc : Type;
@@ -22,16 +22,16 @@ pub theory Restriction where
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
 
-/// Both binders over one port, the abstraction outside: a fresh channel
-/// abstracted over a body that binds the value received on it.
+/// This port has both binders. The atom abstraction is outside the variable
+/// binder.
 theory Receive where
   sort Name : Atom;
   sort Val : Type+;
   sort Proc : Type;
   oper new : (body : bind (c : Name). pi+ (x : Val). Proc) --> Proc;
 
-/// Structural recursion over a port chain: one per `Abstracted` link, none
-/// for a `Port` or a `Bound` one.
+/// This recursion counts `Abstracted` links in a port chain. It ignores `Port`
+/// and `Bound` links.
 def rec abstracted(chain : Theory) -> Integer =
   match chain where
     | Abstracted(name, sort, indices, atoms, binders, rest) => {
@@ -42,8 +42,7 @@ def rec abstracted(chain : Theory) -> Integer =
     | Bound(name, sort, indices, binders, rest) => abstracted[<] rest
     | _ => 0
 
-/// Structural recursion over an operation chain: the abstracting input ports
-/// of every operation.
+/// This recursion counts abstracting input ports of each operation.
 def rec abstracting(chain : Theory) -> Integer =
   match chain where
     | Oper(name, inputs, outputs, rest) => {
@@ -53,7 +52,7 @@ def rec abstracting(chain : Theory) -> Integer =
     }
     | _ => 0
 
-/// Of the restriction signature's three operations, `nu` alone abstracts.
+/// Only `nu` abstracts in the restriction signature.
 @[ runs("1") ]
 def abstractions() -> Integer { match Restriction {
   | Presents(sorts, opers, rules) => abstracting opers

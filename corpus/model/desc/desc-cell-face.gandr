@@ -1,12 +1,16 @@
-//! A presented type whose operation is given by a rule, a face between two
-//! terms [Baader-1998-term_rewriting_and_all_that], § 4.1: the identity
+//! This presented type has one operation.
+//!
+//! A rule defines the operation.
+//!
+//! The rule gives a face between two terms.
+//! [Baader-1998-term_rewriting_and_all_that] gives this example. The identity
 //! operation at zero rewrites to zero.
 //!
 //! - cites: [Baader-1998-term_rewriting_and_all_that]
 //!
 //! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
 
-/// Zero and an identity operation, its value at zero given by a rule.
+/// Zero and an identity operation. A rule gives the operation's value at zero.
 data NatTheory : Type where {
   | Zero : NatTheory
   oper id : (x : NatTheory) --> NatTheory;
