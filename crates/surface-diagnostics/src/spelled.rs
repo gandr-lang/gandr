@@ -77,10 +77,8 @@ use gandr_core_checker::Failure;
 use gandr_core_checker::FrameRole;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::TypeNode;
-use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
-use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
@@ -93,7 +91,6 @@ use gandr_surface_lowering::ImportResolution;
 use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Opening;
-use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::ReadAs;
 use gandr_surface_lowering::Role;
@@ -107,7 +104,6 @@ use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::FamilyKey;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::ModelSlot;
-use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
@@ -117,8 +113,8 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use crate::binders::written_entry_names;
-use crate::binders::written_names;
+use crate::binders::named_forms;
+use crate::binders::written_spans;
 use crate::frame::framed;
 use crate::frame::opened;
 use crate::frame::written_binder;
@@ -670,74 +666,8 @@ fn spell<'failure>(
     let constructors = families.naming();
     let contexts = printed_names(&scopes);
     let enclosing = printed_names(&regions);
-    let arrows: Vec<(CompTypeId, Name<'_>)> = written_names(
-        origins
-            .arrows()
-            .iter()
-            .map(|&(arrow, origin)| (arrow, origin.span())),
-        text,
-    )
-    .collect();
-    let pairs: Vec<(ValueTypeId, Name<'_>)> = written_names(
-        origins
-            .pairs()
-            .iter()
-            .map(|&(pair, origin)| (pair, origin.span())),
-        text,
-    )
-    .collect();
-    let seconds: Vec<(ValueTypeId, Name<'_>)> = written_names(
-        origins
-            .seconds()
-            .iter()
-            .map(|&(pair, origin)| (pair, origin.span())),
-        text,
-    )
-    .collect();
-    let sum_labels: Vec<(ValueTypeId, Vec<Name<'_>>)> = written_entry_names(
-        origins
-            .sum_labels()
-            .iter()
-            .map(|&(sum, ref labels)| (sum, labels.iter().map(Origin::span))),
-        text,
-    )
-    .collect();
-    let with_labels: Vec<(CompTypeId, Vec<Name<'_>>)> = written_entry_names(
-        origins
-            .with_labels()
-            .iter()
-            .map(|&(with, ref labels)| (with, labels.iter().map(Origin::span))),
-        text,
-    )
-    .collect();
-    let mut relations = origins.relations().to_vec();
-    relations.sort_by_key(|&(related, _)| related);
-    let mut models: Vec<(ValueTypeId, Modelled<'_>)> = origins
-        .models()
-        .iter()
-        .map(|&(modelled, ref model)| {
-            (modelled, Modelled {
-                theory: Name::from(model.theory.as_ref()),
-                sorts: model
-                    .sorts
-                    .iter()
-                    .map(|&(ref sort, carrier)| {
-                        (Name::from(sort.as_ref()), CoreNode::ValueType(carrier))
-                    })
-                    .collect(),
-            })
-        })
-        .collect();
-    models.sort_by_key(|&(modelled, _)| modelled);
-    let mut members: Vec<(ValueTypeId, Name<'_>)> = written_names(
-        origins
-            .members()
-            .iter()
-            .map(|&(member, origin)| (member, origin.span())),
-        text,
-    )
-    .collect();
-    members.sort_by_key(|&(member, _)| member);
+    let spans = written_spans(origins);
+    let forms = named_forms(&spans, text);
     let implicits = telescopes(module);
     let slots = model_slots(module);
     let sources: Vec<CoreSource<'_>> = names
@@ -747,12 +677,7 @@ fn spell<'failure>(
             CoreSource::new(arena, names)
                 .homing(homes)
                 .naming(&constructors)
-                .naming_arrows(&arrows)
-                .naming_pairs(&pairs, &seconds)
-                .naming_entries(&sum_labels, &with_labels)
-                .relating(&relations)
-                .modeling(&models)
-                .naming_members(&members)
+                .writing(&forms)
                 .naming_implicits(&implicits)
                 .flattening(&slots)
         })

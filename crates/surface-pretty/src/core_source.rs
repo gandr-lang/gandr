@@ -436,6 +436,233 @@ pub struct ForgetMap<'arena>
     pub sorts: Vec<Name<'arena>>,
 }
 
+/// The forms a source writes that the core erases, each beside its node.
+///
+/// The record holds the name each dependent arrow binds, the labels of each
+/// dependent pair, the labels each sum and lazy product is written over, the
+/// relation and the model type each type is written as, and the type member
+/// each record is written by.
+///
+/// A `Label` is one written name: where the source writes it, its text, or
+/// the name a printer writes. A `Model` is one written model type. Each
+/// reader of the forms keeps them in this one record and reads it whole.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenForms<Label, Model>
+{
+    /// Each dependent arrow with the name it binds.
+    pub arrows: Vec<(CompTypeId, Label)>,
+    /// Each dependent pair a dependent record's field opens, with the
+    /// field's label.
+    pub pairs: Vec<(ValueTypeId, Label)>,
+    /// Each such pair with the label of its second component.
+    pub seconds: Vec<(ValueTypeId, Label)>,
+    /// Each sum written over labels, with its labels in written order.
+    pub sum_labels: Vec<(ValueTypeId, Vec<Label>)>,
+    /// Each lazy product written over labels, with its labels in written
+    /// order.
+    pub with_labels: Vec<(CompTypeId, Vec<Label>)>,
+    /// Each type written as a relation between types, `A ≅ B`, `A ≃ B` or
+    /// `A ⇝ B`, with the relation.
+    pub relations: Vec<(ValueTypeId, Relation)>,
+    /// Each type written as a model type, `Model(T)` or `Model(T) with sort
+    /// C = A …`, with the model type.
+    pub models: Vec<(ValueTypeId, Model)>,
+    /// Each record type written by the name of a type member, with the name:
+    /// the base of a patched type.
+    pub members: Vec<(ValueTypeId, Label)>,
+}
+
+impl<Label, Model> Default for WrittenForms<Label, Model>
+{
+    /// The record of no form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new()
+    }
+}
+
+impl<Label, Model> WrittenForms<Label, Model>
+{
+    /// The record of no form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        Self {
+            arrows: Vec::new(),
+            pairs: Vec::new(),
+            seconds: Vec::new(),
+            sum_labels: Vec::new(),
+            with_labels: Vec::new(),
+            relations: Vec::new(),
+            models: Vec::new(),
+            members: Vec::new(),
+        }
+    }
+
+    /// Sort each list by its node. The entries of one node keep their order,
+    /// so the first entry of a node stays first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn sort(&mut self)
+    {
+        self.arrows.sort_by_key(|&(arrow, _)| arrow);
+        self.pairs.sort_by_key(|&(pair, _)| pair);
+        self.seconds.sort_by_key(|&(pair, _)| pair);
+        self.sum_labels.sort_by_key(|&(sum, _)| sum);
+        self.with_labels.sort_by_key(|&(with, _)| with);
+        self.relations.sort_by_key(|&(related, _)| related);
+        self.models.sort_by_key(|&(modelled, _)| modelled);
+        self.members.sort_by_key(|&(member, _)| member);
+    }
+
+    /// Move each entry of `other` to the end of its list in this record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn append(
+        &mut self,
+        other: &mut Self,
+    )
+    {
+        self.arrows.append(&mut other.arrows);
+        self.pairs.append(&mut other.pairs);
+        self.seconds.append(&mut other.seconds);
+        self.sum_labels.append(&mut other.sum_labels);
+        self.with_labels.append(&mut other.with_labels);
+        self.relations.append(&mut other.relations);
+        self.models.append(&mut other.models);
+        self.members.append(&mut other.members);
+    }
+
+    /// This record with each label read through `label` and each model type
+    /// through `model`, in order. An entry whose label, one of whose labels,
+    /// or whose model type reads as nothing is left out. A reading may borrow
+    /// what it reads for as long as the record lives.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn map<'record, ToLabel, ToModel, Labelling, Modelling>(
+        &'record self,
+        mut label: Labelling,
+        mut model: Modelling,
+    ) -> WrittenForms<ToLabel, ToModel>
+    where
+        Labelling: FnMut(&'record Label) -> Option<ToLabel>,
+        Modelling: FnMut(&'record Model) -> Option<ToModel>,
+    {
+        WrittenForms {
+            arrows: read_each(&self.arrows, &mut label),
+            pairs: read_each(&self.pairs, &mut label),
+            seconds: read_each(&self.seconds, &mut label),
+            sum_labels: read_entries(&self.sum_labels, &mut label),
+            with_labels: read_entries(&self.with_labels, &mut label),
+            relations: self.relations.clone(),
+            models: read_each(&self.models, &mut model),
+            members: read_each(&self.members, &mut label),
+        }
+    }
+
+    /// This record with each node taken to its image through `value` or
+    /// `comp`, in order. An entry whose node has no image is left out.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn imaged<Values, Comps>(
+        self,
+        mut value: Values,
+        mut comp: Comps,
+    ) -> Self
+    where
+        Values: FnMut(ValueTypeId) -> Option<ValueTypeId>,
+        Comps: FnMut(CompTypeId) -> Option<CompTypeId>,
+    {
+        Self {
+            arrows: image_each(self.arrows, &mut comp),
+            pairs: image_each(self.pairs, &mut value),
+            seconds: image_each(self.seconds, &mut value),
+            sum_labels: image_each(self.sum_labels, &mut value),
+            with_labels: image_each(self.with_labels, &mut comp),
+            relations: image_each(self.relations, &mut value),
+            models: image_each(self.models, &mut value),
+            members: image_each(self.members, &mut value),
+        }
+    }
+}
+
+/// The record of no written form.
+const UNWRITTEN: &WrittenForms<Name<'static>, Modelled<'static>> = &WrittenForms::new();
+
+/// Each entry of `kept` with what it holds read through `read`, in order. An
+/// entry that reads as nothing is left out.
+///
+/// # Specification
+/// trivial.
+fn read_each<'record, Id, Held, Read, Reading>(
+    kept: &'record [(Id, Held)],
+    read: &mut Reading,
+) -> Vec<(Id, Read)>
+where
+    Id: Copy,
+    Reading: FnMut(&'record Held) -> Option<Read>,
+{
+    kept.iter()
+        .filter_map(|&(id, ref held)| read(held).map(|read| (id, read)))
+        .collect()
+}
+
+/// Each entry of `kept` with each label it holds read through `read`, in
+/// order. An entry one of whose labels reads as nothing is left out.
+///
+/// # Specification
+/// trivial.
+fn read_entries<'record, Id, Held, Read, Reading>(
+    kept: &'record [(Id, Vec<Held>)],
+    read: &mut Reading,
+) -> Vec<(Id, Vec<Read>)>
+where
+    Id: Copy,
+    Reading: FnMut(&'record Held) -> Option<Read>,
+{
+    kept.iter()
+        .filter_map(|&(id, ref held)| {
+            let labels: Option<Vec<Read>> = held.iter().map(&mut *read).collect();
+            labels.map(|labels| (id, labels))
+        })
+        .collect()
+}
+
+/// Each entry of `kept` at the image `image` gives its node, in order. An
+/// entry whose node has no image is left out.
+///
+/// # Specification
+/// trivial.
+fn image_each<Id, Held, Imaging>(
+    kept: Vec<(Id, Held)>,
+    image: &mut Imaging,
+) -> Vec<(Id, Held)>
+where
+    Imaging: FnMut(Id) -> Option<Id>,
+{
+    kept.into_iter()
+        .filter_map(|(id, held)| image(id).map(|image| (image, held)))
+        .collect()
+}
+
 /// A core arena read through the names of the constants it mentions.
 ///
 /// A core node names a constant or an abstract type by its admission
@@ -491,30 +718,10 @@ pub struct CoreSource<'arena>
     /// The names of the region binders of the definition the root belongs
     /// to, by ordinal.
     binders: &'arena [Option<Name<'arena>>],
-    /// The name the source writes for each dependent arrow's binder,
-    /// ascending by the arrow.
-    arrows: &'arena [(CompTypeId, Name<'arena>)],
-    /// The label the source writes for each dependent pair's binder,
-    /// ascending by the pair.
-    pairs: &'arena [(ValueTypeId, Name<'arena>)],
-    /// The label the source writes for each dependent pair's second
-    /// component, ascending by the pair.
-    seconds: &'arena [(ValueTypeId, Name<'arena>)],
-    /// The labels the source writes a sum over, one per summand in written
-    /// order, ascending by the sum.
-    sum_labels: &'arena [(ValueTypeId, Vec<Name<'arena>>)],
-    /// The labels the source writes a lazy record type over, one per entry
-    /// in written order, ascending by the lazy product.
-    with_labels: &'arena [(CompTypeId, Vec<Name<'arena>>)],
-    /// The relation each type the source writes as `A ≅ B`, `A ≃ B` or
-    /// `A ⇝ B` abbreviates, ascending by the type.
-    relations: &'arena [(ValueTypeId, Relation)],
-    /// The model type each type the source writes as `Model(T)`, or `Model(T)
-    /// with sort C = A …`, lowers from, ascending by the type.
-    models: &'arena [(ValueTypeId, Modelled<'arena>)],
-    /// The name of the type member each record type the source writes by
-    /// that name defines, ascending by the type: the base of a patched type.
-    members: &'arena [(ValueTypeId, Name<'arena>)],
+    /// The forms the source writes that the core erases, each list ascending
+    /// by its node: the binders' names and labels the source writes, and the
+    /// relation, the model type and the type member each type is written as.
+    forms: &'arena WrittenForms<Name<'arena>, Modelled<'arena>>,
     /// The theory each capability scope the source writes as `handle c : T
     /// with sort C = A … { … }` handles, with the sorts its manifest fixes,
     /// ascending by the scope.
@@ -574,14 +781,7 @@ impl<'arena> CoreSource<'arena>
             recursive_telescope: &[],
             regions: &[],
             binders: &[],
-            arrows: &[],
-            pairs: &[],
-            seconds: &[],
-            sum_labels: &[],
-            with_labels: &[],
-            relations: &[],
-            models: &[],
-            members: &[],
+            forms: UNWRITTEN,
             scopes: &[],
             answers: &[],
             rows: &[],
@@ -737,106 +937,22 @@ impl<'arena> CoreSource<'arena>
         Self { binders, ..self }
     }
 
-    /// This source, naming each dependent arrow's binder as `arrows` writes
-    /// it, ascending by the arrow.
+    /// This source, spelling each form `forms` records as the source writes
+    /// it, each list ascending by its node: a dependent arrow's or pair's
+    /// binder by its name, a sum or a lazy product under its labels, and a
+    /// type as the relation, the model type or the type member it was written
+    /// as.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn naming_arrows(
+    pub const fn writing(
         self,
-        arrows: &'arena [(CompTypeId, Name<'arena>)],
+        forms: &'arena WrittenForms<Name<'arena>, Modelled<'arena>>,
     ) -> Self
     {
-        Self { arrows, ..self }
-    }
-
-    /// This source, naming each dependent pair's binder as `pairs` writes it
-    /// and its second component as `seconds` does, each ascending by the
-    /// pair.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn naming_pairs(
-        self,
-        pairs: &'arena [(ValueTypeId, Name<'arena>)],
-        seconds: &'arena [(ValueTypeId, Name<'arena>)],
-    ) -> Self
-    {
-        Self {
-            pairs,
-            seconds,
-            ..self
-        }
-    }
-
-    /// This source, spelling each sum `sum_labels` holds and each lazy
-    /// product `with_labels` holds under the labels it was written over,
-    /// each ascending by the type.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn naming_entries(
-        self,
-        sum_labels: &'arena [(ValueTypeId, Vec<Name<'arena>>)],
-        with_labels: &'arena [(CompTypeId, Vec<Name<'arena>>)],
-    ) -> Self
-    {
-        Self {
-            sum_labels,
-            with_labels,
-            ..self
-        }
-    }
-
-    /// This source, spelling each type `relations` records as the relation
-    /// it was written as, ascending by the type.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn relating(
-        self,
-        relations: &'arena [(ValueTypeId, Relation)],
-    ) -> Self
-    {
-        Self { relations, ..self }
-    }
-
-    /// This source, spelling each type `models` records as the model type it
-    /// was written as, ascending by the type.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn modeling(
-        self,
-        models: &'arena [(ValueTypeId, Modelled<'arena>)],
-    ) -> Self
-    {
-        Self { models, ..self }
-    }
-
-    /// This source, writing each record type `members` records by the name
-    /// of the type member that defines it, ascending by the type.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn naming_members(
-        self,
-        members: &'arena [(ValueTypeId, Name<'arena>)],
-    ) -> Self
-    {
-        Self { members, ..self }
+        Self { forms, ..self }
     }
 
     /// This source, writing each capability scope `scopes` records over the
@@ -1196,17 +1312,17 @@ impl<'arena> CoreSource<'arena>
     /// - hypothesis: L3 — each relation over its record or its flow spells as
     ///   written; the same record unrecorded spells as the record.
     /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
-    #[spec(ensures: |ret| ret.is_none() || self.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok())]
+    #[spec(ensures: |ret| ret.is_none() || self.forms.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok())]
     fn related(
         &self,
         id: ValueTypeId,
     ) -> Option<Former<'arena, CoreNode>>
     {
-        let at = self
-            .relations
+        let relations = &self.forms.relations;
+        let at = relations
             .binary_search_by_key(&id, |&(held, _)| held)
             .ok()?;
-        let &(_, relation) = self.relations.get(at)?;
+        let &(_, relation) = relations.get(at)?;
         let (left, right) = match (relation, self.arena.value_type(id)?) {
             (Relation::Flow, &ValueType::Flow { source, target, .. }) => {
                 (CoreNode::Value(source), CoreNode::Value(target))
@@ -1250,13 +1366,14 @@ impl<'arena> CoreSource<'arena>
     /// - hypothesis: L3 — a model type and a manifest one spell as written; the
     ///   same record unrecorded spells as the record.
     /// - witness: `tests::goldens::a_model_type_spells_as_written_2246`
-    #[spec(ensures: |ret| ret.is_none() || self.models.binary_search_by_key(&id, |&(held, _)| held).is_ok())]
+    #[spec(ensures: |ret| ret.is_none() || self.forms.models.binary_search_by_key(&id, |&(held, _)| held).is_ok())]
     fn modelled(
         &self,
         id: ValueTypeId,
     ) -> Option<Former<'arena, CoreNode>>
     {
-        let models = self.models;
+        let forms = self.forms;
+        let models = &forms.models;
         let at = models.binary_search_by_key(&id, |&(held, _)| held).ok()?;
         let &(_, ref model) = models.get(at)?;
         Some(Former::Model {
@@ -1702,9 +1819,9 @@ impl<'arena> CoreSource<'arena>
         | (Some(&ValueType::Kept { value, region }), Former::Kept { inner: actual, region: named }) =>
             actual == CoreNode::ValueType(value) && named == region,
         | (Some(&(ValueType::Sigma { .. } | ValueType::Flow { .. })), Former::Relation { .. }) =>
-            self.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
-        | (_, Former::Model { .. }) => self.models.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
-        | (Some(&ValueType::Record(_)), Former::Member(name)) => written(self.members, id) == Some(name),
+            self.forms.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
+        | (_, Former::Model { .. }) => self.forms.models.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
+        | (Some(&ValueType::Record(_)), Former::Member(name)) => written(&self.forms.members, id) == Some(name),
         | _ => false,
     })]
     fn value_type(
@@ -1778,7 +1895,7 @@ impl<'arena> CoreSource<'arena>
                 )
             )]
             ValueType::Unknown => Former::Unreadable(Unreadable::UnknownType),
-            ValueType::Record(_) if let Some(member) = written(self.members, id) => {
+            ValueType::Record(_) if let Some(member) = written(&self.forms.members, id) => {
                 Former::Member(member)
             },
             ValueType::Record(ref fields) if fields.is_empty() => {
@@ -2849,7 +2966,7 @@ impl Source for CoreSource<'_>
         | CoreNode::ValueType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value_type(self.unstaged(id)) {
             | Some(&ValueType::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
             | Some(&ValueType::Patched { ref fixed, .. }) => fixed.keys().nth(usize::from(index)).map(AsRef::as_ref),
-            | Some(&ValueType::Sum(ref parts)) => entry_label(self.sum_labels, id, Arity::from(parts.len()), index).map(AsRef::as_ref),
+            | Some(&ValueType::Sum(ref parts)) => entry_label(&self.forms.sum_labels, id, Arity::from(parts.len()), index).map(AsRef::as_ref),
             | Some(_) | None => None,
         },
         | CoreNode::Value(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value(id) {
@@ -2862,7 +2979,7 @@ impl Source for CoreSource<'_>
         },
         | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
         | CoreNode::CompType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.comp_type(id) {
-            | Some(&CompType::With(ref components)) => entry_label(self.with_labels, id, Arity::from(components.len()), index).map(AsRef::as_ref),
+            | Some(&CompType::With(ref components)) => entry_label(&self.forms.with_labels, id, Arity::from(components.len()), index).map(AsRef::as_ref),
             | Some(_) | None => None,
         },
     })]
@@ -2879,7 +2996,7 @@ impl Source for CoreSource<'_>
                 ValueType::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
                 ValueType::Patched { ref fixed, .. } => fixed.keys().nth(at).map(AsRef::as_ref),
                 ValueType::Sum(ref parts) => {
-                    entry_label(self.sum_labels, id, Arity::from(parts.len()), index)
+                    entry_label(&self.forms.sum_labels, id, Arity::from(parts.len()), index)
                         .map(AsRef::as_ref)
                 },
                 ValueType::Data { .. }
@@ -3017,10 +3134,13 @@ impl Source for CoreSource<'_>
                 | Computation::Project(..) => None,
             },
             CoreNode::CompType(id) => match *self.arena.comp_type(id)? {
-                CompType::With(ref components) => {
-                    entry_label(self.with_labels, id, Arity::from(components.len()), index)
-                        .map(AsRef::as_ref)
-                },
+                CompType::With(ref components) => entry_label(
+                    &self.forms.with_labels,
+                    id,
+                    Arity::from(components.len()),
+                    index,
+                )
+                .map(AsRef::as_ref),
                 CompType::Unknown
                 | CompType::Codata { .. }
                 | CompType::Returner { .. }
@@ -3173,8 +3293,8 @@ impl Source for CoreSource<'_>
     ) -> Option<Name<'_>>
     {
         match self.restoration.restored(node) {
-            CoreNode::CompType(id) => written(self.arrows, id),
-            CoreNode::ValueType(id) => written(self.pairs, id),
+            CoreNode::CompType(id) => written(&self.forms.arrows, id),
+            CoreNode::ValueType(id) => written(&self.forms.pairs, id),
             CoreNode::Value(_) | CoreNode::Computation(_) => None,
         }
     }
@@ -3193,7 +3313,7 @@ impl Source for CoreSource<'_>
         else {
             return None;
         };
-        written(self.seconds, id)
+        written(&self.forms.seconds, id)
     }
 
     /// The name recorded for the homed head `head`.
@@ -3487,6 +3607,7 @@ mod tests
     use super::Name;
     use super::Source as _;
     use super::Unreadable;
+    use super::WrittenForms;
 
     /// Node families retain child order and refuse handles dropped by
     /// truncation.
@@ -3606,8 +3727,11 @@ mod tests
             Some(String::from("tls"))
         );
         assert_eq!(source.component(node, Component::from(2_usize)), None);
-        let members = [(record, Name::from("Config"))];
-        let named = CoreSource::new(&arena, &[]).naming_members(&members);
+        let members = WrittenForms {
+            members: Vec::from([(record, Name::from("Config"))]),
+            ..WrittenForms::new()
+        };
+        let named = CoreSource::new(&arena, &[]).writing(&members);
         assert!(matches!(
             named.read(CoreNode::ValueType(record)),
             Former::Member(name) if name.as_ref() == "Config"

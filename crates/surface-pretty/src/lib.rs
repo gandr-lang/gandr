@@ -328,6 +328,7 @@ pub use crate::core_source::ForgetMap;
 pub use crate::core_source::Forgetting;
 pub use crate::core_source::Modelled;
 pub use crate::core_source::Restoration;
+pub use crate::core_source::WrittenForms;
 pub use crate::error::PresentationError;
 pub use crate::former::Answered;
 pub use crate::former::Arity;

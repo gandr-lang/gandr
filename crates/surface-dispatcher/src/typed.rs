@@ -123,7 +123,6 @@ use gandr_core_term::Binders;
 use gandr_core_term::Carried;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
-use gandr_core_term::CompTypeId;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ConstructorTag;
@@ -143,7 +142,6 @@ use gandr_core_term::constructor_classifier_at;
 use gandr_core_term::decoded_comp_reading;
 use gandr_core_term::effect::host::HOMES;
 use gandr_core_term::equal_type_reading;
-use gandr_core_term::identity::Relation;
 use gandr_core_term::instantiate_value_type_under;
 use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
@@ -163,13 +161,13 @@ use gandr_surface_diagnostics::HomedName;
 use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::PATHLESS;
 use gandr_surface_diagnostics::Subject as DiagnosedSubject;
-use gandr_surface_diagnostics::WrittenLabels;
 use gandr_surface_diagnostics::carry_labels;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::homed_names;
-use gandr_surface_diagnostics::written_entry_names;
-use gandr_surface_diagnostics::written_names;
+use gandr_surface_diagnostics::modelled;
+use gandr_surface_diagnostics::named_forms;
+use gandr_surface_diagnostics::written_spans;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ClauseBinder;
 use gandr_surface_lowering::ClausePlace;
@@ -207,7 +205,6 @@ use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::ModelSlot;
-use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
@@ -216,6 +213,7 @@ use gandr_surface_pretty::Recursive;
 use gandr_surface_pretty::Scopes;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Wildcards;
+use gandr_surface_pretty::WrittenForms;
 use gandr_surface_pretty::WrittenName;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
@@ -869,87 +867,6 @@ struct ProbeReading
     /// The bytes of its probes, whose origins it keeps; none for the
     /// top-level reading, which keeps every origin.
     window: Option<(usize, usize)>,
-}
-
-/// Each pair of `named` with the label `text` writes at its span, and each
-/// pair `reread` names, ascending by pair.
-///
-/// # Specification
-/// trivial.
-fn labelled<'names>(
-    named: &[(ValueTypeId, ByteSpan)],
-    text: SourceText<'names>,
-    reread: &'names [(ValueTypeId, String)],
-) -> Vec<(ValueTypeId, Name<'names>)>
-{
-    let mut labelled: Vec<(ValueTypeId, Name<'names>)> = written_names(named.iter().copied(), text)
-        .chain(
-            reread
-                .iter()
-                .map(|&(pair, ref name)| (pair, Name::from(name.as_str()))),
-        )
-        .collect();
-    labelled.sort_by_key(|&(pair, _)| pair);
-    labelled
-}
-
-/// Each sum and each lazy product of `named` with the labels `text` writes at
-/// its spans, and each `reread` names, ascending by the type.
-///
-/// # Specification
-/// trivial.
-fn entries_labelled<'names, Id>(
-    named: &[(Id, Vec<ByteSpan>)],
-    text: SourceText<'names>,
-    reread: &'names [(Id, Vec<String>)],
-) -> Vec<(Id, Vec<Name<'names>>)>
-where
-    Id: Copy + Ord,
-{
-    let mut labelled: Vec<(Id, Vec<Name<'names>>)> = named
-        .iter()
-        .filter_map(|&(id, ref spans)| {
-            written_entry_names([(id, spans.iter().copied())], text).next()
-        })
-        .chain(reread.iter().map(|&(id, ref names)| {
-            (
-                id,
-                names.iter().map(|name| Name::from(name.as_str())).collect(),
-            )
-        }))
-        .collect();
-    labelled.sort_by_key(|&(id, _)| id);
-    labelled
-}
-
-/// What a reprint's own lowering keeps beside the types it read, at their
-/// images in the table's arena: the name each dependent arrow binds, the
-/// labels each dependent pair was written with, the labels each sum and lazy
-/// product was written over, the relation each type was written as, the
-/// model type each was written as and the type member each record was
-/// written by.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct Read
-{
-    /// Each dependent arrow's image with the name it binds.
-    arrows: Vec<(CompTypeId, String)>,
-    /// Each dependent pair's image with the label its binder was written as.
-    pairs: Vec<(ValueTypeId, String)>,
-    /// Each dependent pair's image with the label its second was written as.
-    seconds: Vec<(ValueTypeId, String)>,
-    /// Each labelled sum's image with the labels it was written over.
-    sum_labels: Vec<(ValueTypeId, Vec<String>)>,
-    /// Each labelled lazy product's image with the labels it was written
-    /// over.
-    with_labels: Vec<(CompTypeId, Vec<String>)>,
-    /// Each related type's image with the relation it was written as.
-    relations: Vec<(ValueTypeId, Relation)>,
-    /// Each model type's image with the theory and sorts it was written
-    /// with, each carrier at its image.
-    models: Vec<(ValueTypeId, WrittenModel)>,
-    /// Each record type's image with the name of the type member it was
-    /// written by.
-    members: Vec<(ValueTypeId, String)>,
 }
 
 /// What the table keeps for a declaration: its type node, a refusal of it as
@@ -4455,7 +4372,14 @@ impl TypeTable
         style: Style,
     ) -> Maybe<Presentation, typing::Absent>
     {
-        self.spell_in(&self.arena, node, context, &Read::default(), page, style)
+        self.spell_in(
+            &self.arena,
+            node,
+            context,
+            &WrittenForms::new(),
+            page,
+            style,
+        )
     }
 
     /// `node` of `arena` spelled as [`Self::spell`] spells a node of the
@@ -4473,7 +4397,7 @@ impl TypeTable
         arena: &CoreArena,
         node: TypeNode,
         context: &Context,
-        read: &Read,
+        read: &WrittenForms<String, WrittenModel>,
         page: PageWidth,
         style: Style,
     ) -> Maybe<Presentation, typing::Absent>
@@ -4522,62 +4446,15 @@ impl TypeTable
             .iter()
             .map(|name| name.as_deref().map(Name::from))
             .collect();
-        let mut arrows: Vec<(CompTypeId, Name<'_>)> = self
-            .naming
-            .arrows()
-            .iter()
-            .filter_map(|&(arrow, span)| {
-                <&str>::from(self.naming.text())
-                    .get(usize::from(span.start()) .. usize::from(span.end()))
-                    .map(|name| (arrow, Name::from(name)))
-            })
-            .chain(
-                read.arrows
-                    .iter()
-                    .map(|&(arrow, ref name)| (arrow, Name::from(name.as_str()))),
-            )
-            .collect();
-        arrows.sort_by_key(|&(arrow, _)| arrow);
-        let pairs = labelled(self.naming.pairs(), self.naming.text(), &read.pairs);
-        let seconds = labelled(self.naming.seconds(), self.naming.text(), &read.seconds);
-        let sum_labels = entries_labelled(
-            self.naming.sum_labels(),
-            self.naming.text(),
-            &read.sum_labels,
+        // The forms the unit writes, then those a reprint's own lowering wrote
+        // at their images in `arena`.
+        let mut forms = named_forms(self.naming.forms(), self.naming.text());
+        let mut reread = read.map(
+            |name| Some(Name::from(name.as_str())),
+            |model| Some(modelled(model)),
         );
-        let with_labels = entries_labelled(
-            self.naming.with_labels(),
-            self.naming.text(),
-            &read.with_labels,
-        );
-        let mut relations: Vec<(ValueTypeId, Relation)> = self
-            .naming
-            .relations()
-            .iter()
-            .chain(&read.relations)
-            .copied()
-            .collect();
-        relations.sort_by_key(|&(related, _)| related);
-        let mut models: Vec<(ValueTypeId, Modelled<'_>)> = self
-            .naming
-            .models()
-            .iter()
-            .chain(&read.models)
-            .map(|&(modelled, ref model)| {
-                (modelled, Modelled {
-                    theory: Name::from(model.theory.as_ref()),
-                    sorts: model
-                        .sorts
-                        .iter()
-                        .map(|&(ref sort, carrier)| {
-                            (Name::from(sort.as_ref()), CoreNode::ValueType(carrier))
-                        })
-                        .collect(),
-                })
-            })
-            .collect();
-        models.sort_by_key(|&(modelled, _)| modelled);
-        let members = labelled(self.naming.members(), self.naming.text(), &read.members);
+        forms.append(&mut reread);
+        forms.sort();
         let constructors = self.families.naming();
         // A call supplies its callee's implicits by name, `f[.x = a](b)`, and a
         // model implicit by the path its components read under, `f[.s = M]`:
@@ -4628,12 +4505,7 @@ impl TypeTable
         let printer = CoreSource::new(arena, &names)
             .homing(&homes)
             .naming(&constructors)
-            .naming_arrows(&arrows)
-            .naming_pairs(&pairs, &seconds)
-            .naming_entries(&sum_labels, &with_labels)
-            .relating(&relations)
-            .modeling(&models)
-            .naming_members(&members)
+            .writing(&forms)
             .naming_implicits(&implicits)
             .flattening(&flattened)
             .within(&binders)
@@ -5385,10 +5257,9 @@ impl TypeTable
             })
             .collect();
         let mut lowered: BTreeMap<String, Result<ValueTypeId, String>> = BTreeMap::new();
-        // The names the lowering keeps beside the read types' dependent
-        // arrows, and the relations it records for the types written as one,
-        // at their images, so a reprint binds and spells what was written.
-        let mut read_back = Read::default();
+        // The forms the lowering records as written, at their images, so a
+        // reprint binds and spells what was written.
+        let mut read_back: WrittenForms<String, WrittenModel> = WrittenForms::new();
         for &ProbeReading {
             text: ref augmented,
             ref names,
@@ -5439,96 +5310,43 @@ impl TypeTable
                         Maybe::Present(origin) => inside(origin.span()),
                         Maybe::Absent(_) => true,
                     };
-                    for &(arrow, origin) in module.origins().arrows() {
-                        let span = origin.span();
-                        if !inside(span) {
-                            continue;
-                        }
-                        if let (Some(image), Some(name)) = (
-                            importer.comp_type_image(arrow),
-                            augmented.get(usize::from(span.start()) .. usize::from(span.end())),
-                        ) {
-                            read_back.arrows.push((image, String::from(name)));
-                        }
-                    }
-                    for (named, kept) in [
-                        (module.origins().pairs(), &mut read_back.pairs),
-                        (module.origins().seconds(), &mut read_back.seconds),
-                        (module.origins().members(), &mut read_back.members),
-                    ] {
-                        for &(pair, origin) in named {
-                            let span = origin.span();
-                            if !inside(span) {
-                                continue;
-                            }
-                            if let (Some(image), Some(name)) = (
-                                importer.value_type_image(pair),
-                                augmented.get(usize::from(span.start()) .. usize::from(span.end())),
-                            ) {
-                                kept.push((image, String::from(name)));
-                            }
-                        }
-                    }
-                    let spelled = |labels: &[Origin]| -> Option<Vec<String>> {
-                        labels
-                            .iter()
-                            .map(|label| {
-                                let span = label.span();
+                    // A relation or a model type is kept where its type
+                    // stands inside the reading, any other form where each
+                    // of its names does; each at its image in `arena`.
+                    let mut written = written_spans(module.origins());
+                    written.relations.retain(|&(ty, _)| typed(ty));
+                    written.models.retain(|&(ty, _)| typed(ty));
+                    let mut imaged = written
+                        .map(
+                            |&span| {
+                                if !inside(span) {
+                                    return None;
+                                }
                                 augmented
                                     .get(usize::from(span.start()) .. usize::from(span.end()))
                                     .map(String::from)
-                            })
-                            .collect()
-                    };
-                    for &(sum, ref labels) in module.origins().sum_labels() {
-                        if !labels.iter().all(|label| inside(label.span())) {
-                            continue;
-                        }
-                        if let (Some(image), Some(names)) =
-                            (importer.value_type_image(sum), spelled(labels))
-                        {
-                            read_back.sum_labels.push((image, names));
-                        }
-                    }
-                    for &(with, ref labels) in module.origins().with_labels() {
-                        if !labels.iter().all(|label| inside(label.span())) {
-                            continue;
-                        }
-                        if let (Some(image), Some(names)) =
-                            (importer.comp_type_image(with), spelled(labels))
-                        {
-                            read_back.with_labels.push((image, names));
-                        }
-                    }
-                    for &(related, relation) in module.origins().relations() {
-                        if !typed(related) {
-                            continue;
-                        }
-                        if let Some(image) = importer.value_type_image(related) {
-                            read_back.relations.push((image, relation));
-                        }
-                    }
-                    for &(modelled, ref model) in module.origins().models() {
-                        if !typed(modelled) {
-                            continue;
-                        }
-                        let image = importer.value_type_image(modelled);
-                        let sorts: Option<Vec<_>> = model
-                            .sorts
-                            .iter()
-                            .map(|&(ref sort, carrier)| {
-                                importer
-                                    .value_type_image(carrier)
-                                    .map(|carrier| (sort.clone(), carrier))
-                            })
-                            .collect();
-                        if let (Some(image), Some(sorts)) = (image, sorts) {
-                            read_back.models.push((image, WrittenModel {
-                                theory: model.theory.clone(),
-                                sorts,
-                            }));
-                        }
-                    }
+                            },
+                            |model| {
+                                let sorts: Option<Vec<_>> = model
+                                    .sorts
+                                    .iter()
+                                    .map(|&(ref sort, carrier)| {
+                                        importer
+                                            .value_type_image(carrier)
+                                            .map(|carrier| (sort.clone(), carrier))
+                                    })
+                                    .collect();
+                                sorts.map(|sorts| WrittenModel {
+                                    theory: model.theory.clone(),
+                                    sorts,
+                                })
+                            },
+                        )
+                        .imaged(
+                            |ty| importer.value_type_image(ty),
+                            |ty| importer.comp_type_image(ty),
+                        );
+                    read_back.append(&mut imaged);
                 },
                 Ok(Lowered::Refused(refusal)) => {
                     for name in names {
@@ -5606,16 +5424,7 @@ impl TypeTable
         // recorded its binder's name for, stands at each copy a shift made of
         // it, so a type read under a dropped binder reprints as written (#674,
         // #1655, #1751, #2254, #4395).
-        carry_labels(carried, &mut WrittenLabels {
-            arrows: &mut read_back.arrows,
-            pairs: &mut read_back.pairs,
-            seconds: &mut read_back.seconds,
-            sum_labels: &mut read_back.sum_labels,
-            with_labels: &mut read_back.with_labels,
-            relations: &mut read_back.relations,
-            models: &mut read_back.models,
-            members: &mut read_back.members,
-        });
+        carry_labels(carried, &mut read_back);
         printed
             .into_iter()
             .zip(held)
