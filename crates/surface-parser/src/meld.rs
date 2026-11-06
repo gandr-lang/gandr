@@ -1936,6 +1936,9 @@ pub struct MeldState<'pbg>
     /// boundary operand sits at position zero, so this is what says whether
     /// the unit's fold ever reached past its own forms.
     low_water: usize,
+    /// How many left operands a reduce found missing. Only a difference
+    /// against a [`Mark`] is read, so a restored state starts it at zero.
+    left_shortfalls: usize,
 }
 
 impl<'pbg> MeldState<'pbg>
@@ -1958,7 +1961,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::empty_state_commits_to_a_root`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.edits.is_empty() && ret.removed.is_empty() && ret.live_marks == 0 && ret.low_water == usize::MAX && ret.pbg.fingerprint() == pbg.fingerprint())]
+    #[spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.edits.is_empty() && ret.removed.is_empty() && ret.live_marks == 0 && ret.low_water == usize::MAX && ret.left_shortfalls == 0 && ret.pbg.fingerprint() == pbg.fingerprint())]
     pub fn new(pbg: &'pbg Pbg) -> Self
     {
         Self {
@@ -1975,6 +1978,7 @@ impl<'pbg> MeldState<'pbg>
             removed: Vec::new(),
             live_marks: 0,
             low_water: usize::MAX,
+            left_shortfalls: 0,
         }
     }
 
@@ -4934,6 +4938,7 @@ impl<'pbg> MeldState<'pbg>
                 );
                 children.push(grout);
                 self.flag(Oblig::MissingMeld, span);
+                self.left_shortfalls = self.left_shortfalls.saturating_add(1);
             }
         }
 
@@ -6948,6 +6953,7 @@ impl<'pbg> MeldState<'pbg>
             removed: Vec::new(),
             live_marks: 0,
             low_water: usize::MAX,
+            left_shortfalls: 0,
         };
         state.rebuild_head_caches();
         state
@@ -7153,13 +7159,14 @@ impl<'pbg> MeldState<'pbg>
     /// the appended tails and undoes just those edits, copying neither the
     /// emission log (as [`checkpoint`](MeldState::checkpoint) does) nor the
     /// slope. This is the molder's per-candidate transaction: it marks,
-    /// dry-runs a candidate push, reads the candidate's obligation
-    /// [`delta_since`](MeldState::delta_since), and rolls back.
+    /// dry-runs a candidate push, reads the obligations the candidate causes,
+    /// [`caused_delta_since`](MeldState::caused_delta_since), and rolls back.
     ///
     /// # Specification
     /// - requires: none.
-    /// - ensures: returns the log lengths, the trail position and the number of
-    ///   live marks; counts the new mark live; leaves the parse unchanged.
+    /// - ensures: returns the log lengths, the count of missing left operands,
+    ///   the trail position and the number of live marks; counts the new mark
+    ///   live; leaves the parse unchanged.
     /// - provides: the open side of the candidate dry-run transaction.
     /// - fails: never.
     /// - panics: none.
@@ -7174,7 +7181,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
     #[inline]
     #[must_use]
-    #[spec(captures: before = (self.live_marks, self.edits.len(), self.removed.len()), ensures: |ret| ret.source_len == self.source.len() && ret.emit_len == self.emit.len() && ret.oblig_len == self.obligations.len() && ret.spaces_len == self.spaces.len() && ret.edits_len == before.1 && ret.removed_len == before.2 && ret.depth == before.0 && self.live_marks == before.0.saturating_add(1))]
+    #[spec(captures: before = (self.live_marks, self.edits.len(), self.removed.len()), ensures: |ret| ret.source_len == self.source.len() && ret.emit_len == self.emit.len() && ret.oblig_len == self.obligations.len() && ret.spaces_len == self.spaces.len() && ret.left_shortfalls == self.left_shortfalls && ret.edits_len == before.1 && ret.removed_len == before.2 && ret.depth == before.0 && self.live_marks == before.0.saturating_add(1))]
     pub fn mark(&mut self) -> Mark
     {
         let mark = Mark {
@@ -7182,6 +7189,7 @@ impl<'pbg> MeldState<'pbg>
             emit_len: self.emit.len(),
             oblig_len: self.obligations.len(),
             spaces_len: self.spaces.len(),
+            left_shortfalls: self.left_shortfalls,
             edits_len: self.edits.len(),
             removed_len: self.removed.len(),
             depth: self.live_marks,
@@ -7196,10 +7204,11 @@ impl<'pbg> MeldState<'pbg>
     /// - requires: `mark` was taken from this same state and is the latest live
     ///   mark.
     /// - ensures: truncates the source, emission log, obligation buffer and
-    ///   space list to their marked lengths and undoes every slope edit made
-    ///   since, newest first, so the state is bytewise identical to the mark;
-    ///   the head caches are exact; the marks live before `mark` stay live, and
-    ///   with none left the trail is empty.
+    ///   space list to their marked lengths, restores the marked count of
+    ///   missing left operands and undoes every slope edit made since, newest
+    ///   first, so the state is bytewise identical to the mark; the head caches
+    ///   are exact; the marks live before `mark` stay live, and with none left
+    ///   the trail is empty.
     /// - provides: the close side of the candidate dry-run transaction.
     /// - fails: never.
     /// - panics: none.
@@ -7217,8 +7226,8 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
     #[spec(requires: mark.source_len <= self.source.len() && self.source.is_char_boundary(mark.source_len) && mark.emit_len <= self.emit.len() && mark.oblig_len <= self.obligations.len() && mark.spaces_len <= self.spaces.len() && mark.edits_len <= self.edits.len() && mark.removed_len <= self.removed.len(),
-        captures: marked = (mark.source_len, mark.emit_len, mark.oblig_len, mark.spaces_len, mark.depth, self.edits.get(mark.edits_len ..).map_or(usize::MAX, |since| since.iter().filter_map(|edit| match *edit { SlopeEdit::Overwritten { index, .. } => Some(index), SlopeEdit::Spliced { low, .. } => Some(low), SlopeEdit::Pushed => None }).min().unwrap_or(usize::MAX))),
-        ensures: |_| marked.0 == self.source.len() && marked.1 == self.emit.len() && marked.2 == self.obligations.len() && marked.3 == self.spaces.len() && self.live_marks == marked.4 && (marked.4 > 0 || (self.edits.is_empty() && self.removed.is_empty()))
+        captures: marked = (mark.source_len, mark.emit_len, mark.oblig_len, mark.spaces_len, mark.depth, self.edits.get(mark.edits_len ..).map_or(usize::MAX, |since| since.iter().filter_map(|edit| match *edit { SlopeEdit::Overwritten { index, .. } => Some(index), SlopeEdit::Spliced { low, .. } => Some(low), SlopeEdit::Pushed => None }).min().unwrap_or(usize::MAX)), mark.left_shortfalls),
+        ensures: |_| marked.0 == self.source.len() && marked.1 == self.emit.len() && marked.2 == self.obligations.len() && marked.3 == self.spaces.len() && marked.6 == self.left_shortfalls && self.live_marks == marked.4 && (marked.4 > 0 || (self.edits.is_empty() && self.removed.is_empty()))
             && bool::from(self.caches_exact_from(StackFloor::from(StackIndex::from(marked.5.min(self.stack.len()))))))]
     pub fn rollback_to(
         &mut self,
@@ -7229,6 +7238,7 @@ impl<'pbg> MeldState<'pbg>
         self.emit.truncate(mark.emit_len);
         self.obligations.truncate(mark.oblig_len);
         self.spaces.truncate(mark.spaces_len);
+        self.left_shortfalls = mark.left_shortfalls;
         // Undo the slope edits made since the mark, newest first; the lowest
         // slope position any of them touched bounds the cache rebuild.
         let mut floor = self.stack.len();
@@ -7303,6 +7313,63 @@ impl<'pbg> MeldState<'pbg>
         let mut delta = Delta::empty();
         if let Some(tail) = self.obligations.get(mark.oblig_len ..) {
             for obligation in tail {
+                delta.insert(obligation.class);
+            }
+        }
+        delta
+    }
+
+    /// Return the obligation [`Delta`] that the pushes since `mark` cause.
+    ///
+    /// This is [`delta_since`](Self::delta_since) less each missing left
+    /// operand that a reduce since `mark` found. An operator stays on the slope
+    /// above its left neighbour, so that neighbour cannot change before the
+    /// operator reduces. When a push reduces an operator that the slope held
+    /// before `mark`, every other reading owes the same left operand later, at
+    /// a later reduce or at `finalize`. The molder keys the push of a form's
+    /// end tile by this delta (`Molder::push_delta`). A lookahead window can
+    /// push the operator itself, so a window reads
+    /// [`delta_since`](Self::delta_since).
+    ///
+    /// # Specification
+    /// - requires: `mark` was taken from this state and no rollback has
+    ///   occurred since.
+    /// - ensures: the per-class inserted counts equal the obligations flagged
+    ///   since `mark`, less the missing left operands counted since `mark` in
+    ///   the `MissingMeld` class.
+    /// - provides: the molder's minimization key for a form's end tile.
+    /// - fails: never; a stale mark yields the empty delta.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: reads only the obligations flagged since `mark`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `;` that closes a member over an operator with no
+    ///   left operand, beside a `;` that leaves the operator open. A key that
+    ///   counts the left operand makes the open reading the least, and the next
+    ///   member then nests in the expression.
+    /// - witness: `parse::gap::tests::a_semicolon_after_a_missing_left_operand_ends_the_member_5502`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| Oblig::all().into_iter().all(|class| {
+        let flagged = self.obligations.get(mark.oblig_len ..).map_or(0, |since| since.iter().filter(|obligation| obligation.class == class).count());
+        let caused = if class == Oblig::MissingMeld { flagged.saturating_sub(self.left_shortfalls.saturating_sub(mark.left_shortfalls)) } else { flagged };
+        u32::from(ret.inserted(class)) == u32::try_from(caused).unwrap_or(u32::MAX)
+    }))]
+    pub fn caused_delta_since(
+        &self,
+        mark: &Mark,
+    ) -> Delta
+    {
+        let mut owed = self.left_shortfalls.saturating_sub(mark.left_shortfalls);
+        let mut delta = Delta::empty();
+        if let Some(tail) = self.obligations.get(mark.oblig_len ..) {
+            for obligation in tail {
+                if obligation.class == Oblig::MissingMeld && owed > 0 {
+                    owed = owed.saturating_sub(1);
+                    continue;
+                }
                 delta.insert(obligation.class);
             }
         }
@@ -7395,6 +7462,8 @@ pub struct Mark
     oblig_len: usize,
     /// Floating-space-list length at mark time.
     spaces_len: usize,
+    /// Count of missing left operands at mark time.
+    left_shortfalls: usize,
     /// Slope-edit trail length at mark time.
     edits_len: usize,
     /// Removed-cell log length at mark time.
