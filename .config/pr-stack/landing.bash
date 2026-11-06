@@ -17,7 +17,8 @@
 # A failed action prints a warning.
 # The next run reads the server again.
 set -euo pipefail
-repo=${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 token=${LANDING_TOKEN_HELD:-false}
 # The CI workflow, which `landing.yml` runs on and the depth gate cancels:

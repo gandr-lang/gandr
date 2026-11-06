@@ -11,7 +11,8 @@ set -euo pipefail
 branch=${PRE_COMMIT_REMOTE_BRANCH:-}
 branch=${branch#refs/heads/}
 [[ -n "$branch" ]] || exit 0
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
+repo=$(repo_name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 [[ "$branch" != "$trunk" ]] || exit 0
 blocking=$(open_prs | jq -c --arg branch "$branch" -f "$pr_stack_dir/queued.jq")

@@ -15,7 +15,9 @@
 # stands now, so runs arriving out of order settle on the last state.
 set -euo pipefail
 issue=${1:?usage: unsectioned.sh <issue>}
-repo=${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../gh/repo.bash"
+repo=$(repo_name)
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=$(cd "$here/../.." && pwd)
 
