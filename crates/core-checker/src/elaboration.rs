@@ -171,6 +171,7 @@ pub(crate) use self::constraints::Residue;
 pub(crate) use self::constraints::Signing;
 pub(crate) use self::constraints::Unified;
 pub(crate) use self::output::CodeUse;
+pub(crate) use self::output::CodeUses;
 pub(crate) use self::output::Emission;
 use self::output::Transports;
 use crate::CheckBudget;

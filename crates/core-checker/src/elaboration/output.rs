@@ -45,6 +45,11 @@ enum Effect
     Lift,
 }
 
+/// How many code uses a recording holds, over all its nodes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CodeUses(usize);
+
 /// Code conversions in judgement order, independently for each source node.
 #[derive(Default)]
 pub struct Transports
@@ -97,9 +102,9 @@ impl Transports
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn recorded(&self) -> usize
+    pub const fn recorded(&self) -> CodeUses
     {
-        self.recorded
+        CodeUses(self.recorded)
     }
 }
 
@@ -133,10 +138,10 @@ impl Emission
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn recorded(&self) -> usize
+    pub const fn recorded(&self) -> CodeUses
     {
         match *self {
-            Self::Off => 0,
+            Self::Off => CodeUses(0),
             Self::Recording(ref transports) => transports.recorded(),
         }
     }

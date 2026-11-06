@@ -3624,7 +3624,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn code_uses(&self) -> usize
+    pub(crate) const fn code_uses(&self) -> crate::elaboration::CodeUses
     {
         self.deferrals.emission.recorded()
     }

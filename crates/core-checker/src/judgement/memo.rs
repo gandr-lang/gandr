@@ -202,7 +202,7 @@ struct Effects
     /// The linear state's scope.
     sessions: Scope,
     /// The code uses the elaboration recorded.
-    uses: usize,
+    uses: crate::elaboration::CodeUses,
 }
 
 /// A goal under way whose answer the memo may record.
