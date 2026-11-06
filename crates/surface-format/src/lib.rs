@@ -118,9 +118,9 @@
 //! | `lazy-product`   | `&{C, D}`               | `C & D`         |
 //! | `value-function` | `+U ((x : A) -> B -> -F C)` | `(x : A, B) -> C` |
 //! | `default-grade`  | `+U B`, from `+U[ω] B`  | `+U B`, from `+U[ω] B` |
-//! | `path-composite` | `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)` | `Path.step(p, q)` |
-//! | `path-inverse`   | `Path.walk(fun (y) { Path[.A = A](y, a) }, p, Path.here(a))` | `Path.back(p)` |
-//! | `path-action`    | `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p, Path.here(f(a)))` | `Path.ap(f, p)` |
+//! | `path-composite` | `Path.step(p, q)`, from `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)` | `Path.step(p, q)`, from `Path.walk(fun (y) { Path[.A = A](a, y) }, q, p)` |
+//! | `path-inverse`   | `Path.back(p)`, from `Path.walk(fun (y) { Path[.A = A](y, a) }, p, Path.here(a))` | `Path.back(p)`, from `Path.walk(fun (y) { Path[.A = A](y, a) }, p, Path.here(a))` |
+//! | `path-action`    | `Path.ap(f, p)`, from `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p, Path.here(f(a)))` | `Path.ap(f, p)`, from `Path.walk(fun (y) { Path[.A = B](f(a), f(y)) }, p, Path.here(f(a)))` |
 //! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
 //! | `inserted-returner` | `-> -F B`, as written | `-> B`, at a definition's result |
 //! | `short-alias`    | `(x : A) -> B`, as written | `A -> B`, `x` unread |
@@ -224,27 +224,22 @@
 //! alone.
 //!
 //! `Path.step(p, q)` is the transport `Path.walk(fun (y) { Path[.A = A](a, y)
-//! }, q, p)`, and the syntax holds neither the carrier `A` nor the fixed
-//! endpoint `a`: they are the type of `p`, which the lowering derives. So the
-//! explicit form reads the motive from the lowering — the transport it minted
-//! at the composite — and spells it through the presentation printer under the
-//! names the source writes for the binders around the composite, as
-//! `gandr-surface-diagnostics` names the module's constants and binders for
-//! it. A composite whose motive the printer cannot spell, one under a binder
-//! the source names nothing, keeps `Path.step` and is reported; a composite of
-//! flows is its own explicit spelling and stays. The sugared form writes
-//! `Path.step` for the same transports, those the lowering returns at a
-//! composite, as the printer does: a transport a body runs as written stays
-//! `Path.walk …`.
+//! }, q, p)`, and `Path.back(p)` and `Path.ap(f, p)` are transports too. The
+//! printer writes each such transport the lowering returns as its operation
+//! in both forms (`gandr-surface-pretty`, § Two forms, one walk), so both
+//! forms fold it into the operation and neither form unfolds an operation
+//! (#5206). A transport a body runs as written stays `Path.walk …`, and so
+//! does a composite of flows, which the core holds as written.
 //!
-//! - Choice: the motive spelled by the shared printer from the lowering the
-//!   meaning check already runs, so the explicit spelling is the printer's
+//! - Choice: the operation in both forms, as the printer reads it, so that the
+//!   explicit form needs no motive from the lowering and the two writers agree
 //!   token for token.
-//! - Alternative: inferring `A` and `a` from the syntax, a second type reader
-//!   beside the lowering's, wrong wherever the operand's type is not written.
-//! - Reversal: a lowering that keeps the composite's motive in the syntax it
-//!   records, at which point the rewrite reads it there and the printer
-//!   dependency goes.
+//! - Alternative: the transport in the explicit form, its motive spelled by the
+//!   printer from the lowering; a composite under a binder the source names
+//!   nothing then kept its operation, and the printer and the formatter
+//!   disagreed on the same type (#5205).
+//! - Reversal: the three operations as definitions in `std` (#5523), at which
+//!   point each is a call that both forms write as written.
 //!
 //! | item              | what it is                                              |
 //! | ----------------- | ------------------------------------------------------- |
@@ -606,9 +601,6 @@ pub enum Withdrawn
     /// As written, the declaration is refused, so no rewrite's meaning can be
     /// checked: the refusal, as the lowering writes it.
     Unchecked(String),
-    /// A path composite it writes keeps its spelling: the lowering derived no
-    /// motive the printer spells for it.
-    Unspelled,
     /// Rewritten, a declaration that reads it — named here — would lower
     /// otherwise, though the declaration's own meaning holds: that reader
     /// reads its spelling, not only its type.
@@ -636,10 +628,6 @@ impl fmt::Display for Withdrawn
                     "as written, it is refused, so no rewrite can be checked: {refusal}"
                 )
             },
-            Self::Unspelled => f.write_str(
-                "a path composite it writes has no motive the printer spells, so it keeps \
-                 `Path.step`",
-            ),
             Self::Read(ref reader) => write!(
                 f,
                 "rewritten, `{reader}`, which reads it, would lower to other core"
@@ -870,14 +858,9 @@ pub fn format_beside(
         .flat_map(|declaration| declaration.keys.iter().copied())
         .collect();
     let mut held: BTreeSet<NodeKey> = withdrawn.iter().copied().collect();
-    let motives = match (chosen, lowered.as_ref()) {
-        (Some(_), Some(module)) => composite::motives(
-            module,
-            &arena,
-            whole.as_ref().map_or(tree, ParseResult::tree).source(),
-            base,
-        ),
-        (Some(_) | None, _) => composite::Motives::default(),
+    let composites = match (chosen, lowered.as_ref()) {
+        (Some(_), Some(module)) => composite::Composites::of(module, &arena, base),
+        (Some(_) | None, _) => composite::Composites::default(),
     };
     // A linear run lowers otherwise than the call written at its read, a
     // tail's `return` of a call otherwise than the call, a thunk otherwise
@@ -957,7 +940,7 @@ pub fn format_beside(
     )?;
     let mut reports: Vec<Withdrawal> = Vec::new();
     if let (Some(chosen), false) = (chosen, refused.is_empty()) {
-        let any = composite::Motives::any();
+        let any = composite::Composites::any();
         let every = tail::Tails::any();
         // A refused declaration has no lowering to list its linear runs from,
         // so none is reported for one.
@@ -972,7 +955,7 @@ pub fn format_beside(
                 Some(rewrite::Rewrites {
                     chosen,
                     withdrawn: &[],
-                    motives: &any,
+                    composites: &any,
                     tails: &every,
                     runs: &unlisted,
                     thunks: &unthunked,
@@ -1007,7 +990,7 @@ pub fn format_beside(
             (Some(chosen), Some(_)) => Some(rewrite::Rewrites {
                 chosen,
                 withdrawn: spans.as_slice(),
-                motives: &motives,
+                composites: &composites,
                 tails: &tails,
                 runs: &runs,
                 thunks: &thunks,
@@ -1025,7 +1008,6 @@ pub fn format_beside(
         };
         if laid.respelled.is_empty() {
             verify(grammar, parsed, &flat.leaves, text)?;
-            unspelled(tree, lowered, (&laid.unspelled, base), &mut reports);
             return Ok(laid.formatted(reports));
         }
         let agreement = verify_rewritten(
@@ -1037,7 +1019,6 @@ pub fn format_beside(
         )?;
         match agreement {
             Agreement::Same => {
-                unspelled(tree, lowered, (&laid.unspelled, base), &mut reports);
                 return Ok(laid.formatted(reports));
             },
             Agreement::Declarations(differing) => {
@@ -1189,46 +1170,6 @@ fn read(
     )
 }
 
-/// Report, beside `reports`, each declaration of `module` holding one of the
-/// path composites at `spans` that kept its spelling, no motive derived for
-/// it, once.
-///
-/// # Specification
-/// trivial.
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        linear_search_in_loop,
-        reason = "bounded: `reports` holds the withdrawals of one source's formatting"
-    )
-)]
-fn unspelled(
-    tree: &SyntaxTree<'_>,
-    module: &gandr_surface_lowering::LoweredModule<'_>,
-    (spans, base): (&[ByteSpan], ByteOffset),
-    reports: &mut Vec<Withdrawal>,
-)
-{
-    for &span in spans {
-        let Some(form) = tree.children(tree.root()).find(|&form| {
-            tree.node(form).is_some_and(|node| {
-                node.span().start() <= span.start() && span.end() <= node.span().end()
-            })
-        })
-        else {
-            continue;
-        };
-        let held = meaning::holding(module, base, &Withdrawn::Unspelled, |keys| {
-            top_forms(tree, keys).contains(&form)
-        });
-        if let Some(withdrawal) = held
-            && !reports.contains(&withdrawal)
-        {
-            reports.push(withdrawal);
-        }
-    }
-}
-
 /// What a source's rewrites are checked beside: the source alone, or the
 /// sources its imports reach, laid out before it as one unit.
 #[derive(Clone, Copy, Debug, Default)]
@@ -1311,8 +1252,6 @@ struct Written<'source>
     /// The spans of the signatures and definitions joined into one form,
     /// ascending.
     joined: Vec<ByteSpan>,
-    /// The path composites kept, no motive derived for them, in order.
-    unspelled: Vec<ByteSpan>,
 }
 
 impl Written<'_>
@@ -1360,7 +1299,6 @@ fn write<'source>(
     let mut respelled = Vec::new();
     let mut merged = Vec::new();
     let mut joined = Vec::new();
-    let mut unspelled = Vec::new();
     let units = units(&flat.leaves);
     let mut at = 0_usize;
     while let Some(unit) = units.get(at) {
@@ -1392,8 +1330,7 @@ fn write<'source>(
         };
         let laid = match flat.integrity(form) {
             Integrity::Clean => {
-                let (changed, kept) = respelled_form(grammar, tree, form, unit.leaves, rewrites);
-                unspelled.extend(kept.0);
+                let changed = respelled_form(grammar, tree, form, unit.leaves, rewrites);
                 let own = changed.as_deref().unwrap_or(unit.leaves);
                 // A module's member pairs, written as one form or apart as a
                 // top-level pair would be; a module whose one forms elaborate
@@ -1469,7 +1406,7 @@ fn write<'source>(
                         if !merging && !joining {
                             return None;
                         }
-                        let (definition, also) =
+                        let definition =
                             respelled_form(grammar, tree, defined, next.leaves, Some(chosen));
                         let pair = (next.leaves, definition.as_deref().unwrap_or(next.leaves));
                         let (leaves, one) = merging
@@ -1482,10 +1419,9 @@ fn write<'source>(
                                     .flatten()
                                     .map(|leaves| (leaves, merge::OneForm::Joined))
                             })?;
-                        Some((leaves, one, also, defined, spans, next.span))
+                        Some((leaves, one, defined, spans, next.span))
                     });
-                if let Some((leaves, one, also, defined, spans, end)) = paired {
-                    unspelled.extend(also.0);
+                if let Some((leaves, one, defined, spans, end)) = paired {
                     respelled.extend([form, defined]);
                     match one {
                         merge::OneForm::Function => merged.extend(spans),
@@ -1558,13 +1494,11 @@ fn write<'source>(
         respelled,
         merged,
         joined,
-        unspelled,
     })
 }
 
 /// The leaves of the clean top-level form `form` of `tree`, whose leaves
-/// are `leaves`, respelled by `rewrites` when given and some rewrite applies,
-/// beside the path composites it kept.
+/// are `leaves`, respelled by `rewrites` when given and some rewrite applies.
 ///
 /// # Specification
 /// trivial.
@@ -1574,15 +1508,11 @@ fn respelled_form<'source>(
     form: NodeIndex,
     leaves: &[Leaf<'source>],
     rewrites: Option<rewrite::Rewrites<'_, 'source>>,
-) -> (Option<Vec<Leaf<'source>>>, rewrite::Unspelled)
+) -> Option<Vec<Leaf<'source>>>
 {
-    let (respelling, kept) = rewrites.map_or_else(
-        || (Respelled::Kept, rewrite::Unspelled::default()),
-        |rewrites| rewrite::respell(grammar, tree, form, leaves, rewrites),
-    );
-    match respelling {
-        Respelled::Changed(leaves) => (Some(leaves), kept),
-        Respelled::Kept => (None, kept),
+    match rewrites.map(|rewrites| rewrite::respell(grammar, tree, form, leaves, rewrites))? {
+        Respelled::Changed(leaves) => Some(leaves),
+        Respelled::Kept => None,
     }
 }
 

@@ -22,10 +22,10 @@ path = "tests/lib.rs"
 # formatted text back for the meaning check; the grammar names the forms
 # kept verbatim; the syntax tree is the input. A rewrite between the
 # spellings is checked by lowering the source and the rewritten text into
-# one core arena and comparing what each declaration lowered to. The path
-# composite's explicit spelling writes the motive the lowering derived,
-# spelled through the shared printer under the names the diagnostics give
-# a lowered module's constants and constructors. The checker names the reduct
+# one core arena and comparing what each declaration lowered to. The
+# explicit form spells a forgetting map's carriers through the shared
+# printer, under the names the diagnostics give a lowered module's constants
+# and constructors. The checker names the reduct
 # it applies at a crossing by its constant. The grammar's walk direction reads
 # what a token's mold may follow, which tells a shape face's `{` apart.
 [dependencies]

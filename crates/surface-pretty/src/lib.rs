@@ -70,17 +70,21 @@
 //! abstraction `fun (a) { v }`, and a static application as its spine, `f(a,
 //! b)` for `f` applied to `a` and then to `b` (the type operators of
 //! `gandr-surface-grammar`). Every braced former is written between its
-//! delimiters at any arity from one, its labels in their declared order.
+//! delimiters at any arity from one, its labels in their declared order. The
+//! path operations `Path.step p q`, `Path.back p` and `Path.ap f p` are
+//! written as the operations in both forms, for the returned transport each
+//! derives, the carrier and the fixed endpoint naming no `y` (#754, #778): the
+//! printer never unfolds them (#5206). A transport standing as another
+//! transport's operand keeps its spelling, since nothing there states the
+//! operation's type (#815).
 //!
 //! **Sugared** writes, besides, every sugar the grammar parses where the
 //! core's shape is exactly the one the sugar stands for: the product `A * B`
 //! and the sum `A + B` of two components or more, `A * B * C` one product of
 //! three as the lowering flattens the chain; the binary lazy product `C & D`;
 //! the value-function alias `A -> C`, `() -> C` and `(A, B) -> C` for a thunk
-//! over a chain of non-dependent arrows ending in a pure returner; and the
-//! path composite `Path.step p q` for the returned transport `Path.walk (fun
-//! (y) { Path[.A = A](a, y) }) q p` it derives, the carrier and the fixed
-//! endpoint naming no `y` (#754). A tuple is the record `*{a, b}` in either
+//! over a chain of non-dependent arrows ending in a pure returner. A tuple is
+//! the record `*{a, b}` in either
 //! form: a group is never a stored value (#4853). A dependent arrow, an
 //! effectful returner, a record, a sum or
 //! product of one component and the empty ones keep their explicit spelling.
@@ -444,12 +448,12 @@ pub enum Form
 {
     /// Every sugar the grammar parses where the core's shape is exactly the
     /// sugar's: the value-function alias `(A, B) -> C` for `+U (A -> B -> -F
-    /// C)`, the infix `A * B`, `A + B` and `C & D`, and the path composite
-    /// `Path.step p q` for the transport it derives. The form every face a
+    /// C)`, and the infix `A * B`, `A + B` and `C & D`. The form every face a
     /// person reads takes by default.
     Sugared,
     /// What the core holds, former by former: `+U (A -> B -> -F C)`,
-    /// `*{A, B}`, `+{A, B}`, `&{C, D}` and `*{a, b}`.
+    /// `*{A, B}`, `+{A, B}`, `&{C, D}` and `*{a, b}`. The path operations
+    /// keep their own spelling, as in the sugared form.
     Explicit,
 }
 

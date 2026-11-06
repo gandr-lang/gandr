@@ -31,10 +31,8 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
 
 use crate::Form;
-use crate::composite::Motives;
-use crate::composite::Spaced;
+use crate::composite::Composites;
 use crate::composite::Standing;
-use crate::composite::Token;
 use crate::leaf::Copied;
 use crate::leaf::Documentation;
 use crate::leaf::Leaf;
@@ -49,6 +47,8 @@ use crate::merge::Returning;
 use crate::reduct::Applied;
 use crate::reduct::Reduct;
 use crate::reduct::Reducts;
+use crate::reduct::Spaced;
+use crate::reduct::Token;
 use crate::space::Context as Spacing;
 use crate::tail::Exit;
 use crate::tail::Tails;
@@ -84,13 +84,16 @@ pub enum RewriteName
     /// leaving it unwritten as the printer does.
     DefaultGrade,
     /// The path composite: `Path.walk (fun (y) { Path[.A = A](a, y) }) q p`
-    /// and `Path.step p q`.
+    /// and `Path.step p q`, both forms writing the composite as the printer
+    /// does (#5206).
     PathComposite,
     /// The path inverse: `Path.walk (fun (y) { Path[.A = A](y, a) }) p
-    /// (Path.here a)` and `Path.back p`.
+    /// (Path.here a)` and `Path.back p`, both forms writing the inverse as
+    /// the printer does.
     PathInverse,
     /// A map's action on a path: `Path.walk (fun (y) { Path[.A = B](f(a),
-    /// f(y)) }) p (Path.here (f a))` and `Path.ap f p`.
+    /// f(y)) }) p (Path.here (f a))` and `Path.ap f p`, both forms writing
+    /// the action as the printer does.
     PathAction,
     /// A tail's exit: `return v` where a path through a body ends, over a
     /// value, and `v`; only the sugared form moves it, leaving out the
@@ -300,8 +303,8 @@ pub const REWRITES: [Rewrite; 31] = [
         name: RewriteName::PathComposite,
         direction: Direction::Desugar,
         mold: APPLICATION,
-        from: Spelling("Path.step p q"),
-        to: Spelling("Path.walk (fun (y) { type(Path[.A = A](a, y)) }) q p"),
+        from: Spelling("Path.walk (fun (y) { type(Path[.A = A](a, y)) }) q p"),
+        to: Spelling("Path.step p q"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -316,8 +319,8 @@ pub const REWRITES: [Rewrite; 31] = [
         name: RewriteName::PathInverse,
         direction: Direction::Desugar,
         mold: APPLICATION,
-        from: Spelling("Path.back p"),
-        to: Spelling("Path.walk (fun (y) { type(Path[.A = A](y, a)) }) p (Path.here a)"),
+        from: Spelling("Path.walk (fun (y) { type(Path[.A = A](y, a)) }) p (Path.here a)"),
+        to: Spelling("Path.back p"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -334,8 +337,10 @@ pub const REWRITES: [Rewrite; 31] = [
         name: RewriteName::PathAction,
         direction: Direction::Desugar,
         mold: APPLICATION,
-        from: Spelling("Path.ap f p"),
-        to: Spelling("Path.walk (fun (y) { type(Path[.A = B](f(a), f(y))) }) p (Path.here (f a))"),
+        from: Spelling(
+            "Path.walk (fun (y) { type(Path[.A = B](f(a), f(y))) }) p (Path.here (f a))",
+        ),
+        to: Spelling("Path.ap f p"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -878,8 +883,8 @@ struct Respelling<'run, 'source>
     /// The spans no rewrite enters: declarations whose meaning cannot be
     /// checked.
     refused: &'run [ByteSpan],
-    /// The motive of each path composite, by its span.
-    motives: &'source Motives,
+    /// How the lowering holds each path composite, by its span.
+    composites: &'source Composites,
     /// The `return` forms written as their value.
     tails: &'source Tails,
     /// The `let` statements written away, each call at its binder's read.
@@ -898,9 +903,7 @@ struct Respelling<'run, 'source>
     parents: BTreeMap<NodeIndex, NodeIndex>,
     /// Whether a rewrite applied.
     changed: Changed,
-    /// The spans of the path composites kept, no motive derived for them.
-    unspelled: Vec<ByteSpan>,
-    /// The derived path operations the sugared form wrote, by node: those a
+    /// The derived path operations a rewrite wrote, by node: those a
     /// transport kept as written spells as written again.
     derivations: BTreeSet<NodeIndex>,
 }
@@ -980,7 +983,7 @@ enum Visit
 }
 
 /// What one formatting's rewrites read: the rewrites chosen, the spans they
-/// do not enter, the motives of the path composites the lowering derived, the
+/// do not enter, how the lowering holds each path composite, the
 /// tails whose `return` it would infer, the `let` statements that only
 /// sequence a call, where a thunk is left to the checker, and the reducts the
 /// checker applies.
@@ -992,8 +995,8 @@ pub struct Rewrites<'run, 'source>
     /// The spans no rewrite enters: declarations whose meaning cannot be
     /// checked.
     pub withdrawn: &'run [ByteSpan],
-    /// The motive of each path composite, by its span.
-    pub motives: &'source Motives,
+    /// How the lowering holds each path composite, by its span.
+    pub composites: &'source Composites,
     /// The `return` forms written as their value.
     pub tails: &'source Tails,
     /// The `let` statements written away, each call at its binder's read.
@@ -1018,9 +1021,7 @@ pub struct Rewrites<'run, 'source>
 ///   applies to respelled bottom-up — its operands' leaves kept, its own tiles
 ///   the other spelling's, its comments after the operand they followed, an
 ///   operand parenthesised where its band is looser than its position admits
-///   and unwrapped where a parenthesis it was written in is not needed. Beside
-///   it, the span of each path composite the explicit form would enter but that
-///   keeps its spelling, no motive derived for it.
+///   and unwrapped where a parenthesis it was written in is not needed.
 /// - provides: the leaves [`crate::format`] lays out in place of a form's.
 /// - fails: never.
 /// - panics: none.
@@ -1030,17 +1031,17 @@ pub struct Rewrites<'run, 'source>
 /// - hypothesis: L3 — each rewrite at each direction over one golden source
 ///   holding every pair, nested and with comments, and the corpus sweep.
 /// - witness: `tests::rewrite::each_rewrite_moves_its_pair_both_ways`
-/// - witness: `tests::rewrite::the_path_composite_moves_both_ways`
+/// - witness: `tests::rewrite::the_path_operations_fold_in_both_forms_5206`
 /// - witness: `tests::rewrite::a_sugared_source_keeps_every_comment_with_its_construct`
 /// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
-#[spec(ensures: |ret| !matches!(ret.0, Respelled::Changed(ref written) if written.is_empty()))]
+#[spec(ensures: |ret| !matches!(ret, Respelled::Changed(ref written) if written.is_empty()))]
 pub fn respell<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,
     form: NodeIndex,
     leaves: &[Leaf<'source>],
     rewrites: Rewrites<'_, 'source>,
-) -> (Respelled<'source>, Unspelled)
+) -> Respelled<'source>
 {
     let mut respelling = Respelling {
         grammar,
@@ -1049,7 +1050,7 @@ pub fn respell<'source>(
         form,
         chosen: rewrites.chosen,
         refused: rewrites.withdrawn,
-        motives: rewrites.motives,
+        composites: rewrites.composites,
         tails: rewrites.tails,
         runs: rewrites.runs,
         thunks: rewrites.thunks,
@@ -1059,7 +1060,6 @@ pub fn respell<'source>(
         extents: BTreeMap::new(),
         parents: BTreeMap::new(),
         changed: Changed::No,
-        unspelled: Vec::new(),
         derivations: BTreeSet::new(),
     };
     let mut stack: Vec<(NodeIndex, Visit)> = Vec::from([(form, Visit::Enter)]);
@@ -1077,18 +1077,11 @@ pub fn respell<'source>(
             Visit::Leave => respelling.leave(at),
         }
     }
-    let respelled = match (respelling.changed, respelling.spelled.remove(&form)) {
+    match (respelling.changed, respelling.spelled.remove(&form)) {
         (Changed::Yes, Some(spelled)) => Respelled::Changed(spelled.leaves),
         (Changed::No, _) | (Changed::Yes, None) => Respelled::Kept,
-    };
-    (respelled, Unspelled(respelling.unspelled))
+    }
 }
-
-/// The spans of the path composites a respelling kept, no motive derived for
-/// them, in the order it met them.
-#[repr(transparent)]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Unspelled(pub Vec<ByteSpan>);
 
 /// Whether a node is respelled from its children.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1266,8 +1259,8 @@ impl<'source> Respelling<'_, 'source>
         }
     }
 
-    /// Spell again as written each derived path operation the sugared form
-    /// wrote among the arguments of the application whose parts are `parts`,
+    /// Spell again as written each derived path operation a rewrite wrote
+    /// among the arguments of the application whose parts are `parts`,
     /// when that application is a whole transport `Path.walk m q p` kept as
     /// written, and every one each of those holds so in turn: the printer
     /// writes a derived operation standing as a transport's operand as the
@@ -1318,8 +1311,8 @@ impl<'source> Respelling<'_, 'source>
         Changed::Yes
     }
 
-    /// Push onto `stack`, to enter, each derived path operation the sugared
-    /// form wrote among the arguments of the application whose parts are
+    /// Push onto `stack`, to enter, each derived path operation a rewrite
+    /// wrote among the arguments of the application whose parts are
     /// `parts`, when that application is a whole `Path.walk m q p`, removing
     /// each from the derivations. A partial application in a juxtaposed
     /// spine, `Path.walk m q`, is no transport yet, so it unsugars nothing.
@@ -1536,12 +1529,10 @@ impl<'source> Respelling<'_, 'source>
             None
         };
         let spelled = if let Some((name, spelled)) = rewritten {
-            if chosen.direction == Direction::Sugar
-                && matches!(
-                    name,
-                    RewriteName::PathComposite | RewriteName::PathInverse | RewriteName::PathAction
-                )
-            {
+            if matches!(
+                name,
+                RewriteName::PathComposite | RewriteName::PathInverse | RewriteName::PathAction
+            ) {
                 let _first = self.derivations.insert(at);
             }
             spelled
@@ -2261,8 +2252,10 @@ impl<'source> Respelling<'_, 'source>
                 self.ungraded(&mut out, parts)?;
                 Band::Bridge
             },
-            (RewriteName::PathComposite, Direction::Sugar) => {
-                if self.motives.standing(extent) != Standing::Returned {
+            // Both forms fold a returned transport into the operation it
+            // derives, as the printer reads it in both forms (#5206).
+            (RewriteName::PathComposite, Direction::Sugar | Direction::Desugar) => {
+                if self.composites.standing(extent) != Standing::Returned {
                     return None;
                 }
                 let Some(Operation::Composite { first, second }) = self.derived(parts)
@@ -2276,8 +2269,8 @@ impl<'source> Respelling<'_, 'source>
                 out.place(&self.operand(second), Band::Atom);
                 Band::Application
             },
-            (RewriteName::PathInverse, Direction::Sugar) => {
-                if self.motives.standing(extent) != Standing::Returned {
+            (RewriteName::PathInverse, Direction::Sugar | Direction::Desugar) => {
+                if self.composites.standing(extent) != Standing::Returned {
                     return None;
                 }
                 let Some(Operation::Inverse { path }) = self.derived(parts)
@@ -2289,8 +2282,8 @@ impl<'source> Respelling<'_, 'source>
                 out.place(&self.operand(path), Band::Atom);
                 Band::Application
             },
-            (RewriteName::PathAction, Direction::Sugar) => {
-                if self.motives.standing(extent) != Standing::Returned {
+            (RewriteName::PathAction, Direction::Sugar | Direction::Desugar) => {
+                if self.composites.standing(extent) != Standing::Returned {
                     return None;
                 }
                 let Some(Operation::Action { map, path }) = self.derived(parts)
@@ -2302,33 +2295,6 @@ impl<'source> Respelling<'_, 'source>
                 out.place(&self.operand(map), Band::Atom);
                 out.gap(Spelling(" "));
                 out.place(&self.operand(path), Band::Atom);
-                Band::Application
-            },
-            (RewriteName::PathComposite, Direction::Desugar) => {
-                if self.motives.standing(extent) == Standing::Flows {
-                    return None;
-                }
-                let &[first, second] = self.called(parts, STEP)?.as_slice()
-                else {
-                    return None;
-                };
-                self.transport(&mut out, extent, second, Moved::Written(first))?;
-                Band::Application
-            },
-            (RewriteName::PathInverse, Direction::Desugar) => {
-                let &[path] = self.called(parts, BACK)?.as_slice()
-                else {
-                    return None;
-                };
-                self.transport(&mut out, extent, path, Moved::Derived)?;
-                Band::Application
-            },
-            (RewriteName::PathAction, Direction::Desugar) => {
-                let &[_, path] = self.called(parts, CONG)?.as_slice()
-                else {
-                    return None;
-                };
-                self.transport(&mut out, extent, path, Moved::Derived)?;
                 Band::Application
             },
             (RewriteName::TailReturn, Direction::Sugar) => {
@@ -3359,63 +3325,6 @@ impl<'source> Respelling<'_, 'source>
             && reflexive(left))
         .then_some(Operation::Action { map, path: along })
     }
-
-    /// The arguments of the application whose parts are `parts`, when its
-    /// head is spelled `head` alone, `Path.back`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn called(
-        &self,
-        parts: &[Part<'source>],
-        head: &[Spelling],
-    ) -> Option<Vec<Child<'source>>>
-    {
-        let spine = self.spine(parts)?;
-        let (&callee, arguments) = spine.split_first()?;
-        (self.spelled_as(callee, head) == Spelt::As).then(|| arguments.to_vec())
-    }
-
-    /// Write the transport the derived path operation at `extent` stands
-    /// for, `Path.walk (m) q p`, its motive as the lowering derived it,
-    /// moving `moved` along `along`, or nothing when the lowering derived
-    /// none the printer spells.
-    ///
-    /// # Specification
-    /// trivial.
-    fn transport(
-        &mut self,
-        out: &mut Builder<'source>,
-        extent: ByteSpan,
-        along: Child<'source>,
-        moved: Moved<'source>,
-    ) -> Option<()>
-    {
-        let motives = self.motives;
-        let (Some(motive), Some(value)) = (motives.of(extent), motives.value(extent))
-        else {
-            self.unspelled.push(extent);
-            return None;
-        };
-        held(out, WALK);
-        out.gap(Spelling(" "));
-        out.token(OPEN_PAREN);
-        written(out, motive);
-        out.token(CLOSE_PAREN);
-        out.gap(Spelling(" "));
-        out.place(&self.operand(along), Band::Atom);
-        out.gap(Spelling(" "));
-        match moved {
-            Moved::Written(moved) => out.place(&self.operand(moved), Band::Atom),
-            Moved::Derived if value.len() == 1 => written(out, value),
-            Moved::Derived => {
-                out.token(OPEN_PAREN);
-                written(out, value);
-                out.token(CLOSE_PAREN);
-            },
-        }
-        Some(())
-    }
 }
 
 /// An endpoint of a path type: its tokens and the operands it holds.
@@ -3486,16 +3395,6 @@ enum Operation<'source>
         /// `p`.
         path: Child<'source>,
     },
-}
-
-/// The value the transport a derived path operation stands for moves.
-#[derive(Clone, Copy)]
-enum Moved<'source>
-{
-    /// An operand as the source writes it: a composite's first path.
-    Written(Child<'source>),
-    /// The reflexivity the lowering derived: an inverse's and an action's.
-    Derived,
 }
 
 /// The operands of an infix chain, with every part of every form in it.

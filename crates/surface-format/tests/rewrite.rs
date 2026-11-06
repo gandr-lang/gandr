@@ -560,135 +560,27 @@ pub data Circle : Type where {
 
 ";
 
-/// The path composite moves both ways, nested: desugared, each composite is
-/// the transport whose motive the lowering derived, spelled as the printer
-/// spells it; sugared back, the transport is the composite again.
+/// #5206: both forms write a derived path operation as the operation, as the
+/// printer does. A written composite, inverse or action keeps its spelling in
+/// the explicit form, and both forms fold a written transport into the
+/// operation it derives, nested. #1003: the inverse is taken at the circle's
+/// point, where the reflexivity it moves is the empty word a written
+/// `Path.here Base` reads as.
 #[test]
-fn the_path_composite_moves_both_ways()
+fn the_path_operations_fold_in_both_forms_5206()
 {
     let grammar = grammar();
-    let sugared = format!(
-        "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](Path.step loop (Path.step loop loop), Path.here Base) ;\n"
-    );
-    let explicit = format!(
-        "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](
+    let unfolded = format!(
+        "{CIRCLE}def spin(x : Circle) -> -F Circle {{
+  x
+}}
+
+def thrice : Path[.A = Path[.A = Circle](Base, Base)](
   Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) (Path.walk (fun (a) {{
     type(Path[.A = Circle](Base, a))
   }}) loop loop) loop,
   Path.here Base
 );
-"
-    );
-    let back = format!(
-        "{CIRCLE}def thrice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step loop (Path.step loop loop),
-  Path.here Base
-);
-"
-    );
-    for (source, form, expected) in [
-        (&sugared, Form::Explicit, &explicit),
-        (&explicit, Form::Sugared, &back),
-        (&back, Form::Sugared, &back),
-        (&explicit, Form::Explicit, &explicit),
-    ] {
-        assert_eq!(
-            spelled(&grammar, source.as_str(), form, Selection::Every),
-            *expected,
-            "{form}"
-        );
-    }
-}
-
-/// A derived motive formats once as explicit (#3891). Its lambda's stated
-/// parameter is the binder's type, `fun (c : Path[.A = A](x, y))`, not the
-/// statement the printer once wrote for it (#3943).
-#[test]
-fn a_statement_in_a_derived_motive_formats_once_as_explicit_3891()
-{
-    let grammar = grammar();
-    let source = "def whiskered(
-  A : Type,
-  x : A,
-  y : A,
-  z : A,
-  f1 : Path[.A = A](x, y),
-  f2 : Path[.A = A](x, y),
-  a : Path[.A = Path[.A = A](x, y)](f1, f2),
-  g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
-  Path.ap (thunk { fun (q : Path[.A = A](x, y)) { Path.step q g } } : Path[.A = A](x, y) -> Path[.A = A](x, z)) a
-}
-";
-    let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
-    assert!(
-        once.contains("fun (c : Path[.A = A](x, y)) {"),
-        "the motive's lambda states its parameter's type: {once}"
-    );
-    assert_eq!(
-        spelled(&grammar, once.as_str(), Form::Explicit, Selection::Every),
-        once,
-        "the explicit form is a fixed point"
-    );
-}
-
-/// A lambda stating its binder's type in `Path.ap` formats once as explicit
-/// (#4671). The printer spells the motive's bind with a spaced `;`, and the
-/// explicit form writes it touching the token before it, as every later pass
-/// lays it.
-#[test]
-fn a_stated_binder_in_cong_formats_once_as_explicit_4671()
-{
-    let grammar = grammar();
-    let source = "def whiskered(
-  A : Type,
-  x : A,
-  y : A,
-  z : A,
-  f1 : Path[.A = A](x, y),
-  f2 : Path[.A = A](x, y),
-  a : Path[.A = Path[.A = A](x, y)](f1, f2),
-  g : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
-  Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a
-}
-";
-    let once = spelled(&grammar, source, Form::Explicit, Selection::Every);
-    assert!(
-        once.contains("= pure b;") && !once.contains("pure b ;"),
-        "the motive's bind touches its `;`: {once}"
-    );
-    assert_eq!(
-        spelled(&grammar, once.as_str(), Form::Explicit, Selection::Every),
-        once,
-        "the explicit form is a fixed point"
-    );
-}
-
-/// #778: an inverse and a map's action on a path move both ways as the
-/// composite does: desugared, each is the transport whose motive and moved
-/// reflexivity the lowering derived, spelled as the printer spells them;
-/// sugared back, the transport is the operation again, the map as written.
-/// #1003: the inverse is taken at the circle's point, where the reflexivity
-/// it moves is the empty word a written `Path.here Base` reads as.
-#[test]
-fn an_inverse_and_an_action_on_a_path_move_both_ways_778()
-{
-    let grammar = grammar();
-    let sugared = format!(
-        "{CIRCLE}def spin(x : Circle) -> -F Circle {{
-  x
-}}
-
-def undone : Path[.A = Path[.A = Circle](Base, Base)](Path.back loop, Path.back loop) ;
-
-def spun : Path[.A = Path[.A = Circle](Base, Base)](Path.ap spin loop, Path.ap spin loop) ;
-"
-    );
-    let explicit = format!(
-        "{CIRCLE}def spin(x : Circle) -> -F Circle {{
-  x
-}}
 
 def undone : Path[.A = Path[.A = Circle](Base, Base)](
   Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) loop (Path.here Base),
@@ -701,10 +593,16 @@ def spun : Path[.A = Path[.A = Circle](Base, Base)](
 );
 "
     );
-    let back = format!(
-        "{CIRCLE}def spin(x : Circle) -> Circle {{
+    let folded = |returner: &str| {
+        format!(
+            "{CIRCLE}def spin(x : Circle) -> {returner} {{
   x
 }}
+
+def thrice : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.step loop (Path.step loop loop),
+  Path.here Base
+);
 
 def undone : Path[.A = Path[.A = Circle](Base, Base)](
   Path.back loop,
@@ -716,12 +614,15 @@ def spun : Path[.A = Path[.A = Circle](Base, Base)](
   Path.ap spin loop
 );
 "
-    );
+        )
+    };
+    let (explicit, back) = (folded("-F Circle"), folded("Circle"));
     for (source, form, expected) in [
-        (&sugared, Form::Explicit, &explicit),
+        (&unfolded, Form::Explicit, &explicit),
+        (&unfolded, Form::Sugared, &back),
+        (&explicit, Form::Explicit, &explicit),
         (&explicit, Form::Sugared, &back),
         (&back, Form::Sugared, &back),
-        (&explicit, Form::Explicit, &explicit),
     ] {
         assert_eq!(
             spelled(&grammar, source.as_str(), form, Selection::Every),
@@ -731,15 +632,17 @@ def spun : Path[.A = Path[.A = Circle](Base, Base)](
     }
 }
 
-/// #4645: a map's action on a path between paths moves both ways. The
-/// printer quotes the motive, `fun (y) { type(Path(…)) }`, since no expression
-/// reads a path over a path, and sugared back the quoted transport is the
-/// action again.
+/// #4645: a map's action on a path between paths, whose transport quotes its
+/// motive, `fun (b) { type(Path(…)) }`, since no expression reads a path over
+/// a path. Both forms keep the action as written and fold the quoted
+/// transport into the action.
 #[test]
-fn an_action_under_a_quoted_motive_moves_both_ways_4645()
+fn an_action_under_a_quoted_motive_folds_in_both_forms_4645()
 {
     let grammar = grammar();
-    let source = "def congInAType(
+    let declaration = |action: &str| {
+        format!(
+            "def congInAType(
   A : Type,
   x : A,
   y : A,
@@ -748,32 +651,36 @@ fn an_action_under_a_quoted_motive_moves_both_ways_4645()
   f2 : Path[.A = A](x, y),
   a : Path[.A = Path[.A = A](x, y)](f1, f2),
   F : Path[.A = A](x, y) -> Path[.A = A](x, w)
-) -> Path[.A = Path[.A = Path[.A = A](x, w)](F f1, F f2)](Path.ap F a, Path.ap F a) {
-  Path.here (Path.ap F a)
-}
-";
-    let explicit = spelled(&grammar, source, Form::Explicit, Selection::Every);
-    assert!(
-        explicit.contains("{ type(Path[.A = Path[.A = A](x, w)](F f1, F b)) }"),
-        "the motive is quoted: {explicit}"
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](F f1, F f2)]({action}, {action}) {{
+  Path.here ({action})
+}}
+"
+        )
+    };
+    let written = declaration("Path.ap F a");
+    let unfolded = declaration(
+        "Path.walk (fun (b) { type(Path[.A = Path[.A = A](x, w)](F f1, F b)) }) a (Path.here (F f1))",
     );
-    let back = spelled(&grammar, explicit.as_str(), Form::Sugared, Selection::Every);
-    assert_eq!(
-        (
-            back.matches("Path.ap F a").count(),
-            back.contains("Path.walk")
-        ),
-        (3_usize, false),
-        "the quoted transport is the action again: {back}"
-    );
+    for source in [&written, &unfolded] {
+        for form in [Form::Explicit, Form::Sugared] {
+            let out = spelled(&grammar, source.as_str(), form, Selection::Every);
+            assert_eq!(
+                (
+                    out.matches("Path.ap F a").count(),
+                    out.contains("Path.walk")
+                ),
+                (3_usize, false),
+                "{form}: the action stays an action: {out}"
+            );
+        }
+    }
 }
 
-/// #985: a composite read as a value, alone or under `back`, moves both
-/// ways: desugared, each composite is its transport, written where a value
-/// is read, and sugared back it is the composite again, since a written
-/// transport read as a value lowers to the value it returns.
+/// #985: a composite read as a value, alone or under `back`, folds in both
+/// forms: a written transport read as a value lowers to the value it
+/// returns, so both forms write it as the composite.
 #[test]
-fn a_composite_read_as_a_value_moves_both_ways_985()
+fn a_composite_read_as_a_value_folds_in_both_forms_985()
 {
     let grammar = grammar();
     let sugared = format!(
@@ -782,7 +689,7 @@ fn a_composite_read_as_a_value_moves_both_ways_985()
 def undone : Path[.A = Circle](Base, Base) = Path.back (Path.step loop loop);
 "
     );
-    let explicit = format!(
+    let unfolded = format!(
         "{CIRCLE}def two : Path[.A = Circle](Base, Base);
 def two = Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) loop loop;
 
@@ -792,10 +699,19 @@ def undone = Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) (Path.wa
 }}) loop loop) (Path.here Base);
 "
     );
+    let explicit = format!(
+        "{CIRCLE}def two : Path[.A = Circle](Base, Base);
+def two = Path.step loop loop;
+
+def undone : Path[.A = Circle](Base, Base);
+def undone = Path.back (Path.step loop loop);
+"
+    );
     for (source, form, expected) in [
         (&sugared, Form::Explicit, &explicit),
+        (&unfolded, Form::Explicit, &explicit),
+        (&unfolded, Form::Sugared, &sugared),
         (&explicit, Form::Sugared, &sugared),
-        (&sugared, Form::Sugared, &sugared),
         (&explicit, Form::Explicit, &explicit),
     ] {
         assert_eq!(
@@ -806,9 +722,9 @@ def undone = Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) (Path.wa
     }
 }
 
-/// A transport standing as a computation keeps its spelling sugared, with
-/// nothing withdrawn: the printer writes `then` only for the transport the
-/// lowering returns at a composite, and spells one a body runs as written.
+/// A transport standing as a computation keeps its spelling in both forms,
+/// with nothing withdrawn: the printer writes an operation only for the
+/// transport the lowering returns, and spells one a body runs as written.
 #[test]
 fn a_transport_standing_as_a_computation_keeps_its_spelling()
 {
@@ -820,19 +736,21 @@ fn a_transport_standing_as_a_computation_keeps_its_spelling()
 "
     );
     let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
-    let options = FormatOptions {
-        form: Form::Sugared,
-        ..FormatOptions::default()
-    };
-    let formatted = format(&grammar, &parsed, options).expect("the source formats");
-    assert_eq!(formatted.withdrawn(), &[]);
-    assert_eq!(formatted.into_text(), source);
+    for form in [Form::Sugared, Form::Explicit] {
+        let options = FormatOptions {
+            form,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(formatted.withdrawn(), &[], "{form}");
+        assert_eq!(formatted.into_text(), source, "{form}");
+    }
 }
 
 /// A composite or an inverse standing as the operand of a transport a body
-/// runs keeps its transport too, nested to any depth: the printer writes a
-/// derived operation there as the transport it derives, nothing there
-/// stating its type.
+/// runs keeps its transport too, nested to any depth, in both forms: the
+/// printer writes a derived operation there as the transport it derives,
+/// nothing there stating its type.
 #[test]
 fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
 {
@@ -850,17 +768,19 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
         let laid_out = format(&grammar, &parsed, FormatOptions::default())
             .expect("the source lays out")
             .into_text();
-        let options = FormatOptions {
-            form: Form::Sugared,
-            ..FormatOptions::default()
-        };
-        let formatted = format(&grammar, &parsed, options).expect("the source formats");
-        assert_eq!(formatted.withdrawn(), &[], "{body}");
-        assert_eq!(
-            formatted.into_text(),
-            laid_out,
-            "{body}: only the layout moves"
-        );
+        for form in [Form::Sugared, Form::Explicit] {
+            let options = FormatOptions {
+                form,
+                ..FormatOptions::default()
+            };
+            let formatted = format(&grammar, &parsed, options).expect("the source formats");
+            assert_eq!(formatted.withdrawn(), &[], "{form}: {body}");
+            assert_eq!(
+                formatted.into_text(),
+                laid_out,
+                "{form}: {body}: only the layout moves"
+            );
+        }
     }
 }
 
@@ -1088,147 +1008,6 @@ fn a_transport_along_no_path_motive_keeps_its_spelling()
             source
         );
     }
-}
-
-/// #803: a composite's motive names the binders around it, here the
-/// parameter `x`, so the explicit form spells the motive under the names the
-/// source writes for them and writes the composite as its transport, in a
-/// body and in a type alike, with nothing withdrawn.
-#[test]
-fn a_composite_under_a_parameter_takes_its_motive_803()
-{
-    let grammar = grammar();
-    let source = format!(
-        "{CIRCLE}def onward(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {{
-  Path.step(q, Path.here(Base))
-}}
-
-def stated(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](Path.step(q, Path.here(Base)), Path.step(q, Path.here(Base))) {{
-  Path.here(Path.step(q, Path.here(Base)))
-}}
-"
-    );
-    let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
-    let options = FormatOptions {
-        form: Form::Explicit,
-        ..FormatOptions::default()
-    };
-    let formatted = format(&grammar, &parsed, options).expect("the source formats");
-    assert_eq!(formatted.withdrawn(), &[]);
-    expect![[r#"
-        pub data Circle : Type where {
-          | Base : Circle
-          | loop : Base <-> Base
-        }
-
-        def onward(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Circle](x, Base) {
-          Path.step (q, Path.here (Base))
-        }
-
-        def stated(x : Circle, q : Path[.A = Circle](x, Base)) -> -F Path[.A = Path[.A = Circle](x, Base)](
-          Path.step (q, Path.here (Base)),
-          Path.step (q, Path.here (Base))
-        ) {
-          Path.here (Path.step (q, Path.here (Base)))
-        }
-    "#]]
-    .assert_eq(formatted.text().as_ref());
-}
-
-/// #3772: reading the type of a call mints the callee's composites at the
-/// call's composite, so several transports stand at its span. The explicit
-/// form takes the composite's own motive, the one minted last, and nothing is
-/// withdrawn.
-#[test]
-fn a_composite_beside_a_call_takes_its_own_motive_3772()
-{
-    let grammar = grammar();
-    let source = format!(
-        "{CIRCLE}def twice(q : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
-  Path.here(Path.step(q, q))
-}}
-
-def beside(q : Path[.A = Circle](Base, Base), r : Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q))) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step(q, q), Path.step(q, q)) {{
-  Path.step(r, twice(q))
-}}
-"
-    );
-    let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
-    let options = FormatOptions {
-        form: Form::Explicit,
-        ..FormatOptions::default()
-    };
-    let formatted = format(&grammar, &parsed, options).expect("the source formats");
-    assert_eq!(formatted.withdrawn(), &[]);
-    expect![[r#"
-        pub data Circle : Type where {
-          | Base : Circle
-          | loop : Base <-> Base
-        }
-
-        def twice(q : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](
-          Path.step (q, q),
-          Path.step (q, q)
-        ) {
-          Path.here (Path.step (q, q))
-        }
-
-        def beside(
-          q : Path[.A = Circle](Base, Base),
-          r : Path[.A = Path[.A = Circle](Base, Base)](Path.step (q, q), Path.step (q, q))
-        ) -> -F Path[.A = Path[.A = Circle](Base, Base)](Path.step (q, q), Path.step (q, q)) {
-          Path.step (r, twice (q))
-        }
-    "#]]
-    .assert_eq(formatted.text().as_ref());
-}
-
-/// #2166: a functor's instantiation copies its members, so a copy's composite
-/// stands at the functor body's span; its motive, spelled under the argument,
-/// is never the functor's own, and the explicit form keeps `back` where the
-/// functor cannot spell one.
-#[test]
-fn a_functor_s_composite_takes_no_motive_from_its_instantiation_2166()
-{
-    let grammar = grammar();
-    let source = "theory Semi where {
-  sort M : Type;
-  oper mul : (x : M, y : M) --> M;
-  rule assoc : mul (mul x y) z ==> mul x (mul y z);
-}
-
-module Reassociating(S : Model(Semi)) where {
-  def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path[.A = S.M](
-    S.mul x (S.mul y z),
-    S.mul (S.mul x y) z
-  ) {
-    Path.back (S.assoc x y z)
-  }
-}
-
-module OnePoint : Model(Semi) where {
-  type M = Unit;
-
-  def mul(a : Unit, b : Unit) -> -F Unit { *{} }
-
-  def assoc(x : Unit, y : Unit, z : Unit) -> -F Path[.A = Unit](
-    mul (mul x y) z,
-    mul x (mul y z)
-  ) {
-    Path.here *{}
-  }
-}
-
-module OnePointReassociated = Reassociating(OnePoint);
-";
-    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
-    let options = FormatOptions {
-        form: Form::Explicit,
-        ..FormatOptions::default()
-    };
-    let formatted = format(&grammar, &parsed, options).expect("the source formats");
-    assert_eq!(formatted.withdrawn(), &[]);
-    assert_eq!(<&str>::from(formatted.text()), source);
 }
 
 /// #803: a composite of types, its carrier `Type`, which the grammar keeps as
@@ -1536,11 +1315,17 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 /// A source that imports a sibling is lowered beside it: the rewrite whose
 /// meaning reads the sibling's declarations applies, where alone the
 /// declaration's lowering is refused and it keeps its spelling, reported.
+/// Here the explicit form folds a transport into the composite it derives.
 #[test]
 fn an_importing_source_is_rewritten_beside_its_imports()
 {
     let grammar = grammar();
-    let source = "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](Path.step loop loop, Path.here Base);\n";
+    let source =
+        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop loop,
+  Path.here Base
+);
+";
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,
@@ -1564,7 +1349,7 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     assert_eq!(
         formatted.into_text(),
         "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop loop,
+  Path.step loop loop,
   Path.here Base
 );
 "
@@ -1967,12 +1752,11 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
         Withdrawn::Refused(String::from("the refusal")),
         Withdrawn::Lowered,
         Withdrawn::Unchecked(String::from("the refusal")),
-        Withdrawn::Unspelled,
         Withdrawn::Read(String::from("reader")),
     ]
     .map(|reason| reason.to_string());
     apart(&withdrawals);
-    for (index, carried) in [(0, "the refusal"), (2, "the refusal"), (4, "`reader`")] {
+    for (index, carried) in [(0, "the refusal"), (2, "the refusal"), (3, "`reader`")] {
         assert!(
             withdrawals[index].contains(carried),
             "`{}` names {carried}",

@@ -4766,9 +4766,9 @@ fn a_composite_of_flows_spells_as_a_call()
     }
 }
 
-/// A returned composite of paths spells as a step in the sugared form,
+/// A returned composite of paths spells as a step in both forms,
 /// `Path.step(p, q)`, as the surface writes it and the lowering derives its
-/// transport; the explicit form writes the transport. A transport whose fixed
+/// transport: the printer never unfolds it (#5206). A transport whose fixed
 /// endpoint names the motive's binder is no composite and keeps its spelling
 /// (#754).
 #[test]
@@ -4794,14 +4794,15 @@ fn a_returned_composite_of_paths_is_written_as_a_step_754()
     }
     for (root, form, expected) in [
         (composite, Form::Sugared, "Path.step loop loop"),
-        (
-            composite,
-            Form::Explicit,
-            "Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop",
-        ),
+        (composite, Form::Explicit, "Path.step loop loop"),
         (
             transported,
             Form::Sugared,
+            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop loop",
+        ),
+        (
+            transported,
+            Form::Explicit,
             "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop loop",
         ),
     ] {
@@ -4864,9 +4865,9 @@ fn a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218()
 }
 
 /// A composite a transport reads as its path or as the value it moves stays
-/// the transport it derives: nothing there states the composite's type, and
-/// the lowering reads `Path.step(p, q)` only where something does, as a
-/// call's argument (#815).
+/// the transport it derives, in both forms: nothing there states the
+/// composite's type, and the lowering reads `Path.step(p, q)` only where
+/// something does, as a call's argument (#815).
 #[test]
 fn a_composite_a_transport_moves_stays_explicit_815()
 {
@@ -4895,32 +4896,35 @@ fn a_composite_a_transport_moves_stays_explicit_815()
     let source = CoreSource::new(&core, &names);
     agrees(&core, &names, CoreNode::Value(transported));
     agrees(&core, &names, CoreNode::Computation(called));
-    let rendered = presented_in(
-        &source,
-        Root::Value(CoreNode::Value(transported)),
-        PageWidth::from(1_000_u32),
-        Form::Sugared,
-    );
-    assert_eq!(
-        rendered.as_ref(),
-        "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) (Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop) \
-         (Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop)"
-    );
-    let rendered = presented_in(
-        &source,
-        Root::Computation(CoreNode::Computation(called)),
-        wide(),
-        Form::Sugared,
-    );
-    assert_eq!(rendered.as_ref(), "sect (Path.step loop loop)");
+    for form in [Form::Sugared, Form::Explicit] {
+        let rendered = presented_in(
+            &source,
+            Root::Value(CoreNode::Value(transported)),
+            PageWidth::from(1_000_u32),
+            form,
+        );
+        assert_eq!(
+            rendered.as_ref(),
+            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) (Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop) \
+             (Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop)",
+            "{form:?}"
+        );
+        let rendered = presented_in(
+            &source,
+            Root::Computation(CoreNode::Computation(called)),
+            wide(),
+            form,
+        );
+        assert_eq!(rendered.as_ref(), "sect (Path.step loop loop)", "{form:?}");
+    }
 }
 
 /// A returned inverse and a returned action on a path spell as written in
-/// the sugared form, `Path.back(p)` and `Path.ap(f, p)`, as the lowering
-/// derives their transports; the explicit form writes the transports. A map the
-/// action reads off its motive one binder deeper is spelled as the source
-/// names it, a parameter among them; a transport whose fixed endpoint is no
-/// image of the map keeps its spelling (#778).
+/// both forms, `Path.back(p)` and `Path.ap(f, p)`, as the lowering derives
+/// their transports: the printer never unfolds them (#5206). A map the action
+/// reads off its motive one binder deeper is spelled as the source names it,
+/// a parameter among them; a transport whose fixed endpoint is no image of
+/// the map keeps its spelling (#778).
 #[test]
 fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
 {
@@ -4965,17 +4969,9 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
     }
     for (root, form, expected) in [
         (inverse, Form::Sugared, "Path.back loop"),
-        (
-            inverse,
-            Form::Explicit,
-            "Path.walk (fun (a) { type(Path[.A = Circle](a, base)) }) loop (Path.here base)",
-        ),
+        (inverse, Form::Explicit, "Path.back loop"),
         (action, Form::Sugared, "Path.ap spin loop"),
-        (
-            action,
-            Form::Explicit,
-            "Path.walk (fun (a) { type(Path[.A = Circle](spin base, spin a)) }) loop (Path.here (spin base))",
-        ),
+        (action, Form::Explicit, "Path.ap spin loop"),
         (mapped, Form::Sugared, "Path.ap f loop"),
         (
             unmapped,

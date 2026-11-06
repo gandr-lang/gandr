@@ -22,7 +22,7 @@ use crate::LayoutOptions;
 use crate::PageWidth;
 use crate::Withdrawal;
 use crate::Withdrawn;
-use crate::composite::Motives;
+use crate::composite::Composites;
 use crate::layout;
 use crate::leaf;
 use crate::leaf::Material;
@@ -66,7 +66,7 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
     };
     let chosen = Chosen::of(Form::Sugared, Selection::Every)
         .unwrap_or_else(|| panic!("the sugared form runs rewrites"));
-    let motives = Motives::default();
+    let composites = Composites::default();
     let tails = Tails::default();
     let runs = Runs::default();
     let thunks = Thunks::default();
@@ -74,14 +74,14 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
     let rewrites = Rewrites {
         chosen,
         withdrawn: &[],
-        motives: &motives,
+        composites: &composites,
         tails: &tails,
         runs: &runs,
         thunks: &thunks,
         reducts: &reducts,
         unreduced: &[],
     };
-    let (Respelled::Changed(sugared), _) = respell(&grammar, tree, form, &flat.leaves, rewrites)
+    let Respelled::Changed(sugared) = respell(&grammar, tree, form, &flat.leaves, rewrites)
     else {
         panic!("the product rewrite applies");
     };

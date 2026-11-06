@@ -4760,43 +4760,42 @@ where
     Start::Alike
 }
 
-/// The former the walk reads at `node` in `form`, in a position admitting
-/// `admits`: the source's, but in the sugared form a returned transport that
-/// a derived path operation builds reads as that operation, `Path.step p q`,
-/// `Path.back p` or `Path.ap f p`, where the position states its type.
+/// The former the walk reads at `node`, in a position admitting `admits`:
+/// the source's, but a returned transport that a derived path operation
+/// builds reads as that operation, `Path.step p q`, `Path.back p` or
+/// `Path.ap f p`, where the position states its type. Both forms read it so:
+/// the printer never unfolds the three operations (#5206).
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: [`Former::Step`], [`Former::Back`] or [`Former::Cong`] over what
-///   [`derived`] answers when `form` is [`Form::Sugared`], `admits` is not
-///   [`Admits::Operand`] and `node` reads as [`Former::Returned`] over a body
-///   [`derived`] answers; what `source` reads at `node` otherwise.
+///   [`derived`] answers when `admits` is not [`Admits::Operand`] and `node`
+///   reads as [`Former::Returned`] over a body [`derived`] answers; what
+///   `source` reads at `node` otherwise.
 /// - provides: the one read of each node the walk visits.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each operation's golden in both forms and as a
-///   transport's operand; a read that rewrote the explicit form, a transport
+///   transport's operand; a read that unfolded the explicit form, a transport
 ///   standing as a computation rather than a returned value, or an operation
 ///   written where nothing states its type changes a spelling.
 /// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_as_a_step_754`
 /// - witness: `tests::goldens::a_composite_a_transport_moves_stays_explicit_815`
 /// - witness: `tests::goldens::an_inverse_and_an_action_on_a_path_are_written_as_derived_778`
-#[spec(ensures: |ref ret| (form == Form::Sugared && admits != Admits::Operand)
+#[spec(ensures: |ref ret| admits != Admits::Operand
     || core::mem::discriminant(ret) == core::mem::discriminant(&source.read(node)))]
 fn reading<S>(
     source: &S,
     node: S::Node,
-    form: Form,
     admits: Admits,
 ) -> Former<'_, S::Node>
 where
     S: Source + ?Sized,
 {
     let former = source.read(node);
-    if form == Form::Sugared
-        && admits != Admits::Operand
+    if admits != Admits::Operand
         && let Former::Returned(body) = former
         && let Some(operation) = derived(source, body)
     {
@@ -13885,7 +13884,7 @@ where
                 walk.visit(
                     source,
                     node,
-                    reading(source, node, walk.form, admits),
+                    reading(source, node, admits),
                     admits,
                     depth,
                     &mut tasks,

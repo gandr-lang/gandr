@@ -5530,14 +5530,12 @@ crates/surface-driver/README.md STE-2.1 6b24f385ee2da5d3
 crates/surface-driver/README.md STE-9.3 6b24f385ee2da5d3
 crates/surface-format/README.md STE-3.6 b90ce5df9cbfc5dc
 crates/surface-format/README.md STE-3.2 8c05d63acbdf567a
-crates/surface-format/README.md STE-3.5 09b14644f9d4ffc6
 crates/surface-format/README.md STE-3.5 13245964ac729ed0
 crates/surface-format/README.md STE-3.5 38bbacd2febaa8dd
 crates/surface-format/README.md STE-3.5 4fe6a60ff08cd0b7
 crates/surface-format/README.md STE-3.5 761404e10ab25819
 crates/surface-format/README.md STE-9.3 761404e10ab25819
 crates/surface-format/README.md STE-9.3 8c05d63acbdf567a
-crates/surface-format/README.md STE-1.2 09b14644f9d4ffc6
 crates/surface-format/README.md STE-1.2 ccd2de960cdaba8b
 crates/surface-format/tests/unformatted/members.gandr STE-3.5 85901dfc0d83fdff
 crates/surface-grammar/README.md STE-9.3 a2c85d8ac4e37405
