@@ -1,8 +1,8 @@
 error[OutOfFragment.shell_block]: the shell block is not supported yet
-  ╭▸ corpus/pathological/shell/control-operator-unsupported.gandr:9:25
-  │
-9 │ def both() -> -F Unit { #!{ true && false; } }
-  │                         ━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
-  │
-  ├ note: `both` is refused with OutOfFragment.shell_block, as its expectation states
-  ╰ note: tracked by #1057 <https://github.com/gandr-lang/gandr/issues/1057>
+   ╭▸ corpus/pathological/shell/control-operator-unsupported.gandr:12:25
+   │
+12 │ def both() -> -F Unit { #!{ true && false; } }
+   │                         ━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `both` is refused with OutOfFragment.shell_block, as its expectation states
+   ╰ note: tracked by #1057 <https://github.com/gandr-lang/gandr/issues/1057>
