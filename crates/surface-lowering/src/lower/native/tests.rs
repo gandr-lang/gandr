@@ -6652,3 +6652,53 @@ fn a_clause_column_types_its_call_s_argument()
     }
     assert_accepted(&judged(&module, &mut arena));
 }
+
+/// #5373: a pair nested in the field of a pair, both returned against the
+/// call of a definition that computes the pair type, was dropped as
+/// `Unminted`, an engine fault. The inner pair's classifier is the outer
+/// pair's field type, which the lowering reads off the outer classifier's
+/// arguments, and the outer classifier is the decode of the call, no data
+/// type. The declaration is now refused by name at the inner pair, as a
+/// constructor that needs a type the source does not state. The inner pair
+/// ascribed its pair type lowers, and the checker accepts it.
+#[test]
+fn a_pair_in_a_field_at_a_computed_pair_type_is_refused_by_name_5373()
+{
+    let family = "data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }
+data P(a : Type, b : a -> Type) : Type where { | MkP : (x : a, y : b(x)) --> P(a, b) }
+def twoType(u : Nat) -> Type = return (P Nat (fun (n) { return (P Nat (fun (m) { return Unit })) }))
+";
+    let mut arena = CoreArena::new();
+    let source =
+        alloc::format!("{family}def nested(k : Nat) -> twoType(Z) = MkP Z (MkP Z *{{}});\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let refusal = refusal_of(&module, SurfaceName::from("nested"));
+    let LoweringRefusal::OutOfFragment {
+        span,
+        sort: FragmentSort::Value,
+        boundary: FragmentBoundary::Unannotated,
+        ..
+    } = refusal
+    else {
+        panic!("`nested` is refused as unannotated: {refusal:?}");
+    };
+    assert_eq!(
+        source.get(usize::from(span.start()) .. usize::from(span.end())),
+        Some("MkP Z *{}"),
+        "the refusal stands at the inner pair"
+    );
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{family}def ascribed(k : Nat) -> twoType(Z) =\n  MkP Z (MkP Z *{{}} : P(Nat, fun (m) {{ return Unit }}))\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("ascribed")),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "`ascribed` lowers: {:?}",
+        outcome_of(&module, SurfaceName::from("ascribed"))
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}

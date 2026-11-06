@@ -826,6 +826,10 @@ quenchant_shape::reason_enum! {
             /// The slot belongs to a functor's template, which each
             /// application renames into declarations of its own.
             Templated,
+            /// The constructor around a field reads as no application of a
+            /// family, so the field gives the constructor written in it no
+            /// type.
+            Unclassified,
         }
     }
 }
@@ -3401,8 +3405,9 @@ struct Lowerer<'run, 'source>
     /// it.
     modelled: BTreeMap<SlotIndex, ValueTypeId>,
     /// Each slot a check after minting refused: a derived component that
-    /// names one that did not lower, or a family whose parameters disagree
-    /// with its indices.
+    /// names one that did not lower, a family whose parameters disagree
+    /// with its indices, or a constructor whose field states no type for it
+    /// ([`Self::refuse_unclassified`]).
     faults: BTreeMap<SlotIndex, LoweringRefusal<'source>>,
     /// Each flow's instance over an import's source that the import's match
     /// refuses: it declares nothing.
@@ -3464,6 +3469,10 @@ struct Lowerer<'run, 'source>
     /// reaches after it, so the application, the call or the constructor
     /// around it mints it.
     awaiting: BTreeSet<NodeIndex>,
+    /// Each constructor classified by the field it stands in, with the
+    /// refusal it earns when the constructor around it reads as no family's
+    /// application: the field then states no type for it.
+    unclassified: BTreeMap<NodeIndex, LoweringRefusal<'source>>,
     /// Each thunk a definition is, with the answer its signature states for
     /// its body: `C` for `+U C`, `-F B` for `() -> B`.
     thunked: BTreeMap<NodeIndex, native::Answer>,
@@ -4793,6 +4802,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.unjoin_refused();
         self.mint_foreign(sink);
         self.mint(sink)?;
+        self.refuse_unclassified();
         self.mint_joints(sink);
         self.mint_abstracts(sink);
         self.mint_models(sink);
@@ -4844,6 +4854,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(ensures: self.classifiers.is_empty()
         && self.argued.is_empty()
         && self.awaiting.is_empty()
+        && self.unclassified.is_empty()
         && self.thunked.is_empty()
         && self.inherited.is_empty()
         && self.stand_ins.is_empty()
@@ -4894,6 +4905,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.classifiers.clear();
         self.argued.clear();
         self.awaiting.clear();
+        self.unclassified.clear();
         self.thunked.clear();
         self.inherited.clear();
         self.stand_ins.clear();
@@ -5561,6 +5573,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             argued: BTreeMap::new(),
             parameter_typed: BTreeMap::new(),
             awaiting: BTreeSet::new(),
+            unclassified: BTreeMap::new(),
             thunked: BTreeMap::new(),
             dependent_answers: BTreeMap::new(),
             inherited: BTreeMap::new(),
@@ -17898,6 +17911,68 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.record_framed(sink);
 
         Ok(())
+    }
+
+    /// Refuse each declaration that holds a constructor the mint left
+    /// unclassified: the constructor around its field reads as no family's
+    /// application, so the field states no type for it (#5373).
+    ///
+    /// # Specification
+    /// - requires: the mint sweep of the current source has run.
+    /// - ensures: each unrefused slot of the current source with no fault, the
+    ///   innermost whose span holds a constructor of [`Self::unclassified`]
+    ///   left unminted as unclassified, holds that constructor's refusal as its
+    ///   fault: the refusal of the constructor written first in the slot.
+    /// - provides: a nested pair at a type the lowering cannot read refused by
+    ///   name, never dropped as unminted.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair in a field of a pair at a signature's
+    ///   arguments, and one in a field of a pair at a type a definition's call
+    ///   computes, each refused at the inner pair.
+    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_is_refused_by_name_5373`
+    #[spec(
+        captures: before = self.faults.len(),
+        ensures: self.faults.len() >= before
+            && self.faults.len() <= before.saturating_add(self.unclassified.len()),
+    )]
+    fn refuse_unclassified(&mut self)
+    {
+        let mut refused: Vec<(ByteSpan, LoweringRefusal<'source>)> = self
+            .unclassified
+            .iter()
+            .filter(|&(&node, _)| {
+                matches!(
+                    self.lowered_at(node),
+                    Maybe::Absent(lowered::Absent::Unclassified)
+                )
+            })
+            .filter_map(|(_, &refusal)| match refusal.span() {
+                Maybe::Present(span) => Some((span, refusal)),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        refused.sort_unstable_by_key(|&(span, _)| span);
+        for (span, refusal) in refused {
+            let holder = self
+                .collected
+                .slots
+                .iter()
+                .enumerate()
+                .skip(self.current.slots)
+                .filter(|&(_, slot)| {
+                    matches!(slot.refusal, Maybe::Absent(_))
+                        && slot.introduced_by.span.start() <= span.start()
+                        && span.end() <= slot.introduced_by.span.end()
+                })
+                .min_by_key(|&(_, slot)| slot.introduced_by.span.length())
+                .map(|(position, _)| SlotIndex::from(position));
+            if let Some(slot) = holder {
+                let _first = self.faults.entry(slot).or_insert(refusal);
+            }
+        }
     }
 
     /// Record every label planned against an entry that lowered, with what
