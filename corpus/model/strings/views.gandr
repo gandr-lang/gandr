@@ -1,13 +1,11 @@
-//! A view: a string held for a block is lent to a view for one access, and the
-//! view does not own it. The view reads the string it lends, and the access
-//! ends it exactly once: `resume` writes a string back, `abort` leaves the held
-//! string as it was and runs the access's `unwind` clause. The view lives only
-//! for its access, so no annotation names how long it lives (the yield-once
-//! accessor of Hylo's subscripts, [Racordon-2023-borrow_checking_hylo] and
-//! [boats-2024-references_are_jumps]). A view the program keeps longer is kept
-//! in the region of a scope around it, `at c`, and lives as long as that scope:
-//! a static extent erased before anything runs
-//! [Koronkevich-2025-type_universes_kripke_worlds].
+//! This source models string views.
+//!
+//! A view lends a held string for one access. It does not own the string. A
+//! view cannot outlive its access.
+//!
+//! `resume` writes a string back. `abort` preserves the held string and runs
+//! `unwind`. A region keeps a view until its scope ends. The runtime erases
+//! this static extent.
 //!
 //! - cites: [Koronkevich-2025-type_universes_kripke_worlds]
 //! - cites: [Racordon-2023-borrow_checking_hylo]
@@ -17,7 +15,8 @@
 //! [Racordon-2023-borrow_checking_hylo]: https://2023.splashcon.org/details/iwaco-2023-papers/5/Borrow-checking-Hylo "Racordon and Abrahams, Borrow checking Hylo"
 //! [boats-2024-references_are_jumps]: https://without.boats/blog/references-are-like-jumps/ "boats, References are like jumps"
 
-// The lists; the byte lists; the owned bytes; where they live; the writes.
+// This source imports declarations for lists, bytes, ownership, locations and
+// writes.
 import "../data/data-base.gandr";
 import "./string-base.gandr";
 import "./nul-terminated.gandr";
@@ -34,8 +33,8 @@ def readThrough() -> Integer =
   access s as v { resume(v, v) };
   count (bytes s)
 
-/// `!` appended through a view and written back: after the access the held
-/// string's bytes are the written one's.
+/// `writeThrough` appends `!` through a view.
+/// The access writes the changed string back.
 @[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))") ]
 def writeThrough() -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
@@ -50,7 +49,8 @@ def abandoned() -> List(Integer) =
   access s as v { abort(v) } unwind { pure *{} };
   bytes s
 
-/// Two accesses in turn, each seeing the write the one before left.
+/// `twiceThrough` performs two accesses in sequence.
+/// The second access reads the first write.
 @[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 33 (Cons 0 Nil))))") ]
 def twiceThrough() -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
@@ -58,10 +58,8 @@ def twiceThrough() -> List(Integer) =
   access s as v { let w = push v 33; let t = written w; resume(v, t) };
   bytes s
 
-/// A view kept past its access in the region of the scope around it: it lives
-/// as long as that scope rather than the access, and reads the string after
-/// the access has ended, its two bytes and the zero. The held string stays as
-/// it was until the scope ends.
+/// `keptInRegion` retains a view in the enclosing region.
+/// The view reads an unchanged string after its access ends.
 @[ runs("3") ]
 def keptInRegion() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))

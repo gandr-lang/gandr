@@ -1,24 +1,26 @@
-// A short string keeps its bytes inside itself and a long one in a buffer on
-// the heap: a string of at most 23 bytes, its zero making 24, needs no
-// allocation, and a copy of it is a copy of those bytes. Where the bytes live
-// is not observable: a string reads as the same bytes either way (the
-// small-string optimisation of libc++'s `std::string`, and of Rust's
-// `compact_str`, which keeps 24 bytes inline).
+// This source models short string storage.
+//
+// A short string stores its bytes inline. It uses no allocation through the
+// inline capacity. A long string stores bytes in a heap buffer. Both forms
+// expose the same bytes.
+//
+// `store` selects the location. `own` stores code points as bytes and adds a
+// zero.
 //
 // - see: #1481 — `repeatOnto`
 
-// The lists; the byte lists; the owned bytes.
+// This source imports declarations for lists, bytes and ownership.
 import "../data/data-base.gandr";
 import "./string-base.gandr";
 import "./nul-terminated.gandr";
 
-/// Where a string's bytes live, read off its representation.
+/// `Place` records string byte storage.
 pub data Place : Type where
   | Inside : Place
   | OnHeap : Place
 
-/// A string holding `bs`: inline when they fit the inline capacity, else in a
-/// buffer of its own on the heap, held once.
+/// `store` keeps a short byte list inline.
+/// It stores a longer byte list in an unshared heap buffer.
 pub def store(bs : List(Integer)) -> Repr =
   let n = count bs
   let fits = n <= inlineCapacity
@@ -30,7 +32,7 @@ pub def store(bs : List(Integer)) -> Repr =
 pub def own(cs : List(Integer)) -> Repr =
   store (terminated cs)
 
-/// Where a string's bytes live.
+/// `place` reads byte storage from a string representation.
 pub def place(s : Repr) -> Place =
   match s
     | Inline(bs) => Inside

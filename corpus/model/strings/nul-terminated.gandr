@@ -1,17 +1,24 @@
-// An owned string ends in one zero byte, so a C function reads its bytes as
-// they are held: the owned string is already the C string, with no copy and
-// no re-encoding at the boundary (the C standard's string, ISO/IEC 9899:2018,
-// § 7.1.1; Rust's `CStr` is the borrowed form of the same layout). A string
-// with a zero inside it has no C reading, and the boundary says so instead of
-// cutting it short.
+// This source models C strings from owned strings.
+//
+// An owned string ends with one zero byte. The C standard reads this layout.
+// Rust's `CStr` borrows the same layout. An interior zero prevents a C
+// reading.
+//
+// `terminated` adds the final zero. `cView` borrows valid bytes without a copy
+// or re-encoding.
+//
+// - cites: [Rust-CStr]
+//
+// [Rust-CStr]: https://doc.rust-lang.org/std/ffi/struct.CStr.html "Rust, CStr in std::ffi"
 
-// The lists; the byte lists; the UTF-8 encoder.
+// This source imports declarations for lists, bytes and UTF-8 encoding.
 import "../data/data-base.gandr";
 import "./string-base.gandr";
 import "./utf8.gandr";
 
-/// What C reads of a byte list: the list itself, borrowed, when its one zero
-/// is its last byte; nothing when a zero comes earlier.
+/// `CView` records how C reads a byte list.
+/// It borrows a list with one final zero and reports `Interior` for earlier
+/// zeroes.
 data CView : Type where
   | Borrowed : (bytes : List(Integer)) --> CView
   | Interior : CView
@@ -21,8 +28,8 @@ data CView : Type where
 pub def terminated(cs : List(Integer)) -> List(Integer) =
   concat (encodeAll cs) (Cons 0 Nil : List(Integer))
 
-/// The C reading of a byte list: borrowed whole when the only zero is the
-/// last byte, refused at an interior zero.
+/// `cView` borrows a byte list when its only zero ends the list.
+/// It reports `Interior` for an interior zero.
 def rec cView(bs : List(Integer)) -> CView =
   match bs
     | Nil => Interior
@@ -47,11 +54,11 @@ def rec cView(bs : List(Integer)) -> CView =
         }
     }
 
-/// `hi`, owned: its two bytes and the zero.
+/// `hi` builds an owned `hi` string with a zero.
 @[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def hi() -> List(Integer) { terminated (Cons 104 (Cons 105 Nil) : List(Integer)) }
 
-/// C reads `hi` as the bytes it is held in: it borrows them whole.
+/// `hiForC` lets C borrow the stored `hi` bytes.
 @[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def hiForC() -> List(Integer) { let bs = force hi; let v = cView bs; match v {
   | Borrowed(t) => t

@@ -1,9 +1,16 @@
-// A string's bytes are UTF-8: each code point is written as one to four
-// bytes, the leading byte saying how many follow and each following byte
-// carrying six bits (The Unicode Standard, Version 15.0, § 3.9, Table 3-6).
-// A string is built from code points, so its bytes are UTF-8 by construction.
+// This source encodes strings as UTF-8.
+//
+// UTF-8 uses one to four bytes for each code point. The leading byte states
+// how many bytes follow. Each following byte carries six bits. Unicode
+// Standard 15.0 specifies these byte sequences.
+//
+// `encode` selects bytes by range. `encodeAll` encodes each code point.
+//
+// - cites: [Unicode-15]
+//
+// [Unicode-15]: https://www.unicode.org/versions/Unicode15.0.0/ "The Unicode Consortium, The Unicode Standard, Version 15.0.0"
 
-// The lists; the byte lists.
+// This source imports declarations for lists and bytes.
 import "../data/data-base.gandr";
 import "./string-base.gandr";
 
@@ -43,7 +50,7 @@ def encode(c : Integer) -> List(Integer) =
         }
     }
 
-/// A run of code points, each encoded in turn.
+/// `encodeAll` encodes each code point in order.
 pub def rec encodeAll(cs : List(Integer)) -> List(Integer) =
   match cs
     | Nil => Nil
