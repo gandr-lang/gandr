@@ -40,6 +40,7 @@ Read the record's `time` of the gate on main (`.config/gate-scope/passed.bash`).
 | `sharing` | no |
 | `nominal` | no |
 | `measure` | no |
+| `collapse` | no |
 
 ## Engineering
 
