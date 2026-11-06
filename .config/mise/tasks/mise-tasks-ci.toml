@@ -1374,7 +1374,10 @@ done < "$scratch/actions"
 # cycle.jq` decides the step from the tips of `landing` and `integration` and
 # from the dispatched runs of ci.yml on `integration`. A passing verdict
 # fast-forwards `main` to the commit it tested. Until `main`'s ruleset admits
-# the App (#5443), GitHub refuses that, and the step says so. `integration`
+# the App (#5443), GitHub refuses that, and the step says so. A `main` that
+# moves to a fix that `landing` lacks sets the step output `rebase`, and the
+# factory runner rebases `landing` onto `main` (#5441,
+# `.config/landing/rebase.bash`). `integration`
 # then takes the tip of `landing`. A fast-forward moves the ref. A merge
 # through the merges API keeps the fixer's commits, and GitHub signs the
 # merge commit of an App. A merge that conflicts goes on the list for the
@@ -1441,6 +1444,13 @@ if [[ $conclusion == success ]]; then
         say "would fast-forward main from ${main:0:12} to ${sha:0:12}"
       elif gh api -X PATCH "repos/$repo/git/refs/heads/main" -f sha="$sha" -F force=false > /dev/null 2> "$scratch/main.err"; then
         say "main fast-forwards from ${main:0:12} to ${sha:0:12}"
+        case $(gh api "repos/$repo/compare/$sha...$landing" --jq .status) in
+          ahead | identical) ;;
+          *)
+            say "landing at ${landing:0:12} lacks the fix on main: the factory runner rebases it onto main"
+            if [[ -n ${GITHUB_OUTPUT:-} ]]; then echo "rebase=true" >> "$GITHUB_OUTPUT"; fi
+            ;;
+        esac
       else
         say "main stays at ${main:0:12}: GitHub refuses its fast-forward to ${sha:0:12}: $(< "$scratch/main.err")"
       fi
@@ -1580,6 +1590,16 @@ echo "$line"
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"; fi
 [[ $(jq -r .on <<< "$brake") == false ]]
 '''
+
+# The rebase of `landing` onto `main` (#5441, `.config/landing/rebase.bash`),
+# by hand. The integration cycle's job on the factory runner runs the script
+# after `main` takes a fix that `landing` lacks, and a failed job pages the
+# workflow lane. After a refused push or a lost lease, the lane runs this
+# task again. It signs with the seat's key and pushes with the seat's
+# credentials. A conflict needs a rebase by hand that resolves it.
+["landing:rebase"]
+description = "Rebase landing onto main, its merges kept, each new commit signed and each old one noted"
+run = ".config/landing/rebase.bash"
 
 # A worktree is removed when its branch lands, mechanically: nothing else
 # removed one but a seat remembering to, and a `pr:watch` that dies with its

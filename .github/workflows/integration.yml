@@ -11,7 +11,8 @@ name: integration
 # The integration cycle (#5440) of the landing model (#5438). `integration`
 # takes the tip of `landing`, and ci.yml runs the lanes of a merge group on
 # it with no fail-fast. A red run writes the known-red list and pages the
-# fixer, and the landings go on. A green run fast-forwards `main`. A cycle
+# fixer, and the landings go on. A green run fast-forwards `main`, and a
+# rebase moves `landing` onto a fix that `main` takes (#5441). A cycle
 # starts when the one before it ends: the end of a dispatched run of ci.yml
 # on `integration` starts this workflow. A push to `landing` or
 # `integration` starts it too, so an idle cycle takes a new landing or a fix
@@ -83,6 +84,7 @@ jobs:
       page: ${{ steps.step.outputs.page }}
       brake: ${{ steps.step.outputs.brake }}
       list: ${{ steps.step.outputs.list }}
+      rebase: ${{ steps.step.outputs.rebase }}
     env:
       LANDING_APP_ID: ${{ secrets.LANDING_APP_ID }}
       # mise.toml pins neither tool: the task's own pins (`tools.jq`,
@@ -154,3 +156,33 @@ jobs:
           BRAKE: ${{ needs.cycle.outputs.brake }}
           ISSUE: ${{ needs.cycle.outputs.list }}
         run: factory-notify "brake-$BRAKE" "$ISSUE"
+
+  # A `main` that moved to a fix that `landing` lacks: the factory runner
+  # rebases `landing` onto `main` (#5441, `.config/landing/rebase.bash`).
+  # `landing`'s rules accept signed commits alone, and the host's key signs
+  # the new commits. The host's credentials push them. The job runs the
+  # default branch's script, and the rebase runs no code of `landing`. A
+  # rebase that fails leaves `landing` as it was and pages the workflow lane
+  # with the run, whose log names the files in conflict.
+  rebase:
+    name: rebase landing onto main
+    needs: cycle
+    if: ${{ needs.cycle.outputs.rebase == 'true' }}
+    runs-on: [self-hosted, factory] # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+      - name: rebase landing onto main
+        run: .config/landing/rebase.bash
+      - name: page the workflow lane
+        if: ${{ failure() }}
+        env:
+          RUN: ${{ github.run_id }}
+        run: factory-notify landing-rebase "$RUN"
