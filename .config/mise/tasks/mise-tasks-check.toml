@@ -2012,9 +2012,13 @@ echo "integration check OK: $(jq length .config/integration/cases.json) cases re
 # refused under its flag: a trailer-less copy of a merged commit is refused
 # (the regression: #2613 carried one), an empty commit under `--empty`, and
 # a closing keyword anywhere but its own `Closes #n` line (#2980), since
-# GitHub closes the issue it names when the commit reaches main.
+# GitHub closes the issue it names when the commit reaches main. A case
+# with `push` runs the push tier (`.config/commits/push.bash`) instead, as
+# if the commits were pushed to that ref: a branch's trailer-less commit is
+# refused, and a notes ref, which shares no history with the trunk, passes
+# (#5651).
 ["check:commits"]
-description = "The commit rules over a range refuse a trailer-less commit and, asked, an empty one"
+description = "The commit rules over a range refuse a trailer-less commit and, asked, an empty one; the push tier reads a branch and passes a notes ref"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
@@ -2047,14 +2051,26 @@ while IFS= read -r case; do
   done < <(jq -c '.commits[]' <<< "$case")
   want=$(jq -r .exit <<< "$case")
   got=0
-  out=$(cd "$repo" && "$root/.config/commits/lint.bash" "$base" HEAD $(jq -r .flag <<< "$case") 2>&1) || got=$?
+  push=$(jq -r '.push // empty' <<< "$case")
+  if [[ -n $push ]]; then
+    git -C "$repo" update-ref refs/remotes/origin/landing "$base"
+    head=$(git -C "$repo" rev-parse HEAD)
+    if [[ $push == refs/notes/* ]]; then
+      git -C "$repo" notes --ref "$push" add -m 'moved' "$head"
+      head=$(git -C "$repo" rev-parse "$push")
+    fi
+    out=$(cd "$repo" && GANDR_TRUNK=landing PRE_COMMIT_REMOTE_BRANCH="$push" PRE_COMMIT_TO_REF="$head" \
+      "$root/.config/commits/push.bash" 2>&1) || got=$?
+  else
+    out=$(cd "$repo" && "$root/.config/commits/lint.bash" "$base" HEAD $(jq -r .flag <<< "$case") 2>&1) || got=$?
+  fi
   if [[ $got != "$want" ]]; then
     printf 'commits case FAILED: %s\n  exit %s, wanted %s\n%s\n' "$name" "$got" "$want" "$out" >&2
     failed=1
   fi
 done < <(jq -c '.[]' "$root/.config/commits/cases.json")
 (( failed == 0 )) || exit 1
-echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges read as recorded"
+echo "commits check OK: $(jq length "$root/.config/commits/cases.json") cases read as recorded"
 '''
 
 # The claim lifecycle (`.config/claims/decide.jq`, #1270) picks the claims
