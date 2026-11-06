@@ -4227,6 +4227,36 @@ pub struct Diagnostic
     /// what is unnecessary.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<DiagnosticTag>,
+    /// What the server keeps on it for the code actions it answers: the
+    /// repair its help names, when it names one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<DiagnosticData>,
+}
+
+/// The repair a diagnostic's help names, kept on the diagnostic for the code
+/// action that offers it.
+///
+/// # Specification
+/// - requires: nothing to construct this data; `recheck` builds it from the
+///   model diagnostic's repair and help.
+/// - ensures: `repair` is measured against the document the diagnostic is
+///   published for.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list of two items with no `,` between them publishes
+///   the `,` as its repair.
+/// - witness: `server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticData
+{
+    /// The edit the help names, which a code action offers once a trial of
+    /// the document the edit writes leaves fewer errors.
+    pub repair: TextEdit,
+    /// The help that names it, which the code action's title says.
+    pub help: String,
 }
 
 impl Diagnostic
@@ -4248,7 +4278,7 @@ impl Diagnostic
     #[spec(ensures: |ret| ret.range == Range::default()
         && ret.severity == Severity::ERROR && ret.code.is_none()
         && ret.code_description.is_none()
-        && ret.source == SOURCE && ret.related_information.is_empty() && ret.tags.is_empty())]
+        && ret.source == SOURCE && ret.related_information.is_empty() && ret.tags.is_empty() && ret.data.is_none())]
     #[inline]
     #[must_use]
     pub fn at_origin(message: String) -> Self
@@ -4262,6 +4292,7 @@ impl Diagnostic
             message,
             related_information: Vec::new(),
             tags: Vec::new(),
+            data: None,
         }
     }
 
@@ -4286,6 +4317,7 @@ impl Diagnostic
             message,
             related_information: Vec::new(),
             tags: Vec::new(),
+            data: None,
         }
     }
 }

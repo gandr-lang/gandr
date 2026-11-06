@@ -415,12 +415,12 @@ fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 /// - requires: nothing; the diagnostic is one the session raised over the probe
 ///   `def {name} = {line} ;`, and `line_start` is the line's offset in that
 ///   revision.
-/// - ensures: the diagnostic's spans, annotations, contexts and fix are clamped
-///   to the line's bytes, and its excerpt is the line at `line_start` on line
-///   one, so the renderer quotes the line and marks the line's bytes; a span
-///   that fell outside the line is left unlocated, and an annotation that fell
-///   outside the line is clamped to a zero-width span at the line's start, the
-///   same way the primary span and the context locus are unlocated.
+/// - ensures: the diagnostic's spans, annotations, contexts, fix and repair are
+///   clamped to the line's bytes, and its excerpt is the line at `line_start`
+///   on line one, so the renderer quotes the line and marks the line's bytes; a
+///   span that fell outside the line is left unlocated, and an annotation that
+///   fell outside the line is clamped to a zero-width span at the line's start,
+///   the same way the primary span and the context locus are unlocated.
 /// - provides: the line's coordinates for a probe's refusal.
 /// - fails: never.
 /// - panics: none.
@@ -498,6 +498,20 @@ fn re_range(
                 replacement: fix.replacement,
             }),
             None => Maybe::Absent(gandr_surface_diagnostics::fix::Absent::Unproposed),
+        },
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    };
+    let repair = core::mem::replace(
+        &mut diagnostic.repair,
+        Maybe::Absent(gandr_surface_diagnostics::repair::Absent::Unnamed),
+    );
+    diagnostic.repair = match repair {
+        Maybe::Present(repair) => match clamp(repair.span) {
+            Some(span) => Maybe::Present(Fix {
+                span,
+                replacement: repair.replacement,
+            }),
+            None => Maybe::Absent(gandr_surface_diagnostics::repair::Absent::Unnamed),
         },
         Maybe::Absent(reason) => Maybe::Absent(reason),
     };
@@ -799,6 +813,7 @@ mod tests
             expression: Maybe::Absent(gandr_surface_diagnostics::expression::Absent::Unlocated),
             excerpt: Maybe::Absent(gandr_surface_diagnostics::report_span::Absent::OutsideText),
             fix: Maybe::Absent(fix::Absent::Unproposed),
+            repair: Maybe::Absent(gandr_surface_diagnostics::repair::Absent::Unnamed),
         };
         diagnostic.annotations.push(DiagnosticAnnotation {
             kind: AnnotationKind::Context,

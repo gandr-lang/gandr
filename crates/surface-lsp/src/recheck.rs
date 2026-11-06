@@ -215,11 +215,13 @@ use crate::inline::Forms;
 use crate::position::Range;
 use crate::protocol::CodeDescription;
 use crate::protocol::Diagnostic;
+use crate::protocol::DiagnosticData;
 use crate::protocol::DiagnosticTag;
 use crate::protocol::DocumentUri;
 use crate::protocol::Location;
 use crate::protocol::RelatedInformation;
 use crate::protocol::Severity;
+use crate::protocol::TextEdit;
 use crate::quiet::caret_form;
 use crate::quiet::formless;
 use crate::reading::Reading;
@@ -1560,7 +1562,8 @@ fn reported(step: Step<'_>) -> Step<'_>
 ///   in order, then every located context, outermost first, then each mark the
 ///   diagnostic makes in an import, at that import's file, in order. A finding
 ///   of the `deprecated` lint carries the `Deprecated` tag, which an editor
-///   strikes through.
+///   strikes through. A diagnostic whose help names a repair keeps the repair
+///   and the help as its data, for the code action that offers it.
 /// - provides: the one map from a model diagnostic to an editor diagnostic.
 /// - fails: never.
 /// - panics: none.
@@ -1574,6 +1577,7 @@ fn reported(step: Step<'_>) -> Step<'_>
 ///   and related labels, distinguishing omitted, misclassified or misprojected
 ///   fields without pinning wording.
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
+/// - witness: `server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::a_refusal_publishes_its_label_note_and_help`
 /// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
@@ -1591,7 +1595,8 @@ fn reported(step: Step<'_>) -> Step<'_>
     && ret.related_information.len() >= found.annotations.iter()
         .filter(|annotation| annotation.kind == AnnotationKind::Context).count()
         .saturating_add(found.contexts.iter().filter(|context| matches!(context.locus, Maybe::Present(_))).count())
-    && (ret.tags == [DiagnosticTag::DEPRECATED]) == (found.identifier == Maybe::Present(Identifier::Lint(Lint::Deprecated))))]
+    && (ret.tags == [DiagnosticTag::DEPRECATED]) == (found.identifier == Maybe::Present(Identifier::Lint(Lint::Deprecated)))
+    && ret.data.is_some() == (matches!(found.repair, Maybe::Present(_)) && matches!(found.help, Maybe::Present(_))))]
 fn diagnostic(
     found: &gandr_surface_diagnostics::Diagnostic,
     index: &LineIndex<'_>,
@@ -1670,6 +1675,15 @@ fn diagnostic(
         if *spelling == Identifier::Lint(Lint::Deprecated) {
             diagnostic.tags = Vec::from([DiagnosticTag::DEPRECATED]);
         }
+    }
+    if let (&Maybe::Present(ref repair), &Maybe::Present(ref help)) = (&found.repair, &found.help) {
+        diagnostic.data = Some(DiagnosticData {
+            repair: TextEdit {
+                range: range_of(repair.span),
+                new_text: repair.replacement.clone(),
+            },
+            help: help.clone(),
+        });
     }
     let contexts = found
         .contexts

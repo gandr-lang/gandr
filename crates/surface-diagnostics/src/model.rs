@@ -131,6 +131,18 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a diagnostic names no repair.
+    pub mod repair {
+        /// The reason no repair is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No repair of the source is read off what it reports.
+            Unnamed,
+        }
+    }
+}
+
 /// Where a span lies: its bytes, and the one-based line and column, in
 /// characters, of its first byte.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -787,6 +799,10 @@ pub struct Diagnostic
     pub excerpt: Maybe<Excerpt, report_span::Absent>,
     /// The edit that settles it, when it proposes one.
     pub fix: Maybe<Fix, fix::Absent>,
+    /// The edit its help names as a repair, whether or not the source the
+    /// edit makes checks. The edit is also the fix once a check of that
+    /// source settles it.
+    pub repair: Maybe<Fix, repair::Absent>,
 }
 
 impl Diagnostic
@@ -840,9 +856,9 @@ impl Diagnostic
     ///   annotation before it, the primary one among them, and a context's
     ///   locus there move to [`Diagnostic::elsewhere`] at their unmoved bytes,
     ///   in order, the context's locus then outside the text; a primary span
-    ///   there leaves the diagnostic unlocated, a fix there is not proposed,
-    ///   and an excerpt is cut to the lines from the start on, or dropped when
-    ///   it ends before it.
+    ///   there leaves the diagnostic unlocated, a fix there is not proposed, a
+    ///   repair there is not named, and an excerpt is cut to the lines from the
+    ///   start on, or dropped when it ends before it.
     /// - provides: the diagnostic of one source of a unit that lays its imports
     ///   before it, located in that source's own file.
     /// - fails: never.
@@ -918,6 +934,15 @@ impl Diagnostic
         }
         else if let Maybe::Present(_) = self.fix {
             self.fix = Maybe::Absent(fix::Absent::Unproposed);
+        }
+        if let Maybe::Present(ref repair) = self.repair
+            && let Some(span) = shifted(repair.span)
+        {
+            let replacement = repair.replacement.clone();
+            self.repair = Maybe::Present(Fix { span, replacement });
+        }
+        else if let Maybe::Present(_) = self.repair {
+            self.repair = Maybe::Absent(repair::Absent::Unnamed);
         }
         if let Maybe::Present(excerpt) = core::mem::replace(
             &mut self.excerpt,
@@ -1205,6 +1230,14 @@ impl Diagnostic
                 }),
                 Maybe::Absent(_) => None,
             },
+            repair: match self.repair {
+                Maybe::Present(ref repair) => Some(JsonFix {
+                    start: usize::from(repair.span.start()),
+                    end: usize::from(repair.span.end()),
+                    replacement: repair.replacement.clone(),
+                }),
+                Maybe::Absent(_) => None,
+            },
         };
         serde_json::to_string(&image).unwrap_or_default()
     }
@@ -1256,6 +1289,8 @@ struct JsonDiagnostic
     help: Option<String>,
     /// The fix it proposes: the bytes it replaces and their replacement.
     fix: Option<JsonFix>,
+    /// The repair its help names, whether or not it settles it.
+    repair: Option<JsonFix>,
 }
 
 /// The tracking issue of a diagnostic's JSON image.

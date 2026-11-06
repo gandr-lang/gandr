@@ -160,6 +160,7 @@ pub use crate::model::expression;
 pub use crate::model::fix;
 pub use crate::model::located;
 pub use crate::model::producer;
+pub use crate::model::repair;
 pub use crate::obstruction::Obstruction;
 pub use crate::obstruction::Overlap;
 pub use crate::obstruction::Parted;

@@ -31,6 +31,7 @@ use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::produced_refusal;
 use gandr_surface_diagnostics::Diagnostic;
 use gandr_surface_diagnostics::Failures;
+use gandr_surface_diagnostics::Fix;
 use gandr_surface_diagnostics::PartingPair;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::SourceStart;
@@ -66,6 +67,7 @@ use crate::report::Verb;
 use crate::report::shown;
 use crate::walk::Standing;
 use crate::walk::Step;
+use crate::workspace::stepped_alone;
 
 quenchant_shape::reason_enum! {
     /// Why a declaration has no entry.
@@ -197,6 +199,26 @@ pub enum Refusals
     Every,
 }
 
+/// Whether the repair a refusal names is checked before the refusal proposes
+/// it as its fix.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Repairs
+{
+    /// Each repair is named and checked by nobody here: an editor checks it
+    /// when its reader asks for a fix.
+    #[default]
+    Named,
+    /// Each repair is checked as `check` checks its source, at most
+    /// [`CHECKED_REPAIRS`] in one source, and proposed as the fix when its
+    /// declaration settles in the source the repair writes.
+    Checked,
+}
+
+/// How many repairs one source checks under [`Repairs::Checked`]: each check
+/// lays out, lowers and judges the source again, so the budget bounds the
+/// work a source that refuses many declarations adds to `check`.
+const CHECKED_REPAIRS: usize = 4;
+
 /// The warnings and declarations of a settled composition still to visit.
 #[derive(Clone, Debug)]
 struct Remaining<'step>
@@ -255,6 +277,10 @@ pub struct Entries<'step>
     refusals: Refusals,
     /// The spelling the types a diagnostic names are read in.
     spelling: Spelling,
+    /// Whether a named repair is checked before it is proposed as a fix.
+    repairs: Repairs,
+    /// How many repairs this source has checked.
+    checked: usize,
     /// What remains.
     cursor: Cursor<'step>,
 }
@@ -301,7 +327,7 @@ pub struct Entries<'step>
 /// - witness: `entry::tests::each_use_of_a_deprecated_declaration_is_a_finding`
 /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
 /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
-#[spec(ensures: |ref ret| ret.verb == verb && ret.lints == Lints::default() && ret.refusals == Refusals::Unsettling && ret.spelling == Spelling::Unicode && match *step {
+#[spec(ensures: |ref ret| ret.verb == verb && ret.lints == Lints::default() && ret.refusals == Refusals::Unsettling && ret.spelling == Spelling::Unicode && ret.repairs == Repairs::Named && ret.checked == 0_usize && match *step {
     Step::Fault { path, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path))
         && ret.text.as_ref().is_empty() && matches!(ret.cursor, Cursor::Done),
     Step::Source { path, text, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path)) && core::ptr::eq(core::ptr::from_ref(ret.text.as_ref()), core::ptr::from_ref(text.as_ref())),
@@ -337,6 +363,8 @@ pub fn entries<'step>(
         lints: Lints::default(),
         refusals: Refusals::Unsettling,
         spelling: Spelling::Unicode,
+        repairs: Repairs::Named,
+        checked: 0_usize,
         cursor,
     }
 }
@@ -851,6 +879,37 @@ impl<'step> Entries<'step>
         self
     }
 
+    /// These entries, each repair a refusal names checked as `repairs` says.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same entries, in the same order. Under
+    ///   [`Repairs::Checked`], each of the first [`CHECKED_REPAIRS`] repairs of
+    ///   the source is checked, and a refusal proposes its repair as its fix
+    ///   when the refused declaration settles in the source the repair writes;
+    ///   [`entries`] checks none.
+    /// - provides: the driver's `check`, which proposes only a fix it checked.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list of two items with no `,` between them proposes
+    ///   the `,` as its fix under [`Repairs::Checked`] and none under
+    ///   [`Repairs::Named`]; a line that continues a `let` names its repair and
+    ///   proposes none, because the source it writes still refuses.
+    /// - witness: `entry::tests::a_repair_is_proposed_as_a_fix_once_it_checks_5474`
+    #[spec(ensures: |ref ret| ret.repairs == repairs)]
+    #[inline]
+    #[must_use]
+    pub fn repairing(
+        mut self,
+        repairs: Repairs,
+    ) -> Self
+    {
+        self.repairs = repairs;
+        self
+    }
+
     /// What `declaration` prints, when its verb prints it.
     ///
     /// # Specification
@@ -1008,15 +1067,97 @@ impl<'step> Entries<'step>
     /// # Specification
     /// trivial.
     fn build(
-        &self,
+        &mut self,
         printed: Printed<'_>,
     ) -> Diagnostic
     {
         match printed {
             Printed::Line(line) => line.diagnostic(self.path, self.text, self.start),
-            Printed::Subject(subject) => diagnose(self.path, self.text, subject),
+            Printed::Subject(subject) => {
+                let mut diagnostic = diagnose(self.path, self.text, subject);
+                if let Subject::Refused { declaration, .. } = subject
+                    && let Maybe::Present(ref named) = diagnostic.repair
+                    && self.repairs == Repairs::Checked
+                    && self.checked < CHECKED_REPAIRS
+                {
+                    self.checked = self.checked.saturating_add(1);
+                    if settles(self.path, self.text, self.start, declaration, named)
+                        == Settlement::Settled
+                    {
+                        diagnostic.fix = Maybe::Present(named.clone());
+                    }
+                }
+                diagnostic
+            },
         }
     }
+}
+
+/// How `declaration` stands in the source at `path` that `repair` writes into
+/// the source's own part of `text`, checked as `check` checks a source.
+///
+/// # Specification
+/// - requires: `start` is where the source's own text starts in `text`, and
+///   `repair` is measured against `text`.
+/// - ensures: [`Settlement::Unsettled`] when `repair` lies before the source's
+///   own text, or the source it writes does not compose; otherwise
+///   [`Settlement::Settled`] exactly when a declaration of `declaration`'s name
+///   settles in it.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer is the judgement of a whole source.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Entries::repairing`].
+/// - witness: `entry::tests::a_repair_is_proposed_as_a_fix_once_it_checks_5474`
+fn settles(
+    path: &Path,
+    text: SourceText<'_>,
+    start: SourceStart,
+    declaration: &DeclarationReport<'_>,
+    repair: &Fix,
+) -> Settlement
+{
+    let Maybe::Present(own) = start.measure(repair.span)
+    else {
+        return Settlement::Unsettled;
+    };
+    let base = usize::from(repair.span.start()).saturating_sub(usize::from(own.start()));
+    let Some((before, after)) = text.as_ref().get(base ..).and_then(|source| {
+        Some((
+            source.get(.. usize::from(own.start()))?,
+            source.get(usize::from(own.end()) ..)?,
+        ))
+    })
+    else {
+        return Settlement::Unsettled;
+    };
+    let mut written = String::with_capacity(
+        before
+            .len()
+            .saturating_add(repair.replacement.len())
+            .saturating_add(after.len()),
+    );
+    written.push_str(before);
+    written.push_str(&repair.replacement);
+    written.push_str(after);
+    stepped_alone(
+        path,
+        SourceText::from(written.as_str()),
+        |step| match step {
+            Step::Source {
+                composed: Composed::Settled { ref report, .. },
+                ..
+            } if report.declarations().iter().any(|held| {
+                held.name() == declaration.name() && held.settlement() == Settlement::Settled
+            }) =>
+            {
+                Settlement::Settled
+            },
+            Step::Source { .. } | Step::Fault { .. } => Settlement::Unsettled,
+        },
+    )
+    .unwrap_or(Settlement::Unsettled)
 }
 
 impl Iterator for Entries<'_>
@@ -1215,6 +1356,7 @@ mod tests
     use crate::LoweringCount;
     use crate::Pool;
     use crate::Refusals;
+    use crate::Repairs;
     use crate::SourceRoot;
     use crate::Standing;
     use crate::Step;
@@ -2056,5 +2198,81 @@ mod tests
             Standing::Unsettled,
             &grammar,
         ));
+    }
+
+    /// #5474: a refusal proposes its repair as its fix only once the source
+    /// the repair writes settles the declaration, and only when its entries
+    /// check repairs. The list is the corpus's, with the `,` its line 44
+    /// writes deleted.
+    #[test]
+    fn a_repair_is_proposed_as_a_fix_once_it_checks_5474()
+    {
+        let scratch = Scratch::new(Path::new("checked-repair"));
+        let listed = include_str!("../../../corpus/model/builtins/list-patterns.gandr").replacen(
+            "  shortLength (#[7, 8])\n",
+            "  shortLength (#[7 8])\n",
+            1,
+        );
+        let sources = [
+            (
+                "laid.gandr",
+                "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n   y\n  a\n",
+            ),
+            ("corpus/model/builtins/list-patterns.gandr", listed.as_str()),
+        ];
+        for (name, text) in sources {
+            scratch.file(Path::new(name), SourceText::from(text));
+        }
+        let fixes = |repairs: Repairs| {
+            let mut printed = Vec::new();
+            let ControlFlow::Continue(_report) = Walk::new(
+                sources
+                    .iter()
+                    .map(|&(name, _)| scratch.root().join(name))
+                    .collect(),
+            )
+            .visit(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    printed.extend(
+                        entries(&step, Verb::Check(Goals::Gated))
+                            .repairing(repairs)
+                            .map(|diagnostic| {
+                                (
+                                    diagnostic.path.file_name().map(PathBuf::from),
+                                    matches!(diagnostic.repair, Maybe::Present(_)),
+                                    match diagnostic.fix {
+                                        Maybe::Present(fix) => Some(fix.replacement),
+                                        Maybe::Absent(_) => None,
+                                    },
+                                )
+                            }),
+                    );
+                    ControlFlow::Continue(())
+                },
+            );
+            printed.sort();
+            printed
+        };
+        let named = |name: &str, fix: Option<&str>| {
+            (Some(PathBuf::from(name)), true, fix.map(String::from))
+        };
+        assert_eq!(
+            fixes(Repairs::Checked),
+            [
+                named("laid.gandr", None),
+                named("list-patterns.gandr", Some(","))
+            ],
+            "the `,` settles the list and is proposed; the moved line still refuses, so it is \
+             named alone"
+        );
+        assert_eq!(
+            fixes(Repairs::Named),
+            [
+                named("laid.gandr", None),
+                named("list-patterns.gandr", None)
+            ],
+            "entries that check no repair name each and propose none"
+        );
     }
 }
