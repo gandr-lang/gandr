@@ -76,17 +76,18 @@ use gandr_theory_graphs::WalkChainLength;
 /// its second list (#5213), then by a boolean in type position (#5390), then
 /// by the static bracket's field and face forms, `T[.l = v]` and `T[f ↦ v]`
 /// (#4454), then by eleven session and access keywords that take their
-/// operands by juxtaposition (#5556).
-const BUILT_IN_FINGERPRINT: u64 = 0x0977_fc3e_5829_1d65;
+/// operands by juxtaposition (#5556), then by a system of faces after the
+/// first, `T[f ↦ a, g ↦ b]` (#5106).
+const BUILT_IN_FINGERPRINT: u64 = 0x5ebf_6302_b24f_a4b5;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3014);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3017);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 94;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -113,7 +114,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+=", 15),
     ("+U", 1),
     ("+{", 3),
-    (",", 272),
+    (",", 273),
     ("-", 6),
     ("-->", 31),
     ("-=", 15),
@@ -213,7 +214,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 406),
+    ("identifier", 407),
     ("if", 15),
     ("import", 16),
     ("in", 1),
@@ -287,7 +288,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("~", 1),
     ("~>", 3),
     ("ω", 17),
-    ("↦", 1),
+    ("↦", 2),
     ("⇝", 2),
     ("∷", 2),
     ("≃", 1),
