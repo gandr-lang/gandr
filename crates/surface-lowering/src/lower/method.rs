@@ -96,6 +96,7 @@ use super::lowered;
 use super::stretch;
 use crate::CandidateCount;
 use crate::SurfaceName;
+use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -537,12 +538,12 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         function: Site,
         frame: Frame,
-        parameters: Stretch,
+        parameters: FormStretch,
     ) -> Result<(Frame, HeldReceiver), LoweringRefusal<'source>>
     {
         let name = SurfaceName::from("self");
         let found = self.scope.resolve(frame, name, &mut self.fuel)?;
-        let parameters = stretch(&self.parameters, parameters);
+        let parameters = self.parameters.read(parameters);
         let place = match found {
             Maybe::Present(bound) => parameters
                 .iter()
@@ -1290,7 +1291,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             _ => false,
         };
-        if block.statements.start != block.statements.end || !shaped {
+        if !self.statements.read(block.statements).is_empty() || !shaped {
             return Err(LoweringRefusal::ViewNotPlace { span: last.span });
         }
         let _first = self.view_places.insert(block.last, ViewPlace { element });

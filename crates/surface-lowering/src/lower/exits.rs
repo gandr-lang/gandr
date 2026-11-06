@@ -74,6 +74,8 @@ use super::Sink;
 use super::lowered;
 use super::native::Answer;
 use super::native::answered;
+use crate::by_form::At;
+use crate::by_form::FormStretch;
 use crate::error::LoweringRefusal;
 use crate::form::Former;
 use crate::form::Piece;
@@ -1089,7 +1091,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
     /// - witness: `lower::exits::tests::code_no_path_reaches_is_refused`
     #[spec(ensures: |ret| ret.is_err() || (self.exitable.contains(&block.last)
-        && super::stretch(&self.statements, block.statements).iter().all(|statement| {
+        && self.statements.read(block.statements).last().is_none_or(|statement| {
             self.exitable.contains(&statement.bound)
                 && (!self.looping.contains(&block.last) || self.looping.contains(&statement.bound))
                 && (!self.framed.contains(&block.last) || self.framed.contains(&statement.bound))
@@ -1109,8 +1111,13 @@ impl<'source> Lowerer<'_, 'source>
         let framed = self.framed.contains(&block.last);
         let past = self.looped_past.contains(&block.last);
         let body = self.bodies.get(&block.last).copied();
-        for position in block.statements.start .. block.statements.end {
-            let Some(&statement) = self.statements.get(position)
+        let first = self
+            .statements
+            .first(block.statements)
+            .map_or(0, usize::from);
+        let count = self.statements.read(block.statements).len();
+        for position in (first .. first.saturating_add(count)).map(At::from) {
+            let Some(&statement) = self.statements.at(position)
             else {
                 continue;
             };
@@ -1130,7 +1137,7 @@ impl<'source> Lowerer<'_, 'source>
             match self.leaves_at(statement.bound) {
                 Leaves::Never => {},
                 Leaves::Sometimes => {
-                    if let Some(held) = self.statements.get_mut(position) {
+                    if let Some(held) = self.statements.at_mut(position) {
                         held.rest = Rest::Distributed;
                     }
                     let _joined = self.joined.insert(statement.bound);
@@ -1139,10 +1146,7 @@ impl<'source> Lowerer<'_, 'source>
                     }
                 },
                 Leaves::Always => {
-                    let after = super::Stretch {
-                        start: position.saturating_add(1_usize),
-                        end: block.statements.end,
-                    };
+                    let after = self.statements.after(block.statements, position);
                     return Err(LoweringRefusal::Unreachable {
                         span: self.unreached(site, block, after),
                     });
@@ -1175,17 +1179,14 @@ impl<'source> Lowerer<'_, 'source>
         &self,
         site: super::Site,
         block: Block,
-        after: super::Stretch,
+        after: FormStretch,
     ) -> ByteSpan
     {
-        let first = if after.start < after.end {
-            self.statements
-                .get(after.start)
-                .map_or(block.last, |statement| statement.origin)
-        }
-        else {
-            block.last
-        };
+        let first = self
+            .statements
+            .read(after)
+            .first()
+            .map_or(block.last, |statement| statement.origin);
         let span_of = |node: NodeIndex| self.tree.node(node).map(gandr_surface_syntax::Node::span);
         match (span_of(first), span_of(block.last)) {
             (Some(start), Some(end)) => start.join(end),

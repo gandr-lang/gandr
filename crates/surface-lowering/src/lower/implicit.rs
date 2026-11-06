@@ -453,8 +453,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     /// - witness: `lower::native::tests::a_recursion_under_an_instance_row_binds_its_own_name_3699`
     #[spec(
-        captures: before = self.parameters.len(),
-        ensures: |ret| ret.is_err() || self.parameters.len() >= before,
+        captures: before = self.parameters.mark(),
+        ensures: |ret| ret.is_err() || self.parameters.mark() >= before,
     )]
     pub(super) fn merged_parameters(
         &mut self,

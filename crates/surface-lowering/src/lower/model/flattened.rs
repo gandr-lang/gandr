@@ -689,8 +689,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   its step and its reading, in order.
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(
-        captures: before = self.parameters.len(),
-        ensures: |ret| ret.is_err() || self.parameters.len() == before.saturating_add(slot.components().len()),
+        captures: before = self.parameters.mark(),
+        ensures: |ret| ret.is_err() || usize::from(self.parameters.mark()) == usize::from(before).saturating_add(slot.components().len()),
     )]
     pub(in crate::lower) fn flatten_implicit(
         &mut self,

@@ -144,6 +144,7 @@ use super::exhausted;
 use super::exits;
 use super::lowered;
 use super::stretch;
+use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -1191,15 +1192,17 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a parameter at `end` the body closes resolves to the
     ///   placed linear binder, and a parameter at `Integer` stays unplaced.
     /// - witness: `lower::session::tests::a_parameter_at_a_session_type_is_placed_1862`
-    #[spec(ensures: |ret| ret.1.end == self.endpoints.len()
-        && ret.1.end.saturating_sub(ret.1.start) <= endpoints.len())]
+    #[spec(
+        captures: before = self.endpoints.mark(),
+        ensures: |ret| ret.1 == self.endpoints.since(before) && self.endpoints.read(ret.1).len() <= endpoints.len(),
+    )]
     pub(super) fn place_endpoints(
         &mut self,
         frame: Frame,
         endpoints: &[Parameter],
-    ) -> (Frame, Stretch)
+    ) -> (Frame, FormStretch)
     {
-        let start = self.endpoints.len();
+        let start = self.endpoints.mark();
         let mut placed = frame;
         for &Parameter {
             binder,
@@ -1222,10 +1225,7 @@ impl<'source> Lowerer<'_, 'source>
             });
         }
 
-        (placed, Stretch {
-            start,
-            end: self.endpoints.len(),
-        })
+        (placed, self.endpoints.since(start))
     }
 
     /// Wrap `body`, minted under the linear binders `endpoints` placed, in
@@ -1250,12 +1250,12 @@ impl<'source> Lowerer<'_, 'source>
     })]
     pub(super) fn place_body(
         &self,
-        endpoints: Stretch,
+        endpoints: FormStretch,
         mut body: ComputationId,
         sink: &mut Sink<'_>,
     ) -> Maybe<ComputationId, lowered::Absent>
     {
-        for endpoint in stretch(&self.endpoints, endpoints).iter().rev() {
+        for endpoint in self.endpoints.read(endpoints).iter().rev() {
             let Maybe::Present(origin) = self.origin_at(endpoint.binder)
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
@@ -1647,8 +1647,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   of its block, and the operator's receives under offer arms.
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     #[spec(
-        captures: before = self.statements.len(),
-        ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
+        captures: before = self.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
             && self.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Received { .. }))),
     )]
     pub(super) fn receive(
@@ -1719,8 +1719,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::session::tests::sharing_is_reserved_by_name`
     #[spec(
-        captures: before = self.statements.len(),
-        ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
+        captures: before = self.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
             && self.statements.last().is_some_and(|last| last.origin == statement.at.node && matches!(last.binding, StatementBinding::Forked { .. }))),
     )]
     pub(super) fn fork(

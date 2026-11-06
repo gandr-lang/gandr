@@ -258,8 +258,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::access::tests::a_hold_lowers_at_its_grade`
     /// - witness: `lower::access::tests::a_stated_var_ascribes_its_value_or_holds_a_handle`
     #[spec(
-        captures: before = self.statements.len(),
-        ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
+        captures: before = self.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
             && self.statements.last().is_some_and(|last| last.origin == hold.node && matches!(last.binding, StatementBinding::Held { .. } | StatementBinding::Located { .. }))),
     )]
     pub(super) fn hold(
