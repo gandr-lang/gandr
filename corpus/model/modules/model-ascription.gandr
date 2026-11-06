@@ -1,11 +1,10 @@
-//! One ascription path for a module and a theory: a module is a model of a
-//! theory, `module M : Model(T)` ascribes it transparently and `module M :>
-//! Model(T)` seals it, the theory's sorts abstract outside. A theory with no
-//! laws is an ML signature; the same ascription checks a theory with laws,
-//! whose members are the module's proofs. After Kaposi and Xie
-//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics],
-//! whose first-order models are a theory's algebras, and Rossberg, Russo and
-//! Dreyer [Rossberg-2014-fing_modules] for sealing as opaque ascription.
+//! This source shows model ascription.
+//!
+//! A transparent ascription exposes a model carrier.
+//! A sealed ascription hides that carrier.
+//!
+//! The checker derives a model signature from the theory.
+//! It checks model laws as proof members.
 //!
 //! - see: #746
 //! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
@@ -14,14 +13,13 @@
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories: Signatures and First-Order Semantics"
 //! [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
-/// A counter: a carrier, a start and a step. No laws: an ML signature.
+/// `Counter` states a carrier, a start and a step.
 pub theory Counter where
   sort C : Type;
   oper start : () --> C;
   oper step : (c : C) --> C;
 
-/// A counter on the integers, ascribed transparently: its carrier is
-/// `Integer` outside.
+/// `Open` exposes `Integer` as its carrier.
 module Open : Model(Counter) where
   type C = Integer;
 
@@ -29,8 +27,7 @@ module Open : Model(Counter) where
 
   def step(n : Integer) -> Integer { n + 1 }
 
-/// The same counter sealed by the theory: its carrier is abstract outside,
-/// reachable only through `start` and `step`.
+/// `Sealed` hides its integer carrier.
 module Sealed :> Model(Counter) where
   type C = Integer;
 
@@ -38,26 +35,25 @@ module Sealed :> Model(Counter) where
 
   def step(n : Integer) -> Integer { n + 1 }
 
-/// Two steps on the transparent counter, read as an integer.
+/// `openTwice` reads two transparent steps.
 @[ runs("2") ]
 def openTwice() -> Integer { let s = Open.start (); Open.step (Open.step s) }
 
-/// Two steps on the sealed counter, at its abstract carrier.
+/// `sealedTwice` returns two sealed steps.
 def sealedTwice() -> Sealed.C { let s = Sealed.start (); Sealed.step (Sealed.step s) }
 
-/// A toggle: a step that undoes itself. A law, so the models give its proof.
+/// `Toggle` states an involutive step law.
 theory Toggle where
   sort T : Type;
   oper flip : (t : T) --> T;
   rule twice : flip (flip t) <=> t;
 
-/// Two states.
+/// `Bit` has two states.
 data Bit : Type where
   | Low : Bit
   | High : Bit
 
-/// The two states as a model of the toggle, ascribed transparently: the law
-/// holds by conversion at each state.
+/// `Bits` proves the toggle law by conversion.
 module Bits : Model(Toggle) where {
   type T = Bit;
 
@@ -66,7 +62,7 @@ module Bits : Model(Toggle) where {
       | Low => High
       | High => Low
 
-  /// The law, by cases.
+  /// `twice` proves the law by cases.
   @[ checks ]
   def twice(b : Bit) -> Path(flip (flip b), b) =
     match b where
@@ -74,6 +70,6 @@ module Bits : Model(Toggle) where {
       | High => Path.here High
 }
 
-/// The toggle twice from `Low`, run.
+/// `flippedTwice` runs the toggle twice.
 @[ runs("Low") ]
 def flippedTwice() -> Bit { Bits.flip (Bits.flip Low) }

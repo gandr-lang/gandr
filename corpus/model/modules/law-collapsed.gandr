@@ -1,19 +1,11 @@
-// A theory states a law that collapses its own sort: every two loops are one
-// path.
+// This source shows a model law that collapses one sort.
 //
-// The law has the shape of axiom K, and it is sound where K on the native
-// identity is not. A law is a hypothesis, not a rule. A model owes a proof of
-// it at its carrier, and only a carrier whose loops are one can pay. The
-// native `Path` admits no such law. `here` is not a pattern, and a law over a
-// path of paths has no form today. So K reaches a theory's sort only as an
-// obligation on its models, never as a fact about `Path` or `Flow`. A cell
-// of the theory is a path in its models, not a path in `Type`.
+// `CollapsedDot` proves that every `Dot` loop is the same.
 //
-// `Collapsed` declares the sort and the law. `CollapsedDot` proves the law at
-// `Dot` by cases, and `one_loop` reads the proof at the law's path.
+// The checker requires each model to prove the law at its carrier.
 //
-// - see: `../../pathological/modules/law-collapsed.gandr` — the three refused routes
-// - see: `../../pathological/identity/k-derivation.gandr` — `here` is not a pattern
+// - see: pathological/modules/law-collapsed.gandr
+// - see: pathological/identity/k-derivation.gandr
 
 /// A sort whose loops are one.
 theory Collapsed where

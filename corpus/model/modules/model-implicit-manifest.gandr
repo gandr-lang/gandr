@@ -1,51 +1,50 @@
-// An omitted model implicit at a manifest model type resolved:
-// `[s : Model(Dial) with sort C = Integer]` binds no parameter for `C`, so
-// no argument forces it, and the sort the type fixes is what tells the
-// modules in scope apart. `Up` counts integers and `Flips` flags; only `Up`'s
-// carrier is the one the slot fixes, so a call leaving the slot out passes
-// `Up`.
+// This source shows an omitted model implicit at a manifest type.
+//
+// The manifest sort distinguishes `Up` from `Flips`.
+//
+// The checker selects the model whose carrier matches the fixed sort.
 //
 // - see: #2317
 
-/// A dial: a carrier, a zero, a turn and a reading.
+/// `Dial` states a carrier, a zero, a turn and a reading.
 theory Dial where
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
   oper read : (c : C) --> Integer;
 
-/// Counting up by one.
+/// `Up` counts integers.
 module Up : Model(Dial) where
   type C = Integer;
-  /// Zero.
+  /// `zero` gives zero.
   def zero = 0;
-  /// One count more.
+  /// `incr` adds one.
   def incr(c : Integer) -> Integer { c + 1 }
-  /// The count as it is.
+  /// `read` returns the count.
   def read(c : Integer) -> Integer { c }
 
-/// Flipping a flag.
+/// `Flips` toggles a Boolean value.
 module Flips : Model(Dial) where
   type C = Bool;
-  /// Down.
+  /// `zero` gives false.
   def zero = (false : Bool);
-  /// The other flag.
+  /// `incr` toggles the flag.
   def incr(c : Bool) -> Bool { if c { false } else { true } }
-  /// One for up, zero for down.
+  /// `read` maps true to one.
   def read(c : Bool) -> Integer { if c { 1 } else { 0 } }
 
-/// The reading after one turn from zero, over any dial of integers.
+/// `upOnce` turns an integer dial once.
 def upOnce[s : Model(Dial) with sort C = Integer]() -> Integer =
   s.read (s.incr s.zero)
 
-/// The reading after one turn from zero, over any dial of flags.
+/// `flipOnce` turns a Boolean dial once.
 def flipOnce[s : Model(Dial) with sort C = Bool]() -> Integer =
   s.read (s.incr s.zero)
 
-/// The slot fixes the integers: `Up` answers it, one count from zero.
+/// `turnedUp` selects `Up`.
 @[ runs("1") ]
 def turnedUp() -> Integer { upOnce () }
 
-/// The slot fixes the flags: `Flips` answers it, up after one flip.
+/// `turnedOver` selects `Flips`.
 @[ runs("1") ]
 def turnedOver() -> Integer { flipOnce () }

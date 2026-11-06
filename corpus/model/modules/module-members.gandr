@@ -1,47 +1,40 @@
-// A module's members see the names around it and each other, a nested
-// module's members are reached through its name, and the signature exports
-// only the members it states.
+// This source shows module members and nested members.
 //
-// - see: #1057 — `hidden_reply`
+// `Facts` exports its stated members and hides the others.
+//
+// The checker resolves nested members through the module path.
+//
+// - see: #1057
 
-/// A seed every member builds on.
+/// `seed` gives the shared base value.
 def seed = 40;
 
-/// The facts, with one nested module; the signature hides `hidden_reply`,
-/// `base` and `inner.hidden`.
+/// `Facts` exports `inner.answer` and `total`.
 module Facts : *{ inner : *{answer : Integer}, total : Integer } where {
-  /// A shell command's reply; the lowering admits no shell block yet.
+  /// `hidden_reply` tests a refused shell block.
   @[ refuses("OutOfFragment.shell_block") ]
   def hidden_reply = #!{ printf 'hidden module member ran\n'; };
-  /// The seed and the reply's exit code. An operator is a computation, and a
-  /// definition with no stated type reads its value where nothing infers
-  /// that computation's type.
+  /// `base` tests an unsynthesised operator result.
   @[ refuses("NotSynthesisable") ]
   def base = seed + hidden_reply.exit_code + 1;
-  /// A nested module whose `hidden` the signature leaves out.
+  /// `inner` hides one member.
   module inner : *{ answer : Integer } where {
-    /// The enclosing module's base, whose type is unknown while `base` is
-    /// refused.
+    /// `hidden` reads the refused `base`.
     @[ refuses("UnknownConstant") ]
     def hidden = base;
-    /// One more than the base, refused with it.
+    /// `answer` depends on the refused `base`.
     @[ refuses("UnknownConstant") ]
     def answer = base + 1;
   }
-  /// The nested answer, one more: the nested module's member is named
-  /// through its name. The operator's call is pure, so the value stands as
-  /// what the call returns.
+  /// `total` reads the nested answer.
   @[ checks ]
   def total = inner.answer + 1;
 }
 
-/// The exported total, one more. An operator is a computation, and a
-/// definition with no stated type reads its value where nothing infers that
-/// computation's type.
+/// `after` tests an unsynthesised exported total.
 @[ refuses("NotSynthesisable") ]
 def after = Facts.total + 1;
 
-/// Both gathered in a record; `after` is refused above, so it names a
-/// declaration whose type is not known.
+/// `gathered` tests a record that names refused `after`.
 @[ refuses("UnknownConstant") ]
 def gathered = *{after = after, total = Facts.total};

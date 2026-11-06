@@ -2,7 +2,8 @@
 //
 // The update creates a new record and keeps its other fields.
 //
-// The run expectation checks the updated point.
+// The run expectations check the updated point, in a function and as the own
+// value of a definition.
 //
 // - see: `pathological/records/wide-record-update.gandr` — `updated`
 
@@ -12,3 +13,7 @@ def point = *{x = 1, y = 2};
 /// `moved` changes `point.x` and keeps `point.y`.
 @[ runs("*{.x = 9, .y = 2}") ]
 def moved() -> *{x : Integer, y : Integer} { *{point | x = 9} }
+
+/// `kept` is the same update as its own value. Its run builds the record.
+@[ runs("*{.x = 9, .y = 2}") ]
+def kept : *{x : Integer, y : Integer} = *{point | x = 9};

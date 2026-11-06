@@ -1,7 +1,8 @@
-// An omitted model implicit resolved among models whose model type states the
-// sort: `Model(Same) with sort Carrier = Integer` is a candidate as a
-// module defining `type Carrier = Integer` is, and the sort the operands force
-// leaves the one candidate stating it.
+// This source shows an omitted model implicit at a manifest type.
+//
+// `SameInteger` and `SameBool` state different carrier sorts.
+//
+// The checker selects the model that the operands require.
 //
 // - see: #739
 

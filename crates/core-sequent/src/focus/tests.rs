@@ -723,6 +723,47 @@ fn a_computed_value_focuses_to_the_capture_that_runs_it()
     );
 }
 
+/// A definition whose record holds a returned field focuses to the capture
+/// that runs the field and builds the record from its answer, as the return
+/// of that record in a computation does; the record of plain fields focuses
+/// to itself, no `μ`.
+#[test]
+fn a_record_holding_a_returned_field_focuses_to_the_capture_that_builds_it_5649()
+{
+    let mut core = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let unit = core.value_unit();
+    let returned = core.computation_return(unit);
+    let computed = core.value_returned(returned);
+    let holding = core.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), computed),
+        (label("b"), unit),
+    ]));
+    let plain = core.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), unit),
+        (label("b"), unit),
+    ]));
+    let mut arena = CommandArena::new();
+    let mut provenance = Provenance::new();
+    let capture = focus_definition(&core, holding, &mut arena, &mut provenance, &Writers::NONE)
+        .expect("a record holding a returned field focuses");
+    let stands = focus_definition(&core, plain, &mut arena, &mut provenance, &Writers::NONE)
+        .expect("a record of plain fields focuses");
+    assert_eq!(
+        (
+            alloc::string::String::from(
+                "μα. ⟨{force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨x1 |+ force(μ\u{303}x. ⟨x1 |+ force(μ\u{303}x. ⟨record{a, b}(x1, x0) |+ α0⟩)⟩)⟩} |− α0⟩} |− α0⟩} |+ force(apply({force(α) ⇒ ⟨() |+ α0⟩}; apply({force(α) ⇒ ⟨() |+ α0⟩}; α0)))⟩"
+            ),
+            alloc::string::String::from("record{a, b}((), ())")
+        ),
+        (
+            crate::pretty::render_producer(&arena, capture),
+            crate::pretty::render_producer(&arena, stands)
+        ),
+        "the record runs its returned field under its capture, the plain record stands as itself"
+    );
+}
+
 /// Both result stacks reject every non-singleton shape and pop in LIFO
 /// order.
 #[test]

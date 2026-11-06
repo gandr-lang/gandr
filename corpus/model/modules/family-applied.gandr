@@ -1,15 +1,11 @@
-// A module's family applied through its name, as `Shapes.Opt(Integer)`.
+// This source shows applied families inside a module.
 //
-// A client reaches a module's family only through the module's name. A model
-// of a theory with an indexed sort supplies the sort as such a family.
+// `Shapes` declares option, pair and box families.
 //
-// A type family member expands over its arguments, as the family does applied
-// inside the module. A data family member stands at its arguments, and its
-// constructor builds and opens a value through the module's name.
+// The checker resolves family arguments through qualified names.
 //
-// - see: #3051 — the qualified head's argument list
-// - see: `pathological/modules/family-applied.gandr` — an application of
-//   another count, refused
+// - see: #3051
+// - see: pathological/modules/family-applied.gandr
 
 /// Options.
 data Maybe(a : Type) : Type where

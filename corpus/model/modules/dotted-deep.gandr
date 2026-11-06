@@ -1,6 +1,8 @@
-// A dotted name more than one step deep declares in the modules each
-// segment of its prefix names, a lowercase segment among them below the top,
-// and a path as deep reads it.
+// This source shows dotted names at nested modules.
+//
+// A prefix declares the modules before it declares a member.
+//
+// A path resolves each nested member.
 //
 // - see: #2687
 

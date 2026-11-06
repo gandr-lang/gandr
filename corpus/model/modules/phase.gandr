@@ -1,55 +1,53 @@
-//! The phase distinction
-//! [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]:
-//! a module's type members are its static part and its values its dynamic part,
-//! ordered static below dynamic. A member reads only members at or below its
-//! own phase, so a type reads types and static data, and a value reads both. A
-//! type member reading a module's or a parameter's value is refused by name at
-//! the value (`PhaseDependence`), stated beside it in
-//! `../../pathological/modules/phase.gandr`.
+//! This source shows the phase distinction in a module.
 //!
+//! Type members are static and value members are dynamic.
+//! A member can read only members at its phase or below it.
+//!
+//! The checker rejects a type member that reads a module value.
+//! The lowering keeps static and dynamic members in phase order.
+//!
+//! - see: pathological/modules/phase.gandr
 //! - cites: [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]
 //!
 //! [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]: https://doi.org/10.1145/3474834 "Sterling and Harper, Logical relations as types: proof-relevant parametricity for program modules"
 
-/// A sign, closed data whose constructors are static.
+/// `Sign` has static constructors.
 data Sign : Type where
   | Plus : Sign
   | Minus : Sign
 
-/// A point sealed by its signature: an abstract type and a value of it.
+/// `Point` seals a type and its point.
 module Point :> *{ type T, z : T } where {
   type T = Integer;
-  /// The point.
+  /// `z` gives the point.
   @[ runs("0") ]
   def z = 0;
 }
 
-/// A functor whose type member reads only its argument's type: its result's
-/// static part is a function of the argument's static part.
+/// `Square` reads only its argument type in its static member.
 module Square(S : *{ type T, z : T }) :> *{ type U, w : U } where {
   type U = S.T * S.T;
-  /// The argument's point, twice.
+  /// `w` pairs the argument point with itself.
   @[ checks ]
   def w = *{S.z, S.z};
 }
 
-/// The functor applied to the point.
+/// `Squared` applies `Square` to `Point`.
 module Squared = Square(Point);
 
-/// The applied functor's value, at its own abstract type.
+/// `squared` reads the applied functor value.
 def squared : Squared.U = Squared.w;
 
-/// A module whose type members read a literal and a constructor, which are
-/// static data, and whose values read those types.
+/// `Fixed` reads static literals and constructors in type members.
 module Fixed where {
-  /// A path at three.
+  /// `Three` names a constant path.
   type Three = Path(3, 3);
-  /// A path at the plus sign.
+  /// `Positive` names a plus-sign path.
   type Positive = Path(Plus, Plus);
-  /// The constant path at three.
+  /// `three` gives the constant path.
   @[ checks ]
   def three : Three = Path.here 3;
-  /// The constant path at the plus sign.
+  /// `positive` gives the plus-sign path.
   @[ checks ]
   def positive : Positive = Path.here Plus;
 }

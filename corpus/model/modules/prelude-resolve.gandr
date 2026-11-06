@@ -1,8 +1,9 @@
-// The prelude's instance machinery in one component: `==` and `<`
-// resolved at the integers and the strings through the prelude's `Eq` and
-// `Ord` models, and `==` at a point through a model whose members are derived
-// (`Eq.generic` and its laws). The hotpath series checks this source as its
-// `prelude resolve` workload, so every site here is a resolution it measures.
+// This source shows prelude model resolution.
+//
+// The prelude provides `Eq` and `Ord` models for integers and strings.
+// `EqPoint` derives equality for a point.
+//
+// The checker resolves each comparison from its operand carrier.
 //
 // - see: #2395
 

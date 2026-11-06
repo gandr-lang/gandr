@@ -1,9 +1,9 @@
-// An omitted model implicit resolved: a call that leaves out the model
-// a function quantifies over passes the one module in scope that is a model of
-// its theory at the types its explicit arguments force. No module is marked
-// as an instance: every module whose ascription is `Model(Count)`, or a model
-// of a theory including `Count`, is a candidate. `model-resolution-swapped`
-// imports the same two modules the other way round, and resolves alike.
+// This source shows an omitted model implicit.
+//
+// `Up` and `Flips` both provide a model of `Count`.
+//
+// The checker selects the candidate that the argument carrier requires.
+// It ignores the order that imports introduce candidates.
 //
 // - see: #739
 import "./model-resolution-tally.gandr";

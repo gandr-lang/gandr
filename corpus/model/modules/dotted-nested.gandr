@@ -1,29 +1,30 @@
-// Dotted names and nested module blocks combine: a block nested in a
-// module a dotted name declares, a written block reading into the dotted
-// module, a second module under the prefix reading back into the block, and a
-// sibling under one prefix read by its name inside that prefix.
+// This source shows dotted names with nested module blocks.
+//
+// `Net` contains modules `Wire` and `Meter`. `Wire` contains `Core`.
+//
+// A path resolves a nested member from the source and from its prefix.
 //
 // - see: #2687
 
-/// A dotted module holding a nested block.
+/// `Net.Wire` holds nested module `Core`.
 module Net.Wire where
-  /// A block inside the dotted module.
+  /// `Core` belongs to `Net.Wire`.
   module Core where
-    /// A gauge.
+    /// `gauge` has value three.
     def gauge = 3;
 
-/// A written block reading into the dotted module.
+/// `Panel` reads the dotted module path.
 module Panel where
-  /// The gauge, through the dotted module's path.
+  /// `gauge` reads `Net.Wire.Core.gauge`.
   def gauge = Net.Wire.Core.gauge;
 
-/// A second module under the prefix.
+/// `Net.Meter` is a second `Net` module.
 module Net.Meter where
-  /// The panel's gauge, read back out of the block.
+  /// `shown` reads `Panel.gauge`.
   def shown = Panel.gauge;
-  /// The sibling's gauge, by its name inside `Net`.
+  /// This definition reads `Wire.Core.gauge`.
   def sibling = Wire.Core.gauge;
 
-/// Both readings.
+/// `readings` returns both gauge values.
 @[ runs("*{.shown = 3, .sibling = 3}") ]
 def readings = *{shown = Net.Meter.shown, sibling = Net.Meter.sibling};
