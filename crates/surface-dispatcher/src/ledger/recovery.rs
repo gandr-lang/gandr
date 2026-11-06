@@ -37,6 +37,15 @@
 //! the parse knows something is wrong only there. It is counted by its own
 //! name rather than as well formed, since the source is not.
 //!
+//! An opener's deletion can also let a declaration close legally before the
+//! body that the opener opened. A `{` deleted after `-> Integer` makes `let
+//! (q, r) = divmod a b;` part of the definition, and its `;` ends the
+//! definition. The rest of the body then stands at the top level, after the
+//! deletion, and the first error marks that remainder. The tree does not show
+//! the opener either, so this mutant is also counted closed early. Only an
+//! opener's deletion is counted so. A remainder that another deletion leaves
+//! at the top level is a finding.
+//!
 //! A tile's near miss is derived, never listed: the first of its text with the
 //! last character dropped, its last two characters swapped, and its last
 //! character doubled that spells no literal tile of the grammar. A tile none of
@@ -67,6 +76,7 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_corpus::Refusal;
+use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
@@ -191,6 +201,9 @@ struct Reported
     /// declaration and refused none but for what a well-formed form means
     /// where it stands, so the first error is a meaning's, not a form's.
     formed: bool,
+    /// Whether the first error refuses a remainder: an expression that
+    /// stands at the source's top level, where only declarations stand.
+    remainder: bool,
 }
 
 /// Whether a cause's mutants deleted their tile or missed it.
@@ -358,10 +371,12 @@ pub struct RecoveryReport
 ///   [`RecoveryReport::tally`] answers it.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a sweep whose deleted opener leaves a stray closer counts
-///   that mutant closed early and every mutant in one class; a mutant counted
-///   twice or in no class changes the sum.
+/// - hypothesis: L3 — a sweep whose deleted opener leaves a stray closer, or a
+///   remainder at the top level, counts that mutant closed early and every
+///   mutant in one class; a mutant counted twice or in no class changes the
+///   sum.
 /// - witness: `ledger::recovery::tests::a_closer_left_with_nothing_to_close_is_closed_early_3063`
+/// - witness: `ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RecoveryTally
 {
@@ -675,9 +690,11 @@ fn mutants(
 ///   outside a recursive group or an exit where no body passes, and its first
 ///   error does not mark the site, counted closed early when its first error
 ///   does not mark the site but marks a lone closer, exactly one `}`, `)` or
-///   `]`, and a finding otherwise when its first error's primary span neither
-///   overlaps nor touches the mutation's site, or the error has none. The
-///   scratch directory the mutants are written under is removed.
+///   `]`, or, for a deleted `{`, `(` or `[`, refuses a remainder at the top
+///   level after the site, and a finding otherwise when its first error's
+///   primary span neither overlaps nor touches the mutation's site, or the
+///   error has none. The scratch directory the mutants are written under is
+///   removed.
 /// - fails: the exemplars cannot be listed or read, or the mutants cannot be
 ///   written.
 /// - panics: none.
@@ -696,11 +713,13 @@ fn mutants(
 ///   an exit outside any loop, a statement no path reaches, a descent claim
 ///   outside a recursive group or a `return` where no body passes, are counted
 ///   well formed, not filed; a closer doubled or an opener deleted, leaving a
-///   closer with nothing to close, is counted closed early, not filed.
+///   closer with nothing to close, and an opener deleted, leaving the rest of
+///   its body at the top level, are counted closed early, not filed.
 /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
 /// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
 /// - witness: `ledger::recovery::tests::a_mutant_leaving_only_unresolved_names_is_no_finding_2876`
 /// - witness: `ledger::recovery::tests::a_closer_left_with_nothing_to_close_is_closed_early_3063`
+/// - witness: `ledger::recovery::tests::a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785`
 /// - witness: `ledger::recovery::tests::a_deleted_licence_leaves_a_well_formed_source_3332`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.early).saturating_add(report.findings.len()) <= report.swept))]
 pub(super) fn sweep(
@@ -793,6 +812,27 @@ pub(super) fn sweep(
                 if let (Some(slot), Some(diagnostic)) =
                     (index.and_then(|index| reported.get_mut(index)), first)
                 {
+                    // A remainder: the first error is the refusal of an
+                    // expression that the lowering read at the top level.
+                    let remainder = matches!(
+                        *composed,
+                        Composed::Settled { ref report, .. }
+                            if report.declarations().iter().any(|declaration| {
+                                matches!(
+                                    declaration.produced().refusal(),
+                                    Maybe::Present(refusal @ Refusal::Lowering(
+                                        LoweringRefusal::OutOfFragment {
+                                            boundary: FragmentBoundary::TopLevel,
+                                            ..
+                                        }
+                                    )) if matches!(
+                                        diagnostic.identifier,
+                                        Maybe::Present(Identifier::Refusal(spelling))
+                                            if spelling == refusal.name().spelling()
+                                    )
+                                )
+                            })
+                    );
                     *slot = Some(Reported {
                         name: match diagnostic.identifier {
                             Maybe::Present(ref identifier) => Some(identifier.to_string()),
@@ -807,6 +847,7 @@ pub(super) fn sweep(
                             Maybe::Absent(_) => None,
                         },
                         formed,
+                        remainder,
                     });
                 }
             }
@@ -827,11 +868,17 @@ pub(super) fn sweep(
         // A closer doubled, or one an opener's deletion leaves, closes a form
         // legally; the closer left over has nothing to close, and the first
         // error marks it, never the mutation, which the tree does not show.
+        // An opener's deletion can also let a declaration close legally
+        // before the body that the opener opened. The rest of that body then
+        // stands at the top level, after the site. The first error marks
+        // that remainder, and the tree does not show the mutation.
+        let opener =
+            mutant.mutation == Mutation::Deleted && matches!(mutant.tile.as_str(), "{" | "(" | "[");
         let early = first.span.is_some_and(|span| {
             matches!(
                 mutant.text.get(span.start .. span.end),
                 Some("}" | ")" | "]")
-            )
+            ) || (opener && first.remainder && mutant.site.end < span.start)
         });
         if !marked && first.formed {
             report.formed = report.formed.saturating_add(1);
@@ -960,6 +1007,7 @@ mod tests
                 message: "a message".to_owned(),
                 span: Some(Site { start: 9, end: 9 }),
                 formed: false,
+                remainder: false,
             },
         };
         let report = RecoveryReport {
@@ -1068,6 +1116,64 @@ mod tests
             (1_usize, 0_usize, report.findings.len()),
             "the tally counts the stray closed early: {report}"
         );
+        assert_eq!(
+            tally.where_made + tally.accepted + tally.formed + tally.early + tally.elsewhere,
+            tally.swept,
+            "every mutant counts in one class: {report}"
+        );
+    }
+
+    /// A `{` deleted before a body lets the definition close legally inside
+    /// that body. The rest of the body then stands at the top level,
+    /// and the first error marks that remainder, after the deletion. The tree
+    /// does not show the opener, so the mutant is counted closed early, and
+    /// never as a finding. The two exemplars are the ledger's own: one body
+    /// is on lines of its own, the other on the line of the definition.
+    #[test]
+    fn a_body_an_opener_s_deletion_leaves_at_the_top_level_is_closed_early_4785()
+    {
+        let scratch = std::env::temp_dir().join(format!(
+            "gandr-recovery-test-{}-remainder",
+            std::process::id()
+        ));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        for (exemplar, text) in [
+            (
+                "break-expression.gandr",
+                "/// `break_expression`: a break out of a loop.\n@[ checks ]\ndef once(n : Integer) \
+                 -> -F Integer {\n  loop { break; } ;\n  return n\n}\n",
+            ),
+            (
+                "tuple-pattern.gandr",
+                "/// `tuple_pattern`: a group of patterns that receives a call's outputs.\n@[ \
+                 checks ]\ndef divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { \
+                 (m, n) }\n\n/// The second output of `divmod`, bound by the group.\n@[ checks \
+                 ]\ndef second(a : Integer, b : Integer) -> Integer { let (q, r) = divmod a b; r \
+                 }\n",
+            ),
+        ] {
+            std::fs::write(folder.join(exemplar), text).expect("the exemplar is written");
+        }
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        for (exemplar, at) in [
+            ("break-expression.gandr", 95_usize),
+            ("tuple-pattern.gandr", 279_usize),
+        ] {
+            assert!(
+                !report.findings.iter().any(|finding| {
+                    finding.exemplar.file_name() == Some(exemplar.as_ref())
+                        && finding.at == at
+                        && finding.tile == "{"
+                        && finding.mutation == Mutation::Deleted
+                }),
+                "the `{{` deleted at {at} of {exemplar} leaves its body's rest at the top level, \
+                 closed early: {report}"
+            );
+        }
+        let tally = report.tally();
         assert_eq!(
             tally.where_made + tally.accepted + tally.formed + tally.early + tally.elsewhere,
             tally.swept,
