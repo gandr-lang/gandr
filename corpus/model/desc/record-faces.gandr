@@ -6,8 +6,9 @@
 // of the record. The checker checks each fixed value at its field's type. A
 // value of the patched type is the record of its free fields, and a literal
 // can state a fixed field at its fixed value. A value of the record type stands
-// at the patched type when each fixed field converts with its fixed value. A
-// name at it reads a fixed field as the value the bracket fixes.
+// at the patched type when each fixed field converts with its fixed value. An
+// element of the patched type stands at the record type as its record, and a
+// selection reads a fixed field's value.
 //
 // The block names each face as a theory's `face` member does. The block ends
 // the type member at its `}`, as a `data` block ends its declaration. A record
@@ -21,8 +22,6 @@
 //   literal stating a fixed field at another value, refused
 // - see: `model/desc/shaped-signature.gandr` — a theory's `boundary` and its
 //   faces
-// - owes: #5579 — an element of a patched type coerced back to the
-//   configuration
 // - owes: #5106 — two faces fixed at once, whose values agree where the faces
 //   meet
 
@@ -62,3 +61,24 @@ def secured_port : Integer = port_of (secured);
 
 /// The host of `local`, coerced in where the call reads it.
 def local_host : String = host_of (local);
+
+/// The port of any configuration.
+def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer { c.port }
+
+/// `secured` stands at `Config` as its whole record, which holds the fixed
+/// port.
+@[ runs("443") ]
+def secured_at_base : Integer = any_port (secured);
+
+/// The port a configuration fixes to a name.
+def default_port : Integer = 443;
+
+/// A selection of a fixed field reads the name the bracket fixes.
+def named_port(c : Config[.port = default_port]) -> Integer { c.port }
+
+/// A configuration on the default port, by its free fields.
+def defaulted : Config[.port = default_port] = *{.host = "localhost", .tls = true};
+
+/// The port of `defaulted`: the value of `default_port`.
+@[ runs("443") ]
+def defaulted_port : Integer = named_port (defaulted);

@@ -569,6 +569,15 @@ where
         context.record_coercion(at, fixed);
         return Ok(());
     }
+    // An element of a patched type stands at its base by the coercion out:
+    // the elaboration updates it with the values that the type fixes, and
+    // the update stands as the record of the base's fields.
+    if agreement == Agreement::Apart
+        && let Maybe::Present((overlay, kept)) = coerced_out(context, found, wanted)?
+    {
+        context.record_overlay(at, overlay, kept);
+        return Ok(());
+    }
     let forged = agreement == Agreement::Apart
         && matches!(
             value_type_view(context.arena(), wanted)?,
@@ -667,6 +676,66 @@ fn coerced_in(
         }
     }
     Ok(Maybe::Present(fixed))
+}
+
+/// The record of the values that the patched type `found` fixes, beside the
+/// labels of its free fields, when `wanted` converts with its base: what the
+/// coercion out updates an element of `found` with at `wanted`.
+///
+/// # Specification
+/// - requires: `found` is the type a value synthesised, and both types are
+///   formed in the context's arena.
+/// - ensures: [`Maybe::Present`] of a fresh record of the fixed values, read
+///   where the value stands, and the free labels, when `found` is a patched
+///   type over a record whose base converts with `wanted`; [`Maybe::Absent`]
+///   when `found` is no patched type or `wanted` is apart from its base.
+/// - fails: the refusal of a comparison that does not finish.
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a configuration on the secure port at the configuration
+///   stands as the record of its host, its port and its transport.
+/// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(value_type_view(context.arena(), found.node()), Ok(ValueTypeView::Patched { .. })))]
+fn coerced_out(
+    context: &mut CheckingContext<'_>,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Maybe<(ValueId, Vec<gandr_core_term::FieldLabel>), ()>, CheckRefusal>
+{
+    if !matches!(
+        value_type_view(context.arena(), found.node())?,
+        ValueTypeView::Patched { .. }
+    ) {
+        return Ok(Maybe::Absent(()));
+    }
+    // The fixed values are read where the element stands.
+    let settled = found.settle(context.arena_mut());
+    let ValueTypeView::Patched { base, fixed } = value_type_view(context.arena(), settled)?
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let fixed = fixed.clone();
+    if convert(
+        context,
+        Pairing::Assignable(Relocated::from(base), Relocated::from(wanted)),
+    )? != Agreement::Convertible
+    {
+        return Ok(Maybe::Absent(()));
+    }
+    let arena = context.arena();
+    let Some(free) = arena
+        .value_type(settled)
+        .and_then(|patched| arena.element_fields(patched))
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let kept = free.iter().map(|(label, _)| label.clone()).collect();
+    let overlay = context.arena_mut().value_record(fixed);
+    Ok(Maybe::Present((overlay, kept)))
 }
 
 /// The first kept map between models that carries the type `found` to the

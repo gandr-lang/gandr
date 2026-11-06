@@ -3326,18 +3326,19 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Classify a selection `e.l` as the field `l` of the record `e` is, where
     /// no written type states the record: a chain of selections rooted at a
-    /// value's name.
+    /// value's name, or one link off a name written at a patched type.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading;
     ///   [`Self::selection`] planned nothing at it.
     /// - ensures: planned when the member is a name and the chain of selections
     ///   the operand is ends at a name not capitalised that a binder or a
-    ///   declaration answers, with no type written when the operand is that
-    ///   name itself: the field at the member's label, the operand read as a
-    ///   value under the form's frame. Nothing is planned otherwise, so a
-    ///   module path, a builtin namespace's member, an observation and a name
-    ///   whose written type is not a record are read as before.
+    ///   declaration answers, with no type written, or a patched type, when the
+    ///   operand is that name itself: the field at the member's label, the
+    ///   operand read as a value under the form's frame. Nothing is planned
+    ///   otherwise, so a module path, a builtin namespace's member, an
+    ///   observation and a name whose written type is neither a record nor a
+    ///   patched type are read as before.
     /// - fails: the wrong-sort refusal where no computation is read; the head
     ///   name's own resolution refusals.
     /// - panics: none.
@@ -3348,8 +3349,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a field of a definition with no signature, a field of
     ///   a field, a builtin namespace's member and a name with a written type
-    ///   that is not a record.
+    ///   that is not a record; a fixed and a free field off a name written at a
+    ///   patched type.
     /// - witness: `lower::arity::tests::a_field_of_a_record_no_type_states_projects_its_label_1106`
+    /// - witness: `lower::patched::tests::a_selection_off_a_patched_name_projects_its_field_5579`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Field(..))))]
     pub(super) fn field(
         &mut self,
@@ -3408,8 +3411,13 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
             Maybe::Absent(_) => return Ok(Planned(false)),
         };
-        // A name with a written type that is no record keeps its reading.
-        if head.node == target.node && matches!(declared, Maybe::Present(_)) {
+        // A name with a written type that is no record keeps its reading. A
+        // name written at a patched type projects its field, which the checker
+        // reads off the patched type (#5579).
+        if head.node == target.node
+            && let Maybe::Present(written) = declared
+            && self.patched_at(written)? == Maybe::Absent(())
+        {
             return Ok(Planned(false));
         }
         let label = FieldLabel::from(String::from(member.as_ref()));

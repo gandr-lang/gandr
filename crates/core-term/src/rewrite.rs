@@ -1366,15 +1366,16 @@ impl<'arena> Engine<'arena>
     ///   `rewritten` is an update of a record by a record — the overlay's
     ///   fields beside, for each label `k` the base `b` keeps, `b`'s own
     ///   component at `k` when the build reads [`Kept::Literal`] and `b` is a
-    ///   record literal, and `⟨b.k⟩` otherwise — then a fresh run of the reduct
-    ///   applied to `rewritten` when the crossings name `node`, and otherwise a
-    ///   fresh mark over `rewritten` when the sites name `node` and it is a
-    ///   term; under an elaboration, a fresh thunk over the computation of
-    ///   `rewritten` when `node` is a nested computation the checker decided to
-    ///   suspend, a fresh returned value over it when the checker decided it
-    ///   stands as what it returns, and the suspended call itself when `node`
-    ///   forces a nested computation the checker suspended (#3935); `rewritten`
-    ///   itself otherwise.
+    ///   record literal, and `⟨b.k⟩` otherwise — then, when the crossings name
+    ///   `node`, the update of `rewritten` by the record an overlaid crossing
+    ///   names, and otherwise a fresh run of the reduct applied to `rewritten`,
+    ///   and otherwise a fresh mark over `rewritten` when the sites name `node`
+    ///   and it is a term; under an elaboration, a fresh thunk over the
+    ///   computation of `rewritten` when `node` is a nested computation the
+    ///   checker decided to suspend, a fresh returned value over it when the
+    ///   checker decided it stands as what it returns, and the suspended call
+    ///   itself when `node` forces a nested computation the checker suspended
+    ///   (#3935); `rewritten` itself otherwise.
     /// - provides: the one point a wrap differs from a congruence, and the one
     ///   point an elaboration suspends.
     /// - fails: never.
@@ -1475,6 +1476,12 @@ impl<'arena> Engine<'arena>
             let operand = match crossing.operand {
                 CrossedOperand::Itself => id,
                 CrossedOperand::Standing(standing) => standing,
+                // An element of a patched type stands at its base as the
+                // update of its own rebuilt value by the values that the type
+                // fixes (#5579).
+                CrossedOperand::Overlaid(overlay) => {
+                    return Node::Value(self.arena.value_record_update(id, overlay));
+                },
             };
             let Maybe::Present(by) = crossing.by
             else {
@@ -6319,10 +6326,11 @@ pub fn wrap_marks(
 ///   crossing's map `r` applied to the crossing's carriers `xᵢ`, outermost
 ///   first, then to its operand `o`: `v` itself, or the value the crossing
 ///   names to stand for it; a crossing with no map stands `v` as `o` itself,
-///   with no run; `subject` itself when `crossings` names nothing it reaches;
-///   `carried` gains one pair per node the rebuild carried over — a named value
-///   beside the value it stands as inside its run, when that is another — and
-///   `runs` each run minted, in minting order.
+///   with no run, and an overlaid crossing stands `v` as the update of `v` by
+///   the record it names; `subject` itself when `crossings` names nothing it
+///   reaches; `carried` gains one pair per node the rebuild carried over — a
+///   named value beside the value it stands as inside its run, when that is
+///   another — and `runs` each run minted, in minting order.
 /// - provides: the body whose runs the nested elaboration binds before their
 ///   regions, as a run the source wrote.
 /// - fails: never.
@@ -6333,11 +6341,13 @@ pub fn wrap_marks(
 ///   separate the run minted at the one from the identity on the other; a
 ///   crossing with a carrier applies the map to the carrier before the value; a
 ///   crossing with a standing operand applies the map to it in place of the
-///   value; a crossing with no map stands the value as its operand.
+///   value; a crossing with no map stands the value as its operand; an overlaid
+///   crossing updates the value as rebuilt.
 /// - witness: `rewrite::tests::a_crossing_runs_its_reduct_at_exactly_the_named_values`
 /// - witness: `rewrite::tests::a_crossing_applies_its_carriers_before_the_value`
 /// - witness: `rewrite::tests::a_standing_operand_takes_the_crossed_value_s_place_4732`
 /// - witness: `rewrite::tests::an_unmapped_crossing_stands_the_value_as_its_operand_4807`
+/// - witness: `rewrite::tests::an_overlaid_crossing_updates_the_rebuilt_value_5579`
 #[spec(captures: [held = carried.len(), minted = runs.len()],
     ensures: |ret| carried.len() >= held && runs.len() >= minted
         && (runs.len() > minted || ret == subject
@@ -6504,6 +6514,11 @@ pub enum CrossedOperand
     /// which `fromDecimal` takes after its digits, or the float a decimal
     /// stands as at `f64` (#4807).
     Standing(ValueId),
+    /// The record that updates the crossed value, its own children rebuilt
+    /// first: an element of a patched type stands at its base as its free
+    /// fields beside the values that the type fixes (#5579). The crossing
+    /// names no map.
+    Overlaid(ValueId),
 }
 
 /// The kind of literal a reader reads: the theory of the prelude its model

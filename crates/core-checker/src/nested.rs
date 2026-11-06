@@ -251,8 +251,10 @@ impl NestedElaboration
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an update keeping one field of its base and writing
-    ///   another stands as the record of both.
+    ///   another stands as the record of both; an element of a patched type
+    ///   that a run returns as a definition's own value stands as its record.
     /// - witness: `module::tests::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
+    /// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
     #[spec(captures: own = self.carried.len(), ensures: |ret| ret.1.carried.len() >= own)]
     #[must_use]
     pub(crate) fn updated(
@@ -266,18 +268,36 @@ impl NestedElaboration
         if updates.is_empty() {
             return (body, self);
         }
-        let rebuilt = |pairs: &[Carried]| -> BTreeMap<ValueId, ValueId> {
-            pairs
-                .iter()
-                .filter_map(|&pair| match pair {
-                    Carried::Value(held, written) => Some((held, written)),
-                    Carried::Computation(..) | Carried::ValueType(..) | Carried::CompType(..) => {
-                        None
+        // A definition's own value that a run stands in is carried to its
+        // rebuild and then to the run's returned value: the update is the
+        // rebuild, so a later pair never replaces an update.
+        let rebuilt = |arena: &CoreArena, pairs: &[Carried]| -> BTreeMap<ValueId, ValueId> {
+            let mut read = BTreeMap::new();
+            for &pair in pairs {
+                let Carried::Value(held, written) = pair
+                else {
+                    continue;
+                };
+                let update = |at| {
+                    matches!(
+                        arena.value(at),
+                        Some(gandr_core_term::Value::RecordUpdate { .. })
+                    )
+                };
+                match read.entry(held) {
+                    alloc::collections::btree_map::Entry::Vacant(vacant) => {
+                        vacant.insert(written);
                     },
-                })
-                .collect()
+                    alloc::collections::btree_map::Entry::Occupied(mut occupied) => {
+                        if !update(*occupied.get()) {
+                            occupied.insert(written);
+                        }
+                    },
+                }
+            }
+            read
         };
-        let (crossing, elaborating) = (rebuilt(crossed), rebuilt(&self.carried));
+        let (crossing, elaborating) = (rebuilt(arena, crossed), rebuilt(arena, &self.carried));
         let read = updates
             .iter()
             .map(|(&at, kept)| {
@@ -358,19 +378,23 @@ pub fn elaborate(
 /// - ensures: the rebuilt body, every node the rebuild carried over beside the
 ///   node it was built from, and `decisions` keyed by what each node stands as
 ///   in the rebuilt body, with each run the rebuild minted decided a pure run;
-///   `body`, nothing carried and `decisions` unchanged when `crossings` names
-///   nothing it reaches.
+///   an element that an overlaid crossing updates keeps its decision at the
+///   element rebuilt, the update's base; `body`, nothing carried and
+///   `decisions` unchanged when `crossings` names nothing it reaches.
 /// - provides: the body and decisions [`elaborate`] reads where the value
-///   bridge crossed by a map between models or a literal reader.
+///   bridge crossed by a map between models or a literal reader, or rebuilt an
+///   element of a patched type at its base.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a monoid's model passed where a semigroup's is asked,
 ///   beside a nested call, elaborates the reduct into a bind and keeps the
 ///   call's decision; a literal read in a definition's own value stands as the
-///   value its reader returns.
+///   value its reader returns; a call whose result stands at its base runs
+///   before the update of its result.
 /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
 /// - witness: `module::tests::a_literal_read_in_a_definition_s_own_value_stands_as_its_reading_4812`
+/// - witness: `module::tests::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
 #[spec(ensures: |ret| ret.2.len() >= decisions.len())]
 pub fn cross(
     arena: &mut CoreArena,
@@ -381,10 +405,23 @@ pub fn cross(
 {
     let (mut carried, mut runs) = (Vec::new(), Vec::new());
     let crossed = gandr_core_term::cross_reducts(arena, body, crossings, &mut carried, &mut runs);
+    // A decision at an element that an overlaid crossing updates stays at the
+    // element, which the update holds as its base.
     let rebuilt: BTreeMap<ValueId, ValueId> = carried
         .iter()
         .filter_map(|&pair| match pair {
-            Carried::Value(held, written) => Some((held, written)),
+            Carried::Value(held, written) => {
+                Some((held, match (crossings.get(&held), arena.value(written)) {
+                    (
+                        Some(&gandr_core_term::Crossing {
+                            operand: gandr_core_term::CrossedOperand::Overlaid(_),
+                            ..
+                        }),
+                        Some(&gandr_core_term::Value::RecordUpdate { base, .. }),
+                    ) => base,
+                    _ => written,
+                }))
+            },
             Carried::Computation(..) | Carried::ValueType(..) | Carried::CompType(..) => None,
         })
         .collect();

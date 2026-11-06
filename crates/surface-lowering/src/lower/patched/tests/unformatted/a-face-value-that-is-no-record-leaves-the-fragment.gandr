@@ -1,0 +1,2 @@
+{CONFIG}def standard : Integer = 443;
+def bound(c : Config[secure ↦ standard]) -> Integer {{ 0 }}

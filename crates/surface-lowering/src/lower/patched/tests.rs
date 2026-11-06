@@ -5,7 +5,6 @@ use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
-use gandr_kernel_term::Literal;
 use gandr_surface_syntax::SourceText;
 
 use crate::error::FormFault;
@@ -84,47 +83,38 @@ fn a_base_named_by_a_type_member_keeps_the_name()
     );
 }
 
+/// A selection off a name written at a patched type projects the field by its
+/// label, free or fixed, whatever value the bracket fixes: the checker reads a
+/// fixed field off the patched type (#5579).
 #[test]
-fn a_fixed_field_reads_its_value_back()
+fn a_selection_off_a_patched_name_projects_its_field_5579()
 {
     let source = format!(
-        include_str!("tests/unformatted/a-fixed-field-reads-its-value-back.gandr"),
+        include_str!(
+            "tests/unformatted/a-selection-off-a-patched-name-projects-its-field-5579.gandr"
+        ),
         CONFIG = CONFIG
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for (name, label) in [
+        ("port", "port"),
+        ("tls", "tls"),
+        ("host", "host"),
+        ("named", "port"),
+    ] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert!(
+            matches!(
+                arena.computation(tail),
+                Some(Computation::RecordProjection(_, projected)) if projected.as_ref() == label
+            ),
+            "`{name}` projects `{label}`: {:?}",
+            arena.computation(tail)
+        );
+    }
     let report = judged(&module, &mut arena);
     assert_accepted(&report);
-    let returned = |name: &str| {
-        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
-        let Some(&Computation::Return(value)) = arena.computation(tail)
-        else {
-            panic!("`{name}` returns a value: {:?}", arena.computation(tail));
-        };
-        arena.value(value).cloned()
-    };
-    assert!(
-        matches!(returned("port"), Some(Value::Literal(Literal::Integer(_)))),
-        "a fixed field reads the number the bracket fixes"
-    );
-    // A boolean stands ascribed its type, around the injection it is.
-    let tls = match returned("tls") {
-        Some(Value::Ascribe { value, .. }) => arena.value(value).cloned(),
-        other => other,
-    };
-    assert!(
-        matches!(tls, Some(Value::Injection(..))),
-        "a face's field reads the boolean its value fixes: {tls:?}"
-    );
-    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("host")));
-    assert!(
-        matches!(
-            arena.computation(tail),
-            Some(Computation::RecordProjection(_, label)) if label.as_ref() == "host"
-        ),
-        "a free field projects the record: {:?}",
-        arena.computation(tail)
-    );
 }
 
 #[test]
@@ -163,31 +153,24 @@ fn a_bracket_naming_what_its_base_lacks_is_refused_by_the_name()
 }
 
 #[test]
-fn a_fixed_value_the_lowering_does_not_read_leaves_the_fragment()
+fn a_face_value_that_is_no_record_leaves_the_fragment()
 {
     let source = format!(
-        include_str!(
-            "tests/unformatted/a-fixed-value-the-lowering-does-not-read-leaves-the-fragment.gandr"
-        ),
+        include_str!("tests/unformatted/a-face-value-that-is-no-record-leaves-the-fragment.gandr"),
         CONFIG = CONFIG
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
-    for (name, why) in [
-        ("named", "a fixed name is not read back"),
-        ("bound", "a face's value is a record written in place"),
-    ] {
-        assert!(
-            matches!(
-                refusal_of(&module, SurfaceName::from(name)),
-                LoweringRefusal::OutOfFragment {
-                    boundary: FragmentBoundary::Unadmitted(Unbuilt::FixedValue),
-                    ..
-                }
-            ),
-            "{why}"
-        );
-    }
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("bound")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::FixedValue),
+                ..
+            }
+        ),
+        "a face's value is a record written in place"
+    );
     let report = judged(&module, &mut arena);
     assert_accepted(&report);
 }

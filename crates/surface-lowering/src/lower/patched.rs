@@ -16,13 +16,13 @@
 //! checker checks each fixed value at its field's type, and a value of the
 //! patched type is the record of its free fields.
 //!
-//! # A fixed field reads its value back
+//! # A selection reads a field
 //!
-//! A selection `c.l` off a name written at a patched type reads a free field
-//! as the field of the record, and a fixed field as the value the bracket
-//! fixes ([`Lowerer::patched_field`]). That value is a literal: a number, a
-//! string, a character or a boolean. A literal holds no name, so it reads the
-//! same at the bracket and at the selection.
+//! A selection `c.l` off a name written at a patched type projects the field
+//! `l` of the record ([`Lowerer::patched_at`]). The checker reads a free field
+//! off the record of the free fields, and a fixed field as the value the
+//! bracket fixes, whatever that value is. An element of the patched type
+//! stands at its base as the record of the base's fields.
 //!
 //! # Boundaries
 //!
@@ -32,12 +32,9 @@
 //!   A face's value that omits a label of the face is a form fault.
 //! - The face form holds one face. Two faces, `T[f ↦ a, g ↦ b]`, form no
 //!   bracket of the grammar.
-//! - A face's value that is no record written in place, and a fixed field read
-//!   back where its value is no literal, leave the fragment
+//! - A face's value that is no record written in place leaves the fragment
 //!   ([`Unbuilt::FixedValue`]). So does a base with a field whose type names an
 //!   earlier field ([`Unbuilt::DependentPatch`]).
-//! - The checker does not coerce a value of the base to the patched type, nor a
-//!   value of the patched type to its base.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -45,7 +42,6 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::FieldLabel;
-use gandr_kernel_term::Side;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_shapes::Membership;
 use quenchant_shape::shape::Maybe;
@@ -54,7 +50,6 @@ use super::Frame;
 use super::Lowered;
 use super::Lowerer;
 use super::Plan;
-use super::Produced;
 use super::Reading;
 use super::Sink;
 use super::Site;
@@ -62,14 +57,12 @@ use super::arity::Arranged;
 use super::arity::Entry;
 use super::arity::Held;
 use super::arity::Key;
-use super::arity::Planned;
 use super::arity::Thunked;
 use super::arity::arrange;
 use super::arity::separated;
 use super::closed;
 use super::exhausted;
 use super::lowered;
-use super::parse_literal;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -640,185 +633,32 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The fields a patched type written at `declared` fixes, each label with
-    /// its value, read off its bracket.
+    /// Present when `declared`, the type a name's binder or declaration is
+    /// written with, is a patched type: a staged type whose bracket writes a
+    /// field form or a face form.
     ///
     /// # Specification
-    /// - requires: `declared` is the type a name's binder or declaration is
-    ///   written with; `site` is a selection off that name.
-    /// - ensures: each fixed label with its value when the type is a staged
-    ///   type whose bracket writes a field form, or a face form of one face
-    ///   whose value is a record written in place; nothing for any other type.
-    /// - fails: the bracket's own malformation, as [`Self::bracket`] and
-    ///   [`Self::face_value`] read it.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As `- fails:`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a field form and a face form each read their fixed
-    ///   values back.
-    /// - witness: `lower::patched::tests::a_fixed_field_reads_its_value_back`
-    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|fixed| fixed.as_ref().is_none_or(|fixed| !fixed.is_empty())))]
-    fn fixed_fields(
+    /// trivial.
+    pub(super) fn patched_at(
         &self,
-        site: Site,
         declared: NodeIndex,
-    ) -> Result<Option<BTreeMap<SurfaceName<'source>, Placed>>, LoweringRefusal<'source>>
+    ) -> Result<Maybe<(), ()>, LoweringRefusal<'source>>
     {
         let Some(tree) = self.tree.node(declared)
         else {
-            return Ok(None);
+            return Ok(Maybe::Absent(()));
         };
-        let placed = Placed::of(declared, tree);
-        let Some((name, Former::StagedType)) = self.form_at(placed)?
+        let Some((_, Former::StagedType)) = self.form_at(Placed::of(declared, tree))?
         else {
-            return Ok(None);
+            return Ok(Maybe::Absent(()));
         };
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, declared, &mut pieces)?;
-        if bracket_of(&pieces.pieces) == Written::Stage {
-            return Ok(None);
-        }
-        let written = Site {
-            at: placed,
-            name,
-            reading: site.reading,
-        };
-        let mut cursor = Cursor::new(&pieces.pieces, placed.span);
-        let _base = written.one(cursor.operands())?;
-        closed(written, &mut cursor, TileName::BRACKET_OPEN)?;
-        let fixed = match self.bracket(written, &mut cursor)? {
-            Bracket::Stage => return Ok(None),
-            Bracket::Fields(fixed) => fixed,
-            Bracket::Face(_, value) => self.face_value(written, value)?,
-        };
-
-        Ok(Some(
-            fixed
-                .iter()
-                .filter_map(|entry| match entry.key {
-                    Key::Label(label, _) => Some((label, entry.held.at())),
-                    Key::Index(..) | Key::Positional => None,
-                })
-                .collect(),
-        ))
-    }
-
-    /// Classify a selection `c.l` off a name written at a patched type.
-    ///
-    /// # Specification
-    /// - requires: `site` is a projection; `pieces` is its reading.
-    /// - ensures: planned when the selection is one link off a name whose
-    ///   binder or declaration is written at a patched type: a fixed field as
-    ///   the literal its value is, and a free field as the field of the record,
-    ///   the name read as a value under the form's frame; nothing is planned
-    ///   otherwise.
-    /// - fails: [`Unbuilt::FixedValue`] for a fixed field whose value is no
-    ///   literal; the wrong-sort refusal where neither a value nor a
-    ///   computation is read; the name's own resolution refusals.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// The selection's refusal.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a fixed number, a fixed boolean and a free string
-    ///   read off one name, and a fixed name read back.
-    /// - witness: `lower::patched::tests::a_fixed_field_reads_its_value_back`
-    /// - witness: `lower::patched::tests::a_fixed_value_the_lowering_does_not_read_leaves_the_fragment`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&(Plan::Field(..) | Plan::Literal(_) | Plan::Boolean(_)))))]
-    pub(super) fn patched_field(
-        &mut self,
-        site: Site,
-        pieces: &Pieces,
-    ) -> Result<Planned, LoweringRefusal<'source>>
-    {
-        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
-        else {
-            return Ok(Planned(false));
-        };
-        let Maybe::Present(declared) = self.name_type(site.reading.frame(), target)?
-        else {
-            return Ok(Planned(false));
-        };
-        let Some(fixed) = self.fixed_fields(site, declared)?
-        else {
-            return Ok(Planned(false));
-        };
-        let member = self.name_at(selected);
-        if let Some(&value) = fixed.get(&member) {
-            let _frame = self.require(site, Produced::Value)?;
-            let plan = self.fixed_literal(site, value)?;
-            self.plan(site, plan);
+        Ok(if bracket_of(&pieces.pieces) == Written::Stage {
+            Maybe::Absent(())
         }
         else {
-            let frame = self.require(site, Produced::Computation)?;
-            self.read(target.node, Reading::Value(frame));
-            let label = FieldLabel::from(String::from(member.as_ref()));
-            self.plan(site, Plan::Field(target.node, label));
-        }
-
-        Ok(Planned(true))
-    }
-
-    /// The plan of the literal a fixed field's value `value` is, read back at
-    /// the selection `site`.
-    ///
-    /// # Specification
-    /// - requires: `value` is a fixed field's value.
-    /// - ensures: a boolean as its side, `true` the left; a number, a character
-    ///   or a string with no interpolation as the literal its text parses to.
-    /// - fails: [`Unbuilt::FixedValue`] for any other value, a number with a
-    ///   suffix among them.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As `- fails:`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a number and a boolean read back, and a name refused.
-    /// - witness: `lower::patched::tests::a_fixed_field_reads_its_value_back`
-    /// - witness: `lower::patched::tests::a_fixed_value_the_lowering_does_not_read_leaves_the_fragment`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |plan| matches!(*plan, Plan::Literal(_) | Plan::Boolean(_))))]
-    fn fixed_literal(
-        &self,
-        site: Site,
-        value: Placed,
-    ) -> Result<Plan, LoweringRefusal<'source>>
-    {
-        let declined = || site.out(FragmentBoundary::Unadmitted(Unbuilt::FixedValue));
-        let Some((_, former)) = self.form_at(value)?
-        else {
-            return Err(declined());
-        };
-        let text = self.text_at(value);
-        if former == Former::Boolean {
-            let side = if text.as_ref() == "true" {
-                Side::Left
-            }
-            else {
-                Side::Right
-            };
-            return Ok(Plan::Boolean(side));
-        }
-        if !matches!(former, Former::Number | Former::Character | Former::Text) {
-            return Err(declined());
-        }
-        if former == Former::Text {
-            let mut pieces = Pieces::new();
-            read_pieces(self.pbg, self.tree, value.node, &mut pieces)?;
-            let interpolated = pieces.pieces.iter().any(
-                |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::INTERPOLATION),
-            );
-            if interpolated {
-                return Err(declined());
-            }
-        }
-        match parse_literal(former, text) {
-            Maybe::Present(literal) => Ok(Plan::Literal(literal)),
-            Maybe::Absent(_) => Err(declined()),
-        }
+            Maybe::Present(())
+        })
     }
 }
