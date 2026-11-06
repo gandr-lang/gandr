@@ -635,6 +635,9 @@ enum Held
     /// A printing of a bind or a return of several values, which the printer
     /// reads as no former of one term (#5173).
     SeveralResults,
+    /// A printing that writes a constructor bare where more than one family
+    /// or import answers its name, so the lowering refuses it (#5779).
+    BareName,
 }
 
 impl fmt::Display for Held
@@ -654,6 +657,7 @@ impl fmt::Display for Held
             Self::Juxtaposed => "#5200, a type application juxtaposed inside an expression",
             Self::Withdrawn => "#5207, a product of thunk types the formatter withdraws in a quote",
             Self::SeveralResults => "#5173, a bind of a call's outputs",
+            Self::BareName => "#5779, a constructor written bare where its name is ambiguous",
         })
     }
 }
@@ -876,6 +880,9 @@ struct Read
     /// The declarations refused as a type the type grammar reads no
     /// juxtaposition in, by name.
     juxtaposed: BTreeSet<String>,
+    /// The declarations refused for a bare name that more than one family or
+    /// import answers, by name.
+    bare: BTreeSet<String>,
 }
 
 /// Each completed declaration `written` writes as a `def`, read by the
@@ -1063,6 +1070,14 @@ fn read(
                 let _first = read.juxtaposed.insert(format!("{}", declaration.name()));
                 continue;
             },
+            // A bare name that two families or two imports answer.
+            DeclarationOutcome::Refused(
+                LoweringRefusal::AmbiguousConstructor { .. }
+                | LoweringRefusal::ImportShadows { .. },
+            ) => {
+                let _first = read.bare.insert(format!("{}", declaration.name()));
+                continue;
+            },
             DeclarationOutcome::Refused(_)
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
@@ -1200,7 +1215,9 @@ fn substituted(
 /// written — and every declaration the printer spells whole in `variant`.
 /// A declaration of `printed` completes in its own source, so a variant
 /// that refuses it for a mode word off a receiver, or for an extra operand,
-/// reads the printing's juxtaposed type application (#5200).
+/// reads the printing's juxtaposed type application (#5200), and a variant
+/// that refuses it for an ambiguous bare name reads a constructor the
+/// printing writes bare (#5779).
 ///
 /// # Specification
 /// trivial.
@@ -1236,6 +1253,12 @@ fn reading_back(
                         .juxtaposed
                         .contains(&declaration.name)
                         .then_some(Held::Juxtaposed)
+                })
+                .or_else(|| {
+                    again
+                        .bare
+                        .contains(&declaration.name)
+                        .then_some(Held::BareName)
                 })
                 .map(|held| (declaration.name.clone(), held))
         })
