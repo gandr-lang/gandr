@@ -376,6 +376,15 @@ pub enum Real
     Power(RealId, Power),
     /// A real defined by its cut, which binds one variable.
     Cut(Cut),
+    /// π, a builtin whose enclosure rule is the series of Machin.
+    Pi,
+    /// The cosine of a real, a builtin.
+    Cos(RealId),
+    /// The sine of a real, a builtin.
+    Sin(RealId),
+    /// The angle of the point `(x, y)`, a builtin: from `−π` to `π`, and `0`
+    /// at the origin. The first child is `x`, the second `y`.
+    Arg(RealId, RealId),
 }
 
 /// A node of sort open: an open proposition, which a refinement can confirm
@@ -650,12 +659,17 @@ impl Node
             scope: Scope::Same,
         };
         let (edges, count) = match *self {
-            Self::Real(Real::Bound(_) | Real::Constant(_))
+            Self::Real(Real::Bound(_) | Real::Constant(_) | Real::Pi)
             | Self::Open(Open::Top | Open::Bottom)
             | Self::Domain(Domain::Interval { .. }) => ([none, none, none], 0),
-            Self::Real(Real::Power(base, _)) => ([real(base), none, none], 1),
+            Self::Real(Real::Power(base, _) | Real::Cos(base) | Real::Sin(base)) => {
+                ([real(base), none, none], 1)
+            },
             Self::Real(
-                Real::Add(left, right) | Real::Sub(left, right) | Real::Mul(left, right),
+                Real::Add(left, right)
+                | Real::Sub(left, right)
+                | Real::Mul(left, right)
+                | Real::Arg(left, right),
             )
             | Self::Open(
                 Open::Less(left, right) | Open::LowerCut(left, right) | Open::UpperCut(left, right),
@@ -720,7 +734,10 @@ impl Node
     {
         return Ok(match self {
             Self::Real(node) => Self::Real(match node {
-                Real::Bound(_) | Real::Constant(_) => node,
+                Real::Bound(_) | Real::Constant(_) | Real::Pi => node,
+                Real::Cos(argument) => Real::Cos(RealId(place(argument.0)?)),
+                Real::Sin(argument) => Real::Sin(RealId(place(argument.0)?)),
+                Real::Arg(x, y) => Real::Arg(RealId(place(x.0)?), RealId(place(y.0)?)),
                 Real::Add(left, right) => {
                     Real::Add(RealId(place(left.0)?), RealId(place(right.0)?))
                 },

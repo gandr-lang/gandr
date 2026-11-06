@@ -1,6 +1,7 @@
 //! `gandr run` of the exact reals exemplars: the host admits the plan of the
-//! square root of two and prints the two ends of an enclosure of it, and its
-//! machines decide comparisons, stop by name, and resume from a checkpoint.
+//! square root of two and prints the two ends of an enclosure of it, its
+//! machines decide comparisons, stop by name, and resume from a checkpoint,
+//! and it encloses reals that read π, the cosine, the sine and an angle.
 
 use std::path::Path;
 use std::process::Command;
@@ -63,4 +64,35 @@ fn gandr_run_decides_comparisons_5703()
             String::from_utf8_lossy(&ran.stderr)
         );
     }
+}
+
+/// #5786: `gandr run` of the trigonometry exemplar decides that
+/// `cos (π/4)` and `sin (π/4)` each lie between `0.7071` and `0.7072`. It
+/// then prints the two ends of an enclosure of the Euler angle `β₁` for
+/// `α₁ = 1`, `α₂ = 1` and `α₃ = 1/2`, and exits 0. The two ends are
+/// `0.43052850328517242567…` and `0.43052850328517242704…`, and `β₁` is
+/// `0.43052850328517242635…`.
+#[test]
+fn gandr_run_decides_and_encloses_through_the_builtins_5786()
+{
+    let exemplar =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals/trigonometry.gandr");
+    let unconfigured = std::env::temp_dir().join("gandr-driver-unconfigured");
+    let ran = Command::new(env!("CARGO_BIN_EXE_gandr"))
+        .arg("run")
+        .arg(&exemplar)
+        .env("XDG_CONFIG_HOME", &unconfigured)
+        .output()
+        .expect("the run starts");
+    assert_eq!(
+        (ran.status.code(), String::from_utf8_lossy(&ran.stdout)),
+        (
+            Some(0_i32),
+            "holds holds holds holds\n586005032499230016071096543046997561923p-130 \
+             586005032499230017944185075441990931755p-130\n"
+                .into()
+        ),
+        "the run prints the verdicts and the enclosure: {}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
 }

@@ -1,0 +1,115 @@
+// A program decides two bounds on `cos (π/4)` and on `sin (π/4)`, and
+// encloses an angle of a gate. It works through `std.reals.Eff`, the host
+// interface of exact reals. Each value lies between `0.7071` and `0.7072`.
+// The angle is `β₁` of the Euler decomposition of the gate.
+//
+// No plan of field operations and cuts defines a transcendental real. So π,
+// the cosine, the sine and the angle of a point are builtin nodes of a plan.
+// Four plans compare `10000 · cos (π · 1/4)` and `10000 · sin (π · 1/4)` with
+// `7071` and `7072`. The fifth plan's root is the angle `β₁` of the
+// decomposition for `α₁ = 1`, `α₂ = 1` and `α₃ = 1/2`. That angle is
+// `arg (cos h · cos x⁺, sin h · cos x⁻) + arg (cos h · sin x⁺, −sin h · sin x⁻)`,
+// with `x⁺ = (α₁ + α₃)/2`, `x⁻ = x⁺ − α₃` and `h = α₂/2`.
+//
+// The host encloses each builtin by its rule at a precision that doubles, and
+// the checker replays each step before the host replies. `gandr run
+// trigonometry.gandr` prints `holds` four times on one line. It then prints
+// the two ends of an enclosure of `β₁` no wider than `2^-16`, near
+// `0.4305285`. The same `decided` and `enclosed` run under a handler of this
+// source, a second model of the interface.
+//
+// - see: `crates/theory-exact-reals/src/elementary.rs` — the enclosure rules
+//   of the builtins
+// - see: `corpus/model/reals/comparison.gandr` — a comparison of a cut
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+// The join of two strings.
+import std.string (concat);
+
+/// The canonical bytes of the plan of `7071 < 10000 · cos (π · 1/4)` in
+/// lowercase hexadecimal: 8 nodes in 91 bytes, the magic `GXRP` first.
+pub def cosineAbove : String = "4758525001000800000000000000020000000002000000000000009f1b0204000000020000000000000071020902feffffff0100000000000000010502000000030000000a04000000050100000005000000120000000006000000";
+
+/// The canonical bytes of the plan of `10000 · cos (π · 1/4) < 7072`: 8
+/// nodes in 91 bytes.
+pub def cosineBelow : String = "47585250010008000000000000000204000000020000000000000071020902feffffff0100000000000000010501000000020000000a0300000005000000000400000002050000000200000000000000dd00120500000006000000";
+
+/// The canonical bytes of the plan of `7071 < 10000 · sin (π · 1/4)`: 8
+/// nodes in 91 bytes.
+pub def sineAbove : String = "4758525001000800000000000000020000000002000000000000009f1b0204000000020000000000000071020902feffffff0100000000000000010502000000030000000b04000000050100000005000000120000000006000000";
+
+/// The canonical bytes of the plan of `10000 · sin (π · 1/4) < 7072`: 8
+/// nodes in 91 bytes.
+pub def sineBelow : String = "47585250010008000000000000000204000000020000000000000071020902feffffff0100000000000000010501000000020000000b0300000005000000000400000002050000000200000000000000dd00120500000006000000";
+
+/// The canonical bytes of the plan of `β₁` for `α₁ = 1`, `α₂ = 1` and
+/// `α₃ = 1/2`: 21 nodes in 193 bytes.
+pub def betaOne : String = "4758525001001500000000000000020000000001000000000000000102ffffffff0100000000000000010500000000010000000a020000000300000000010000000504000000010000000a050000000503000000060000000b020000000405000000010000000a0900000005080000000a0000000c070000000b0000000b0500000005030000000d000000020000000000000000000000000b09000000050800000010000000040f000000110000000c0e00000012000000030c00000013000000";
+
+/// The verdict on the open root of `plan` after at most `quanta` quanta.
+pub def decided(plan : String, quanta : Integer) -> [std.reals.Eff] String =
+  let held = std.reals.admit plan
+  let *{verdict, machine} = std.reals.decide held quanta
+  verdict
+
+/// The verdicts on the four bounds, a space between each two.
+pub def bounds() -> [std.reals.Eff] String =
+  let first = decided cosineAbove 16
+  let second = decided cosineBelow 16
+  let third = decided sineAbove 16
+  let fourth = decided sineBelow 16
+  concat first (concat " " (concat second (concat " " (concat third (concat " " fourth)))))
+
+/// The ends of an enclosure of the root of `plan` no wider than `2^-k`, the
+/// lower end first and a space between them.
+pub def enclosed(plan : String, k : Integer) -> [std.reals.Eff] String =
+  let held = std.reals.admit plan
+  let *{lower, upper} = std.reals.enclose held k
+  concat lower (concat " " upper)
+
+/// `bounds` under a handler of this source, a second model of
+/// `std.reals.Eff` that decides each root true.
+@[ runs("\"holds holds holds holds\"") ]
+def boundsModelled() -> String =
+  handle r : std.reals.Eff {
+    bounds ()
+  } with {
+    | pure(x) => pure x
+    | oper admit(plan, k) => k 0
+    | oper enclose(asked, k) => k "0p0" "1p0"
+    | oper decide(asked, k) => k "holds" 0
+    | oper step(machine, k) => k "holds" machine
+    | oper checkpoint(machine, k) => k ""
+    | oper restore(text, k) => k 0
+    | oper report(machine, k) => k #[15, 2, 8]
+  }
+
+/// `enclosed` under a handler of this source, a second model of
+/// `std.reals.Eff` that answers each enclosure with `0` and `1/2`.
+@[ runs("\"0p0 1p-1\"") ]
+def enclosedModelled() -> String =
+  handle r : std.reals.Eff {
+    enclosed betaOne 16
+  } with {
+    | pure(x) => pure x
+    | oper admit(plan, k) => k 0
+    | oper enclose(asked, k) => k "0p0" "1p-1"
+    | oper decide(asked, k) => k "holds" 0
+    | oper step(machine, k) => k "holds" machine
+    | oper checkpoint(machine, k) => k ""
+    | oper restore(text, k) => k 0
+    | oper report(machine, k) => k #[0, 0, 0]
+  }
+
+/// The entry: decide the four bounds within 16 quanta each, and print the
+/// verdicts. Then enclose `β₁` no wider than `2^-16`, print its two ends, and
+/// exit with 0.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let verdicts = bounds ()
+  std.io.Console.print verdicts
+  let ends = enclosed betaOne 16
+  std.io.Console.print ends
+  0

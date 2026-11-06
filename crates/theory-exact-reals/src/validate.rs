@@ -709,7 +709,14 @@ fn payload(
     };
     match *node {
         Node::Real(ref real) => match *real {
-            Real::Bound(_) | Real::Add(..) | Real::Sub(..) | Real::Mul(..) => {},
+            Real::Bound(_)
+            | Real::Add(..)
+            | Real::Sub(..)
+            | Real::Mul(..)
+            | Real::Pi
+            | Real::Cos(_)
+            | Real::Sin(_)
+            | Real::Arg(..) => {},
             Real::Constant(ref value) => narrow(value, quotas)?,
             Real::Div { nonzero, .. } => expect(nonzero, Judgement::NonZero)?,
             Real::Power(_, power) => {

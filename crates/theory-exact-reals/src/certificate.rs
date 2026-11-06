@@ -31,18 +31,13 @@
 //! |`Outside`|the same node, and an enclosure of the point whose end toward the cut's value lies outside that cut|the open node fails|
 //! |`Variable`|the variable at index zero and a closed interval|the variable lies in it, under that hypothesis|
 //! |`Sum`, `Difference`, `Product`|the node, and enclosures of its operands|the exact result on them|
+//! |`Pi`|the π node and a precision|the enclosure of π by its rule at that precision|
+//! |`Cosine`, `Sine`|the node, an enclosure of its argument, and a precision|the enclosure of the rule over that enclosure|
+//! |`Angle`|the node, enclosures of its two coordinates, and a precision|the enclosure of the rule over their box|
 //! |`Witness`|an existential over an interval, and its body holding under a hypothesis inside it|the existential holds|
 //! |`Cover`|a universal over a closed interval, and its body holding under hypotheses that tile it in order|the universal holds|
 //! |`Counterexample`|an overt universal, and its body failing under a hypothesis inside its domain|the universal fails|
 //! |`Refutation`|a compact existential, and its body failing under hypotheses that tile its domain in order|the existential fails|
-//!
-//! The checker's work is bounded. [`CheckerQuotas`] bounds the steps of a
-//! certificate and the width of each dyadic in it, and the checker refuses a
-//! certificate past a bound. Replay is linear in the steps and in the
-//! premises of each cover. Each step costs at most one exact square or four
-//! exact products of dyadics within the width bound. A
-//! certificate states its [`FormatVersion`], and the checker refuses another
-//! format.
 //!
 //! # Items
 //!
@@ -50,6 +45,16 @@
 //! - [`check`], [`Checked`], [`Conclusion`] — the replay and what it proves.
 //! - [`CheckerQuotas`], [`StepCount`] — the bounds of the replay.
 //! - [`CertificateRefusal`], [`CertificateCheck`], [`StepSite`] — a refusal.
+//!
+//! The checker's work is bounded. [`CheckerQuotas`] bounds the steps of a
+//! certificate and the width of each dyadic in it, and the checker refuses a
+//! certificate past a bound. Replay is linear in the steps and in the
+//! premises of each cover. An arithmetic step costs at most one exact square
+//! or four exact products of dyadics within the width bound. A builtin's
+//! step sums the series of its rule at its precision `p`: at most `4p + 64`
+//! terms each, and each term costs one rounded product or division within
+//! the width bound. A certificate states its [`FormatVersion`], and the
+//! checker refuses another format.
 
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -61,6 +66,11 @@ use crate::dyadic::BitWidth;
 use crate::dyadic::Dyadic;
 use crate::dyadic::Precision;
 use crate::dyadic::Rounding;
+use crate::elementary::angle;
+use crate::elementary::cosine;
+use crate::elementary::pi;
+use crate::elementary::sine;
+use crate::elementary::width;
 use crate::interval::Bound;
 use crate::interval::Closure;
 use crate::interval::Endpoint;
@@ -394,6 +404,49 @@ pub enum Step
         /// The cut that the point lies outside.
         side: Side,
     },
+    /// π lies in the enclosure of its rule at a precision.
+    Pi
+    {
+        /// The π node.
+        real: NodeId,
+        /// The absolute bits of the rule.
+        precision: Precision,
+    },
+    /// A cosine lies in the enclosure of its rule over its argument's
+    /// enclosure at a precision.
+    Cosine
+    {
+        /// The cosine.
+        real: NodeId,
+        /// The step that encloses the argument.
+        argument: StepId,
+        /// The absolute bits of the rule.
+        precision: Precision,
+    },
+    /// A sine lies in the enclosure of its rule over its argument's enclosure
+    /// at a precision.
+    Sine
+    {
+        /// The sine.
+        real: NodeId,
+        /// The step that encloses the argument.
+        argument: StepId,
+        /// The absolute bits of the rule.
+        precision: Precision,
+    },
+    /// An angle lies in the enclosure of its rule over the box of its
+    /// coordinates' enclosures at a precision.
+    Angle
+    {
+        /// The angle.
+        real: NodeId,
+        /// The step that encloses the first coordinate.
+        x: StepId,
+        /// The step that encloses the second coordinate.
+        y: StepId,
+        /// The absolute bits of the rule.
+        precision: Precision,
+    },
 }
 
 impl Step
@@ -509,6 +562,39 @@ impl Step
                 open: rename(open)?,
                 point,
                 side,
+            },
+            Self::Pi { real, precision } => Self::Pi {
+                real: rename(real)?,
+                precision,
+            },
+            Self::Cosine {
+                real,
+                argument,
+                precision,
+            } => Self::Cosine {
+                real: rename(real)?,
+                argument,
+                precision,
+            },
+            Self::Sine {
+                real,
+                argument,
+                precision,
+            } => Self::Sine {
+                real: rename(real)?,
+                argument,
+                precision,
+            },
+            Self::Angle {
+                real,
+                x,
+                y,
+                precision,
+            } => Self::Angle {
+                real: rename(real)?,
+                x,
+                y,
+                precision,
             },
         });
     }
@@ -1006,6 +1092,14 @@ fn derive(
         }
         return Ok(());
     };
+    // A builtin's rule works at its precision plus guard bits, which the
+    // width quota bounds as it bounds a dyadic.
+    let within = |precision: Precision| {
+        if width(precision) > quotas.width {
+            return Err(CertificateCheck::WidthQuota);
+        }
+        return Ok(());
+    };
     let premise = |id: StepId| {
         earlier
             .get(usize::from(id))
@@ -1289,6 +1383,70 @@ fn derive(
                     .map(|&id| body(id, quantifier.body.node(), Pole::Fails)),
             )?;
             Ok(Derived::closed(Conclusion::Fails { open: exists }))
+        },
+        Step::Pi { real, precision } => {
+            let Node::Real(Real::Pi) = *node(real)?
+            else {
+                return Err(CertificateCheck::WrongNode);
+            };
+            within(precision)?;
+            Ok(Derived::closed(Conclusion::Encloses {
+                real,
+                interval: pi(precision)?,
+            }))
+        },
+        Step::Cosine {
+            real,
+            argument,
+            precision,
+        }
+        | Step::Sine {
+            real,
+            argument,
+            precision,
+        } => {
+            let wave = matches!(*step, Step::Cosine { .. });
+            let operand = match (node(real)?, wave) {
+                (&Node::Real(Real::Cos(operand)), true)
+                | (&Node::Real(Real::Sin(operand)), false) => operand,
+                (&(Node::Real(_) | Node::Open(_) | Node::Domain(_)), true | false) => {
+                    return Err(CertificateCheck::WrongNode);
+                },
+            };
+            within(precision)?;
+            let (interval, hypothesis) = enclosure(argument, operand.node())?;
+            let interval = if wave {
+                cosine(interval, precision)?
+            }
+            else {
+                sine(interval, precision)?
+            };
+            Ok(Derived {
+                conclusion: Conclusion::Encloses { real, interval },
+                hypothesis: hypothesis.cloned(),
+            })
+        },
+        Step::Angle {
+            real,
+            x,
+            y,
+            precision,
+        } => {
+            let Node::Real(Real::Arg(first, second)) = *node(real)?
+            else {
+                return Err(CertificateCheck::WrongNode);
+            };
+            within(precision)?;
+            let (first, first_hypothesis) = enclosure(x, first.node())?;
+            let (second, second_hypothesis) = enclosure(y, second.node())?;
+            let hypothesis = joint(first_hypothesis, second_hypothesis)?;
+            Ok(Derived {
+                conclusion: Conclusion::Encloses {
+                    real,
+                    interval: angle(first, second, precision)?,
+                },
+                hypothesis,
+            })
         },
     };
 }
