@@ -93,8 +93,10 @@ use gandr_surface_syntax::SourceText;
 
 use super::ParseResult;
 use super::molded;
+use super::molded_moving;
 use super::ordered;
 use crate::label::Lexeme;
+use crate::label::Move;
 use crate::label::Token;
 use crate::label::cut_in;
 use crate::label::label;
@@ -147,21 +149,41 @@ struct Frame
     items: Items,
 }
 
-/// One place: the tiles written at the end of a token, in order, or one tile
-/// written in place of a misspelt word.
+/// What a place does to the copy that judges it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Act
+{
+    /// The tiles written at the end of a token, in order, or one tile written
+    /// in place of a misspelt word.
+    Writes
+    {
+        /// The tiles, each its own token.
+        tiles: Vec<&'static str>,
+        /// How many source bytes from the place the tile replaces: none for a
+        /// tile left out.
+        over: usize,
+    },
+    /// The line that begins at the place stays in a layout block that its
+    /// column closes.
+    Moves
+    {
+        /// How many of the blocks that the line's column closes the line
+        /// closes, innermost first.
+        closes: u32,
+    },
+}
+
+/// One place, and what it does to the copy that judges it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Gap
 {
-    /// Where the tiles are written.
+    /// Where the tiles are written, or where the moved line begins.
     at: ByteOffset,
-    /// The tiles, each its own token.
-    tiles: Vec<&'static str>,
-    /// How many source bytes from `at` the tile replaces: none for a tile
-    /// left out.
-    over: usize,
+    /// What the place writes or moves.
+    act: Act,
     /// Whether the place is kept only when its copy owes nothing in the
-    /// top-level form it stands in: a closer, a sibling separator or a
-    /// keyword. A `,` alone before a line is kept by its count.
+    /// top-level form it stands in: a closer, a sibling separator, a keyword
+    /// or a move. A `,` alone before a line is kept by its count.
     cleared: bool,
 }
 
@@ -313,8 +335,9 @@ fn class(
     }
 }
 
-/// The places the gap before each line and the sibling separators give in
-/// `text`, labelled as `tokens`, and the words a keyword may stand for.
+/// The places the gap before each line, the layout closers before it and the
+/// sibling separators give in `text`, labelled as `tokens`, and the words a
+/// keyword may stand for.
 ///
 /// # Specification
 /// - requires: `tokens` label `text`.
@@ -328,8 +351,13 @@ fn class(
 ///   no `,`. In `siblings`, a `,` between each two tokens on one line, apart,
 ///   the first ending an operand and the second beginning one, directly inside
 ///   a group. Each place stands at the end of the token before it, in source
-///   order. In `words`, each lower-case word of two or more bytes that is no
-///   keyword, outside a shell block or an interpolation, in source order.
+///   order. Also in `lines`, `k` moves at the first token of each line before
+///   which the layout pass closes `k > 0` blocks, one for each count of closes
+///   from 0 to `k - 1`, when the token neither closes nor separates, no shell
+///   block or interpolation is open, and the innermost open frame is none or a
+///   layout block whose items stand at another column. In `words`, each
+///   lower-case word of two or more bytes that is no keyword, outside a shell
+///   block or an interpolation, in source order.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
@@ -343,6 +371,7 @@ fn class(
 /// - witness: `parse::gap::tests::a_separator_left_out_between_siblings_is_minted_5433`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
 /// - witness: `parse::gap::tests::a_source_that_owes_nothing_keeps_its_parse_5433`
+/// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
 fn gaps<'text>(
     text: SourceText<'text>,
     tokens: &[Token],
@@ -356,6 +385,9 @@ fn gaps<'text>(
     let mut line_start = 0_u32;
     let mut line_column = 0_u32;
     let mut broken = false;
+    // How many layout blocks the pass closes after the last significant
+    // token.
+    let mut closing = 0_u32;
     // The token before the current one: where it ends, whether it opens a
     // bracket, whether it is a `,`, and whether it ends an operand.
     let mut previous: Option<(u32, bool, bool, bool)> = None;
@@ -374,10 +406,11 @@ fn gaps<'text>(
             },
             Lexeme::LayoutSemi => continue,
             Lexeme::LayoutOpen => {
-                stack.push(open(Kind::Block, line_column, Items::Inline));
+                stack.push(open(Kind::Block, line_column, Items::Unread));
                 continue;
             },
             Lexeme::LayoutClose => {
+                closing = closing.saturating_add(1);
                 if stack.pop().is_some_and(|frame| frame.kind == Kind::Opaque) {
                     opaque = opaque.saturating_sub(1);
                 }
@@ -408,6 +441,32 @@ fn gaps<'text>(
         let leads = core::mem::replace(&mut broken, false);
         if leads {
             line_column = column;
+        }
+        // A line before which the layout pass closes blocks, and which stands
+        // at no column of a block left open, may stay in each block it closes.
+        // A word at column zero begins a form, so no form holds one after its
+        // first line.
+        if leads
+            && closing > 0
+            && opaque == 0
+            && class.bracketing != Bracketing::Closes
+            && !class.separates
+            && match stack.last() {
+                None => true,
+                Some(&Frame {
+                    kind: Kind::Block,
+                    items: Items::At(items),
+                    ..
+                }) => items != column,
+                Some(_) => false,
+            }
+        {
+            let at = ByteOffset::from(usize::try_from(token.start).unwrap_or(usize::MAX));
+            places.lines.extend((0 .. closing).map(|closes| Gap {
+                at,
+                act: Act::Moves { closes },
+                cleared: true,
+            }));
         }
         if leads
             && column > 0
@@ -443,8 +502,7 @@ fn gaps<'text>(
                 let cleared = tiles.iter().any(|&tile| tile != ",");
                 places.lines.push(Gap {
                     at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
-                    tiles,
-                    over: 0,
+                    act: Act::Writes { tiles, over: 0 },
                     cleared,
                 });
             }
@@ -461,8 +519,10 @@ fn gaps<'text>(
         {
             places.siblings.push(Gap {
                 at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
-                tiles: alloc::vec![","],
-                over: 0,
+                act: Act::Writes {
+                    tiles: alloc::vec![","],
+                    over: 0,
+                },
                 cleared: true,
             });
         }
@@ -502,19 +562,36 @@ fn gaps<'text>(
             class.separates,
             matches!(class.edge, Edge::Ends | Edge::Both),
         ));
+        closing = 0;
     }
     places
 }
 
+/// A copy of a form or of the source with places written in, as [`written`]
+/// answers it.
+#[derive(Debug)]
+struct Written
+{
+    /// The copy.
+    copy: String,
+    /// One splice per tile written, in copy order, each beside where its tile
+    /// starts in the copy.
+    splices: Vec<(Splice, ByteOffset)>,
+    /// One move per moved line, in copy order, at the line's start in the
+    /// copy.
+    moves: Vec<Move>,
+}
+
 /// `text` with the tiles of each of `gaps` written in, and their splices,
-/// each read back as minted.
+/// each read back as minted, and the moves of the lines `gaps` moves.
 ///
 /// # Specification
-/// - requires: `gaps` stand in source order.
+/// - requires: `gaps` stand in source order, a move before a tile at one place.
 /// - ensures: the copy and one splice per tile, in copy order, each with an
 ///   empty postfix grout of the source boundary's sort as its label until
 ///   [`minted`] reads the copy's molds. A place that replaces a word writes its
-///   tile in place of the word's bytes, with no space around it.
+///   tile in place of the word's bytes, with no space around it. Each move
+///   names where its line starts in the copy.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the concatenation.
@@ -523,23 +600,36 @@ fn gaps<'text>(
 /// - hypothesis: L3 — as [`gapped`].
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
+/// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
 fn written(
     region: SourceText<'_>,
     base: ByteOffset,
     gaps: &[&Gap],
-) -> Option<(String, Vec<(Splice, ByteOffset)>)>
+) -> Option<Written>
 {
     let text = <&str>::from(region);
     let base = usize::from(base);
     let mut copy = String::with_capacity(text.len().saturating_add(gaps.len().saturating_mul(4)));
     let mut splices = Vec::new();
+    let mut moves = Vec::new();
     let mut from = 0_usize;
     for gap in gaps {
         let at = usize::from(gap.at).checked_sub(base)?;
         copy.push_str(text.get(from .. at)?);
-        let after = at.checked_add(gap.over)?;
+        from = at;
+        let (tiles, over) = match gap.act {
+            Act::Moves { closes } => {
+                moves.push(Move {
+                    line: u32::try_from(copy.len()).ok()?,
+                    closes,
+                });
+                continue;
+            },
+            Act::Writes { ref tiles, over } => (tiles, over),
+        };
+        let after = at.checked_add(over)?;
         let mut word = text.get(at .. after)?;
-        for &tile in &gap.tiles {
+        for &tile in tiles {
             let spelled = if word.is_empty() {
                 cut_in(region, ByteOffset::from(at), SourceText::from(tile))
             }
@@ -559,7 +649,11 @@ fn written(
         from = after;
     }
     copy.push_str(text.get(from ..)?);
-    Some((copy, splices))
+    Some(Written {
+        copy,
+        splices,
+        moves,
+    })
 }
 
 /// The keyword a misspelt `word` stands for: the keyword nearest it, when
@@ -638,19 +732,22 @@ struct Form<'gap>
 /// - requires: `parsed` is a parse under `pbg`.
 /// - ensures: `parsed` when it owes nothing, no place the search tries is kept,
 ///   or the copy with every kept place written in owes no fewer obligations;
-///   otherwise the parse of that copy, read back over the source with each
-///   written tile minted at its place, its obligations those of the copy,
-///   shifted back over the tiles, one [`Oblig::MissingTile`] at each minted
-///   tile's place and one [`Oblig::IncompleteTile`] over each misspelt word.
-///   The scan reads only the top-level forms, [`form_around`], that hold an
-///   obligation. The search tries their places before each line in source
-///   order, then their sibling places and the keywords [`misspelt`] gives for
-///   the [`COPIES`] words nearest an obligation, nearest first, [`COPIES`]
-///   places in all. Each place is judged in a copy of its form with the places
-///   kept there before it. A place is kept when that copy owes fewer
-///   obligations than the form alone, each minted tile counting as one. A
-///   closer, a sibling separator or a keyword is kept only when the copy owes
-///   nothing but its minted tiles.
+///   otherwise the parse of that copy, with each kept line moved, read back
+///   over the source with each written tile minted at its place, its
+///   obligations those of the copy, shifted back over the tiles, one
+///   [`Oblig::MissingTile`] at each minted tile's place and at the start of
+///   each moved line, and one [`Oblig::IncompleteTile`] over each misspelt
+///   word. The scan reads only the top-level forms, [`form_around`], that hold
+///   an obligation. The search tries their places before each line in source
+///   order, each move of a line innermost block first, then their sibling
+///   places and the keywords [`misspelt`] gives for the [`COPIES`] words
+///   nearest an obligation, nearest first, [`COPIES`] places in all. Each place
+///   is judged in a copy of its form with the places kept there before it, a
+///   move in place of a move of its own line. A place is kept when that copy
+///   owes fewer obligations than the form alone, each minted tile and each
+///   moved line counting as one. A closer, a sibling separator, a keyword or a
+///   move is kept only when the copy owes nothing but its minted tiles and its
+///   moved lines.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -661,12 +758,13 @@ struct Form<'gap>
 ///   leaves open owes the `)` and the `,` there; two arguments side by side owe
 ///   the `,` between them; a misspelt `matc` owes its word alone; a `)` deleted
 ///   inside a line with a repair after it is not minted at the line's end; a
-///   source that owes nothing, and one whose places all owe more, keep their
-///   parse.
+///   line at column zero inside nested blocks owes only its own line; a source
+///   that owes nothing, and one whose places all owe more, keep their parse.
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_separator_left_out_between_siblings_is_minted_5433`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
 /// - witness: `parse::gap::tests::a_closer_deleted_inside_a_line_is_not_minted_at_its_end_5433`
+/// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
 /// - witness: `parse::gap::tests::a_source_that_owes_nothing_keeps_its_parse_5433`
 pub(super) fn gapped<'source>(
     pbg: &Pbg,
@@ -731,8 +829,10 @@ pub(super) fn gapped<'source>(
     near.extend(words.iter().take(COPIES).filter_map(|&(at, word)| {
         misspelt(pbg, word).map(|keyword| Gap {
             at,
-            tiles: alloc::vec![keyword.0],
-            over: <&str>::from(word).len(),
+            act: Act::Writes {
+                tiles: alloc::vec![keyword.0],
+                over: <&str>::from(word).len(),
+            },
             cleared: true,
         })
     }));
@@ -752,14 +852,22 @@ pub(super) fn gapped<'source>(
             kept: Vec::new(),
         });
         let mut trial = form.kept.clone();
+        // A move competes with a move of its own line kept before it.
+        if let Act::Moves { .. } = place.act {
+            trial.retain(|kept| kept.at != place.at || matches!(kept.act, Act::Writes { .. }));
+        }
         trial.push(place);
-        trial.sort_by_key(|gap| gap.at);
-        let Some((copy, written)) = written(region, start, &trial)
+        trial.sort_by_key(|gap| (gap.at, matches!(gap.act, Act::Writes { .. })));
+        let Some(copy) = written(region, start, &trial)
         else {
             continue;
         };
-        let own = molded(pbg, SourceText::from(copy.as_str())).owed().len();
-        let owed = own.saturating_add(written.len());
+        let own = molded_moving(pbg, SourceText::from(copy.copy.as_str()), &copy.moves)
+            .owed()
+            .len();
+        let owed = own
+            .saturating_add(copy.splices.len())
+            .saturating_add(copy.moves.len());
         if owed < form.best && (own == 0 || !place.cleared) {
             form.best = owed;
             form.kept = trial;
@@ -769,7 +877,7 @@ pub(super) fn gapped<'source>(
     if kept.is_empty() {
         return parsed;
     }
-    kept.sort_by_key(|gap| gap.at);
+    kept.sort_by_key(|gap| (gap.at, matches!(gap.act, Act::Writes { .. })));
     match minted(pbg, source, &kept) {
         Some(repaired) if repaired.obligations.len() < parsed.obligations.len() => repaired,
         Some(_) | None => parsed,
@@ -777,24 +885,31 @@ pub(super) fn gapped<'source>(
 }
 
 /// The top-level form `at` stands in: from the start of the last line at or
-/// before `at` that begins a form at column zero to the start of the next
-/// such line. A line that begins with a closer at column zero continues the
-/// form it closes.
+/// before `at` that begins a form to the start of the next such line. A line
+/// begins a form when its first byte is a lower-case letter, `_`, `@` or `/`:
+/// the start of a declaration's keyword, of an attribute or of a comment
+/// before a declaration. The labeler resets only at a word or an attribute
+/// at column zero, so a line that a closer, a `|` or an upper-case word
+/// begins continues the form before it. An arm typed before it is indented
+/// thus stays in its declaration's form, where a move can keep it in its
+/// block.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `(start, end)` with `start <= at <= end`, each the start of a
-///   line whose first byte is neither whitespace nor `)`, `]` or `}`, the start
-///   of `text` or its end.
+///   line whose first byte is a lower-case ASCII letter, `_`, `@` or `/`, the
+///   start of `text` or its end.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`gapped`]: a record type whose `}` stands at column
-///   zero is one form with the field the line leaves open.
+///   zero is one form with the field the line leaves open, and an arm at column
+///   zero is one form with its declaration.
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_closer_deleted_inside_a_line_is_not_minted_at_its_end_5433`
+/// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
 fn form_around(
     text: SourceText<'_>,
     at: ByteOffset,
@@ -804,7 +919,7 @@ fn form_around(
     let leads = |line: usize| {
         text.as_bytes()
             .get(line)
-            .is_some_and(|&byte| !byte.is_ascii_whitespace() && !matches!(byte, b')' | b']' | b'}'))
+            .is_some_and(|&byte| matches!(byte, b'a' ..= b'z' | b'_' | b'@' | b'/'))
     };
     let line_of = |offset: usize| {
         text.get(.. offset)
@@ -826,11 +941,12 @@ fn form_around(
 }
 
 /// The parse of `source` with the tiles of `kept` written in and read back as
-/// minted: a closer as a minted close, a `,` as an empty postfix grout, and a
-/// keyword written over a misspelt word as a prefix grout over the word.
+/// minted, and with each line `kept` moves kept in its block: a closer as a
+/// minted close, a `,` as an empty postfix grout, and a keyword written over
+/// a misspelt word as a prefix grout over the word.
 ///
 /// # Specification
-/// - requires: `kept` stand in source order.
+/// - requires: `kept` stand in source order, a move before a tile at one place.
 /// - ensures: as [`gapped`] for its kept places; `None` when a written tile
 ///   reads as no tile of the copy, or the commit fails.
 /// - fails: never.
@@ -841,15 +957,20 @@ fn form_around(
 /// - hypothesis: L3 — as [`gapped`].
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
+/// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
 fn minted<'source>(
     pbg: &Pbg,
     source: SourceText<'source>,
     kept: &[&Gap],
 ) -> Option<ParseResult<'source>>
 {
-    let (copy, written) = written(source, ByteOffset::from(0_usize), kept)?;
+    let Written {
+        copy,
+        splices: written,
+        moves,
+    } = written(source, ByteOffset::from(0_usize), kept)?;
     let text = SourceText::from(copy.as_str());
-    let state = molded(pbg, text);
+    let state = molded_moving(pbg, text, &moves);
     let mut splices = Vec::with_capacity(written.len());
     for &(splice, at) in &written {
         let tile = <&str>::from(splice.tile(text)?).trim_matches(' ');
@@ -882,19 +1003,25 @@ fn minted<'source>(
         .map(|obligation| splices.obligation(obligation))
         .collect();
     for gap in kept {
-        if gap.over == 0 {
-            let place = ByteSpan::new(gap.at, gap.at).ok()?;
-            for _tile in &gap.tiles {
-                obligations.push(ObligationInstance::new(Oblig::MissingTile, place));
-            }
-        }
-        else {
-            let word = ByteSpan::new(
-                gap.at,
-                ByteOffset::from(usize::from(gap.at).checked_add(gap.over)?),
-            )
-            .ok()?;
-            obligations.push(ObligationInstance::new(Oblig::IncompleteTile, word));
+        match gap.act {
+            Act::Writes { ref tiles, over: 0 } => {
+                let place = ByteSpan::new(gap.at, gap.at).ok()?;
+                for _tile in tiles {
+                    obligations.push(ObligationInstance::new(Oblig::MissingTile, place));
+                }
+            },
+            Act::Writes { over, .. } => {
+                let word = ByteSpan::new(
+                    gap.at,
+                    ByteOffset::from(usize::from(gap.at).checked_add(over)?),
+                )
+                .ok()?;
+                obligations.push(ObligationInstance::new(Oblig::IncompleteTile, word));
+            },
+            Act::Moves { .. } => {
+                let line = ByteSpan::new(gap.at, gap.at).ok()?;
+                obligations.push(ObligationInstance::new(Oblig::MissingTile, line));
+            },
         }
     }
     ordered(&mut obligations);
@@ -1112,6 +1239,71 @@ mod tests
             }),
             "the `)` the line leaves open is not minted at its end, where the copy owes more: {:?}",
             parsed.obligations()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434()
+    -> Result<(), Box<dyn Error>>
+    {
+        // `pick` of `corpus/model/specification/niche-realizability.gandr`,
+        // its arms in two nested arm blocks.
+        let lines = [
+            "def rec pick(a : Nat, b : Nat, yes : Maybe(Nat), no : Maybe(Nat)) -> Maybe(Nat) =",
+            "  match a",
+            "    | Zero => match b",
+            "      | Zero => yes",
+            "      | Succ(_q) => no",
+            "    | Succ(p) => match b",
+            "      | Zero => no",
+            "      | Succ(q) => pick[<] p q yes no",
+            "",
+            "def next = 1;",
+        ];
+        assert_eq!(
+            owed(SourceText::from(lines.join("\n").as_str()))?,
+            [],
+            "the arms at their columns owe nothing"
+        );
+        // Each arm typed at column zero: the first and last arms of each inner
+        // block, and both arms of the outer block.
+        for at in [2_usize, 3, 4, 5, 6, 7] {
+            let typed: alloc::vec::Vec<&str> = lines
+                .iter()
+                .enumerate()
+                .map(|(line, &text)| if line == at { text.trim_start() } else { text })
+                .collect();
+            assert_eq!(
+                owed(SourceText::from(typed.join("\n").as_str()))?,
+                [(Oblig::MissingTile, Line(at.saturating_add(1)))],
+                "the arm on line {} at column zero owes one repair, on its own line",
+                at.saturating_add(1)
+            );
+        }
+        // A word at column zero begins a declaration. The body closes before
+        // it and owes its statement, so the line owes two repairs. A move
+        // would keep the line in the body with one repair, but no move keeps
+        // a word at column zero.
+        let body = [
+            "def g(a : Nat) -> Nat =",
+            "  let b = a;",
+            "  b",
+            "",
+            "def next = 1;",
+        ];
+        assert_eq!(owed(SourceText::from(body.join("\n").as_str()))?, []);
+        let reset = [
+            "def g(a : Nat) -> Nat =",
+            "let b = a;",
+            "  b",
+            "",
+            "def next = 1;",
+        ];
+        assert_eq!(
+            owed(SourceText::from(reset.join("\n").as_str()))?,
+            [(Oblig::MissingTile, Line(2)), (Oblig::MissingTile, Line(2))],
+            "a word at column zero stays a declaration's first line"
         );
         Ok(())
     }

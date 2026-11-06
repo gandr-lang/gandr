@@ -20,6 +20,15 @@
 //! opened, nor a line at column zero. A `)` with no open bracket to close
 //! leaves every block open, so the melder marks it where it stands.
 //!
+//! A line at column zero inside nested blocks gives the column rule no block
+//! to choose, so it closes every block. The melder's dry run judges the line
+//! in each block that its column closes, and it gives the pass the block it
+//! keeps as a [`Move`]: the line closes fewer blocks and stays in that block,
+//! as a line at the block's column does. A block's first line at column zero
+//! closes its block at once. A move that closes nothing opens the block at
+//! the least column of the lines after it, with the moved line as its first
+//! item (#4853, #5434).
+//!
 //! | opener | block | separator |
 //! | --- | --- | --- |
 //! | `=` ending a `def` head that has a `->` result | a statement body | `;` |
@@ -254,6 +263,23 @@ struct Insertion
 }
 
 primitive_copy_wrapper!(
+    /// A column of a line, counted from zero.
+    struct Column(u32);
+);
+
+/// A line that the melder's dry run keeps in a layout block that its column
+/// closes. The block's virtual `}` moves past the line (#4853, #5434).
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Move
+{
+    /// Where the line's first token starts.
+    pub line: u32,
+    /// How many of the blocks that the line's column closes the line closes,
+    /// innermost first. With none, the line stays in the innermost block.
+    pub closes: u32,
+}
+
+primitive_copy_wrapper!(
     /// Whether an item needs a separator to end it.
     struct Unended(bool);
 );
@@ -352,16 +378,25 @@ impl Plan<'_>
 }
 
 /// Write the layout blocks of `bytes` into its labeled and arm-marked
-/// `tokens`, in place.
+/// `tokens`, in place, with each line of `moves` kept in a block that its
+/// column closes.
 ///
 /// # Specification
 /// - requires: `tokens` are [`super::label`]'s tokens of `bytes` before layout,
-///   arm bars marked.
+///   arm bars marked, and `moves` ascend by line.
 /// - ensures: every token of `tokens` stays, in order, with its span; a `=`
 ///   that opens a body is relabeled [`Lexeme::LayoutOpen`]; every other added
 ///   token is a zero-width [`Lexeme::LayoutOpen`], [`Lexeme::LayoutSemi`] or
 ///   [`Lexeme::LayoutClose`] at the end of the significant token before it, so
-///   the spans still tile the source.
+///   the spans still tile the source. A line whose first token starts at a
+///   move's line, and which neither resets nor closes a bracket, closes only
+///   the move's count of the blocks its column closes, and then stays in the
+///   next block as a line at that block's column does. The first of those
+///   blocks is the block an opener waits to open, when the line stands at or
+///   left of the opener's line. A move that closes nothing opens that block at
+///   the least column of the lines after the moved line that stand right of the
+///   opener's line, up to the first line at or left of it, and the moved line
+///   is its first item.
 /// - panics: none.
 /// - executable: none — the clauses compare the stream with itself before the
 ///   pass, which the witnesses do over each rule.
@@ -369,18 +404,21 @@ impl Plan<'_>
 /// # Adequacy
 /// - hypothesis: L3 — each opener, the column rule in a layout block, in a
 ///   brace and at the top level, a dedent, a word at column zero, each place a
-///   separator is left out, and a declaration body's last `;` write their
-///   tokens; a rule left out or misplaced changes a witness's marks.
+///   separator is left out, a declaration body's last `;` and a moved line
+///   write their tokens; a rule left out or misplaced changes a witness's
+///   marks.
 /// - witness: `label::layout::tests::a_line_final_opener_opens_a_block_at_the_next_column`
 /// - witness: `label::layout::tests::a_line_at_the_column_ends_a_statement`
 /// - witness: `label::layout::tests::a_declaration_ends_where_its_form_needs_its_semicolon`
 /// - witness: `label::layout::tests::a_word_at_column_zero_closes_every_block`
+/// - witness: `label::layout::tests::a_moved_line_stays_in_the_block_its_move_names_5434`
 /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
 #[expect(clippy::too_many_lines, reason = "one column-stack state machine")]
 pub(super) fn lay_out(
     bytes: SourceBytes<'_>,
     tokens: &mut Vec<Token>,
     next: Next,
+    mut moves: &[Move],
 )
 {
     let text = |token: &Token| {
@@ -465,13 +503,46 @@ pub(super) fn lay_out(
         let brace = token.lexeme == Lexeme::Punct && spelled == b"{";
         let members = matches!(pending, Pending::Members { .. });
         let mut opened = false;
+        // The move the melder's dry run asks for at this line, and the column
+        // a moved first line opens its opener's block at.
+        let mut step = if line_start && !closer {
+            next_move(&mut moves, token)
+        }
+        else {
+            None
+        };
+        let waiting = match pending {
+            Pending::Body { indent, .. }
+            | Pending::Members { indent }
+            | Pending::Arms { indent, .. } => Some(Column(indent)),
+            Pending::None => None,
+        };
+        let below = step
+            .and(waiting)
+            .and_then(|indent| {
+                block_column(bytes, tokens.get(index ..).unwrap_or_default(), indent)
+            })
+            .map(u32::from);
         let mut open = |frames: &mut Vec<Frame>, plan: &mut Plan<'_>, indent: u32, sep: Sep| {
             if column > indent {
                 frames.push(Frame::new(Kind::Layout { column }, sep));
                 opened = true;
             }
+            // A moved line at or left of its opener's line, whose move closes
+            // nothing, is the block's first line, at the least column of the
+            // lines the block holds after it.
+            else if let Some(Move { closes: 0, .. }) = step
+                && let Some(below) = below
+            {
+                frames.push(Frame::new(Kind::Layout { column: below }, sep));
+                opened = true;
+            }
             else {
                 plan.place(Lexeme::LayoutClose);
+                // The block's close is the first close the move counts.
+                if let Some(Move { ref mut closes, .. }) = step {
+                    *closes = closes.saturating_sub(1);
+                }
             }
         };
         match pending {
@@ -540,7 +611,10 @@ pub(super) fn lay_out(
                 rest: tokens.get(index ..).unwrap_or_default(),
                 column,
             };
-            let stays = !closer && bool::from(dented(bytes, line, &mut frames));
+            let stays = match step {
+                Some(step) => bool::from(moved(&mut plan, &mut frames, line, step)),
+                None => !closer && bool::from(dented(bytes, line, &mut frames)),
+            };
             while !stays
                 && frames.len() > 1
                 && let Some(&frame) = frames.last()
@@ -839,6 +913,116 @@ fn dented(
     Stays(false)
 }
 
+/// The column of the block that a moved line opens, as its first line, when
+/// it stands at or left of its opener's line at `indent`: the least column of
+/// the lines after the first of `rest` that stand right of `indent`, up to
+/// the first line at or left of it.
+///
+/// # Specification
+/// trivial.
+fn block_column(
+    bytes: SourceBytes<'_>,
+    rest: &[Token],
+    indent: Column,
+) -> Option<Column>
+{
+    let indent = u32::from(indent);
+    let mut least: Option<u32> = None;
+    let mut begin: Option<u32> = None;
+    for token in rest.iter().skip(1) {
+        if token.lexeme == Lexeme::Space {
+            if let Some(newline) = bytes
+                .0
+                .get(
+                    usize::try_from(token.start).unwrap_or(usize::MAX)
+                        .. usize::try_from(token.end).unwrap_or(usize::MAX),
+                )
+                .unwrap_or_default()
+                .iter()
+                .rposition(|&byte| byte == b'\n')
+            {
+                begin = Some(
+                    token
+                        .start
+                        .saturating_add(u32::try_from(newline).unwrap_or(u32::MAX))
+                        .saturating_add(1),
+                );
+            }
+            continue;
+        }
+        if let Some(begin) = begin.take() {
+            let column = token.start.saturating_sub(begin);
+            if column <= indent {
+                break;
+            }
+            least = Some(least.map_or(column, |least| least.min(column)));
+        }
+    }
+    least.map(Column)
+}
+
+/// The move of the line that `token` begins, when `moves` holds one, with
+/// `moves` advanced past it and past each move of an earlier line.
+///
+/// # Specification
+/// trivial.
+fn next_move(
+    moves: &mut &[Move],
+    token: Token,
+) -> Option<Move>
+{
+    while let Some((&first, rest)) = moves.split_first()
+        && first.line <= token.start
+    {
+        *moves = rest;
+        if first.line == token.start {
+            return Some(first);
+        }
+    }
+    None
+}
+
+/// Close the layout blocks that `line` stands left of, at most `step.closes`
+/// of them, innermost first, and answer whether the line then stays in the
+/// innermost frame left open: a layout block that the line's column closes.
+///
+/// # Specification
+/// - requires: `frames` are the open frames before the line.
+/// - ensures: each frame closed is a layout block right of the line's column,
+///   at most `step.closes` of them, and the base frame stays; true only when
+///   the innermost frame left open is a layout block right of the line's
+///   column.
+/// - panics: none.
+/// - executable: none — the clauses read the frames before the call, which the
+///   witness fixes for each count.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a line at column zero in two nested blocks stays in the
+///   inner block with no close, in the outer block with one, and in neither
+///   with two; a count off by one moves a witness's line.
+/// - witness: `label::layout::tests::a_moved_line_stays_in_the_block_its_move_names_5434`
+fn moved(
+    plan: &mut Plan<'_>,
+    frames: &mut Vec<Frame>,
+    line: LineStart<'_>,
+    step: Move,
+) -> Stays
+{
+    let right =
+        |frame: &Frame| matches!(frame.kind, Kind::Layout { column } if line.column < column);
+    let mut closed = 0_u32;
+    while closed < step.closes
+        && frames.len() > 1
+        && let Some(&frame) = frames.last()
+        && right(&frame)
+    {
+        plan.close(&frame);
+        frames.pop();
+        closed = closed.saturating_add(1);
+    }
+    Stays(frames.len() > 1 && frames.last().is_some_and(right))
+}
+
 /// What the lines after a line's first token hold, as [`dented`] reads them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NextLine
@@ -971,12 +1155,14 @@ fn insert(
 #[cfg(test)]
 mod tests
 {
+    use alloc::format;
     use alloc::string::String;
 
     use gandr_surface_syntax::SourceFragment;
 
     use super::Lexeme;
-    use crate::label::label;
+    use super::Move;
+    use crate::label::label_moving;
 
     /// `src` with each layout token marked where it stands.
     ///
@@ -984,10 +1170,23 @@ mod tests
     /// trivial.
     fn marked<'text>(src: impl Into<SourceFragment<'text>>) -> String
     {
+        marked_moving(src, &[])
+    }
+
+    /// `src` with each layout token marked where it stands, each line of
+    /// `moves` kept in the block its move names.
+    ///
+    /// # Specification
+    /// trivial.
+    fn marked_moving<'text>(
+        src: impl Into<SourceFragment<'text>>,
+        moves: &[Move],
+    ) -> String
+    {
         let src: SourceFragment<'text> = src.into();
         let text = AsRef::<str>::as_ref(&src);
         let mut out = String::new();
-        for token in label(src) {
+        for token in label_moving(src, moves) {
             let spelled = text
                 .get(
                     usize::try_from(token.start).unwrap_or(usize::MAX)
@@ -1197,6 +1396,49 @@ mod tests
         assert_eq!(
             marked("def f(x : A) -> A =\n  let y = x}\n  y\n"),
             "def f(x : A) -> A ⟪=→{⟫\n  let y = x⟪}⟫}\n  y\n"
+        );
+    }
+
+    #[test]
+    fn a_moved_line_stays_in_the_block_its_move_names_5434()
+    {
+        // An arm at column zero inside two arm blocks and a body closes all
+        // three. A move keeps it in the block its count of closes leaves.
+        let source =
+            "def f(x : A) -> A =\n  match x\n    | a => match a\n      | b => b\n| c => c\n";
+        let line = u32::try_from(source.find("| c").unwrap_or_default()).unwrap_or(u32::MAX);
+        let moved = |closes: u32| marked_moving(source, &[Move { line, closes }]);
+        let head = "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n    | a => match a⟪{⟫\n      | b => b";
+        assert_eq!(marked(source), format!("{head}⟪}}⟫⟪}}⟫⟪}}⟫\n| c => c\n"));
+        assert_eq!(moved(0), format!("{head}\n| c => c⟪}}⟫⟪}}⟫⟪}}⟫\n"));
+        assert_eq!(moved(1), format!("{head}⟪}}⟫\n| c => c⟪}}⟫⟪}}⟫\n"));
+        assert_eq!(moved(2), format!("{head}⟪}}⟫⟪}}⟫\n| c => c⟪}}⟫\n"));
+        // A count past the blocks the column closes closes every one of them.
+        assert_eq!(moved(3), marked(source));
+        // A word at column zero resets, and no move keeps it.
+        let reset = source.replace("| c => c", "c");
+        assert_eq!(
+            marked_moving(reset.as_str(), &[Move { line, closes: 0 }]),
+            marked(reset.as_str())
+        );
+        // A first arm at column zero closes its arms block at once. A move
+        // that closes nothing opens the block at the least column of the
+        // lines after it, and a move that closes one keeps the arm in the
+        // body.
+        let first = "def f(x : A) -> A =\n  match x\n| a => a\n    | b => b\n";
+        let line = u32::try_from(first.find("| a").unwrap_or_default()).unwrap_or(u32::MAX);
+        let first_moved = |closes: u32| marked_moving(first, &[Move { line, closes }]);
+        assert_eq!(
+            marked(first),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫⟪}⟫⟪}⟫\n| a => a\n    | b => b\n"
+        );
+        assert_eq!(
+            first_moved(0),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫\n| a => a\n    | b => b⟪}⟫⟪}⟫\n"
+        );
+        assert_eq!(
+            first_moved(1),
+            "def f(x : A) -> A ⟪=→{⟫\n  match x⟪{⟫⟪}⟫\n| a => a\n    | b => b⟪}⟫\n"
         );
     }
 }
