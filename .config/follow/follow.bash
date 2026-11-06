@@ -5,24 +5,36 @@
 # checkout's code index and warms the builds a gate and `pr:open` make, which
 # every new worktree copies (#4866, `follow_warm`).
 #
+# No seat and no editor reloads for new tooling. A running `gandr lsp` or
+# `gandr mcp` moves to the deployed build in place, on the next request its
+# client sends, and keeps its process and its session (`followed` in
+# `crates/surface-driver/src/main.rs`). A relay that sends nothing stays on
+# its build until it sends.
+#
 # The configuration and the follower's memory live outside the tree, under
 # the XDG directories:
 #   $XDG_CONFIG_HOME/gandr/follow.json   `{checkout, interval, page}`: the
 #       main checkout it builds in, the seconds between readings, and the
 #       page command's argument vector before the line;
 #   $XDG_STATE_HOME/gandr/follow.json    `{deployed, previous, failed,
-#       indexed, warmed, paged}`: the commit deployed, the one deployed
-#       before it, the last commit whose build failed, the commits the code
-#       index was last synced to and the gates' builds last warmed at, and
-#       the keys of the pages already sent.
+#       fetch_failures, indexed, warmed, paged}`: the commit deployed, the
+#       one deployed before it, the last commit whose build cargo refused,
+#       the failed fetches in a row, the commits the code index was last
+#       synced to and the gates' builds last warmed at, and the keys of the
+#       pages already sent;
+#   $XDG_STATE_HOME/gandr/follow-build.log   the output of the last build.
 # The builds live in `$XDG_DATA_HOME/gandr/builds/<commit>/gandr`. The
 # toolchain `main` names the deployed build and is the default, and the
 # toolchain `previous` names the build before it, for a rollback by
 # `gandr toolchain default previous`.
+#
+# A main checkout older than the follower has no `toolchain:follow`. Before
+# the first `--install`, fast-forward it once to `origin/main`.
 
 follow_dir="$(git rev-parse --show-toplevel)/.config/follow"
 follow_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/follow.json"
 follow_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow.json"
+follow_build_log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow-build.log"
 follow_builds="${XDG_DATA_HOME:-$HOME/.local/share}/gandr/builds"
 follow_toolchains="${XDG_DATA_HOME:-$HOME/.local/share}/gandr/toolchains"
 # The page command's argument vector before the line, the configuration's
@@ -174,18 +186,40 @@ follow_warm() {
 }
 
 # One reading in the checkout `$1`: fetch, fast-forward, build, deploy, sync
-# the code index and warm the gates' builds. A fetch that fails, or a
-# checkout off `main`, dirty, or past `origin/main`, is left as it is and
-# paged once per commit of `origin/main`, the one last fetched for a failed
-# fetch (#4866). A failed build deploys nothing and is paged once per commit.
+# the code index and warm the gates' builds. A checkout off `main`, dirty, or
+# past `origin/main` is left as it is and paged once per commit of
+# `origin/main`. A fetch that fails twice in a row is paged once per commit of
+# `origin/main` last fetched (#4866). A build that cargo refuses deploys
+# nothing and is paged once per commit. A build that a signal ends records
+# nothing, and the next reading builds the commit again.
 follow_once() {
-  local checkout=$1 upstream branch head memory error
+  local checkout=$1 upstream branch head memory error url prefix status failures index
   cd "$checkout" || { follow_page "missing:$checkout" "FOLLOW checkout-missing: $checkout is no directory; nothing deployed"; return; }
+  # The user's git configuration can rewrite origin's URL, as an `insteadOf`
+  # that sends it to ssh where the service holds no key. A map of origin's
+  # owner prefix onto itself is longer than such a rewrite, so it wins. The
+  # fetch and cargo's fetches of the owner's git dependencies read it from
+  # the environment.
+  if url=$(git config --get remote.origin.url); then
+    prefix=${url%/*}/
+    index=${GIT_CONFIG_COUNT:-0}
+    export "GIT_CONFIG_KEY_$index=url.$prefix.insteadOf" "GIT_CONFIG_VALUE_$index=$prefix" GIT_CONFIG_COUNT=$((index + 1))
+  fi
   if ! error=$(git fetch -q origin main 2>&1); then
     echo "$error" >&2
     upstream=$(git rev-parse -q --verify origin/main || echo none)
-    follow_page "fetch:$upstream" "FOLLOW fetch-failed: $checkout cannot fetch origin main: $(awk 'NF {print; exit}' <<< "$error"); nothing past ${upstream:0:9} is deployed"
+    memory=$(follow_memory)
+    failures=$(( $(jq '.fetch_failures // 0' <<< "$memory") + 1 ))
+    follow_remember "$(jq -c --argjson failures "$failures" '.fetch_failures = $failures' <<< "$memory")"
+    # One failed fetch can be a moment of the network: the second in a row pages.
+    if (( failures >= 2 )); then
+      follow_page "fetch:$upstream" "FOLLOW fetch-failed: $checkout cannot fetch origin main, $failures times in a row: $(awk 'NF {print; exit}' <<< "$error"); nothing past ${upstream:0:9} is deployed"
+    fi
     return
+  fi
+  memory=$(follow_memory)
+  if jq -e 'has("fetch_failures")' <<< "$memory" > /dev/null; then
+    follow_remember "$(jq -c 'del(.fetch_failures)' <<< "$memory")"
   fi
   upstream=$(git rev-parse origin/main)
   branch=$(git symbolic-ref -q --short HEAD || echo detached)
@@ -205,11 +239,17 @@ follow_once() {
   memory=$(follow_memory)
   if [[ "$head" != $(jq -r '.deployed // empty' <<< "$memory") && "$head" != $(jq -r '.failed // empty' <<< "$memory") ]]; then
     echo "toolchain:follow: building $head"
-    if cargo build --release --locked -p gandr-lang --bin gandr; then
+    # The build writes to its log, so an output pipe that closes cannot end it.
+    mkdir -p "$(dirname "$follow_build_log")"
+    status=0
+    cargo build --release --locked -p gandr-lang --bin gandr > "$follow_build_log" 2>&1 || status=$?
+    if (( status == 0 )); then
       follow_deploy "$head"
+    elif (( status > 128 )); then
+      echo "toolchain:follow: signal $((status - 128)) ended the build of $head; the next reading builds it again" >&2
     else
       follow_remember "$(jq -c --arg head "$head" '.failed = $head' <<< "$(follow_memory)")"
-      follow_page "build:$head" "FOLLOW build-failed: main at ${head:0:9} does not build; the default stays $(jq -r '.deployed // "unchanged"' <<< "$memory" | cut -c1-9)"
+      follow_page "build:$head" "FOLLOW build-failed: main at ${head:0:9} does not build: $(awk '/^error/ {line = $0} END {print line}' "$follow_build_log"); the default stays $(jq -r '.deployed // "unchanged"' <<< "$memory" | cut -c1-9)"
     fi
   fi
   follow_index "$head"
