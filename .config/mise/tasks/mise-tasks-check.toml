@@ -2657,18 +2657,24 @@ done < <(jq -c '.[]' .config/service/reinstall.json)
 echo "service check OK: $(jq length .config/service/cases.json) cases read as recorded, $(jq length .config/service/reinstall.json) reinstalls leave an agent loaded"
 '''
 
-# The toolchain follower's pruning (#4499): `prune.jq` names the build
-# directories a deploy removes, keeping the current build, the one before it
-# and any build a live process runs. Each case in `.config/follow/cases.json`
-# holds the builds on disk and the ones it must remove.
+# The toolchain follower (#4499, #4540). Its pruning: `prune.jq` names the
+# build directories a deploy removes, keeping the current build, the one
+# before it and any build a live process runs. Each case in
+# `.config/follow/cases.json` holds the builds on disk and the ones it must
+# remove. Its readings: `.config/follow/once-cases.bash` runs `follow_once`
+# over a scratch origin with a stub build. A build that a signal ends or whose
+# output pipe breaks records nothing, and one that cargo refuses records
+# `failed`. A rewrite of origin's URL leaves the fetches on it, and the second
+# failed fetch in a row pages.
 ["check:follow"]
-description = "The toolchain follower removes every build but the current, the previous and a live one"
+description = "The toolchain follower prunes its builds, retries an interrupted build, fetches past a URL rewrite and pages a repeated failed fetch"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash follow .config/follow/cases.json --program .config/follow/prune.jq --mode c
 echo "follow check OK: $(jq length .config/follow/cases.json) cases read as recorded"
+.config/follow/once-cases.bash
 '''
 
 # The hotpath verdict's report (#1468): `report.jq` reads the head's hotpath
