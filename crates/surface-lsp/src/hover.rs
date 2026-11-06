@@ -2333,7 +2333,7 @@ mod tests
         };
         assert!(
             shown.starts_with(&fenced(SourceText::from(
-                "upManifest : Model(Counter) with sort C = +{Unit, Bool}"
+                "upManifest : Model Counter with sort C = +{Unit, Bool}"
             ))),
             "the name hovers its model type as written: {shown}"
         );
@@ -2787,7 +2787,7 @@ mod tests
         ));
         assert_eq!(
             shown(text, (4.into(), 12.into())),
-            Ok(String::from("```gandr\ns : Model(Tally)\n```"))
+            Ok(String::from("```gandr\ns : Model Tally\n```"))
         );
     }
 

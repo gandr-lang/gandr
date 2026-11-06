@@ -1434,7 +1434,7 @@ fn a_refusal_spells_its_types_in_either_spelling_782()
                 "diagnostics/fixtures/a-refusal-spells-its-types-in-either-spelling-782-2.gandr"
             ),
             "Integer ≅ String",
-            "Iso(Integer, String)",
+            "Iso Integer String",
         ),
     ] {
         let step = unsettled(
@@ -1637,17 +1637,17 @@ fn a_data_declaration_s_refusal_spells_its_binders_by_name_4028()
         (
             include_str!("diagnostics/fixtures/bounds-2.gandr"),
             "Nat",
-            "Fin(n)",
+            "Fin n",
         ),
         (
             include_str!("diagnostics/fixtures/bounds-3.gandr"),
             "Nat",
-            "Fin(n)",
+            "Fin n",
         ),
         (
             include_str!("diagnostics/fixtures/bounds-4.gandr"),
-            "Fin(Succ(n))",
-            "Fin(n)",
+            "Fin (Succ n)",
+            "Fin n",
         ),
     ] {
         let source = format!("{BOUNDS}{declaration}");
@@ -1669,7 +1669,7 @@ fn a_data_declaration_s_refusal_spells_its_binders_by_name_4028()
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>(),
-            ["n : Nat", "i : Fin(n)"],
+            ["n : Nat", "i : Fin n"],
             "the hypotheses are the declaration's binders before the refused site, each \
              named: {declaration}"
         );
@@ -1687,11 +1687,11 @@ fn a_signature_s_refusal_spells_its_binders_by_name_4043()
     for (declaration, hypotheses) in [
         (
             "def atZero(k : Nat, f : (x : Fin(k)) -> Fin(x)) -> Nat { Zero }\n",
-            &["k : Nat", "x : Fin(k)"][..],
+            &["k : Nat", "x : Fin k"][..],
         ),
         (
             "data Inner(n : Nat) : Type where { | C : (k : Nat, f : (x : Fin(k)) -> Fin(x)) --> Inner(n) }\n",
-            &["n : Nat", "k : Nat", "x : Fin(k)"][..],
+            &["n : Nat", "k : Nat", "x : Fin k"][..],
         ),
     ] {
         let source = format!("{BOUNDS}{declaration}");
@@ -1701,7 +1701,7 @@ fn a_signature_s_refusal_spells_its_binders_by_name_4043()
         );
         assert_eq!(
             diagnostic.detail.compared.found,
-            Maybe::Present(String::from("Fin(k)")),
+            Maybe::Present(String::from("Fin k")),
             "the mismatch names the binder it stands under: {declaration}"
         );
         assert_eq!(

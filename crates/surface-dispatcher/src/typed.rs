@@ -7857,7 +7857,7 @@ mod tests
             (
                 "import std.list (List) ;\n",
                 vec![home, counted],
-                "List(Integer)",
+                "List Integer",
             ),
             (
                 "import std.list as l ;\n",
@@ -8918,7 +8918,7 @@ mod tests
         );
         assert_eq!(
             answer(&table, source, SourceText::from("k) =>")),
-            binder("Stack(-F Unit, -F Unit)"),
+            binder("Stack (-F Unit) (-F Unit)"),
             "the continuation from `exit`'s reply to the scope's answer"
         );
     }
@@ -9005,9 +9005,9 @@ mod tests
             ("c, d]", "Integer"),
             ("d] =>", "Integer"),
             ("_, b, ..rest", "Integer"),
-            ("rest] =>", "List(Integer)"),
+            ("rest] =>", "List Integer"),
             ("h, .._", "Integer"),
-            ("all @ #[h", "List(Integer)"),
+            ("all @ #[h", "List Integer"),
             ("p, n}", "Bool"),
             ("z) :", "Integer"),
             ("m} =>", "+U (M -> M -> -F M)"),
@@ -9031,14 +9031,14 @@ mod tests
         ));
         let table = table(source);
         for (needle, subject, ty) in [
-            ("a.C, c", Subject::Binder, "Model(Counter)"),
-            ("a.C) ->", Subject::Binder, "Model(Counter)"),
-            ("f.C)", Subject::Binder, "Model(Counter) with sort C = x"),
+            ("a.C, c", Subject::Binder, "Model Counter"),
+            ("a.C) ->", Subject::Binder, "Model Counter"),
+            ("f.C)", Subject::Binder, "Model Counter with sort C = x"),
             (".C) -> -F x", Subject::Type, "Type"),
             (
                 "g.C)",
                 Subject::Binder,
-                "Model(Counter) with sort C = Integer",
+                "Model Counter with sort C = Integer",
             ),
             (".C) -> -F Integer { c", Subject::Type, "Type"),
         ] {
@@ -10633,7 +10633,7 @@ mod tests
             "the freshness a cons's evidence is at reads the declaration `fresh`"
         );
         assert_eq!(
-            trip("elD[<](d, a) -> UD(d)"),
+            trip("elD[<](d, a) -> UD d"),
             Some(RoundTrip::Open),
             "the field's decode is the binder, written after its uniform parameter"
         );
@@ -10849,7 +10849,7 @@ mod tests
         let table = table(source);
         assert_eq!(
             answer(&table, source, SourceText::from("v }")),
-            agreed(Subject::Term, SourceText::from("Vec(Nat, k)")),
+            agreed(Subject::Term, SourceText::from("Vec Nat k")),
             "the use answers under its function's binders"
         );
     }
@@ -10909,16 +10909,16 @@ mod tests
         assert_eq!(
             read,
             [
-                ("FZ(_)", String::from("+U ((a : N) -> -F Fin(S(a)))")),
+                ("FZ(_)", String::from("+U ((a : N) -> -F (Fin (S a)))")),
                 ("_) => Z\n    | FS", String::from("N")),
                 (
                     "VC(k, _, t)",
-                    String::from("+U ((a : N) -> N -> V(N, a) -> -F V(N, S(a)))")
+                    String::from("+U ((a : N) -> N -> V N a -> -F V N (S a))")
                 ),
                 ("_, t)", String::from("N")),
-                ("_) => S k", String::from("V(N, k)")),
-                ("_) => y", String::from("V(N, _)")),
-                ("MkBox(_)", String::from("+U (N -> -F Box(N))")),
+                ("_) => S k", String::from("V N k")),
+                ("_) => y", String::from("V N _")),
+                ("MkBox(_)", String::from("+U (N -> -F Box N)")),
                 ("_) => Z\n", String::from("N")),
             ],
             "each name at the index its constructor states, each field at its declared type"

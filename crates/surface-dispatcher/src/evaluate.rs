@@ -3930,7 +3930,7 @@ mod tests
         let mut sealed = listed_program(&listed);
         for (path, spelled) in [
             ("returned", "⟨opaque at Secret⟩ : () -> Secret.T"),
-            ("listed", "⟨opaque at Secret⟩ : () -> List(Secret.T)"),
+            ("listed", "⟨opaque at Secret⟩ : () -> List Secret.T"),
             ("reported", "\"progress\""),
             ("Counter.zero", "0"),
         ] {
