@@ -145,8 +145,9 @@ use crate::typing::Refusal;
 use crate::typing::Site;
 use crate::typing::Typing;
 
-/// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x12";
+/// The magic and version a persisted checkpoint set opens with. Version
+/// `0x13` names each hole by its form and its place in the form.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x13";
 
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0b";

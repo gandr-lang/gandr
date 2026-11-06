@@ -18,6 +18,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::ValueId;
 use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::hole::TermId;
 use gandr_core_term::pattern::BranchStatus;
 use gandr_core_term::pattern::Pattern;
@@ -587,7 +588,7 @@ fn an_or_pattern_entails_a_later_repeat_of_either_alternative()
 }
 
 #[test]
-fn a_pattern_hole_is_named_by_its_place_among_the_holes()
+fn a_pattern_hole_is_a_written_hole_the_run_stops_at()
 {
     let mut written = color_pick("| Red => return 0 | ? => return 1");
     let Some(&hole) = written.rows().get(1)
@@ -599,9 +600,9 @@ fn a_pattern_hole_is_named_by_its_place_among_the_holes()
         panic!("the second row is a pattern hole");
     };
     assert_eq!(
-        identity,
-        HoleId::from(0_u32),
-        "the source's only hole is named by its place among the holes it writes"
+        identity.origin(),
+        HoleOrigin::Written,
+        "the source's only hole is a hole the text writes"
     );
     let green = written.construct("Color", 1, Vec::new());
     let analysis = written.analyze("Color", green);

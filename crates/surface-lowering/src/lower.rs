@@ -510,9 +510,10 @@
 //! # Source holes
 //!
 //! Source `?` and `?name` lower to core value or computation holes according to
-//! their term position. Occurrences have distinct `HoleId`s, each the number of
-//! holes the text writes before it, so a hole keeps its name however the text
-//! around it is spelled; they retain the usual written origins. Witness:
+//! their term position. Occurrences have distinct `HoleId`s, each the hole's
+//! form and the number of holes the form writes before it. A hole keeps its
+//! name however the text around it is spelled, and whatever another form
+//! writes; they retain the usual written origins. Witness:
 //! `tests::source_holes_keep_their_families_and_distinct_occurrences`.
 
 use alloc::collections::BTreeMap;
@@ -3865,9 +3866,10 @@ struct Lowerer<'run, 'source>
     /// frame its computation reads under and the computation, whose callee's
     /// written result states the binder's type to a match on it.
     ran: BTreeMap<ScopeId, (Frame, Placed)>,
-    /// Every hole of the tree, by where its text starts, read once the first
-    /// hole is lowered: a hole is named by its place here.
-    holes: Vec<(ByteOffset, NodeIndex)>,
+    /// Every hole of the tree, by its form and where its text starts, read
+    /// once the first hole is lowered: a hole is named by its form and its
+    /// place among its form's holes here.
+    holes: Vec<(gandr_core_term::hole::HoleForm, ByteOffset, NodeIndex)>,
     /// Each pattern variable whose position a written type states, by the
     /// name's syntax node: the node of that type, which the arm binds the
     /// variable at.
@@ -3944,9 +3946,18 @@ struct Lowerer<'run, 'source>
     /// function, beside the entry of its merged telescope that writes it.
     written_slots: BTreeMap<SlotIndex, Vec<(usize, model::WrittenSlot<'source>)>>,
     /// Each hole nominated for an omitted implicit or a written wildcard, in
-    /// the order nominated, with what it stands for: the hole's name counts
-    /// them.
+    /// the order nominated, with what it stands for.
     nominations: BTreeMap<gandr_core_term::hole::HoleId, implicit::Nomination<'source>>,
+    /// How many holes each form nominated, by the form and the origin the
+    /// holes' names say: a nominated hole's name counts its form's holes of
+    /// its origin.
+    nominated_places: BTreeMap<
+        (
+            gandr_core_term::hole::HoleForm,
+            gandr_core_term::hole::HoleOrigin,
+        ),
+        u32,
+    >,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// Each derived rule's minted type and proof, by slot: a derived rule
@@ -5763,6 +5774,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             flattened: BTreeMap::new(),
             written_slots: BTreeMap::new(),
             nominations: BTreeMap::new(),
+            nominated_places: BTreeMap::new(),
             operated: BTreeMap::new(),
             derivations: BTreeMap::new(),
             generic: None,
@@ -18289,16 +18301,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
         SurfaceName::from(self.text_at(placed))
     }
 
-    /// The name of the hole written at `at`: its place among the tree's
-    /// holes in the order the text writes them, so a hole keeps its name
-    /// however the text around it is spelled or laid out.
+    /// The name of the hole written at `at`: its form, and its place among
+    /// the form's holes in the order the text writes them. A hole keeps its
+    /// name however the text around it is spelled or laid out, and whatever
+    /// another form writes.
     ///
     /// # Specification
     /// - requires: `at` is a hole of the tree.
-    /// - ensures: each hole is named by how many holes the text writes before
-    ///   it, so distinct holes have distinct names.
-    /// - fails: the budget refusal for a hole past the last written name, the
-    ///   last below the nominated half ([`gandr_core_term::hole::HoleId`]).
+    /// - ensures: each hole is named by its form and by how many holes its form
+    ///   writes before it, so distinct holes have distinct names.
+    /// - fails: the budget refusal for a form or a place past the written
+    ///   names' bits ([`gandr_core_term::hole::HoleId::written`]).
     /// - panics: none.
     ///
     /// # Errors
@@ -18306,9 +18319,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — holes before, between and after other declarations,
-    ///   in a pattern and in a body, each named by its written place.
+    ///   in a pattern and in a body, each named by its written place; a form's
+    ///   holes keep their names when another form writes more.
     /// - witness: `lower::tests::source_holes_keep_their_families_and_distinct_occurrences`
-    #[spec(ensures: |ret| ret.is_err() || self.holes.binary_search(&(at.span.start(), at.node)).is_ok_and(|place| ret.as_ref().is_ok_and(|&hole| usize::try_from(u32::from(hole)) == Ok(place))))]
+    /// - witness: `lower::implicit::tests::a_form_s_holes_keep_their_names_when_another_form_writes_more_5598`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&hole| {
+        let form = self.hole_form(self.form_of(at.node));
+        let first = self.holes.partition_point(|&(held, ..)| held < form);
+        self.holes.binary_search(&(form, at.span.start(), at.node)).is_ok_and(|index| {
+            u32::try_from(index.saturating_sub(first)).ok().and_then(|place| {
+                gandr_core_term::hole::HoleId::written(form, gandr_core_term::hole::HolePlace::from(place))
+            }) == Some(hole)
+        })
+    }))]
     fn hole(
         &mut self,
         at: Placed,
@@ -18320,24 +18343,57 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let exceeded = LoweringRefusal::BudgetExceeded {
             budget: self.fuel.budget,
         };
-        let place = self
+        let form = self.hole_form(self.form_of(at.node));
+        let index = self
             .holes
-            .binary_search(&(at.span.start(), at.node))
+            .binary_search(&(form, at.span.start(), at.node))
             .map_err(|_absent| exceeded)?;
-        u32::try_from(place)
-            .ok()
-            .map(gandr_core_term::hole::HoleId::from)
-            .filter(|hole| hole.origin() == gandr_core_term::hole::HoleOrigin::Written)
+        let first = self.holes.partition_point(|&(held, ..)| held < form);
+        let place = u32::try_from(index.saturating_sub(first)).map_err(|_overflow| exceeded)?;
+        gandr_core_term::hole::HoleId::written(form, gandr_core_term::hole::HolePlace::from(place))
             .ok_or(exceeded)
     }
 
+    /// The number a hole's name holds for the form whose layout block is
+    /// `block`: the block's place among the tree's blocks that hold no root.
+    /// A tree joined after a closure and the parse of its whole text lay one
+    /// block for each form in one order, and one more block for each root.
+    /// Thus both give each form one number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `block` less the count of roots in `block` or a block before
+    ///   it; the number past a `u32` for a block past it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document resumed after its closure names its holes
+    ///   as the whole text does.
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[spec(ensures: |ret| ret == gandr_core_term::hole::HoleForm::from(u32::try_from(usize::from(block).saturating_sub(self.tree.roots().partition_point(|root| root.block() <= block))).unwrap_or(u32::MAX)))]
+    fn hole_form(
+        &self,
+        block: LayoutBlock,
+    ) -> gandr_core_term::hole::HoleForm
+    {
+        let roots = self
+            .tree
+            .roots()
+            .partition_point(|root| root.block() <= block);
+        let number = usize::from(block).saturating_sub(roots);
+        gandr_core_term::hole::HoleForm::from(u32::try_from(number).unwrap_or(u32::MAX))
+    }
+
     /// Read the holes among the tree's nodes from block `from` on into the
-    /// holes read before, in the order the text writes them.
+    /// holes read before, by their form, then in the order the text writes
+    /// them.
     ///
     /// # Specification
     /// - requires: no node from block `from` on was read before.
-    /// - ensures: every hole from block `from` on is held, sorted by where its
-    ///   text starts beside the holes held before.
+    /// - ensures: every hole from block `from` on is held beside its form,
+    ///   sorted by its form, then by where its text starts, beside the holes
+    ///   held before.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -18366,7 +18422,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             if matches!(shape_of(self.pbg, node), Ok(Shape::Form { name, .. }) if name == FormName::HOLE)
             {
-                self.holes.push((node.span().start(), position));
+                let form = self.hole_form(self.form_of(position));
+                self.holes.push((form, node.span().start(), position));
             }
         }
         self.holes.sort_unstable();

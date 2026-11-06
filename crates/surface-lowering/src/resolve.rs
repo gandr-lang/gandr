@@ -1308,6 +1308,18 @@ impl<'source> Scope<'source>
         self.form = form;
     }
 
+    /// The layout block of the form whose node the lowering reads now, which
+    /// the next frame is pushed into.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn form(&self) -> LayoutBlock
+    {
+        self.form
+    }
+
     /// The frame that extends `parent` with an untyped binder for `name`,
     /// written at `site`.
     ///

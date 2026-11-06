@@ -1463,15 +1463,19 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Nominate a hole for `nomination`, an implicit a call omits, a component
     /// of the model a capability scope names none of, a wildcard or a splice
-    /// the text writes, the next nominated name of its kind.
+    /// the text writes: the next name of its kind in the form the lowering
+    /// reads now.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a name no hole before it carries, kept beside `nomination`: a
     ///   wildcard's name for a wildcard, so the printer writes it back as `_`,
     ///   a splice's, carrying its tactic, for a splice, and a nominated one for
-    ///   an omitted implicit or a scope's component, which it leaves out.
-    /// - fails: the budget refusal once the kind's quarter has no more names.
+    ///   an omitted implicit or a scope's component, which it leaves out. The
+    ///   name holds the form and the count of its form's holes of its kind
+    ///   nominated before it.
+    /// - fails: the budget refusal once the form's share of its kind's names
+    ///   has no more names.
     /// - panics: none.
     ///
     /// # Errors
@@ -1480,10 +1484,12 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two implicits a call omits are two distinct holes,
     ///   each kept with its implicit's name, and a wildcard beside them a
-    ///   third, named as a wildcard; a splice's hole carries its tactic.
+    ///   third, named as a wildcard; a splice's hole carries its tactic; a
+    ///   form's nominations keep their names when another form nominates more.
     /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
     /// - witness: `lower::implicit::tests::a_wildcard_is_a_nominated_hole_of_its_own`
     /// - witness: `lower::splice::tests::a_splice_is_a_hole_carrying_its_tactic_2762`
+    /// - witness: `lower::implicit::tests::a_form_s_holes_keep_their_names_when_another_form_writes_more_5598`
     #[spec(
         captures: before = self.nominations.len(),
         ensures: |ret| match ret {
@@ -1505,22 +1511,36 @@ impl<'source> Lowerer<'_, 'source>
         nomination: Nomination<'source>,
     ) -> Result<gandr_core_term::hole::HoleId, LoweringRefusal<'source>>
     {
-        let hole = u32::try_from(self.nominations.len())
-            .ok()
-            .map(gandr_core_term::hole::NominationIndex::from)
-            .and_then(|index| match nomination {
-                Nomination::Wildcard => gandr_core_term::hole::HoleId::wildcard(index),
-                Nomination::Spliced(tactic) => {
-                    gandr_core_term::hole::HoleId::spliced(index, tactic)
-                },
-                Nomination::Omitted { .. } | Nomination::Answering { .. } => {
-                    gandr_core_term::hole::HoleId::nominated(index)
-                },
-            })
-            .ok_or(LoweringRefusal::BudgetExceeded {
-                budget: self.fuel.budget,
-            })?;
+        let form = self.hole_form(self.scope.form());
+        let origin = match nomination {
+            Nomination::Wildcard => gandr_core_term::hole::HoleOrigin::Wildcard,
+            Nomination::Spliced(_) => gandr_core_term::hole::HoleOrigin::Spliced,
+            Nomination::Omitted { .. } | Nomination::Answering { .. } => {
+                gandr_core_term::hole::HoleOrigin::Nominated
+            },
+        };
+        let place = self
+            .nominated_places
+            .get(&(form, origin))
+            .copied()
+            .unwrap_or(0);
+        let at = gandr_core_term::hole::HolePlace::from(place);
+        let hole = match nomination {
+            Nomination::Wildcard => gandr_core_term::hole::HoleId::wildcard_in(form, at),
+            Nomination::Spliced(tactic) => {
+                gandr_core_term::hole::HoleId::spliced_in(form, at, tactic)
+            },
+            Nomination::Omitted { .. } | Nomination::Answering { .. } => {
+                gandr_core_term::hole::HoleId::nominated_in(form, at)
+            },
+        }
+        .ok_or(LoweringRefusal::BudgetExceeded {
+            budget: self.fuel.budget,
+        })?;
         let _first = self.nominations.insert(hole, nomination);
+        let _counted = self
+            .nominated_places
+            .insert((form, origin), place.saturating_add(1));
         Ok(hole)
     }
 }

@@ -1,0 +1,4 @@
+{FIRST}def early : () -> Integer ;
+def early = {EARLY} ;
+def omitted : () -> Integer ;
+def omitted = thunk {{ become first ? *{{}} }} ;
