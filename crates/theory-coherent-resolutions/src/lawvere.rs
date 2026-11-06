@@ -24,7 +24,9 @@
 //!
 //! The complex is infinite. [`LawvereTheory`] states the faces of a cell when
 //! a caller asks, as a [`Complex`] of the Morse crate. A [`Truncation`] lists
-//! the largest subcomplex inside a [`BarBound`].
+//! the largest subcomplex inside a [`BarBound`]. The theory also gives each
+//! cell its class under Brown's collapsing scheme, as a
+//! [`Scheme`](gandr_theory_discrete_morse::Scheme) of the Morse crate.
 //!
 //! # References
 //!
@@ -54,6 +56,10 @@ use crate::boundary::Operation;
 use crate::boundary::TermPlace;
 use crate::boundary::TermSize;
 use crate::boundary::Variable;
+
+mod brown;
+
+pub use self::brown::overlapped;
 
 /// The outermost symbol of a term.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -89,6 +95,9 @@ pub enum LawvereError
     Unfilled(Variable),
     /// The first arrow of a cell holds no term.
     NoTerm,
+    /// The first arrow of a cell holds a variable, so the cell is degenerate
+    /// and the collapsing scheme gives it no class.
+    LeadingVariable,
     /// A coefficient passes the integers that an incidence holds.
     Overflow,
 }
@@ -120,6 +129,9 @@ impl fmt::Display for LawvereError
                 usize::from(variable)
             ),
             Self::NoTerm => f.write_str("the first arrow of the cell holds no term"),
+            Self::LeadingVariable => f.write_str(
+                "the first arrow of the cell holds a variable, so the scheme gives it no class",
+            ),
             Self::Overflow => {
                 f.write_str("a coefficient passes the integers that an incidence holds")
             },
@@ -433,6 +445,9 @@ pub struct LawvereTheory
     normal: BTreeMap<TermPlace, TermPlace>,
     /// The most rewrites that one normal form takes.
     budget: NormalizationBudget,
+    /// The working memory of the collapsing scheme, kept from one cell to
+    /// the next.
+    scheme: brown::Memory,
 }
 
 impl LawvereTheory
@@ -457,6 +472,7 @@ impl LawvereTheory
             table,
             normal: BTreeMap::new(),
             budget,
+            scheme: brown::Memory::new(),
         }
     }
 
@@ -944,27 +960,24 @@ enum Identity
     Other,
 }
 
-impl Arrow
+/// Whether the tuple `terms` in `source` variables is an identity in `table`.
+///
+/// # Specification
+/// trivial.
+fn identity(
+    table: &TermTable,
+    (source, terms): (Arity, &[TermPlace]),
+) -> Result<Identity, LawvereError>
 {
-    /// Whether the arrow is an identity in `table`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn identity(
-        &self,
-        table: &TermTable,
-    ) -> Result<Identity, LawvereError>
-    {
-        if usize::from(self.source) != self.terms.len() {
+    if usize::from(source) != terms.len() {
+        return Ok(Identity::Other);
+    }
+    for (place, &term) in terms.iter().enumerate() {
+        if table.node(term)?.head != TermHead::Var(Variable::from(place)) {
             return Ok(Identity::Other);
         }
-        for (place, &term) in self.terms.iter().enumerate() {
-            if table.node(term)?.head != TermHead::Var(Variable::from(place)) {
-                return Ok(Identity::Other);
-            }
-        }
-        Ok(Identity::Identity)
     }
+    Ok(Identity::Identity)
 }
 
 /// A cell of the bar complex: a composable list of arrows, the first one
@@ -1033,7 +1046,7 @@ impl BarCell
             TermHead::Op(_) => {},
         }
         for arrow in later {
-            match arrow.identity(table)? {
+            match identity(table, (arrow.source, &arrow.terms))? {
                 Identity::Identity => return Ok(Degeneracy::Degenerate),
                 Identity::Other => {},
             }
