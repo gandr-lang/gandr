@@ -1,12 +1,14 @@
-// An endpoint at `end` is dropped as it is closed: `drop c` is the end
-// action `close c` writes, admitted exactly where the endpoint's protocol
-// has ended.
+// This source drops endpoints at `end`.
+//
+// `drop c` executes `close c`.
+// The checker admits `drop` after an endpoint's protocol ends.
+//
+// The checker closes the endpoint when it processes `drop`.
 //
 // - see: #1054
 
-/// The seat selects `done` and drops its end; the desk offers `done` and
-/// drops its own. The selection comes first, and the seat's drop sits beside
-/// the desk's offer and drop.
+/// `finished` selects `done` and drops both endpoints.
+/// The selection precedes the drops.
 @[
   runs("*{}"),
   traces(decomposes
@@ -17,8 +19,8 @@ def finished() -> Unit =
   let desk = fork (seat : +{done : end}) { select seat done; drop seat };
   offer desk { | done => drop desk }
 
-/// A drop at one end of a fork and a close at the other, each ending its end
-/// beside the other.
+/// `mixed` closes one fork endpoint and drops the other.
+/// Each action ends its endpoint.
 @[ runs("*{}"), traces(decomposes seat (parallel (event left 0) (event right 0))) ]
 def mixed() -> Unit =
   let desk = fork (seat : end) { close seat };

@@ -1,14 +1,14 @@
-// A view of a value held inside a scope, kept at its own hold, as Rust lets a
-// reference to a block's local live as long as the block: `{ let x = 42; let
-// r = &x; *r }`. A shared view kept in a region keeps its held value frozen
-// until the region ends, so a slot held inside the scope is kept at the hold
-// that holds it.
-
-// Early exit's host interface.
+//! `held-within` keeps a shared view inside its hold.
+//!
+//! The hold freezes its value. The pathological twin refuses a view that
+//! escapes the hold as `ViewEscaped`.
+//!
+//! The checker keeps each view at its declared hold. Both examples run to
+//! `42`. The source imports the early exit host interface.
+//!
+//! - see: corpus/pathological/regions/held-within.gandr — a view after its hold
 import std.process;
-
-/// Keeps a view of a value held inside the handler at the hold, and forces it
-/// before the hold ends.
+/// `keptAtHold` forces a view before its hold ends.
 @[ runs("42") ]
 def keptAtHold() -> Integer =
   handle inner : std.process.Exit.Eff {
@@ -20,8 +20,7 @@ def keptAtHold() -> Integer =
     | oper exit(code, k) => pure 0
   }
 
-/// The same inside a handler a `run` binds within another: where a handler is
-/// bound opens no region of its own.
+/// `keptAtNestedHold` does the same with nested handlers.
 @[ runs("42") ]
 def keptAtNestedHold() -> Integer =
   handle outer : std.process.Exit.Eff {

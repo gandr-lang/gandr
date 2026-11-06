@@ -894,6 +894,7 @@ path = "crates/theory-deep-inference"
 # - none: alloc-only matchings over the caller's cells.
 # consumers:
 # - surface-lowering (dev)
+# - theory-coherent-resolutions
 [workspace.dependencies.gandr-theory-discrete-morse]
 path = "crates/theory-discrete-morse"
 default-features = false

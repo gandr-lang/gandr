@@ -10,3 +10,11 @@ def class:
   elif test("^(run (list|view|download)|cache list|search [a-z]+|extension install|release (view|list|download))$") then {api: "rest", kind: "read"}
   elif test("^(run (rerun|cancel)|workflow run|cache delete|label create)$") then {api: "rest", kind: "write"}
   else {api: "graphql", kind: "write"} end;
+
+# The class of a call `.`, a site with its `verb` and `input`, true when the
+# call reads its request from `--input`. Such a GraphQL call names no query
+# in its arguments, and the check cannot read the request, so it is a write,
+# the dearest guess, as the router counts it (#5695).
+def call_class:
+  (.verb | class) as $class
+  | if $class.api == "graphql" and .input == true then $class + {kind: "write"} else $class end;

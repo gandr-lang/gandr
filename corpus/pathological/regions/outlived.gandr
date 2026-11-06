@@ -1,14 +1,18 @@
-// An answer read past its region, as Rust refuses a reference that outlives
-// the borrow it came from: what `pass` hands back is kept in the handler's
-// region, so a binding kept in none cannot hold it.
-
-// Early exit's host interface.
+//! `outlived` reads a thunk after its holding region ends.
+//!
+//! `pass` returns at its input region. A binding with no region cannot hold that
+//! result. The checker reports `TypeMismatch`.
+//!
+//! The source defines a same-region `pass`. Rust rejects a borrow that outlives
+//! its source. The source imports the early exit host interface.
+//!
+//! - see: corpus/model/regions/passed.gandr — a result inside its region
 import std.process;
 
-/// Hands back the thunk it is lent, kept in the same region.
+/// `pass` returns a thunk at the same region.
 def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) { pure k }
 
-/// Binds what `pass` hands back at a type kept in no region.
+/// `outlived` binds `pass` output at no region.
 @[ refuses("TypeMismatch") ]
 def outlived() -> Integer =
   var s = 4

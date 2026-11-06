@@ -14,9 +14,14 @@
 //! overlap support relates certificates as well as cells — so
 //! the crate encloses both.
 //!
-//! Everything is generic over the substrate's
+//! The rewriting engine is generic over the substrate's
 //! [`CellAlphabet`](gandr_theory_cell_complexes::CellAlphabet) and adds no cell
-//! vocabulary. The crate is `no_std` and depends on `alloc`, the substrate and
+//! vocabulary. The resolution of a first-order block is the bar complex of the
+//! Lawvere theory that the block presents ([`LawvereTheory`], [`BarCell`]). A
+//! sequent cell has no first-order reading in the substrate, so the caller
+//! states the theory's rules. The complex is a
+//! [`Complex`](gandr_theory_discrete_morse::Complex) of the Morse crate. The
+//! crate is `no_std` and depends on `alloc`, the substrate, the Morse crate and
 //! `quenchant-shape`; its `hotpath` feature links `std` and the profiler, which
 //! times the overlap queries and normalization for the benchmark report.
 //!
@@ -90,10 +95,13 @@ extern crate std;
 
 mod boundary;
 mod completion;
+mod lawvere;
 mod overlap;
 mod rewrite;
 mod tracelet;
 
+pub use crate::boundary::Arity;
+pub use crate::boundary::BarDegree;
 pub use crate::boundary::BatchIndex;
 pub use crate::boundary::BudgetExhaustion;
 pub use crate::boundary::CertificateIndex;
@@ -101,11 +109,16 @@ pub use crate::boundary::CompletionCellBudget;
 pub use crate::boundary::CompletionStatus;
 pub use crate::boundary::CompletionStepBudget;
 pub use crate::boundary::NormalizationBudget;
+pub use crate::boundary::Occurrences;
+pub use crate::boundary::Operation;
 pub use crate::boundary::OverlapIndex;
 pub use crate::boundary::PairDecisions;
 pub use crate::boundary::StepIndependence;
+pub use crate::boundary::TermPlace;
+pub use crate::boundary::TermSize;
 pub use crate::boundary::TraceletEquivalence;
 pub use crate::boundary::TraceletReplay;
+pub use crate::boundary::Variable;
 pub use crate::completion::CompletionBudget;
 pub use crate::completion::CompletionOutcome;
 pub use crate::completion::DeclineReason;
@@ -116,6 +129,18 @@ pub use crate::completion::complete;
 pub use crate::completion::complete_with_overlap_source;
 pub use crate::completion::join_critical_pairs;
 pub use crate::completion::scheduled_confluence_batches;
+pub use crate::lawvere::Arrow;
+pub use crate::lawvere::BarBound;
+pub use crate::lawvere::BarCell;
+pub use crate::lawvere::Degeneracy;
+pub use crate::lawvere::LawvereError;
+pub use crate::lawvere::LawvereTheory;
+pub use crate::lawvere::TermHead;
+pub use crate::lawvere::TermNode;
+pub use crate::lawvere::TermTable;
+pub use crate::lawvere::Truncation;
+pub use crate::lawvere::root_rewrite;
+pub use crate::lawvere::truncated;
 pub use crate::overlap::Overlap;
 pub use crate::overlap::OverlapKind;
 pub use crate::overlap::OverlapRefusal;

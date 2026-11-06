@@ -1755,6 +1755,18 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # are cancelled; a member above changing the red one's path refuses the cut
 # with nothing moved (#5073). `red.jq` reads which check makes a bottom red,
 # and `stale.jq` which runs a cut made stale.
+# `.config/pr-stack/closed.bash` runs `retarget_bottom` over a scratch
+# repository, once per case in `.config/pr-stack/closed.json`: a bottom on
+# the branch of a member closed unmerged, the branch kept or deleted, is cut
+# past it, and each member's own commits replay onto the closed one's base
+# (#5695, `cut_closed`); a closed head that moved, or a conflict, refuses the
+# cut with nothing moved, and a base that heads no closed pull request is
+# refused by name.
+# `.config/pr-stack/watcher.bash` runs the landing watcher's `act_on` once
+# per case in `.config/pr-stack/watcher.json`, `land_prefix` and `tell`
+# recorded: a dequeued head on its base is told it landed again only after
+# the landing ran, with the landing's line, and a refused landing is told
+# `pr-dequeued` with the refusal's line, once a head (#5695).
 # `.config/pr-stack/replays.bash` lands a scratch repository's lower branch,
 # once per case in `.config/pr-stack/replays.json`, and reads the commits of
 # the upper a rebase onto main would replay empty: a lower rewritten before
@@ -1774,7 +1786,7 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # trunk held before the fork keeps its branch, and a subject the trunk gains
 # after the fork deletes it (#5118, `own_commits`).
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a heal reports its restack, a change is measured from a fetched trunk, a top behind the trunk arms pr:await, is stacked past or is refused, the commits a rebase would replay empty are read, a member above a queued one is merged only once linked, pr:await outlasts a failed read, and the sweep judges a subject from the fork"
+description = "The stacking rule's readings give each recorded case its output, the landing watcher reads on events, a restack replays only a stack's own commits, a red member is cut out of its stack, a chain is cut past a member closed unmerged, a heal reports its restack, the watcher tells a refused landing, a change is measured from a fetched trunk, a top behind the trunk arms pr:await, is stacked past or is refused, the commits a rebase would replay empty are read, a member above a queued one is merged only once linked, pr:await outlasts a failed read, and the sweep judges a subject from the fork"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1791,6 +1803,8 @@ fi
 .config/pr-stack/past.bash || failed=1
 .config/pr-stack/heal.bash || failed=1
 .config/pr-stack/cut.bash || failed=1
+.config/pr-stack/closed.bash || failed=1
+.config/pr-stack/watcher.bash || failed=1
 .config/pr-stack/fetched-base.bash || failed=1
 .config/pr-stack/behind-top.bash || failed=1
 .config/pr-stack/replays.bash || failed=1
@@ -1798,7 +1812,7 @@ fi
 .config/pr-stack/await.bash || failed=1
 .config/pr-stack/sweep-subjects.bash || failed=1
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a heal reports its restack; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused; a rebase's empty replays are read; a member above a queued one merges only once linked; pr:await outlasts a failed read; the sweep judges a subject from the fork"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events; a restack replays only its own commits; a red member is cut out of its stack; a chain is cut past a member closed unmerged; a heal reports its restack; the watcher tells a refused landing; a change is measured from a fetched trunk; a top behind the trunk arms pr:await, is stacked past or is refused; a rebase's empty replays are read; a member above a queued one merges only once linked; pr:await outlasts a failed read; the sweep judges a subject from the fork"
 '''
 
 # Every `gh` call site has a measured price, and each identity's hour of
@@ -1823,7 +1837,7 @@ failed=0
 sites=$(git ls-files -z -- '.config/*.sh' '.config/*.bash' '.config/*.toml' '.github/*.yml' '.github/*.yaml' \
   | xargs -0 awk -v text=1 -f .config/gh/sites.awk \
   | jq -R -s -c 'split("\n") | map(select(. != "") | split("\t")
-      | {file: .[0], scope: .[1], verb: .[2], paginated: (.[3:] | join("\t") | test("(^|\\s)--paginate(\\s|$)"))})')
+      | {file: .[0], scope: .[1], verb: .[2], paginated: (.[3:] | join("\t") | test("(^|\\s)--paginate(\\s|$)")), input: (.[3:] | join("\t") | test("(^|\\s)--input(\\s|=|$)"))})')
 table=$(yq -p toml -o json -I 0 .config/gh/calls.toml)
 # Each workflow a row's `schedule` names, with its crons; a workflow that is
 # gone gives none, which the rule refuses.
@@ -2584,7 +2598,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash mutants .config/mutants/cases.json --programs .config/mutants --mode c --raw landed.jq
+.config/cases/run.bash mutants .config/mutants/cases.json --programs .config/mutants --mode c --raw landed.jq --raw unwitnessed.jq
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
 '''
 

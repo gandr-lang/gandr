@@ -452,30 +452,35 @@ pub fn decode_signature<G>(
     Ok(DataSignature::new(parameters, constructors, kind))
 }
 
-/// Decode a codata description into a native codata signature, `itself` the
-/// declaration applied to its own parameters.
+/// Decode a codata description into a native codata signature.
+///
+/// `itself` is the declaration applied to its own parameters, and `fields`
+/// the value type the lowering read for each observation written as a field.
 ///
 /// # Specification
 /// - requires: parameter classifiers and `context` have matching de Bruijn
 ///   scopes; `itself` is the declaration's codata type at its parameter
-///   variables, in that scope.
+///   variables, in that scope; `fields` holds one type for each observation
+///   written as a field, in declaration order, in that scope.
 /// - ensures: parameters and kind are retained; observations follow declaration
 ///   order; an observation written as the declaration itself is `itself`, and
-///   one written as a value type `A` is the returner `F A`.
+///   one written as a value type is the returner `F A` of its type `A` in
+///   `fields`.
 /// - fails: a data or multi-sort description, a mismatched parameter arity, an
-///   observation naming another sort, an observation of any other code and an
-///   unreadable field type are declined explicitly.
+///   observation naming another sort, an observation of any other code, and a
+///   count of `fields` other than the count of field observations are declined
+///   explicitly.
 /// - panics: none.
 ///
 /// # Errors
-/// Returns `MalformedCode` for a data description or an observation that is
-/// neither a field nor the declaration, `MultiSorted`, `ParameterArity`,
-/// `ForeignSort`, or a `decode` refusal of a field type.
+/// Returns `MalformedCode` for a data description, an observation that is
+/// neither a field nor the declaration, or a count of `fields` that differs,
+/// and `MultiSorted`, `ParameterArity` or `ForeignSort`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a stream's two observations decode to the returner of its
-///   parameter and to the stream itself, in written order, and a data
-///   description is declined.
+///   field's type and to the stream itself, in written order; a data
+///   description, and a field with no type read for it, are declined.
 /// - witness: `description::tests::a_codata_description_decodes_its_observations`
 #[inline]
 #[spec(ensures: |result| result.as_ref().map_or(true, |signature| signature.observations().len() == description.ctors.len() && signature.parameters().len() == description.params.len() && signature.kind() == kind))]
@@ -484,6 +489,7 @@ pub fn decode_codata<G>(
     description: &TheoryDesc<G>,
     (context, itself): (DecodeContext<'_>, crate::CompTypeId),
     parameters: Vec<ValueTypeId>,
+    fields: &[ValueTypeId],
     kind: ValueTypeId,
 ) -> Result<crate::CodataSignature, DecodeError>
 {
@@ -496,6 +502,7 @@ pub fn decode_codata<G>(
     if parameters.len() != description.params.len() {
         return Err(DecodeError::ParameterArity);
     }
+    let mut fields = fields.iter().copied();
     let mut observations = Vec::with_capacity(description.ctors.len());
     for observation in &description.ctors {
         let node = observation.code.to_node();
@@ -503,8 +510,7 @@ pub fn decode_codata<G>(
             CodeView::Var(sort) if sort.as_ref() == context.self_sort.as_ref() => itself,
             CodeView::Var(sort) => return Err(DecodeError::ForeignSort(sort.clone())),
             CodeView::Field { .. } => {
-                let field = interpret(arena, vec![Frame::Code(node)], context)?;
-                arena.comp_type_returner(field)
+                arena.comp_type_returner(fields.next().ok_or(DecodeError::MalformedCode)?)
             },
             CodeView::Unit
             | CodeView::Prod(_)
@@ -515,6 +521,9 @@ pub fn decode_codata<G>(
             },
         };
         observations.push(observed);
+    }
+    if fields.next().is_some() {
+        return Err(DecodeError::MalformedCode);
     }
     Ok(crate::CodataSignature::new(parameters, observations, kind))
 }
@@ -860,8 +869,9 @@ fn parameter_value(
 /// Returns the binding's refusal or `ParameterArity`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`decode_argument`].
-/// - witness: `description::tests::an_argument_decodes_as_a_nominal_argument_does`
+/// - hypothesis: L3 — a nominal application's argument at a parameter is the
+///   parameter's variable at the telescope's depth.
+/// - witness: `description::tests::native_indices_remain_values_under_telescope_scope`
 fn bound_argument(
     arena: &mut CoreArena,
     argument: ValueTypeNode<'_>,
@@ -879,40 +889,6 @@ fn bound_argument(
         },
         TypeBinding::Type(_) | TypeBinding::Nominal { .. } => Ok(None),
     }
-}
-
-/// Interpret `argument`, an argument a written type applies a family at, in
-/// the value language, as a nominal application's argument is interpreted.
-///
-/// # Specification
-/// - requires: `context`'s scopes are the ones the argument is written under.
-/// - ensures: a name `context` binds to a value or a parameter is that value or
-///   the parameter's variable; any other reference is the code of the type it
-///   interprets to.
-/// - fails: a name `context` does not bind and an unreadable type.
-/// - panics: none.
-///
-/// # Errors
-/// Returns the interpretation's refusal.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a parameter is its variable at the telescope's depth and
-///   a primitive the code of its type, as when a nominal application applies to
-///   them.
-/// - witness: `description::tests::an_argument_decodes_as_a_nominal_argument_does`
-#[inline]
-#[spec(ensures: |result| result.as_ref().map_or(true, |id| arena.value(*id).is_some()))]
-pub fn decode_argument(
-    arena: &mut CoreArena,
-    argument: ValueTypeNode<'_>,
-    context: DecodeContext<'_>,
-) -> Result<crate::ValueId, DecodeError>
-{
-    if let Some(value) = bound_argument(arena, argument, context)? {
-        return Ok(value);
-    }
-    let ty = interpret::<()>(arena, vec![Frame::Type(argument)], context)?;
-    Ok(arena.value_quote(ty))
 }
 
 /// Interpret supported primitives without inventing opaque substitutes.

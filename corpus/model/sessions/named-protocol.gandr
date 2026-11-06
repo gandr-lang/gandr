@@ -1,12 +1,13 @@
-// A parameter whose type names a session type is an endpoint, as one written
-// at the session type is.
+// This source uses named session types as endpoint parameters.
 //
-// A program names its protocol once and spells it by that name at each end.
-// The name may be a top-level type, a module's manifest component or a name
-// for either.
+// A program names its protocol once.
+// Each endpoint uses that name.
+// A top-level type can name the protocol.
+// A module manifest component can name the protocol.
+// An alias can name either type.
 //
-// The lowering reads each name through to the type its definition writes,
-// and places the parameter when that type is a session type.
+// The lowering resolves each name to its definition's type.
+// The lowering places a parameter when that type is a session type.
 //
 // - see: #4703
 
@@ -17,7 +18,7 @@ module Desk where
 
 /// The seat's side of a one-number report, named at the top level.
 type Tell = !Integer. end;
-/// A second name for the seat's side, which reads through to `Tell`.
+/// `Report` names the seat's side as `Tell` does.
 type Report = Tell;
 
 /// A desk that hears one number on the endpoint a module's protocol names.

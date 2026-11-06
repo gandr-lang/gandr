@@ -339,6 +339,7 @@ digraph crates {
   "theory-circuit-algebras" -> "theory-cell-complexes";
   "theory-circuit-algebras" -> "theory-spec-combinators";
   "theory-coherent-resolutions" -> "theory-cell-complexes";
+  "theory-coherent-resolutions" -> "theory-discrete-morse";
   "theory-coherent-resolutions" -> "theory-spec-combinators";
   "theory-computads" -> "theory-cell-complexes";
   "theory-computads" -> "theory-coherent-resolutions";
@@ -375,7 +376,7 @@ digraph crates {
   "workflow-sweep" -> "surface-parser";
   "workflow-sweep" -> "surface-syntax";
   "workflow-test-timing" -> "workflow-github";
-  "theory-discrete-morse" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
+  "theory-coherent-resolutions" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "core-fork" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "runtime-emitter" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "surface-dispatcher" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];

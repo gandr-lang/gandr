@@ -1,7 +1,11 @@
-// A type written where an expression stands, quoted as `type(T)`: an
-// expression reads a receive's `?` as a hole and a labelled sum's `+{` as an
-// injection, so the quote is the one spelling of such a type as an argument,
-// as it is spelled bare in a signature.
+// This source quotes types for expression arguments.
+//
+// An expression reads a receive's `?` as a hole.
+// An expression reads a labelled sum's `+{` as an injection.
+// The quote gives such a type one argument spelling.
+// A signature writes the type without the quote.
+//
+// The checker reads the quoted form as a type argument.
 //
 // - see: #839
 // - see: #1728 — `run_over_binder`
@@ -21,8 +25,7 @@ def quoted_receive : Flow[.A = Type](
 /// The stationary flow at a labelled sum of one summand.
 def quoted_sum : Flow[.A = Type](+{Unit}, +{Unit}) = Flow.stay (type(+{Unit}));
 
-/// The seat's protocol, written out in full where an expression stands,
-/// simulates the protocol its name stands for.
+/// `protocol` compares the written seat protocol with its named form.
 def protocol : Flow[.A = Type](Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
   report : !(Seat.Report). &{next : turn, retire : end},
   handoff : !(Seat.Handoff). end
@@ -31,8 +34,7 @@ def protocol : Flow[.A = Type](Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
   handoff : !(Seat.Handoff). end
 }));
 
-/// A run's protocol may read the binder of the motive it stands in, where a
-/// quote may not: a run stays on the checker's side, so its payloads are no
-/// codes the kernel forms, and the run moves along a path.
+/// `run_over_binder` reads a motive binder in a run protocol.
+/// The checker carries the run without payload codes.
 def run_over_binder(served : Run(?(Seat.Dispatch). end)) -> Run(?(Seat.Dispatch). end) =
   Path.walk (fun (X) { Run (type(?X. end)) }) (Path.here Seat.Dispatch) served

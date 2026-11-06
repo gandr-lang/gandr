@@ -1,8 +1,12 @@
-// A bisimilarity paid with a univalence between two nominal types: the
-// univalence's record is the evidence, checked at the native identity the
-// payload pair owes. `equiv` decides such a path by its round trips
-// (`model/identity/equiv-data.gandr`).
+// This source pays session bisimilarity with a univalence between nominal types.
 //
+// The univalence record supplies the evidence.
+// Native identity checks the evidence at the owed payload pair.
+// `equiv` decides a path from its round trips.
+//
+// `oneProtocol` gives `Path.bisim` the payload path.
+//
+// - see: `model/identity/equiv-data.gandr` — `equiv` checks round trips
 // - see: #1739 — `oneProtocol`
 
 // The bits and the answers, their univalence `codes`, and the protocols

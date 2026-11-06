@@ -129,3 +129,48 @@ wrapper! {
     #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
     pub struct CompletionStatus(bool);
 }
+
+wrapper! {
+    /// The place of an operation in the signature of a Lawvere theory.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Operation(usize);
+}
+
+wrapper! {
+    /// The place of a variable in a context of a Lawvere theory.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Variable(usize);
+}
+
+wrapper! {
+    /// The place of a term in its table. Equal places in one table are equal
+    /// terms.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct TermPlace(usize);
+}
+
+wrapper! {
+    /// A number of variables: the arity of an operation, or the variables of
+    /// a context.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Arity(usize);
+}
+
+wrapper! {
+    /// A number of nodes: of a term, or of the terms of a cell.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct TermSize(usize);
+}
+
+wrapper! {
+    /// The occurrences of one variable in a term, each path from the root
+    /// counted once.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Occurrences(usize);
+}
+
+wrapper! {
+    /// The degree of a cell of a bar complex: the number of its arrows.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct BarDegree(usize);
+}

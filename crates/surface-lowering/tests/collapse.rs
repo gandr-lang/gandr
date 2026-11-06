@@ -41,6 +41,18 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::coincide::Certificates;
 use gandr_surface_lowering::desc_cells::DeclarationCells;
 use gandr_surface_syntax::SourceText;
+use gandr_theory_coherent_resolutions::Arity;
+use gandr_theory_coherent_resolutions::Arrow;
+use gandr_theory_coherent_resolutions::BarBound;
+use gandr_theory_coherent_resolutions::BarCell;
+use gandr_theory_coherent_resolutions::BarDegree;
+use gandr_theory_coherent_resolutions::LawvereTheory;
+use gandr_theory_coherent_resolutions::Operation;
+use gandr_theory_coherent_resolutions::TermHead;
+use gandr_theory_coherent_resolutions::TermPlace;
+use gandr_theory_coherent_resolutions::TermTable;
+use gandr_theory_coherent_resolutions::Truncation;
+use gandr_theory_coherent_resolutions::Variable;
 use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Complex;
@@ -48,23 +60,11 @@ use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Incidence;
 use gandr_theory_discrete_morse::Standing;
 
-use crate::lawvere::Arrow;
-use crate::lawvere::Bound;
-use crate::lawvere::Cell;
 use crate::lawvere::Count;
-use crate::lawvere::Degeneracy;
-use crate::lawvere::Head;
-use crate::lawvere::Operation;
 use crate::lawvere::Side;
-use crate::lawvere::Table;
-use crate::lawvere::TermId;
-use crate::lawvere::Theory;
-use crate::lawvere::Truncation;
-use crate::lawvere::Variable;
-use crate::lawvere::boundary;
+use crate::lawvere::bound;
 use crate::lawvere::presented;
 use crate::lawvere::read;
-use crate::lawvere::truncation;
 use crate::squier::Presentation;
 use crate::squier::Reading;
 use crate::squier::certified;
@@ -105,7 +105,7 @@ struct Origin
 struct Spot
 {
     /// The symbol.
-    head: Head,
+    head: TermHead,
     /// The arrow the node comes from.
     level: Level,
     /// Where the node lies in that arrow.
@@ -133,7 +133,7 @@ enum Build
     Enter
     {
         /// The node.
-        term: TermId,
+        term: TermPlace,
         /// Its arrow.
         level: Level,
         /// The term of the arrow it lies in.
@@ -145,7 +145,7 @@ enum Build
     Leave
     {
         /// The symbol.
-        head: Head,
+        head: TermHead,
         /// Its arrow.
         level: Level,
         /// Where it lies in its arrow.
@@ -174,7 +174,7 @@ impl Composite
     /// trivial.
     fn build(
         &mut self,
-        (table, arrows): (&Table, &[Arrow]),
+        (table, arrows): (&TermTable, &[Arrow]),
         last: Level,
     ) -> Option<()>
     {
@@ -205,11 +205,11 @@ impl Composite
                         node: *counter,
                     };
                     counter.0 = counter.0.saturating_add(1);
-                    let node = table.node(term);
+                    let node = table.node(term).ok()?;
                     match node.head {
-                        Head::Var(variable) if level < last => {
+                        TermHead::Var(variable) if level < last => {
                             let next = Level(level.0.saturating_add(1));
-                            let place = usize::from(variable.0);
+                            let place = usize::from(variable);
                             pending.push(Build::Enter {
                                 term: *arrows.get(next.0)?.terms.get(place)?,
                                 level: next,
@@ -217,7 +217,7 @@ impl Composite
                                 fresh: Fresh::Root,
                             });
                         },
-                        head @ (Head::Var(_) | Head::Op(_)) => {
+                        head @ (TermHead::Var(_) | TermHead::Op(_)) => {
                             pending.push(Build::Leave {
                                 head,
                                 level,
@@ -273,7 +273,7 @@ struct Scheme
     /// The composite of the cell's first arrows.
     composite: Composite,
     /// The pairs of pattern and node that a match has still to read.
-    pending: Vec<(TermId, Place)>,
+    pending: Vec<(TermPlace, Place)>,
     /// The nodes the last match reads.
     region: Vec<Place>,
     /// The nodes of the last arrow that the selected redex reads.
@@ -286,7 +286,7 @@ enum Cut
 {
     /// Read the node at the term, which lies at the given place in the
     /// pre-order of its term.
-    Enter(TermId, Count),
+    Enter(TermPlace, Count),
     /// Make the operation from the last nodes built, as many as the count.
     Leave(Operation, Count),
 }
@@ -301,16 +301,16 @@ impl Scheme
     /// trivial.
     fn matched(
         &mut self,
-        table: &Table,
-        (pattern, place): (TermId, Place),
+        table: &TermTable,
+        (pattern, place): (TermPlace, Place),
     ) -> Option<()>
     {
         self.pending.clear();
         self.region.clear();
         self.pending.push((pattern, place));
         while let Some((pattern, place)) = self.pending.pop() {
-            let want = table.node(pattern);
-            if let Head::Var(_) = want.head {
+            let want = table.node(pattern).ok()?;
+            if let TermHead::Var(_) = want.head {
                 continue;
             }
             let have = self.composite.spots.get(place.0)?;
@@ -333,13 +333,13 @@ impl Scheme
     /// trivial.
     fn first_redex(
         &mut self,
-        theory: &Theory,
+        theory: &LawvereTheory,
         levels: (Level, Level),
     ) -> Option<Rule>
     {
         for place in 0 .. self.composite.spots.len() {
-            for (rule, &(left, _)) in theory.rules.iter().enumerate() {
-                if self.matched(&theory.table, (left, Place(place))).is_none() {
+            for (rule, &(left, _)) in theory.rules().iter().enumerate() {
+                if self.matched(theory.table(), (left, Place(place))).is_none() {
                     continue;
                 }
                 let spots = &self.composite.spots;
@@ -363,19 +363,19 @@ impl Scheme
     /// trivial.
     fn classify(
         &mut self,
-        theory: &mut Theory,
-        cell: &Cell,
-    ) -> Option<Class<Cell>>
+        theory: &mut LawvereTheory,
+        cell: &BarCell,
+    ) -> Option<Class<BarCell>>
     {
         let arrows = &cell.0;
         let first = arrows.first()?;
         let term = *first.terms.first()?;
-        let Head::Op(operation) = theory.table.node(term).head
+        let TermHead::Op(operation) = theory.table().node(term).ok()?.head
         else {
             return None;
         };
-        let children = theory.table.node(term).children.clone();
-        let generator = generator(&mut theory.table, (operation, Count(children.len())))?;
+        let children = theory.table().node(term).ok()?.children.clone();
+        let generator = generator(theory.table_mut(), (operation, Arity::from(children.len())))?;
         if *first != generator {
             let mut split = Vec::with_capacity(arrows.len().saturating_add(1));
             split.push(generator);
@@ -384,11 +384,11 @@ impl Scheme
                 terms: children,
             });
             split.extend(arrows.iter().skip(1).cloned());
-            return Some(Class::Redundant(Cell(split)));
+            return Some(Class::Redundant(BarCell(split)));
         }
         for at in 1 .. arrows.len() {
             let (before, level) = (Level(at.saturating_sub(1)), Level(at));
-            self.composite.build((&theory.table, arrows), level)?;
+            self.composite.build((theory.table(), arrows), level)?;
             self.kept.clear();
             if self.first_redex(theory, (before, level)).is_some() {
                 let spots = &self.composite.spots;
@@ -404,7 +404,7 @@ impl Scheme
                 let (outer, filler) = (arrows.get(before.0)?, arrows.get(at)?);
                 let mut terms = Vec::with_capacity(outer.terms.len());
                 for &held in &outer.terms {
-                    terms.push(theory.table.substituted(held, &filler.terms)?);
+                    terms.push(theory.table_mut().substituted(held, &filler.terms).ok()?);
                 }
                 let mut merged: Vec<Arrow> = arrows.iter().take(before.0).cloned().collect();
                 merged.push(Arrow {
@@ -412,19 +412,19 @@ impl Scheme
                     terms,
                 });
                 merged.extend(arrows.iter().skip(at.saturating_add(1)).cloned());
-                return Some(Class::Collapsible(Cell(merged)));
+                return Some(Class::Collapsible(BarCell(merged)));
             }
             let kept = &self.kept;
-            let (top, rest) = split(&mut theory.table, arrows.get(at)?, |origin| {
+            let (top, rest) = split(theory.table_mut(), arrows.get(at)?, |origin| {
                 kept.contains(&origin)
             })?;
-            if fill(&theory.table, &rest) == Fill::Identity {
+            if fill(theory.table(), &rest)? == Fill::Identity {
                 continue;
             }
             let mut parted: Vec<Arrow> = arrows.iter().take(at).cloned().collect();
             parted.extend([top, rest]);
             parted.extend(arrows.iter().skip(at.saturating_add(1)).cloned());
-            return Some(Class::Redundant(Cell(parted)));
+            return Some(Class::Redundant(BarCell(parted)));
         }
         Some(Class::Critical)
     }
@@ -437,12 +437,12 @@ impl Scheme
     /// trivial.
     fn overlapping(
         &mut self,
-        theory: &Theory,
-        cell: &Cell,
+        theory: &LawvereTheory,
+        cell: &BarCell,
     ) -> Option<Rule>
     {
         let last = Level(cell.0.len().checked_sub(1)?);
-        self.composite.build((&theory.table, &cell.0), last)?;
+        self.composite.build((theory.table(), &cell.0), last)?;
         self.first_redex(theory, (Level(last.0.checked_sub(1)?), last))
     }
 }
@@ -453,17 +453,17 @@ impl Scheme
 /// # Specification
 /// trivial.
 fn generator(
-    table: &mut Table,
-    (operation, arity): (Operation, Count),
+    table: &mut TermTable,
+    (operation, arity): (Operation, Arity),
 ) -> Option<Arrow>
 {
-    let mut children = Vec::with_capacity(arity.0);
-    for place in 0 .. arity.0 {
-        children.push(table.var(Variable(u8::try_from(place).ok()?)));
+    let mut children = Vec::with_capacity(usize::from(arity));
+    for place in 0 .. usize::from(arity) {
+        children.push(table.var(Variable::from(place)));
     }
     Some(Arrow {
         source: arity,
-        terms: vec![table.op(operation, children)],
+        terms: vec![table.op(operation, children).ok()?],
     })
 }
 
@@ -472,21 +472,19 @@ fn generator(
 /// # Specification
 /// trivial.
 fn fill(
-    table: &Table,
+    table: &TermTable,
     arrow: &Arrow,
-) -> Fill
+) -> Option<Fill>
 {
-    let identity = arrow.source.0 == arrow.terms.len()
-        && arrow.terms.iter().enumerate().all(|(place, &term)| {
-            u8::try_from(place)
-                .is_ok_and(|place| table.node(term).head == Head::Var(Variable(place)))
-        });
-    if identity {
-        Fill::Identity
+    if usize::from(arrow.source) != arrow.terms.len() {
+        return Some(Fill::Proper);
     }
-    else {
-        Fill::Proper
+    for (place, &term) in arrow.terms.iter().enumerate() {
+        if table.node(term).ok()?.head != TermHead::Var(Variable::from(place)) {
+            return Some(Fill::Proper);
+        }
     }
+    Some(Fill::Identity)
 }
 
 /// The arrow `arrow` split as `top ∘ rest`. The top keeps each operation node
@@ -496,18 +494,18 @@ fn fill(
 /// # Specification
 /// trivial.
 fn split<Keep>(
-    table: &mut Table,
+    table: &mut TermTable,
     arrow: &Arrow,
     keep: Keep,
 ) -> Option<(Arrow, Arrow)>
 where
     Keep: Fn(Origin) -> bool,
 {
-    let mut fresh: Vec<TermId> = Vec::new();
+    let mut fresh: Vec<TermPlace> = Vec::new();
     let mut tops = Vec::with_capacity(arrow.terms.len());
     let mut pending: Vec<Cut> = Vec::new();
-    let mut built: Vec<TermId> = Vec::new();
-    let mut children: Vec<(TermId, Count)> = Vec::new();
+    let mut built: Vec<TermPlace> = Vec::new();
+    let mut children: Vec<(TermPlace, Count)> = Vec::new();
     for (of, &root) in arrow.terms.iter().enumerate() {
         pending.push(Cut::Enter(root, Count(0)));
         while let Some(step) = pending.pop() {
@@ -517,22 +515,22 @@ where
                         term: Count(of),
                         node,
                     };
-                    let held = table.node(term);
+                    let held = table.node(term).ok()?;
                     match held.head {
-                        Head::Op(operation) if keep(origin) => {
+                        TermHead::Op(operation) if keep(origin) => {
                             pending.push(Cut::Leave(operation, Count(held.children.len())));
                             let mut next = node.0.saturating_add(1);
                             children.clear();
                             for &child in &held.children {
                                 children.push((child, Count(next)));
-                                next = next.saturating_add(table.size(child).0);
+                                next = next.saturating_add(usize::from(table.size(child).ok()?));
                             }
                             while let Some((child, at)) = children.pop() {
                                 pending.push(Cut::Enter(child, at));
                             }
                         },
-                        Head::Op(_) | Head::Var(_) => {
-                            let variable = Variable(u8::try_from(fresh.len()).ok()?);
+                        TermHead::Op(_) | TermHead::Var(_) => {
+                            let variable = Variable::from(fresh.len());
                             fresh.push(term);
                             built.push(table.var(variable));
                         },
@@ -541,7 +539,7 @@ where
                 Cut::Leave(operation, arity) => {
                     let start = built.len().checked_sub(arity.0)?;
                     let arguments = built.split_off(start);
-                    built.push(table.op(operation, arguments));
+                    built.push(table.op(operation, arguments).ok()?);
                 },
             }
         }
@@ -549,7 +547,7 @@ where
     }
     Some((
         Arrow {
-            source: Count(fresh.len()),
+            source: Arity::from(fresh.len()),
             terms: tops,
         },
         Arrow {
@@ -557,28 +555,6 @@ where
             terms: fresh,
         },
     ))
-}
-
-/// Whether `cell` lies in the bar complex of `theory`, or none past the fuel.
-///
-/// # Specification
-/// trivial.
-fn standing(
-    theory: &mut Theory,
-    cell: &Cell,
-) -> Option<Standing>
-{
-    if cell.degeneracy(&theory.table) == Degeneracy::Degenerate {
-        return Some(Standing::Outside);
-    }
-    for arrow in &cell.0 {
-        for &term in &arrow.terms {
-            if theory.normal_form(term)? != term {
-                return Some(Standing::Outside);
-            }
-        }
-    }
-    Some(Standing::Inside)
 }
 
 /// The most redundant cells the cycle check visits before the probe gives up.
@@ -594,14 +570,14 @@ struct Unread;
 struct Bar<'theory>
 {
     /// The theory whose bar complex this is.
-    theory: &'theory mut Theory,
+    theory: &'theory mut LawvereTheory,
     /// The scheme's working memory.
     scheme: Scheme,
 }
 
 impl Complex for Bar<'_>
 {
-    type Cell = Cell;
+    type Cell = BarCell;
     type Fault = Unread;
 
     /// Whether `cell` lies in the bar complex.
@@ -610,10 +586,10 @@ impl Complex for Bar<'_>
     /// trivial.
     fn standing(
         &mut self,
-        cell: &Cell,
+        cell: &BarCell,
     ) -> Result<Standing, Unread>
     {
-        standing(self.theory, cell).ok_or(Unread)
+        self.theory.standing(cell).map_err(|_fault| Unread)
     }
 
     /// The faces of `cell` in its boundary, each with its coefficient.
@@ -622,17 +598,11 @@ impl Complex for Bar<'_>
     /// trivial.
     fn faces(
         &mut self,
-        cell: &Cell,
-        faces: &mut Vec<(Cell, Incidence)>,
+        cell: &BarCell,
+        faces: &mut Vec<(BarCell, Incidence)>,
     ) -> Result<(), Unread>
     {
-        let chain = boundary(self.theory, cell).ok_or(Unread)?;
-        faces.extend(
-            chain
-                .into_iter()
-                .map(|(face, coefficient)| (face, Incidence::from(coefficient.0))),
-        );
-        Ok(())
+        self.theory.faces(cell, faces).map_err(|_fault| Unread)
     }
 }
 
@@ -645,8 +615,8 @@ impl gandr_theory_discrete_morse::Scheme for Bar<'_>
     /// trivial.
     fn class(
         &mut self,
-        cell: &Cell,
-    ) -> Result<Class<Cell>, Unread>
+        cell: &BarCell,
+    ) -> Result<Class<BarCell>, Unread>
     {
         if cell.0.is_empty() {
             return Ok(Class::Critical);
@@ -664,7 +634,7 @@ impl gandr_theory_discrete_morse::Scheme for Bar<'_>
 /// # Specification
 /// trivial.
 fn faults(
-    theory: &mut Theory,
+    theory: &mut LawvereTheory,
     truncation: &Truncation,
 ) -> Option<Faults>
 {
@@ -674,7 +644,7 @@ fn faults(
     };
     let done = gandr_theory_discrete_morse::collapse(
         &mut bar,
-        truncation.cells.iter().skip(1).flatten(),
+        (1 ..= DEGREES).flat_map(|degree| truncation.cells(BarDegree::from(degree))),
         Budget::from(CLOSURE),
     )
     .ok()?;
@@ -718,21 +688,18 @@ fn spread(
 /// # Specification
 /// trivial.
 fn shapes_of(
-    theory: &mut Theory,
-    shapes: &[Vec<TermId>],
+    theory: &mut LawvereTheory,
+    shapes: &[Vec<TermPlace>],
     size: Count,
-) -> Vec<TermId>
+) -> Option<Vec<TermPlace>>
 {
     let mut found = Vec::new();
-    let mut tuples: Vec<Vec<TermId>> = Vec::new();
-    let mut longer: Vec<Vec<TermId>> = Vec::new();
-    for place in 0 .. theory.arities.len() {
-        let Ok(operation) = u8::try_from(place).map(Operation)
-        else {
-            continue;
-        };
-        let arity = theory.arities.get(place).copied().unwrap_or_default();
-        for sizes in spread(Count(size.0.saturating_sub(1)), arity) {
+    let mut tuples: Vec<Vec<TermPlace>> = Vec::new();
+    let mut longer: Vec<Vec<TermPlace>> = Vec::new();
+    for place in 0 .. theory.arities().len() {
+        let operation = Operation::from(place);
+        let arity = theory.arities().get(place).copied().unwrap_or_default();
+        for sizes in spread(Count(size.0.saturating_sub(1)), Count(usize::from(arity))) {
             tuples.clear();
             tuples.push(Vec::new());
             for part in sizes {
@@ -748,11 +715,11 @@ fn shapes_of(
                 core::mem::swap(&mut tuples, &mut longer);
             }
             while let Some(arguments) = tuples.pop() {
-                found.push(theory.table.op(operation, arguments));
+                found.push(theory.table_mut().op(operation, arguments).ok()?);
             }
         }
     }
-    found
+    Some(found)
 }
 
 /// The arrows into `target` variables with one to `largest` operations whose
@@ -761,16 +728,16 @@ fn shapes_of(
 /// # Specification
 /// trivial.
 fn linear_arrows(
-    theory: &mut Theory,
-    shapes: &[Vec<TermId>],
-    (target, largest): (Count, Count),
+    theory: &mut LawvereTheory,
+    shapes: &[Vec<TermPlace>],
+    (target, largest): (Arity, Count),
 ) -> Option<Vec<Arrow>>
 {
     let mut out = Vec::new();
-    let mut tuples: Vec<Vec<TermId>> = Vec::new();
-    let mut longer: Vec<Vec<TermId>> = Vec::new();
+    let mut tuples: Vec<Vec<TermPlace>> = Vec::new();
+    let mut longer: Vec<Vec<TermPlace>> = Vec::new();
     for total in 1 ..= largest.0 {
-        for sizes in spread(Count(total), target) {
+        for sizes in spread(Count(total), Count(usize::from(target))) {
             tuples.clear();
             tuples.push(Vec::new());
             for part in sizes {
@@ -787,13 +754,13 @@ fn linear_arrows(
             }
             while let Some(terms) = tuples.pop() {
                 let holed = Arrow {
-                    source: Count(1),
+                    source: Arity::from(1_usize),
                     terms,
                 };
-                let (arrow, _holes) = split(&mut theory.table, &holed, |_| true)?;
+                let (arrow, _holes) = split(theory.table_mut(), &holed, |_| true)?;
                 let mut normal = true;
                 for &term in &arrow.terms {
-                    normal = normal && theory.normal_form(term)? == term;
+                    normal = normal && theory.normal_form(term).ok()? == term;
                 }
                 if normal {
                     out.push(arrow);
@@ -810,27 +777,25 @@ fn linear_arrows(
 ///
 /// # Specification
 /// trivial.
-fn essential(theory: &mut Theory) -> Option<Vec<Vec<Cell>>>
+fn essential(theory: &mut LawvereTheory) -> Option<Vec<Vec<BarCell>>>
 {
-    let largest = theory
-        .rules
-        .iter()
-        .map(|&(left, _)| operations(&theory.table, left))
-        .max()
-        .unwrap_or_default();
-    let hole = theory.table.var(Variable(0));
-    let mut shapes: Vec<Vec<TermId>> = vec![vec![hole]];
+    let mut largest = Count(0);
+    for &(left, _) in theory.rules() {
+        largest = largest.max(operations(theory.table(), left)?);
+    }
+    let hole = theory.table_mut().var(Variable::from(0_usize));
+    let mut shapes: Vec<Vec<TermPlace>> = vec![vec![hole]];
     for size in 1 ..= largest.0 {
-        let found = shapes_of(theory, &shapes, Count(size));
+        let found = shapes_of(theory, &shapes, Count(size))?;
         shapes.push(found);
     }
     let mut scheme = Scheme::default();
     let mut generators = Vec::new();
-    for place in 0 .. theory.arities.len() {
-        let operation = Operation(u8::try_from(place).ok()?);
-        let arity = theory.arities.get(place).copied().unwrap_or_default();
-        generators.push(Cell(vec![generator(
-            &mut theory.table,
+    for place in 0 .. theory.arities().len() {
+        let operation = Operation::from(place);
+        let arity = theory.arities().get(place).copied().unwrap_or_default();
+        generators.push(BarCell(vec![generator(
+            theory.table_mut(),
             (operation, arity),
         )?]));
     }
@@ -842,7 +807,7 @@ fn essential(theory: &mut Theory) -> Option<Vec<Vec<Cell>>>
             for arrow in linear_arrows(theory, &shapes, (target, largest))? {
                 let mut arrows = cell.0.clone();
                 arrows.push(arrow);
-                let candidate = Cell(arrows);
+                let candidate = BarCell(arrows);
                 if scheme.classify(theory, &candidate)? == Class::Critical {
                     found.push(candidate);
                 }
@@ -858,33 +823,33 @@ fn essential(theory: &mut Theory) -> Option<Vec<Vec<Cell>>>
 /// # Specification
 /// trivial.
 fn operations(
-    table: &Table,
-    place: TermId,
-) -> Count
+    table: &TermTable,
+    place: TermPlace,
+) -> Option<Count>
 {
     let mut found = 0_usize;
     let mut pending = vec![place];
     while let Some(next) = pending.pop() {
-        let node = table.node(next);
-        if let Head::Op(_) = node.head {
+        let node = table.node(next).ok()?;
+        if let TermHead::Op(_) = node.head {
             found = found.saturating_add(1);
         }
         pending.extend(&node.children);
     }
-    Count(found)
+    Some(Count(found))
 }
 
 /// An overlap of two rules: its peak, when the reading spells it, and the two
 /// left sides, the lesser first.
-type Overlap = (Option<TermId>, TermId, TermId);
+type Overlap = (Option<TermPlace>, TermPlace, TermPlace);
 
 /// The overlap of the rules at `left` and `right`, the lesser first.
 ///
 /// # Specification
 /// trivial.
 fn overlap(
-    peak: Option<TermId>,
-    (left, right): (TermId, TermId),
+    peak: Option<TermPlace>,
+    (left, right): (TermPlace, TermPlace),
 ) -> Overlap
 {
     (peak, left.min(right), left.max(right))
@@ -945,10 +910,13 @@ impl Collapse
 
 /// The bound of the truncation the matching is checked on: two variables, and
 /// a total size of five.
-const BOUND: Bound = Bound {
-    variables: Count(2),
-    weight: Count(5),
-};
+///
+/// # Specification
+/// trivial.
+fn checked_bound() -> BarBound
+{
+    bound(Count(2), Count(5))
+}
 
 /// The differences of two multisets: the count of `left` less `right`, and
 /// of `right` less `left`.
@@ -1025,25 +993,35 @@ fn collapse(
 {
     let certificates = certified(cells).ok_or(Undecided::Uncertified)?;
     let (mut theory, names) = presented(&block.rules).ok_or(Undecided::Binding)?;
-    for &(left, _) in &theory.rules {
-        if let Head::Var(_) = theory.table.node(left).head {
+    for &(left, _) in theory.rules() {
+        if let TermHead::Var(_) = theory
+            .table()
+            .node(left)
+            .map_err(|_fault| Undecided::Bound)?
+            .head
+        {
             return Err(Undecided::Nonlinear);
         }
-        if linearity(&theory.table, left) == Linearity::Repeated {
+        if linearity(theory.table(), left).ok_or(Undecided::Bound)? == Linearity::Repeated {
             return Err(Undecided::Nonlinear);
         }
     }
-    for place in 0 .. theory.arities.len() {
-        let operation = Operation(u8::try_from(place).ok().ok_or(Undecided::Bound)?);
-        let arity = theory.arities.get(place).copied().unwrap_or_default();
-        let generator = generator(&mut theory.table, (operation, arity)).ok_or(Undecided::Bound)?;
+    for place in 0 .. theory.arities().len() {
+        let operation = Operation::from(place);
+        let arity = theory.arities().get(place).copied().unwrap_or_default();
+        let generator =
+            generator(theory.table_mut(), (operation, arity)).ok_or(Undecided::Bound)?;
         let term = *generator.terms.first().ok_or(Undecided::Bound)?;
-        if theory.normal_form(term).ok_or(Undecided::Bound)? != term {
+        if theory
+            .normal_form(term)
+            .map_err(|_fault| Undecided::Bound)?
+            != term
+        {
             return Err(Undecided::Defined);
         }
     }
     let found = essential(&mut theory).ok_or(Undecided::Bound)?;
-    let lefts: Vec<TermId> = theory.rules.iter().map(|&(left, _)| left).collect();
+    let lefts: Vec<TermPlace> = theory.rules().iter().map(|&(left, _)| left).collect();
     let spelled = spelled_cells(&mut theory, (&found, &lefts), reading).ok_or(Undecided::Bound)?;
     let (certified_overlaps, frames) = certified_overlaps(
         (&mut theory, &names),
@@ -1051,7 +1029,9 @@ fn collapse(
         (&certificates, &lefts),
     )
     .ok_or(Undecided::Bound)?;
-    let truncated = truncation(&mut theory, BOUND).ok_or(Undecided::Bound)?;
+    let truncated = theory
+        .truncation(checked_bound())
+        .map_err(|_fault| Undecided::Bound)?;
     let faults = faults(&mut theory, &truncated).ok_or(Undecided::Bound)?;
     let mut essential = [Count(0); DEGREES];
     for (slot, cells) in essential.iter_mut().zip(&found) {
@@ -1073,10 +1053,10 @@ fn collapse(
 /// # Specification
 /// trivial.
 fn spelled_cells(
-    theory: &mut Theory,
-    (found, lefts): (&[Vec<Cell>], &[TermId]),
+    theory: &mut LawvereTheory,
+    (found, lefts): (&[Vec<BarCell>], &[TermPlace]),
     reading: Reading,
-) -> Option<(Vec<TermId>, Vec<Overlap>)>
+) -> Option<(Vec<TermPlace>, Vec<Overlap>)>
 {
     let mut scheme = Scheme::default();
     let mut spelled_lefts = Vec::new();
@@ -1084,17 +1064,19 @@ fn spelled_cells(
         let (generator, top) = (cell.0.first()?, cell.0.get(1)?);
         spelled_lefts.push(
             theory
-                .table
-                .substituted(*generator.terms.first()?, &top.terms)?,
+                .table_mut()
+                .substituted(*generator.terms.first()?, &top.terms)
+                .ok()?,
         );
     }
     let mut overlaps = Vec::new();
     for cell in found.get(2)? {
         let (generator, top, below) = (cell.0.first()?, cell.0.get(1)?, cell.0.get(2)?);
         let left = theory
-            .table
-            .substituted(*generator.terms.first()?, &top.terms)?;
-        let peak = theory.table.substituted(left, &below.terms)?;
+            .table_mut()
+            .substituted(*generator.terms.first()?, &top.terms)
+            .ok()?;
+        let peak = theory.table_mut().substituted(left, &below.terms).ok()?;
         let other = lefts.get(scheme.overlapping(theory, cell)?.0).copied()?;
         let peak = (reading == Reading::Terms).then_some(peak);
         overlaps.push(overlap(peak, (left, other)));
@@ -1109,9 +1091,9 @@ fn spelled_cells(
 /// # Specification
 /// trivial.
 fn certified_overlaps(
-    (theory, names): (&mut Theory, &[String]),
+    (theory, names): (&mut LawvereTheory, &[String]),
     (reading, block): (Reading, &Presentation),
-    (certificates, lefts): (&Certificates, &[TermId]),
+    (certificates, lefts): (&Certificates, &[TermPlace]),
 ) -> Option<(Vec<Overlap>, Count)>
 {
     let mut out = Vec::new();
@@ -1124,7 +1106,7 @@ fn certified_overlaps(
                 variables.clear();
                 let peak = read(
                     &free,
-                    (names, &mut theory.table),
+                    (names, theory.table_mut()),
                     (&mut variables, Side::Left),
                 )?;
                 let left = lefts.get(block.index.get(&pair.overlap.left)?.0).copied()?;
@@ -1158,22 +1140,22 @@ fn certified_overlaps(
 /// # Specification
 /// trivial.
 fn linearity(
-    table: &Table,
-    place: TermId,
-) -> Linearity
+    table: &TermTable,
+    place: TermPlace,
+) -> Option<Linearity>
 {
     let mut seen = BTreeSet::new();
     let mut pending = vec![place];
     while let Some(next) = pending.pop() {
-        let node = table.node(next);
-        if let Head::Var(variable) = node.head
+        let node = table.node(next).ok()?;
+        if let TermHead::Var(variable) = node.head
             && !seen.insert(variable)
         {
-            return Linearity::Repeated;
+            return Some(Linearity::Repeated);
         }
         pending.extend(&node.children);
     }
-    Linearity::Linear
+    Some(Linearity::Linear)
 }
 
 /// The essential cell counts of a decided reading, and its verdict.
@@ -1223,19 +1205,29 @@ fn the_cells_of_nat_units_collapse_by_hand_onto_its_operations_rules_and_pairs()
         panic!("the source holds NatUnits");
     };
     assert_eq!(names, ["Succ", "Zero", "add"]);
-    let (succ, zero, add) = (Operation(0), Operation(1), Operation(2));
-    let table = &mut theory.table;
-    let (first, second) = (table.var(Variable(0)), table.var(Variable(1)));
-    let nought = table.op(zero, Vec::new());
-    let sum = table.op(add, vec![first, second]);
-    let double = table.op(add, vec![first, first]);
-    let next = table.op(succ, vec![first]);
-    let one = table.op(succ, vec![nought]);
-    let arrow = |source: usize, terms: &[TermId]| Arrow {
-        source: Count(source),
+    let (succ, zero, add) = (
+        Operation::from(0_usize),
+        Operation::from(1_usize),
+        Operation::from(2_usize),
+    );
+    let table = theory.table_mut();
+    let (first, second) = (
+        table.var(Variable::from(0_usize)),
+        table.var(Variable::from(1_usize)),
+    );
+    let mut op = |operation: Operation, children: Vec<TermPlace>| {
+        table.op(operation, children).expect("a term of NatUnits")
+    };
+    let nought = op(zero, Vec::new());
+    let sum = op(add, vec![first, second]);
+    let double = op(add, vec![first, first]);
+    let next = op(succ, vec![first]);
+    let one = op(succ, vec![nought]);
+    let arrow = |source: usize, terms: &[TermPlace]| Arrow {
+        source: Arity::from(source),
         terms: terms.to_vec(),
     };
-    let cell = |arrows: &[Arrow]| Cell(arrows.to_vec());
+    let cell = |arrows: &[Arrow]| BarCell(arrows.to_vec());
     let classes = [
         (cell(&[arrow(0, &[nought])]), Class::Critical),
         (
@@ -1284,19 +1276,19 @@ fn the_cells_of_nat_units_collapse_by_hand_onto_its_operations_rules_and_pairs()
         );
     }
     let found = essential(&mut theory).expect("the essential cells build");
-    let generators: BTreeSet<Cell> = [
+    let generators: BTreeSet<BarCell> = [
         cell(&[arrow(1, &[next])]),
         cell(&[arrow(0, &[nought])]),
         cell(&[arrow(2, &[sum])]),
     ]
     .into();
-    let lefts: BTreeSet<Cell> = [
+    let lefts: BTreeSet<BarCell> = [
         cell(&[arrow(2, &[sum]), arrow(1, &[nought, first])]),
         cell(&[arrow(2, &[sum]), arrow(1, &[first, nought])]),
         cell(&[arrow(2, &[sum]), arrow(2, &[next, second])]),
     ]
     .into();
-    let overlaps: BTreeSet<Cell> = [
+    let overlaps: BTreeSet<BarCell> = [
         cell(&[
             arrow(2, &[sum]),
             arrow(1, &[first, nought]),
@@ -1309,7 +1301,7 @@ fn the_cells_of_nat_units_collapse_by_hand_onto_its_operations_rules_and_pairs()
         ]),
     ]
     .into();
-    let by_degree: Vec<BTreeSet<Cell>> = found.into_iter().map(BTreeSet::from_iter).collect();
+    let by_degree: Vec<BTreeSet<BarCell>> = found.into_iter().map(BTreeSet::from_iter).collect();
     assert_eq!(by_degree, [generators, lefts, overlaps]);
 }
 

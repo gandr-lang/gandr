@@ -1,14 +1,16 @@
 # The price of every `gh` call site (#5061), read by `check:gh-budget`.
 #
 # Input: `{sites, table, schedules}`. `sites` is `sites.awk`'s lines as
-# `[{file, scope, verb, paginated}]`, one per call, `paginated` true for a
-# call that gives `--paginate`. `table` is `calls.toml` as JSON: `budget`,
+# `[{file, scope, verb, paginated, input}]`, one per call, `paginated` true
+# for a call that gives `--paginate`, and `input` true for a call that reads
+# its request from `--input`. `table` is `calls.toml` as JSON: `budget`,
 # the hour's ceiling of each identity and API, and `site`, the rows. A row
 # names a site (`file`, `scope`), its `api` (`graphql` or `rest`), its
 # `identity` (`read` or `write` on a host, `actions` for a workflow's
-# token, `cycle` for the `gandr-lang` App), the `calls` of that API the
-# site holds, the `points` one run spends, how they were `measured`, its
-# `trigger`, and `hour`, the runs in an hour on one host at eight seats.
+# token, `cycle` for the `gandr-lang` App, `landing` for landing.yml's
+# `LANDING_TOKEN`), the `calls` of that API the site holds, the `points`
+# one run spends, how they were `measured`, its `trigger`, and `hour`, the
+# runs in an hour on one host at eight seats.
 # A row of a site that reads pages states `pages`, the pages its lists read
 # in one run (#5681). A row that a workflow's cron runs names the workflow
 # as `schedule`, a file name or a list of them. `schedules` gives each such
@@ -16,10 +18,11 @@
 #
 # Output: one finding a line, nothing when every site is priced.
 #
-# - A verb's class is its API and whether it reads or writes (`class.jq`).
+# - A call's class is its API and whether it reads or writes (`class.jq`).
+#   A GraphQL call that reads its request from `--input` is a write.
 # - Each site's calls of one API and kind need a row of that API whose
 #   identity is the kind, or a token that reads and writes (`actions`,
-#   `cycle`), and whose `calls` is their count.
+#   `cycle`, `landing`), and whose `calls` is their count.
 # - A row whose site holds no call of its API and kind is gone.
 # - A row's `points` is a whole number. `measured` is `cost` (the
 #   `rateLimit` cost of one call), `rest` (one request a call and a page),
@@ -38,9 +41,9 @@ include "class";
 
 def key: "\(.file) \(.scope) (\(.api))";
 
-# The kinds an identity covers: a workflow's token and the `gandr-lang` App
-# each read and write.
-def covers: if . == "actions" or . == "cycle" then ["read", "write"] else [.] end;
+# The kinds an identity covers: a workflow's token, the `gandr-lang` App and
+# landing.yml's `LANDING_TOKEN` each read and write.
+def covers: if IN("actions", "cycle", "landing") then ["read", "write"] else [.] end;
 
 def plural($n): if $n == 1 then "" else "s" end;
 
@@ -83,7 +86,7 @@ def row_findings($groups; $schedules):
   | [$groups[] | select(.file == $r.file and .scope == $r.scope and .api == $r.api and (.kind as $k | $r.identity | covers | index($k)))] as $held
   | ($held | map(.count) | add // 0) as $count
   | ($held | any(.[]; .paginated)) as $paged
-  | (if ($r.identity | IN("read", "write", "actions", "cycle") | not) then "bad identity: \($r | key) names `\($r.identity)`; one of read, write, actions, cycle"
+  | (if ($r.identity | IN("read", "write", "actions", "cycle", "landing") | not) then "bad identity: \($r | key) names `\($r.identity)`; one of read, write, actions, cycle, landing"
      elif $count == 0 then "gone: \($r | key) as \($r.identity) is in .config/gh/calls.toml, but the site holds no such call"
      elif $r.calls != $count then "changed: \($r | key) as \($r.identity) holds \($count) call\(plural($count)); its row says \($r.calls)"
      else empty end),
@@ -108,7 +111,7 @@ def two: if . < 10 then "0\(.)" else tostring end;
 .table as $table
 | (.schedules // {}) as $schedules
 | ($table.site // []) as $rows
-| [.sites[] | . + (.verb | class)] as $calls
+| [.sites[] | . + call_class] as $calls
 | ($calls | group_by([.file, .scope, .api, .kind])
     | map({file: .[0].file, scope: .[0].scope, api: .[0].api, kind: .[0].kind, count: length, paginated: any(.[]; .paginated == true)})) as $groups
 | ($groups[] as $g

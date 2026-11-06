@@ -1750,9 +1750,9 @@ impl Reader<'_, '_>
     ///   nullary observation where its name and each node of its type are
     ///   written, and the family applied as its result writes it when the
     ///   family heads the result.
-    /// - fails: constructor and operation leads refuse the wrong polarity. No
-    ///   native reading reads an observation's type, so a type that is no type
-    ///   is malformed here.
+    /// - fails: constructor and operation leads refuse the wrong polarity. The
+    ///   lowering reads an observation's type only after this reader reads it,
+    ///   so a type that is no type is malformed here.
     /// - panics: none.
     ///
     /// # Errors
@@ -1769,7 +1769,7 @@ impl Reader<'_, '_>
         Ok(Observation::Nullary(ref ctor, ref written)) => ctor.result == *family
             && !written.ty.nodes.is_empty()
             && match written.itself {
-                Maybe::Present(ref itself) => itself.applied.head_name() == *family,
+                Maybe::Present(ref itself) => matches!(itself.steps.last(), Some(&written::Applied::Family(_))),
                 Maybe::Absent(_) => true,
             },
         Ok(Observation::Parameterized(ref operation)) => operation.arity.outputs.len() == 1,
@@ -1823,7 +1823,7 @@ impl Reader<'_, '_>
         // it at are kept beside it, for the decoder to state.
         let itself = if code.recursive_sorts().next().is_some() {
             Maybe::Present(written::SelfApplication {
-                applied: self.type_reference(ty)?.0,
+                steps: self.self_applied(ty, family)?,
                 at: ty.node,
             })
         }
@@ -1836,6 +1836,7 @@ impl Reader<'_, '_>
             CtorDesc::new(self.text(named).0, code, family.clone(), attrs),
             written::WrittenObservation {
                 named: named.span,
+                at: ty.node,
                 ty: written,
                 itself,
             },
@@ -2322,10 +2323,84 @@ impl Reader<'_, '_>
         Ok(())
     }
 
-    /// Read symbolic first-order types with an explicit postorder stack, and
-    /// keep where each node is written.
+    /// The family `family` applied as `at` writes it, in post-order: each
+    /// argument the family does not head at the node it is written at, and
+    /// the family over the arguments before it.
     ///
     /// # Specification
+    /// - ensures: one family step per application the family heads, after the
+    ///   steps of its arguments in written order, and one argument step per
+    ///   argument it does not head; a parenthesised argument is the argument it
+    ///   groups. A root the family does not head is one argument step.
+    /// - fails: an argument list the family heads that does not read is refused
+    ///   at its written node.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `TypeShape` or `Malformed`.
+    ///
+    /// # Termination
+    /// - reason: the read is a `while let` loop over an explicit stack, not
+    ///   recursion.
+    /// - measure: the frames not yet popped, each written node read once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tail at the parameters swapped, at the family
+    ///   applied again and at a data family reads each argument the family does
+    ///   not head at its own node.
+    /// - witness: `description::tests::a_codata_self_reference_keeps_its_written_arguments_2188`
+    /// - witness: `description::tests::a_codata_family_reads_a_data_family_as_the_lowering_does_2665`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |steps| !steps.is_empty()))]
+    fn self_applied(
+        &self,
+        at: Placed,
+        family: &Name,
+    ) -> Result<Vec<written::Applied>, DescriptionDiagnostic>
+    {
+        let mut pending = vec![AppliedFrame::Read(at)];
+        let mut steps = Vec::new();
+        while let Some(frame) = pending.pop() {
+            let at = match frame {
+                AppliedFrame::Read(at) => at,
+                AppliedFrame::Family(count) => {
+                    steps.push(written::Applied::Family(count.0));
+                    continue;
+                },
+            };
+            let (read, pieces) = self.ungrouped(at, self.pieces(at)?)?;
+            if let [Piece::Tile { .. }] = *pieces.as_slice() {
+                steps.push(if self.text(read).0 == family.as_ref() {
+                    written::Applied::Family(0)
+                }
+                else {
+                    written::Applied::Argument(read.node)
+                });
+                continue;
+            }
+            let mut run = Run::new(&pieces, read.span);
+            let head = run.take()?;
+            if self.text(head).0 != family.as_ref() || !run.eat(Spelling("(")).0 {
+                steps.push(written::Applied::Argument(read.node));
+                continue;
+            }
+            let mut args = Vec::new();
+            while !run.eat(Spelling(")")).0 {
+                args.push(run.take()?);
+                if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
+                    return Err(run.fault(DescriptionFault::TypeShape));
+                }
+            }
+            pending.push(AppliedFrame::Family(ArgumentCount(args.len())));
+            pending.extend(args.into_iter().rev().map(AppliedFrame::Read));
+        }
+        Ok(steps)
+    }
+
+    /// Read symbolic first-order types with an explicit postorder stack over
+    /// the pieces already read at `at`, and keep where each node is written.
+    ///
+    /// # Specification
+    /// - requires: `pieces` are the pieces written at `at`.
     /// - ensures: applications preserve the head and argument order without
     ///   Rust recursion, and a parenthesised type reads as the type it groups.
     ///   The written term holds one node per node of the type, in pre-order,
@@ -2337,42 +2412,17 @@ impl Reader<'_, '_>
     /// # Errors
     /// Returns `NoType`, `HigherOrderField`, `TypeShape` or `Malformed`.
     ///
-    /// # Adequacy
-    /// - hypothesis: L3 — nested applications, the four primitives, universes
-    ///   and function fields separate supported shapes and order.
-    /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
-    /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
-    /// - witness: `description::tests::a_field_reads_each_primitive_and_each_applied_argument`
-    #[spec(ensures: |result| result.as_ref().map_or_else(|_| self.tree.node(at.node).is_some(), |&(_, ref written)| written.nodes.first().is_some_and(|node| node.span == at.span)))]
-    fn type_reference(
-        &self,
-        at: Placed,
-    ) -> Result<(ValueTypeRef, written::WrittenTerm), DescriptionDiagnostic>
-    {
-        self.type_reference_read(at, self.pieces(at)?)
-    }
-
-    /// [`Self::type_reference`] over the pieces already read at `at`, so a
-    /// caller that looked at them first reads them once.
-    ///
-    /// # Specification
-    /// - requires: `pieces` are the pieces written at `at`.
-    /// - ensures: what [`Self::type_reference`] answers at `at`.
-    /// - fails: as [`Self::type_reference`].
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// Returns `NoType`, `HigherOrderField`, `TypeShape` or `Malformed`.
-    ///
     /// # Termination
     /// - reason: the read is a `while let` loop over an explicit stack, not
     ///   recursion.
     /// - measure: the frames not yet popped, each written node read once.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the root's pieces as given and every argument's as
-    ///   read separate supported shapes and order.
+    /// - hypothesis: L3 — nested applications, the four primitives, universes
+    ///   and function fields separate supported shapes and order.
     /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
+    /// - witness: `description::tests::a_family_its_code_cannot_carry_is_left_to_the_native_reading`
+    /// - witness: `description::tests::a_field_reads_each_primitive_and_each_applied_argument`
     /// - witness: `description::tests::a_value_function_field_is_the_function_former`
     #[spec(ensures: |result| result.as_ref().map_or(true, |&(_, ref written)| written.nodes.first().is_some_and(|node| node.span == at.span)))]
     fn type_reference_read(
@@ -2598,6 +2648,15 @@ enum TypeFrame
     Read(Placed),
     /// Assemble the argument suffix read before it.
     Apply(Name, ArgumentCount),
+}
+
+/// A pending step of [`Reader::self_applied`]'s walk.
+enum AppliedFrame
+{
+    /// Read one argument node.
+    Read(Placed),
+    /// The family over the arguments read before it.
+    Family(ArgumentCount),
 }
 
 /// What ends a member of a block, outside any bracket.

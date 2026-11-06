@@ -20,7 +20,6 @@ set -euo pipefail
 repo=${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 token=${LANDING_TOKEN_HELD:-false}
-required=$(required_contexts)
 # The CI workflow, which `landing.yml` runs on and the depth gate cancels:
 # the `name` of `.github/workflows/ci.yml`.
 ci_workflow=CI
@@ -95,6 +94,96 @@ tell() {
     || echo "::warning::#$1: the $3 comment failed"
 }
 
+# Land pull request `$1`'s stack (`land_prefix`, #5695). Every line it writes
+# goes to the run's log, and its last line is printed: what it queued, or why
+# it refused. Its status is returned, and a 3 returns 0: the stack waits on a
+# queued unit or pull request, and the next run reads it again.
+landed() {
+  local status=0 log
+  log=$(mktemp)
+  land_prefix "$1" 2> "$log" 1>&2 || status=$?
+  cat "$log" >&2
+  awk 'NF { line = $0 } END { print line }' "$log"
+  rm -f "$log"
+  (( status == 0 || status == 3 )) || return "$status"
+}
+
+# Tell the seat of pull request `$1`, at head `$2`, that the watcher could not
+# queue its stack for the reason `$4` (#5695). The comment is `pr-dequeued`,
+# and its event line carries the reason, so the page that `stall:watch` sends
+# for the event names it. It is posted once a head: `$3` is true when the
+# head already carries the mark. The run's log keeps a warning each time.
+refused() {
+  echo "::warning::#$1: the landing failed: $4"
+  [[ $3 != true ]] || return 0
+  tell "$1" "pr-dequeued #$1: $4" pr-dequeued "$2" \
+    "The landing watcher could not queue the stack of this pull request. Do what the line above names, then \`pr:land $1\`."
+}
+
+# Do the action `$1` that `landing.jq` decided, from the reading `$prs`.
+act_on() {
+  local action=$1 number act oid told line moved
+  number=$(jq -r .number <<< "$action")
+  act=$(jq -r .act <<< "$action")
+  told=$(jq -r '.told // false' <<< "$action")
+  oid=$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .oid' <<< "$prs")
+  case "$act" in
+    land)
+      echo "#$number: landing its stack's ready prefix"
+      line=$(landed "$number") || refused "$number" "$oid" "$told" "$line"
+      ;;
+    restack)
+      # A member queued since the reading is never moved, nor one above it (#2531).
+      if [[ $(queued_of "$(server_stack "$number")") != '[]' ]]; then
+        echo "#$number: a member of its stack is queued now; nothing is pushed"
+      elif moved=$(signed_restack "$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .head' <<< "$prs")" "$oid" \
+        "$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .base' <<< "$prs")" 2> "$err"); then
+        if [[ -n $moved ]]; then
+          echo "#$number: the watcher restacks it onto its base as signed commits"
+          tell "$number" "pr-restacked #$number" pr-restacked "$oid" \
+            "The merge queue removed this pull request with no red check in its stack. The landing watcher replayed its commits onto its base as commits GitHub signs. It lands once its checks are green."
+        else
+          # The head already stands on its base: what made the queue remove
+          # it was ahead of it in the queue, so it lands again unchanged. The
+          # comment follows the landing, and says what it did (#5695).
+          echo "#$number: it already stands on its base; landing its stack's ready prefix again"
+          if line=$(landed "$number"); then
+            tell "$number" "pr-restacked #$number" pr-restacked "$oid" \
+              "The merge queue removed this pull request with no red check in its stack, and it already stands on its base. The landing watcher ran its landing again${line:+: $line}."
+          else
+            refused "$number" "$oid" "$told" "$line"
+          fi
+        fi
+      elif [[ $told != true ]]; then
+        echo "#$number: the restack failed: $(< "$err")"
+        tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
+          "The merge queue removed this pull request, and the landing watcher could not restack it onto its base: $(< "$err"). Rebase it, then \`pr:land $number\`."
+      fi
+      ;;
+    green)
+      tell "$number" "pr-green #$number" pr-green "$oid" \
+        "Every required check passed on this head and the pull request is out of the merge queue: \`pr:land $number\` queues its stack's ready prefix."
+      ;;
+    dequeued)
+      if [[ $(jq -r '.upstream // [] | length' <<< "$action") != 0 ]]; then
+        tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
+          "The merge queue removed this pull request, and its branch holds commits whose change its base already carries: $(jq -r '.upstream | map("`\(.)`") | join(", ")' <<< "$action"). \`pr:land $number\` restacks it onto \`$trunk\` and drops them."
+      else
+        tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
+          "The merge queue removed this pull request at this head. Read the entry's run, then \`pr:land $number\`, which restacks it onto \`$trunk\`."
+      fi
+      ;;
+    red)
+      tell "$number" "pr-red #$number $(jq -r '.failed | join(", ")' <<< "$action")" pr-red "$oid" \
+        "A required check failed on this head; read its log, fix it, then \`pr:land $number\`."
+      ;;
+    dirty)
+      tell "$number" "pr-dirty #$number" pr-dirty "$oid" \
+        "This pull request conflicts with its base: rebase it, then \`pr:land $number\`."
+      ;;
+  esac
+}
+
 # The CI depth gate (#5074), run first in a pull request's CI run: above the
 # depth of one queue unit (`queue_unit_cap`, 3 when it reads nothing) the run
 # is cancelled before any lane starts, so the runners go to the members that
@@ -126,6 +215,11 @@ if [[ ${1:-} == depth ]]; then
   exit 0
 fi
 
+# Sourced, the file gives its functions and runs nothing: `watcher.bash`
+# runs `act_on` over its cases so (#5695).
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
+required=$(required_contexts)
+
 # The run's GraphQL spend, read before and after from the free `rate_limit`
 # endpoint and printed last, so a costly run shows in its own log.
 spent_before=$(command gh api rate_limit --jq .resources.graphql.used 2> /dev/null) || spent_before=
@@ -134,64 +228,7 @@ prs=$(read_prs)
 actions=$(jq -c --argjson token "$token" '{token: $token, prs: .}' <<< "$prs" | jq -c -f "$pr_stack_dir/landing.jq")
 err=$(mktemp)
 while IFS= read -r action; do
-  number=$(jq -r .number <<< "$action")
-  act=$(jq -r .act <<< "$action")
-  oid=$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .oid' <<< "$prs")
-  status=0
-  case "$act" in
-    land)
-      echo "#$number: landing its stack's ready prefix"
-      land_prefix "$number" || status=$?
-      # 3: the stack waits on a queued unit or pull request; the next run reads it again.
-      if (( status != 0 && status != 3 )); then echo "::warning::#$number: the landing failed ($status)"; fi
-      ;;
-    restack)
-      # A member queued since the reading is never moved, nor one above it (#2531).
-      if [[ $(queued_of "$(server_stack "$number")") != '[]' ]]; then
-        echo "#$number: a member of its stack is queued now; nothing is pushed"
-      elif moved=$(signed_restack "$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .head' <<< "$prs")" "$oid" \
-        "$(jq -r --argjson n "$number" '.[] | select(.number == $n) | .base' <<< "$prs")" 2> "$err"); then
-        if [[ -n $moved ]]; then
-          echo "#$number: the watcher restacks it onto its base as signed commits"
-          tell "$number" "pr-restacked #$number" pr-restacked "$oid" \
-            "The merge queue removed this pull request with no red check in its stack. The landing watcher replayed its commits onto its base as commits GitHub signs. It lands once its checks are green."
-        else
-          # The head already stands on its base: what made the queue remove
-          # it was ahead of it in the queue, so it queues again unchanged.
-          echo "#$number: it already stands on its base; landing its stack's ready prefix again"
-          tell "$number" "pr-restacked #$number" pr-restacked "$oid" \
-            "The merge queue removed this pull request with no red check in its stack, and it already stands on its base. The landing watcher queues it again."
-          land_prefix "$number" || status=$?
-          if (( status != 0 && status != 3 )); then echo "::warning::#$number: the landing failed ($status)"; fi
-        fi
-      elif [[ $(jq -r .told <<< "$action") != true ]]; then
-        echo "#$number: the restack failed: $(< "$err")"
-        tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
-          "The merge queue removed this pull request, and the landing watcher could not restack it onto its base: $(< "$err"). Rebase it, then \`pr:land $number\`."
-      fi
-      ;;
-    green)
-      tell "$number" "pr-green #$number" pr-green "$oid" \
-        "Every required check passed on this head and the pull request is out of the merge queue: \`pr:land $number\` queues its stack's ready prefix."
-      ;;
-    dequeued)
-      if [[ $(jq -r '.upstream // [] | length' <<< "$action") != 0 ]]; then
-        tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
-          "The merge queue removed this pull request, and its branch holds commits whose change its base already carries: $(jq -r '.upstream | map("`\(.)`") | join(", ")' <<< "$action"). \`pr:land $number\` restacks it onto \`$trunk\` and drops them."
-      else
-        tell "$number" "pr-dequeued #$number" pr-dequeued "$oid" \
-          "The merge queue removed this pull request at this head. Read the entry's run, then \`pr:land $number\`, which restacks it onto \`$trunk\`."
-      fi
-      ;;
-    red)
-      tell "$number" "pr-red #$number $(jq -r '.failed | join(", ")' <<< "$action")" pr-red "$oid" \
-        "A required check failed on this head; read its log, fix it, then \`pr:land $number\`."
-      ;;
-    dirty)
-      tell "$number" "pr-dirty #$number" pr-dirty "$oid" \
-        "This pull request conflicts with its base: rebase it, then \`pr:land $number\`."
-      ;;
-  esac
+  act_on "$action"
 done < <(jq -c '.[]' <<< "$actions")
 
 # The depth gate's promotion (#5074): a pull request the gate stopped that a

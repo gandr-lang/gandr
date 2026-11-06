@@ -23,8 +23,7 @@ data CView : Type where
   | Borrowed : (bytes : List(Integer)) --> CView
   | Interior : CView
 
-/// An owned string's bytes: the code points encoded, then the terminating
-/// zero.
+/// This function adds a final zero to encoded code points.
 pub def terminated(cs : List(Integer)) -> List(Integer) =
   concat (encodeAll cs) (Cons 0 Nil : List(Integer))
 
@@ -65,11 +64,11 @@ def hiForC() -> List(Integer) { let bs = force hi; let v = cView bs; match v {
   | Interior => Nil
 } }
 
-/// A zero inside the string: C would stop at it, so it has no C reading.
+/// This test refuses a string with an interior zero.
 @[ runs("Interior") ]
 def cut() -> CView =
   cView (terminated (Cons 104 (Cons 0 (Cons 105 Nil)) : List(Integer)))
 
-/// Bytes with no terminating zero have no C reading either.
+/// This test refuses bytes without a final zero.
 @[ runs("Interior") ]
 def unterminated() -> CView { cView (Cons 104 (Cons 105 Nil) : List(Integer)) }

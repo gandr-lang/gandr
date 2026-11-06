@@ -1,27 +1,26 @@
-// The include graph's joins: every two theories a block reaches have
-// one join among the theories it sees, the poorest one reaching both. A
-// second theory joining a pair another already joins leaves the pair two
-// incomparable joins, so it is refused naming the pair and both.
-//
-// - see: #1225
+//! `two-joins` refuses two incomparable joins of the same theories.
+//!
+//! A block has one poorest join for each reachable pair. `MagmaWithUnit`
+//! repeats the `Pointed` and `Magma` join. The checker refuses the pair.
+//!
+//! - see: #1225
 
-/// A carrier with a unit.
+/// `Pointed` defines a carrier with a unit.
 theory Pointed where
   sort M : Type;
   oper point : () --> M;
 
-/// A carrier with a multiplication.
+/// `Magma` defines a carrier with multiplication.
 theory Magma where
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
 
-/// The pair joined once.
+/// `UnitalMagma` joins `Pointed` and `Magma` once.
 theory UnitalMagma where
   include Pointed;
   include Magma;
 
-/// The pair joined again beside the first: `Pointed` and `Magma` now have
-/// two joins, neither reaching the other.
+/// `MagmaWithUnit` adds an incomparable second join.
 @[ refuses("MalformedForm") ]
 theory MagmaWithUnit where
   include Pointed;

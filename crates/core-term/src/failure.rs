@@ -242,8 +242,6 @@ impl TrackingIssue
     /// zero, a universe field, a term index, or a union, staged or session
     /// field.
     pub const TYPE_SHAPE: Self = Self(5662);
-    /// A description the native interpreter gives no interpretation.
-    pub const NATIVE_DECODE: Self = Self(2665);
     /// An operation feeding an output from several monomials, or of an arity
     /// the cell frame cannot hold.
     pub const OPERATION_SHAPE: Self = Self(2666);

@@ -1551,6 +1551,101 @@ fn a_codata_self_reference_keeps_its_written_arguments_2188()
     assert_eq!(tail(stream), [variable(0)], "`Stream(a)` stays uniform");
 }
 
+/// #2665: a codata family reads each data family it names as the lowering
+/// reads one. `Holder`'s observation returns `Small`, and `Stream`'s tail
+/// applies the family to the code of `Small`, which the occurrence guard then
+/// refuses as a non-uniform occurrence.
+#[test]
+fn a_codata_family_reads_a_data_family_as_the_lowering_does_2665()
+{
+    use gandr_core_term::CompType;
+    use gandr_core_term::Value;
+    use gandr_core_term::ValueType;
+
+    use crate::DeclarationOutcome;
+    use crate::LoweringBudget;
+    use crate::lower_module;
+    use crate::namespace::Recognition;
+    let grammar = grammar();
+    let source = include_str!(
+        "tests/fixtures/a-codata-family-reads-a-data-family-as-the-lowering-does-2665.gandr"
+    );
+    let tree = parsed(&grammar, source.into());
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .unwrap();
+    let [small, holder, stream] = *module.declarations().iter().collect::<Vec<_>>()
+    else {
+        panic!("a data family and two codata families")
+    };
+    let observations = |declaration: &crate::LoweredDeclaration<'_>| {
+        let DeclarationOutcome::Codata(index) = declaration.outcome()
+        else {
+            panic!("the codata family lowers: {:?}", declaration.outcome())
+        };
+        let Maybe::Present(codata) = module.codata(index)
+        else {
+            panic!("the module holds the codata family's signature")
+        };
+        codata.observations().to_vec()
+    };
+    let is_small = |ty| {
+        matches!(arena.value_type(ty), Some(&ValueType::Data { declaration, ref arguments })
+            if declaration == small.constant() && arguments.is_empty())
+    };
+    let [held] = *observations(holder)
+    else {
+        panic!("one observation")
+    };
+    let Some(&CompType::Returner { result, .. }) = arena.comp_type(held)
+    else {
+        panic!(
+            "the observation returns its value: {:?}",
+            arena.comp_type(held)
+        )
+    };
+    assert!(
+        is_small(result),
+        "`held` returns `Small`: {:?}",
+        arena.value_type(result)
+    );
+    let [_, tail] = *observations(stream)
+    else {
+        panic!("two observations")
+    };
+    let Some(&CompType::Codata {
+        declaration,
+        ref arguments,
+    }) = arena.comp_type(tail)
+    else {
+        panic!(
+            "the tail is a codata application: {:?}",
+            arena.comp_type(tail)
+        )
+    };
+    assert_eq!(
+        declaration,
+        stream.constant(),
+        "the tail applies its own family"
+    );
+    let [argument] = *arguments.as_slice()
+    else {
+        panic!("the tail applies the family to one argument: {arguments:?}")
+    };
+    let Some(&Value::Quote(code)) = arena.value(argument)
+    else {
+        panic!("the argument is a code: {:?}", arena.value(argument))
+    };
+    assert!(is_small(code), "the tail is at the code of `Small`");
+    assert!(module.description_diagnostics().is_empty());
+}
+
 #[test]
 fn an_attribute_block_decorates_the_codata_declaration_after_it()
 {
