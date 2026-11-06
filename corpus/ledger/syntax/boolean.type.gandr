@@ -1,9 +1,0 @@
-/// `boolean.type`: a boolean in type position.
-
-/// The type of the integers, for each pair of a number and a boolean.
-@[ checks ]
-def holds(p : Integer * Bool) -> -F Type { return Integer }
-
-/// A value at the type that `holds` gives for the pair `*{3, true}`.
-@[ checks ]
-def held(x : holds(*{3, true})) -> -F holds(*{3, true}) { return x }
