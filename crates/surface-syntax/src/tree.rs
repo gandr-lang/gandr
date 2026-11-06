@@ -629,14 +629,12 @@ impl ExactSizeIterator for NodeIndices
 #[derive(Clone, Debug)]
 pub struct Positions<'tree>
 {
-    /// Where each block starts among the tree's nodes, in layout order.
-    starts: &'tree [NodeCount],
-    /// How many nodes the tree holds.
-    count: usize,
+    /// Where each block of the tree starts among its nodes.
+    blocks: BlockStarts<'tree>,
     /// How many positions the walk has yielded.
     yielded: usize,
     /// The block the next position lies in.
-    block: usize,
+    block: LayoutBlock,
 }
 
 impl Iterator for Positions<'_>
@@ -660,24 +658,26 @@ impl Iterator for Positions<'_>
     #[inline]
     #[spec(
         captures: before = self.yielded,
-        ensures: |ret| ret.is_some() == (before < self.count)
-            && self.yielded == if before < self.count { before.saturating_add(1) } else { before },
+        ensures: |ret| ret.is_some() == (before < self.blocks.count.0)
+            && self.yielded == if before < self.blocks.count.0 { before.saturating_add(1) } else { before },
     )]
     fn next(&mut self) -> Option<Self::Item>
     {
-        if self.yielded >= self.count {
+        if self.yielded >= self.blocks.count.0 {
             return None;
         }
-        while self
-            .starts
-            .get(self.block.saturating_add(1))
-            .is_some_and(|next| next.0 <= self.yielded)
-        {
-            self.block = self.block.saturating_add(1);
-        }
-        let start = self.starts.get(self.block).map_or(0, |start| start.0);
+        // The walk's block is the first that ends past the next node.
+        let start = loop {
+            match self.blocks.bounds(self.block) {
+                Some((_, end)) if end.0 <= self.yielded => {
+                    self.block = LayoutBlock(self.block.0.saturating_add(1));
+                },
+                Some((start, _)) => break start.0,
+                None => break 0,
+            }
+        };
         let position = NodeIndex::at(
-            LayoutBlock::from(self.block),
+            self.block,
             BlockOffset::from(self.yielded.saturating_sub(start)),
         );
         self.yielded = self.yielded.saturating_add(1);
@@ -697,10 +697,10 @@ impl Iterator for Positions<'_>
     /// - hypothesis: L3 — as [`Positions`].
     /// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
     #[inline]
-    #[spec(ensures: |ret| ret == (self.count.saturating_sub(self.yielded), Some(self.count.saturating_sub(self.yielded))))]
+    #[spec(ensures: |ret| ret == (self.blocks.count.0.saturating_sub(self.yielded), Some(self.blocks.count.0.saturating_sub(self.yielded))))]
     fn size_hint(&self) -> (usize, Option<usize>)
     {
-        let remaining = self.count.saturating_sub(self.yielded);
+        let remaining = self.blocks.count.0.saturating_sub(self.yielded);
 
         (remaining, Some(remaining))
     }
@@ -756,30 +756,150 @@ pub struct SyntaxTree<'source>
     index: FormIndex,
 }
 
-/// Where `position` lies among `count` nodes whose blocks start at `starts`:
-/// the count of nodes laid out before it, or nothing for a block or an offset
-/// the layout does not hold.
+/// Where each layout block starts among cells laid out block after block, and
+/// how many cells there are: the one reading of where a block ends.
 ///
-/// Every lookup by position runs through this, so it carries no checked
-/// wrapper of its own: [`SyntaxTree::node`] and the layout's own
-/// specification state what it yields.
+/// A block ends where the next block starts, and the last block ends where
+/// the cells end. A tree reads its nodes through it, and a table that keeps a
+/// cell for each node reads its cells through it.
 ///
 /// # Specification
-/// trivial.
-#[inline]
-fn flat(
-    starts: &[NodeCount],
-    count: NodeCount,
-    position: NodeIndex,
-) -> Option<NodeCount>
+/// - ensures: each reading counts cells from the first, and a block past the
+///   last holds none.
+/// - executable: none — this type has no entry or return boundary; its methods
+///   state its readings.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, one-block and many-block layouts are read at each
+///   of their blocks, and a tree's lookups read every node through it.
+/// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
+/// - witness: `build::tests::each_form_s_descendants_are_one_range`
+#[derive(Clone, Copy, Debug)]
+pub struct BlockStarts<'starts>
 {
-    let block = usize::from(position.block());
-    let start = starts.get(block)?.0;
-    let end = starts
-        .get(block.saturating_add(1))
-        .map_or(count.0, |end| end.0);
-    let at = start.checked_add(usize::from(position.offset()))?;
-    (at < end).then_some(NodeCount(at))
+    /// Where the first cell of each block lies among the cells, ascending.
+    starts: &'starts [NodeCount],
+    /// How many cells there are.
+    count: NodeCount,
+}
+
+impl<'starts> BlockStarts<'starts>
+{
+    /// The blocks that start at `starts` among `count` cells.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        starts: &'starts [NodeCount],
+        count: NodeCount,
+    ) -> Self
+    {
+        Self { starts, count }
+    }
+
+    /// Where `block` starts and ends among the cells, or nothing for a block
+    /// past the last: the one place the rule that a block ends where the next
+    /// starts is read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn bounds(
+        self,
+        block: LayoutBlock,
+    ) -> Option<(NodeCount, NodeCount)>
+    {
+        let index = usize::from(block);
+        let start = *self.starts.get(index)?;
+        let end = self
+            .starts
+            .get(index.saturating_add(1))
+            .copied()
+            .unwrap_or(self.count);
+        Some((start, end))
+    }
+
+    /// Where the first cell of `block` lies among the cells, or nothing for a
+    /// block past the last.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn start(
+        self,
+        block: LayoutBlock,
+    ) -> Option<NodeCount>
+    {
+        self.starts.get(usize::from(block)).copied()
+    }
+
+    /// Where `block` ends among the cells: where the next block starts, or
+    /// where the cells end for the last block. Nothing for a block past the
+    /// last.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn end(
+        self,
+        block: LayoutBlock,
+    ) -> Option<NodeCount>
+    {
+        self.bounds(block).map(|(_, end)| end)
+    }
+
+    /// How many cells `block` holds, none for a block past the last.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn length(
+        self,
+        block: LayoutBlock,
+    ) -> NodeCount
+    {
+        self.bounds(block).map_or(NodeCount(0), |(start, end)| {
+            NodeCount(end.0.saturating_sub(start.0))
+        })
+    }
+
+    /// How many cells each block holds, block by block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn lengths(self) -> impl ExactSizeIterator<Item = NodeCount> + 'starts
+    {
+        (0 .. self.starts.len()).map(move |index| self.length(LayoutBlock::from(index)))
+    }
+
+    /// Where `position` lies among the cells: the count of cells laid out
+    /// before it, or nothing for a block or an offset the blocks do not hold.
+    ///
+    /// Every lookup by position runs through this, so it carries no checked
+    /// wrapper of its own: [`SyntaxTree::node`] and the layout's own
+    /// specification state what it yields.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn flat(
+        self,
+        position: NodeIndex,
+    ) -> Option<NodeCount>
+    {
+        let (start, end) = self.bounds(position.block())?;
+        let (start, end) = (start.0, end.0);
+        let at = start.checked_add(usize::from(position.offset()))?;
+        (at < end).then_some(NodeCount(at))
+    }
 }
 
 impl<'source> SyntaxTree<'source>
@@ -819,10 +939,8 @@ impl<'source> SyntaxTree<'source>
     #[spec(ensures: |ref ret| matches!(ret.source.const_eq(source), crate::ConstEquality::Equal)
         && matches!(ret.grammar.const_eq(grammar), crate::ConstEquality::Equal)
         && ret.nodes.iter().enumerate().all(|(position, node)| node.child_count.0 == 0_usize
-            || flat(&ret.starts, NodeCount(ret.nodes.len()), node.first_child).is_some_and(|first| first.0 > position
-                && flat(
-                    &ret.starts,
-                    NodeCount(ret.nodes.len()),
+            || BlockStarts::new(&ret.starts, NodeCount(ret.nodes.len())).flat(node.first_child).is_some_and(|first| first.0 > position
+                && BlockStarts::new(&ret.starts, NodeCount(ret.nodes.len())).flat(
                     NodeIndex::at(node.first_child.block(), BlockOffset::from(usize::from(node.first_child.offset()).saturating_add(node.child_count.0).saturating_sub(1))),
                 ).is_some())))]
     #[inline]
@@ -1181,6 +1299,16 @@ impl<'source> SyntaxTree<'source>
         self.nodes.get(self.flat(position)?.0)
     }
 
+    /// Where each block of this tree starts among its nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn laid_out(&self) -> BlockStarts<'_>
+    {
+        BlockStarts::new(&self.starts, NodeCount(self.nodes.len()))
+    }
+
     /// Where `position` lies among this tree's nodes, or nothing for a
     /// position it does not hold.
     ///
@@ -1192,7 +1320,7 @@ impl<'source> SyntaxTree<'source>
         position: NodeIndex,
     ) -> Option<NodeCount>
     {
-        flat(&self.starts, NodeCount(self.nodes.len()), position)
+        self.laid_out().flat(position)
     }
 
     /// How many nodes each layout block holds, block by block.
@@ -1215,14 +1343,7 @@ impl<'source> SyntaxTree<'source>
     #[inline]
     pub fn blocks(&self) -> impl ExactSizeIterator<Item = NodeCount> + '_
     {
-        let count = self.nodes.len();
-        self.starts.iter().enumerate().map(move |(block, start)| {
-            let end = self
-                .starts
-                .get(block.saturating_add(1))
-                .map_or(count, |end| end.0);
-            NodeCount(end.saturating_sub(start.0))
-        })
+        self.laid_out().lengths()
     }
 
     /// Every position in the tree, in its layout's order.
@@ -1273,15 +1394,13 @@ impl<'source> SyntaxTree<'source>
         first: LayoutBlock,
     ) -> Positions<'_>
     {
-        let block = usize::from(first);
+        let blocks = self.laid_out();
         Positions {
-            starts: &self.starts,
-            count: self.nodes.len(),
-            yielded: self
-                .starts
-                .get(block)
+            blocks,
+            yielded: blocks
+                .start(first)
                 .map_or(self.nodes.len(), |start| start.0),
-            block,
+            block: first,
         }
     }
 
@@ -1451,7 +1570,7 @@ struct FormIndex
     && ret.ranges.len() == ret.forms.len()
     && ret.digest.is_some() != nodes.is_empty()
     && ret.forms.iter().enumerate().all(|(slot, &form)| {
-        flat(starts, NodeCount(nodes.len()), form).and_then(|at| ret.ranks.get(at.0).copied().flatten())
+        BlockStarts::new(starts, NodeCount(nodes.len())).flat(form).and_then(|at| ret.ranks.get(at.0).copied().flatten())
             == Some((FormSlot(slot), FormRank::default()))
     }))]
 fn index_forms(
@@ -1462,6 +1581,7 @@ fn index_forms(
 {
     let mut index = FormIndex::default();
     index.ranks.resize(nodes.len(), None);
+    let blocks = BlockStarts::new(starts, NodeCount(nodes.len()));
     let Some(root) = nodes.first()
     else {
         return index;
@@ -1483,14 +1603,14 @@ fn index_forms(
             None
         }
         else {
-            flat(starts, NodeCount(nodes.len()), node.first_child).map(|first| first.0)
+            blocks.flat(node.first_child).map(|first| first.0)
         }
     };
     let mut preimage = Preimage::default();
     let mut pending: Vec<usize> = Vec::new();
     let tops = NodeIndices::run(root.first_child, root.child_count);
     for top in tops {
-        let Some(position) = flat(starts, NodeCount(nodes.len()), top).map(|at| at.0)
+        let Some(position) = blocks.flat(top).map(|at| at.0)
         else {
             continue;
         };
@@ -1503,13 +1623,7 @@ fn index_forms(
             if node.child_count.0 == 0 {
                 return NodeIndices::empty();
             }
-            let block = usize::from(node.first_child.block());
-            let length = starts.get(block).map_or(0, |start| {
-                starts
-                    .get(block.saturating_add(1))
-                    .map_or(nodes.len(), |end| end.0)
-                    .saturating_sub(start.0)
-            });
+            let length = blocks.length(node.first_child.block()).0;
             NodeIndices::run(
                 NodeIndex::at(node.first_child.block(), BlockOffset(0)),
                 ChildCount(length),

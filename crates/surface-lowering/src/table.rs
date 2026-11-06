@@ -19,6 +19,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_syntax::BlockOffset;
+use gandr_surface_syntax::BlockStarts;
 use gandr_surface_syntax::LayoutBlock;
 use gandr_surface_syntax::NodeCount;
 use gandr_surface_syntax::NodeIndex;
@@ -45,7 +46,7 @@ pub struct NodeTable<Cell>
 {
     /// Where each block's cells start among the table's cells, in block
     /// order.
-    starts: Vec<usize>,
+    starts: Vec<NodeCount>,
     /// The cells [`Self::share`] shared, block after block.
     shared: Arc<[Cell]>,
     /// The shared nodes written since they were shared, each with its cell.
@@ -68,7 +69,7 @@ impl<Cell: Clone> NodeTable<Cell>
     /// - witness: `table::tests::a_write_to_a_shared_cell_is_the_writer_s_own_776`
     #[spec(ensures: |ret| ret.shared.is_empty()
         && ret.written.is_empty()
-        && ret.starts.first().is_none_or(|&start| start == 0_usize))]
+        && ret.starts.first().is_none_or(|&start| usize::from(start) == 0_usize))]
     #[inline]
     pub fn filled<Blocks>(
         blocks: Blocks,
@@ -120,27 +121,14 @@ impl<Cell: Clone> NodeTable<Cell>
         LayoutBlock::from(self.starts.len())
     }
 
-    /// How many cells `block` holds; none for a block the table does not hold.
+    /// Where each block of the table starts among its cells.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn block_cells(
-        &self,
-        block: LayoutBlock,
-    ) -> NodeCount
+    fn laid_out(&self) -> BlockStarts<'_>
     {
-        let index = usize::from(block);
-        let Some(&start) = self.starts.get(index)
-        else {
-            return NodeCount::from(0_usize);
-        };
-        let end = self
-            .starts
-            .get(index.saturating_add(1))
-            .copied()
-            .unwrap_or_else(|| usize::from(self.count()));
-        NodeCount::from(end.saturating_sub(start))
+        BlockStarts::new(&self.starts, self.count())
     }
 
     /// Where the cell at `at` lies among the table's cells, as the count of
@@ -155,10 +143,7 @@ impl<Cell: Clone> NodeTable<Cell>
         at: NodeIndex,
     ) -> Option<NodeCount>
     {
-        let start = *self.starts.get(usize::from(at.block()))?;
-        let offset = usize::from(at.offset());
-        (offset < usize::from(self.block_cells(at.block())))
-            .then(|| NodeCount::from(start.saturating_add(offset)))
+        self.laid_out().flat(at)
     }
 
     /// The cell at `at`, or nothing for a node the table holds no cell for.
@@ -237,17 +222,14 @@ impl<Cell: Clone> NodeTable<Cell>
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = (NodeIndex, &Cell)>
     {
-        let count = usize::from(self.count());
         let shared = self.shared.len();
         self.starts
             .iter()
+            .zip(self.laid_out().lengths())
             .enumerate()
-            .flat_map(move |(block, &start)| {
-                let end = self
-                    .starts
-                    .get(block.saturating_add(1))
-                    .copied()
-                    .unwrap_or(count);
+            .flat_map(move |(block, (&start, length))| {
+                let start = usize::from(start);
+                let end = start.saturating_add(usize::from(length));
                 // A block lies wholly among the shared cells or wholly among
                 // the own ones: sharing takes every block and widening adds
                 // whole blocks.
@@ -305,7 +287,7 @@ impl<Cell: Clone> NodeTable<Cell>
         let held = self.starts.len();
         let mut count = usize::from(self.count());
         for length in blocks.into_iter().skip(held) {
-            self.starts.push(count);
+            self.starts.push(NodeCount::from(count));
             count = count.saturating_add(usize::from(length));
         }
         self.own
@@ -325,7 +307,7 @@ impl<Cell: Clone> NodeTable<Cell>
     /// - witness: `table::tests::filling_a_block_writes_its_cells_alone`
     #[spec(
         captures: wanted = cell.clone(),
-        ensures: (0_usize .. usize::from(self.block_cells(block))).all(|offset| {
+        ensures: (0_usize .. usize::from(self.laid_out().length(block))).all(|offset| {
             self.get(NodeIndex::at(block, BlockOffset::from(offset))) == Some(&wanted)
         }),
     )]
@@ -337,12 +319,12 @@ impl<Cell: Clone> NodeTable<Cell>
     ) where
         Cell: PartialEq,
     {
-        let index = usize::from(block);
-        let Some(&start) = self.starts.get(index)
+        let laid_out = self.laid_out();
+        let (Some(start), Some(end)) = (laid_out.start(block), laid_out.end(block))
         else {
             return;
         };
-        let end = start.saturating_add(usize::from(self.block_cells(block)));
+        let (start, end) = (usize::from(start), usize::from(end));
         let shared = self.shared.len();
         if let Some(own) = start.checked_sub(shared) {
             if let Some(cells) = self.own.get_mut(own .. end.saturating_sub(shared)) {
