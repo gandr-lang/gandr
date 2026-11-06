@@ -245,5 +245,226 @@
       }
     },
     "output": "no ceiling: .config/gh/calls.toml's budget gives none for write rest"
+  },
+  {
+    "name": "#5681: a row a cron runs spends only in its workflows' hours, so two schedules at different hours each fit",
+    "input": {
+      "sites": [
+        { "file": "a.bash", "scope": "nightly", "verb": "api GET" },
+        { "file": "a.bash", "scope": "weekly", "verb": "api GET" },
+        { "file": "a.bash", "scope": "poll", "verb": "api GET" }
+      ],
+      "table": {
+        "budget": { "read": { "rest": 100 } },
+        "site": [
+          {
+            "file": "a.bash",
+            "scope": "nightly",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 60,
+            "measured": "rest",
+            "hour": 1,
+            "schedule": "n.yml",
+            "trigger": "n.yml: once a day"
+          },
+          {
+            "file": "a.bash",
+            "scope": "weekly",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 60,
+            "measured": "rest",
+            "hour": 1,
+            "schedule": ["w.yml"],
+            "trigger": "w.yml: once a week"
+          },
+          {
+            "file": "a.bash",
+            "scope": "poll",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 30,
+            "measured": "rest",
+            "hour": 1,
+            "trigger": "a poll"
+          }
+        ]
+      },
+      "schedules": { "n.yml": ["0 4 * * *"], "w.yml": ["0 5 * * 1"] }
+    },
+    "output": ""
+  },
+  {
+    "name": "#5681: an hour over its ceiling is refused, naming the hour and its largest spenders; a cron's list, range and step each name hours",
+    "input": {
+      "sites": [
+        { "file": "a.bash", "scope": "sweep", "verb": "api GET" },
+        { "file": "a.bash", "scope": "batch", "verb": "api GET" },
+        { "file": "a.bash", "scope": "poll", "verb": "api GET" }
+      ],
+      "table": {
+        "budget": { "read": { "rest": 100 } },
+        "site": [
+          {
+            "file": "a.bash",
+            "scope": "sweep",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 40,
+            "measured": "rest",
+            "hour": 1,
+            "schedule": "c.yml",
+            "trigger": "c.yml: every two hours"
+          },
+          {
+            "file": "a.bash",
+            "scope": "batch",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 30,
+            "measured": "rest",
+            "hour": 1,
+            "schedule": "b.yml",
+            "trigger": "b.yml: four hours a day"
+          },
+          {
+            "file": "a.bash",
+            "scope": "poll",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 40,
+            "measured": "rest",
+            "hour": 1,
+            "trigger": "a poll"
+          }
+        ]
+      },
+      "schedules": { "c.yml": ["17 */2 * * *"], "b.yml": ["0 1-3,6 * * *"] }
+    },
+    "output": "over budget: read rest spends 110 in the hour from 02:00 UTC, over its 100; the most: a.bash sweep (rest) 40, a.bash poll (rest) 40, a.bash batch (rest) 30"
+  },
+  {
+    "name": "#5681: a row of a site that reads pages states its pages, at most its points; a row whose site reads none states none",
+    "input": {
+      "sites": [
+        { "file": "a.bash", "scope": "list", "verb": "api GET", "paginated": true },
+        { "file": "a.bash", "scope": "many", "verb": "api GET", "paginated": true },
+        { "file": "a.bash", "scope": "zero", "verb": "api GET", "paginated": true },
+        { "file": "a.bash", "scope": "one", "verb": "api GET", "paginated": false },
+        { "file": "a.bash", "scope": "fits", "verb": "api GET", "paginated": true }
+      ],
+      "table": {
+        "budget": { "read": { "rest": 100 } },
+        "site": [
+          {
+            "file": "a.bash",
+            "scope": "list",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 8,
+            "measured": "rest",
+            "hour": 1,
+            "trigger": "a task"
+          },
+          {
+            "file": "a.bash",
+            "scope": "many",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 2,
+            "pages": 8,
+            "measured": "rest",
+            "hour": 1,
+            "trigger": "a task"
+          },
+          {
+            "file": "a.bash",
+            "scope": "zero",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 1,
+            "pages": 0,
+            "measured": "rest",
+            "hour": 1,
+            "trigger": "a task"
+          },
+          {
+            "file": "a.bash",
+            "scope": "one",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 1,
+            "pages": 1,
+            "measured": "rest",
+            "hour": 1,
+            "trigger": "a task"
+          },
+          {
+            "file": "a.bash",
+            "scope": "fits",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 9,
+            "pages": 8,
+            "measured": "rest",
+            "hour": 1,
+            "trigger": "a task"
+          }
+        ]
+      }
+    },
+    "output": "no pages: a.bash list (rest) as read reads pages; its row states no `pages`\npages over points: a.bash many (rest) as read reads 8 pages, over its 2 points\nbad pages: a.bash zero (rest) as read states `pages` 0; a whole number of 1 or more\npages unread: a.bash one (rest) as read states `pages`, but the site reads no pages"
+  },
+  {
+    "name": "#5681: a schedule names a workflow that runs on a cron whose hour field the rule reads",
+    "input": {
+      "sites": [
+        { "file": "a.bash", "scope": "gone", "verb": "api GET" },
+        { "file": "a.bash", "scope": "odd", "verb": "api GET" }
+      ],
+      "table": {
+        "budget": { "read": { "rest": 100 } },
+        "site": [
+          {
+            "file": "a.bash",
+            "scope": "gone",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 1,
+            "measured": "rest",
+            "hour": 1,
+            "schedule": "gone.yml",
+            "trigger": "gone.yml: once a day"
+          },
+          {
+            "file": "a.bash",
+            "scope": "odd",
+            "api": "rest",
+            "identity": "read",
+            "calls": 1,
+            "points": 1,
+            "measured": "rest",
+            "hour": 1,
+            "schedule": "odd.yml",
+            "trigger": "odd.yml: once a day"
+          }
+        ]
+      },
+      "schedules": { "gone.yml": [], "odd.yml": ["0 25 * * *"] }
+    },
+    "output": "no schedule: a.bash gone (rest) as read names `gone.yml`, which runs on no cron\nbad cron: a.bash odd (rest) as read: `odd.yml` runs at `0 25 * * *`, an hour field this rule does not read"
   }
 ]

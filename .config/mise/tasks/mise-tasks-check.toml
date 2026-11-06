@@ -1803,10 +1803,14 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 
 # Every `gh` call site has a measured price, and each identity's hour of
 # calls stays within its ceiling (#5061). `.config/gh/sites.awk` lists the
-# calls in the workflow's shell, tasks and workflows. `.config/gh/budget.jq`
-# reads them against `.config/gh/calls.toml`, and `.config/gh/cases.json`
-# holds its cases. A new call site, a changed one or a price over a ceiling
-# fails here, before it spends the shared limit.
+# calls in the workflow's shell, tasks and workflows, with each call's text,
+# so a call that gives `--paginate` reads pages and its row states them
+# (#5681). A row that a workflow's cron runs names the workflow, and the
+# check reads that workflow's crons, so the row spends only in their UTC
+# hours. `.config/gh/budget.jq` reads them against `.config/gh/calls.toml`
+# and sums each of the 24 hours, and `.config/gh/cases.json` holds its
+# cases. A new call site, a changed one or a price over a ceiling fails
+# here, before it spends the shared limit.
 ["check:gh-budget"]
 description = "Every gh call site has a measured price in .config/gh/calls.toml, and each identity's hour of calls stays within its ceiling"
 tools.jq = "1.8.1"
@@ -1817,10 +1821,20 @@ set -euo pipefail
 failed=0
 .config/cases/run.bash gh-budget .config/gh/cases.json --program .config/gh/budget.jq || failed=1
 sites=$(git ls-files -z -- '.config/*.sh' '.config/*.bash' '.config/*.toml' '.github/*.yml' '.github/*.yaml' \
-  | xargs -0 awk -f .config/gh/sites.awk \
-  | jq -R -s -c 'split("\n") | map(select(. != "") | split("\t") | {file: .[0], scope: .[1], verb: .[2]})')
+  | xargs -0 awk -v text=1 -f .config/gh/sites.awk \
+  | jq -R -s -c 'split("\n") | map(select(. != "") | split("\t")
+      | {file: .[0], scope: .[1], verb: .[2], paginated: (.[3:] | join("\t") | test("(^|\\s)--paginate(\\s|$)"))})')
 table=$(yq -p toml -o json -I 0 .config/gh/calls.toml)
-findings=$(jq -n -c --argjson sites "$sites" --argjson table "$table" '{$sites, $table}' | jq -r -L .config/gh -f .config/gh/budget.jq)
+# Each workflow a row's `schedule` names, with its crons; a workflow that is
+# gone gives none, which the rule refuses.
+schedules=$(jq -r '[.site[]?.schedule // empty] | flatten | unique[]' <<< "$table" | while IFS= read -r workflow; do
+  if [[ -f .github/workflows/$workflow ]]; then
+    yq -o json -I 0 '[.on.schedule[]?.cron]' ".github/workflows/$workflow" | jq -c --arg workflow "$workflow" '{($workflow): .}'
+  else
+    jq -n -c --arg workflow "$workflow" '{($workflow): []}'
+  fi
+done | jq -s -c 'add // {}')
+findings=$(jq -n -c --argjson sites "$sites" --argjson table "$table" --argjson schedules "$schedules" '{$sites, $table, $schedules}' | jq -r -L .config/gh -f .config/gh/budget.jq)
 if [[ -n $findings ]]; then
   printf '%s\n' "$findings" >&2
   failed=1
