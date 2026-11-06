@@ -4588,6 +4588,7 @@ INSERT INTO purpose VALUES('workflow-sweep','rotation::Nights','struct','How man
 INSERT INTO purpose VALUES('workflow-sweep','rotation::Offset','struct','A byte offset into a Text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','rotation::Part','struct','The bytes of a Text from `start` to `end`, a night covers.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','rotation::Rotation','enum','Which of its inputs a rotating sweep visits under a whole profile.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-sweep','rotation::Row','struct','The index of a row of an input, for a sweep that checks each input row by row, each row on its own.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','rotation::Slice','struct','Which of a rotation''s slices a night visits: its day number modulo the rotation''s Nights.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','rotation::Text','struct','A text a sweep covers part by part.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-sweep','sample::Sample','struct','A sweep''s stated sample.',NULL,'fits','sound',NULL);
