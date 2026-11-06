@@ -3256,7 +3256,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   its own reflexivity, reads the carrier its signature solves; the
     ///   checker and the kernel admit it, and a composite at an endpoint that
     ///   the carrier does not reach is refused as on a written carrier.
-    /// - witness: `kernel_export::kernel_presented_readmission::a_body_reads_the_carrier_its_signature_solves_5272`
+    /// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
     pub(crate) fn relate_solved(
         &mut self,
         point: ValueId,
@@ -3315,7 +3315,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::relate_solved`].
-    /// - witness: `kernel_export::kernel_presented_readmission::a_body_reads_the_carrier_its_signature_solves_5272`
+    /// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
     #[spec(ensures: |ret| ret == value || self.arena.value(ret).is_some())]
     pub(crate) fn read_solved(
         &mut self,

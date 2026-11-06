@@ -3076,6 +3076,100 @@ fn a_binder_that_the_motive_alone_reads_is_generalised_in_both_checkers_5324()
     assert!(crossed.audit().axioms().is_empty());
 }
 
+/// #5337: a case on a value of a family with a parameter, its motive keeping
+/// the scrutinee variable as the lowering writes it. `CodeAt(d : Type)` at
+/// position 0 has two constructors with no field. `famAt(d, c) -> Type` at
+/// position 1 cases on `c` and returns `⌜Unit⌝` at each arm. `unitAt(d, c) ->
+/// El(⟨famAt d c⟩)` at position 2 cases on `c` with `()` at each arm, and its
+/// motive reads `c` and not its own binder. Each arm meets the goal at its
+/// own constructor, in the checker and in the kernel.
+#[test]
+fn a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337()
+{
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let codes = ConstantIndex::from(0_usize);
+    let family = ConstantIndex::from(1_usize);
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let no_fields = [0_usize, 0]
+        .map(gandr_kernel_term::FieldCount::from)
+        .to_vec();
+    // `Π (d : Type). Π (c : CodeAt(d)). F answer`, the answer read under `d`
+    // and `c`.
+    let over_codes = |arena: &mut CoreArena, answer: ValueTypeId| {
+        let d = variable(arena, 0);
+        let code = arena.value_type_data(codes, vec![d]);
+        let returns = arena.comp_type_returner(answer);
+        let inner = arena.comp_type_pi(code, returns);
+        let outer = arena.comp_type_pi(kind, inner);
+        arena.value_type_thunk(outer)
+    };
+    // `famAt = thunk λd. λc. case c { return ⌜Unit⌝ | return ⌜Unit⌝ }`.
+    let fam_type = over_codes(&mut arena, kind);
+    let unit_type = arena.value_type_unit();
+    let unit_code = arena.value_quote(unit_type);
+    let unit_code = arena.computation_return(unit_code);
+    let returns_kind = arena.comp_type_returner(kind);
+    let c = variable(&mut arena, 0);
+    let fam_case = arena.computation_data_case(
+        c,
+        returns_kind,
+        vec![unit_code, unit_code],
+        no_fields.clone(),
+    );
+    let fam_body = arena.computation_lambda(fam_case);
+    let fam_body = arena.computation_lambda(fam_body);
+    let fam_body = arena.value_thunk(fam_body);
+    // `El(⟨force famAt d c⟩)`, with `d` and `c` the variables at `d_at` and
+    // `c_at`.
+    let decoded = |arena: &mut CoreArena, d_at: u32, c_at: u32| {
+        let fam = arena.value_constant(family);
+        let forced = arena.computation_force(fam);
+        let d = variable(arena, d_at);
+        let applied = arena.computation_application(forced, d);
+        let c = variable(arena, c_at);
+        let applied = arena.computation_application(applied, c);
+        let code = arena.value_returned(applied);
+        arena.value_type_element(code, Level::zero())
+    };
+    // `unitAt`'s goal under `d` and `c`: `d` is 1 and `c` is 0.
+    let goal = decoded(&mut arena, 1, 0);
+    let unit_at_type = over_codes(&mut arena, goal);
+    // The motive binds the scrutinee at 0 and keeps `c` as written: `c` is 1
+    // and `d` is 2 under it.
+    let motive = decoded(&mut arena, 2, 1);
+    let motive = arena.comp_type_returner(motive);
+    let unit = arena.value_unit();
+    let returned = arena.computation_return(unit);
+    let scrutinee = variable(&mut arena, 0);
+    let case = arena.computation_data_case(scrutinee, motive, vec![returned, returned], no_fields);
+    let unit_at = arena.computation_lambda(case);
+    let unit_at = arena.computation_lambda(unit_at);
+    let unit_at = arena.value_thunk(unit_at);
+    let (report, crossed) = run(&mut arena, &[
+        Declaration::data(
+            codes,
+            DataSignature::new(vec![kind], vec![vec![], vec![]], kind).into(),
+            OriginToken::from(0_usize),
+        ),
+        definition(family, fam_type, fam_body),
+        definition(ConstantIndex::from(2_usize), unit_at_type, unit_at),
+    ]);
+    assert!(
+        matches!(report.judged()[2].verdict(), Verdict::Checked { .. }),
+        "each arm meets the goal at its own constructor: {:?}",
+        report.judged()[2].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[2].outcome(), Outcome::Defined { .. }),
+        "the kernel admits the case at the kept scrutinee: {:?}",
+        crossed.readmitted()[2].outcome()
+    );
+    assert!(crossed.audit().axioms().is_empty());
+}
+
 /// #5036: a joint fixpoint's goal at a summand is a decode of a case on an
 /// injection, which each member reads as its own type, in the checker and in
 /// the kernel. `pick` at `Π (y : Unit + Unit). El(⟨case y { return ⌜Unit -> F

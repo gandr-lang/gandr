@@ -7603,6 +7603,169 @@ fn a_path_type_over_an_omitted_model_converts_once_resolved_2391()
     );
 }
 
+/// #5272: a parameter whose path type omits its carrier is read again as the
+/// first path of a composite, and the composite reads the omitted carrier. The
+/// signature's formation solves that carrier. The body reads the solved
+/// carrier at the composite's endpoint, at its reflexivity and at an
+/// ascription's endpoints, and the kernel readmits each declaration. A
+/// composite at an endpoint that the body's composite does not reach is
+/// refused as on a written carrier.
+#[test]
+fn a_body_reads_the_carrier_its_signature_solves_5272()
+{
+    // def first(A : Type, y : A, z : A, w : A, g : Path(y, z),
+    //   h : Path[.A = A](z, w), k : Path[.A = A](z, w))
+    //   -> F Path[.A = A](y, w) = thunk λ⁷. return (Path.step g h) ;
+    // def here(…) -> F Path[.A = Path[.A = A](y, w)](Path.step g h,
+    //   Path.step g h) = thunk λ⁷. return here(Path.step g h) ;
+    // def ascribed(…) -> F Path[.A = Path[.A = A](y, w)](Path.step g h,
+    //   Path.step g h) = thunk λ⁷. return (here(Path.step g h) :
+    //   Path[.A = Path[.A = A](y, w)](Path.step g h, Path.step g h)) ;
+    // def apart(…) -> F Path[.A = Path[.A = A](y, w)](Path.step g h,
+    //   Path.step g k) = thunk λ⁷. return here(Path.step g h) ;
+    let mut arena = CoreArena::new();
+    let holes: [gandr_core_term::hole::HoleId; 4] = nominated_holes();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let element = |arena: &mut CoreArena, index: u32| {
+        let code = variable(arena, index);
+        arena.value_type_element(code, Level::zero())
+    };
+    // `Path.step g s` under `A y z w g h k`, `s` at `second`: the composite
+    // reads its carrier from `g`'s type, the decoding of the omitted hole.
+    // Each reading mints its own nodes, as the lowering mints them.
+    let step = |arena: &mut CoreArena, hole, second: u32| {
+        let omitted = arena.value_hole(hole);
+        let carrier = arena.value_type_element(omitted, Level::zero());
+        let [y, g, second] = [5, 2, second].map(|index| variable(arena, index));
+        gandr_core_term::compose::compose(
+            arena,
+            gandr_core_term::compose::Composite::binary(),
+            (carrier, y),
+            &[g, second],
+        )
+    };
+    // `Path[.A = Path[.A = A](y, w)](Path.step g h, Path.step g s)` under `A y
+    // z w g h k`, `s` at `second`: `A` is six, `y` five and `w` three.
+    let around = |arena: &mut CoreArena, hole, second: u32| {
+        let a = element(arena, 6);
+        let [y, w] = [5, 3].map(|index| variable(arena, index));
+        let composite = arena.value_type_path(a, y, w);
+        let left = step(arena, hole, 1);
+        let right = step(arena, hole, second);
+        arena.value_type_path(composite, left, right)
+    };
+    let [first, here, ascribed, apart] = [
+        (holes[0], Form::First),
+        (holes[1], Form::Here),
+        (holes[2], Form::Ascribed),
+        (holes[3], Form::Apart),
+    ]
+    .map(|(hole, form)| {
+        // `A`, `y`, `z` and `w`: each point's type reads `A`.
+        let [y_type, z_type, w_type] = [0, 1, 2].map(|index| element(&mut arena, index));
+        // `g : Path(y, z)` under `A y z w`, its carrier the decoding of the
+        // hole the form nominates.
+        let omitted = arena.value_hole(hole);
+        let carrier = arena.value_type_element(omitted, Level::zero());
+        let [y, z] = [2, 1].map(|index| variable(&mut arena, index));
+        let g_type = arena.value_type_path(carrier, y, z);
+        // `h, k : Path[.A = A](z, w)` under `A y z w g` and `A y z w g h`.
+        let [h_type, k_type] = [(4, 2, 1), (5, 3, 2)].map(|(a, z, w)| {
+            let a = element(&mut arena, a);
+            let z = variable(&mut arena, z);
+            let w = variable(&mut arena, w);
+            arena.value_type_path(a, z, w)
+        });
+        // Under `A y z w g h k`, `h` is one and `k` zero.
+        let (answer, returned) = match form {
+            Form::First => {
+                let a = element(&mut arena, 6);
+                let [y, w] = [5, 3].map(|index| variable(&mut arena, index));
+                (arena.value_type_path(a, y, w), step(&mut arena, hole, 1))
+            },
+            Form::Here | Form::Ascribed | Form::Apart => {
+                let answer = around(&mut arena, hole, if form == Form::Apart { 0 } else { 1 });
+                let point = step(&mut arena, hole, 1);
+                let reflexive = arena.value_here(point);
+                let returned = if form == Form::Ascribed {
+                    let written = around(&mut arena, hole, 1);
+                    arena.value_ascribe(reflexive, written)
+                }
+                else {
+                    reflexive
+                };
+                (answer, returned)
+            },
+        };
+        let mut telescope = arena.comp_type_returner(answer);
+        for domain in [k_type, h_type, g_type, w_type, z_type, y_type, kind] {
+            telescope = arena.comp_type_pi(domain, telescope);
+        }
+        let mut body = arena.computation_return(returned);
+        for _ in 0 .. 7 {
+            body = arena.computation_lambda(body);
+        }
+        (arena.value_type_thunk(telescope), arena.value_thunk(body))
+    });
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(At(0), Maybe::Present(first.0), Maybe::Present(first.1)),
+        declaration(At(1), Maybe::Present(here.0), Maybe::Present(here.1)),
+        declaration(
+            At(2),
+            Maybe::Present(ascribed.0),
+            Maybe::Present(ascribed.1),
+        ),
+        declaration(At(3), Maybe::Present(apart.0), Maybe::Present(apart.1)),
+    ]);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            _
+        ]),
+        "the composite, its reflexivity and its ascription read the carrier the signature solves: {verdicts:?}"
+    );
+    assert!(
+        readmission
+            .readmitted()
+            .iter()
+            .take(3)
+            .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. })),
+        "the kernel readmits the three declarations: {:?}",
+        readmission.readmitted()
+    );
+    assert!(
+        matches!(
+            verdicts.get(3),
+            Some(Verdict::Refused(CheckRefusal::EndpointMismatch { .. }))
+        ),
+        "a composite the body's composite does not reach is refused: {verdicts:?}"
+    );
+}
+
+/// What the body of a declaration of
+/// [`a_body_reads_the_carrier_its_signature_solves_5272`] returns.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Form
+{
+    /// The composite, at a path type that writes its carrier.
+    First,
+    /// The composite's reflexivity, at the path type between two composites.
+    Here,
+    /// The reflexivity, ascribed to that path type as the body writes it.
+    Ascribed,
+    /// The reflexivity, at a path type whose second composite reads `k`.
+    Apart,
+}
+
 mod bridges;
 
 #[test]

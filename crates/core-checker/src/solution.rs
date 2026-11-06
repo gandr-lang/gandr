@@ -704,7 +704,7 @@ pub fn refined_arm(
 ///   checkers.
 /// - witness: `tests::native_formers::a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483`
 /// - witness: `tests::native_formers::a_binder_that_the_motive_alone_reads_is_generalised_in_both_checkers_5324`
-/// - witness: `kernel_export::kernel_presented_readmission::a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337`
+/// - witness: `tests::native_formers::a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
     | Maybe::Present(ref refined) => refined.term != case,
     | Maybe::Absent(_) => true,
@@ -916,7 +916,7 @@ pub fn refined_case(
 /// - hypothesis: L3 — a case on a code of a family with a parameter, its goal
 ///   reading the code, meets the goal at each constructor, and a case over a
 ///   family with no parameter is refined as before.
-/// - witness: `kernel_export::kernel_presented_readmission::a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337`
+/// - witness: `tests::native_formers::a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
     | Maybe::Present((family, ty)) => matches!(context.arena().value_type(ty), Some(&ValueType::Data { declaration, .. }) if declaration == family),
     | Maybe::Absent(reason) => reason == unrefined::Absent::Unsolved,

@@ -1634,7 +1634,7 @@ pub fn indices_agree(
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 /// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
 /// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
-/// - witness: `kernel_export::kernel_presented_readmission::a_body_reads_the_carrier_its_signature_solves_5272`
+/// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
 fn endpoints_agree(
     context: &mut CheckingContext<'_>,
     left: ValueId,

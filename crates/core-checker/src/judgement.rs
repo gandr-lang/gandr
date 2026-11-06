@@ -11781,7 +11781,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
     /// - witness: `judgement::tests::reflexivity_at_a_stuck_native_point_meets_it_by_syntax`
     /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
-    /// - witness: `kernel_export::kernel_presented_readmission::a_body_reads_the_carrier_its_signature_solves_5272`
+    /// - witness: `bridge::tests::a_body_reads_the_carrier_its_signature_solves_5272`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right, .. }) => site == at && named_left == left && named_right == right,
         | Ok(()) => self.context.reflexivities().contains_key(&at),
