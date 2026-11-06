@@ -11749,10 +11749,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   unread call of a binder whose calls return
     ///   ([`crate::divergence::returning`]) discarded
     ///   ([`crate::code::CodeDefinitions::relation`]), with the trace it
-    ///   recorded. A conversion that waits for a fill
-    ///   ([`CheckingContext::awaits_fill`]) holds with the empty dialogue: the
-    ///   run that judges the filled body meets the pair again. On success the
-    ///   context records the two dialogues at `at`.
+    ///   recorded. A pair that the conversion refuses is converted again with
+    ///   each hole that the running judgement bound read through its solution
+    ///   ([`CheckingContext::relate_solved`]). A conversion that waits for a
+    ///   fill ([`CheckingContext::awaits_fill`]) holds with the empty dialogue:
+    ///   the run that judges the filled body meets the pair again. On success
+    ///   the context records the two dialogues at `at`.
     /// - provides: the endpoint condition of reflexivity's rule, and the
     ///   dialogues the kernel replays for it.
     /// - fails: [`CheckRefusal::EndpointMismatch`] naming `at` and both
@@ -11779,6 +11781,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
     /// - witness: `judgement::tests::reflexivity_at_a_stuck_native_point_meets_it_by_syntax`
     /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
+    /// - witness: `kernel_export::kernel_presented_readmission::a_body_reads_the_carrier_its_signature_solves_5272`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right, .. }) => site == at && named_left == left && named_right == right,
         | Ok(()) => self.context.reflexivities().contains_key(&at),
@@ -11825,12 +11828,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
             if returning.is_none() {
                 returning = Some(crate::divergence::returning(self.context)?);
             }
-            match self.context.definitions().relation(
-                self.context.arena(),
+            let related = self.context.relate_solved(
                 point,
                 endpoint,
                 returning.as_deref().unwrap_or_default(),
-            ) {
+            );
+            match related {
                 Ok((gandr_core_nbe::MachineVerdict::Convertible, decisions)) => {
                     *dialogue = decisions;
                 },

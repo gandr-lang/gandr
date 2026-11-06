@@ -3227,6 +3227,115 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
     }
 
+    /// The machine's relation of `point` to `endpoint`
+    /// ([`crate::code::CodeDefinitions::relation`]). When the written sides
+    /// refuse, the relation reads them again with the solution of each hole
+    /// that the running judgement nominated and the solver bound
+    /// ([`Self::read_solved`]). The run over the filled body reads the sides
+    /// so.
+    ///
+    /// # Specification
+    /// - requires: both sides stand under the context's intuitionistic binders.
+    /// - ensures: the relation of the sides so read when the written sides
+    ///   refuse, the read changes a side, and the sides so read relate or wait
+    ///   for a fill ([`Self::awaits_fill`]); otherwise the relation of the
+    ///   written sides.
+    /// - provides: the verdict the run over the filled body gives, before the
+    ///   fill. A hole that the signature's formation solves stands in a body
+    ///   node that reads a binder's type, and the machine reads no solution. A
+    ///   pair that the written sides relate costs no read and mints no node.
+    ///   The read only ever adds an acceptance: every refusal is the written
+    ///   sides' refusal.
+    /// - fails: never; a refusal of the relation is its answer.
+    /// - panics: none.
+    /// - executable: none — the verdicts are the machine's own readings; a
+    ///   predicate restating them would run the readings again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite whose first path omits its carrier, at
+    ///   its own reflexivity, reads the carrier its signature solves; the
+    ///   checker and the kernel admit it, and a composite at an endpoint that
+    ///   the carrier does not reach is refused as on a written carrier.
+    /// - witness: `kernel_export::kernel_presented_readmission::a_body_reads_the_carrier_its_signature_solves_5272`
+    pub(crate) fn relate_solved(
+        &mut self,
+        point: ValueId,
+        endpoint: ValueId,
+        returning: &[gandr_kernel_term::DeBruijnIndex],
+    ) -> Result<
+        (
+            gandr_core_nbe::MachineVerdict,
+            Vec<gandr_kernel_conversion_trace::ConversionDecision<gandr_core_nbe::TraceNode>>,
+        ),
+        CheckRefusal,
+    >
+    {
+        // A relation holds for the run when the machine relates the pair, or
+        // when its verdict waits for a fill.
+        let holds =
+            |context: &Self, answer: &Result<(gandr_core_nbe::MachineVerdict, _), CheckRefusal>| {
+                match *answer {
+                    Ok((gandr_core_nbe::MachineVerdict::Convertible, _)) => true,
+                    Ok((verdict, _)) => {
+                        context.awaits_fill(verdict) == crate::elaboration::Deferred::Yes
+                    },
+                    Err(_) => false,
+                }
+            };
+        let related = self
+            .definitions()
+            .relation(self.arena(), point, endpoint, returning);
+        if holds(self, &related) {
+            return related;
+        }
+        let solved = (self.read_solved(point), self.read_solved(endpoint));
+        if solved == (point, endpoint) {
+            return related;
+        }
+        let again = self
+            .definitions()
+            .relation(self.arena(), solved.0, solved.1, returning);
+        if holds(self, &again) { again } else { related }
+    }
+
+    /// `value` read with the solution of each hole that the running judgement
+    /// nominated and the solver bound. The run over the filled body reads the
+    /// value so. A hole that the solver left unbound stays a hole.
+    ///
+    /// # Specification
+    /// - requires: `value` stands under the context's intuitionistic binders.
+    /// - ensures: `value` itself when the running judgement bound no hole, or
+    ///   when the binders are past the count a binder index can name; otherwise
+    ///   `value` with each bound hole filled by its solution, raised past the
+    ///   binders between the solution's scope and where the hole stands, or
+    ///   `value` itself when it holds none.
+    /// - provides: the side that [`Self::relate_solved`] and the endpoint
+    ///   conversion read again after the written side refuses.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::relate_solved`].
+    /// - witness: `kernel_export::kernel_presented_readmission::a_body_reads_the_carrier_its_signature_solves_5272`
+    #[spec(ensures: |ret| ret == value || self.arena.value(ret).is_some())]
+    pub(crate) fn read_solved(
+        &mut self,
+        value: ValueId,
+    ) -> ValueId
+    {
+        let bound = self.deferrals.bound(self.arena);
+        if bound.is_empty() {
+            return value;
+        }
+        let Ok(under) = u32::try_from(usize::from(self.depth(Zone::Intuitionistic)))
+            .map(gandr_core_term::Binders::from)
+        else {
+            return value;
+        };
+        crate::module::rounds(value, &bound, |subject, hole, solution| {
+            gandr_core_term::fill_value_hole(self.arena, (subject, under), hole, solution)
+        })
+    }
+
     /// Record a permitted residual, or retain ordinary rigid conversion.
     ///
     /// # Specification

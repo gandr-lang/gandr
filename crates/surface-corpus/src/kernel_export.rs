@@ -2548,6 +2548,45 @@ mod kernel_presented_readmission
         Environment::replay(decoded.arena().clone(), &declarations)
             .expect("the kernel readmits the split of the pair at its fibre");
     }
+
+    /// #5272: a parameter whose path type omits its carrier, read again as the
+    /// first path of a composite in the body, reads the carrier the signature
+    /// solves; the checker checks each declaration, and the kernel readmits
+    /// them.
+    #[test]
+    fn a_body_reads_the_carrier_its_signature_solves_5272()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/omitted-carrier-in-body.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the composites lower");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        for name in [
+            "stepOmittedAtHere",
+            "stepOmittedFirst",
+            "stepOmittedThrough",
+        ] {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            let marked = declarations
+                .iter()
+                .find(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            assert_eq!(
+                marked.mark(),
+                gandr_kernel_term::AdmissionMark::Checked,
+                "the checker checks `{name}`"
+            );
+        }
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits the composites over the solved carrier");
+    }
 }
 
 /// A step case at a variable readmits by the kernel's own reading of the bind
