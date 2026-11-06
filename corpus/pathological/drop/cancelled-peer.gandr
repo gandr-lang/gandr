@@ -1,13 +1,11 @@
-//! A peer that has sent everything before its scope abandons the rest leaves
-//! the run its clause's answer.
+//! `cancelled-peer` models a completed peer when a handler abandons the root
+//! continuation.
 //!
-//! The run's scheduler starts a fork's child when the root first waits. Here
-//! the child sends both payloads and ends before the clause abandons the
-//! root's rest.
+//! Cancellation does not reach an ended peer.
+//! The handler returns `7`.
 //!
-//! The root takes the first payload, then the exit abandons its continuation
-//! with the second payload still on the channel. No cancellation reaches the
-//! ended peer, so the run answers `7`.
+//! The peer sends two payloads, then it ends before the root exits.
+//! The root receives the first payload before it abandons its continuation.
 //!
 //! - see: #3305 — the cancellation hop, which a peer still waiting at the
 //!   abandonment needs
@@ -16,10 +14,10 @@
 //!
 //! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
 
-// Early exit's host interface.
+// The import provides the early-exit host interface.
 import std.process;
 
-/// The peer sends both payloads and ends before the clause abandons the rest.
+/// The peer ends before the handler abandons the root continuation.
 @[ runs("7") ]
 def cancelled() -> Integer =
   handle c : std.process.Exit.Eff {
