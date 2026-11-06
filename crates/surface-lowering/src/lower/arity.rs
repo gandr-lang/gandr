@@ -636,7 +636,7 @@ pub(super) fn arrange<'source>(
 /// - hypothesis: L3 — trailing commas and one-entry lists read alike.
 /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
 #[spec(ensures: |ret| ret.is_err() || matches!(cursor.peek(), Maybe::Absent(_) | Maybe::Present(_)))]
-fn separated<'source>(
+pub(super) fn separated<'source>(
     site: Site,
     cursor: &mut Cursor<'_>,
     closer: TileName,
@@ -913,7 +913,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
     /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| !matches!(entry.key, Key::Positional))))]
-    fn dotted_entries(
+    pub(super) fn dotted_entries(
         &self,
         site: Site,
         cursor: &mut Cursor<'_>,

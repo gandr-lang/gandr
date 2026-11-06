@@ -73,14 +73,16 @@ use gandr_theory_graphs::WalkChainLength;
 /// with the call form, the value function type, `unit` and the arm commas
 /// gone (#4853), then by a type applied by juxtaposition beside its call form
 /// (#5326), then by a type's call through a module path, its empty list and
-/// its second list (#5213), then by a boolean in type position (#5390).
-const BUILT_IN_FINGERPRINT: u64 = 0x60c9_3480_6320_3aba;
+/// its second list (#5213), then by a boolean in type position (#5390), then
+/// by the static bracket's field and face forms, `T[.l = v]` and `T[f ↦ v]`
+/// (#4454).
+const BUILT_IN_FINGERPRINT: u64 = 0x7451_f8b6_c769_a187;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3031);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3042);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 93;
@@ -110,13 +112,13 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+=", 15),
     ("+U", 1),
     ("+{", 3),
-    (",", 273),
+    (",", 275),
     ("-", 6),
     ("-->", 31),
     ("-=", 15),
     ("->", 12),
     ("-F", 3),
-    (".", 90),
+    (".", 92),
     (".#[", 2),
     (".*{", 1),
     ("..", 3),
@@ -130,7 +132,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<=", 1),
     ("<=>", 27),
     ("<>", 1),
-    ("=", 141),
+    ("=", 143),
     ("==", 1),
     ("==>", 27),
     ("=>", 36),
@@ -160,7 +162,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Unknown", 1),
     ("Void", 1),
     ("[", 59),
-    ("]", 76),
+    ("]", 78),
     ("_", 48),
     ("abort", 1),
     ("access", 1),
@@ -210,7 +212,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 407),
+    ("identifier", 409),
     ("if", 15),
     ("import", 16),
     ("in", 1),
@@ -284,6 +286,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("~", 1),
     ("~>", 3),
     ("ω", 17),
+    ("↦", 1),
     ("⇝", 2),
     ("∷", 2),
     ("≃", 1),

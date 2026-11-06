@@ -190,8 +190,15 @@ pub const UNRESTRICTED: Spelled = Spelled {
     ascii: Ascii::Token(LabelText("inf")),
 };
 
+/// A type restricted along a named face, `Config[secure ↦ e]` or
+/// `Config[secure |-> e]`.
+pub const MAPS_TO: Spelled = Spelled {
+    tile: TileLabel("↦"),
+    ascii: Ascii::Token(LabelText("|->")),
+};
+
 /// Every glyph tile of the surface with its ASCII spelling.
-pub const SPELLED: &[Spelled] = &[EQUIVALENCE, FLOW, ISOMORPHISM, CONS, UNRESTRICTED];
+pub const SPELLED: &[Spelled] = &[EQUIVALENCE, FLOW, ISOMORPHISM, CONS, UNRESTRICTED, MAPS_TO];
 
 /// The prime an identifier may carry, `x′`: Unicode with no ASCII spelling.
 pub const PRIME: LabelText<'static> = LabelText("′");

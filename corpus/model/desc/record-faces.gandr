@@ -1,18 +1,28 @@
 // A record type's faces: each a set of the record's labels, named in a `where`
-// block after the type.
+// block after the type. A static bracket after the type fixes some fields, by
+// label or by face.
 //
 // A record type's labels are its boundary. A face over them names a part of
-// the record, so a later form restricts a value to that part.
+// the record, so a later form restricts a value to that part. The patched type
+// is the record of the fields the bracket leaves free. A name at it reads a
+// fixed field as the value the bracket fixes.
 //
 // The block names each face as a theory's `face` member does. The block ends
 // the type member at its `}`, as a `data` block ends its declaration. A record
 // type with no block keeps its labels as its boundary all the same.
+// `Config[.port = 443, .tls = true]` fixes two fields by label, and
+// `Config[secure ↦ *{.port = 443, .tls = true}]` fixes the face `secure`.
+// `|->` spells `↦` in ASCII.
 //
-// - see: `pathological/desc/record-faces.gandr` — a face past the labels, and
-//   a face named twice, refused
+// - see: `pathological/desc/record-faces.gandr` — a face past the labels, a
+//   face named twice, and a bracket naming a field or a face the type lacks,
+//   refused
 // - see: `model/desc/shaped-signature.gandr` — a theory's `boundary` and its
 //   faces
-// - owes: #4454 — the extension type over a face
+// - owes: #5536 — a configuration coerced to a patched type, and an element
+//   of a patched type coerced back to the configuration
+// - owes: #5106 — two faces fixed at once, whose values agree where the faces
+//   meet
 
 /// A server's configuration: the faces `secure` and `addr` meet at the port.
 type Config = *{host : String, port : Integer, tls : Bool} where
@@ -21,3 +31,18 @@ type Config = *{host : String, port : Integer, tls : Bool} where
 
 /// A configuration states the record whatever faces it names.
 def local : Config = *{.host = "localhost", .port = 443, .tls = true};
+
+/// A configuration on the secure port, by its fields: the host alone is free.
+def secured : Config[.port = 443, .tls = true] = *{.host = "localhost"};
+
+/// The same configuration by its face.
+def faced : Config[secure ↦ *{.port = 443, .tls = true}] = *{.host = "localhost"};
+
+/// The port a configuration on the secure port fixes: 443.
+def port_of(c : Config[.port = 443, .tls = true]) -> Integer { c.port }
+
+/// The host of a configuration on the secure face, written in ASCII.
+def host_of(c : Config[secure |-> *{.port = 443, .tls = true}]) -> String { c.host }
+
+/// The port of the configuration by its fields.
+def secured_port : Integer = port_of (secured);

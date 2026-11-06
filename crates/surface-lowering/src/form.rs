@@ -586,6 +586,9 @@ impl TileName
     pub const LAW: Self = Self("law");
     /// The less-than sign `<`: an instantiation's structural-descent claim.
     pub const LESS_THAN: Self = Self("<");
+    /// The arrow `↦` of a face in a static bracket, `T[f ↦ v]`, spelled `|->`
+    /// in ASCII.
+    pub const MAPS_TO: Self = Self("↦");
     /// The sort literal `-` of a universe: the computation types.
     pub const MINUS: Self = Self("-");
     /// The module keyword `module`.

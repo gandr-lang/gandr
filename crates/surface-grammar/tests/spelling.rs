@@ -93,6 +93,7 @@ fn each_glyph_is_written_in_the_spelling_asked()
     for (glyph, ascii) in [
         ("≃", "<~>"),
         ("⇝", "~~>"),
+        ("↦", "|->"),
         ("≅", "Iso"),
         ("∷", "::"),
         ("ω", "inf"),

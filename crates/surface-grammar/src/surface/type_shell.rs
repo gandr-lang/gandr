@@ -604,6 +604,26 @@ fn add_type_rules(
     // so `Nat[< i] -> Nat` and `-F Nat[i]` need no parentheses. The same
     // bracket names a method's deduced mode where a view's type reads its
     // element after it, `View[m](a)`.
+    //
+    // The bracket also writes an extension type over a record's fields. The
+    // field form `Config[.port = 443, .tls = true]` fixes the fields it names.
+    // The face form `Config[secure ↦ *{.port = 443, .tls = true}]` fixes the
+    // fields of one face the record's type member names. The field form opens
+    // with `.`, where a stage opens with `<` or a name. The face form and a
+    // stage share their name, and the token after it, `↦` or `]`, decides
+    // between them. The forms are alternatives of one rule, so the `[` after
+    // a type keeps one mold. A second rule over the same `[` would tie with
+    // this one at every staged type.
+    //
+    // A field's value is a type hole, as a value a type takes as a call's
+    // argument is: a number, a boolean, a name or a call. After `=` in a type,
+    // an expression hole lets a declaration's own `= e`, cut off by a bracket
+    // the source leaves open, read as a fixed value. The recovery then marks
+    // the open bracket at the declaration's end and not where it was left
+    // open. A face's value follows `↦`, which no declaration writes, so it is
+    // an expression: the record of the face's fields. The face form holds one
+    // face. A `,` after its expression hole makes the recovery of a dropped
+    // token owe more in sources that write no face.
     rules.push(rule(
         RuleName("staged_type"),
         ty,
@@ -611,14 +631,36 @@ fn add_type_rules(
         Regex::seq([
             Regex::sort(ty),
             tile(TileLabel("[")),
-            Regex::optional(tile(TileLabel("<"))),
-            tile(TileLabel("identifier")),
-            tile(TileLabel("]")),
-            Regex::optional(Regex::seq([
-                tile(TileLabel("(")),
-                comma1(Regex::sort(ty)),
-                tile(TileLabel(")")),
-            ])),
+            Regex::alt([
+                Regex::seq([
+                    Regex::optional(tile(TileLabel("<"))),
+                    tile(TileLabel("identifier")),
+                    Regex::alt([
+                        Regex::seq([
+                            tile(TileLabel("]")),
+                            Regex::optional(Regex::seq([
+                                tile(TileLabel("(")),
+                                comma1(Regex::sort(ty)),
+                                tile(TileLabel(")")),
+                            ])),
+                        ]),
+                        Regex::seq([
+                            tile(TileLabel("↦")),
+                            Regex::sort(Sort::Expression),
+                            tile(TileLabel("]")),
+                        ]),
+                    ]),
+                ]),
+                Regex::seq([
+                    comma1(Regex::seq([
+                        tile(TileLabel(".")),
+                        tile(TileLabel("identifier")),
+                        tile(TileLabel("=")),
+                        Regex::sort(ty),
+                    ])),
+                    tile(TileLabel("]")),
+                ]),
+            ]),
         ]),
     ));
     // A parenthesized type holds one type or, as the domain of the n-ary `=>`,

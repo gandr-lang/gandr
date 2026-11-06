@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x60c9348063203aba`
+- Grammar fingerprint: `0x7451f8b6c769a187`
 - Rules: 172 — 171 committed, 1 internal
-- Molds: 3031
+- Molds: 3042
 - Attributes: 18
 
 ## Reading a form
@@ -184,7 +184,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`type_application`](../corpus/ledger/syntax/type-application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
 | [`type_application.juxtaposed`](../corpus/ledger/syntax/type-application.juxtaposed.gandr) | `TYPE   TYPE` | `type.juxtaposition` | `type_application` | admitted | Other |
 | [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ⦅ ‹type_identifier› ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ‹type_variable› ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
-| [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ < ⦆? ‹identifier› ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
+| [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ↦ EXPRESSION ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` or `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ \|-> EXPRESSION ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized-type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope-type.gandr) | `*{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |
 | [`send_session_type`](../corpus/ledger/syntax/send-session-type.gandr) | `! TYPE ⦅ >> ‖ . ⦆ TYPE` | `type.arrow` | `send_session_type` | admitted | Operator, Other |
@@ -405,7 +405,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `type_application` | type | 13 | `type_identifier` `type_variable` | `moded_type`, `type_identifier`, `type_variable` | 4 |
 | `type_application.juxtaposed` | type | 1 | ` ` | — | 0 |
 | `type_path` | type | 17 | `.` | — | 9 |
-| `staged_type` | type | 8 | `[` | — | 2 |
+| `staged_type` | type | 19 | `[` | — | 4 |
 | `parenthesized_type` | type | 6 | `(` | — | 4 |
 | `telescope_type` | type | 6 | `*{` | — | 4 |
 | `send_session_type` | type | 3 | `!` | — | 0 |
@@ -443,23 +443,23 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 201 labels
+## Menus — 202 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 407 | 60 | 3 |
-| `,` | 273 | 49 | 0 |
+| `identifier` | 409 | 60 | 3 |
+| `,` | 275 | 49 | 0 |
 | `:` | 248 | 32 | 0 |
 | `type_identifier` | 203 | 33 | 2 |
 | `)` | 143 | 44 | 0 |
-| `=` | 141 | 36 | 0 |
+| `=` | 143 | 37 | 0 |
 | `(` | 139 | 43 | 5 |
 | `;` | 127 | 26 | 1 |
 | `type_variable` | 93 | 15 | 3 |
-| `.` | 90 | 44 | 3 |
-| `]` | 76 | 40 | 0 |
+| `.` | 92 | 45 | 3 |
+| `]` | 78 | 40 | 0 |
 | `}` | 76 | 40 | 0 |
 | `[` | 59 | 33 | 4 |
 | `number` | 57 | 33 | 3 |
@@ -648,5 +648,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `\|>` | 1 | 1 | 1 |
 | `\|\|` | 1 | 1 | 1 |
 | `~` | 1 | 1 | 1 |
+| `↦` | 1 | 1 | 0 |
 | `≃` | 1 | 1 | 1 |
 | `≅` | 1 | 1 | 1 |

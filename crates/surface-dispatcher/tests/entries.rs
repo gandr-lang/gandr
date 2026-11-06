@@ -420,8 +420,9 @@ fn kind(
 /// binding port binds or an abstracting operation in a theory's rule, as
 /// the head or the type of an `Eq.generic(T)` or of one of its laws, as a
 /// node of the tactic a splice runs, as the splice a law member admits by,
-/// as a node of a world's requirement row, as a host interface's path, or
-/// as the implicit a path-shaped type supplies its carrier by.
+/// as a node of a world's requirement row, as a host interface's path, as
+/// the implicit a path-shaped type supplies its carrier by, as a value a
+/// static bracket fixes, or as the name a selection reads a fixed field off.
 ///
 /// # Specification
 /// trivial.
@@ -573,6 +574,18 @@ enum Placed
     /// term nor a type, so the type answers (#4932). The pun `Path[.A](a,
     /// b)` reads `A` as the carrier, which answers.
     Implicit,
+    /// A value a static bracket fixes, `443` in `Config[.port = 443]`, or the
+    /// record a face fixes, `*{.port = 443}` in `Config[secure ↦ *{.port =
+    /// 443}]`: the patched type is the record of the fields the bracket
+    /// leaves free, so no core node of the type holds the value, and no
+    /// judgement types it until the checker reads each fixed value at its
+    /// field's type (#5536). The type answers.
+    Fixed,
+    /// The name a selection reads a fixed field off, `c` in `c.port` where `c
+    /// : Config[.port = 443]`: the selection reads the value the bracket
+    /// fixes, so no core node holds the name until the checker reads the
+    /// field back through the patched type (#5536). The selection answers.
+    ReadBack,
 }
 
 /// What the lowering knows of a source's models: each model implicit a
@@ -701,6 +714,30 @@ fn gated(
             after.get(.. after.find(|letter: char| !(letter.is_alphanumeric() || letter == '_'))?)
         })
         .filter(|name| !name.is_empty())
+        .collect();
+    // The labels a static bracket after a type fixes, `port` in `Config[.port
+    // = 443]` and in `Config[secure ↦ *{.port = 443}]`.
+    let fixed: BTreeSet<&str> = source
+        .match_indices('[')
+        .filter(|&(at, _)| {
+            named(source.get(.. at).unwrap_or(""))
+                .is_some_and(|head| head.starts_with(char::is_uppercase))
+        })
+        .filter_map(|(at, _)| {
+            let inside = source.get(at ..)?;
+            inside.get(.. inside.find(']')?)
+        })
+        .flat_map(|inside| {
+            inside.match_indices('.').filter_map(move |(dot, _)| {
+                let after = inside.get(dot.saturating_add(1) ..)?;
+                let label = after.get(
+                    .. after.find(|letter: char| !(letter.is_alphanumeric() || letter == '_'))?,
+                )?;
+                (label.starts_with(char::is_lowercase)
+                    && after.get(label.len() ..)?.trim_start().starts_with('='))
+                .then_some(label)
+            })
+        })
         .collect();
     let rules: Vec<(usize, usize)> = source
         .match_indices("rule ")
@@ -1005,6 +1042,14 @@ fn gated(
         // A flow's body: every child of a flow declaration after its `where`.
         // The pass over the children below opens the body at that tile.
         let flow = melded && def.label == "flow" && def.sort == Sort::Item;
+        // A static bracket's fixed values: every child of a bracket after a
+        // type, but its base, when a `.` or a `↦` stands among its tiles.
+        let patched = melded
+            && def.label == "["
+            && def.sort == Sort::Type
+            && children
+                .iter()
+                .any(|&child| matches!(spelled(Some(child)), "." | "↦" | "|->"));
         let mut opened = false;
         stack.extend(
             children
@@ -1043,6 +1088,9 @@ fn gated(
                         }
                         else if bodied {
                             placed.or(Some(Placed::Template))
+                        }
+                        else if patched && opener != Some(child) {
+                            placed.or(Some(Placed::Fixed))
                         }
                         else {
                             placed
@@ -1249,6 +1297,21 @@ fn gated(
             && source
                 .get(usize::from(span.end()) ..)
                 .is_some_and(|after| after.trim_start().starts_with('='));
+        // A name a selection reads a fixed field off, `c` in `c.port`.
+        let read_back = !melded
+            && def.label == "identifier"
+            && parent.is_some_and(|(_, label, _, qualifying, _)| label == "." && qualifying)
+            && source
+                .get(usize::from(span.end()) ..)
+                .and_then(|after| after.strip_prefix('.'))
+                .and_then(|after| {
+                    after.get(
+                        .. after
+                            .find(|letter: char| !(letter.is_alphanumeric() || letter == '_'))
+                            .unwrap_or(after.len()),
+                    )
+                })
+                .is_some_and(|label| fixed.contains(label));
         let placed = placed
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))
@@ -1266,7 +1329,8 @@ fn gated(
             .or_else(|| interfaced.then_some(Placed::Interface))
             .or_else(|| conditioned.then_some(Placed::Theory))
             .or_else(|| lent.then_some(Placed::Lent))
-            .or_else(|| implicit.then_some(Placed::Implicit));
+            .or_else(|| implicit.then_some(Placed::Implicit))
+            .or_else(|| read_back.then_some(Placed::ReadBack));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated

@@ -255,6 +255,9 @@ impl TrackingIssue
     /// A value lift, a numeric literal, the numeric atom or a universe over a
     /// sort parameter, which the judgement has no rule for.
     pub const JUDGEMENT_FORMER: Self = Self(2669);
+    /// A fixed field of a patched type read back where its value is no
+    /// literal, and the coercions between a patched type and its base.
+    pub const PATCHED_TYPE: Self = Self(5536);
 
     /// The issue's page.
     ///
