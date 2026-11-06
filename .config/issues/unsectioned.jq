@@ -1,11 +1,10 @@
 # What the issues workflow does to one issue (#3113): `status:unsectioned`
 # stands exactly while the body fails `unit:check`'s reading (`unit.jq`),
-# and one comment opening `<!-- unit:check -->` lists the findings,
-# rewritten in place on each run, never a second one. A pass takes the label
-# off and rewrites the comment to say so; an issue never flagged gets no
-# comment. An epic or a `collector` keeps its own shape and is not read: the
-# label comes off and a standing comment says why. A closed issue is left as
-# it is.
+# and one comment opening `<!-- unit:check -->` lists its findings in a table. The workflow rewrites this comment in place.
+# It never writes a second comment. A pass removes the label. It rewrites the
+# comment. An issue that was never flagged gets no comment. An epic or a
+# `collector` keeps its own shape. The workflow does not read it. It removes the label.
+# It writes a standing comment that gives the reason. A closed issue stays unchanged.
 #
 # Input: `{state, labels, findings, comments}`: the issue's state (`open` or
 # `closed`), its labels, `unit.jq`'s findings as lines, and its comments
@@ -25,13 +24,14 @@ def settled: gsub("\r"; "") | sub("\\s+$"; "");
     (has("kind:epic") or has("collector")) as $exempt
     | (($in.findings | length) > 0 and ($exempt | not)) as $failing
     | (if $exempt then
-         "\(marker)\n**unit:check:** not read: an epic or a `collector` keeps its own shape (`units.md` § units-issue).\n"
+         "\(marker)\n**unit:check:** This issue is not read. An epic or a `collector` keeps its own shape (`units.md` § units-issue).\n"
        elif $failing then
-         "\(marker)\n<details><summary>unit:check: \($in.findings | length) finding\(if ($in.findings | length) == 1 then "" else "s" end); labelled <code>status:unsectioned</code> until each is written</summary>\n\n"
-         + ($in.findings | map("- \(.)") | join("\n"))
-         + "\n\n</details>\n\nThe seat that claims this issue writes them first, and pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten on every edit.\n"
+         "\(marker)\n**unit:check:** This issue has \($in.findings | length) missing unit section\(if ($in.findings | length) == 1 then "" else "s" end).\n\n"
+         + "| Section |\n| --- |\n"
+         + ($in.findings | map("| \(.) |") | join("\n"))
+         + "\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
        else
-         "\(marker)\n**unit:check:** sections complete; `status:unsectioned` is off.\n"
+         "\(marker)\n**unit:check:** The unit sections are complete.\n"
        end) as $text
     | {label: (if $failing and (has("status:unsectioned") | not) then "add"
                elif ($failing | not) and has("status:unsectioned") then "remove"

@@ -1,0 +1,9 @@
+import "./base.gandr" as prelude ;
+world seat ;
+def a = 1 ;
+def f(a : Type, y : a) -> -F a {
+  let x : a = same a y ;
+  loop { break } ;
+  return x
+}
+def t = *{1, 2} ;

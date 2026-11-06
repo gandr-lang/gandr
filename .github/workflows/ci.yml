@@ -2107,16 +2107,7 @@ jobs:
         env:
           CI_BASELINE_SHA: ${{ needs.prepare.outputs.baseline-sha }}
           CI_BASELINE_CREATED: ${{ needs.prepare.outputs.baseline-created }}
-        run: |
-          age=$(( ($(date +%s) - $(date -d "$CI_BASELINE_CREATED" +%s)) / 3600 ))
-          for report in target/landed/junit-cargo-test-enforcing-shard-*/ci-enforcing/junit.xml; do
-            shard=${report#target/landed/junit-cargo-test-enforcing-shard-}
-            shard=${shard%%/*}
-            printf '## %s\n\n' "$shard"
-            mise run ci:spec-cost-ratio --plain target/plain-baseline/ci/junit.xml \
-              --enforcing "$report" --baseline-commit "$CI_BASELINE_SHA" --baseline-age-hours "$age"
-            printf '\n'
-          done | tee target/spec-cost-ratio.md >> "$GITHUB_STEP_SUMMARY"
+        run: .config/spec-cost/landed.bash target/landed target/plain-baseline/ci/junit.xml | tee target/spec-cost-ratio.md >> "$GITHUB_STEP_SUMMARY"
       - name: upload each test's specification cost
         uses: *upload-artifact
         with:

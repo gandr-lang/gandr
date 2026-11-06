@@ -1,0 +1,3 @@
+  let m = twice n ;
+  let k = twice m ;
+  both k m

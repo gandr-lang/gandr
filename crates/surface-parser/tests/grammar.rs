@@ -315,10 +315,8 @@ fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Box<dyn Error>>
             "def w = loop :: Path.here Base;",
         ),
         (
-            "def f(p : Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    | loop ∷ q => \
-             1\n  }\n}",
-            "def f(p : Path[.A = Circle](Base, Base)) -> -F Integer {\n  match p {\n    | loop :: q => \
-             1\n  }\n}",
+            include_str!("grammar/fixtures/each-ascii-spelling-molds-as-its-glyph-782-1.gandr"),
+            include_str!("grammar/fixtures/each-ascii-spelling-molds-as-its-glyph-782-2.gandr"),
         ),
         ("def g : +U[ω] (A -> -F B);", "def g : +U[inf] (A -> -F B);"),
     ];

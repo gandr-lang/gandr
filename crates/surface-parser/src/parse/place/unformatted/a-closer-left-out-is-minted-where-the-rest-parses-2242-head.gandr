@@ -1,0 +1,3 @@
+def head(xs : List(Integer) -> -F Integer {
+  return 0
+}

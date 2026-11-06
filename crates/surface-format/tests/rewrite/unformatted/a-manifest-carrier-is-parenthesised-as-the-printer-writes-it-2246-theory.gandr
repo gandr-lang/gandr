@@ -1,0 +1,5 @@
+theory Pointed where {
+  sort M : Type;
+  oper one : M;
+}
+

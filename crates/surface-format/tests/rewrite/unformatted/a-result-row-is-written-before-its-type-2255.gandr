@@ -1,0 +1,21 @@
+import std.process;
+
+def both() -> -F [Partial, std.process.Exit.Eff] Integer {
+  pure 1
+}
+
+def pair() -> -F [Partial] (Integer * Integer) {
+  pure *{1, 2}
+}
+
+def apply(k : +U (Unit -> -F [Partial] Unit)) -> -F [Partial] Unit {
+  k *{}
+}
+
+def tailed[r : Row]() -> -F [Partial | r] Unit {
+  pure *{}
+}
+
+def open[r : Row]() -> -F [r] Unit {
+  pure *{}
+}

@@ -1,0 +1,12 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+
+def onType(t : Type) -> -F Type {
+  return (+U (t -> -F t))
+}
+
+def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> -F Nat {
+  become Path.walk (+U (Nat -> -F Nat)) q v v v
+}

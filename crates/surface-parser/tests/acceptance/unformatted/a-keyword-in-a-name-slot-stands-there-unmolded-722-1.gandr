@@ -1,0 +1,2 @@
+def {keyword} : Integer ;
+def ok = 2 ;

@@ -1,0 +1,13 @@
+data Color : Type where {
+  | Red : Color
+  | Green : Color
+}
+
+def sketch(c : Color) -> -F Integer {
+  match c {
+    | Red => return 0
+    | Green => ?
+  }
+}
+
+def pair : *{Integer, String};

@@ -1,0 +1,4 @@
+def both : (Bool, Bool) -> Bool where {
+  | true, b if b => true
+  | _, _ => false
+}

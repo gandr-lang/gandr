@@ -1358,13 +1358,37 @@ mod tests
         };
         for (closure, document) in [
             (
-                "def a = 1;\nmodule M where {\n  def b = *{a, 2};\n}\n",
-                "def c = M.b;\ndef d = (c ;\n",
+                include_str!(
+                    "parse/unformatted/a-parse-laid-after-a-tree-reads-as-the-whole-texts-1.gandr"
+                ),
+                include_str!(
+                    "parse/unformatted/a-parse-laid-after-a-tree-reads-as-the-whole-texts-2.gandr"
+                ),
             ),
-            ("def a = 1;\n", "  \n// c\n\ndef b = a;\n"),
-            ("def a = 1;\n", "#!/usr/bin/env gandr\ndef b = a;\n"),
-            ("def a = 1;\n/// a\n", "def b = 2;\n"),
-            ("def a = 1;\n", "/// b\ndef b = 2;\n"),
+            (
+                "def a = 1;\n",
+                include_str!(
+                    "parse/unformatted/a-parse-laid-after-a-tree-reads-as-the-whole-texts-3.gandr"
+                ),
+            ),
+            (
+                "def a = 1;\n",
+                include_str!(
+                    "parse/unformatted/a-parse-laid-after-a-tree-reads-as-the-whole-texts-4.gandr"
+                ),
+            ),
+            (
+                include_str!(
+                    "parse/unformatted/a-parse-laid-after-a-tree-reads-as-the-whole-texts-5.gandr"
+                ),
+                "def b = 2;\n",
+            ),
+            (
+                "def a = 1;\n",
+                include_str!(
+                    "parse/unformatted/a-parse-laid-after-a-tree-reads-as-the-whole-texts-6.gandr"
+                ),
+            ),
         ] {
             let whole = format!("{closure}{document}");
             let before = parse(&pbg, SourceText::from(closure)).unwrap();
@@ -1413,7 +1437,12 @@ mod tests
         };
         let document = "def b = 2;\n";
         for (closure, refused) in [
-            ("def a = 1;\n/* open\n", Unlayable::Open),
+            (
+                include_str!(
+                    "parse/unformatted/a-closure-that-repairs-or-ends-inside-a-token-is-not-layable.gandr"
+                ),
+                Unlayable::Open,
+            ),
             ("def a = \"open\n", Unlayable::Repaired),
             ("def a = (1\n", Unlayable::Repaired),
             ("def a = 1; // closed by the newline", Unlayable::Open),
@@ -1583,11 +1612,7 @@ mod tests
         // Losslessness: the committed tree's tile and layout leaves
         // reconstruct the exact source, including interleaved comments.
         let pbg = built_in()?;
-        let src = r#"// a comment
-def greeting = "hi";
-
-pure greeting
-"#;
+        let src = include_str!("parse/fixtures/parse-is-lossless-and-hash-stable-src.gandr");
         let result = parse(&pbg, SourceText::from(src))?;
         assert_eq!(
             reconstruct(result.tree()),
@@ -1641,7 +1666,8 @@ pure greeting
         // before each top-level head and nowhere else; every seam holds but
         // the last, which follows a statement rather than a declaration.
         let pbg = built_in()?;
-        let src = "def a = 1;\n@[doc(\"b\")] def b = 2;\nmodule M where {\n  def c = 3;\n  def d = 4;\n}\ndata Bit : Type where {\n  | Off : Bit\n}\n1;\ndef e = 5;\n";
+        let src =
+            include_str!("parse/fixtures/a-source-splits-before-each-declaration-head-src.gandr");
         let source = SourceText::from(src);
         let mut molder = Molder::new(&pbg);
         let split = FormSplit::new(&molder, source);
@@ -1679,7 +1705,7 @@ pure greeting
         // column, documented, attributed and terminated. Each top-level `pub`
         // starts the run of the declaration after it, and every seam holds.
         let pbg = built_in()?;
-        let src = "import \"base.gandr\";\npub def one : Nat = Zero\n\n/// Two.\npub def rec two(n : Nat) -> Nat =\n  match n\n    | Zero => Zero\n    | Succ(m) => two[<] m\n\n@[ checks ]\npub data Bit : Type where\n  | Off : Bit\n  | On : Bit\n\npub def three = 3;\n";
+        let src = include_str!("parse/fixtures/a-pub-declaration-starts-its-run-4667-src.gandr");
         let source = SourceText::from(src);
         let mut molder = Molder::new(&pbg);
         let split = FormSplit::new(&molder, source);
@@ -1895,10 +1921,9 @@ pure greeting
     fn declaration_prefix_round_trips_and_snapshots_model_state() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let src = r#"def nth[A : Type, i : Fin(length(xs))](xs : List(A)) -> A {
-  pure xs
-}
-"#;
+        let src = include_str!(
+            "parse/fixtures/declaration-prefix-round-trips-and-snapshots-model-state-src.gandr"
+        );
         let result = parse(&pbg, SourceText::from(src))?;
         assert!(
             result.obligations().is_empty(),

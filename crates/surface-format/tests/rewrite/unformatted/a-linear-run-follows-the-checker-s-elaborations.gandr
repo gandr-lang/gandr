@@ -1,0 +1,8 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+
+def twice(n : Nat) -> Nat { Succ (Succ n) }
+
+def field(n : Nat) -> Nat {
+  let m = twice n;
+  Succ m
+}

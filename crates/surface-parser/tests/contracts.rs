@@ -103,10 +103,7 @@ fn module_declarations_mold_zero_obligation() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases = [
         "module M where { def x = 1; def y : Integer; }",
-        r#"module M : *{ x : Integer, f : -F Integer } where {
-  def x = 1;
-  def f(a : Integer) -> -F Integer { pure a }
-}"#,
+        include_str!("contracts/fixtures/module-declarations-mold-zero-obligation.gandr"),
         "module Outer where { module Inner where { type T = Integer; } } def y : Outer.Inner.T -> -F Outer.Inner.T;",
     ];
     for src in cases {
@@ -173,11 +170,8 @@ fn prefix_type_formers_group_required_operands() -> Result<(), Box<dyn Error>>
 fn nested_module_members_mold_zero_obligation() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
-    let src = r#"module Outer : *{ before : Integer, inner : *{ answer : Integer }, after : Integer } where {
-  def before = 0;
-  module inner : *{ answer : Integer } where { def answer = 42; }
-  def after = inner.answer;
-}"#;
+    let src =
+        include_str!("contracts/fixtures/nested-module-members-mold-zero-obligation-src.gandr");
     let result = parse(&pbg, SourceText::from(src))?;
     assert!(
         bool::from(result.is_clean()),
@@ -986,8 +980,8 @@ proptest! {
         separator in prop_oneof![
             Just(" "),
             Just("\n"),
-            Just("\n\n"),
-            Just(" \n "),
+            Just(include_str!("contracts/unformatted/declaration-boundary-stays-stable-under-layout-blank-line.gandr")),
+            Just(include_str!("contracts/unformatted/declaration-boundary-stays-stable-under-layout.gandr")),
         ]
     ) {
         let source = format!("def bad = ( 1 ;{separator}def good = 2;");

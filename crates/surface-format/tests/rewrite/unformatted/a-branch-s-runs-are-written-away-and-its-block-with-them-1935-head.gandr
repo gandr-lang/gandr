@@ -1,0 +1,6 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+
+def twice(n : Nat) -> Nat { Succ (Succ n) }
+
+def both(m : Nat, k : Nat) -> Nat { Succ m }
+
