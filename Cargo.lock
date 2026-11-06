@@ -1527,6 +1527,7 @@ dependencies = [
 name = "gandr-surface-dispatcher"
 version = "0.0.0"
 dependencies = [
+ "allocation-counter",
  "blake3",
  "gandr-core-checker",
  "gandr-core-fork",

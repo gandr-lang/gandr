@@ -73,6 +73,7 @@ pub use crate::approx::BilateralApprox;
 pub use crate::approx::NegativeApprox;
 pub use crate::approx::PositiveApprox;
 pub use crate::approx::approximate;
+pub use crate::bisection::PieceCount;
 pub use crate::cache::Cache;
 pub use crate::cache::CacheBound;
 pub use crate::cache::CacheRefusal;

@@ -41,6 +41,7 @@ use crate::evaluate::Entry;
 use crate::evaluate::Hosted;
 use crate::evaluate::MigrationCount;
 use crate::evaluate::ProgramKey;
+use crate::evaluate::RealsProfile;
 use crate::evaluate::RunStatus;
 use crate::evaluate::WorldBindings;
 use crate::evaluate::Worlds;
@@ -127,8 +128,9 @@ impl Ran<'_>
 /// declaration of it was refused.
 ///
 /// Each line it prints is handed to `console`, each `Net` operation is
-/// served on `net` when it is given, and each migration runs where `worlds`'
-/// bindings bind its world when it is given.
+/// served on `net` when it is given, each `Reals` operation is served under
+/// the quotas of `profile`, and each migration runs where `worlds`' bindings
+/// bind its world when it is given.
 ///
 /// # Specification
 /// - requires: `worlds` holds the key of the text `composed` was composed from.
@@ -137,8 +139,9 @@ impl Ran<'_>
 ///   a source declaring no `main` at its top level is [`Ran::NoProgram`] and
 ///   runs nothing, its last declaration included; a program with an entry
 ///   enters it once with `arguments`, writing each line it prints to `console`,
-///   in order, serving its `Net` operations on `net` and its migrations as
-///   `worlds` binds them, and [`Ran::Entered`] carries it.
+///   in order, serving its `Net` operations on `net`, its `Reals` operations
+///   under `profile` and its migrations as `worlds` binds them, and
+///   [`Ran::Entered`] carries it.
 /// - provides: the run step `gandr run` and [`run_source`] share.
 /// - fails: never; every failure is a [`Ran`].
 /// - panics: none.
@@ -181,7 +184,7 @@ pub fn execute<'source>(
     composed: &mut Composed<'source>,
     arguments: &[String],
     console: &mut dyn Console,
-    (net, worlds): (Option<&mut Net>, Option<Worlds<'_>>),
+    (net, worlds, profile): (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
 ) -> Ran<'source>
 {
     let Composed::Settled {
@@ -208,7 +211,7 @@ pub fn execute<'source>(
     match program.name(entry.constant) {
         Maybe::Present(name) => Ran::Entered {
             target: name,
-            entered: program.enter(entry, arguments, console, (net, worlds)),
+            entered: program.enter(entry, arguments, console, (net, worlds, profile)),
         },
         Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
     }
@@ -300,7 +303,12 @@ pub fn run_source<'source>(
 ) -> Result<(Composed<'source>, Ran<'source>), ComposeFault<'source>>
 {
     let mut composed = compose(grammar, CorpusRoot::Strict, source, lowerings)?;
-    let ran = execute(&mut composed, &[], console, (None, None));
+    let ran = execute(
+        &mut composed,
+        &[],
+        console,
+        (None, None, RealsProfile::Default),
+    );
     Ok((composed, ran))
 }
 
@@ -394,6 +402,8 @@ pub struct Script
     /// How many migrations it hosts instead of running its entry, when it
     /// hosts.
     hosting: Option<MigrationCount>,
+    /// The quotas of the exact reals of its entry's run.
+    reals: RealsProfile,
 }
 
 impl Script
@@ -417,6 +427,7 @@ impl Script
             net: None,
             bindings: None,
             hosting: None,
+            reals: RealsProfile::Default,
         }
     }
 
@@ -524,6 +535,33 @@ impl Script
     )
     {
         self.hosting = Some(migrations);
+    }
+
+    /// This script, its entry's `Reals` operations served under the quotas of
+    /// `profile`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a later [`Self::run`] serves each `Reals` operation of its
+    ///   entry under `profile`; a script given no profile takes
+    ///   [`RealsProfile::Default`].
+    /// - provides: the profile that `gandr run` reads from `[reals] profile`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — what the quotas refuse is observed by the later
+    ///   run; the store itself is a copy.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run under `bounded` refuses a precision that a run
+    ///   under `default` encloses.
+    /// - witness: `tests::reals::a_configured_profile_bounds_the_run_5704`
+    #[inline]
+    pub const fn reals(
+        &mut self,
+        profile: RealsProfile,
+    )
+    {
+        self.reals = profile;
     }
 
     /// Read the source, compose it as `check` would, and run its program,
@@ -639,9 +677,12 @@ impl Script
                     (Some(_), ..) => Ran::Hosted(Hosted::Faulted {
                         answered: MigrationCount::default(),
                     }),
-                    (None, net, worlds) => {
-                        execute(&mut composed, &self.arguments, console, (net, worlds))
-                    },
+                    (None, net, worlds) => execute(
+                        &mut composed,
+                        &self.arguments,
+                        console,
+                        (net, worlds, self.reals),
+                    ),
                 };
                 let standing = Standing::of(root, &composed);
                 ScriptRun::Source {

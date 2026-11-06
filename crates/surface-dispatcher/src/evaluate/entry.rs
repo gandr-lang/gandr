@@ -54,6 +54,7 @@ use super::console;
 use super::net;
 use super::reals;
 use super::reals::Reals;
+use super::reals::RealsProfile;
 use super::worlds;
 use super::worlds::Worlds;
 
@@ -242,8 +243,9 @@ impl<'source> Program<'source>
     /// Run `entry` with `arguments`, under a host that serves `Proc.exit`,
     /// writes each `Console.print` line to `console`, serves each `Net`
     /// operation on `net` when it is given, serves each `Reals` operation on
-    /// the plans and the machines the run holds, and runs each migration where
-    /// `worlds`' bindings bind its world when it is given.
+    /// the plans and the machines the run holds under the quotas of `profile`,
+    /// and runs each migration where `worlds`' bindings bind its world when it
+    /// is given.
     ///
     /// # Specification
     /// - requires: nothing; an entry the program cannot run is an outcome.
@@ -257,12 +259,12 @@ impl<'source> Program<'source>
     ///   prints is handed to `console` in order as it runs, each `Net`
     ///   operation it performs is served on `net`, or declined without one,
     ///   each `Reals` operation is served on tables of plans and machines that
-    ///   the run owns, empty until its first `admit`, and each migration runs
-    ///   where the bindings bind its world, or here without one; a run that
-    ///   performs `Proc.exit` with an integer, or returns an integer, is
-    ///   [`Entered::Exited`] with that integer's low byte, one returning the
-    ///   unit is [`Entered::Exited`] with zero, and any other end is
-    ///   [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it,
+    ///   the run owns under `profile`, empty until its first `admit`, and each
+    ///   migration runs where the bindings bind its world, or here without one;
+    ///   a run that performs `Proc.exit` with an integer, or returns an
+    ///   integer, is [`Entered::Exited`] with that integer's low byte, one
+    ///   returning the unit is [`Entered::Exited`] with zero, and any other end
+    ///   is [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it,
     ///   [`Evaluation::Holed`] for a hole reached.
     /// - fails: never; every failure is an outcome.
     /// - panics: none.
@@ -291,7 +293,7 @@ impl<'source> Program<'source>
         entry: Entry,
         arguments: &[String],
         console: &mut dyn Console,
-        (net, worlds): (Option<&mut Net>, Option<Worlds<'_>>),
+        (net, worlds, profile): (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>
     {
         let constant = entry.constant;
@@ -323,7 +325,7 @@ impl<'source> Program<'source>
         let mut host = EntryHost {
             console,
             net,
-            reals: Reals::default(),
+            reals: Reals::new(profile),
             worlds: worlds.map(|worlds| (worlds, self.names.as_slice())),
         };
         match self.hosted(command, &mut store, &mut host) {

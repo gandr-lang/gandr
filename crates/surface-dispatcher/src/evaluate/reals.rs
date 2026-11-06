@@ -56,7 +56,9 @@ use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_theory_exact_reals::Answer;
+use gandr_theory_exact_reals::BitWidth;
 use gandr_theory_exact_reals::Budget;
+use gandr_theory_exact_reals::ByteLength;
 use gandr_theory_exact_reals::CertificateRefusal;
 use gandr_theory_exact_reals::CheckerQuotas;
 use gandr_theory_exact_reals::Conclusion;
@@ -68,23 +70,26 @@ use gandr_theory_exact_reals::Endpoint;
 use gandr_theory_exact_reals::Evidence;
 use gandr_theory_exact_reals::EvidenceTable;
 use gandr_theory_exact_reals::Exponent;
+use gandr_theory_exact_reals::Height;
 use gandr_theory_exact_reals::Judgement;
+use gandr_theory_exact_reals::NodeCount;
 use gandr_theory_exact_reals::Obligation;
 use gandr_theory_exact_reals::Outcome;
 use gandr_theory_exact_reals::Position;
+use gandr_theory_exact_reals::Power;
 use gandr_theory_exact_reals::Quantum;
 use gandr_theory_exact_reals::Quotas;
 use gandr_theory_exact_reals::Refusal;
 use gandr_theory_exact_reals::ResumeError;
 use gandr_theory_exact_reals::Rounds;
+use gandr_theory_exact_reals::StepCount;
+use gandr_theory_exact_reals::Steps;
 use gandr_theory_exact_reals::SuspendReason;
 use gandr_theory_exact_reals::ValidatedPlan;
 use gandr_theory_exact_reals::check;
 use gandr_theory_exact_reals::validate;
 
-use self::machine::MACHINES;
 use self::machine::Machines;
-use self::machine::QUANTA;
 use self::machine::Verdict;
 use super::Console;
 use super::Printed;
@@ -107,23 +112,117 @@ const RESTORE: &str = "restore";
 /// The operation of [`REALS`] that gives the work counters of a machine.
 const REPORT: &str = "report";
 
-/// The most plans that one run holds.
-const PLANS: usize = 64;
+/// The quotas of the exact reals of a run.
+///
+/// `[reals] profile` in the configuration of the driver names a profile, and a
+/// run with no configuration takes [`Self::Default`]. A profile sets every
+/// quota of `theory-exact-reals`: the sizes of a plan and of a certificate, the
+/// finest precision of `enclose` and the quanta of one `decide`. It also sets
+/// the most plans and machines that a run holds.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum RealsProfile
+{
+    /// The quotas of stage A for a plan, and the default quotas of the
+    /// checker. An `enclose` goes to `2^-4096`, and a `decide` runs at most
+    /// 1024 quanta. A run holds at most 64 plans and 64 machines.
+    #[default]
+    Default,
+    /// The quotas of a host that serves plans that it does not trust. A plan
+    /// holds at most 64 KiB, 4096 nodes, a height of 256 and 16 binders. Its
+    /// mantissas hold at most 4096 bits, and its powers go up to 64. A
+    /// certificate holds at most 4096 steps and mantissas of 4096 bits. An
+    /// `enclose` goes to `2^-256`, a `decide` runs at most 256 quanta, and a
+    /// run holds at most 16 plans and 16 machines.
+    Bounded,
+}
 
-/// The finest precision that `enclose` takes: an enclosure no wider than
-/// `2^-4096`.
-const PRECISION: i32 = 1 << 12;
+impl RealsProfile
+{
+    /// Each profile, in the order that a refusal of an unknown name lists
+    /// them.
+    pub const ALL: [Self; 2] = [Self::Default, Self::Bounded];
 
-/// The most certificate steps that one `enclose` does: the step quota of the
-/// checker.
-const STEPS: u64 = 1 << 16;
+    /// The quotas that the profile sets.
+    ///
+    /// # Specification
+    /// trivial.
+    fn limits(self) -> Limits
+    {
+        match self {
+            Self::Default => Limits {
+                plan: Quotas::default(),
+                checker: CheckerQuotas::default(),
+                precision: 4096,
+                quanta: 1024,
+                plans: 64,
+                machines: 64,
+            },
+            Self::Bounded => Limits {
+                plan: Quotas {
+                    bytes: ByteLength::from(0x0001_0000_usize),
+                    nodes: NodeCount::from(4096_usize),
+                    height: Height::from(256_u32),
+                    binders: Height::from(16_u32),
+                    width: BitWidth::from(4096_u64),
+                    power: Power::from(64_u32),
+                },
+                checker: CheckerQuotas {
+                    steps: StepCount::from(4096_usize),
+                    width: BitWidth::from(4096_u64),
+                },
+                precision: 256,
+                quanta: 256,
+                plans: 16,
+                machines: 16,
+            },
+        }
+    }
+}
+
+impl fmt::Display for RealsProfile
+{
+    /// Write the name of the profile, as the configuration names it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Default => "default",
+            Self::Bounded => "bounded",
+        })
+    }
+}
+
+/// The quotas that a profile sets for a run.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Limits
+{
+    /// The quotas of a plan that `admit` and `restore` validate.
+    plan: Quotas,
+    /// The quotas of a certificate that the checker replays. Its step quota
+    /// also bounds the certificate steps of one `enclose`.
+    checker: CheckerQuotas,
+    /// The finest precision that `enclose` takes.
+    precision: i32,
+    /// The most quanta that one `decide` runs.
+    quanta: u64,
+    /// The most plans that one run holds.
+    plans: usize,
+    /// The most machines that one run holds.
+    machines: usize,
+}
 
 /// The plans and the machines that a run holds, each at the place that its
-/// handle names.
+/// handle names, under the quotas of its profile.
 ///
 /// The tables are empty until the first `admit`, so a run that performs no
 /// `Reals` operation allocates nothing for them.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Reals
 {
     /// The validated plans, in the order of their `admit`. A machine shares
@@ -131,6 +230,24 @@ pub(super) struct Reals
     plans: Vec<Rc<ValidatedPlan>>,
     /// The machines, in the order that the run mints them.
     machines: Machines,
+    /// The quotas of the profile of the run.
+    limits: Limits,
+}
+
+/// One plan through the host of `std.reals.Eff`, outside the store of a run.
+///
+/// Each operation does what the host does for it: the decode and the
+/// validation of `admit`, the handle tables, and the spelling of the reply.
+/// It reads no payload from the store of a run, and it allocates no reply
+/// there. The `reals` bench of this crate times it against the same work in
+/// `theory-exact-reals` with no adapter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RealsAdapter
+{
+    /// The text of the plan, as `admit` reads it.
+    text: StringLiteral,
+    /// A table that holds the plan at the first handle.
+    reals: Reals,
 }
 
 /// The handle of a plan: its place in the table of the run.
@@ -148,12 +265,14 @@ struct Decoded(Vec<u8>);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct MachineHandle(usize);
 
-/// A budget of quanta, from zero to [`QUANTA`].
+/// A budget of quanta, from zero to the quanta of the profile.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Quanta(u64);
 
 /// The work counters of a machine, in the order that `report` replies them.
+/// The first three are the work of the machine. The other six are the
+/// metrics of the first release of the exact reals.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Counters
 {
@@ -165,6 +284,24 @@ struct Counters
     obligations: usize,
     /// The steps of the certificate that decides the machine, or zero.
     certificate: usize,
+    /// The frontier: the obligations that are live after the last quantum.
+    frontier: usize,
+    /// The cache hits. The host consults no cache, so the count is zero until
+    /// #5851 gives a run its cache.
+    hits: u64,
+    /// The regions: the most pieces that a search of the machine holds at
+    /// once, or zero for a machine that searches no domain.
+    regions: usize,
+    /// The checker steps: the certificate steps that the checker replays for
+    /// the machine. A restore replays the steps of its checkpoint, and a
+    /// decision replays its certificate.
+    replayed: usize,
+    /// The checkpoints that the machine spells.
+    checkpoints: usize,
+    /// The cancellations: the runs of the machine that stop at a
+    /// cancellation. The host signals none until #5852 gives `gandr run` an
+    /// interrupt, so the count is zero.
+    cancellations: u64,
 }
 
 /// What the payload of a `Reals` operation asks, read out of the store of the
@@ -179,7 +316,8 @@ enum Asked<'values>
     {
         /// The place of the plan in the table.
         handle: Handle,
-        /// The power of two that bounds the width, from `-PRECISION` to zero.
+        /// The power of two that bounds the width, from the negated finest
+        /// precision of the profile to zero.
         width: Exponent,
     },
     /// Mint a machine on the open root of the plan at the handle, and run it
@@ -241,14 +379,15 @@ enum Declined
     Payload,
     /// The text is not the lowercase hexadecimal of a byte string.
     Hexadecimal,
-    /// The run holds [`PLANS`] plans already.
-    Full,
+    /// The run holds as many plans as its profile allows: this number.
+    Full(usize),
     /// The validation pass refuses the plan.
     Refused(Refusal),
     /// The run holds no plan at the handle.
     Unknown,
-    /// The precision is below zero or past [`PRECISION`].
-    Precision,
+    /// The precision is below zero or past the finest of the profile: this
+    /// one.
+    Precision(i32),
     /// The root of the plan is no real.
     Proposition,
     /// The machine stops short of an enclosure.
@@ -259,10 +398,10 @@ enum Declined
     Mismatch,
     /// The root of the plan is no open proposition.
     Real,
-    /// The budget is past [`QUANTA`].
-    Quanta,
-    /// The run holds [`MACHINES`] machines already.
-    Machines,
+    /// The budget is past the quanta of the profile: these.
+    Quanta(u64),
+    /// The run holds as many machines as its profile allows: this number.
+    Machines(usize),
     /// The run holds no machine at the handle.
     NoMachine,
     /// The machine is decided or holds no live obligation.
@@ -309,10 +448,10 @@ impl fmt::Display for Declined
             Self::Hexadecimal => {
                 f.write_str("the text is not the lowercase hexadecimal of a byte string")
             },
-            Self::Full => write!(f, "the run holds {PLANS} plans already"),
+            Self::Full(plans) => write!(f, "the run holds {plans} plans already"),
             Self::Refused(refusal) => write!(f, "the plan is refused at {refusal}"),
             Self::Unknown => f.write_str("the run holds no plan at the handle"),
-            Self::Precision => write!(f, "the precision is not from 0 to {PRECISION}"),
+            Self::Precision(finest) => write!(f, "the precision is not from 0 to {finest}"),
             Self::Proposition => f.write_str("the root of the plan is no real"),
             Self::Unsettled(stopped) => {
                 f.write_str("the machine stops short of an enclosure: ")?;
@@ -334,8 +473,8 @@ impl fmt::Display for Declined
                 f.write_str("the certificate concludes another judgement than the enclosure asked")
             },
             Self::Real => f.write_str("the root of the plan is no open proposition"),
-            Self::Quanta => write!(f, "the budget is not from 0 to {QUANTA} quanta"),
-            Self::Machines => write!(f, "the run holds {MACHINES} machines already"),
+            Self::Quanta(quanta) => write!(f, "the budget is not from 0 to {quanta} quanta"),
+            Self::Machines(machines) => write!(f, "the run holds {machines} machines already"),
             Self::NoMachine => f.write_str("the run holds no machine at the handle"),
             Self::Settled => f.write_str(
                 "the machine is decided or holds no live obligation, so no checkpoint resumes it",
@@ -364,10 +503,11 @@ impl fmt::Display for Declined
 ///   machine and its handle, `holds` or `fails` only with a certificate that
 ///   the checker replays; for `checkpoint`, the text of an undecided machine
 ///   and its plan; for `restore`, a new machine from such text, validated
-///   again; for `report`, the quanta, the obligations and the certificate steps
-///   of a machine. A decline when the payload is not what `Reals` declares, or
-///   when a check of the operation fails; one line on `console`'s standard
-///   error names the cause first. Nothing for any other interface.
+///   again; for `report`, the nine counters of a machine in their fixed order.
+///   A decline when the payload is not what `Reals` declares or passes a quota
+///   of the profile, or when a check of the operation fails; one line on
+///   `console`'s standard error names the cause first. Nothing for any other
+///   interface.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -394,7 +534,7 @@ pub(super) fn served<Abort>(
     if request.signature.name().as_ref() != REALS {
         return None;
     }
-    let answered = asked(request.operation, request.payload, values)
+    let answered = asked(request.operation, request.payload, values, &reals.limits)
         .and_then(|asked| reals.answer(asked))
         .and_then(|answer| reply(answer, values).ok_or(Declined::Store));
     Some(match answered {
@@ -411,6 +551,28 @@ pub(super) fn served<Abort>(
 
 impl Reals
 {
+    /// The empty tables of a run under the quotas of `profile`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn new(profile: RealsProfile) -> Self
+    {
+        Self::under(profile.limits())
+    }
+
+    /// The empty tables of a run under `limits`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under(limits: Limits) -> Self
+    {
+        Self {
+            plans: Vec::new(),
+            machines: Machines::default(),
+            limits,
+        }
+    }
+
     /// Answer `asked` over the plans and the machines of the run.
     ///
     /// # Specification
@@ -432,7 +594,7 @@ impl Reals
                     .map(Rc::clone)
                     .ok_or(Declined::Unknown)?;
                 self.machines
-                    .decide(plan, budget)
+                    .decide(plan, budget, &self.limits)
                     .map(|(verdict, machine)| Answered::Verdict(verdict, machine))
             },
             Asked::Step(machine) => self
@@ -445,7 +607,9 @@ impl Reals
                 .map(|bytes| Answered::Text(lowercase(&bytes))),
             Asked::Restore(text) => {
                 let bytes = hexadecimal(text).ok_or(Declined::Hexadecimal)?;
-                self.machines.restore(&bytes).map(Answered::Machine)
+                self.machines
+                    .restore(&bytes, &self.limits)
+                    .map(Answered::Machine)
             },
             Asked::Report(machine) => self.machines.report(machine).map(Answered::Counters),
         }
@@ -456,7 +620,8 @@ impl Reals
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the handle of the plan, the place where the table now holds
-    ///   it; the table holds no plan that fails validation.
+    ///   it; the table holds no plan that fails validation under the plan
+    ///   quotas of the profile.
     /// - fails: a full table, text that is not lowercase hexadecimal, and a
     ///   plan that the validation pass refuses, each with the table unchanged.
     /// - panics: none.
@@ -477,13 +642,13 @@ impl Reals
         text: &StringLiteral,
     ) -> Result<Handle, Declined>
     {
-        if self.plans.len() >= PLANS {
-            return Err(Declined::Full);
+        if self.plans.len() >= self.limits.plans {
+            return Err(Declined::Full(self.limits.plans));
         }
         let bytes = hexadecimal(text).ok_or(Declined::Hexadecimal)?;
         let plan = validate(
             EncodedPlan::from(bytes.0.as_slice()),
-            &Quotas::default(),
+            &self.limits.plan,
             &evidence(),
         )
         .map_err(Declined::Refused)?;
@@ -496,7 +661,8 @@ impl Reals
     /// `handle`, no wider than `2^width`.
     ///
     /// # Specification
-    /// - requires: `width` from `-PRECISION` to zero.
+    /// - requires: `width` from the negated finest precision of the profile to
+    ///   zero.
     /// - ensures: the lower end and the upper end of the enclosure that the
     ///   checker replays from the certificate of the machine, the conclusion
     ///   about the root at the width asked.
@@ -530,9 +696,10 @@ impl Reals
             Obligation::new(plan, plan.plan().root().node(), Demand::Encloses { width })
                 .ok()
                 .ok_or(Declined::Proposition)?;
-        let quotas = CheckerQuotas::default();
+        let quotas = self.limits.checker;
+        let steps = u64::try_from(usize::from(quotas.steps)).unwrap_or(u64::MAX);
         let mut machine = Dovetail::new(plan, [obligation], Quantum::from(NonZeroU32::MAX), quotas);
-        let report = machine.run(Budget::from(STEPS), Rounds::from(1_u64), || false);
+        let report = machine.run(Budget::from(steps), Rounds::from(1_u64), || false);
         let stopped = match report.outcome(Position::from(0_usize)) {
             Some(Outcome::Certified(certificate)) => Ok(certificate),
             Some(Outcome::Pending) | None => Err(Stopped::Pending),
@@ -560,6 +727,80 @@ impl Reals
             },
             Conclusion::Holds { .. } | Conclusion::Fails { .. } => Err(Declined::Mismatch),
         }
+    }
+}
+
+impl RealsAdapter
+{
+    /// The host under `profile` with the plan that `text` spells admitted at
+    /// the first handle, or nothing when the host declines the plan.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        text: StringLiteral,
+        profile: RealsProfile,
+    ) -> Option<Self>
+    {
+        let mut reals = Reals::new(profile);
+        let _first = reals.admit(&text).ok()?;
+        Some(Self { text, reals })
+    }
+
+    /// `admit` of the text into an empty table, and the handle spelled as
+    /// the reply spells it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn admit(&self) -> Option<String>
+    {
+        let mut reals = Reals::under(self.reals.limits);
+        reals
+            .admit(&self.text)
+            .ok()
+            .map(|handle| handle.0.to_string())
+    }
+
+    /// `enclose` of the plan no wider than `2^width`, and its two ends
+    /// spelled.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn enclose(
+        &self,
+        width: Exponent,
+    ) -> Option<(String, String)>
+    {
+        self.reals.enclose(Handle(0), width).ok()
+    }
+
+    /// `decide` of the plan for `quanta` quanta into an empty table of
+    /// machines, and the verdict and the handle spelled.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decide(
+        &self,
+        quanta: Steps,
+    ) -> Option<(String, String)>
+    {
+        let budget = Some(u64::from(quanta))
+            .filter(|&budget| budget <= self.reals.limits.quanta)
+            .map(Quanta)?;
+        let plan = self.reals.plans.first().map(Rc::clone)?;
+        let mut machines = Machines::default();
+        machines
+            .decide(plan, budget, &self.reals.limits)
+            .ok()
+            .map(|(verdict, handle)| (verdict.to_string(), handle.0.to_string()))
     }
 }
 
@@ -654,8 +895,8 @@ fn lowercase(bytes: &Decoded) -> String
 ///   machine.
 /// - fails: a payload that is not what `Reals` declares, or an operation that
 ///   `Reals` does not declare; a handle below zero or past the places of a
-///   table; a precision below zero or past [`PRECISION`]; and a budget below
-///   zero or past [`QUANTA`].
+///   table; a precision below zero or past the finest of `limits`; and a budget
+///   below zero or past the quanta of `limits`.
 /// - panics: none.
 /// - executable: none — the clause restates the reading of the payload.
 ///
@@ -671,6 +912,7 @@ fn asked<'values>(
     operation: &OperationName,
     payload: HeapValueId,
     values: &'values HostValues<'_>,
+    limits: &Limits,
 ) -> Result<Asked<'values>, Declined>
 {
     let text = move || match values.value(payload) {
@@ -710,9 +952,9 @@ fn asked<'values>(
                 .ok()
                 .flatten()
                 .and_then(|digits| digits.as_ref().parse::<i32>().ok())
-                .filter(|&precision| precision <= PRECISION)
+                .filter(|&precision| precision <= limits.precision)
                 .map(|precision| Exponent::from(precision.saturating_neg()))
-                .ok_or(Declined::Precision)?;
+                .ok_or(Declined::Precision(limits.precision))?;
             Ok(Asked::Enclose { handle, width })
         },
         DECIDE => {
@@ -722,9 +964,9 @@ fn asked<'values>(
                 .ok()
                 .flatten()
                 .and_then(|digits| digits.as_ref().parse::<u64>().ok())
-                .filter(|&quanta| quanta <= QUANTA)
+                .filter(|&quanta| quanta <= limits.quanta)
                 .map(Quanta)
-                .ok_or(Declined::Quanta)?;
+                .ok_or(Declined::Quanta(limits.quanta))?;
             Ok(Asked::Decide { handle, budget })
         },
         STEP => machine(payload).map(Asked::Step),
@@ -785,7 +1027,15 @@ fn reply(
                     fields: Box::new([]),
                 })
                 .ok()?;
+            // The list is built from its last element, so the counters come
+            // here in the reverse of the order that `report` replies them.
             for count in [
+                counters.cancellations.to_string(),
+                counters.checkpoints.to_string(),
+                counters.replayed.to_string(),
+                counters.regions.to_string(),
+                counters.hits.to_string(),
+                counters.frontier.to_string(),
                 counters.certificate.to_string(),
                 counters.obligations.to_string(),
                 counters.quanta.to_string(),

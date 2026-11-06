@@ -5,7 +5,8 @@
 //! machines decide the two bounded quantifiers, and every exemplar of the
 //! exact reals runs to its end. The host refuses each pathological plan and
 //! checkpoint of stage C by its check, and `gandr check` refuses a capability
-//! that claims an operation past its grant.
+//! that claims an operation past its grant. The profile that the
+//! configuration names sets the quotas of a run.
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -254,6 +255,104 @@ fn gandr_check_refuses_a_capability_past_its_grant_5705()
         !String::from_utf8_lossy(&wide.stdout).contains("CapabilityUngranted"),
         "a grant of both operations refuses no capability: {}",
         String::from_utf8_lossy(&wide.stdout)
+    );
+}
+
+/// A source that encloses the square root of two no wider than `2^-300`.
+const FINE: &str = "import std.io;\nimport std.reals;\nimport std.string (concat);\n\ndef main() -> [std.reals.Eff, std.io.Console.Eff] Integer =\n  let held = std.reals.admit \"4758525001000b0000000000000001000000000200000000000000000000000012000000000100000005000000000000000002010000000100000000000000011203000000040000001402000000050000001201000000000000001204000000030000001307000000080000000800010000000001000000000000000100010100000001000000000000000100060000000900000000000000\"\n  let *{lower, upper} = std.reals.enclose held 300\n  std.io.Console.print (concat lower (concat \" \" upper))\n  0\n";
+
+/// #5704: `[reals] profile` in the configuration of the driver sets the
+/// quotas of a run. With no configuration, and under `default`, an enclosure
+/// no wider than `2^-300` prints its two ends. Under `bounded` the finest
+/// precision is `2^-256`. So the host declines that enclosure, and the run
+/// exits 1 with the cause on standard error. The existential still holds
+/// under `bounded`. A name that is no profile stops the driver with exit 2
+/// before the run starts, and the fault names the file and each profile.
+#[test]
+fn a_configured_profile_bounds_the_run_5704()
+{
+    let scratch = Scratch::new(Path::new("reals-profile-5704"));
+    let source = scratch.file(Path::new("fine.gandr"), Text::from(FINE));
+    let home = |profile: &str| {
+        let file = scratch.file(
+            &Path::new(profile).join("gandr/config.toml"),
+            Text::from(format!("[reals]\nprofile = \"{profile}\"\n").as_str()),
+        );
+        file.parent()
+            .and_then(Path::parent)
+            .expect("a configuration home")
+            .to_path_buf()
+    };
+    let run_under = |home: &Path, source: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_gandr"))
+            .arg("run")
+            .arg(source)
+            .current_dir(repository())
+            .env("XDG_CONFIG_HOME", home)
+            .output()
+            .expect("the run starts")
+    };
+    let unconfigured = run(&source);
+    let ends = String::from_utf8_lossy(&unconfigured.stdout).into_owned();
+    assert_eq!(
+        unconfigured.status.code(),
+        Some(0_i32),
+        "{}",
+        String::from_utf8_lossy(&unconfigured.stderr)
+    );
+    assert_eq!(ends.split_whitespace().count(), 2, "two ends: {ends}");
+    let standard = run_under(&home("default"), &source);
+    assert_eq!(
+        (
+            standard.status.code(),
+            String::from_utf8_lossy(&standard.stdout)
+        ),
+        (Some(0_i32), ends.as_str().into()),
+        "`default` takes the quotas of a run with no configuration"
+    );
+    let bounded = home("bounded");
+    let refused = run_under(&bounded, &source);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(
+        (
+            refused.status.code(),
+            String::from_utf8_lossy(&refused.stdout),
+            stderr.lines().next()
+        ),
+        (
+            Some(1_i32),
+            "".into(),
+            Some("std.reals.Eff.enclose: the precision is not from 0 to 256")
+        ),
+        "{stderr}"
+    );
+    let searched = run_under(&bounded, Path::new("corpus/model/reals/exists.gandr"));
+    assert_eq!(
+        (
+            searched.status.code(),
+            String::from_utf8_lossy(&searched.stdout)
+        ),
+        (Some(0_i32), "holds\n".into()),
+        "{}",
+        String::from_utf8_lossy(&searched.stderr)
+    );
+    let unknown = home("fast");
+    let stopped = run_under(&unknown, &source);
+    assert_eq!(
+        (
+            stopped.status.code(),
+            String::from_utf8_lossy(&stopped.stdout),
+            String::from_utf8_lossy(&stopped.stderr)
+        ),
+        (
+            Some(2_i32),
+            "".into(),
+            format!(
+                "gandr: {}: `reals.profile` is `fast`; it names `default` or `bounded`\n",
+                unknown.join("gandr/config.toml").display()
+            )
+            .into()
+        )
     );
 }
 

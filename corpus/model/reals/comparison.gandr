@@ -38,7 +38,7 @@ def decidedModelled() -> String =
     | oper step(machine, k) => k "holds" machine
     | oper checkpoint(machine, k) => k ""
     | oper restore(text, k) => k 0
-    | oper report(machine, k) => k #[7, 2, 4]
+    | oper report(machine, k) => k #[7, 2, 4, 0, 0, 0, 4, 0, 0]
   }
 
 /// The entry: decide `sqrt 2 < 3/2` within 16 quanta, print the verdict, and
