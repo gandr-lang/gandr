@@ -16,7 +16,6 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::RowTail;
 use gandr_theory_levitation::RuleFace;
-use gandr_theory_levitation::ValueTypeRef;
 use quenchant_shape::shape::Maybe;
 
 quenchant_shape::reason_enum! {
@@ -464,8 +463,8 @@ pub struct WrittenResult
     pub arguments: Vec<ByteSpan>,
 }
 
-/// Where a codata observation is written: its name, and each node of the
-/// type it observes, in pre-order.
+/// Where a codata observation is written: its name, its type's node and each
+/// node of the type it observes, in pre-order.
 ///
 /// # Specification
 /// trivial.
@@ -474,6 +473,9 @@ pub struct WrittenObservation
 {
     /// The observation's name tile.
     pub named: ByteSpan,
+    /// The node its type is written at, which the lowering reads as a value
+    /// type when the family does not head it.
+    pub at: NodeIndex,
     /// The nodes of its type: the whole type, then each argument of an
     /// application in written order, each read the same way.
     pub ty: WrittenTerm,
@@ -489,10 +491,26 @@ pub struct WrittenObservation
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SelfApplication
 {
-    /// The application, the family its head.
-    pub applied: ValueTypeRef,
+    /// The application in post-order: each argument the family does not head,
+    /// and the family over the arguments before it, the whole application
+    /// last.
+    pub steps: Vec<Applied>,
     /// The node it is written at.
     pub at: NodeIndex,
+}
+
+/// One step of a codata family's application, in post-order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Applied
+{
+    /// An argument that the family does not head, at the node the lowering
+    /// reads as a value.
+    Argument(NodeIndex),
+    /// The family over the values of the steps before it, this many of them.
+    Family(usize),
 }
 
 /// A name a member writes for another member of its block: the bytes of the

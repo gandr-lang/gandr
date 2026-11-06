@@ -6,8 +6,9 @@
 //! reading, which also enters its constructors and compiles its matches. Its
 //! description is checked and elaborated to cells beside it. A codata family
 //! is decoded here into a codata signature: each observation the returner of
-//! its written value type, or the family itself at its parameters. A
-//! decoder's refusal is reported at the family.
+//! the value type the lowering reads at it, or the family at the arguments it
+//! writes, each argument the value the lowering reads at it. A decoder's
+//! refusal is reported at the family.
 //!
 //! `Theory` reaches the same decoder from [`theory_desc`], and a `theory`
 //! block's definition is its presentation's value read node for node: each
@@ -38,7 +39,6 @@ use gandr_core_term::description::ParameterDepth;
 use gandr_core_term::description::ParameterLevel;
 use gandr_core_term::description::TypeArity;
 use gandr_core_term::description::TypeBinding;
-use gandr_core_term::description::decode_argument;
 use gandr_core_term::description::decode_codata;
 use gandr_core_term::description::decode_signature;
 use gandr_kernel_strata::Level;
@@ -58,8 +58,6 @@ use gandr_theory_levitation::PayloadNode;
 use gandr_theory_levitation::PayloadView;
 use gandr_theory_levitation::TheoryFault;
 use gandr_theory_levitation::TheoryValue;
-use gandr_theory_levitation::ValueTypeNode;
-use gandr_theory_levitation::ValueTypeView;
 use gandr_theory_levitation::theory_desc;
 use quenchant_shape::shape::Maybe;
 
@@ -73,6 +71,7 @@ use crate::LoweringRefusal;
 use crate::description::DescribedDeclaration;
 use crate::description::DescriptionDiagnostic;
 use crate::description::DescriptionFault;
+use crate::description::written::Applied;
 use crate::form::Former;
 use crate::form::Shape;
 use crate::form::shape_of;
@@ -129,13 +128,17 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Seed the parameters of every described family the native reading does
-    /// not own: each parameter's type under the parameters before it.
+    /// not own: each parameter's type under the parameters before it, and
+    /// under all of them each observation's type that the family does not
+    /// head, or each argument of the family's application that it does not.
     ///
     /// # Specification
     /// - requires: the collection pass has run.
     /// - ensures: one frame per parameter, typed with its written type and
-    ///   mentioned, and one seed per parameter type, appended to `seeds`; a
-    ///   data declaration form is left to [`Self::seed_data`].
+    ///   mentioned, one seed per parameter type, one per observation type that
+    ///   the family does not head and one value seed per argument the family
+    ///   does not head, appended to `seeds`; a data declaration form is left to
+    ///   [`Self::seed_data`].
     /// - provides: the description half of [`Self::seed`].
     /// - fails: [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
@@ -145,9 +148,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parameterised codata family reaches the decoder
-    ///   with its parameter types minted, and a data family beside it is seeded
-    ///   once, natively.
+    ///   with its parameter and observation types minted, and a data family
+    ///   beside it is seeded once, natively.
     /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    /// - witness: `description::tests::a_codata_family_reads_a_data_family_as_the_lowering_does_2665`
     #[spec(
         captures: before = seeds.len(),
         ensures: |ret| ret.is_err() || seeds.len() >= before,
@@ -179,6 +183,17 @@ impl<'source> Lowerer<'_, 'source>
                 );
                 self.scope.mention(extended);
                 frame = Frame::Inner(extended);
+            }
+            for observation in &entry.written.observations {
+                match observation.itself {
+                    Maybe::Absent(_) => seeds.push((observation.at, Reading::ValueType(frame))),
+                    Maybe::Present(ref applied) => {
+                        seeds.extend(applied.steps.iter().filter_map(|&step| match step {
+                            Applied::Argument(node) => Some((node, Reading::Value(frame))),
+                            Applied::Family(_) => None,
+                        }));
+                    },
+                }
             }
         }
         Ok(())
@@ -602,8 +617,9 @@ impl<'source> Lowerer<'_, 'source>
         let depth = ParameterDepth(parameters.len());
         if entry.description.polarity == DeclPolarity::Codata {
             let itself = arena.comp_type_codata(constant, arguments);
-            // An observation names the family by its code, read before any
-            // field type is interpreted, so no value type stands for it.
+            // An observation names the family by its code, and the lowering
+            // read the type of each other observation, so no value type stands
+            // for the family.
             let context = DecodeContext {
                 self_sort,
                 self_type: kind,
@@ -611,11 +627,22 @@ impl<'source> Lowerer<'_, 'source>
                 locals: &locals,
                 depth,
             };
+            let fields: Result<Vec<_>, _> = entry
+                .written
+                .observations
+                .iter()
+                .filter(|written| matches!(written.itself, Maybe::Absent(_)))
+                .map(|written| match self.value_type_at(written.at) {
+                    Maybe::Present(field) => Ok(field),
+                    Maybe::Absent(_) => Err(DecodeError::MalformedCode),
+                })
+                .collect();
             let decoded = decode_codata(
                 arena,
                 &entry.description,
                 (context, itself),
                 parameters,
+                &fields?,
                 kind,
             )?;
             // The code names the family alone; its result is the family at
@@ -623,8 +650,7 @@ impl<'source> Lowerer<'_, 'source>
             let mut observations = decoded.observations().to_vec();
             for (observed, written) in observations.iter_mut().zip(&entry.written.observations) {
                 if let Maybe::Present(ref applied) = written.itself {
-                    *observed =
-                        self_application(arena, applied.applied.to_node(), constant, context)?;
+                    *observed = self.self_application(arena, &applied.steps, constant)?;
                 }
             }
             return Ok(Decoded::Codata(CodataSignature::new(
@@ -643,95 +669,64 @@ impl<'source> Lowerer<'_, 'source>
         };
         decode_signature(arena, &entry.description, context, parameters, kind).map(Decoded::Data)
     }
-}
 
-/// One step of [`self_application`]'s walk.
-enum Applying<'code>
-{
-    /// Read an argument of an application of the family.
-    Argument(ValueTypeNode<'code>),
-    /// Apply the family to the last `usize` arguments read.
-    Apply(usize),
-}
-
-/// The codata family at `constant` applied as `written`, a reference the
-/// family heads, writes it: each argument a parameter's variable, a value's
-/// code, or the family applied again, quoted.
-///
-/// # Specification
-/// - requires: `context` is the family's own, under its telescope; the family
-///   heads `written`.
-/// - ensures: the family over one value per written argument, left to right: an
-///   argument the family heads its own application, quoted as a value, and any
-///   other as [`decode_argument`] interprets it.
-/// - fails: an argument's own refusal, and `MalformedCode` when `written` is no
-///   reference the family heads.
-/// - panics: none.
-/// - intension: an explicit worklist; an application pushes its apply step and
-///   then its arguments, so each argument's value is complete before the next
-///   begins and an apply pops exactly its own arguments.
-///
-/// # Errors
-/// As `- fails:`.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a tail at the parameters swapped, at the family applied
-///   again, and at the parameters in order each reach the checker as written.
-/// - witness: `description::tests::a_codata_self_reference_keeps_its_written_arguments_2188`
-#[spec(ensures: |result| result.as_ref().map_or(true, |&id| matches!(arena.comp_type(id), Some(&CompType::Codata { declaration, .. }) if declaration == constant)))]
-fn self_application(
-    arena: &mut CoreArena,
-    written: ValueTypeNode<'_>,
-    constant: ConstantIndex,
-    context: DecodeContext<'_>,
-) -> Result<CompTypeId, DecodeError>
-{
-    let heads = |node: ValueTypeNode<'_>| match node.view() {
-        ValueTypeView::Param(name) | ValueTypeView::Ctor { head: name, .. } => {
-            name.as_ref() == context.self_sort.as_ref()
-        },
-        ValueTypeView::Prim(_) => false,
-    };
-    if !heads(written) {
-        return Err(DecodeError::MalformedCode);
-    }
-    let mut steps = vec![Applying::Argument(written)];
-    let mut values: Vec<ValueId> = Vec::new();
-    let mut applied = None;
-    while let Some(step) = steps.pop() {
-        match step {
-            Applying::Argument(node) if heads(node) => {
-                let start = steps.len();
-                match node.view() {
-                    ValueTypeView::Ctor { args, .. } => {
-                        steps.push(Applying::Apply(args.len()));
-                        steps.extend(args.map(Applying::Argument));
-                    },
-                    ValueTypeView::Param(_) | ValueTypeView::Prim(_) => {
-                        steps.push(Applying::Apply(0));
-                    },
-                }
-                if let Some(arguments) = steps.get_mut(start.saturating_add(1) ..) {
-                    arguments.reverse();
-                }
-            },
-            Applying::Argument(node) => values.push(decode_argument(arena, node, context)?),
-            Applying::Apply(count) => {
-                let start = values
-                    .len()
-                    .checked_sub(count)
-                    .ok_or(DecodeError::MalformedCode)?;
-                let family = arena.comp_type_codata(constant, values.split_off(start));
-                if steps.is_empty() {
-                    applied = Some(family);
-                }
-                else {
+    /// The codata family at `constant` applied as `steps` write it: each
+    /// argument the value the lowering read at its node, and each application
+    /// of the family inside it quoted as a value.
+    ///
+    /// # Specification
+    /// - requires: `steps` are a self application's, in post-order; the mint
+    ///   sweep has read each argument node as a value under the family's
+    ///   parameters.
+    /// - ensures: the family over one value per written argument, left to
+    ///   right.
+    /// - fails: `MalformedCode` when an argument has no value, or when the
+    ///   steps do not end in one application over every value before it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tail at the parameters swapped, at the family
+    ///   applied again, at the parameters in order and at a data family each
+    ///   reach the checker as written.
+    /// - witness: `description::tests::a_codata_self_reference_keeps_its_written_arguments_2188`
+    /// - witness: `description::tests::a_codata_family_reads_a_data_family_as_the_lowering_does_2665`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |&id| matches!(arena.comp_type(id), Some(&CompType::Codata { declaration, .. }) if declaration == constant)))]
+    fn self_application(
+        &self,
+        arena: &mut CoreArena,
+        steps: &[Applied],
+        constant: ConstantIndex,
+    ) -> Result<CompTypeId, DecodeError>
+    {
+        let Some((&Applied::Family(count), arguments)) = steps.split_last()
+        else {
+            return Err(DecodeError::MalformedCode);
+        };
+        let mut values: Vec<ValueId> = Vec::new();
+        for &step in arguments {
+            match step {
+                Applied::Argument(node) => match self.value_at(node) {
+                    Maybe::Present(value) => values.push(value),
+                    Maybe::Absent(_) => return Err(DecodeError::MalformedCode),
+                },
+                Applied::Family(inner) => {
+                    let start = values
+                        .len()
+                        .checked_sub(inner)
+                        .ok_or(DecodeError::MalformedCode)?;
+                    let family = arena.comp_type_codata(constant, values.split_off(start));
                     values.push(arena.value_quote_computation(family));
-                }
-            },
+                },
+            }
         }
+        if values.len() != count {
+            return Err(DecodeError::MalformedCode);
+        }
+        Ok(arena.comp_type_codata(constant, values))
     }
-    applied.ok_or(DecodeError::MalformedCode)
 }
 
 /// A described family's decoded signature.

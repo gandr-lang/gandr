@@ -125,7 +125,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 66_usize] = [
+const OWED: [(&str, Owed); 67_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -247,6 +247,13 @@ const OWED: [(&str, Owed); 66_usize] = [
         "UndescribedMember.OffBoundary",
         Owed::Unreachable(Reason(
             "a circuit rule's redex is placed on the boundary its own wiring derives",
+        )),
+    ),
+    (
+        "UndescribedMember.NativeDecode",
+        Owed::Unreachable(Reason(
+            "the lowering reads each type a codata observation names and each argument its self \
+             application writes, so the decoder takes no name it must resolve",
         )),
     ),
     (
