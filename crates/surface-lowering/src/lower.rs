@@ -6859,14 +6859,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// Hand `position`'s records to its children and classify it, offering a
-    /// refusal to its declaration.
+    /// refusal to its declaration, its frames pushed into its form.
     ///
     /// # Specification
     /// - requires: `position` is reached in ascending arena order, or asked
     ///   ahead by the form it stands under, so the records the sweep hands down
     ///   have reached it.
     /// - ensures: `position`'s children carry its records, and it is planned or
-    ///   its refusal offered to it.
+    ///   its refusal offered to it; every frame it pushes takes its place in
+    ///   [`Self::form_of`] `position`.
     /// - provides: the per-position step of [`Self::classify`].
     /// - fails: an engine fault, on which [`Self::classify`] aborts.
     /// - panics: none.
@@ -6888,6 +6889,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         position: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        self.scope.enter(self.form_of(position));
         self.inherit_owner(position);
         self.inherit_payload(position);
         self.inherit_scope(position);
@@ -6904,6 +6906,35 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         Ok(())
+    }
+
+    /// The block naming the form `position` belongs to: its descendants' block
+    /// for a top-level form, and its own block for any other node.
+    ///
+    /// # Specification
+    /// - requires: nothing — a position the tree does not hold is admissible.
+    /// - ensures: for a top-level form with descendants, the block they lie in;
+    ///   otherwise `position`'s own block, which is its form's block for a node
+    ///   below a top-level form.
+    /// - provides: the form a frame is numbered in ([`Scope::enter`]).
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one read of the tree's form index.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module's frames keep their coordinates when one
+    ///   form before them takes another binder.
+    /// - witness: `resolve::tests::a_form_s_frames_keep_their_coordinates_when_another_form_changes_4457`
+    #[spec(ensures: |ret| self.tree.descendants(position).is_some() || ret == position.block())]
+    fn form_of(
+        &self,
+        position: NodeIndex,
+    ) -> LayoutBlock
+    {
+        self.tree
+            .descendants(position)
+            .and_then(|mut descendants| descendants.next())
+            .map_or_else(|| position.block(), NodeIndex::block)
     }
 
     /// Give every child of `position` the match on a recursive function's
