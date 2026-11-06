@@ -35,7 +35,7 @@ def unitAt(d : Type, c : CodeAt(d)) -> famAt(d, c) =
     | BAt => *{}
 
 /// Each arm returns `v` at its own code.
-def sameAt(d : Type, c : CodeAt(d), v : famAt(d, c)) -> famAt(d, c) =
+def keepAt(d : Type, c : CodeAt(d), v : famAt(d, c)) -> famAt(d, c) =
   match c
     | AAt => v
     | BAt => v
@@ -54,10 +54,10 @@ def rec units(a : Type, s : Seq(a)) -> Type =
     | Cons(h, t) => units[<] a t
 
 /// A walk down a sequence. Its goal reads the sequence.
-def rec walk(a : Type, s : Seq(a)) -> units(a, s) =
+def rec trek(a : Type, s : Seq(a)) -> units(a, s) =
   match s
     | Nil => *{}
-    | Cons(h, t) => walk[<] a t
+    | Cons(h, t) => trek[<] a t
 
 /// The sequences over a type, as a definition computes them.
 def seqOf(a : Type) -> Type = return Seq (a)

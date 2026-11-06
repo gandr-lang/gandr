@@ -2637,7 +2637,7 @@ mod kernel_presented_readmission
         };
         let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
-        for name in ["unitAt", "sameAt", "walk", "walkOf"] {
+        for name in ["unitAt", "keepAt", "trek", "walkOf"] {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
             let named = StructuredName::from(vec![segment]);
             let marked = declarations
