@@ -3070,10 +3070,13 @@ echo "epic:deps: ${#epics[@]} epic(s) read; $refused dependency(ies) refused"
 # reads every issue once, open or closed, and sets each open `kind:epic`
 # blocked by every issue whose body names it or that its body names
 # (`.config/epics/link.jq`, neither an epic nor a `collector` a member), so
-# the epics workflow closes it once the last of them closes. It prints, per
-# epic, what it added and how many of its members are open; `--dry-run`
-# prints the same and sets nothing. A dependency GitHub refuses is printed
-# and the run goes on, exiting 1 at its end. It is idempotent.
+# the epics workflow closes it once the last of them closes. It reads the
+# issues in one paginated GraphQL query, and each open epic's blocked-by set
+# from one `deps_open_graph` pass (#5688); only its writes and the read of
+# the repository's name are REST. It
+# prints, per epic, what it added and how many of its members are open;
+# `--dry-run` prints the same and sets nothing. A dependency GitHub refuses
+# is printed and the run goes on, exiting 1 at its end. It is idempotent.
 ["epics:link"]
 description = "Set each open epic blocked by every issue its body names or that names it"
 usage = '''
@@ -3086,15 +3089,28 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/claims/deps.bash"
 repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
-issues=$(gh api --paginate "repos/$repo/issues?state=all&per_page=100" \
-  --jq '.[] | select(.pull_request == null) | {number, state, labels: [.labels[].name], body: (.body // "")}' | jq -s -c '.')
+# Every issue, 100 a page at one point, newest first as the REST list gives
+# them: REST takes a page for each 100 issues and pull requests (#5688).
+issues=$(gh api graphql --paginate -F owner="${repo%/*}" -F name="${repo#*/}" -f query='
+  query($owner: String!, $name: String!, $endCursor: String) {
+    repository(owner: $owner, name: $name) {
+      issues(first: 100, after: $endCursor, orderBy: {field: CREATED_AT, direction: DESC}) {
+        pageInfo { hasNextPage endCursor }
+        nodes { number state body labels(first: 100) { nodes { name } } }
+      }
+    }
+  }' --jq '.data.repository.issues.nodes[] | {number, state: (.state | ascii_downcase), labels: [.labels.nodes[].name], body: (.body // "")}' \
+  | jq -s -c '.')
+# Each open issue's blocked-by numbers in one pass, where REST takes a read
+# for each epic.
+blocked=$(deps_open_graph "$repo" | jq -c 'map_values([.blocked_by[].number])')
 plan=$(jq -c '{issues: .}' <<< "$issues" | jq -c -f "$root/.config/epics/link.jq")
 states=$(jq -c 'map({key: (.number | tostring), value: .state}) | from_entries' <<< "$issues")
 refused=0
 epics=0
 while read -r entry; do
   epic=$(jq -r .epic <<< "$entry")
-  set_now=$(deps_blocked_by "$repo" "$epic" | jq -c '[.[].number]')
+  set_now=$(jq -c --arg epic "$epic" '.[$epic] // []' <<< "$blocked")
   set=$set_now
   added=0
   for member in $(jq -r --argjson set "$set_now" '.members[] | select(IN($set[]) | not)' <<< "$entry"); do
@@ -4479,8 +4495,7 @@ done
 #   pr-merged #n               landed, its branch's worktree removed and its
 #                              `## Refactoring` verdict filed (`refactor:file`,
 #                              #2885; a failed filing is told on stderr and
-#                              `stall:watch` pages it), the seat's next claim
-#                              printed on stderr (#3736) (exit 0)
+#                              `stall:watch` pages it) (exit 0)
 #   pr-closed #n               closed without merging
 #   pr-dirty #n                a landing ahead conflicts: rebase, `pr:land`
 #   pr-red #n <job>            a required check, or the queue entry's run,
@@ -4535,7 +4550,6 @@ arg "<number>" help="pull request number"
 flag "--timeout <seconds>" default="10800" help="give up after this many seconds"
 '''
 tools.jq = "1.8.1"
-tools.yq = "4.54.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
@@ -4597,22 +4611,6 @@ red_check() {
 }
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/pr-stack/stack.bash"
-# The seat's next claim once the pull request merges (#3736): the item
-# `claim:next` offers the lane the branch names, `<lane>-<n>-<slug>`, the
-# longest lane of `.config/issues/lanes.toml` the branch opens with, printed
-# on stderr as `next-claim <lane>: #n <title>`, or `none`. A branch naming no
-# lane prints nothing. Read before the worktree goes, which may be this
-# watch's own.
-next_claim() {
-  local branch key lane= pick
-  branch=$(gh pr view "$number" -R "$repo" --json headRefName --jq .headRefName) || return 0
-  for key in $(yq -p toml -o yaml '.lane | keys | .[]' "$root/.config/issues/lanes.toml"); do
-    if [[ $branch == "$key"-* && ${#key} -gt ${#lane} ]]; then lane=$key; fi
-  done
-  [[ -n $lane ]] || return 0
-  pick=$(mise run --quiet claim:next "$lane" --dry-run 2> /dev/null | awk '/^#[0-9]/') || pick=
-  echo "next-claim $lane: ${pick:-none}${pick:+ (mise run claim:next $lane)}" >&2
-}
 # The watch marks its worktree while it runs, so no seat's `wt:sweep` removes
 # the tree its merge steps run in (#3798); the mark goes with the watch.
 watch_mark=$(git rev-parse --path-format=absolute --git-dir)/gandr-watch-$$
@@ -4749,7 +4747,6 @@ while (( SECONDS < deadline )); do
     MERGED)
       # Filed before the worktree, which may be this watch's own, goes.
       mise run --quiet refactor:file "$number" >&2 || echo "refactor-unfiled #$number: refactor:file failed; stall:watch pages the verdict" >&2
-      next_claim
       remove_landed_worktree "$number"
       echo "pr-merged #$number"
       exit 0
