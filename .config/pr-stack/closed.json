@@ -1,0 +1,32 @@
+[
+  {
+    "name": "#5695: a bottom on the branch of a member closed unmerged is cut past it: the chain replays onto the closed one's base without its commits",
+    "closed": true,
+    "setup": "none",
+    "output": "status 0; #2 cut past #1, closed unmerged: #2 ← #3 replayed onto main without its commits; bottom holds bottom's own; upper holds upper's own, bottom's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main; link: 2 3"
+  },
+  {
+    "name": "#5695: the branch of the closed member deleted, the chain is cut past its last head all the same",
+    "closed": true,
+    "setup": "gone",
+    "output": "status 0; #2 cut past #1, closed unmerged: #2 ← #3 replayed onto main without its commits; bottom holds bottom's own; upper holds upper's own, bottom's own; gh: stack unstack 9 | pr edit 2 -R case/case --base main; link: 2 3"
+  },
+  {
+    "name": "#5695: a closed member whose head moved after the chain stacked refuses the cut, with nothing moved",
+    "closed": true,
+    "setup": "moved",
+    "output": "status 2; the cut past #1 is refused: bottom does not hold the head of #1, which moved after the chain stacked on it; rebase bottom onto main without the commits of #1; bottom holds bottom's own, closed's own; upper holds upper's own, bottom's own, closed's own; gh: ; link: "
+  },
+  {
+    "name": "#5695: a bottom's commit that needs the closed member's change stops the cut at its conflict, with nothing moved",
+    "closed": true,
+    "setup": "conflict",
+    "output": "status 2; the cut of #2 past #1 onto main conflicts (c.txt): rebase it by hand; bottom holds bottom's own, closed's own; upper holds upper's own, bottom's own, closed's own; gh: ; link: "
+  },
+  {
+    "name": "a base that stands unmerged and heads no closed pull request is refused by name, as before #5695",
+    "closed": false,
+    "setup": "none",
+    "output": "status 2; #2 stands on closed, which is not main, heads no open pull request and has not merged: rebase it onto the pull request it builds on, or onto main; bottom holds bottom's own, closed's own; upper holds upper's own, bottom's own, closed's own; gh: ; link: "
+  }
+]

@@ -1060,22 +1060,108 @@ carried_queued() {
   jq -c .wait <<< "$carried"
 }
 
+# The newest pull request, closed or merged, whose head is branch `$1`, as
+# `{number, head, base, oid}` when it closed unmerged (#5695); `null` when it
+# merged, or when no pull request has the branch as its head.
+closed_pr() {
+  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -f head="$1" \
+    -f query='query($owner: String!, $name: String!, $head: String!) { repository(owner: $owner, name: $name) { pullRequests(headRefName: $head, states: [CLOSED, MERGED], last: 1) { nodes { number state headRefName baseRefName headRefOid } } } }' \
+    --jq '.data.repository.pullRequests.nodes[0] // null | if . != null and .state == "CLOSED" then {number, head: .headRefName, base: .baseRefName, oid: .headRefOid} else null end'
+}
+
+# Cut the pull request `$1` (`closed_pr`), closed unmerged, out from under
+# the chain `$2` stacked on it, bottom to top (#5695), as `cut_bottom` cuts a
+# red one. Each member's own commits, those past the old head below it, are
+# replayed onto the new head below it, and the bottom's onto the closed one's
+# base. So the closed one's commits are left out. GitHub signs each replayed
+# commit (`signed_replay`), because a runner holds no signing key. The cut is
+# refused with nothing moved when a member is queued (#2531), or when a
+# member's remote tip does not hold the head below it. After the replays,
+# the chain is unstacked, since GitHub refuses a stacked member's base
+# change. The bottom is then retargeted onto the closed one's base, and the
+# chain is linked again (`stack_link`). A conflict or a refused replay stops
+# the cut and names the member. The members below it stay moved, and they
+# are retargeted and linked in the same way. Prints one line on stderr.
+cut_closed() {
+  local closed=$1 chain=$2 number base below onto from dir tip new stack i moved=0 status=0 heads=() numbers=() olds=()
+  IFS=$'\t' read -r number base below < <(jq -r '[.number, .base, .oid] | @tsv' <<< "$closed")
+  mapfile -t heads < <(jq -r '.[].head' <<< "$chain")
+  mapfile -t numbers < <(jq -r '.[].number' <<< "$chain")
+  if [[ $(queued_of "$chain") != '[]' ]]; then
+    echo "the cut past #$number, closed unmerged, waits: a member of the chain over it is queued, and a queued branch never moves" >&2
+    return 1
+  fi
+  git fetch --quiet origin "$base" "${heads[@]}" "refs/pull/$number/head" || { echo "the fetch of the chain over #$number failed" >&2; return 1; }
+  for (( i = 0; i < ${#heads[@]}; i++ )); do
+    olds+=("$(git rev-parse "origin/${heads[i]}")")
+    if (( i == 0 )); then
+      if ! git merge-base --is-ancestor "$below" "${olds[0]}"; then
+        echo "the cut past #$number is refused: ${heads[0]} does not hold the head of #$number, which moved after the chain stacked on it; rebase ${heads[0]} onto $base without the commits of #$number" >&2
+        return 1
+      fi
+    elif ! git merge-base --is-ancestor "${olds[i-1]}" "${olds[i]}"; then
+      echo "the cut past #$number is refused: ${heads[i]} does not hold ${heads[i-1]}, the branch below it; rebase it onto ${heads[i-1]} first" >&2
+      return 1
+    fi
+  done
+  dir=$(mktemp -d)
+  git worktree add --quiet --detach "$dir" "${olds[0]}" || { rm -rf "$dir"; echo "the scratch worktree for the cut past #$number failed" >&2; return 1; }
+  onto=origin/$base
+  for (( i = 0; i < ${#heads[@]}; i++ )); do
+    if (( i == 0 )); then from=$below; else from=${olds[i-1]}; fi
+    git -C "$dir" checkout --quiet --detach "${olds[i]}"
+    if ! git -C "$dir" -c user.name=landing -c user.email=landing@users.noreply.github.com rebase --quiet --onto "$onto" "$from" > /dev/null 2>&1; then
+      echo "the cut of #${numbers[i]} past #$number onto $base conflicts ($(git -C "$dir" diff --name-only --diff-filter=U | paste -sd ' ' -)): rebase it by hand" >&2
+      git -C "$dir" rebase --abort 2> /dev/null || :
+      status=1
+      break
+    fi
+    tip=$(git -C "$dir" rev-parse HEAD)
+    new=$(signed_replay "${heads[i]}" "$onto" "$tip" "${olds[i]}") || { status=1; break; }
+    git fetch --quiet origin "${heads[i]}"
+    onto=$new
+    moved=$((moved + 1))
+  done
+  git worktree remove --force "$dir" 2> /dev/null || rm -rf "$dir"
+  git worktree prune
+  if (( moved > 0 )); then
+    stack=$(stack_of "${numbers[0]}")
+    [[ $stack == null ]] || gh stack unstack "$stack" < /dev/null > /dev/null 2>&1 || :
+    gh pr edit "${numbers[0]}" -R "$repo" --base "$base" > /dev/null || status=1
+    stack_link "$(jq -c --argjson moved "$moved" '.[: $moved]' <<< "$chain")" || status=1
+  fi
+  (( status == 0 )) || return "$status"
+  echo "#${numbers[0]} cut past #$number, closed unmerged: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$chain") replayed onto $base without its commits" >&2
+}
+
 # Bring the stack bottom `$1`, standing off the trunk as `bottom.jq` reads it
-# (#4168), back to the trunk: a base that merged or is gone is retargeted.
-# A queued bottom leaves the queue first by being closed and reopened, the
-# only way out of a queue on a base other than the trunk, and a bottom a
-# server stack holds is unstacked, since GitHub refuses a stacked member's
-# base change (#1520). A base that still stands unmerged is refused by name,
-# returning 2. Prints one line on stderr.
+# (#4168), back to a base that lands; `$2` is its chain, bottom to top. A base
+# that a pull request closed unmerged heads, or headed before its branch was
+# deleted, is cut out from under the chain (`cut_closed`, #5695). A base that
+# merged or is gone is retargeted to the trunk. A queued bottom leaves the
+# queue first by being closed and reopened, the only way out of a queue on a
+# base other than the trunk, and a bottom a server stack holds is unstacked,
+# since GitHub refuses a stacked member's base change (#1520). A base that
+# still stands unmerged and heads no closed pull request is refused by name,
+# returning 2, and so is a cut that fails. Prints one line on stderr.
 retarget_bottom() {
-  local number base stack
+  local number base stack closed=null
   IFS=$'\t' read -r number base stack < <(jq -r '[.number, .base, (.stack // "")] | @tsv' <<< "$1")
   if git ls-remote --exit-code --heads origin "$base" > /dev/null; then
     git fetch --quiet origin "$trunk" "$base"
     if ! git merge-base --is-ancestor "origin/$base" "origin/$trunk"; then
-      echo "#$number stands on $base, which is not $trunk, heads no open pull request and has not merged: rebase it onto the pull request it builds on, or onto $trunk" >&2
-      return 2
+      closed=$(closed_pr "$base") || closed=null
+      if [[ $closed == null ]]; then
+        echo "#$number stands on $base, which is not $trunk, heads no open pull request and has not merged: rebase it onto the pull request it builds on, or onto $trunk" >&2
+        return 2
+      fi
     fi
+  else
+    closed=$(closed_pr "$base") || closed=null
+  fi
+  if [[ $closed != null ]]; then
+    cut_closed "$closed" "$2" || return 2
+    return 0
   fi
   if [[ $(jq -r .landing <<< "$1") == true ]]; then
     gh pr close "$number" -R "$repo" > /dev/null
@@ -1196,7 +1282,8 @@ cut_reason() {
 # stacked above one, is refused with 2 and one line naming the hold
 # (`rests.jq`, #3253): nothing of it is queued. Before the queue is read, a
 # bottom standing off the trunk (`bottom.jq`, #4168) is brought back to it
-# (`retarget_bottom`), or refused with 2 naming its base.
+# (`retarget_bottom`): retargeted, or cut past a member closed unmerged below
+# it (#5695). Otherwise it is refused with 2 naming its base.
 land_prefix() {
   local server queued carried required cap room number state states=() decision verdict upto stop status=0 rests off
   rests=$(open_prs | jq -c --argjson n "$1" --arg trunk "$trunk" -f "$pr_stack_dir/rests.jq")
@@ -1211,7 +1298,7 @@ land_prefix() {
   [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$1 is not open" >&2; return 2; }
   off=$(open_prs | jq -c --argjson n "$(jq '.[0].number' <<< "$server")" --arg trunk "$trunk" -f "$pr_stack_dir/bottom.jq")
   if [[ "$off" != null ]]; then
-    retarget_bottom "$off" || return 2
+    retarget_bottom "$off" "$server" || return 2
     server=$(server_stack "$1")
   fi
   queued=$(queued_of "$server")

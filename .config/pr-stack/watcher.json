@@ -1,0 +1,44 @@
+[
+  {
+    "name": "#5695: a dequeued head on its base is told that it landed again only after the landing ran, with what it queued",
+    "action": { "number": 5, "act": "restack", "told": false },
+    "restack": "already",
+    "landing": { "status": 0, "line": "queued the stack up to #6" },
+    "output": "told: pr-restacked #5: The merge queue removed this pull request with no red check in its stack, and it already stands on its base. The landing watcher ran its landing again: queued the stack up to #6.; warnings: 0"
+  },
+  {
+    "name": "#5695: a refused landing of a dequeued head is told `pr-dequeued` with the refusal's line, and never that it queues again",
+    "action": { "number": 5, "act": "restack", "told": false },
+    "restack": "already",
+    "landing": {
+      "status": 2,
+      "line": "#5 stands on floor, which is not main, heads no open pull request and has not merged: rebase it onto the pull request it builds on, or onto main"
+    },
+    "output": "told: pr-dequeued #5: #5 stands on floor, which is not main, heads no open pull request and has not merged: rebase it onto the pull request it builds on, or onto main: The landing watcher could not queue the stack of this pull request. Do what the line above names, then `pr:land 5`.; warnings: 1"
+  },
+  {
+    "name": "#5695: a refusal already told at this head is not told again, and the run's log keeps its warning",
+    "action": { "number": 5, "act": "restack", "told": true },
+    "restack": "already",
+    "landing": {
+      "status": 2,
+      "line": "#5 held by the owner; the stack above it waits: `pr:release` ends the hold"
+    },
+    "output": "told: ; warnings: 1"
+  },
+  {
+    "name": "#5695: a refused landing of a green stack is told `pr-dequeued` with the refusal's line",
+    "action": { "number": 5, "act": "land", "told": false },
+    "landing": {
+      "status": 2,
+      "line": "#5 held by the owner; the stack above it waits: `pr:release` ends the hold"
+    },
+    "output": "told: pr-dequeued #5: #5 held by the owner; the stack above it waits: `pr:release` ends the hold: The landing watcher could not queue the stack of this pull request. Do what the line above names, then `pr:land 5`.; warnings: 1"
+  },
+  {
+    "name": "a green stack that waits on a queued unit tells nothing: the next run reads it again",
+    "action": { "number": 5, "act": "land", "told": false },
+    "landing": { "status": 3, "line": "#4 is queued; the stack's next unit lands once it merges" },
+    "output": "told: ; warnings: 0"
+  }
+]

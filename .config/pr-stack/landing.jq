@@ -22,7 +22,9 @@
 #   With the token, a green pull request is landed through `land_prefix`,
 #   which reads its whole stack bottom up, so one member asks for the stack,
 #   and only for a stack with no dequeued member: `land_prefix` reads a
-#   dequeued head as green and would queue it again unchanged. A dequeued
+#   dequeued head as green and would queue it again unchanged. A landing
+#   that `land_prefix` refuses is told `pr-dequeued`, once per head (`told`,
+#   #5695). A dequeued
 #   pull request is restacked onto its base, as `pr:watch` heals a stack
 #   (#1264), when no member of its stack is red or queued (a push never
 #   moves a queued branch or one below it, #2531) and fewer than three
@@ -60,9 +62,9 @@
 #   `pr-dequeued` without the token, or past the cap, has them named.
 #
 # Output: the actions, by pull request number, each `{number, act}` with `act`
-# one of `land`, `restack` (with `told`), `green`, `dirty`, `red` (with
-# `failed`, the contexts) or `dequeued` (with `upstream` when it holds such
-# commits).
+# one of `land` (with `told`), `restack` (with `told`), `green`, `dirty`,
+# `red` (with `failed`, the contexts) or `dequeued` (with `upstream` when it
+# holds such commits).
 
 def key: if .stack == null then "#\(.number)" else "stack \(.stack)" end;
 def state:
@@ -91,7 +93,7 @@ def restacks: [(.marks // [])[] | select(startswith("pr-restacked:"))] | length;
         else {number, act: "dequeued"}
         end
       elif .state == "green" and all($members[]; .state != "dequeued") then
-        if $token then {number, act: "land", key: key}
+        if $token then {number, act: "land", key: key, told: marked("pr-dequeued")}
         else {number, act: "green", key: key, told: marked("pr-green")}
         end
       else empty
