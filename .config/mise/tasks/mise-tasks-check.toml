@@ -2077,8 +2077,9 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # or the claim the lane holds (`next.jq`, #2533, #3736, #3915, #4660), a case
 # naming a lane reading its row of `.config/issues/lanes.toml` as the table
 # writes it (#4056); each in `.config/claims/claimed.json` a lane, a body and
-# the body `claim:next` writes before its claim, or whether the lane keeps the
-# claim after it (`claimed.jq`, #4660); each in `.config/claims/taken.json` a
+# the labels the write reads, and the body `claim:next` writes before its
+# claim, whether the lane keeps the claim after it, or the body a lapse leaves
+# (`claimed.jq`, #4660, #5531); each in `.config/claims/taken.json` a
 # branch or a lane, an issue, and the unit the branch works, the gate's
 # verdict on its claim, or what `claim:take` writes (`taken.jq`, #5146); each in
 # `.config/claims/ledger.json`

@@ -6,6 +6,8 @@
 # release under `--forgo` writes neither (#4104). A claim keeps another lane's
 # claim standing before its own (`claiming`, #4660): when two runs claim at
 # once, the first claim marker is the earlier claim, and it holds the issue.
+# A marker holds a claim only under `status:claimed`, so a claim of a body
+# without the label writes the lane's marker alone (#5531).
 #
 # A marker counts only where a tool writes it, alone on its line (#4839): one
 # quoted in prose or a code span, as an issue about the markers writes it, is
@@ -38,6 +40,14 @@ def claim_lane: [(. // "") | unfenced | capture(alone("<!-- claim: lane=(?<lane>
 def claiming($lane):
   (. // "" | gsub(alone("<!-- released: [^>\\n]*-->"); "\n") | gsub(alone(claim_marker($lane)); "\n") | sub("\\s+$"; ""))
   + "\n\n" + claim_marker($lane) + "\n";
+
+# The body `$lane` claims, given the labels `$labels` its read shows (#5531).
+# Under `status:claimed`, another lane's marker can be a live claim, so the
+# body keeps it first (`claiming`, #4660). A live claim adds its label before
+# its marker, so without the label no marker is live, and the body carries
+# the lane's marker alone.
+def claiming($lane; $labels):
+  if ($labels | index("status:claimed")) then claiming($lane) else marked(claim_marker($lane)) end;
 
 # The body without `$lane`'s claim marker, or null when it carries none.
 def unclaiming($lane):
