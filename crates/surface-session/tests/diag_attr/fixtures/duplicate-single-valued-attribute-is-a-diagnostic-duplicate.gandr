@@ -1,0 +1,3 @@
+@[ refuses("a") ]
+@[ refuses("b") ]
+def f = 42;

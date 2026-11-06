@@ -1,0 +1,5 @@
+data Color : Type where { | Red : Color | Green : Color }
+def a = 1;
+def b = thunk { return a };
+def c = 3;
+def d = c;

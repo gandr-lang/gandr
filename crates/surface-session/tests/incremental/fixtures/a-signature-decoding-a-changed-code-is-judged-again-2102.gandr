@@ -1,0 +1,4 @@
+def code : Type;
+def code = String;
+def three : code;
+def three = 3;

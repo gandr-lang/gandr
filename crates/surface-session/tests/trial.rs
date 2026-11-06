@@ -30,21 +30,21 @@ use crate::common::submit;
 
 /// The revision every trial starts from: one definition and one declaration
 /// owed its body.
-const BASE: &str = "def a = 1 ;\ndef f : Integer ;\n";
+const BASE: &str = include_str!("trial/fixtures/base.gandr");
 
 /// Candidate revisions of [`BASE`], each filling `f` differently, in the
 /// order a trial is given them.
 const CANDIDATES: [&str; 5] = [
     // A body of the wrong type: `f` is refused.
-    "def a = 1 ;\ndef f : Integer ;\ndef f = \"one\" ;\n",
+    include_str!("trial/fixtures/candidates-1.gandr"),
     // A body that checks: every declaration settles.
-    "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
+    include_str!("trial/fixtures/candidates-2.gandr"),
     // No body: `f` stays owed.
-    "def a = 1 ;\ndef f : Integer ;\n",
+    include_str!("trial/fixtures/base.gandr"),
     // A revision that declares nothing: the lowering refuses it whole.
     "@[ checks ]\n",
     // The checking body again.
-    "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
+    include_str!("trial/fixtures/candidates-2.gandr"),
 ];
 
 /// What a face shows of a submission: its standing, its parse repairs and
@@ -173,7 +173,7 @@ fn each_candidate_is_judged_as_a_fresh_session_judges_it()
 #[test]
 fn a_trial_leaves_the_session_as_it_was()
 {
-    let next = "def a = 2 ;\ndef f : Integer ;\ndef f = a ;\n";
+    let next = include_str!("trial/fixtures/a-trial-leaves-the-session-as-it-was-next.gandr");
     for pool in pools() {
         let mut tried = based(Arc::clone(&pool));
         let mut untried = based(pool);

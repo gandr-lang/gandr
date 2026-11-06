@@ -1,0 +1,2 @@
+def k = thunk { pure 1 ;
+def b = 1  2 ;

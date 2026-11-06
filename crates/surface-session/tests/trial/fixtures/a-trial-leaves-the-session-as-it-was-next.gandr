@@ -1,0 +1,3 @@
+def a = 2;
+def f : Integer;
+def f = a;

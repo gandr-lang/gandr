@@ -1,0 +1,3 @@
+def x = 40;
+def y : Integer;
+def y = x;

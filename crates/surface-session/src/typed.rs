@@ -249,7 +249,7 @@ mod tests
             Maybe::Present(ref shown) if shown.as_ref() == "String")
         );
         let _submitted = session
-            .submit(SourceText::from("def name : String ;\ndef name = 42 ;"))
+            .submit(SourceText::from(include_str!("typed/fixtures/missing-and-refused-types-keep-their-absence-reasons--submitted.gandr")))
             .expect("the mismatch is a refusal, not an engine fault");
         assert!(matches!(
             type_of(session.last(), SourceFragment::from("name"), page),
@@ -277,9 +277,9 @@ mod tests
     {
         let mut session = session();
         let _submitted = session
-            .submit(SourceText::from(
-                "data Two : Type where {\n  | L : Two\n  | R : Two\n}",
-            ))
+            .submit(SourceText::from(include_str!(
+                "typed/fixtures/a-data-declaration-is-spelled-by-its-kind--submitted.gandr"
+            )))
             .expect("the session does not fault");
         let page = PageWidth::from(100_u32);
         assert!(
