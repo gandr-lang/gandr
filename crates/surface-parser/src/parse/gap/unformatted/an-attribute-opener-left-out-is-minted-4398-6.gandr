@@ -1,0 +1,3 @@
+module Answers where
+  doc("The answer.") ]
+  def answer = 42;
