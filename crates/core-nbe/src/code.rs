@@ -516,9 +516,11 @@ enum FirstOrder<'run>
     Tuple(ArgumentFields<'run>),
     /// A tagged sum value.
     Injection(gandr_kernel_term::Summand, Node),
-    /// A constructor with its complete nominal classifier.
+    /// A constructor with its family and its complete nominal classifier.
     Constructor
     {
+        /// The family the constructor's tag counts within.
+        family: gandr_kernel_term::ConstantIndex,
         /// The complete nominal classifier, in its captured reading.
         datatype: Node,
         /// The constructor ordinal within that nominal declaration.
@@ -2440,11 +2442,12 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     Ok(FirstOrder::Injection(*side, Node::Code(*body, place)))
                 },
                 Value::Constructor {
+                    family,
                     ref datatype,
                     ref tag,
                     ref fields,
-                    ..
                 } => Ok(FirstOrder::Constructor {
+                    family,
                     datatype: Node::ValueType(*datatype, place),
                     tag: *tag,
                     fields: ArgumentFields::Source(fields.iter(), place),
@@ -2507,6 +2510,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     Ok(FirstOrder::Injection(summand, Node::Held(body)))
                 },
                 DomainValue::Constructor {
+                    family,
                     datatype,
                     tag,
                     fields,
@@ -2518,6 +2522,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         return Err(malformed);
                     };
                     Ok(FirstOrder::Constructor {
+                        family,
                         datatype: Node::ValueType(classifier, Self::opened(datatype)),
                         tag,
                         fields: ArgumentFields::Held(
@@ -2622,16 +2627,21 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
             },
             (
                 FirstOrder::Constructor {
+                    family: left_family,
                     datatype: left_datatype,
                     tag: left_tag,
                     fields: left_fields,
                 },
                 FirstOrder::Constructor {
+                    family: right_family,
                     datatype: right_datatype,
                     tag: right_tag,
                     fields: right_fields,
                 },
-            ) if left_tag == right_tag && left_fields.len() == right_fields.len() => {
+            ) if left_family == right_family
+                && left_tag == right_tag
+                && left_fields.len() == right_fields.len() =>
+            {
                 pending.extend(left_fields.zip(right_fields));
                 pending.push((left_datatype, right_datatype));
                 Ok(Alike::Same)

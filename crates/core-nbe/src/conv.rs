@@ -925,18 +925,25 @@ impl<'run> Walk<'run>
         match (one, other) {
             (
                 DomainValue::Constructor {
+                    family: left_family,
                     datatype: left_code,
                     tag: left_tag,
                     fields: left_fields,
                     ..
                 },
                 DomainValue::Constructor {
+                    family: right_family,
                     datatype: right_code,
                     tag: right_tag,
                     fields: right_fields,
                     ..
                 },
             ) => {
+                // Constructors of two families are apart before their
+                // classifiers are read.
+                if left_family != right_family || left_tag != right_tag {
+                    return Ok(Local::Disagree);
+                }
                 let left_fields = self
                     .domain
                     .fields(left_fields)
@@ -945,7 +952,7 @@ impl<'run> Walk<'run>
                     .domain
                     .fields(right_fields)
                     .map_err(ConversionFault::Domain)?;
-                if left_tag != right_tag || left_fields.len() != right_fields.len() {
+                if left_fields.len() != right_fields.len() {
                     return Ok(Local::Disagree);
                 }
                 match compare_codes(

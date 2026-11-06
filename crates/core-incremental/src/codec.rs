@@ -146,10 +146,10 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x11";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x12";
 
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0a";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0b";
 
 /// The decoder's cap on a level atom's offset.
 ///
@@ -1568,11 +1568,13 @@ where
             write_fields(writer, fields)?;
         },
         ContentNode::Constructor {
+            ref family,
             datatype,
             tag,
             ref fields,
         } => {
             writer.tag(Tag(0x52));
+            write_reference(writer, family)?;
             write_index(writer, datatype)?;
             writer.count(Count(usize::from(tag)))?;
             write_indices(writer, fields)?;
@@ -4230,6 +4232,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         },
         0x51 => ContentNode::RecordType(read_fields(reader)?),
         0x52 => ContentNode::Constructor {
+            family: read_reference(reader)?,
             datatype: read_index(reader)?,
             tag: gandr_core_term::ConstructorTag::from(reader.count()?.0),
             fields: read_indices(reader)?,

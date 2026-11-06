@@ -114,6 +114,23 @@ fn nominal_identity_and_constructor_refusals()
         Err(KernelError::ValueTypeMismatch(_))
     ));
 
+    // A constructor of the second family at the first family's classifier
+    // names its own family, never the first family's constructor of its tag.
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let first_type = arena.value_type_data(first, vec![]);
+    let unit = arena.value_unit();
+    let constructor =
+        arena.value_constructor(second, first_type, ConstructorTag::from(0), vec![unit]);
+    let declaration = staging.def(LevelSignature::monomorphic(), first_type, constructor);
+    assert_eq!(
+        environment.add_decl(declaration),
+        Err(KernelError::ConstructorFamily {
+            family: second,
+            declaration: first,
+        })
+    );
+
     let mut staging = environment.stage();
     let arena = staging.arena();
     let datatype = arena.value_type_data(first, vec![]);

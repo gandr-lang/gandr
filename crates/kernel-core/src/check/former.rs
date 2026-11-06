@@ -409,14 +409,16 @@ pub(super) fn field_type(
 ///   the constructor gives them; an indexed family's constructor stands at the
 ///   index its classifier names, each stated result index instantiated at the
 ///   parameters and the fields α-equal to the classifier's index argument.
-/// - fails: non-data classifiers, unknown tags, wrong argument or field
-///   arities, and a classifier at another index than the constructor states.
+/// - fails: non-data classifiers, a constructor of another family than its
+///   classifier names, unknown tags, wrong argument or field arities, and a
+///   classifier at another index than the constructor states.
 /// - panics: none.
 /// Returned goals are executable field-check obligations, not synthesized
 /// claims.
 ///
 /// # Errors
-/// Returns a native former refusal, `ConstructorIndex` for a classifier at
+/// Returns a native former refusal, `ConstructorFamily` for a constructor of
+/// another family than its classifier, `ConstructorIndex` for a classifier at
 /// another index, or an arena fault.
 ///
 /// # Adequacy
@@ -435,13 +437,14 @@ pub(super) fn constructor(
     value: ValueId,
 ) -> Result<(ValueTypeId, Vec<Goal>), KernelError>
 {
-    let (datatype, tag, count) = match arena.value(value).ok_or(KernelError::ArenaFault)? {
+    let (family, datatype, tag, count) = match arena.value(value).ok_or(KernelError::ArenaFault)? {
         &Value::Constructor {
+            family,
             ref datatype,
             ref tag,
             ref fields,
             ..
-        } => (*datatype, *tag, fields.len()),
+        } => (family, *datatype, *tag, fields.len()),
         &Value::Record(_)
         | &Value::SessionPath { .. }
         | &Value::SessionFlow { .. }
@@ -504,6 +507,12 @@ pub(super) fn constructor(
                 ));
             },
         };
+    if declaration != family {
+        return Err(KernelError::ConstructorFamily {
+            family,
+            declaration,
+        });
+    }
     let signature = signature(entries, declaration)?;
     if signature.arity() != FamilyArity(argument_count) {
         return Err(KernelError::DataArgumentArity);

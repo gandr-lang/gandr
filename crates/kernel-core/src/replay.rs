@@ -5979,10 +5979,11 @@ where
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::decompose`], over the value formers; two
-    ///   reflexivities decompose to their points. A returned endpoint never
-    ///   reaches here: [`Self::settle`] reads it first. Under
-    ///   [`Reading::Unfolding`], two quotes neither α-equal nor both rigid
-    ///   close convertible with the pair pushed to the replay's `owed`.
+    ///   constructors of two families or two tags are apart before their
+    ///   classifiers are read; two reflexivities decompose to their points. A
+    ///   returned endpoint never reaches here: [`Self::settle`] reads it first.
+    ///   Under [`Reading::Unfolding`], two quotes neither α-equal nor both
+    ///   rigid close convertible with the pair pushed to the replay's `owed`.
     /// - provides: the former half of [`Self::decompose`].
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling id or a returned
     ///   endpoint.
@@ -6006,8 +6007,8 @@ where
     /// - witness: `replay::tests::two_reflexivities_decompose_to_their_points`
     /// - witness: `replay::tests::the_forced_loop_compares_children_only_where_the_shapes_agree`
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (self.arena.value(left), self.arena.value(right));
-if let Some(matched_left_node) = matched_left_value && let Value::Constructor { datatype:a,tag:a_tag,fields:ref a_fields, .. } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Constructor { datatype:b,tag:b_tag,fields:ref b_fields, .. } = *matched_right_node { {
-            if a_tag != b_tag || a_fields.len() != b_fields.len() { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
+if let Some(matched_left_node) = matched_left_value && let Value::Constructor { family:a_family,datatype:a,tag:a_tag,fields:ref a_fields } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Constructor { family:b_family,datatype:b,tag:b_tag,fields:ref b_fields } = *matched_right_node { {
+            if a_family != b_family || a_tag != b_tag || a_fields.len() != b_fields.len() { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
             else { matches!(&ret,Ok(Structure::Premises(premises)) if premises.len() == a_fields.len().saturating_add(1_usize)
                 && premises.first().is_some_and(|premise| matches!((premise.left,premise.right), (Term::Value(left),Term::Value(right)) if self.arena.value(left) == Some(&Value::Quote(a)) && self.arena.value(right) == Some(&Value::Quote(b))))
                 && premises.iter().skip(1).copied().eq(a_fields.iter().zip(b_fields).map(|(a,b)| Premise::values(*a,*b)))) }
@@ -6043,19 +6044,24 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             (&Value::Returned(_), _) | (_, &Value::Returned(_)) => return Err(unreadable()),
             (
                 &Value::Constructor {
+                    family: one_family,
                     datatype: a,
                     tag: one_tag,
                     fields: ref a_fields,
-                    ..
                 },
                 &Value::Constructor {
+                    family: other_family,
                     datatype: b,
                     tag: other_tag,
                     fields: ref b_fields,
-                    ..
                 },
             ) => {
-                if one_tag != other_tag || a_fields.len() != b_fields.len() {
+                // Constructors of two families are apart before their
+                // classifiers are read, as core-nbe decides them.
+                if one_family != other_family
+                    || one_tag != other_tag
+                    || a_fields.len() != b_fields.len()
+                {
                     return Ok(Structure::Leaf(Expect::NotConvertible));
                 }
                 let count = a_fields.len();

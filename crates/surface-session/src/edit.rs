@@ -2595,10 +2595,11 @@ enum Agreement
 /// # Specification
 /// - requires: nothing.
 /// - ensures: agrees exactly on the former, the non-child payload and the
-///   number of children: leaf values, injection side, classifier targets, path
-///   evidence, a memory form's kind and slot, and a tuple's or product's
-///   component count matter; child indices do not. The walk pairs children by
-///   slot, so two nodes it descends into have every child paired.
+///   number of children: leaf values, injection side, classifier targets, a
+///   constructor's family and tag, path evidence, a memory form's kind and
+///   slot, and a tuple's or product's component count matter; child indices do
+///   not. The walk pairs children by slot, so two nodes it descends into have
+///   every child paired.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2624,7 +2625,7 @@ enum Agreement
             && children(old).count() == children(new).count()
             && match *old {
                 ContentNode::Data {declaration:ref left,ref arguments} => matches!(*new,ContentNode::Data {declaration:ref right,arguments:ref other} if left == right && arguments.len() == other.len()),
-                ContentNode::Constructor {tag,ref fields,..} => matches!(*new,ContentNode::Constructor {tag:other,fields:ref theirs,..} if tag == other && fields.len() == theirs.len()),
+                ContentNode::Constructor {family:ref left,tag,ref fields,..} => matches!(*new,ContentNode::Constructor {family:ref right,tag:other,fields:ref theirs,..} if left == right && tag == other && fields.len() == theirs.len()),
                 ContentNode::Record(ref fields) => matches!(*new,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
                 ContentNode::RecordType(ref fields) => matches!(*new,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
                 ContentNode::DataCase {ref branches,..} => matches!(*new,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
@@ -2868,16 +2869,18 @@ fn agreement(
         ) => left == right && a.len() == b.len(),
         (
             &ContentNode::Constructor {
+                family: ref first,
                 tag: a,
                 fields: ref left,
                 ..
             },
             &ContentNode::Constructor {
+                family: ref second,
                 tag: b,
                 fields: ref right,
                 ..
             },
-        ) => a == b && left.len() == right.len(),
+        ) => first == second && a == b && left.len() == right.len(),
         (&ContentNode::Record(ref left), &ContentNode::Record(ref right))
         | (&ContentNode::RecordType(ref left), &ContentNode::RecordType(ref right)) => {
             left.keys().eq(right.keys())
@@ -3141,9 +3144,9 @@ fn read(
 /// # Specification
 /// - requires: `child` numbers the supplied child roots.
 /// - ensures: preserves the arena node’s former and non-child payload, resolves
-///   constants by program identity, and invokes `child` in former order with
-///   each child’s sort. An absent arena entry is Unresolved at the requested
-///   sort.
+///   constants and a constructor's family by program identity, and invokes
+///   `child` in former order with each child’s sort. An absent arena entry is
+///   Unresolved at the requested sort.
 /// - panics: only if `child` panics.
 ///
 /// # Adequacy
@@ -3165,7 +3168,7 @@ fn read(
         .map_or(
             matches!(ret, ContentNode::Unresolved(Sort::Value)),
             |node| match *node {
-                Value::Constructor {tag,ref fields,..} => matches!(ret,ContentNode::Constructor {tag:found,fields:ref other,..} if tag == found && fields.len() == other.len()),
+                Value::Constructor {family,tag,ref fields,..} => matches!(ret,ContentNode::Constructor {family:ref named,tag:found,fields:ref other,..} if tag == found && fields.len() == other.len() && program.items().iter().position(|item| item.declaration().constant() == family).and_then(|ordinal| program.references().get(ordinal)).map_or(matches!(named, Reference::Unoccupied), |expected| named == expected)),
                 Value::Record(ref fields) => matches!(ret,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
                 Value::Reify(_) => matches!(ret, ContentNode::Reify(_)),
                 Value::Primitive { primitive, .. } => ret == ContentNode::PrimitiveValue(primitive),
@@ -3275,11 +3278,12 @@ where
 {
     match program.arena().value(id) {
         Some(&Value::Constructor {
+            family,
             datatype,
             tag,
             ref fields,
-            ..
         }) => ContentNode::Constructor {
+            family: program.resolve(family),
             datatype: child(Root::ValueType(datatype)),
             tag,
             fields: fields
@@ -4794,7 +4798,8 @@ def body = 1 ;
             declaration: item(key),
             arguments: vec![node(argument)],
         };
-        let constructor = |tag: usize, field| ContentNode::Constructor {
+        let constructor = |family: &str, tag: usize, field| ContentNode::Constructor {
+            family: item(family),
             datatype: node(1_usize),
             tag: ConstructorTag::from(tag),
             fields: vec![node(field)],
@@ -4814,7 +4819,7 @@ def body = 1 ;
             target: target.clone(),
             code: node(code),
         };
-        let cases: [(&str, ContentNode, ContentNode, Agreement); 28] = [
+        let cases: [(&str, ContentNode, ContentNode, Agreement); 29] = [
             (
                 "a perform over other children",
                 perform(state(), "get", 3),
@@ -4936,14 +4941,20 @@ def body = 1 ;
             ("another family", data("List", 1), data("Tree", 1), Differs),
             (
                 "a constructor over another field",
-                constructor(0, 1),
-                constructor(0, 2),
+                constructor("Celsius", 0, 1),
+                constructor("Celsius", 0, 2),
                 Same,
             ),
             (
                 "another constructor",
-                constructor(0, 1),
-                constructor(1, 1),
+                constructor("Celsius", 0, 1),
+                constructor("Celsius", 1, 1),
+                Differs,
+            ),
+            (
+                "a constructor of another family at one classifier",
+                constructor("Celsius", 0, 1),
+                constructor("Fahrenheit", 0, 1),
                 Differs,
             ),
             (

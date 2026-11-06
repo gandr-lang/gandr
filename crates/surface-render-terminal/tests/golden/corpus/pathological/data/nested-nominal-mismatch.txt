@@ -5,7 +5,6 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │               ┬─┯━━━━━─        ────────── the type it is checked against
    │               │ │
    │               │ its type does not convert: expected `Fahrenheit`, found `Celsius`
-   │               │ the type it synthesises
    │               checked against `List(Fahrenheit)`; while checking the first part of this list cell or dependent record
    │
    ├ note: `listed` is refused with TypeMismatch, as its expectation states
@@ -18,7 +17,6 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │              ┬─┯━━━━━─        ────────── the type it is checked against
    │              │ │
    │              │ its type does not convert: expected `Fahrenheit`, found `Celsius`
-   │              │ the type it synthesises
    │              checked against `List(Fahrenheit)`; while checking the first part of this list cell or dependent record
    │
    ├ note: `again` is refused with TypeMismatch, as its expectation states
