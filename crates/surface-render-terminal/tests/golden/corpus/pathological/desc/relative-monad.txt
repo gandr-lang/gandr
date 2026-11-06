@@ -12,7 +12,7 @@ error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping
 error[FamilyTelescope]: the type member `T` lands in value types where its component states computation types
    ╭▸ corpus/pathological/desc/relative-monad.gandr:30:8
    │
-30 │   type T(a : Type) = List(a);
+30 │   type T(a : Type) = List a;
    │        ━ types its sort does not land in
    │
    ├ note: `T` is refused with FamilyTelescope, as its expectation states
@@ -21,7 +21,7 @@ error[FamilyTelescope]: the type member `T` lands in value types where its compo
 error[FamilyTelescope]: the type member `T` lands in computation types where its component states value types
    ╭▸ corpus/pathological/desc/relative-monad.gandr:43:8
    │
-43 │   type T(a : Type) = -F List(a);
+43 │   type T(a : Type) = -F List a;
    │        ━ types its sort does not land in
    │
    ├ note: `T` is refused with FamilyTelescope, as its expectation states

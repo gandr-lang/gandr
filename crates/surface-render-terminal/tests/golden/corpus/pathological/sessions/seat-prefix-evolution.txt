@@ -1,7 +1,7 @@
 error[RunNotAdmitted]: the protocol does not admit this run
    ╭▸ corpus/pathological/sessions/seat-prefix-evolution.gandr:42:51
    │
-41 │ ┌ def dropped() -> Prefix(Evolution.Kept) =
+41 │ ┌ def dropped() -> Prefix Evolution.Kept =
 42 │ │   Flow.ride (fun (X) { Prefix X }) Evolution.keep retired
    │ │   ┬───────────────────────────────────────────────┯━━━━━│
    │ └───│───────────────────────────────────────────────│─────┤
@@ -15,7 +15,7 @@ error[RunNotAdmitted]: the protocol does not admit this run
 error[RunNotAdmitted]: the protocol does not admit this run
    ╭▸ corpus/pathological/sessions/seat-prefix-evolution.gandr:47:51
    │
-46 │   def narrowed(play : Prefix(Evolution.SeatEnd)) -> Prefix(Evolution.Kept) =
+46 │   def narrowed(play : Prefix Evolution.SeatEnd) -> Prefix Evolution.Kept =
    │   │            ──── checked; while checking the body of this function; binds play : ?
    │ ┌─┘
    │ │

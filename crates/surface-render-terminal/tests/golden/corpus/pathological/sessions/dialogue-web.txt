@@ -24,10 +24,10 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[DialogueUnmatched]: this dialogue's message is not received as it was sent
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:35:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:35:38
    │
-35 │   def misheard : Dialogue(Ask.Asking) = dialogue
-   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+35 │   def misheard : Dialogue Ask.Asking = dialogue
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 36 │ ┃   (left (sent "yes"))
 37 │ ┃   (right (received "no"))
 38 │ ┃   (left closed)
@@ -38,10 +38,10 @@ error[DialogueUnmatched]: this dialogue's message is not received as it was sent
    ╰ help: make each dialogue receipt match its sent value
 
 error[DialogueInverted]: this dialogue is logged out of its causal order
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:43:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:43:38
    │
-43 │   def foretold : Dialogue(Ask.Asking) = dialogue
-   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+43 │   def foretold : Dialogue Ask.Asking = dialogue
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 44 │ ┃   (right (received "yes"))
 45 │ ┃   (left (sent "yes"))
 46 │ ┃   (left closed)
@@ -52,10 +52,10 @@ error[DialogueInverted]: this dialogue is logged out of its causal order
    ╰ help: log each send before its matching receipt
 
 error[RunNotAdmitted]: the protocol does not admit this run
-   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:51:39
+   ╭▸ corpus/pathological/sessions/dialogue-web.gandr:51:38
    │
-51 │   def answered : Dialogue(Ask.Asking) = dialogue
-   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+51 │   def answered : Dialogue Ask.Asking = dialogue
+   │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 52 │ ┃   (left (received "yes"))
 53 │ ┃   (right (sent "yes"))
 54 │ ┃   (left closed)

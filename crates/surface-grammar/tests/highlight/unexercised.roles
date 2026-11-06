@@ -1249,6 +1249,7 @@
 2169 Number bridge_type number L[,] R[]]
 2170 Other bridge_type ] L[+ - number] R[]]
 2190 Operator flow_type - L[[] R[, ]]
+2213 Other type_application , L[<type>] R[)]
 2215 Other type_application ( L[)] R[<type>]
 2216 Other type_application , L[<type>] R[<type>]
 2217 Other type_application , L[<type>] R[)]

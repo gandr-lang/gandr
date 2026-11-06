@@ -2,8 +2,8 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
    ╭▸ corpus/pathological/data/w-negative.gandr:19:1
    │
 19 │ ┏ data Lop(a : Type) : Type where
-20 │ ┃   | MkLop : (f : Lop(Two) -> Two) --> Lop(a)
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the declared type under a function's domain, where no stage reaches it
+20 │ ┃   | MkLop : (f : Lop Two -> Two) --> Lop a
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the declared type under a function's domain, where no stage reaches it
    │
    ├ note: `Lop` is refused with NegativeOccurrence, as its expectation states
    ╰ help: apply the datatype there only to its own parameters, one stage below its constructor

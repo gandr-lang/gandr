@@ -1,8 +1,8 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/include/reduct.gandr:18:35
    │
-12 │ def absorbs(z : Model(LeftZero)) -> Integer =
-   │                 ─────────────── the type it is checked against
+12 │ def absorbs(z : Model LeftZero) -> Integer =
+   │                 ────────────── the type it is checked against
    ┆
 18 │ def noZero() -> Integer { absorbs endoManifest }
    │ ┬─────────────────────────┬───────┯━━━━━━━━━━━──

@@ -36,7 +36,7 @@ error[ShapeMismatch]: expected an eager product `A * B`
    │   │             │        checked against `(a : ObjTy) -> (d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend g a, d)`; while checking the body of this function; binds a : ObjTy
    │ ┌─┘             checked against `(g : Ctx) -> (a : ObjTy) -> (d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend g a, d)`; while checking the body of this function; binds g : Ctx
    │ │
-59 │ │   Extend(g, a),
+59 │ │   Extend g a,
 60 │ │   d
 61 │ │ ) { *{rho, v} }
    │ └─────┯━━━━━━━━─┘ checked against `(g : Ctx, a : ObjTy, d : Ctx, envs(g, d), sem(a, d)) -> envs(Extend g a, d)`; while checking the body of this thunk

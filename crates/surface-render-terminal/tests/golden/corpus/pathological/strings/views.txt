@@ -2,7 +2,7 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╭▸ corpus/pathological/strings/views.gandr:18:25
    │
 16 │ ┌ def escaped() -> Repr =
-17 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+17 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │   ─── checked against `-F Repr`; while checking the scope of this hold
 18 │ │   access s as v { force thunk { resume v v } };
    │ │   ┬───────────────┬─────┯━━━━━━━━━━━━━━━━━━━──
@@ -20,7 +20,7 @@ error[ViewSpent]: the view is used after its `resume` or `abort`
    ╭▸ corpus/pathological/strings/views.gandr:26:31
    │
 24 │ ┌ def endedTwice() -> Unit =
-25 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+25 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
 26 │ │   access s as v { resume v v; abort v }
    │ │   ┬───────────────┬───────────┯━━━━━━─│
@@ -37,7 +37,7 @@ error[ViewUnended]: the body of this `access` must end its view with `resume` or
    ╭▸ corpus/pathological/strings/views.gandr:33:3
    │
 31 │ ┌ def unended() -> Unit =
-32 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+32 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │   ─── checked against `-F Unit`; while checking the scope of this hold
 33 │ │   access s as v { pure *{} }
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━│
@@ -52,7 +52,7 @@ error[KeptEscaped]: a value kept `at c` lives only as long as the scope binding 
    ╭▸ corpus/pathological/strings/views.gandr:44:29
    │
 38 │ ┌  def keptPastRegion() -> Integer =
-39 │ │    var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+39 │ │    var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
 40 │ │┌   handle c : std.process.Exit.Eff {
 41 │ ││     let k : (() -> Integer) at c = access shared s as w {
@@ -78,7 +78,7 @@ error[HeldKept]: a shared view of this value is kept in a region whose scope is 
    ╭▸ corpus/pathological/strings/views.gandr:60:5
    │
 54 │ ┌  def writtenWhileKept() -> Integer =
-55 │ │    var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+55 │ │    var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
 56 │ │┌   handle c : std.process.Exit.Eff {
 57 │ ││     let k : (() -> Integer) at c = access shared s as w {

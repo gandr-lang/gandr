@@ -1,7 +1,7 @@
 error[BuiltinNotCanonical]: this declaration departs from the canonical form of the built-in role `irArgs` at its answer at constructor 2 of the signature type
    ╭▸ corpus/pathological/universe/ir-holders.gandr:35:1
    │
-35 │ ┏ def rec fields(d : Type, c : Codes(d), x : Type, t : x -> d) -> Type =
+35 │ ┏ def rec fields(d : Type, c : Codes d, x : Type, t : x -> d) -> Type =
 36 │ ┃   match c where
 37 │ ┃     | Stop(e) => return Unit
 38 │ ┃     | Ask(a, f) => return (Pair a (fun (y) { fields[<] d (f y) x t }))
