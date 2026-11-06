@@ -450,17 +450,14 @@ stack_link() {
 # #3078), so a lower pull request restacked or squashed before it merged
 # leaves nothing of its own to conflict. A branch that does not contain the
 # open one below it, because that one was force-pushed since (#3115), is
-# first replayed onto it from the newest head of the lower it holds
-# (`relink_fork`); a branch holding none of them is refused. The scratch is
-# named
-# for this process (`gandr-scratch-<pid>.`), and the caller's exit trap runs
-# `drop_scratch`, so a failure anywhere removes it; a scratch a hard kill
-# leaves, its process gone, is `wt:sweep`'s.
-# Every commit a replay writes is signed (`--gpg-sign`, #3745): a seat signs
-# its commits with `-S`, not by configuration, so a rebase without the flag
-# writes unsigned commits that the repository's rule refuses to queue.
+# replayed from the newest head of the lower it holds (`relink_fork`); a
+# branch holding none of them is refused. The replay is `chain_replay`'s,
+# member by member, and git signs every commit it writes (#3745). The scratch
+# is named for this process (`gandr-scratch-<pid>.`), and the caller's exit
+# trap runs `drop_scratch`, so a failure anywhere removes it; a scratch a hard
+# kill leaves, its process gone, is `wt:sweep`'s.
 restack() {
-  local stack=$1 heads head below fork merged held top scratch status=0 moved=() pushes=() leases=() old new
+  local stack=$1 heads head below fork merged held scratch line conflicted i status=0 members=() relinked=() moved=() pushes=() leases=() old new
   mapfile -t heads < <(jq -r '.[].head' <<< "$stack")
   git fetch --quiet origin "$trunk" "${heads[@]}"
   merged=$(git merge-base "origin/${heads[0]}" "origin/$trunk")
@@ -468,56 +465,38 @@ restack() {
   if [[ $fork != "$merged" ]]; then
     echo "${heads[0]}: $(git rev-list --count "$merged..$fork") commits a merged pull request below held are left out"
   fi
+  members=("${heads[0]}")
+  for (( i = 1; i < ${#heads[@]}; i++ )); do
+    head=${heads[i]}
+    below=${heads[i-1]}
+    if git merge-base --is-ancestor "origin/$below" "origin/$head"; then
+      members+=("$head")
+      continue
+    fi
+    held=$(relink_fork "$below" "$(git rev-parse "origin/$head")")
+    if [[ -z $held ]]; then
+      echo "$head does not contain $below, the branch below it, nor any of its earlier heads; rebase it onto $below first" >&2
+      return 1
+    fi
+    echo "$head: $(git rev-list --count "$held..origin/$head") commits replayed from $below's earlier head ${held::12} onto its current one"
+    members+=("$head:$held")
+    relinked+=("$head")
+  done
   scratch=$(mktemp -d "${TMPDIR:-/tmp}/gandr-scratch-$$.XXXXXX")
   pr_stack_scratch=$scratch
   git worktree add --quiet --detach "$scratch" "origin/${heads[-1]}"
-  for head in "${heads[@]::${#heads[@]}-1}"; do
-    git -C "$scratch" branch --quiet --force "pr-stack/$head" "origin/$head"
-  done
-  top=$(git rev-parse "origin/${heads[-1]}")
-  below=
-  for head in "${heads[@]}"; do
-    if [[ -n $below ]] && (( status == 0 )); then
-      new=$top
-      [[ $head == "${heads[-1]}" ]] || new=$(git -C "$scratch" rev-parse "pr-stack/$head")
-      if ! git -C "$scratch" merge-base --is-ancestor "pr-stack/$below" "$new"; then
-        held=$(relink_fork "$below" "$new")
-        if [[ -z $held ]]; then
-          echo "$head does not contain $below, the branch below it, nor any of its earlier heads; rebase it onto $below first" >&2
-          status=1
-        else
-          echo "$head: $(git -C "$scratch" rev-list --count "$held..$new") commits replayed from $below's earlier head ${held::12} onto its current one"
-          git -C "$scratch" checkout --quiet --detach "$new"
-          if ! git -C "$scratch" rebase --quiet --gpg-sign --onto "pr-stack/$below" "$held" > /dev/null; then
-            echo "the replay of $head onto $below conflicts ($(git -C "$scratch" diff --name-only --diff-filter=U | paste -sd ' ' -)); rebase $head onto $below by hand and land again" >&2
-            git -C "$scratch" rebase --abort || true
-            status=1
-          elif [[ $head == "${heads[-1]}" ]]; then
-            top=$(git -C "$scratch" rev-parse HEAD)
-          else
-            git -C "$scratch" branch --quiet --force "pr-stack/$head" HEAD
-          fi
-        fi
-      fi
+  if ! chain_replay "$scratch" "origin/$trunk" "$fork" git "${members[@]}"; then
+    conflicted=${heads[chain_stop]}
+    if [[ -n $chain_files && " ${relinked[*]} " == *" $conflicted "* ]]; then
+      echo "the replay of $conflicted onto ${heads[chain_stop-1]} conflicts ($chain_files); rebase $conflicted onto ${heads[chain_stop-1]} by hand and land again" >&2
+    elif [[ -n $chain_files ]]; then
+      echo "the restack of ${heads[*]} onto origin/$trunk conflicts in $conflicted ($chain_files); rebase $conflicted onto origin/$trunk by hand and land again" >&2
     fi
-    below=$head
-  done
-  git -C "$scratch" checkout --quiet --detach "$top"
-  if (( status == 0 )) && ! git -C "$scratch" rebase --quiet --gpg-sign --update-refs --onto "origin/$trunk" "$fork" > /dev/null; then
-    local stopped conflicted=${heads[-1]} files
-    stopped=$(git -C "$scratch" rev-parse --verify --quiet REBASE_HEAD) || stopped=
-    for head in "${heads[@]}"; do
-      if [[ -n "$stopped" ]] && git merge-base --is-ancestor "$stopped" "origin/$head"; then conflicted=$head; break; fi
-    done
-    files=$(git -C "$scratch" diff --name-only --diff-filter=U | paste -sd ' ' -)
-    git -C "$scratch" rebase --abort || true
-    echo "the restack of ${heads[*]} onto origin/$trunk conflicts in $conflicted ($files); rebase $conflicted onto origin/$trunk by hand and land again" >&2
     status=1
   fi
   if (( status == 0 )); then
-    for head in "${heads[@]}"; do
-      old=$(git rev-parse "origin/$head")
-      if [[ "$head" == "${heads[-1]}" ]]; then new=$(git -C "$scratch" rev-parse HEAD); else new=$(git -C "$scratch" rev-parse "pr-stack/$head"); fi
+    for line in "${chain_moved[@]}"; do
+      read -r head old new <<< "$line"
       [[ "$old" != "$new" ]] || continue
       pushes+=("$new:refs/heads/$head")
       leases+=("--force-with-lease=refs/heads/$head:$old")
@@ -528,9 +507,6 @@ restack() {
       gh_budget_stale
     fi
   fi
-  for head in "${heads[@]::${#heads[@]}-1}"; do
-    git branch --quiet --delete --force "pr-stack/$head" > /dev/null 2>&1 || true
-  done
   drop_scratch
   (( status == 0 )) || return "$status"
   if (( ${#moved[@]} > 0 )); then printf 'moved %s\n' "${moved[@]}"; fi
@@ -559,28 +535,32 @@ chain_gap() {
 # Replay the chain `$5`… (branches, bottom to top, fetched) in the scratch
 # worktree `$1`, member by member (#5749). Each member's own commits, those
 # past the old tip below it (`$3` for the first), go onto the new tip below it
-# (`$2` for the first). `$4` names the signer. With `git`, the rebase signs
-# each commit it writes (`--gpg-sign`, #3745), and the caller pushes the new
-# tips. With `github`, the rebase writes its commits as `landing`, and
-# `signed_replay` moves each branch to commits that GitHub signs (#5214),
-# because a runner holds no signing key. Sets `chain_moved` to one
-# `<branch> <old> <new>` for each member replayed. At a conflict or a refused
-# replay it stops and fails. Then `chain_stop` is the index of the member that
-# stopped, and `chain_files` the files that conflict, empty when no file
-# conflicts. A rebase that stops on no conflict prints git's error. The
-# members replayed before the stop stay replayed.
+# (`$2` for the first). A member written `<branch>:<commit>` replays from that
+# commit in place of the old tip below it, as `restack` gives a member that
+# `relink_fork` relinks; a branch name holds no `:`. `$4` names the signer.
+# With `git`, the rebase signs each commit it writes (`--gpg-sign`, #3745),
+# and the caller pushes the new tips. With `github`, the rebase writes its
+# commits as `landing`, and `signed_replay` moves each branch to commits that
+# GitHub signs (#5214), because a runner holds no signing key. Sets
+# `chain_moved` to one `<branch> <old> <new>` for each member replayed. At a
+# conflict or a refused replay it stops and fails. Then `chain_stop` is the
+# index of the member that stopped, and `chain_files` the files that
+# conflict, empty when no file conflicts. A rebase that stops on no conflict
+# prints git's error. The members replayed before the stop stay replayed.
 chain_moved=()
 chain_stop=
 chain_files=
 chain_replay() {
-  local dir=$1 onto=$2 from=$3 signer=$4 head old tip new error i=0
+  local dir=$1 onto=$2 from=$3 signer=$4 member head old tip new error i=0
   local -a rebase=(rebase --quiet --gpg-sign)
   shift 4
   [[ $signer == git ]] || rebase=(-c user.name=landing -c user.email=landing@users.noreply.github.com rebase --quiet)
   chain_moved=()
   chain_stop=
   chain_files=
-  for head in "$@"; do
+  for member in "$@"; do
+    head=${member%%:*}
+    [[ $member == "$head" ]] || from=${member#*:}
     old=$(git rev-parse "origin/$head")
     git -C "$dir" checkout --quiet --detach "$old"
     if ! error=$(git -C "$dir" "${rebase[@]}" --onto "$onto" "$from" 2>&1 > /dev/null); then
