@@ -1,0 +1,2 @@
+{declared}@[ boundary(addRow){stated} ]
+extern "rust" from "b" as B {{ def add(x : u32) -> u32; }}

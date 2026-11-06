@@ -1431,7 +1431,7 @@ mod tests
     #[test]
     fn a_report_within_a_source_keeps_the_declarations_written_there()
     {
-        let source = "def first = 1 ;\ndef second = 2 ;\ndef third = 3 ;";
+        let source = include_str!("report/fixtures/three-declarations.gandr");
         let start = source
             .find("def second")
             .expect("the second declaration is written");
@@ -1465,12 +1465,7 @@ mod tests
     {
         let report = settled(
             CorpusRoot::Fixture,
-            SourceText::from(
-                r#"def hidden_record = 3 ;
-@[ owes(1) ] def fixture_hole : Integer ;
-def plain_hole : Integer ;
-@[ refuses("UnresolvedName") ] def fixture_refusal = missing ;"#,
-            ),
+            SourceText::from(include_str!("report/fixtures/selected-declarations.gandr")),
         );
         let rendered = report.to_string();
         assert!(!rendered.contains("hidden_record"));
@@ -1546,12 +1541,7 @@ def plain_hole : Integer ;
     #[test]
     fn the_tally_counts_every_declaration_once()
     {
-        let source = SourceText::from(
-            r#"def helper = 3 ;
-@[ owes(2) ] def owed : Integer ;
-@[ refuses("OutOfFragment.typed_number") ] def half = 0.5f32 ;
-@[ checks ] def wrong : Integer ; def wrong = "text" ;"#,
-        );
+        let source = SourceText::from(include_str!("report/fixtures/tally.gandr"));
         let tally = settled(CorpusRoot::Fixture, source).tally();
 
         assert_eq!(
