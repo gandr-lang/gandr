@@ -1001,7 +1001,7 @@ mod tests
     #[test]
     fn formatters_preserve_text_and_numeric_options()
     {
-        for text in ["", "é\n\"", "source"] {
+        for text in ["", "é\"\n", "source"] {
             assert_eq!(alloc::format!("{}", SourceText::from(text)), text);
             assert_eq!(alloc::format!("{}", SourceFragment::from(text)), text);
         }
