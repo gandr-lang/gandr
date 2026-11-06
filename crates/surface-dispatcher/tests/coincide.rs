@@ -174,14 +174,16 @@ fn thunk_body(
 /// The call a thunk's body is, when the body delivers one call unchanged or
 /// one output of it: `become f a`, `f a`, or `let p = f a` then `p`, the
 /// tail written `p` alone as the sugared form writes it (#1327), either after
-/// a `;` or on the next line. A call of several outputs also delivers one
-/// output, by the selection `(f a).q` or by the labelled pattern
-/// `let *{.q = x, .r} = f a` then `x` (#5147). The call is written in the
-/// inspection notation a `normalizes` row reads, `f(a)`. The label is the
-/// output the run delivers, absent when the run delivers the call whole.
+/// a `;` or on the next line. A call of several outputs delivers them whole
+/// by its output group, `let (q, r) = f a` then `*{q, r}`. It delivers one
+/// output by the selection `(f a).q` or by the labelled group
+/// `let (.q = x, .r) = f a` then `x` (#5147). A pair pattern `*{…}` reads
+/// as a group does. The call is written in the inspection notation a
+/// `normalizes` row reads, `f(a)`. The label is the output the run delivers,
+/// absent when the run delivers the call whole.
 ///
 /// # Specification
-/// - ensures: present only for a body of one of the five shapes, the call an
+/// - ensures: present only for a body of one of the six shapes, the call an
 ///   identifier applied to at least one operand, in the inspection notation.
 /// - panics: none.
 ///
@@ -230,34 +232,54 @@ fn direct_call(body: SourceFragment<'_>) -> Option<(String, Option<String>)>
         },
         [ref bound, ref tail] => {
             let bound = bound.strip_prefix("let ")?;
-            // A pair pattern holds ` = ` inside its braces, so its end is
-            // its `}`.
-            let (pattern, call) = if bound.starts_with("*{") {
-                let close = bound.find('}')?;
-                (
-                    bound.get(..= close)?,
-                    bound.get(close.saturating_add(1) ..)?.strip_prefix(" = ")?,
-                )
+            // A pattern of several entries holds ` = ` inside its brackets,
+            // so its end is its closing bracket: `}` for a pair, `)` for an
+            // output group.
+            let closing = if bound.starts_with("*{") {
+                Some('}')
+            }
+            else if bound.starts_with('(') {
+                Some(')')
             }
             else {
-                bound.split_once(" = ")?
+                None
             };
+            let (pattern, call) = match closing {
+                Some(closing) => {
+                    let close = bound.find(closing)?;
+                    (
+                        bound.get(..= close)?,
+                        bound.get(close.saturating_add(1) ..)?.strip_prefix(" = ")?,
+                    )
+                },
+                None => bound.split_once(" = ")?,
+            };
+            // The entries of a pair pattern `*{q, r}` or of a group `(q, r)`.
+            let entries = pattern
+                .strip_prefix("*{")
+                .and_then(|inner| inner.strip_suffix('}'))
+                .or_else(|| pattern.strip_prefix('(')?.strip_suffix(')'));
             let returned = tail.strip_prefix("return ").unwrap_or(tail);
-            if returned == pattern {
+            // The tail returns the pattern, or the pair of its entries in
+            // their order.
+            let whole = returned == pattern
+                || entries.is_some_and(|entries| {
+                    returned
+                        .strip_prefix("*{")
+                        .and_then(|inner| inner.strip_suffix('}'))
+                        == Some(entries)
+                });
+            if whole {
                 (call, None)
             }
             else {
                 // The label of the entry that binds `returned`: `q` for `x`
-                // in `*{.q = x, .r}`, and `r` for `r`.
-                let label = pattern
-                    .strip_prefix("*{")?
-                    .strip_suffix('}')?
-                    .split(", ")
-                    .find_map(|entry| {
-                        let entry = entry.strip_prefix('.')?;
-                        let (label, binder) = entry.split_once(" = ").unwrap_or((entry, entry));
-                        (binder == returned).then(|| String::from(label))
-                    })?;
+                // in `(.q = x, .r)`, and `r` for `r`.
+                let label = entries?.split(", ").find_map(|entry| {
+                    let entry = entry.strip_prefix('.')?;
+                    let (label, binder) = entry.split_once(" = ").unwrap_or((entry, entry));
+                    (binder == returned).then(|| String::from(label))
+                })?;
                 (call, Some(label))
             }
         },
