@@ -2,22 +2,22 @@ error[UsedAfterClose]: the endpoint is used after `close`
    ╭▸ corpus/pathological/completion/buffer-touched.gandr:25:3
    │
 16 │ ┌ def bufferTouched() -> Unit =
-17 │ │   let buffer = fork (owner : Ring.Buffer) { close(owner) };
+17 │ │   let buffer = fork (owner : Ring.Buffer) { close owner };
    │ │   ┬──
    │ │   │
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the rest of this fork's parent
 18 │ │   let ring = fork (kernel : Ring.Moving) {
    │ │   ─── checked against `-F Unit`; while checking the rest of this fork's parent
-19 │ │     let held = recv(kernel);
+19 │ │     let held = recv kernel;
    ┆ ┆
-24 │ │   send(ring, buffer)
-   │ │   ────────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
-25 │ │   close(buffer)
-   │ │   ━━━━━━━━━━━━━ an endpoint already closed
-26 │ │   let cqe = recv(ring)
-27 │ │   close(ring)
-   │ └─────────────┘ checked against `() -> Unit`; while checking the body of this thunk
+24 │ │   send ring buffer
+   │ │   ──────────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
+25 │ │   close buffer
+   │ │   ━━━━━━━━━━━━ an endpoint already closed
+26 │ │   let cqe = recv ring
+27 │ │   close ring
+   │ └────────────┘ checked against `() -> Unit`; while checking the body of this thunk
    │
    ├ note: `bufferTouched` is refused with UsedAfterClose, as its expectation states
    ╰ help: move the action before the `close`, or delete it

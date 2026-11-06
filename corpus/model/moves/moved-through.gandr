@@ -21,13 +21,13 @@ import "./file-base.gandr";
       (parallel (event left 2) (series (event right 1) (event right 2)))))
 ]
 def movedThrough() -> Unit =
-  let file = fork (owner : File.Handle) { close(owner) };
+  let file = fork (owner : File.Handle) { close owner };
   let task = fork (writer : File.Writer) {
-    let held = recv(writer);
-    send(writer, held);
-    close(writer)
+    let held = recv writer;
+    send writer held;
+    close writer
   };
-  send(task, file)
-  let back = recv(task)
-  close(back)
-  close(task)
+  send task file
+  let back = recv task
+  close back
+  close task

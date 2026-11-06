@@ -8,11 +8,11 @@ error[FootprintsOverlap]: both halves of this fork may use the authority found h
 16 │ │   let found = fork (task : end) {
    │ │   ━━━ authority both halves of a fork hold, one to change: found `Cap {read, write}`
 17 │ │     c.write "notes" "task";
-18 │ │     close(task)
+18 │ │     close task
 19 │ │   };
 20 │ │   c.write "notes" "parent"
-21 │ │   close(found)
-   │ └──────────────┘ checked against `+U (Cap {read, write} -> -F [std.fs.Eff] Unit)`; while checking the body of this thunk
+21 │ │   close found
+   │ └─────────────┘ checked against `+U (Cap {read, write} -> -F [std.fs.Eff] Unit)`; while checking the body of this thunk
    │
    ├ note: `racing` is refused with FootprintsOverlap, as its expectation states
    ╰ help: give each fork half separate authority

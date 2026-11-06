@@ -164,7 +164,7 @@ unbuilt! {
     JointTelescope => "mutual_block.staged_after_first",
     /// The shared fork `fork !(…) { … } ;`.
     SharedFork => "fork_expression.shared",
-    /// The endpoint copy `dup(e)`.
+    /// The endpoint copy `dup e`.
     Dup => "dup_expression",
     /// The statement `acquire …;`.
     Acquire => "acquire_expression",

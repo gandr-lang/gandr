@@ -11,10 +11,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 20 │ │  │ }) -> [Partial] Unit =
    │ │  └─┘ the type it is checked against
 21 │ │  ┌   loop {
-22 │ │  ┌     offer(operator) {
+22 │ │  ┌     offer operator {
 23 │ │          | report => { continue }
    │ │                        ━━━━━━━━ its type does not convert: expected `rec t => &{report : ?Integer >> t, retire : ?Integer >> end}`, found `?Integer >> rec t => &{report : ?Integer >> t, retire : ?Integer >> end}`
-24 │ │          | retire => { let last = recv(operator); close(operator); break }
+24 │ │          | retire => { let last = recv operator; close operator; break }
 25 │ │  │     }
    │ │  └─────┘ checked against `-F [Partial] Unit`; while checking an arm of this offer
 26 │ │  │   }
@@ -37,10 +37,10 @@ error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in dif
 32 │ │      retire : ?Integer. end
 33 │ │    }) -> [Partial] Unit =
 34 │ │ ┌    loop {
-35 │ │ │┌     offer(operator) {
-36 │ │ ││       | report => { let next = recv(operator); continue }
+35 │ │ │┌     offer operator {
+36 │ │ ││       | report => { let next = recv operator; continue }
    │ │ ││                     ─── the arm it disagrees with
-37 │ │ ││       | retire => { let last = recv(operator); break }
+37 │ │ ││       | retire => { let last = recv operator; break }
    │ │ ││                     ━━━ an arm that leaves the endpoints otherwise
 38 │ │ ││     }
    │ │ │└─────┘ checked against `-F [Partial] Unit`; while checking an arm of this offer
@@ -68,7 +68,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 48 │ │┏   loop {
 49 │ │┃     match waiting
 50 │ │┃       | true => continue
-51 │ │┃       | false => offer(operator) {
+51 │ │┃       | false => offer operator {
    ┆ ┆┇
 55 │ │┃   }
    │ │┃   ╿

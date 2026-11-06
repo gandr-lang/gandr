@@ -1,4 +1,4 @@
 def raised() -> -F Integer =
   var xs = 0
-  (xs.first () as w { resume(w, 2) };
+  (xs.first () as w { resume w 2 };
   pure xs

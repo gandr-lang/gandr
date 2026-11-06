@@ -443,8 +443,15 @@ enum Placed
     /// The name of a held slot in an element read, for example `xs` in `let
     /// y = xs.#[1] ;`. The read lends the slot shared at the index. The slot
     /// is in the linear zone, so no core node holds its name. Thus the read
-    /// answers. The name that an `access` form lends also has no node.
+    /// answers. The name that an `access` form lends also has no node, and
+    /// neither has the view that `resume v e` or `abort v` ends.
     Lent,
+    /// The application a keyword head of two operands holds, `c v` in `send
+    /// c v`, and the label `l` in `select c l`: the lowering reads the
+    /// application's head and argument as the form's two operands, and the
+    /// label as a name, so no core node holds either, and the form answers
+    /// (#5556).
+    Operands,
     /// A count of the stratum an annotation on a head writes, `1` and `4`
     /// in `ua[1, 4](a, b, f, g)`: the degree and the catalogue bound the
     /// former reads off the literal's digits, never a term, so the call
@@ -1049,6 +1056,11 @@ fn gated(
             && children
                 .iter()
                 .any(|&child| matches!(spelled(Some(child)), "↦" | "|->"));
+        // The application a keyword head of two operands holds, `c v` in `send
+        // c v`, read as the head's two operands.
+        let keyword = parent.map_or("", |(_, label, ..)| label);
+        let operands =
+            applied && def.label == JUXTAPOSED && matches!(keyword, "send" | "select" | "resume");
         let mut opened = false;
         stack.extend(
             children
@@ -1090,6 +1102,12 @@ fn gated(
                         }
                         else if faced && opener != Some(child) {
                             placed.or(Some(Placed::Faced))
+                        }
+                        else if operands && keyword == "select" && Some(child) == last {
+                            placed.or(Some(Placed::Operands))
+                        }
+                        else if operands && keyword == "resume" && opener == Some(child) {
+                            placed.or(Some(Placed::Lent))
                         }
                         else {
                             placed
@@ -1193,8 +1211,9 @@ fn gated(
             && parent.is_some_and(|(_, label, headed, ..)| label == "[" && !headed);
         let lent = !melded
             && def.label == "identifier"
-            && slots.contains(text.trim())
-            && parent.is_some_and(|(_, label, headed, ..)| label == ".#[" && headed);
+            && ((slots.contains(text.trim())
+                && parent.is_some_and(|(_, label, headed, ..)| label == ".#[" && headed))
+                || parent.is_some_and(|(_, label, ..)| label == "abort"));
         let sized = !melded
             && def.label == "type_identifier"
             && text == "Size"
@@ -1328,6 +1347,7 @@ fn gated(
             .or_else(|| interfaced.then_some(Placed::Interface))
             .or_else(|| conditioned.then_some(Placed::Theory))
             .or_else(|| lent.then_some(Placed::Lent))
+            .or_else(|| operands.then_some(Placed::Operands))
             .or_else(|| implicit.then_some(Placed::Implicit))
             .or_else(|| read_back.then_some(Placed::ReadBack));
         gated.push((kind(grammar, tree, position, *def), span, placed));

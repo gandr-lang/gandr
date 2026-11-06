@@ -1,9 +1,9 @@
 def received() -> -F Unit {
-  let d = fork (c : !Integer >> end) { send(c, 1); close(c) };
-  recv(d);
-  close(d)
+  let d = fork (c : !Integer >> end) { send c 1; close c };
+  recv d;
+  close d
 }
 def forked() -> -F Unit {
-  fork (c : end) { close(c) };
+  fork (c : end) { close c };
   return *{}
 }

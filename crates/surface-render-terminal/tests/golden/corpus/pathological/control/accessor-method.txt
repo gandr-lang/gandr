@@ -73,10 +73,10 @@ error[HeldLent]: the held value is lent to an `access` here, which ends before i
 48 │ ┌ def raisedWhileRead() -> Integer =
 49 │ │   var xs = pair
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-50 │ │   access shared xs as v { (xs.first ()) as w { resume(w, 3) }; pure 0 }
-   │ │   ┬───────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─────────│
-   │ └───│───────────────────────│───────────────────────────────────────────┤
-   │     │                       │                                           checked against `() -> Integer`; while checking the body of this thunk
+50 │ │   access shared xs as v { (xs.first ()) as w { resume w 3 }; pure 0 }
+   │ │   ┬───────────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━─────────│
+   │ └───│───────────────────────│─────────────────────────────────────────┤
+   │     │                       │                                         checked against `() -> Integer`; while checking the body of this thunk
    │     │                       a held value lent to an access
    │     checked against `-F Integer`; while checking the body of this access
    │

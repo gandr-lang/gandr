@@ -210,8 +210,8 @@
 //! () in rest`, at the origin of `c`: the split types the value as the unit, so
 //! the checker refuses a discarded result of any other type at the statement,
 //! and the lowering needs no annotation of its own. A block with no last
-//! computation is refused at the block as `Arity` with zero. `let x = recv(c);`
-//! binds what `recv(c)` returns as any `let` of a computation does,
+//! computation is refused at the block as `Arity` with zero. `let x = recv c;`
+//! binds what `recv c` returns as any `let` of a computation does,
 //! `let d = fork (c : S) t;` runs `t` beside the rest of the block (the
 //! `lower::session` module), `var x = e;` holds `e` for the rest of the block
 //! (the `lower::access` module), and `let x at w = v;` opens the handle `v`
@@ -1911,7 +1911,7 @@ enum StatementBinding
         /// The name `c` the child's end binds.
         end: NodeIndex,
     },
-    /// `let x = recv(c);` receives on `c` into `x`'s linear binder, over the
+    /// `let x = recv c;` receives on `c` into `x`'s linear binder, over the
     /// rest of the block.
     Received
     {
@@ -11590,7 +11590,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   piece closes.
     /// - ensures: each `let x = c ;` statement reads its computation under the
     ///   frame the statements before it extended and binds `x` in a frame
-    ///   extending that one; `let x = recv(c);` binds `x` the same way, and
+    ///   extending that one; `let x = recv c;` binds `x` the same way, and
     ///   `fork (c : S) t as d ;` binds `d` and `var x = e ;` binds `x` linearly
     ///   over the rest of the block; the last computation, written bare or as a
     ///   statement `c ;` before the closing `}` and then recorded as stated,
@@ -31777,7 +31777,7 @@ mod tests
         assert_eq!(
             refusal_in(&pbg, &tree),
             LoweringRefusal::MalformedForm {
-                span: at(after("(xs"), after("2) }")),
+                span: at(after("(xs"), after("2 }")),
                 form: FormName::from(NamedKind("parenthesized_expression")),
                 fault: FormFault::Repaired(Repair::GhostClose(
                     gandr_surface_syntax::ClosingClass::Paren,

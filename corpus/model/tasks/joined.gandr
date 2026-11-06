@@ -12,11 +12,11 @@ import std.process;
 def joined() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Task.Join) {
-      send(task, Task.notes);
-      close(task)
+      send task Task.notes;
+      close task
     };
-    let text = recv(found);
-    close(found);
+    let text = recv found;
+    close found;
     c.exit 1
   } with {
     | pure(x) => pure x

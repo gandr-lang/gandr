@@ -1954,7 +1954,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 66 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.pipe", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "application_expression", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_model_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "fork_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_model_expression" => p.pure, "binary_expression.pipe" => p.pipe, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "application_expression" => p.application, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" => p.unary, "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == match name { "application_expression" => "call_expression", _ => name.split_once('.').map_or(name, |(stem, _)| stem) })))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 66 && added.iter().zip(["pure_expression", "return_expression", "become_expression", "bind_expression", "binary_expression.pipe", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.cons", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "application_expression", "unary_expression", "force_expression", "run_expression", "hold_expression", "splice_expression", "pack_model_expression", "instantiation_expression", "projection_expression", "record_selection_expression", "view_expression", "index_expression", "hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "fork_expression", "access_expression", "shell_block", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "resume_expression", "abort_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "pure_expression" | "return_expression" | "become_expression" | "bind_expression" | "pack_model_expression" => p.pure, "binary_expression.pipe" => p.pipe, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.cons" => p.cons, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "application_expression" => p.application, "unary_expression" | "force_expression" | "run_expression" | "hold_expression" | "splice_expression" | "send_expression" | "close_expression" | "select_expression" | "dup_expression" | "drop_expression" | "recv_expression" | "acquire_expression" | "release_expression" | "resume_expression" | "abort_expression" => p.unary, "instantiation_expression" | "projection_expression" | "record_selection_expression" | "view_expression" | "index_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == match name { "application_expression" => "call_expression", _ => name.split_once('.').map_or(name, |(stem, _)| stem) })))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -2251,6 +2251,9 @@ fn expressions(
         seq([h(s), t(TileLabel(".#[")), h(s), t(TileLabel("]"))]),
     ));
     primary_expressions(out, p.atom);
+    // The keyword heads come last, so a completion ranks each after the
+    // forms a source writes more often.
+    keyword_heads(out, p.unary);
 }
 
 /// Append shared lexical named-token forms used by term and pattern rules.
@@ -3361,13 +3364,14 @@ fn params() -> Regex
     seq([t(TileLabel("(")), opt(comma1(param())), t(TileLabel(")"))])
 }
 
-/// Append session-operation expression forms.
+/// Append the session forms that hold more than one operand: the offer, the
+/// migration and the fork. The actions of one operand are keyword heads
+/// ([`keyword_heads`]).
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends the eleven ordered session-expression forms at the
-///   supplied band: the receive, the reserved acquire and release, and the
-///   fork, whose `!` marks the shared fork, last.
+/// - ensures: appends the three ordered session forms at the supplied band: the
+///   offer, the migration, and the fork, whose `!` marks the shared fork, last.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3378,25 +3382,21 @@ fn params() -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 11 && added.iter().zip(["offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "fork_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 3 && added.iter().zip(["offer_expression", "migrate_expression", "fork_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
 fn session_expressions(
     out: &mut Vec<Rule>,
     p: Prec,
 )
 {
     let s = Sort::Expression;
+    // An offer holds its endpoint between its keyword and its arms, as a
+    // match holds its scrutinee: `offer c { | l => t }`.
     out.push(r(
         RuleName("offer_expression"),
         Provenance("offer_expression"),
         s,
         p,
-        seq([
-            t(TileLabel("offer")),
-            t(TileLabel("(")),
-            h(s),
-            t(TileLabel(")")),
-            arm_block(),
-        ]),
+        seq([t(TileLabel("offer")), h(s), arm_block()]),
     ));
     out.push(r(
         RuleName("migrate_expression"),
@@ -3409,108 +3409,6 @@ fn session_expressions(
             t(TileLabel("identifier")),
             t(TileLabel("]")),
             block(),
-        ]),
-    ));
-    out.push(r(
-        RuleName("send_expression"),
-        Provenance("send_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("send")),
-            t(TileLabel("(")),
-            h(s),
-            t(TileLabel(",")),
-            h(s),
-            t(TileLabel(")")),
-        ]),
-    ));
-    out.push(r(
-        RuleName("close_expression"),
-        Provenance("close_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("close")),
-            t(TileLabel("(")),
-            h(s),
-            t(TileLabel(")")),
-        ]),
-    ));
-    out.push(r(
-        RuleName("select_expression"),
-        Provenance("select_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("select")),
-            t(TileLabel("(")),
-            h(s),
-            t(TileLabel(",")),
-            t(TileLabel("identifier")),
-            t(TileLabel(")")),
-        ]),
-    ));
-    out.push(r(
-        RuleName("dup_expression"),
-        Provenance("dup_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("dup")),
-            t(TileLabel("(")),
-            h(s),
-            t(TileLabel(")")),
-        ]),
-    ));
-    out.push(r(
-        RuleName("drop_expression"),
-        Provenance("drop_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("drop")),
-            t(TileLabel("(")),
-            h(s),
-            t(TileLabel(")")),
-        ]),
-    ));
-    // A receive and the reserved shared-session forms each give one value
-    // that a `let` binds: `let x = recv(c);`.
-    out.push(r(
-        RuleName("recv_expression"),
-        Provenance("recv_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("recv")),
-            t(TileLabel("(")),
-            h(s),
-            t(TileLabel(")")),
-        ]),
-    ));
-    out.push(r(
-        RuleName("acquire_expression"),
-        Provenance("acquire_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("acquire")),
-            t(TileLabel("(")),
-            h(s),
-            t(TileLabel(")")),
-        ]),
-    ));
-    out.push(r(
-        RuleName("release_expression"),
-        Provenance("release_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("release")),
-            t(TileLabel("(")),
-            h(s),
-            t(TileLabel(")")),
         ]),
     ));
     // A fork gives its parent's end, which a `let` binds:
@@ -3534,24 +3432,21 @@ fn session_expressions(
     ));
 }
 
-/// Append the temporary-access expression forms: the access that lends a
-/// held value, or a place of it, to a view, and the two eliminators that end
-/// the view.
+/// Append the keyword heads: the session actions `send`, `close`, `select`,
+/// `dup`, `drop`, `recv`, `acquire` and `release`, and the two eliminators of
+/// a view, `resume` and `abort`.
 ///
-/// `access x as v { t } unwind { u }` names the held slot `x` and binds the
-/// view `v` over the body `t`; the optional `unwind` block runs when an
-/// `abort` ends the view and defaults to nothing. A mode word after `access`,
-/// `shared` or `exclusive`, names the mode; the grammar admits an `unwind`
-/// after either, and lowering refuses one after `shared`. A selector after the
-/// held name, `x.#[e]`, lends the place of `x` at `e`. `resume(v, e)` ends
-/// the view writing `e` back and `abort(v)` ends it with nothing written. Each
-/// opens on its own reserved lead and names its view by an identifier tile,
-/// so no expression hole competes with the name. The tree-sitter grammar has
-/// no temporary access, so the kinds are in `PBG_ONLY_KINDS`.
+/// Each head is its keyword before one operand at the supplied band, as
+/// `force` and `hold` are. Thus a head applies by juxtaposition: `recv c`,
+/// `close c`. A head of two operands holds their application as its one
+/// operand: `send c v` holds `c v`. The lowering reads the head of that
+/// application and its argument as the two operands. A receive gives one
+/// value, which a `let` binds: `let x = recv c`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: appends the three ordered access forms at the supplied band.
+/// - ensures: appends the ten ordered keyword heads at the supplied band, each
+///   its keyword before one expression operand.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3560,7 +3455,111 @@ fn session_expressions(
 ///   misplaced precedence bands.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 3 && added.iter().zip(["access_expression", "resume_expression", "abort_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip(["send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "resume_expression", "abort_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
+fn keyword_heads(
+    out: &mut Vec<Rule>,
+    p: Prec,
+)
+{
+    let s = Sort::Expression;
+    out.push(r(
+        RuleName("send_expression"),
+        Provenance("send_expression"),
+        s,
+        p,
+        seq([t(TileLabel("send")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("close_expression"),
+        Provenance("close_expression"),
+        s,
+        p,
+        seq([t(TileLabel("close")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("select_expression"),
+        Provenance("select_expression"),
+        s,
+        p,
+        seq([t(TileLabel("select")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("dup_expression"),
+        Provenance("dup_expression"),
+        s,
+        p,
+        seq([t(TileLabel("dup")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("drop_expression"),
+        Provenance("drop_expression"),
+        s,
+        p,
+        seq([t(TileLabel("drop")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("recv_expression"),
+        Provenance("recv_expression"),
+        s,
+        p,
+        seq([t(TileLabel("recv")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("acquire_expression"),
+        Provenance("acquire_expression"),
+        s,
+        p,
+        seq([t(TileLabel("acquire")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("release_expression"),
+        Provenance("release_expression"),
+        s,
+        p,
+        seq([t(TileLabel("release")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("resume_expression"),
+        Provenance("resume_expression"),
+        s,
+        p,
+        seq([t(TileLabel("resume")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("abort_expression"),
+        Provenance("abort_expression"),
+        s,
+        p,
+        seq([t(TileLabel("abort")), h(s)]),
+    ));
+}
+
+/// Append the temporary access, which lends a held value, or a place of it,
+/// to a view. The two eliminators that end the view are keyword heads
+/// ([`keyword_heads`]).
+///
+/// `access x as v { t } unwind { u }` names the held slot `x` and binds the
+/// view `v` over the body `t`; the optional `unwind` block runs when an
+/// `abort` ends the view and defaults to nothing. A mode word after `access`,
+/// `shared` or `exclusive`, names the mode; the grammar admits an `unwind`
+/// after either, and lowering refuses one after `shared`. A selector after the
+/// held name, `x.#[e]`, lends the place of `x` at `e`. `resume v e` ends the
+/// view writing `e` back and `abort v` ends it with nothing written. The
+/// tree-sitter grammar has no temporary access, so the kinds are in
+/// `PBG_ONLY_KINDS`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: appends the access form at the supplied band.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 1 && added.iter().zip(["access_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
 fn access_expressions(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -3581,32 +3580,6 @@ fn access_expressions(
             t(TileLabel("identifier")),
             block(),
             opt(seq([t(TileLabel("unwind")), block()])),
-        ]),
-    ));
-    out.push(r(
-        RuleName("resume_expression"),
-        Provenance("resume_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("resume")),
-            t(TileLabel("(")),
-            t(TileLabel("identifier")),
-            t(TileLabel(",")),
-            h(s),
-            t(TileLabel(")")),
-        ]),
-    ));
-    out.push(r(
-        RuleName("abort_expression"),
-        Provenance("abort_expression"),
-        s,
-        p,
-        seq([
-            t(TileLabel("abort")),
-            t(TileLabel("(")),
-            t(TileLabel("identifier")),
-            t(TileLabel(")")),
         ]),
     ));
 }
@@ -4202,7 +4175,7 @@ fn h(sort: Sort) -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 36 && added.iter().zip(["hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "recv_expression", "acquire_expression", "release_expression", "fork_expression", "access_expression", "resume_expression", "abort_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 26 && added.iter().zip(["hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "fork_expression", "access_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
 fn primary_expressions(
     out: &mut Vec<Rule>,
     p: Prec,

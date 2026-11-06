@@ -21,10 +21,10 @@ def regionEnded() -> Unit =
   var buf = Ring.read
   let buffer : (() -> Ring.Sqe) at buf = access shared buf as w { pure thunk { pure w } };
   let ring = fork (kernel : ?((() -> Ring.Sqe) at buf). !(Ring.Cqe). end) {
-    let sqe = recv(kernel);
-    send(kernel, Ring.done);
-    close(kernel)
+    let sqe = recv kernel;
+    send kernel Ring.done;
+    close kernel
   };
-  send(ring, buffer)
-  let cqe = recv(ring)
-  close(ring)
+  send ring buffer
+  let cqe = recv ring
+  close ring

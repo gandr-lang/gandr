@@ -1,8 +1,8 @@
 def probed(i : Integer) -> -F Integer {
   var xs : List(Integer) = #[1, 2];
-  access xs as v { resume(v, v) };
+  access xs as v { resume v v };
   access shared xs.#[i] as w { pure *{} };
-  access xs as u { abort(u) };
+  access xs as u { abort u };
   xs.#[0] += 1;
   let y = xs.#[i];
   return y

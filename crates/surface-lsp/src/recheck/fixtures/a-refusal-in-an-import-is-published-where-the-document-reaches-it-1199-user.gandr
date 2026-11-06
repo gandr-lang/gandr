@@ -2,8 +2,8 @@ import "./base.gandr";
 @[ checks ]
 def moved() -> -F Unit {
   let ring = fork (kernel : P.Moving) {
-    let held = recv(kernel);
-    close(kernel)
+    let held = recv kernel;
+    close kernel
   };
-  close(ring)
+  close ring
 }

@@ -1,6 +1,6 @@
 def other = 1;
-def parameter(n : Integer) -> -F Unit { close(n) }
-def literal(n : Integer) -> -F Unit { send(3, n) }
-def declared(n : Integer) -> -F Unit { select(other, go) }
-def unbound(n : Integer) -> -F Unit { close(missing) }
-def misspelt() -> -F Unit { let desk = fokr (seat : end) { close(seat) }; close(desk) }
+def parameter(n : Integer) -> -F Unit { close n }
+def literal(n : Integer) -> -F Unit { send 3 n }
+def declared(n : Integer) -> -F Unit { select other go }
+def unbound(n : Integer) -> -F Unit { close missing }
+def misspelt() -> -F Unit { let desk = fokr (seat : end) { close seat }; close desk }

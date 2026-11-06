@@ -5,7 +5,7 @@
 @[ refuses("ViewEscaped") ]
 def leak() -> Integer =
   var c = 0
-  access c as v { force thunk { resume(v, 1) } };
+  access c as v { force thunk { resume v 1 } };
   pure c
 
 /// A held value captured by a thunk would outlive its hold the same way. The

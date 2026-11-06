@@ -1,6 +1,6 @@
 def frozen() -> -F Integer {
   var c = 2;
-  access exclusive c as v { resume(v, v + 1) };
+  access exclusive c as v { resume v (v + 1) };
   access shared c as w { pure w }
 }
 def unwound() -> -F Unit {

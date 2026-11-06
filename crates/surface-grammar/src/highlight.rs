@@ -39,9 +39,9 @@
 //!   `rec`, `op`, `oper`, `obs`, `rule` or `data`; a binding after `as`, `for`,
 //!   `module`, `node` or `feed`; a parameter inside a parenthesised list or an
 //!   implicit `@[…]` binder; a member after `.`, inside a record `#{…}` or a
-//!   block of fields; a label for a world or a `select`'s label; a call for the
-//!   operation a circuit node applies; a number for a grade in `+U[…]` and
-//!   `thunk[…]`; an attribute or decoration name is `Other`.
+//!   block of fields; a label for a world; a call for the operation a circuit
+//!   node applies; a number for a grade in `+U[…]` and `thunk[…]`; an attribute
+//!   or decoration name is `Other`.
 //! - Every other tile — a bracket, a separator, a delimiter — is `Other`.
 //!
 //! Layout has no mold: a layout node opening with `//` or `/*` is a `Comment`,
@@ -227,7 +227,7 @@ enum Frame<'pbg>
 
 /// The bracket a mold stands inside, as its role reads it.
 #[derive(Clone, Copy)]
-enum Opener<'pbg>
+enum Opener
 {
     /// No bracket of the form.
     Form,
@@ -236,8 +236,6 @@ enum Opener<'pbg>
     {
         /// The opener's label.
         label: TileLabel,
-        /// The symbols that can stand left of the opener.
-        left: Side<'pbg>,
     },
 }
 
@@ -314,7 +312,7 @@ struct MoldFacts<'pbg>
     /// The symbols that can stand right of it.
     right: Side<'pbg>,
     /// The bracket of its form it stands inside.
-    opener: Opener<'pbg>,
+    opener: Opener,
 }
 
 /// What one layout token is, by the bytes it opens with.
@@ -397,13 +395,8 @@ impl RoleTable
             let right = Side(pbg.step(def.rctx, Dir::Right)?);
             let opener = match occurrence.enclosure {
                 Enclosure::Form => Opener::Form,
-                Enclosure::Bracket(opener) => {
-                    let opener_def = pbg.mold(opener)?;
-                    let opener_left = pbg.step(opener_def.rctx, Dir::Left)?;
-                    Opener::Bracket {
-                        label: TileLabel(opener_def.label),
-                        left: Side(opener_left),
-                    }
+                Enclosure::Bracket(opener) => Opener::Bracket {
+                    label: TileLabel(pbg.mold(opener)?.label),
                 },
             };
             roles.push(classify(&MoldFacts {
@@ -850,22 +843,22 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// # Specification
 /// - requires: `facts` is an `identifier` mold's.
 /// - ensures: the reference atom's identifier is a variable, and so is each
-///   name of a cons pattern's letter, `g` and `back(g)`, and the view a
-///   `resume` or an `abort` ends. A member: in a projection, after `.`, inside
-///   a record bracket `#{`, and inside a block `{` of fields or observations. A
-///   label: a world, where a handle's type names it and where a declaration
-///   declares it, and the label a `select` names. A site's offer writes its
-///   label as an operand, as a row does. A named instantiation argument and a
-///   staged type's stage are parameters, an as-pattern's name is a variable
-///   definition, and an attribute name is [`HlRole::Other`]. The operation a
-///   circuit node applies, between `:` and `(`, is a call. A name after a
-///   defining keyword is a function definition and after a binding keyword a
-///   variable definition, either one a parameter inside a parenthesised list.
-///   Inside `@[…]` a binder before `:` is a parameter and any other name an
-///   attribute; inside `[…]` a grade word is a number, a migration's world a
-///   label, and a decoration [`HlRole::Other`]; a name an import's list names
-///   is a variable, and every other identifier inside a parenthesised list is a
-///   parameter. An identifier none of these reach is a variable.
+///   name of a cons pattern's letter, `g` and `back(g)`. A member: in a
+///   projection, after `.`, inside a record bracket `#{`, and inside a block
+///   `{` of fields or observations. A label: a world, where a handle's type
+///   names it and where a declaration declares it. A `select` and a site's
+///   offer write their label as an operand, as a row does. A named
+///   instantiation argument and a staged type's stage are parameters, an
+///   as-pattern's name is a variable definition, and an attribute name is
+///   [`HlRole::Other`]. The operation a circuit node applies, between `:` and
+///   `(`, is a call. A name after a defining keyword is a function definition
+///   and after a binding keyword a variable definition, either one a parameter
+///   inside a parenthesised list. Inside `@[…]` a binder before `:` is a
+///   parameter and any other name an attribute; inside `[…]` a grade word is a
+///   number, a migration's world a label, and a decoration [`HlRole::Other`]; a
+///   name an import's list names is a variable, and every other identifier
+///   inside a parenthesised list is a parameter. An identifier none of these
+///   reach is a variable.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -877,7 +870,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
 #[spec(requires: facts.label.0 == "identifier", ensures: |ret| ret == match facts.kind.0 {
-    "identifier" | "cons_pattern" | "resume_expression" | "abort_expression" => HlRole::Variable,
+    "identifier" | "cons_pattern" => HlRole::Variable,
     "projection_expression" => HlRole::Member,
     "at_type" | "world_declaration" => HlRole::Label,
     "attribute_block" => HlRole::Other,
@@ -889,13 +882,12 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
     _ if BINDERS.iter().any(|&label| facts.left.crosses(TileLabel(label)).0) => if matches!(facts.opener, Opener::Bracket { label: TileLabel("("), .. }) { HlRole::VariableParam } else { HlRole::VariableDef },
     _ => match facts.opener {
         Opener::Form => HlRole::Variable,
-        Opener::Bracket { label, left } => match label.0 {
+        Opener::Bracket { label, .. } => match label.0 {
             "*{" | "+{" | "&{" | "{" => HlRole::Member,
             "@[" | "[" if facts.right.crosses(TileLabel(":")).0 => HlRole::VariableParam,
             "[" if matches!(facts.kind.0, "u_type" | "thunk_expression") => HlRole::Number,
             "[" if facts.kind.0 == "migrate_expression" => HlRole::Label,
             "@[" | "@![" | "[" => HlRole::Other,
-            "(" if left.crosses(TileLabel("select")).0 => HlRole::Label,
             "(" if facts.kind.0 == "import_declaration" => HlRole::Variable,
             "(" => HlRole::VariableParam,
             _ => HlRole::Variable,
@@ -906,7 +898,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
 {
     let kind = facts.kind.0;
     match kind {
-        "identifier" | "cons_pattern" | "resume_expression" | "abort_expression" => {
+        "identifier" | "cons_pattern" => {
             return HlRole::Variable;
         },
         "projection_expression" => return HlRole::Member,
@@ -946,7 +938,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
     }
     match facts.opener {
         Opener::Form => HlRole::Variable,
-        Opener::Bracket { label, left } => match label.0 {
+        Opener::Bracket { label, .. } => match label.0 {
             "*{" | "+{" | "&{" | "{" => HlRole::Member,
             "@[" | "[" if right_crosses(":") => HlRole::VariableParam,
             "@[" | "@![" => HlRole::Other,
@@ -955,7 +947,6 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
                 "migrate_expression" => HlRole::Label,
                 _ => HlRole::Other,
             },
-            "(" if bool::from(left.crosses(TileLabel("select"))) => HlRole::Label,
             "(" if kind == "import_declaration" => HlRole::Variable,
             "(" => HlRole::VariableParam,
             _ => HlRole::Variable,
@@ -1220,7 +1211,6 @@ mod tests
             ("telescope_expression", "|", None, HlRole::Member),
             ("glob_expression", "{", None, HlRole::Member),
             ("codata_declaration", "{", None, HlRole::Member),
-            ("select_expression", ",", None, HlRole::Label),
             ("at_type", "at", None, HlRole::Label),
             ("world_declaration", "world", None, HlRole::Label),
             ("migrate_expression", "[", None, HlRole::Label),
@@ -1370,16 +1360,11 @@ mod tests
         let opening = [RCtxStep {
             crossed: StepSym::Tile("("),
         }];
-        let selection = [RCtxStep {
-            crossed: StepSym::Tile("select"),
-        }];
         let parens = Opener::Bracket {
             label: TileLabel("("),
-            left: Side(&[]),
         };
         let record = Opener::Bracket {
             label: TileLabel("*{"),
-            left: Side(&[]),
         };
         for kind in ["list_operator", "redirection_operator"] {
             for label in ["identifier", "number", "+", "unknown"] {
@@ -1467,16 +1452,6 @@ mod tests
                 HlRole::VariableDef,
             ),
             ("custom", Side(&[]), Side(&[]), record, HlRole::Member),
-            (
-                "custom",
-                Side(&[]),
-                Side(&[]),
-                Opener::Bracket {
-                    label: TileLabel("("),
-                    left: Side(&selection),
-                },
-                HlRole::Label,
-            ),
             (
                 "custom",
                 Side(&[]),

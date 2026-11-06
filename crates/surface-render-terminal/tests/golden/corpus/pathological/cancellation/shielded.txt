@@ -1,18 +1,18 @@
 error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an effect
-   ╭▸ corpus/pathological/cancellation/shielded.gandr:27:43
+   ╭▸ corpus/pathological/cancellation/shielded.gandr:27:42
    │
 14 │ ┌  def shielded() -> Unit =
 15 │ │┌   handle c : std.process.Exit.Eff {
 16 │ ││     let found = fork (task : Cancel.Join) {
-17 │ ││       send(task, Cancel.notes);
-18 │ ││       close(task)
+17 │ ││       send task Cancel.notes;
+18 │ ││       close task
    ┆ ┆┆
 26 │ ││       var n = 0;
    │ ││       ─── checked against `-F Unit`; while checking the scope of this hold
-27 │ ││       access n as v { abort(v) } unwind { abandon k }
-   │ ││       ┬───────────────────────────────────┯━━━━━━━━──
-   │ ││       │                                   │
-   │ ││       │                                   an effect in an unwind
+27 │ ││       access n as v { abort v } unwind { abandon k }
+   │ ││       ┬──────────────────────────────────┯━━━━━━━━──
+   │ ││       │                                  │
+   │ ││       │                                  an effect in an unwind
    │ ││       checked against `-F Unit`; while checking the unwind of this access under the empty row
 28 │ ││     }
 29 │ ││   }

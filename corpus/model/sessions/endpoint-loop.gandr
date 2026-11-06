@@ -21,9 +21,9 @@ def follow(operator : mu open. &{
   retire : ?Integer. end
 }) -> Unit =
   loop {
-    offer(operator) {
-      | report => { let next = recv(operator); continue }
-      | retire => { let last = recv(operator); close(operator); break }
+    offer operator {
+      | report => { let next = recv operator; continue }
+      | retire => { let last = recv operator; close operator; break }
     }
   }
 
@@ -35,9 +35,9 @@ def tally(operator : mu open. &{
 }) -> Integer =
   var seen = 0
   loop {
-    offer(operator) {
-      | report => { let next = recv(operator); access seen as v { resume(v, v + 1) }; continue }
-      | retire => { let last = recv(operator); close(operator); break }
+    offer operator {
+      | report => { let next = recv operator; access seen as v { resume v (v + 1) }; continue }
+      | retire => { let last = recv operator; close operator; break }
     }
   };
   pure seen
@@ -49,10 +49,10 @@ def followed() -> Unit =
     report : ?Integer. open,
     retire : ?Integer. end
   }) { follow operator };
-  select(seat, report)
-  send(seat, 1)
-  select(seat, report)
-  send(seat, 2)
-  select(seat, retire)
-  send(seat, 3)
-  close(seat)
+  select seat report
+  send seat 1
+  select seat report
+  send seat 2
+  select seat retire
+  send seat 3
+  close seat

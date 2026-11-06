@@ -19,7 +19,7 @@ def read_held() -> Integer =
 @[ refuses("HeldCopied") ]
 def read_twice() -> Unit =
   var[1] c = 3
-  access c as v { resume(v, v + v) }
+  access c as v { resume v (v + v) }
 
 /// A read through a shared view copies the value.
 @[ refuses("HeldCopied") ]
@@ -32,4 +32,4 @@ def read_shared() -> Integer =
 @[ refuses("ViewMoved") ]
 def moved_then_aborted() -> Integer =
   var[1] c = 0
-  access c as v { let n = succ v; abort(v); pure n } unwind { pure *{} }
+  access c as v { let n = succ v; abort v; pure n } unwind { pure *{} }

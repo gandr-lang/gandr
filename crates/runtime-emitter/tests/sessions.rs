@@ -87,8 +87,8 @@ enum Echoed
     Selecting(FieldLabel),
 }
 
-/// `let x = recv(c); send(c, x) ; close(c)` with `c` the innermost linear
-/// binder, `select(c, l)` before the send when `echoed` selects `l`.
+/// `let x = recv c; send c x ; close c` with `c` the innermost linear
+/// binder, `select c l` before the send when `echoed` selects `l`.
 ///
 /// # Specification
 /// trivial.
@@ -623,7 +623,7 @@ fn an_abandoned_end_s_waiting_peer_is_abandoned()
     let one = integer(&mut core, Digits("1"));
     let two = integer(&mut core, Digits("2"));
     let seven = integer(&mut core, Digits("7"));
-    // The child: `send(c, 1); let x = recv(c); close(c)`.
+    // The child: `send c 1; let x = recv c; close c`.
     let closed = core.computation_session(SessionAction::Close {
         endpoint: end(Linear(1)),
     });
@@ -706,7 +706,7 @@ fn a_root_whose_peer_cancels_is_stuck_cancelled_at_its_receive()
     let protocol = core.value_type_unit();
     let two = integer(&mut core, Digits("2"));
     let unit = core.value_unit();
-    // The child, its end in its scope: `exit; send(c, 2); close(c)`, the exit
+    // The child, its end in its scope: `exit; send c 2; close c`, the exit
     // abandoning the rest.
     let closed = core.computation_session(SessionAction::Close {
         endpoint: end(Linear(0)),
@@ -721,7 +721,7 @@ fn a_root_whose_peer_cancels_is_stuck_cancelled_at_its_receive()
     );
     let rest = exited(&mut core, sent);
     let child = abandoning(&mut core, rest, unit);
-    // The root: `let n = recv(e); close(e); return n`.
+    // The root: `let n = recv e; close e; return n`.
     let n = core.value_variable(Zone::Linear, end(Linear(0)));
     let answered = core.computation_return(n);
     let closed = then(

@@ -34,7 +34,7 @@ def pushedUnheld(t : Repr) -> -F Unit =
 @[ refuses("HeldLent") ]
 def readWhileLent() -> Unit =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
-  access s as v { let n = s.len (); resume(v, v) }
+  access s as v { let n = s.len (); resume v v }
 
 /// A push onto a string a read lends: the push would write the string the
 /// read's view still reads.

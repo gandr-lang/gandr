@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x7451f8b6c769a187`
+- Grammar fingerprint: `0x0977fc3e58291d65`
 - Rules: 172 — 171 committed, 1 internal
-- Molds: 3042
+- Molds: 3014
 - Attributes: 18
 
 ## Reading a form
@@ -119,21 +119,21 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`telescope_expression`](../corpus/ledger/syntax/telescope-expression.gandr) | `*{ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ‖ *{ ⦅ } ‖ EXPRESSION ⦅ = EXPRESSION ⦆? ⦅ \| ‹identifier› = EXPRESSION ⦅ , ‹identifier› = EXPRESSION ⦆* ⦅ , ⦆? } ‖ ⦅ , EXPRESSION ⦅ = EXPRESSION ⦆? ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `telescope_expression` * | admitted | Other, Member, Number, Operator |
 | [`labelled_sum_expression`](../corpus/ledger/syntax/labelled-sum-expression.gandr) | `+{ . ⦅ ‹identifier› ‖ ‹number› ⦆ = EXPRESSION }` | `expression.atom` | `labelled_sum_expression` * | admitted | Other, Member, Number |
 | [`lazy_record_expression`](../corpus/ledger/syntax/lazy-record-expression.gandr) | `&{ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦅ , . ⦅ ‹identifier› ‖ ‹number› ⦆ => EXPRESSION ⦆* ⦅ , ⦆? ⦆? }` | `expression.atom` | `lazy_record_expression` * | admitted | Other, Member, Number, Operator |
-| [`offer_expression`](../corpus/ledger/syntax/offer-expression.gandr) | `offer ( EXPRESSION ) { \| PATTERN => EXPRESSION ⦅ \| PATTERN => EXPRESSION ⦆* }` | `expression.atom` | `offer_expression` | admitted | Keyword, Other, Operator |
+| [`offer_expression`](../corpus/ledger/syntax/offer-expression.gandr) | `offer EXPRESSION { \| PATTERN => EXPRESSION ⦅ \| PATTERN => EXPRESSION ⦆* }` | `expression.atom` | `offer_expression` | admitted | Keyword, Other, Operator |
 | [`migrate_expression`](../corpus/ledger/syntax/migrate-expression.gandr) | `migrate [ ‹identifier› ] BLOCK` | `expression.atom` | `migrate_expression` | admitted | Keyword, Other, Label |
-| [`send_expression`](../corpus/ledger/syntax/send-expression.gandr) | `send ( EXPRESSION , EXPRESSION )` | `expression.atom` | `send_expression` | admitted | Keyword, Other |
-| [`close_expression`](../corpus/ledger/syntax/close-expression.gandr) | `close ( EXPRESSION )` | `expression.atom` | `close_expression` | admitted | Keyword, Other |
-| [`select_expression`](../corpus/ledger/syntax/select-expression.gandr) | `select ( EXPRESSION , ‹identifier› )` | `expression.atom` | `select_expression` | admitted | Keyword, Other, Label |
-| [`dup_expression`](../corpus/ledger/syntax/dup-expression.gandr) | `dup ( EXPRESSION )` | `expression.atom` | `dup_expression` | reserved | Keyword, Other |
-| [`drop_expression`](../corpus/ledger/syntax/drop-expression.gandr) | `drop ( EXPRESSION )` | `expression.atom` | `drop_expression` | admitted | Keyword, Other |
-| [`recv_expression`](../corpus/ledger/syntax/recv-expression.gandr) | `recv ( EXPRESSION )` | `expression.atom` | `recv_expression` * | admitted | Keyword, Other |
-| [`acquire_expression`](../corpus/ledger/syntax/acquire-expression.gandr) | `acquire ( EXPRESSION )` | `expression.atom` | `acquire_expression` * | reserved | Keyword, Other |
-| [`release_expression`](../corpus/ledger/syntax/release-expression.gandr) | `release ( EXPRESSION )` | `expression.atom` | `release_expression` * | reserved | Keyword, Other |
 | [`fork_expression`](../corpus/ledger/syntax/fork-expression.gandr) | `fork ⦅ ! ⦆? ( ‹identifier› : TYPE ) EXPRESSION` | `expression.atom` | `fork_expression` * | admitted | Keyword, Other, VariableParam |
 | [`access_expression`](../corpus/ledger/syntax/access-expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› ⦅ .#[ EXPRESSION ] ⦆? as ‹identifier› BLOCK ⦅ unwind BLOCK ⦆?` | `expression.atom` | `access_expression` * | admitted | Keyword, Other, Variable, VariableDef |
-| [`resume_expression`](../corpus/ledger/syntax/resume-expression.gandr) | `resume ( ‹identifier› , EXPRESSION )` | `expression.atom` | `resume_expression` * | admitted | Keyword, Other, Variable |
-| [`abort_expression`](../corpus/ledger/syntax/abort-expression.gandr) | `abort ( ‹identifier› )` | `expression.atom` | `abort_expression` * | admitted | Keyword, Other, Variable |
 | [`shell_block`](../corpus/ledger/syntax/shell-block.gandr) | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | unadmitted | Other |
+| [`send_expression`](../corpus/ledger/syntax/send-expression.gandr) | `send EXPRESSION` | `expression.unary` | `send_expression` | admitted | Keyword |
+| [`close_expression`](../corpus/ledger/syntax/close-expression.gandr) | `close EXPRESSION` | `expression.unary` | `close_expression` | admitted | Keyword |
+| [`select_expression`](../corpus/ledger/syntax/select-expression.gandr) | `select EXPRESSION` | `expression.unary` | `select_expression` | admitted | Keyword |
+| [`dup_expression`](../corpus/ledger/syntax/dup-expression.gandr) | `dup EXPRESSION` | `expression.unary` | `dup_expression` | reserved | Keyword |
+| [`drop_expression`](../corpus/ledger/syntax/drop-expression.gandr) | `drop EXPRESSION` | `expression.unary` | `drop_expression` | admitted | Keyword |
+| [`recv_expression`](../corpus/ledger/syntax/recv-expression.gandr) | `recv EXPRESSION` | `expression.unary` | `recv_expression` * | admitted | Keyword |
+| [`acquire_expression`](../corpus/ledger/syntax/acquire-expression.gandr) | `acquire EXPRESSION` | `expression.unary` | `acquire_expression` * | reserved | Keyword |
+| [`release_expression`](../corpus/ledger/syntax/release-expression.gandr) | `release EXPRESSION` | `expression.unary` | `release_expression` * | reserved | Keyword |
+| [`resume_expression`](../corpus/ledger/syntax/resume-expression.gandr) | `resume EXPRESSION` | `expression.unary` | `resume_expression` * | admitted | Keyword |
+| [`abort_expression`](../corpus/ledger/syntax/abort-expression.gandr) | `abort EXPRESSION` | `expression.unary` | `abort_expression` * | admitted | Keyword |
 | [`identifier.expression`](../corpus/ledger/syntax/identifier.expression.gandr) | `‹identifier›` | `expression.atom` | `identifier` | admitted | Variable |
 | [`constructor.expression`](../corpus/ledger/syntax/constructor.expression.gandr) | `‹constructor›` | `expression.atom` | `constructor` | admitted | Constructor |
 | [`boolean.expression`](../corpus/ledger/syntax/boolean.expression.gandr) | `true ‖ false` | `expression.atom` | `boolean` | admitted | Boolean |
@@ -358,21 +358,21 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `telescope_expression` | expression | 27 | `*{` | — | 12 |
 | `labelled_sum_expression` | expression | 6 | `+{` | — | 0 |
 | `lazy_record_expression` | expression | 12 | `&{` | — | 2 |
-| `offer_expression` | expression | 9 | `offer` | — | 0 |
+| `offer_expression` | expression | 7 | `offer` | — | 0 |
 | `migrate_expression` | expression | 4 | `migrate` | — | 0 |
-| `send_expression` | expression | 4 | `send` | — | 0 |
-| `close_expression` | expression | 3 | `close` | — | 0 |
-| `select_expression` | expression | 5 | `select` | — | 0 |
-| `dup_expression` | expression | 3 | `dup` | — | 0 |
-| `drop_expression` | expression | 3 | `drop` | — | 0 |
-| `recv_expression` | expression | 3 | `recv` | — | 0 |
-| `acquire_expression` | expression | 3 | `acquire` | — | 0 |
-| `release_expression` | expression | 3 | `release` | — | 0 |
 | `fork_expression` | expression | 6 | `fork` | — | 0 |
 | `access_expression` | expression | 9 | `access` | — | 0 |
-| `resume_expression` | expression | 5 | `resume` | — | 0 |
-| `abort_expression` | expression | 4 | `abort` | — | 0 |
 | `shell_block` | expression | 2 | `#!{` | — | 0 |
+| `send_expression` | expression | 1 | `send` | — | 0 |
+| `close_expression` | expression | 1 | `close` | — | 0 |
+| `select_expression` | expression | 1 | `select` | — | 0 |
+| `dup_expression` | expression | 1 | `dup` | — | 0 |
+| `drop_expression` | expression | 1 | `drop` | — | 0 |
+| `recv_expression` | expression | 1 | `recv` | — | 0 |
+| `acquire_expression` | expression | 1 | `acquire` | — | 0 |
+| `release_expression` | expression | 1 | `release` | — | 0 |
+| `resume_expression` | expression | 1 | `resume` | — | 0 |
+| `abort_expression` | expression | 1 | `abort` | — | 0 |
 | `identifier.pattern` | pattern | 1 | `identifier` | `cons_pattern` | 0 |
 | `identifier.expression` | expression | 1 | `identifier` | — | 0 |
 | `constructor.expression` | expression | 1 | `constructor` | — | 0 |
@@ -449,13 +449,13 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 409 | 60 | 3 |
-| `,` | 275 | 49 | 0 |
+| `identifier` | 406 | 57 | 3 |
+| `,` | 272 | 46 | 0 |
 | `:` | 248 | 32 | 0 |
 | `type_identifier` | 203 | 33 | 2 |
-| `)` | 143 | 44 | 0 |
 | `=` | 143 | 37 | 0 |
-| `(` | 139 | 43 | 5 |
+| `)` | 132 | 33 | 0 |
+| `(` | 128 | 32 | 5 |
 | `;` | 127 | 26 | 1 |
 | `type_variable` | 93 | 15 | 3 |
 | `.` | 92 | 45 | 3 |

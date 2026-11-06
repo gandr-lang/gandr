@@ -14820,10 +14820,10 @@ mod tests
         );
     }
 
-    /// A statement outside any block, an expression and a byte no label
-    /// molds, standing among declarations, each refuse themselves alone as a
-    /// held slot no name table enters; the declarations around them are
-    /// collected as written (#1058).
+    /// An arm outside any match, an expression and a byte no label molds,
+    /// standing among declarations, each refuse themselves alone as a held
+    /// slot no name table enters; the declarations around them are collected
+    /// as written (#1058).
     #[test]
     fn a_stray_root_child_refuses_itself_alone_1058()
     {
@@ -14858,7 +14858,7 @@ mod tests
                     Maybe::Present(FailureClass::MalformedSource)
                 ),
                 (
-                    SurfaceName::from("release"),
+                    SurfaceName::from("|"),
                     Role::Held,
                     Maybe::Present(FailureClass::MalformedSource)
                 ),

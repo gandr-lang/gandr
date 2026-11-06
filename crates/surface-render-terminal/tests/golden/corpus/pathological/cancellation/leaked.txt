@@ -4,8 +4,8 @@ error[ContinuationCaptured]: the continuation is used inside a thunk, which may 
 15 │ ┌  def leaked() -> Unit =
 16 │ │┌   handle c : std.process.Exit.Eff {
 17 │ ││     let found = fork (task : Cancel.Join) {
-18 │ ││       send(task, Cancel.notes);
-19 │ ││       close(task)
+18 │ ││       send task Cancel.notes;
+19 │ ││       close task
    ┆ ┆┆
 26 │ ││     | oper exit(code, k) => force thunk { k *{} }
    │ ││                             ┬─────┯━━━━━━━━━━━━━━

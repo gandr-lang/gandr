@@ -1,5 +1,5 @@
 def done() -> -F Unit {
   var c = 0;
-  access c as v { abort(v) } }
+  access c as v { abort v } }
 def next = 1 ;
 }

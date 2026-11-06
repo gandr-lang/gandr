@@ -32,12 +32,12 @@ def twice(n : Integer) -> Integer =
 def in_turn() -> Integer =
   var c = 4
   let n = access shared c as w { twice w };
-  access c as v { resume(v, n) };
+  access c as v { resume v n };
   pure c
 
 /// `exclusive` spells the mode an access takes when it names none.
 @[ runs("2") ]
 def spelled() -> Integer =
   var c = 1
-  access exclusive c as v { resume(v, v + 1) } unwind { pure *{} };
+  access exclusive c as v { resume v (v + 1) } unwind { pure *{} };
   pure c

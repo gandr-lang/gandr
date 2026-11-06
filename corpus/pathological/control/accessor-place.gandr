@@ -17,14 +17,14 @@ def unindexed() -> Integer =
 def index_frozen() -> Unit =
   var i = 0
   var xs = pair
-  access shared xs.#[i] as w { access i as v { resume(v, w) } }
+  access shared xs.#[i] as w { access i as v { resume v w } }
 
 /// Two views at distinct indices of one list: the list is lent as a whole, so
 /// an exclusive view of one element excludes a view of another.
 @[ refuses("HeldLent") ]
 def two_places() -> Unit =
   var xs = pair
-  access xs.#[0] as v { access xs.#[1] as w { resume(w, v) }; resume(v, 0) }
+  access xs.#[0] as v { access xs.#[1] as w { resume w v }; resume v 0 }
 
 /// An access at a place with a bare bracket. The access takes its place
 /// through the selector `.#[ … ]`.

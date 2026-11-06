@@ -1,6 +1,6 @@
 /// `SessionMismatch`: an action the endpoint's session type does not admit.
 @[ refuses("SessionMismatch") ]
 def desk_receives_first() -> -F Unit =
-  let desk = fork (seat : ?String. end) { let task = recv(seat); close(seat) };
-  let task = recv(desk)
-  close(desk)
+  let desk = fork (seat : ?String. end) { let task = recv seat; close seat };
+  let task = recv desk
+  close desk

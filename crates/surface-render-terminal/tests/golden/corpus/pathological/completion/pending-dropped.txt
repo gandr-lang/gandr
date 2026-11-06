@@ -7,10 +7,10 @@ error[LinearResidue]: the endpoint is not closed before the fork half or receive
    │ │   │
    │ │   an endpoint left unconsumed: found `?(Ring.Cqe) >> end`
    │ │   the endpoint was opened by this fork
-12 │ │     let sqe = recv(kernel);
-13 │ │     send(kernel, Ring.done);
+12 │ │     let sqe = recv kernel;
+13 │ │     send kernel Ring.done;
    ┆ ┆
-16 │ │   send(ring, Ring.read)
+16 │ │   send ring Ring.read
 17 │ │   pure *{}
    │ └──────────┘ checked against `() -> Unit`; while checking the body of this thunk
    │

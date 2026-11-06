@@ -1,6 +1,6 @@
 //! Temporary access. `var c = e;` keeps a value for the rest of a block, and
 //! `access c as v { … }` lends it to the view `v`, which the body ends exactly
-//! once: `resume(v, e)` writes `e` back, `abort(v)` leaves the held value as it
+//! once: `resume v e` writes `e` back, `abort v` leaves the held value as it
 //! was and runs the access's `unwind` clause instead. The unwind runs under the
 //! empty row, and an access with none unwinds by doing nothing. The loan
 //! follows Rust's mutable borrow, ended once [Rust-reference], § Borrow
@@ -20,8 +20,8 @@ pub def succ(n : Integer) -> Integer =
 @[ runs("1") ]
 def counter() -> Integer =
   var c = 0
-  access c as v { let n = succ v; resume(v, n) };
-  access c as v { abort(v) } unwind { pure *{} };
+  access c as v { let n = succ v; resume v n };
+  access c as v { abort v } unwind { pure *{} };
   pure c
 
 /// The view reads the value it lends, so each write-back sees the one before
@@ -29,16 +29,16 @@ def counter() -> Integer =
 @[ runs("12") ]
 def doubled() -> Integer =
   var c = 3
-  access c as v { resume(v, v + v) };
-  access c as v { resume(v, v + 6) };
+  access c as v { resume v (v + v) };
+  access c as v { resume v (v + 6) };
   pure c
 
 /// A held value beside a parameter: the write-back reads both, and an access
 /// that aborts without an `unwind` clause unwinds by doing nothing.
 def add_to(n : Integer) -> Integer =
   var c = 1
-  access c as v { resume(v, v + n) };
-  access c as v { abort(v) };
+  access c as v { resume v (v + n) };
+  access c as v { abort v };
   pure c
 
 /// One held, five added.

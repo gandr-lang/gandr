@@ -9,9 +9,9 @@ import "../../model/completion/ring-base.gandr";
 @[ refuses("LinearResidue") ]
 def pendingDropped() -> Unit =
   let ring = fork (kernel : Ring.Submission) {
-    let sqe = recv(kernel);
-    send(kernel, Ring.done);
-    close(kernel)
+    let sqe = recv kernel;
+    send kernel Ring.done;
+    close kernel
   };
-  send(ring, Ring.read)
+  send ring Ring.read
   pure *{}

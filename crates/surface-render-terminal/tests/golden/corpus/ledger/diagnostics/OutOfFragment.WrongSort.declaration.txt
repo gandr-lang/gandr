@@ -1,8 +1,8 @@
-error[OutOfFragment.WrongSort.declaration]: a release expression cannot stand where a declaration is expected
+error[OutOfFragment.WrongSort.declaration]: a lambda expression cannot stand where a declaration is expected
   ╭▸ corpus/ledger/diagnostics/OutOfFragment.WrongSort.declaration.gandr:4:1
   │
-4 │ release x ;
-  │ ━━━━━━━━━━━ a form of another sort than this position takes
+4 │ | x => 1 ;
+  │ ━━━━━━━━━━ a form of another sort than this position takes
   │
-  ├ note: `release` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
+  ├ note: `|` is refused with OutOfFragment.WrongSort.declaration, as its expectation states
   ╰ help: write a declaration in this position

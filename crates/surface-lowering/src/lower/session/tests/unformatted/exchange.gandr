@@ -1,23 +1,23 @@
 def exchange(n : Integer) -> -F Unit {
 let peer = fork (c : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !String >> end }) {
-let task = recv(c);
-select(c, report);
-send(c, "progress");
-offer(c) {
-| next => { select(c, handoff); send(c, "notes"); close(c) }
-| retire => close(c)
+let task = recv c;
+select c report;
+send c "progress";
+offer c {
+| next => { select c handoff; send c "notes"; close c }
+| retire => close c
 }
 };
-send(peer, "task");
-offer(peer) {
+send peer "task";
+offer peer {
 | report => {
-let first = recv(peer);
-select(peer, next);
-offer(peer) {
-| report => { let second = recv(peer); select(peer, retire); close(peer) }
-| handoff => { let notes = recv(peer); close(peer) }
+let first = recv peer;
+select peer next;
+offer peer {
+| report => { let second = recv peer; select peer retire; close peer }
+| handoff => { let notes = recv peer; close peer }
 }
 }
-| handoff => { let notes = recv(peer); close(peer) }
+| handoff => { let notes = recv peer; close peer }
 }
 }

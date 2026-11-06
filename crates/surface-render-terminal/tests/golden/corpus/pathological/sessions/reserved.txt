@@ -1,8 +1,8 @@
 error[OutOfFragment.fork_expression.shared]: the fork expression is reserved, and not available yet
   ╭▸ corpus/pathological/sessions/reserved.gandr:3:3
   │
-3 │   fork !(seat : end) { close(seat) };
-  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a reserved form
+3 │   fork !(seat : end) { close seat };
+  │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ a reserved form
   │
   ├ note: `shared_fork` is refused with OutOfFragment.fork_expression.shared, as its expectation states
   ╰ note: tracked by #1501 <https://github.com/gandr-lang/gandr/issues/1501>
@@ -10,8 +10,8 @@ error[OutOfFragment.fork_expression.shared]: the fork expression is reserved, an
 error[OutOfFragment.dup_expression]: the dup expression is reserved, and not available yet
   ╭▸ corpus/pathological/sessions/reserved.gandr:9:3
   │
-9 │   dup(desk)
-  │   ━━━━━━━━━ a reserved form
+9 │   dup desk
+  │   ━━━━━━━━ a reserved form
   │
   ├ note: `duplicated` is refused with OutOfFragment.dup_expression, as its expectation states
   ╰ note: tracked by #1501 <https://github.com/gandr-lang/gandr/issues/1501>
@@ -19,8 +19,8 @@ error[OutOfFragment.dup_expression]: the dup expression is reserved, and not ava
 error[OutOfFragment.acquire_expression]: the acquire expression is reserved, and not available yet
    ╭▸ corpus/pathological/sessions/reserved.gandr:14:14
    │
-14 │   let seat = acquire(rounds)
-   │              ━━━━━━━━━━━━━━━ a reserved form
+14 │   let seat = acquire rounds
+   │              ━━━━━━━━━━━━━━ a reserved form
    │
    ├ note: `acquired` is refused with OutOfFragment.acquire_expression, as its expectation states
    ╰ note: tracked by #1501 <https://github.com/gandr-lang/gandr/issues/1501>
@@ -28,8 +28,8 @@ error[OutOfFragment.acquire_expression]: the acquire expression is reserved, and
 error[OutOfFragment.release_expression]: the release expression is reserved, and not available yet
    ╭▸ corpus/pathological/sessions/reserved.gandr:19:14
    │
-19 │   let seat = release(rounds)
-   │              ━━━━━━━━━━━━━━━ a reserved form
+19 │   let seat = release rounds
+   │              ━━━━━━━━━━━━━━ a reserved form
    │
    ├ note: `released` is refused with OutOfFragment.release_expression, as its expectation states
    ╰ note: tracked by #1501 <https://github.com/gandr-lang/gandr/issues/1501>

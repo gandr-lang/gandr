@@ -21,12 +21,12 @@ def resume_stack(j : Stack(-F Unit, -F Unit)) -> -F Unit =
 def handed() -> -F Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
-      send(task, Cancel.notes);
-      close(task)
+      send task Cancel.notes;
+      close task
     };
     c.exit 1;
-    let text = recv(found);
-    close(found)
+    let text = recv found;
+    close found
   } with {
     | pure(x) => pure x
     | oper exit(code, k) => resume_stack k

@@ -42,14 +42,14 @@ pub def first(q : Pair) -> Integer =
 @[ runs("Pair 2 2") ]
 def heldOnce() -> Pair =
   var[1] p = Pair 1 2
-  access p as v { let q = bump v; resume(v, q) };
+  access p as v { let q = bump v; resume v q };
   p.take ()
 
 /// The same update at the default grade answers the same.
 @[ runs("Pair 2 2") ]
 def heldMany() -> Pair =
   var p = Pair 1 2
-  access p as v { let q = bump v; resume(v, q) };
+  access p as v { let q = bump v; resume v q };
   p.take ()
 
 /// A copy taken before the update keeps its value: the copy's first component
@@ -58,6 +58,6 @@ def heldMany() -> Pair =
 def copyKept() -> Pair =
   var p = Pair 1 2
   let keep = p
-  access p as v { let q = bump v; resume(v, q) };
+  access p as v { let q = bump v; resume v q };
   let q = p.take ()
   pure Pair (first keep) (first q)

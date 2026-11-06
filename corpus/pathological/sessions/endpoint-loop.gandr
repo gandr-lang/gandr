@@ -19,9 +19,9 @@ def hasty(operator : mu open. &{
   retire : ?Integer. end
 }) -> [Partial] Unit =
   loop {
-    offer(operator) {
+    offer operator {
       | report => { continue }
-      | retire => { let last = recv(operator); close(operator); break }
+      | retire => { let last = recv operator; close operator; break }
     }
   }
 
@@ -32,9 +32,9 @@ def abandoned(operator : mu open. &{
   retire : ?Integer. end
 }) -> [Partial] Unit =
   loop {
-    offer(operator) {
-      | report => { let next = recv(operator); continue }
-      | retire => { let last = recv(operator); break }
+    offer operator {
+      | report => { let next = recv operator; continue }
+      | retire => { let last = recv operator; break }
     }
   }
 
@@ -48,8 +48,8 @@ def idle(waiting : Bool, operator : mu open. &{
   loop {
     match waiting
       | true => continue
-      | false => offer(operator) {
-        | report => { let next = recv(operator); continue }
-        | retire => { let last = recv(operator); close(operator); break }
+      | false => offer operator {
+        | report => { let next = recv operator; continue }
+        | retire => { let last = recv operator; close operator; break }
       }
   }

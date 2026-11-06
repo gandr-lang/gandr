@@ -1,6 +1,6 @@
 // The target's completion reaped before the cancellation's, every close
-// written as a statement: a block ending in `close(e);` closes `e` and returns
-// the unit, as one ending in `close(e)` does.
+// written as a statement: a block ending in `close e;` closes `e` and returns
+// the unit, as one ending in `close e` does.
 //
 // - see: #1205
 
@@ -11,18 +11,18 @@ import "./ring-base.gandr";
 /// closing statement.
 def closedAsStatements() -> Unit =
   let pending = fork (target : Ring.Submission) {
-    let sqe = recv(target);
-    send(target, Ring.done);
-    close(target);
+    let sqe = recv target;
+    send target Ring.done;
+    close target;
   };
   let cancel = fork (canceller : Ring.Submission) {
-    let sqe = recv(canceller);
-    send(canceller, Ring.done);
-    close(canceller);
+    let sqe = recv canceller;
+    send canceller Ring.done;
+    close canceller;
   };
-  send(pending, Ring.read)
-  send(cancel, Ring.read)
-  let first = recv(pending)
-  let second = recv(cancel)
-  close(pending)
-  close(cancel);
+  send pending Ring.read
+  send cancel Ring.read
+  let first = recv pending
+  let second = recv cancel
+  close pending
+  close cancel;

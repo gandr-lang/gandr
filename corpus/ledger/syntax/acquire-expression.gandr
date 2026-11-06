@@ -4,5 +4,5 @@
 /// - owes: #1501
 @[ refuses("OutOfFragment.acquire_expression") ]
 def acquired(rounds : Integer) -> -F Unit =
-  let seat = acquire(rounds)
+  let seat = acquire rounds
   return *{}

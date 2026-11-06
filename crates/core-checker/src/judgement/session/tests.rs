@@ -220,7 +220,7 @@ impl<'arena> Program<'arena>
             .value_literal(Literal::Text(StringLiteral::new(String::from(text))))
     }
 
-    /// `close(c)`.
+    /// `close c`.
     ///
     /// # Specification
     /// trivial.
@@ -231,7 +231,7 @@ impl<'arena> Program<'arena>
         })
     }
 
-    /// `select(c, l) ; rest`.
+    /// `select c l ; rest`.
     ///
     /// # Specification
     /// trivial.
@@ -250,7 +250,7 @@ impl<'arena> Program<'arena>
         )
     }
 
-    /// `send(c, text) ; rest`.
+    /// `send c text ; rest`.
     ///
     /// # Specification
     /// trivial.
@@ -270,7 +270,7 @@ impl<'arena> Program<'arena>
         )
     }
 
-    /// `let x = recv(c); rest`, `rest` built under the receive's binder.
+    /// `let x = recv c; rest`, `rest` built under the receive's binder.
     ///
     /// # Specification
     /// trivial.
@@ -286,7 +286,7 @@ impl<'arena> Program<'arena>
         self.act(SessionAction::Receive { endpoint, body })
     }
 
-    /// `offer(c) { l => arm, … }`.
+    /// `offer c { l => arm, … }`.
     ///
     /// # Specification
     /// trivial.
@@ -924,7 +924,7 @@ fn a_clause_ends_a_continuation_holding_an_obligation_once_1334()
     );
 }
 
-/// `operation; close(d)`.
+/// `operation; close d`.
 ///
 /// # Specification
 /// trivial.
@@ -1534,7 +1534,7 @@ enum AfterSend
 
 /// The sending half of an exchange over [`delegating`]: `let d = fork (e : end)
 /// { close(e) }; send(c, d) ; close(c)`, with `close(d)` after the send
-/// when `after` closes it. Answers the inner fork and the `close(d)`.
+/// when `after` closes it. Answers the inner fork and the `close d`.
 ///
 /// # Specification
 /// trivial.
@@ -1576,7 +1576,7 @@ fn a_delegated_endpoint_leaves_its_sender()
     let mut arena = CoreArena::new();
     let protocol = delegating(&mut arena);
     let (inner, _) = delegator(&mut arena, AfterSend::Leaves);
-    // `let x = recv(c); close(x) ; close(c)`
+    // `let x = recv c; close x ; close c`
     let parent = Program::new(&mut arena).receive(|program| {
         let outer = program.close();
         program.then(
@@ -1619,7 +1619,7 @@ fn a_closed_endpoint_is_not_delegated()
     let protocol = delegating(&mut arena);
     let ended = end(&mut arena);
     let inner_child = Program::new(&mut arena).close();
-    // `let d = fork (e : end) { close(e) }; close(d) ; send(c, d) ; close(c)`
+    // `let d = fork (e : end) { close e }; close d ; send c d ; close c`
     let sent = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
     let mut program = Program::new(&mut arena);
     let close_outer = program.act(SessionAction::Close {
@@ -1668,7 +1668,7 @@ fn a_received_endpoint_is_acted_on_and_must_be_closed()
     let mut arena = CoreArena::new();
     let protocol = delegating(&mut arena);
     let (inner, _) = delegator(&mut arena, AfterSend::Leaves);
-    // `let x = recv(c); close(c)`, `x` left open
+    // `let x = recv c; close c`, `x` left open
     let parent = Program::new(&mut arena).receive(Program::close);
     let exchange = fork(&mut arena, protocol, inner, parent);
     let refused = check_unit(&mut arena, exchange);
@@ -2075,7 +2075,7 @@ fn an_endpoint_moved_into_a_call_leaves_its_caller_4501()
     let returned = arena.computation_return(nothing);
     let ignored_body = arena.computation_lambda(returned);
     let ignored = arena.value_thunk(ignored_body);
-    // `let d = fork (seat : end) { callee(seat) ; after }; close(d)`
+    // `let d = fork (seat : end) { callee(seat) ; after }; close d`
     let caller = |arena: &mut CoreArena, callee: usize, after: Option<ComputationId>| {
         let head = arena.value_constant(ConstantIndex::from(callee));
         let forced = arena.computation_force(head);
@@ -2247,7 +2247,7 @@ fn a_loop_takes_the_endpoint_it_is_applied_to_4502()
     let split = arena.computation_split(slots_parameter, ComponentCount::from(2_usize), placed);
     let finish_body = arena.computation_lambda(split);
     let finish = arena.value_thunk(finish_body);
-    // `let d = fork (c : end) { hold () as h { finish((c, h)) } }; close(d)`
+    // `let d = fork (c : end) { hold () as h { finish((c, h)) } }; close d`
     let head = arena.value_constant(ConstantIndex::from(0_usize));
     let forced = arena.computation_force(head);
     let seat = arena.value_variable(Zone::Linear, DeBruijnIndex::from(1_u32));

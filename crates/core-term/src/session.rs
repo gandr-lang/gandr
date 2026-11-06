@@ -1302,7 +1302,7 @@ quenchant_shape::reason_enum! {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
 {
-    /// `send(c, v)`: send `payload`, returning the unit.
+    /// `send c v`: send `payload`, returning the unit.
     Send
     {
         /// The endpoint, a linear index.
@@ -1310,7 +1310,7 @@ pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
         /// The payload.
         payload: V,
     },
-    /// `let x = recv(c); body`: receive a payload into one linear binder and
+    /// `let x = recv c; body`: receive a payload into one linear binder and
     /// run `body` under it.
     Receive
     {
@@ -1319,7 +1319,7 @@ pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
         /// The rest of the block, under the payload's linear binder.
         body: C,
     },
-    /// `select(c, l)`: choose `label`, returning the unit.
+    /// `select c l`: choose `label`, returning the unit.
     Select
     {
         /// The endpoint, a linear index.
@@ -1327,7 +1327,7 @@ pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
         /// The label chosen.
         label: FieldLabel,
     },
-    /// `offer(c) { l => … }`: run the arm of the label the peer chose.
+    /// `offer c { l => … }`: run the arm of the label the peer chose.
     Offer
     {
         /// The endpoint, a linear index.
@@ -1335,7 +1335,7 @@ pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
         /// One arm per label, in label order.
         arms: BTreeMap<FieldLabel, C>,
     },
-    /// `close(c)`: close the endpoint, returning the unit.
+    /// `close c`: close the endpoint, returning the unit.
     Close
     {
         /// The endpoint, a linear index.
