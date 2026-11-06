@@ -694,7 +694,6 @@ mod sweeps
         let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
         let mut unread: Vec<String> = Vec::new();
         let mut moved: Vec<String> = Vec::new();
-        let mut held: Vec<String> = Vec::new();
         let mut over = 0_usize;
         let ControlFlow::Continue(_report) = walk.visit(
             &Pool::new(Width::SERIAL),
@@ -755,34 +754,14 @@ mod sweeps
                         RoundTrip::Unknown => "Unknown",
                         RoundTrip::Wildcard => "Wildcard",
                         RoundTrip::Different => {
-                            unread.push(format!("{}: `{}` reads back as another type", at, read.spelled));
+                            unread.push(format!(
+                                "{}: `{}` reads back as another type",
+                                at, read.spelled
+                            ));
                             "Different"
                         },
                         RoundTrip::Refused(ref refusal) => {
-                            // A printed row names its effect by a path the
-                            // read back does not resolve (#5209): held when
-                            // the refused head is a path the spelling writes
-                            // as a row entry.
-                            let line = format!("{}: `{}` refuses: {refusal}", at, read.spelled);
-                            let qualified_row = refusal
-                                .strip_prefix("no type head answers `")
-                                .and_then(|rest| rest.split_once('`'))
-                                .is_some_and(|(head, _)| {
-                                    head.contains('.')
-                                        && spelled.match_indices(head).any(|(start, _)| {
-                                            spelled
-                                                .get(.. start)
-                                                .is_some_and(|before| before.ends_with('['))
-                                        })
-                                });
-                            if qualified_row {
-                                held.push(format!(
-                                    "#5209, a printed row's effect path reads back unresolved: {line}"
-                                ));
-                            }
-                            else {
-                                unread.push(line);
-                            }
+                            unread.push(format!("{}: `{}` refuses: {refusal}", at, read.spelled));
                             "Refused"
                         },
                         RoundTrip::Unparsed => {
@@ -822,9 +801,6 @@ mod sweeps
             eprintln!("| {class} | {count} |");
         }
         eprintln!("{over} sources past the read-back ceiling, read whole by the `sweeps` profile");
-        for line in &held {
-            eprintln!("held out, {line}");
-        }
         assert!(
             sweep.portion() == Portion::Changed
                 || trips.get("Equal").is_some_and(|&equal| equal > 0_usize),

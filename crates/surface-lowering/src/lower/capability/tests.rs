@@ -34,6 +34,7 @@ use gandr_kernel_term::RuleIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::coincide::Decisions;
 use crate::error::CrossedExit;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -46,6 +47,7 @@ use crate::fixture::listing;
 use crate::fixture::parsed;
 use crate::lower::LoweringBudget;
 use crate::lower::lower_module;
+use crate::lower::lower_unit;
 use crate::model::InterfaceFault;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredDeclaration;
@@ -58,6 +60,7 @@ use crate::origin::Omitted;
 use crate::origin::ScopeAnswer;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
+use crate::unit::Unit;
 
 /// The module the parser and the lowering make of `source`.
 ///
@@ -439,6 +442,47 @@ fn a_host_interface_answers_only_where_its_module_is_imported_4523()
                 "{imports:?}: the console is an unresolved head: {outcome:?}"
             );
         }
+    }
+}
+
+/// #5209: a unit that lays no source of a host interface's home takes the
+/// import of that home through a stand-in, one newline that
+/// [`crate::unit::Unit::standing_in`] lays before the last source, and the
+/// row names the interface. The same source alone refuses the import.
+#[test]
+fn a_stand_in_takes_the_import_of_a_home_the_unit_lacks_5209()
+{
+    let quit = "def quit(p : Cap {exit}) -> -F [std.process.Exit.Eff] Unit { p.exit 1 }\nimport \
+                std.process ;\n";
+    let pbg = grammar();
+    for (laid, unit, completed) in [
+        (
+            alloc::format!("\n{quit}"),
+            Unit::single().standing_in(SurfaceName::from("std.process")),
+            true,
+        ),
+        (String::from(quit), Unit::single(), false),
+    ] {
+        let tree = parsed(&pbg, SourceText::from(laid.as_str()));
+        let mut arena = CoreArena::new();
+        let module = lower_unit(
+            &pbg,
+            &tree,
+            &unit,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+            &mut Decisions::none(),
+        )
+        .expect("the unit lowers");
+        let outcome = outcome_of(&module, "quit".into());
+        assert_eq!(
+            matches!(outcome, DeclarationOutcome::Completed { .. }),
+            completed,
+            "{} sources: the row names `std.process.Exit.Eff` through the stand-in alone: \
+             {outcome:?}",
+            unit.sources().len()
+        );
     }
 }
 
