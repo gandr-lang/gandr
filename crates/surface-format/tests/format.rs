@@ -366,6 +366,28 @@ fn a_type_s_spine_keeps_its_line_in_a_signature_5326()
     );
 }
 
+/// #5528: before the fix, a spine broke before its operands, but its head
+/// kept a bracket whole on one line past the page. A second pass read the
+/// operand's line as a continuation, and broke the bracket. Now the broken
+/// spine's head breaks a bracket that does not fit, so the layout formats once.
+#[test]
+fn a_broken_spine_s_head_breaks_a_bracket_past_the_page_5528()
+{
+    let grammar = grammar();
+    let source = "def twiceRun() -> Integer { twice[.m = Integer, .combine = Adding.plus] 3 }\n";
+    let laid = text(&grammar, source, NARROW);
+    assert_eq!(
+        laid,
+        "def twiceRun() -> Integer {\n  twice[\n    .m = Integer,\n    .combine = Adding.plus\n  ]\n    3\n}\n",
+        "the head's bracket breaks one field a line, and the operand stands deeper"
+    );
+    assert_eq!(
+        text(&grammar, laid.as_str(), NARROW),
+        laid,
+        "and the layout formats once"
+    );
+}
+
 #[test]
 fn strings_shell_blocks_and_holes_are_copied_as_written()
 {

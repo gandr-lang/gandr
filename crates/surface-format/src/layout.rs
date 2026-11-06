@@ -1363,10 +1363,12 @@ fn spines(
 /// bracket inside an operand stays whole on the operand's line when it fits.
 /// A group that cannot stand on one line, as a lambda's block, keeps its own
 /// lines inside the spine's line: a lambda that ends the spine hugs its last
-/// line. A spine the source broke before an operand stays broken, as a group
-/// the source broke after its opening bracket does, so the layout formats
-/// once: the broken spine's blocks break, and on the next pass its line would
-/// hug them.
+/// line. The broken spine's head lays its groups out as each best fits the
+/// page, as an operand's line does: a bracket in the head that does not fit
+/// breaks, as the next pass breaks it on the head's own line (#5528). A spine
+/// the source broke before an operand stays broken, as a group the source
+/// broke after its opening bracket does, so the layout formats once: the
+/// broken spine's blocks break, and on the next pass its line would hug them.
 ///
 /// # Specification
 /// trivial.
@@ -1389,7 +1391,7 @@ fn spine_doc(
     let head = placed
         .get(spine.start .. first)
         .ok_or(FormatError::Unbalanced)?;
-    let head = line_run(builder, head, docs, Mode::Flat)?;
+    let head = line_run(builder, head, docs, Mode::Best)?;
     let mut lines: Vec<DocId> = Vec::with_capacity(spine.tiles.len().saturating_mul(2));
     for (at, &tile) in spine.tiles.iter().enumerate() {
         let until = spine
