@@ -1,11 +1,13 @@
-//! A `deprecated` attribute beside `doc` (after Rust's `#[deprecated]`,
-//! [Rust-reference], § Diagnostic attributes): the declaration still checks,
-//! and each use of it is a finding of the `deprecated` lint naming the version
-//! and the note the record states, either field left out when unstated.
+//! `doc-and-deprecated` documents declarations and marks them as deprecated.
 //!
-//! - cites: [Rust-reference]
+//! Each deprecated use reports its recorded version and note when they exist.
+//! The declaration itself still checks.
 //!
-//! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
+//! The checker records each attribute on its declaration. The `deprecated`
+//! lint reports every use.
+//!
+//! - see: corpus/pathological/attributes/ill-typed-deprecation.gandr
+//! - see: https://doc.rust-lang.org/reference/
 
 // Squaring, documented by its attribute and marked deprecated.
 @[ doc("Squares its argument.") ]
