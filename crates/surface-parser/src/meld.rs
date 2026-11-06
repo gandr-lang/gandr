@@ -11199,7 +11199,9 @@ mod tests
         // whose fold touched its stand-in still breaks, one whose fold did
         // not still joins.
         let pbg = built_in()?;
-        let source = SourceText::from("def a = 1;\ndef b = 2;\n");
+        let source = SourceText::from(include_str!(
+            "meld/fixtures/a-parked-unit-keeps-whether-it-reached-its-stand-in.gandr"
+        ));
         let mut molder = crate::Molder::new(&pbg);
         let split = crate::FormSplit::new(&molder, source);
         let &[first, second] = split.runs()
@@ -11695,7 +11697,7 @@ mod tests
         );
         assert_eq!(
             vec!["+U[1] Integer".to_owned()],
-            spans_of("def bad : +U[1] Integer;\ndef bad = pure 1;", "u_type")?,
+            spans_of(include_str!("meld/fixtures/str-1.gandr"), "u_type")?,
             "a bridge's operand stays its own when another declaration follows"
         );
         assert_eq!(
@@ -11798,9 +11800,8 @@ mod tests
     fn each_comment_is_owned_by_the_node_it_describes() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let source = "// lead\ndef x = 1; // trail\n\n// alone\n\n// first\n// second\ndef w = 2;\n\
-                      def f(x : Integer) -> -F Integer {\n  // above\n  return x\n}\n\
-                      def y = #[ /* empty */ ];\ndef z = 1 /* one */;\n";
+        let source =
+            include_str!("meld/unformatted/each-comment-is-owned-by-the-node-it-describes.gandr");
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
         assert_eq!(crate::testing::reconstruct(&tree), source);
         let owner_of = |comment: &str| -> Option<String> {
@@ -11861,8 +11862,8 @@ mod tests
             &[
                 "def x = 1;\n",
                 "@[ doc(\"x\") ] def x = 1;\n",
-                "/// x\ndef x = 1;\n",
-                "/// x\n/// y\n@[ doc(\"z\") ]\ndef x = 1;\n",
+                include_str!("meld/fixtures/str-2.gandr"),
+                include_str!("meld/fixtures/str-3.gandr"),
             ],
             &[
                 "@[ checks ] def x = 1;\n",
@@ -11870,12 +11871,12 @@ mod tests
                 "@[ checks, doc(\"x\") ] def x = 1;\n",
                 "@[ doc(\"x\") ] @[ checks ] def x = 1;\n",
                 "@[ checks ] @[ doc(\"x\") ] def x = 1;\n",
-                "@[ checks ]\n/// x\ndef x = 1;\n",
+                include_str!("meld/fixtures/str-4.gandr"),
             ],
             &[
                 "data D : Type where { | A : D }\n",
                 "@[ doc(\"x\") ] data D : Type where { | A : D }\n",
-                "/// x\ndata D : Type where { | A : D }\n",
+                include_str!("meld/fixtures/str-5.gandr"),
             ],
             &[
                 "@[ checks ] data D : Type where { | A : D }\n",
@@ -11905,7 +11906,7 @@ mod tests
     fn a_doc_run_documents_the_form_below_it() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let source = "/// a\n\n/// b\n/// c\ndef x = 1; /// d\ndef y = 2;\n";
+        let source = include_str!("meld/fixtures/a-doc-run-documents-the-form-below-it.gandr");
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
         assert_eq!(crate::testing::reconstruct(&tree), source);
         let text = |position| -> String {
@@ -11942,8 +11943,8 @@ mod tests
     fn an_inner_run_documents_what_it_stands_in_1365() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
-        let source = "//! s\n//! t\n/// a\ndef x = 1;\n//! u\ndef f(x : Integer) -> -F Integer {\n  \
-                      //! inner\n  return x\n}\n";
+        let source =
+            include_str!("meld/fixtures/an-inner-run-documents-what-it-stands-in-1365.gandr");
         let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
         assert_eq!(crate::testing::reconstruct(&tree), source);
         let text = |position| -> String {

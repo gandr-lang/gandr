@@ -677,8 +677,8 @@ fn tables_agree(sweep: &Sweep) -> Result<(), Box<dyn Error>>
     const STRAYS: [&str; 6] = [
         "def f(x : In[: Nat]) -> Nat { pure x }",
         "def g(b : Unit) -> Unit { let c = not b); become not(c) }",
-        "too_big = Type ;\ndef wrong_sort : Type ;",
-        "def : Integer ;\ndef y = 1 ;",
+        include_str!("sweeps/unformatted/strays-1.gandr"),
+        include_str!("sweeps/unformatted/strays-2.gandr"),
         "def h(x : List[Nat) -> Nat { pure x }",
         "def k(a : Unit) -> Unit { run r go a; pure r }",
     ];

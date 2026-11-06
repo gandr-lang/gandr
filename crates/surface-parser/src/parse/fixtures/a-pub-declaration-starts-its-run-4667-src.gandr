@@ -1,0 +1,15 @@
+import "base.gandr";
+pub def one : Nat = Zero
+
+/// Two.
+pub def rec two(n : Nat) -> Nat =
+  match n
+    | Zero => Zero
+    | Succ(m) => two[<] m
+
+@[ checks ]
+pub data Bit : Type where
+  | Off : Bit
+  | On : Bit
+
+pub def three = 3;

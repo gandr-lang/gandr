@@ -1,0 +1,6 @@
+theory T where {{
+  sort Tm : Type;
+  oper nil : () --> Tm;
+  rule {keyword} : nil() <=> nil();
+}}
+def ok = 2 ;
