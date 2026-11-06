@@ -23,7 +23,10 @@
 # works no defect. An open box is the obligation owed.
 
 def header($name): [capture("(?m)^" + $name + ": (?<value>.+)$").value][0];
-def stop: [capture("(?m)^\\s*\\*?\\s*frame #0: .* at (?<at>\\S+:[0-9]+(:[0-9]+)?)\\s*$").at][0];
+# The location of frame 0. lldb may end the line with marks such as ` [opt]`,
+# for a frame of the optimised standard library (#5341); the location stands
+# before them.
+def stop: [capture("(?m)^\\s*\\*?\\s*frame #0: .* at (?<at>\\S+:[0-9]+(:[0-9]+)?)(\\s+\\[[a-z]+\\])*\\s*$").at][0];
 
 select(.defect)
 | .body as $body
