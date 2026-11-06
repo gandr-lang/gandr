@@ -158,6 +158,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::UnresolvedName { name, .. } => {
             format!("define `{name}`, or import the module that exports it")
         },
+        LoweringRefusal::UnresolvedDocLink { name, .. } => {
+            format!("declare `{name}`, or link to a name this source declares")
+        },
         LoweringRefusal::DuplicateDefinition { name, .. } => {
             format!("give each definition of `{name}` its own name, or delete one of them")
         },
@@ -391,6 +394,22 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             fault: ModelFault::Unbound,
             ..
         } => String::from("remove the component the model signature cannot state"),
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::Arity,
+            ..
+        } => String::from("give each sort and operation its declared number of arguments"),
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::IllSorted,
+            ..
+        } => String::from("write each term at the sort its position reads"),
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::UnknownHead,
+            ..
+        } => String::from("declare each sort and operation the component uses"),
+        LoweringRefusal::UnstatedComponent {
+            fault: ModelFault::Unsorted,
+            ..
+        } => String::from("use each variable where its sort is known"),
         LoweringRefusal::UnderivedRule { .. } => {
             String::from("write a rule the theory's completed rules derive")
         },
@@ -468,8 +487,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             String::from("remove code after every path leaves the body")
         },
         // Unworded: a later slice words each, most-seen first.
-        LoweringRefusal::UnresolvedDocLink { .. }
-        | LoweringRefusal::OutOfFragment { .. }
+        LoweringRefusal::OutOfFragment { .. }
         | LoweringRefusal::GradedBridge { .. }
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::UnreadCells { .. }
@@ -1249,7 +1267,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 230] = [
+    const WORDED: [&str; 235] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1415,6 +1433,11 @@ mod tests
         "Unlocated",
         "UnofferedLabel",
         "UnrestrictedEndpoint",
+        "UnresolvedDocLink",
+        "UnstatedComponent.Arity",
+        "UnstatedComponent.IllSorted",
+        "UnstatedComponent.UnknownHead",
+        "UnstatedComponent.Unsorted",
         "UnstatedComponent.Unbound",
         "ViewMoved",
         "ViewOfNoPlace",

@@ -2027,6 +2027,26 @@ pub mod tests
             LoweringRefusal::UnstatedComponent {
                 span,
                 name,
+                fault: ModelFault::Arity,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
+                fault: ModelFault::IllSorted,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
+                fault: ModelFault::UnknownHead,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
+                fault: ModelFault::Unsorted,
+            },
+            LoweringRefusal::UnstatedComponent {
+                span,
+                name,
                 fault: ModelFault::Unbound,
             },
             LoweringRefusal::FamilyTelescope {

@@ -5580,12 +5580,8 @@ crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/ShadowedBu
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/TelescopeCycle.txt STE-5.3 761ce136eef636cd
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnexportedName.txt STE-5.3 3c742c4d5cf41195
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnmarkedSelfReference.txt STE-5.3 4db31bd807aaf1cf
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnresolvedDocLink.txt STE-5.3 521f75ffad0e2fc0
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.Arity.txt STE-5.3 ce02ed9841827976
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.IllSorted.txt STE-5.3 da184cf2bcfa9278
+crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.Arity.txt STE-5.2 c3f68a1179ef2ead
 crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.Unbound.txt STE-5.3 6e2efb42d3e3cee3
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.UnknownHead.txt STE-5.3 29eb10348855398a
-crates/surface-render-terminal/tests/golden/corpus/ledger/diagnostics/UnstatedComponent.Unsorted.txt STE-5.3 913d618e84e71673
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-typed-deprecation.txt STE-5.3 d0c11940f1f75c24
 crates/surface-render-terminal/tests/golden/corpus/pathological/attributes/ill-typed-deprecation.txt STE-5.3 d6565ea6daeaf10f
 crates/surface-render-terminal/tests/golden/corpus/pathological/builtins/list-patterns.txt STE-5.3 9861b85a5613cd7c
