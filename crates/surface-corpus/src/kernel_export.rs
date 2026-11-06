@@ -2358,6 +2358,32 @@ mod kernel_presented_readmission
     }
 
     #[test]
+    fn a_path_through_a_recursive_operation_readmits_by_its_rules_4291()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/data/ruled-operation-path.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the paths through `add` lower");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        assert!(
+            declarations
+                .iter()
+                .any(|marked| marked.declaration().operation_rules().rules().len() == 2),
+            "`add` crosses carrying its two rules"
+        );
+        // Each path reads a call of `add` at an endpoint. `onePlusOne` takes
+        // the recursive rule once and then the rule at `Zero`.
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("each path readmits: the kernel unfolds `add` by its rules");
+    }
+
+    #[test]
     fn a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name()
     {
         let pbg = built_in().expect("the built-in grammar builds");

@@ -495,6 +495,10 @@ pub struct Unfoldings
     presentations: crate::presented::Presentations,
     /// The relation of each lawful atom, at its admission position.
     identities: BTreeMap<ConstantIndex, ValueId>,
+    /// The fixpoint each ruled definition's body thunks, in ascending order.
+    /// Admission decided that the rules of the definition terminate and that
+    /// the fixpoint is their decision tree, so its recursion terminates.
+    terminating: Vec<ComputationId>,
 }
 
 impl Unfoldings
@@ -530,6 +534,7 @@ impl Unfoldings
             bodies,
             presentations: crate::presented::Presentations::default(),
             identities: BTreeMap::new(),
+            terminating: Vec::new(),
         }
     }
 
@@ -618,6 +623,50 @@ impl Unfoldings
     ) -> Option<ValueId>
     {
         self.identities.get(&atom).copied()
+    }
+
+    /// These unfoldings, the replay reading the fixpoint each ruled
+    /// definition among `entries` thunks as one whose recursion terminates.
+    ///
+    /// # Specification
+    /// - requires: `entries` is the admission log the replay's terms were
+    ///   admitted in, its bodies minted into `arena`.
+    /// - ensures: the partial gate unfolds the fixpoint that the body of each
+    ///   definition among `entries` with operation rules thunks. It unfolds no
+    ///   other partial fixpoint whose recursion it cannot ignore.
+    /// - provides: where a partial fixpoint's gate unfolds an operation that
+    ///   its admitted rules decide.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause quantifies over every entry of the
+    ///   admission log, which a predicate may not iterate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operation's ruled fixpoint unfolds at its gate and
+    ///   at its recursive call, and declines at its gate without the ruling.
+    /// - witness: `ruled::tests::a_ruled_fixpoint_unfolds_at_its_partial_gate_4291`
+    #[inline]
+    #[must_use]
+    pub fn ruling(
+        self,
+        arena: &TermArena,
+        entries: &crate::env::Entries,
+    ) -> Self
+    {
+        let mut terminating = Vec::new();
+        for entry in entries.iter() {
+            if let gandr_kernel_term::DeclarationContent::Def { body, .. } = *entry.content()
+                && !entry.declaration().operation_rules().rules().is_empty()
+                && let Some(&Value::Thunk(root)) = arena.value(body)
+            {
+                terminating.push(root);
+            }
+        }
+        terminating.sort_unstable();
+        Self {
+            terminating,
+            ..self
+        }
     }
 
     /// How the constant `constant` unfolds.
@@ -8174,7 +8223,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         // is a definition: unfolding it substitutes nothing and
                         // cannot recur, so it unfolds at that gate (#2833). A
                         // joint fixpoint's gate stands under the projection that
-                        // selects a component, at that component's position.
+                        // selects a component, at that component's position. A
+                        // ruled definition's fixpoint unfolds at the partial gate
+                        // too. Its admitted rules terminate, and each unfolding
+                        // takes one step of a rule.
                         Some(&Computation::Fixpoint { body, evidence }) => {
                             let (position, projected) = match evidence {
                                 FixpointEvidence::Joint { .. } => {
@@ -8305,8 +8357,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     FixpointEvidence::Partial,
                                     Gate::Constructor | Gate::Canonical | Gate::Observed,
                                 ) => {
-                                    if innermost(self.arena.computation_support(body))
-                                        != BinderUse::Ignored
+                                    if self
+                                        .unfoldings
+                                        .terminating
+                                        .binary_search(&focus.node)
+                                        .is_err()
+                                        && innermost(self.arena.computation_support(body))
+                                            != BinderUse::Ignored
                                     {
                                         return Err(Stop::PartialFixpoint);
                                     }

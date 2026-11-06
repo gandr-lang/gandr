@@ -2,10 +2,12 @@ use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
@@ -18,9 +20,18 @@ use gandr_kernel_term::OperationRules;
 use gandr_kernel_term::Overlapped;
 use gandr_kernel_term::RuleIndex;
 use gandr_kernel_term::RuleVariable;
+use gandr_kernel_term::Value;
 
 use crate::env::Environment;
 use crate::error::KernelError;
+use crate::replay::EngineClaim;
+use crate::replay::KernelVerdict;
+use crate::replay::ReplayBudget;
+use crate::replay::ReplayDecline;
+use crate::replay::ReplayNode;
+use crate::replay::ReplaySides;
+use crate::replay::Unfoldings;
+use crate::replay::replay;
 use crate::ruled::OperationBodyFault;
 
 /// `or` at position `$constant` over the booleans at 0.
@@ -483,5 +494,66 @@ fn a_recursive_body_links_its_fields_and_calls()
                 "{recursion:?}: {departure:?}"
             );
         }
+    }
+}
+
+/// The partial gate unfolds the fixpoint of a ruled definition. At the
+/// unfoldings that rule the admission log, `add(succ zero, zero)` replays as
+/// `return succ zero` through its recursive call. At the unfoldings without
+/// the ruling, the same pair declines at the gate.
+#[test]
+fn a_ruled_fixpoint_unfolds_at_its_partial_gate_4291()
+{
+    let mut environment = naturals();
+    assert_eq!(
+        admit_add(&mut environment, Recursion::Under, Departure::Kept),
+        Ok(())
+    );
+    let mut arena = environment.arena().clone();
+    let entries = environment.entries();
+    let root = entries
+        .iter()
+        .find_map(|entry| {
+            if let DeclarationContent::Def { body, .. } = *entry.content()
+                && let Some(&Value::Thunk(root)) = arena.value(body)
+            {
+                Some(root)
+            }
+            else {
+                None
+            }
+        })
+        .expect("`add` thunks its fixpoint");
+    let naturals = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let family = ConstantIndex::from(0_usize);
+    let zero = arena.value_constructor(family, naturals, ConstructorTag::from(ZERO), vec![]);
+    let one = arena.value_constructor(family, naturals, ConstructorTag::from(SUCC), vec![zero]);
+    let on_x = arena.computation_application(root, one);
+    let called = arena.computation_application(on_x, zero);
+    let expected = arena.computation_return(one);
+    for (unfoldings, verdict) in [
+        (
+            Unfoldings::default().ruling(&arena, entries),
+            KernelVerdict::Convertible,
+        ),
+        (
+            Unfoldings::default(),
+            KernelVerdict::Declined(ReplayDecline::PartialFixpoint),
+        ),
+    ] {
+        assert_eq!(
+            replay(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Computations(called, expected),
+                EngineClaim::Convertible,
+                [ConversionDecision::ComparedShared {
+                    left: ReplayNode::Other,
+                    right: ReplayNode::Other,
+                }],
+                ReplayBudget::default(),
+            ),
+            verdict
+        );
     }
 }

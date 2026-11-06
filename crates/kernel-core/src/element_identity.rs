@@ -1542,7 +1542,8 @@ fn decoded_fibre(
             })
             .collect(),
     )
-    .identifying(entries);
+    .identifying(entries)
+    .ruling(arena, entries);
     crate::replay::read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(fibre)
 }
 

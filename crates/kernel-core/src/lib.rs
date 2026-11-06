@@ -424,6 +424,14 @@
 //! `kernel_export::kernel_presented_readmission::rules_the_body_does_not_compute_are_refused_by_the_kernel_322`
 //! in the surface corpus.
 //!
+//! Conversion unfolds a ruled definition's fixpoint at its gate, as it
+//! unfolds a structural fixpoint. The fixpoint is partial, but its rules
+//! terminate, and each unfolding takes one step of a rule. So a path whose
+//! endpoint calls a recursive operation converts as the checker computes it.
+//! The witness is
+//! `kernel_export::kernel_presented_readmission::a_path_through_a_recursive_operation_readmits_by_its_rules_4291`
+//! in the surface corpus.
+//!
 //! # Accessibility
 //!
 //! A data declaration's fields may place its family anywhere the stage order

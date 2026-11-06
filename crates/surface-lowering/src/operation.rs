@@ -57,12 +57,13 @@
 //! the law's two sides agree on.
 //!
 //! **Recursion is partial.** The function closes one fixpoint over its
-//! operation's whole parameter list with [`FixpointEvidence::Partial`], so the
-//! machine unfolds it and conversion never does. Structural evidence stages
-//! one parameter, and every recursive call must stand below that parameter's
-//! stage, which a multi-input operation's rules, descending on whichever
-//! column they match, do not promise. Reversal: a stage per column in the
-//! kernel.
+//! operation's whole parameter list with [`FixpointEvidence::Partial`].
+//! Structural evidence stages one parameter, and every recursive call must
+//! stand below that parameter's stage, which a multi-input operation's rules,
+//! descending on whichever column they match, do not promise. The machine
+//! unfolds the fixpoint. The kernel's conversion unfolds it too, because the
+//! kernel admits the operation only when its rules terminate. Reversal: a
+//! stage per column in the kernel.
 //!
 //! **Operation names resolve after declarations, before builtins.** An
 //! operation is entered in no module namespace; a name the module declares
