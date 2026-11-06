@@ -2996,6 +2996,86 @@ fn a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483()
     assert!(crossed.audit().axioms().is_empty());
 }
 
+/// #5324: a case whose motive alone reads a binder after the scrutinee, the
+/// binder's type reading the scrutinee. `pred(u : T, v : B(u)) -> Type` at
+/// position 2 returns `⌜Unit⌝`, and `go(u : T, v : B(u)) -> El(⟨pred u v⟩)`
+/// at position 3 cases on `u` with `()` at each arm. No arm reads `v`, and
+/// each arm meets the motive at its own code.
+#[test]
+fn a_binder_that_the_motive_alone_reads_is_generalised_in_both_checkers_5324()
+{
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (code, [codes, boxes]) = codes_and_boxes(&mut arena);
+    let boxed = ConstantIndex::from(1_usize);
+    let predicate = ConstantIndex::from(2_usize);
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    let no_fields = [0_usize, 0]
+        .map(gandr_kernel_term::FieldCount::from)
+        .to_vec();
+    // `pred : U (Π (u : T). B(u) → F Type)`, the thunk `λu. λv. return ⌜Unit⌝`.
+    let u_outer = variable(&mut arena, 0);
+    let box_at_u = arena.value_type_data(boxed, vec![u_outer]);
+    let returns_kind = arena.comp_type_returner(kind);
+    let pred_type = arena.comp_type_arrow(box_at_u, returns_kind);
+    let pred_type = arena.comp_type_pi(code, pred_type);
+    let pred_type = arena.value_type_thunk(pred_type);
+    let unit_type = arena.value_type_unit();
+    let unit_code = arena.value_quote(unit_type);
+    let pred_body = arena.computation_return(unit_code);
+    let pred_body = arena.computation_lambda(pred_body);
+    let pred_body = arena.computation_lambda(pred_body);
+    let pred_body = arena.value_thunk(pred_body);
+    // `El(⟨force pred s w⟩)`, with `s` and `w` the variables at `scrutinee`
+    // and `later`.
+    let decoded = |arena: &mut CoreArena, scrutinee: u32, later: u32| {
+        let pred = arena.value_constant(predicate);
+        let forced = arena.computation_force(pred);
+        let s = variable(arena, scrutinee);
+        let applied = arena.computation_application(forced, s);
+        let w = variable(arena, later);
+        let applied = arena.computation_application(applied, w);
+        let code = arena.value_returned(applied);
+        arena.value_type_element(code, Level::zero())
+    };
+    // `go : U (Π (u : T). Π (v : B(u)). F El(⟨pred u v⟩))`: under `u` and `v`,
+    // `u` is 1 and `v` is 0.
+    let goal = decoded(&mut arena, 1, 0);
+    let answers = arena.comp_type_returner(goal);
+    let go_type = arena.comp_type_pi(box_at_u, answers);
+    let go_type = arena.comp_type_pi(code, go_type);
+    let go_type = arena.value_type_thunk(go_type);
+    // The motive binds the scrutinee `s` at 0, so `v` is 1 under it.
+    let motive = decoded(&mut arena, 0, 1);
+    let motive = arena.comp_type_returner(motive);
+    let unit = arena.value_unit();
+    let returned = arena.computation_return(unit);
+    let scrutinee = variable(&mut arena, 1);
+    let case = arena.computation_data_case(scrutinee, motive, vec![returned, returned], no_fields);
+    let go = arena.computation_lambda(case);
+    let go = arena.computation_lambda(go);
+    let go = arena.value_thunk(go);
+    let (report, crossed) = run(&mut arena, &[
+        codes,
+        boxes,
+        definition(predicate, pred_type, pred_body),
+        definition(ConstantIndex::from(3_usize), go_type, go),
+    ]);
+    assert!(
+        matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+        "the motive alone reads the binder after the scrutinee: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[3].outcome(), Outcome::Defined { .. }),
+        "the kernel admits the case generalised over that binder: {:?}",
+        crossed.readmitted()[3].outcome()
+    );
+    assert!(crossed.audit().axioms().is_empty());
+}
+
 /// #5036: a joint fixpoint's goal at a summand is a decode of a case on an
 /// injection, which each member reads as its own type, in the checker and in
 /// the kernel. `pick` at `Π (y : Unit + Unit). El(⟨case y { return ⌜Unit -> F

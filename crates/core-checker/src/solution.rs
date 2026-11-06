@@ -670,19 +670,21 @@ pub fn refined_arm(
 }
 
 /// The case `case` on a variable, its motive generalised over the binders
-/// after the variable that its arms read and whose types read the variable.
+/// after the variable that its arms or its motive read and whose types read
+/// the variable.
 ///
 /// # Specification
 /// - requires: `case` is read under the binders open now.
-/// - ensures: when `case` is a case on a variable and an arm reads a binder
-///   after it whose type reads it, the case at the motive `λs. Π (d′ : D[x :=
-///   s]). M(s)`, each arm abstracting `d′` past its fields and equations and
-///   reading it for `D`, applied to `D`. The refined case carries each arm's
-///   written lambda to its copy, and names each lambda that binds `d′` beside
-///   the binder it stands for. [`unrefined::Absent::Unsolved`] when no arm
-///   reads such a binder or one such binder is staged, and
-///   [`unrefined::Absent::Unshaped`] for any other term, a scrutinee that is no
-///   variable an open binder holds, or an arm of another form.
+/// - ensures: when `case` is a case on a variable and an arm or the motive
+///   reads a binder after it whose type reads it, the case at the motive `λs. Π
+///   (d′ : D[x := s]). M(s)`, each arm abstracting `d′` past its fields and
+///   equations and reading it for `D`, applied to `D`. The refined case carries
+///   each arm's written lambda to its copy, and names each lambda that binds
+///   `d′` beside the binder it stands for. [`unrefined::Absent::Unsolved`] when
+///   neither an arm nor the motive reads such a binder or one such binder is
+///   staged, and [`unrefined::Absent::Unshaped`] for any other term, a
+///   scrutinee that is no variable an open binder holds, or an arm of another
+///   form.
 /// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold,
 ///   and [`CheckRefusal::MachineInvariant`] for a binder count past any index.
 /// - panics: none.
@@ -693,8 +695,11 @@ pub fn refined_arm(
 /// # Adequacy
 /// - hypothesis: L3 — a case on a code whose arm returns a binder typed at the
 ///   code's decode separates the generalised binder from the scrutinee's
-///   refinement; the refined case checks in both checkers.
+///   refinement, and a case whose motive alone reads such a binder separates
+///   the motive's reads from the arms'; each refined case checks in both
+///   checkers.
 /// - witness: `tests::native_formers::a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483`
+/// - witness: `tests::native_formers::a_binder_that_the_motive_alone_reads_is_generalised_in_both_checkers_5324`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
     | Maybe::Present(ref refined) => refined.term != case,
     | Maybe::Absent(_) => true,
@@ -734,6 +739,8 @@ pub fn refined_case(
     }
     let variable = place_of(depth, index)?;
     let arena = context.arena_mut();
+    // The motive stands under one binder more, the scrutinee's.
+    let under = depth_past(depth, 1)?;
     let mut seeds = Vec::with_capacity(binders.len());
     for place in 0 .. binders.len() {
         let mut read = Reading::Ignores;
@@ -745,6 +752,10 @@ pub fn refined_case(
                 {
                     read = Reading::Reads;
                 }
+            }
+            let goal = CoreNode::Type(TypeNode::Computation(motive));
+            if reads(arena, goal, index_at(under, BinderDepth::from(place))?)? == Reading::Reads {
+                read = Reading::Reads;
             }
         }
         seeds.push(read);
