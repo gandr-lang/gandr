@@ -1,26 +1,28 @@
-//! An abandoned stack runs the unwind of each access it captured, innermost
-//! first, in place of the write-back it never reaches; its other frames never
-//! run. Each captured frame's destructor runs in reverse order
-//! [Congard-2025-linear_effects_exceptions_and_resource_safety]. An unwind that
-//! calls a declaration owed its body blames the run, which shows the
-//! abandonment ran it.
+//! `unwound` models cleanup after a handler abandons a continuation with open
+//! access views.
+//!
+//! It proves that captured cleanup runs from the inner access to the outer
+//! access.
+//! It shows a blame when cleanup calls an owed declaration.
+//!
+//! The examples abandon continuations through an exit handler.
+//! They observe a cleanup call and a list that survives the cleanup.
 //!
 //! - see: #1334 — `unwound`
 //! - cites: [Congard-2025-linear_effects_exceptions_and_resource_safety]
 //!
 //! [Congard-2025-linear_effects_exceptions_and_resource_safety]: https://arxiv.org/abs/2510.23517 "Congard, Munch-Maccagnoni and Douence, Linear Effects, Exceptions, and Resource Safety"
 
-// The native finite lists.
+// The import provides native finite lists.
 import std.list (List);
-// Early exit's host interface.
+// The import provides the early-exit host interface.
 import std.process;
 
-/// A declaration owed its body: a run that calls it is blamed.
+/// A run reports blame when it calls the owed `later` declaration.
 @[ owes(1) ]
 def later : Integer -> Unit;
 
-/// The rest of the scope abandoned while an access's view is open: the
-/// access's unwind runs, and its call of `later` blames the run.
+/// Cleanup calls `later` after a handler abandons an open access.
 @[ runs("blame: `later` is owed its body") ]
 def unwound() -> Integer =
   var x = 1
@@ -33,12 +35,12 @@ def unwound() -> Integer =
   };
   pure x
 
-/// A list built where it runs.
+/// The function creates a two-element list with its argument first.
 def built(a : Integer) -> List(Integer) =
   pure cons a (cons 2 nil)
 
-/// An abandoned access whose unwind reads a list the scope reads again after:
-/// the unwind and the rest of the scope each hold the list.
+/// Cleanup reads a list before the enclosing scope reads it again.
+/// Both retain the list.
 @[ runs("cons 9 (cons 1 (cons 2 nil))") ]
 def unwound_kept() -> List(Integer) =
   let ys = built 1
