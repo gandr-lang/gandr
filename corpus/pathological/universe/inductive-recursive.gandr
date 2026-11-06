@@ -96,17 +96,17 @@ rec {
   @[ refuses("NegativeOccurrence") ]
   data ULevel : Nat -> Type where {
     /// The naturals, at every level.
-    | NatV : (n : Nat) --> ULevel(n)
+    | NatV : (n : Nat) --> ULevel n
     /// The universe a level down, a code one level up.
     | TypeV : (n : Nat) --> ULevel(Succ(n))
     /// The dependent functions from a coded domain at a level.
-    | PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> -F ULevel(n))) --> ULevel(n)
+    | PiV : (n : Nat, a : ULevel n, b : +U (elLevel(n, a) -> -F ULevel n)) --> ULevel n
   }
 
   /// The decoder at each level. Its arm for `TypeV` returns the family
   /// itself, at the level under `n`.
   @[ refuses("NegativeOccurrence") ]
-  def rec elLevel(n : Nat, u : ULevel(n)) -> -F Type =
+  def rec elLevel(n : Nat, u : ULevel n) -> -F Type =
     match u where
       | NatV(m) => return Nat
       | TypeV(m) => return (ULevel m)
