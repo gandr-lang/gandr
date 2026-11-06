@@ -51,13 +51,10 @@ def keptWord : Path[.A = Path[.A = Circle](Base, Base)](
   loop ∷ Path.here Base
 ) = Path.here loop;
 
-/// The transport that `Path.ap keepNamed loop` abbreviates, from the call
-/// `keepNamed Base`.
+/// The transport from the call `keepNamed Base` along the loop, which the
+/// sugared form writes as the action `Path.ap keepNamed loop`.
 def keptFromCall : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.walk
-    (fun (y) { type(Path[.A = Circle](keepNamed Base, keepNamed y)) })
-    loop
-    (Path.here (keepNamed Base)),
+  Path.ap keepNamed loop,
   loop
 ) = Path.here loop;
 
