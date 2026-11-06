@@ -723,9 +723,9 @@ jobs:
   # `.config/integration/brake.json` (`ci:brake`). Only a huge backlog takes
   # the brake. The job needs no setup, so it runs beside the blocking set.
   # The checkout holds the commits of the whole history and the trees of its
-  # own commit alone, so git reads the lag in hours. The cycle's App reads
-  # the runs of the cycle, because the workflow's token has no room for the
-  # call. A job with no App fails, so the brake holds until the App exists.
+  # own commit alone, so git reads the lag in hours. The `gandr-lang` App
+  # reads the runs of the cycle, because the workflow's token has no room for
+  # the call. A job with no App fails, so the brake holds until it has one.
   brake:
     name: hold the landings while main lags
     if: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_ref == 'refs/heads/landing' }}
@@ -740,12 +740,12 @@ jobs:
       MISE_ENABLE_TOOLS: "jq"
     steps:
       - *git-checkout
-      - name: mint the cycle App's token
+      - name: mint the App's token
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          client-id: ${{ secrets.GANDR_CYCLE_APP_ID }}
-          private-key: ${{ secrets.GANDR_CYCLE_APP_KEY }}
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
           # The brake's need, no more: read the runs of the cycle.
           permission-actions: read
       # No cache, as in pr-title.yml: the shared cache holds every tool of

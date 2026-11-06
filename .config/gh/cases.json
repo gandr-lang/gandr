@@ -114,7 +114,7 @@
     "output": ""
   },
   {
-    "name": "#5440: the integration cycle's App prices the reads and the writes of its API together, against its own ceiling",
+    "name": "#5440: the gandr-lang App prices the reads and the writes of its API together, against the cycle's own ceiling",
     "input": {
       "sites": [
         { "file": "a.toml", "scope": "ci:cycle", "verb": "api GET" },

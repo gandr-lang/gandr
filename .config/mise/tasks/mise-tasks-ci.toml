@@ -1369,7 +1369,7 @@ done < "$scratch/actions"
 # One step of the integration cycle (#5440, `.github/workflows/integration.yml`).
 # Each step reads the state of the cycle from GitHub, so a lost or repeated
 # event changes nothing. Every call runs on GH_TOKEN, the token of the
-# cycle's own GitHub App in the workflow, because the workflow's token has no
+# `gandr-lang` App in the workflow, because the workflow's token has no
 # room for the cycle (`.config/gh/calls.toml`). `.config/integration/
 # cycle.jq` decides the step from the tips of `landing` and `integration` and
 # from the dispatched runs of ci.yml on `integration`. A passing verdict
@@ -1558,7 +1558,7 @@ fi
 # holds the landings. The limits are provisional until a day of cycles
 # gives their measure. `.config/integration/brake.bash` reads the lag in
 # hours from git, and this task reads the runs of the cycle in one call on
-# GH_TOKEN, the token of the cycle's App. A reading that fails fails the
+# GH_TOKEN, the token of the `gandr-lang` App. A reading that fails fails the
 # check, so the brake also holds when it cannot read the lag. GH_REPO names
 # the repository.
 ["ci:brake"]
