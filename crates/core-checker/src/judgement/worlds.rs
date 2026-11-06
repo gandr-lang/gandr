@@ -19,7 +19,6 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::MemoryForm;
-use gandr_core_term::shift_comp_type;
 use gandr_core_term::strengthen_comp_type;
 use gandr_core_term::world::World;
 use gandr_core_term::world::WorldForm;
@@ -476,10 +475,7 @@ impl Machine<'_, '_>
         let direction = match direction {
             Direction::Synthesise => Direction::Synthesise,
             Direction::Check(expected) => {
-                let arena = self.context.arena_mut();
-                Direction::Check(
-                    shift_comp_type(arena, expected, Binders::from(1_u32)).settle(arena),
-                )
+                Direction::Check(self.context.shift_comp_type(expected, Binders::from(1_u32)))
             },
         };
         self.context
@@ -527,7 +523,7 @@ impl Machine<'_, '_>
                 else {
                     return Err(CheckRefusal::DependentBind { at, synthesised });
                 };
-                let lowered = lowered.settle(self.context.arena_mut());
+                let lowered = self.context.settle_comp_type(lowered);
                 self.close()?;
                 Ok(Step::Ascend(Produced::CompType(lowered)))
             },
@@ -1087,7 +1083,7 @@ impl Machine<'_, '_>
         if !self.images.forming.iter().any(open) {
             return Ok(());
         }
-        let ty = read.settle(self.context.arena_mut());
+        let ty = self.context.settle_value_type(read);
         let Crossing::Stays { former, predicate } = crosses(self.context, ty)?
         else {
             return Ok(());
