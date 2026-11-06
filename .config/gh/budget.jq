@@ -5,7 +5,7 @@
 # `budget`, the hour's ceiling of each identity and API, and `site`, the
 # rows. A row names a site (`file`, `scope`), its `api` (`graphql` or
 # `rest`), its `identity` (`read` or `write` on a host, `actions` for a
-# workflow's token, `cycle` for the integration cycle's App), the `calls` of
+# workflow's token, `cycle` for the `gandr-lang` App), the `calls` of
 # that API the site holds, the `points` one run spends, how they were
 # `measured`, its `trigger`, and `hour`, the runs in an hour on one host at
 # eight seats.
@@ -29,8 +29,8 @@ include "class";
 
 def key: "\(.file) \(.scope) (\(.api))";
 
-# The kinds an identity covers: a workflow's token and the cycle's App each
-# read and write.
+# The kinds an identity covers: a workflow's token and the `gandr-lang` App
+# each read and write.
 def covers: if . == "actions" or . == "cycle" then ["read", "write"] else [.] end;
 
 def plural($n): if $n == 1 then "" else "s" end;

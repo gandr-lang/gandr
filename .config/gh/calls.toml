@@ -229,11 +229,12 @@ site = [
 ]
 
 # The hour's ceiling of each identity on each API: a fifth of the reader's
-# and the writer's 5,000 a host, the whole of a workflow token's hour, which
-# no host shares, and a fifth of the integration cycle's App, whose 5,000 an
-# hour no other site shares (#5440).
+# and the writer's 5,000 a host, and the whole of a workflow token's hour,
+# which no host shares. `cycle` holds the whole of the `gandr-lang` App
+# installation's 5,000 an hour (#5440). landing.yml shares it lightly when no
+# `LANDING_TOKEN` is set, and its rows stand under `actions`.
 [budget]
 read = { graphql = 1000, rest = 1000 }
 write = { graphql = 1000, rest = 1000 }
 actions = { graphql = 1000, rest = 1000 }
-cycle = { graphql = 1000, rest = 1000 }
+cycle = { graphql = 5000, rest = 5000 }

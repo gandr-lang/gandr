@@ -23,12 +23,12 @@ name: integration
 # step also reads the brake (#5442), and a brake that takes or lets go pages
 # every lane and the coordinator.
 #
-# Every call of the step runs on the cycle's own GitHub App, minted from
-# `GANDR_CYCLE_APP_ID` and `GANDR_CYCLE_APP_KEY`: the workflow's token has no
-# room for the cycle in `.config/gh/calls.toml`. The App's merge commits are
-# signed, and its pushes start this workflow again, which reads that nothing
-# changed. Until the owner sets the two secrets, the step only says that it
-# waits for them.
+# Every call of the step runs on the `gandr-lang` App, minted from the
+# organisation's secrets `LANDING_APP_ID` and `LANDING_APP_PRIVATE_KEY`, which
+# landing.yml reads too: the workflow's token has no room for the cycle in
+# `.config/gh/calls.toml`. The App's merge commits are signed, and its pushes
+# start this workflow again, which reads that nothing changed. Without the
+# two secrets, the step only says that it waits for them.
 on:
   push:
     branches: [landing, integration]
@@ -84,31 +84,31 @@ jobs:
       brake: ${{ steps.step.outputs.brake }}
       list: ${{ steps.step.outputs.list }}
     env:
-      GANDR_CYCLE_APP_ID: ${{ secrets.GANDR_CYCLE_APP_ID }}
+      LANDING_APP_ID: ${{ secrets.LANDING_APP_ID }}
       # mise.toml pins neither tool: the task's own pins (`tools.jq`,
       # `tools.yq`) install them when it runs, and no other tool installs.
       MISE_ENABLE_TOOLS: "jq,yq"
     steps:
       - name: say that the cycle waits for its App
-        if: ${{ env.GANDR_CYCLE_APP_ID == '' }}
-        run: echo "The cycle waits for its App, the secrets GANDR_CYCLE_APP_ID and GANDR_CYCLE_APP_KEY." >> "$GITHUB_STEP_SUMMARY"
+        if: ${{ env.LANDING_APP_ID == '' }}
+        run: echo "The cycle waits for its App, the secrets LANDING_APP_ID and LANDING_APP_PRIVATE_KEY." >> "$GITHUB_STEP_SUMMARY"
       # The brake (#5442) reads the lag of `main` behind `landing` from git:
       # the commits of the whole history and the trees of one commit.
       - name: git checkout
-        if: ${{ env.GANDR_CYCLE_APP_ID != '' }}
+        if: ${{ env.LANDING_APP_ID != '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
           filter: tree:0
           ref: ${{ github.event.repository.default_branch }}
-      - name: mint the cycle App's token
+      - name: mint the App's token
         id: app
-        if: ${{ env.GANDR_CYCLE_APP_ID != '' }}
+        if: ${{ env.LANDING_APP_ID != '' }}
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          client-id: ${{ secrets.GANDR_CYCLE_APP_ID }}
-          private-key: ${{ secrets.GANDR_CYCLE_APP_KEY }}
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
           # The step's needs, no more: move `integration` and `main`, merge;
           # dispatch ci.yml and read its runs and reports; keep the issues.
           permission-contents: write
@@ -117,13 +117,13 @@ jobs:
       # No cache, as in pr-title.yml: the shared cache holds every tool of
       # CI, and this job installs none of mise.toml's.
       - name: install mise
-        if: ${{ env.GANDR_CYCLE_APP_ID != '' }}
+        if: ${{ env.LANDING_APP_ID != '' }}
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
         with:
           cache: "false"
       - id: step
         name: read the verdict, take landing and start the suite
-        if: ${{ env.GANDR_CYCLE_APP_ID != '' }}
+        if: ${{ env.LANDING_APP_ID != '' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
