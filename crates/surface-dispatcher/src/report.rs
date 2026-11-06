@@ -954,12 +954,9 @@ mod tests
         let Ok(Composed::Settled { report, .. }) = compose(
             &grammar,
             CorpusRoot::Fixture,
-            SourceText::from(
-                r#"@[ checks ] def fixture = 1 ;
-def plain = 2 ;
-def hole : Integer ;
-def broken = missing ;"#,
-            ),
+            SourceText::from(include_str!(
+                "report/fixtures/each-verb-shows-its-declarations.gandr"
+            )),
             &mut lowerings,
         )
         else {
@@ -1152,9 +1149,7 @@ def broken = missing ;"#,
         let ordinary = compose_source(
             "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ; def hole : Integer ;",
         );
-        let pending = compose_source(
-            "module M : *{ x : Integer, z : Integer } where { def x = 1; }\ndef identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ; def hole : Integer ;",
-        );
+        let pending = compose_source(include_str!("report/unformatted/str-pending.gandr"));
         let mut report = RunReport::default();
         report.read(
             SourceRoot::Fixture,

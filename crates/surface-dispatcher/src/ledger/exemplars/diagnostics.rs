@@ -710,15 +710,19 @@ mod tests
         };
         let other = written(
             "other.gandr",
-            "/// `MissingPayload`: states another.\n@[ refuses(\"UnresolvedName\") ] def a = b ;\n",
+            include_str!("diagnostics/fixtures/an-exemplar-refuses-with-its-own-name-other.gandr"),
         );
         let admitted = written(
             "admitted.gandr",
-            "/// `OutOfFragment.Reserved`: refused at another boundary.\n@[ refuses(\"OutOfFragment.match_expression\") ]\ndef stated(x : Void) -> -F Integer { match x -> -F Integer {} }\n",
+            include_str!(
+                "diagnostics/fixtures/an-exemplar-refuses-with-its-own-name-admitted.gandr"
+            ),
         );
         let unnamed = written(
             "unnamed.gandr",
-            "/// Names nothing.\n@[ refuses(\"MissingPayload\") ]\n@[doc]\ndef f = 42;\n",
+            include_str!(
+                "diagnostics/fixtures/an-exemplar-refuses-with-its-own-name-unnamed.gandr"
+            ),
         );
         let subject = |name: &str| {
             Subject::every()

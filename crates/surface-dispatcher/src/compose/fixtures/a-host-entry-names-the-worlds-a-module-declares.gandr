@@ -1,0 +1,3 @@
+world operator;
+world seat;
+def moved() -> -F Integer { migrate [seat] { pure 1 } }

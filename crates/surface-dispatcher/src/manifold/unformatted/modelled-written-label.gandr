@@ -1,0 +1,2 @@
+module {REQUIRED}{at}(M : Model({interface}){manifest}) where {{}}
+module {OFFERED}{at} = {REQUIRED}{at}({module});

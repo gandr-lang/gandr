@@ -2423,7 +2423,9 @@ pub mod tests
         );
         scratch.file(
             Path::new("fixture/importer.gandr"),
-            SourceText::from("import \"./base.gandr\" ;\ndef two = one ;"),
+            SourceText::from(include_str!(
+                "walk/fixtures/a-source-given-twice-answers-twice-from-one-judgement.gandr"
+            )),
         );
         let [base, importer] =
             ["base.gandr", "importer.gandr"].map(|file| scratch.0.join("fixture").join(file));
@@ -2487,9 +2489,9 @@ pub mod tests
         );
         scratch.file(
             Path::new("corpus/fixture/pending/form.gandr"),
-            SourceText::from(
-                "module M : *{ x : Integer, z : Integer } where { def x = 1; }\ndef broken = missing ;",
-            ),
+            SourceText::from(include_str!(
+                "walk/fixtures/each-root-stands-its-sources.gandr"
+            )),
         );
         scratch.file(
             Path::new("corpus/fixture/pending/coded.gandr"),
@@ -2803,16 +2805,17 @@ pub mod tests
                 })
                 .collect()
         };
-        let base = "@[ checks ]\npub data Point : Type where {\n  | Here : Point\n}\n\n@[ checks ]\npub \
-                    def here : Point ;\ndef here = Here ;\n";
+        let base = include_str!("walk/fixtures/an-importer-is-judged-over-its-sibling-base.gandr");
         scratch.file(Path::new("fixture/base.gandr"), SourceText::from(base));
         for side in ["left", "right"] {
             scratch.file(
                 Path::new(&format!("fixture/{side}.gandr")),
                 SourceText::from(
                     format!(
-                        "import \"./base.gandr\" ;\n\n@[ checks ]\npub def {side} : Point ;\ndef \
-                         {side} = here ;\n"
+                        include_str!(
+                            "walk/unformatted/an-importer-is-judged-over-its-sibling-1.gandr"
+                        ),
+                        side = side
                     )
                     .as_str(),
                 ),
@@ -2823,15 +2826,16 @@ pub mod tests
         // not what that source imports.
         scratch.file(
             Path::new("fixture/top.gandr"),
-            SourceText::from(
-                "import \"./left.gandr\" ;\nimport \"./right.gandr\" ;\nimport \"./base.gandr\" \
-                 ;\n\n@[ checks ]\ndef top : Point ;\ndef top = left ;\n",
-            ),
+            SourceText::from(include_str!(
+                "walk/fixtures/an-importer-is-judged-over-its-sibling-2.gandr"
+            )),
         );
         // A source no import joins to the diamond: a component of its own.
         scratch.file(
             Path::new("fixture/apart.gandr"),
-            SourceText::from("@[ checks ]\ndef apart : Integer ;\ndef apart = 1 ;\n"),
+            SourceText::from(include_str!(
+                "walk/fixtures/an-importer-is-judged-over-its-sibling-3.gandr"
+            )),
         );
         for width in widths() {
             let mut judged = Vec::new();
@@ -2949,8 +2953,7 @@ pub mod tests
                 Path::new(&format!("fixture/{side}.gandr")),
                 SourceText::from(
                     format!(
-                        "import std.string (concat) ;\n\n@[ checks ]\ndef {side} : Integer ;\ndef \
-                         {side} = 1 ;\n"
+                        include_str!("walk/unformatted/importers-of-a-given-std-module-are-judged-apart-4856.gandr"), side = side
                     )
                     .as_str(),
                 ),
@@ -3018,17 +3021,16 @@ pub mod tests
         // fixture root it is read, and settles when the checker refuses.
         scratch.file(
             Path::new("strict/s.gandr"),
-            SourceText::from(
-                "def one = 1 ;\n\n@[ refuses(\"UnresolvedName\") ]\ndef bad = nowhere ;\n",
-            ),
+            SourceText::from(include_str!(
+                "walk/fixtures/each-source-of-a-component-settles-under-its-own-root-3100-1.gandr"
+            )),
         );
         let strict = scratch.0.join("strict/s.gandr");
         scratch.file(
             Path::new("fixture/f.gandr"),
             SourceText::from(
                 format!(
-                    "import \"{}\" ;\n\n@[ refuses(\"UnresolvedName\") ]\ndef missing = nowhere \
-                     ;\n",
+                    include_str!("walk/unformatted/each-source-of-a-component-settles-under-its-own-root-3100-2.gandr"),
                     strict.display()
                 )
                 .as_str(),
@@ -3074,21 +3076,28 @@ pub mod tests
         let files = [
             (
                 "fixture/base.gandr",
-                "pub module Seat where {\n  def task : Integer = 1;\n}\n",
+                include_str!(
+                    "walk/fixtures/a-module-resolves-through-the-importer-s-own-import-files.gandr"
+                ),
             ),
             ("fixture/shared.gandr", "def shared : Integer = 0;\n"),
             (
                 "fixture/mid.gandr",
-                "import \"./shared.gandr\";\nimport \"./base.gandr\";\n\ndef m : Integer = \
-                 Seat.task;\n",
+                include_str!(
+                    "walk/fixtures/a-module-resolves-through-the-importer-s-own-import-1.gandr"
+                ),
             ),
             (
                 "fixture/other.gandr",
-                "import \"./shared.gandr\";\n\nmodule Seat where {\n  def other : Integer = 2;\n}\n",
+                include_str!(
+                    "walk/fixtures/a-module-resolves-through-the-importer-s-own-import-2.gandr"
+                ),
             ),
             (
                 "fixture/user.gandr",
-                "import \"./base.gandr\";\n\ndef t : Integer = Seat.task;\n",
+                include_str!(
+                    "walk/fixtures/a-module-resolves-through-the-importer-s-own-import-3.gandr"
+                ),
             ),
         ];
         for (relative, text) in files {
@@ -3123,7 +3132,8 @@ pub mod tests
     fn an_import_parses_its_importer_once_617()
     {
         let scratch = Scratch::new(Path::new("parsed-once"));
-        let floor = "/// One.\n@[ checks ]\ndata One : Type where {\n  | It : One\n}\n";
+        let floor =
+            include_str!("walk/fixtures/an-import-parses-its-importer-once-617-floor.gandr");
         let body = (0_usize .. 150_usize).fold(String::new(), |mut body, n| {
             let _written = write!(
                 body,
@@ -3133,7 +3143,14 @@ pub mod tests
         });
         scratch.file(
             Path::new("fixture/flat/flat.gandr"),
-            SourceText::from(format!("{floor}\n{body}").as_str()),
+            SourceText::from(
+                format!(
+                    include_str!("walk/unformatted/an-import-parses-its-importer-once-617-1.gandr"),
+                    body = body,
+                    floor = floor
+                )
+                .as_str(),
+            ),
         );
         scratch.file(
             Path::new("fixture/import/floor.gandr"),
@@ -3141,7 +3158,13 @@ pub mod tests
         );
         scratch.file(
             Path::new("fixture/import/importer.gandr"),
-            SourceText::from(format!("import \"./floor.gandr\" ;\n{body}").as_str()),
+            SourceText::from(
+                format!(
+                    include_str!("walk/unformatted/an-import-parses-its-importer-once-617-2.gandr"),
+                    body = body
+                )
+                .as_str(),
+            ),
         );
         let parsed = |directory: &str| {
             let ControlFlow::Continue(report) =
@@ -3225,20 +3248,29 @@ pub mod tests
         let sources = [
             (
                 "base",
-                "@[ checks ]\npub def one : Integer ;\ndef one = 1 ;\n",
+                include_str!(
+                    "walk/unformatted/a-source-refused-whole-refuses-only-itself-and-its-importers-1027-sources.gandr"
+                ),
             ),
             // A source that declares nothing, an attribute block decorating
             // nothing after its import, is refused as a whole.
-            ("bad", "import \"./base.gandr\" ;\n\n@[ checks ]\n"),
+            (
+                "bad",
+                include_str!(
+                    "walk/unformatted/a-source-refused-whole-refuses-only-itself-and-its-importers-1027-1.gandr"
+                ),
+            ),
             (
                 "sibling",
-                "import \"./base.gandr\" ;\n\n@[ checks ]\ndef three : Integer ;\ndef three = \
-                 one ;\n",
+                include_str!(
+                    "walk/unformatted/a-source-refused-whole-refuses-only-itself-and-its-importers-1027-2.gandr"
+                ),
             ),
             (
                 "top",
-                "import \"./bad.gandr\" ;\n\n@[ refuses(\"ImportUnresolved\") ]\ndef four : \
-                 Integer ;\ndef four = 4 ;\n",
+                include_str!(
+                    "walk/unformatted/a-source-refused-whole-refuses-only-itself-and-its-importers-1027-3.gandr"
+                ),
             ),
         ];
         for (name, text) in sources {
@@ -3286,11 +3318,13 @@ pub mod tests
         let scratch = Scratch::new(Path::new("refused-pair"));
         scratch.file(
             Path::new("fixture/base.gandr"),
-            SourceText::from("@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n"),
+            SourceText::from(include_str!(
+                "walk/unformatted/a-pair-refused-whole-in-its-importer-settles-its-base.gandr"
+            )),
         );
         scratch.file(
             Path::new("fixture/bad.gandr"),
-            SourceText::from("import \"./base.gandr\" ;\n\n@[ checks ]\n"),
+            SourceText::from(include_str!("walk/unformatted/a-source-refused-whole-refuses-only-itself-and-its-importers-1027-1.gandr")),
         );
         for width in core::iter::once(Width::SERIAL).chain(widths()) {
             let (seen, _report) = visited(&scratch.0, vec![scratch.0.join("fixture")], width);
@@ -3322,16 +3356,21 @@ pub mod tests
     fn two_sources_refused_whole_are_each_set_apart()
     {
         let scratch = Scratch::new(Path::new("refused-twice"));
-        let checks = "@[ checks ]\npub def one : Integer ;\ndef one = 1 ;\n";
-        let bad = "import \"./base.gandr\" ;\n\n@[ checks ]\n";
+        let checks = include_str!(
+            "walk/unformatted/a-source-refused-whole-refuses-only-itself-and-its-importers-1027-sources.gandr"
+        );
+        let bad = include_str!(
+            "walk/unformatted/a-source-refused-whole-refuses-only-itself-and-its-importers-1027-1.gandr"
+        );
         for (name, text) in [
             ("base", checks),
             ("bad1", bad),
             ("bad2", bad),
             (
                 "sibling",
-                "import \"./base.gandr\" ;\n\n@[ checks ]\ndef three : Integer ;\ndef three = \
-                 one ;\n",
+                include_str!(
+                    "walk/unformatted/a-source-refused-whole-refuses-only-itself-and-its-importers-1027-2.gandr"
+                ),
             ),
         ] {
             scratch.file(
@@ -3382,9 +3421,12 @@ pub mod tests
     fn an_import_its_parse_does_not_read_is_grouped_again()
     {
         let scratch = Scratch::new(Path::new("regrouped"));
-        let base = "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n";
-        let nested = "module inner where {\n  import \"./base.gandr\" ;\n}\n\n@[ checks ]\ndef three : \
-                      Integer ;\ndef three = 3 ;\n";
+        let base = include_str!(
+            "walk/unformatted/a-pair-refused-whole-in-its-importer-settles-its-base.gandr"
+        );
+        let nested = include_str!(
+            "walk/fixtures/an-import-its-parse-does-not-read-is-grouped-again-nested.gandr"
+        );
         scratch.file(Path::new("fixture/base.gandr"), SourceText::from(base));
         scratch.file(Path::new("fixture/nested.gandr"), SourceText::from(nested));
         for width in widths() {
@@ -3440,15 +3482,16 @@ pub mod tests
         let scratch = Scratch::new(Path::new("one-form-two-members"));
         scratch.file(
             Path::new("fixture/base.gandr"),
-            SourceText::from("@[ checks ]\ndata One : Type where {\n  | Pt : One\n}\n"),
+            SourceText::from(include_str!(
+                "walk/fixtures/one-form-in-two-members-keeps-its-own-expectation-596-1.gandr"
+            )),
         );
         for (side, documentation) in [("left", "The left two."), ("right", "The right two.")] {
             scratch.file(
                 Path::new(&format!("fixture/{side}.gandr")),
                 SourceText::from(
                     format!(
-                        "import \"./base.gandr\" ;\n\n/// {documentation}\n@[ checks ]\ndata Two \
-                         : Type where {{\n  | L : Two\n  | R : Two\n}}\n"
+                        include_str!("walk/unformatted/one-form-in-two-members-keeps-its-own-expectation-596-2.gandr"), documentation = documentation
                     )
                     .as_str(),
                 ),

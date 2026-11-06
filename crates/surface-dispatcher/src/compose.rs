@@ -4974,8 +4974,8 @@ mod tests
         }
 
         let pbg = grammar();
-        let closure_text = "def one : Integer ;\ndef one = 1 ;\n";
-        let own = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        let closure_text = include_str!("compose/fixtures/module-closure-text.gandr");
+        let own = include_str!("compose/fixtures/module-own.gandr");
         let text = format!("{closure_text}{own}");
         let unit = Unit::new(vec![
             UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
@@ -5037,7 +5037,7 @@ mod tests
         assert_eq!(
             lower_closure(
                 Arc::new(grammar()),
-                String::from("def one = 1 ;\n/* never closed"),
+                String::from(include_str!("compose/unformatted/module.gandr")),
                 alone(),
                 &mut untouched,
             )
@@ -5216,15 +5216,9 @@ mod tests
         // The fold's nested calls and `told`'s are elaborated: the closure's
         // nodes are located before the document's lowering, the document's
         // after it.
-        let closure_text = "data Int : Type where {\n  | Z : Int\n  | S : (x : Int) --> Int\n  | P : (x :  Int) --> Int\n  rule : S (P x) ==> x;\n  rule : P (S x) ==> x;\n}\ndef \
-                            rec tell(n : Int) -> -F Int {\n  match n {\n    | Z => Z\n    | S(x) \
-                            => S (tell[<] x)\n    | P(x) => P (tell[<] x)\n  }\n}\ndef one : \
-                            Integer ;\ndef one = 1 ;\ndef owed : Integer ;\ndef lost = nowhere \
-                            ;\ndef bad : Integer ;\ndef bad = \"bad\" ;\n";
-        let first = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n@[ \
-                     runs(\"1\") ] def ran = one ;\ndef told = S (tell Z) ;\n";
-        let second = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = \"two\" \
-                      ;\ndef three : Integer ;\ndef three = owed ;\n";
+        let closure_text = include_str!("compose/fixtures/reported-closure-text.gandr");
+        let first = include_str!("compose/fixtures/reported-first.gandr");
+        let second = include_str!("compose/fixtures/reported-second.gandr");
         let base = ByteOffset::from(closure_text.len());
         let unit = Unit::new(vec![
             UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
@@ -5393,15 +5387,9 @@ mod tests
         let report = settled(
             &grammar,
             CorpusRoot::Fixture,
-            SourceText::from(
-                r#"def answer : Integer ;
-def answer = 42 ;
-def copy = answer ;
-@[ owes(1) ] def later : Integer ;
-@[ refuses("UnresolvedName") ] def broken = missing ;
-def wrong : Integer ;
-def wrong = "text" ;"#,
-            ),
+            SourceText::from(include_str!(
+                "compose/fixtures/a-module-settles-every-declaration-once-report.gandr"
+            )),
         );
         let rows: Vec<(String, Settlement, Outcome)> = report
             .declarations()
@@ -5459,10 +5447,9 @@ def wrong = "text" ;"#,
     fn a_host_entry_names_the_worlds_a_module_declares()
     {
         let grammar = grammar();
-        let source = SourceText::from(
-            "world operator ;\nworld seat ;\ndef moved() -> -F Integer { migrate [seat] { pure 1 \
-             } }\n",
-        );
+        let source = SourceText::from(include_str!(
+            "compose/fixtures/a-host-entry-names-the-worlds-a-module-declares.gandr"
+        ));
         let moved = |grant: &HostGrant| {
             let Lowered::Module { module, arena } =
                 lower_source(&grammar, source, &mut LoweringCount::default())
@@ -5501,11 +5488,8 @@ def wrong = "text" ;"#,
     #[test]
     fn an_effectful_declaration_stays_on_the_checkers_side()
     {
-        let listed = crate::tests::Listed::hosted(concat!(
-            "def peek(c : Cap {read}) -> -F [std.fs.Eff] String { c.read \"notes\" }\n",
-            "def quit() -> -F Unit { handle c : std.process.Exit.Eff { c.exit 1 } with { | pure(x) => pure x | oper exit(code, k) => k *{} } }\n",
-            "def answer : Integer ;\n",
-            "def answer = 42 ;\n",
+        let listed = crate::tests::Listed::hosted(include_str!(
+            "compose/fixtures/an-effectful-declaration-stays-on-the-checkers-side-listed.gandr"
         ));
         let Composed::Settled { report, .. } = listed.composed(CorpusRoot::Strict)
         else {
@@ -5590,13 +5574,17 @@ def wrong = "text" ;"#,
         let mut lowerings = LoweringCount::default();
         for (source, refused, expected) in [
             (
-                "def bad = 1 ′ 2 ;\ndef good = 2 ;",
+                include_str!(
+                    "compose/unformatted/a-lowering-carries-the-parse-obligations-1.gandr"
+                ),
                 false,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 15_usize)][..],
             ),
             ("def good = 2 ;", false, &[][..]),
             (
-                "def bad = 1 ′ 2 ;\npure 3",
+                include_str!(
+                    "compose/unformatted/a-lowering-carries-the-parse-obligations-2.gandr"
+                ),
                 false,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 15_usize)][..],
             ),
@@ -5669,12 +5657,9 @@ def wrong = "text" ;"#,
         let composed = compose(
             &grammar,
             CorpusRoot::Fixture,
-            SourceText::from(
-                r#"@[ refuses("ImplicitTelescope") ] def f[a : Type] = 1 ;
-@[ refuses("UnresolvedName") ] def g = missing ;
-def h = 1 ;
-module M : *{ x : Integer, z : Integer } where { def x = 1; }"#,
-            ),
+            SourceText::from(include_str!(
+                "compose/fixtures/a-refusal-at-a-declaration-form-is-unstatable-composed.gandr"
+            )),
             &mut lowerings,
         );
         let Ok(Composed::Settled {
@@ -5836,24 +5821,9 @@ module M : *{ x : Integer, z : Integer } where { def x = 1; }"#,
         let report = settled(
             &grammar,
             CorpusRoot::Strict,
-            SourceText::from(
-                r"/// The 2-path `Path.here (Path.step f g1)` moved along `b`.
-def liftLeft(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g2) {
-  Path.walk (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f c)) }) b (Path.here (Path.step f g1))
-}
-/// Two lifts composed.
-def two(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2), g3 : Path[.A = A](y, z), c : Path[.A = Path[.A = A](y, z)](g2, g3)) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g3) {
-  Path.step (liftLeft A x y z f g1 g2 b) (liftLeft A x y z f g2 g3 c)
-}
-/// `two` then a third lift, against its body then the third lift.
-def unfolded(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2), g3 : Path[.A = A](y, z), c : Path[.A = Path[.A = A](y, z)](g2, g3), g4 : Path[.A = A](y, z), d : Path[.A = Path[.A = A](y, z)](g3, g4)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g4)](
-  Path.step (two A x y z f g1 g2 b g3 c) (liftLeft A x y z f g3 g4 d),
-  Path.step (Path.step (liftLeft A x y z f g1 g2 b) (liftLeft A x y z f g2 g3 c)) (liftLeft A x y z f g3 g4 d)
-) {
-  Path.here (Path.step (Path.step (liftLeft A x y z f g1 g2 b) (liftLeft A x y z f g2 g3 c)) (liftLeft A x y z f g3 g4 d))
-}
-",
-            ),
+            SourceText::from(include_str!(
+                "compose/fixtures/a-composite-after-a-call-to-a-defined-composite-replays-4246-report.gandr"
+            )),
         );
         let outcomes: Vec<(String, Outcome)> = report
             .declarations()
@@ -5881,28 +5851,9 @@ def unfolded(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A
         let report = settled(
             &grammar,
             CorpusRoot::Strict,
-            SourceText::from(
-                r"/// `Path.ap` as a definition.
-def ap(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](F x, F y) {
-  Path.ap F p
-}
-/// The 2-path `a` whiskered on the right by `g`.
-def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
-  ap type(Path[.A = A](x, y)) type(Path[.A = A](x, z)) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z)) f1 f2 a
-}
-/// The 2-path `Path.here (Path.step f1 g)` moved along `a`.
-def liftRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
-  Path.walk (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step c g)) }) a (Path.here (Path.step f1 g))
-}
-/// A lift whiskered by the reflexivity at its end, against the lift.
-def whiskeredByHere(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g)](
-  whiskerRight A x z z (Path.step f1 g) (Path.step f2 g) (liftRight A x y z f1 f2 a g) (Path.here z),
-  liftRight A x y z f1 f2 a g
-) {
-  Path.here (liftRight A x y z f1 f2 a g)
-}
-",
-            ),
+            SourceText::from(include_str!(
+                "compose/fixtures/a-defined-two-path-whiskered-by-a-reflexivity-replays-4255-report.gandr"
+            )),
         );
         let outcomes: Vec<(String, Outcome)> = report
             .declarations()
@@ -5930,25 +5881,9 @@ def whiskeredByHere(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 :
         let report = settled(
             &grammar,
             CorpusRoot::Strict,
-            SourceText::from(
-                r"/// A path from a point to itself.
-def p(A : Type, x : A) -> Path[.A = A](x, x) {
-  Path.here x
-}
-/// Three of them composed reduce to the reflexivity.
-def three(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](Path.step (Path.step (p A x) (p A x)) (p A x), Path.here x) {
-  Path.here (Path.here x)
-}
-/// A 2-path between reflexivities.
-def r(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x) {
-  Path.here (Path.here x)
-}
-/// Three of them composed reduce to the reflexivity's reflexivity.
-def threeTwoPaths(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](Path.step (Path.step (r A x) (r A x)) (r A x), Path.here (Path.here x)) {
-  Path.here (Path.here (Path.here x))
-}
-",
-            ),
+            SourceText::from(include_str!(
+                "compose/fixtures/three-defined-paths-composed-replay-4412-report.gandr"
+            )),
         );
         let outcomes: Vec<(String, Outcome)> = report
             .declarations()
@@ -5975,32 +5910,9 @@ def threeTwoPaths(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Pa
         let report = settled(
             &grammar,
             CorpusRoot::Strict,
-            SourceText::from(
-                r"/// A function's action on a path.
-def ap(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](F x, F y) {
-  Path.ap F p
-}
-/// The left whisker, by the action of composing with `f`.
-def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g2) {
-  ap type(Path[.A = A](y, z)) type(Path[.A = A](x, z)) (fun (q : Path[.A = A](y, z)) { Path.step f q } : Path[.A = A](y, z) -> Path[.A = A](x, z)) g1 g2 b
-}
-/// The right whisker, by the action of composing with `g`.
-def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
-  ap type(Path[.A = A](x, y)) type(Path[.A = A](x, z)) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z)) f1 f2 a
-}
-/// The associator, by conversion.
-def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z), h : Path[.A = A](z, w)) -> Path[.A = Path[.A = A](x, w)](Path.step (Path.step f g) h, Path.step f (Path.step g h)) {
-  Path.here (Path.step (Path.step f g) h)
-}
-/// A whisker, an associator read back and a whisker, at reflexivities.
-def whiskered(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](
-  Path.step (Path.step (whiskerLeft A x x x (Path.here x) (Path.step (Path.here x) (Path.here x)) (Path.step (Path.here x) (Path.here x)) (Path.here (Path.step (Path.here x) (Path.here x)))) (Path.back (assoc A x x x x (Path.here x) (Path.here x) (Path.here x)))) (whiskerRight A x x x (Path.step (Path.here x) (Path.here x)) (Path.step (Path.here x) (Path.here x)) (Path.here (Path.step (Path.here x) (Path.here x))) (Path.here x)),
-  Path.here (Path.here x)
-) {
-  Path.here (Path.here (Path.here x))
-}
-",
-            ),
+            SourceText::from(include_str!(
+                "compose/fixtures/a-whisker-an-inverse-associator-and-a-whisker-replay-4413-report.gandr"
+            )),
         );
         let outcomes: Vec<(String, Outcome)> = report
             .declarations()
@@ -6028,32 +5940,9 @@ def whiskered(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.h
         let report = settled(
             &grammar,
             CorpusRoot::Strict,
-            SourceText::from(
-                r"/// The left whisker, as a level-two composite.
-def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g2) {
-  compose[4, 9] (chain 2 (0, 1)) (f, b)
-}
-/// The right whisker, as a level-two composite.
-def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
-  compose[4, 9] (chain 2 (1, 0)) (a, g)
-}
-/// The associator, by conversion.
-def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z), h : Path[.A = A](z, w)) -> Path[.A = Path[.A = A](x, w)](Path.step (Path.step f g) h, Path.step f (Path.step g h)) {
-  Path.here (Path.step (Path.step f g) h)
-}
-/// Two squares side by side compose to a square, through two associators.
-def cylinderComposite2(A : Type, x : A, x2 : A, xs : Path[.A = A](x, x2), y : A, y2 : A, ys : Path[.A = A](y, y2), f : Path[.A = A](x, y), f2 : Path[.A = A](x2, y2), a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2), z : A, g : Path[.A = A](y, z), z2 : A, g2 : Path[.A = A](y2, z2), zs : Path[.A = A](z, z2), b : Path[.A = Path[.A = A](y, z2)](Path.step g zs, Path.step ys g2)) -> Path[.A = Path[.A = A](x, z2)](Path.step (Path.step f g) zs, Path.step xs (Path.step f2 g2)) {
-  Path.step (Path.step (Path.step (Path.step (assoc A x y z z2 f g zs) (whiskerLeft A x y z2 f (Path.step g zs) (Path.step ys g2) b)) (Path.back (assoc A x y y2 z2 f ys g2))) (whiskerRight A x y2 z2 (Path.step f ys) (Path.step xs f2) a g2)) (assoc A x x2 y2 z2 xs f2 g2)
-}
-/// Two squares of reflexivities side by side compose to the reflexivity of the reflexivity.
-def cylinderCompositeAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](
-  cylinderComposite2 A x x (Path.here x) x x (Path.here x) (Path.here x) (Path.here x) (Path.here (Path.here x)) x (Path.here x) x (Path.here x) (Path.here x) (Path.here (Path.here x)),
-  Path.here (Path.here x)
-) {
-  Path.here (Path.here (Path.here x))
-}
-",
-            ),
+            SourceText::from(include_str!(
+                "compose/unformatted/a-defined-chain-of-level-two-whiskers-replays-at-reflexivities-4419-report.gandr"
+            )),
         );
         let outcomes: Vec<(String, Outcome)> = report
             .declarations()
@@ -6086,36 +5975,9 @@ def cylinderCompositeAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A]
         let report = settled(
             &grammar,
             CorpusRoot::Strict,
-            SourceText::from(
-                r"/// The left whisker, as a level-two composite.
-def whiskerLeft(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g1 : Path[.A = A](y, z), g2 : Path[.A = A](y, z), b : Path[.A = Path[.A = A](y, z)](g1, g2)) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g2) {
-  compose[4, 9] (chain 2 (0, 1)) (f, b)
-}
-/// The right whisker, as a level-two composite.
-def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
-  compose[4, 9] (chain 2 (1, 0)) (a, g)
-}
-/// The associator, by conversion.
-def assoc(A : Type, x : A, y : A, z : A, w : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z), h : Path[.A = A](z, w)) -> Path[.A = Path[.A = A](x, w)](Path.step (Path.step f g) h, Path.step f (Path.step g h)) {
-  Path.here (Path.step (Path.step f g) h)
-}
-/// Two squares side by side compose to a square, through two associators.
-def cylinderComposite2(A : Type, x : A, y : A, f : Path[.A = A](x, y), x2 : A, y2 : A, f2 : Path[.A = A](x2, y2), xs : Path[.A = A](x, x2), ys : Path[.A = A](y, y2), a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2), z : A, g : Path[.A = A](y, z), z2 : A, g2 : Path[.A = A](y2, z2), zs : Path[.A = A](z, z2), b : Path[.A = Path[.A = A](y, z2)](Path.step g zs, Path.step ys g2)) -> Path[.A = Path[.A = A](x, z2)](Path.step (Path.step f g) zs, Path.step xs (Path.step f2 g2)) {
-  Path.step (Path.step (Path.step (Path.step (assoc A x y z z2 f g zs) (whiskerLeft A x y z2 f (Path.step g zs) (Path.step ys g2) b)) (Path.back (assoc A x y y2 z2 f ys g2))) (whiskerRight A x y2 z2 (Path.step f ys) (Path.step xs f2) a g2)) (assoc A x x2 y2 z2 xs f2 g2)
-}
-/// A stack of two squares composes to a square, the composite of their reversed squares reversed.
-def cylinderStack2(A : Type, x : A, y : A, f : Path[.A = A](x, y), x2 : A, y2 : A, f2 : Path[.A = A](x2, y2), xs : Path[.A = A](x, x2), ys : Path[.A = A](y, y2), a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2), x3 : A, y3 : A, f3 : Path[.A = A](x3, y3), xs2 : Path[.A = A](x2, x3), ys2 : Path[.A = A](y2, y3), b : Path[.A = Path[.A = A](x2, y3)](Path.step f2 ys2, Path.step xs2 f3)) -> Path[.A = Path[.A = A](x, y3)](Path.step f (Path.step ys ys2), Path.step (Path.step xs xs2) f3) {
-  Path.back (cylinderComposite2 A x x2 xs y y2 ys f f2 (Path.back a) x3 xs2 y3 ys2 f3 (Path.back b))
-}
-/// A stack of two squares of reflexivities composes to the reflexivity of the reflexivity.
-def cylinderStackAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](Path.here x, Path.here x)](
-  cylinderStack2 A x x (Path.here x) x x (Path.here x) (Path.here x) (Path.here x) (Path.here (Path.here x)) x x (Path.here x) (Path.here x) (Path.here x) (Path.here (Path.here x)),
-  Path.here (Path.here x)
-) {
-  Path.here (Path.here (Path.here x))
-}
-",
-            ),
+            SourceText::from(include_str!(
+                "compose/unformatted/a-stack-of-level-two-whiskered-squares-replays-at-reflexivities-4435-report.gandr"
+            )),
         );
         let outcomes: Vec<(String, Outcome)> = report
             .declarations()
@@ -6150,43 +6012,9 @@ def cylinderStackAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, 
         let report = settled(
             &grammar,
             CorpusRoot::Strict,
-            SourceText::from(
-                r"/// The composite of two paths, whose type states its endpoints.
-def join(A : Type, x : A, y : A, z : A, p : Path[.A = A](x, y), q : Path[.A = A](y, z)) -> Path[.A = A](x, z) {
-  Path.step p q
-}
-/// Two cells' composite, curried over the cells.
-def composedCells(A : Type, x : A, y : A, z : A) -> (f : Path[.A = A](x, y)) -> ((g : Path[.A = A](y, z)) -> Path[.A = A](x, z)) {
-  thunk { fun (f) { thunk { fun (g) { join A x y z f g } } } }
-}
-/// The composite's reflexivity by `fill`, at its sides.
-def selfFill(A : Type, x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g) {
-  fill[5, 7] (chain 2) (composedCells A x y z) (Path.here f, g)
-}
-/// That reflexivity, curried: a generator whose body is a fill.
-def selfFillOver(A : Type, x : A, y : A, z : A) -> (f : Path[.A = A](x, y)) -> ((g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)) {
-  thunk { fun (f) { thunk { fun (g) { selfFill A x y z f g } } } }
-}
-/// The right whisker the outer fill lifts by.
-def liftRight(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) {
-  Path.walk (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step c g)) }) fa (Path.here (Path.step fm g))
-}
-/// The outer fill, its generator's body a fill.
-def nestedFill(A : Type, x : A, y : A, z : A, fm : Path[.A = A](x, y), fp : Path[.A = A](x, y), fa : Path[.A = Path[.A = A](x, y)](fm, fp), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
-  Path.step (selfFill A x y z fm g) (liftRight A x y z fm fp fa g),
-  Path.step (liftRight A x y z fm fp fa g) (selfFill A x y z fp g)
-) {
-  fill[5, 7] (chain 2) (selfFillOver A x y z) (fa, g)
-}
-/// The nested fill at reflexivities.
-def nestedAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, x)](Path.step (Path.here x) (Path.here x), Path.step (Path.here x) (Path.here x))](Path.here (Path.step (Path.here x) (Path.here x)), Path.here (Path.step (Path.here x) (Path.here x)))](
-  nestedFill A x x x (Path.here x) (Path.here x) (Path.here (Path.here x)) (Path.here x),
-  Path.here (Path.here (Path.step (Path.here x) (Path.here x)))
-) {
-  Path.here (Path.here (Path.here (Path.step (Path.here x) (Path.here x))))
-}
-",
-            ),
+            SourceText::from(include_str!(
+                "compose/fixtures/a-fill-whose-generator-holds-a-fill-replays-at-reflexivities-4186-report.gandr"
+            )),
         );
         let outcomes: Vec<(String, Outcome)> = report
             .declarations()
@@ -6218,18 +6046,9 @@ def nestedAtHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = Path[.A = A](
     fn a_session_reaches_the_kernel_as_what_it_computes_1319()
     {
         let grammar = grammar();
-        let source = SourceText::from(
-            "def finished() -> -F Unit {
-  let desk = fork (seat : end) { close(seat) };
-  close(desk)
-}
-def delivered() -> -F Unit {
-  let desk = fork (seat : !Integer. end) { send(seat, 1); close(seat) };
-  let n = recv(desk);
-  close(desk)
-}
-",
-        );
+        let source = SourceText::from(include_str!(
+            "compose/fixtures/a-session-reaches-the-kernel-as-what-it-computes-1319.gandr"
+        ));
         let tree = parse(&grammar, source).expect("parses").into_tree();
         let mut arena = CoreArena::new();
         let module = lower_module(
@@ -6416,10 +6235,15 @@ def delivered() -> -F Unit {
     fn a_resumed_admission_exports_what_a_whole_one_does_776()
     {
         let grammar = grammar();
-        let closure = "def one : Integer ; def one = 1 ;\ndef two : Integer ; def two = one ;\n";
+        let closure = include_str!(
+            "compose/fixtures/a-resumed-admission-exports-what-a-whole-one-does-776-closure.gandr"
+        );
         let first = format!("{closure}def three : Integer ; def three = two ;");
         let later = format!(
-            "{closure}def four : Integer ; def four = 4 ;\ndef five : Integer ; def five = two ;"
+            include_str!(
+                "compose/unformatted/a-resumed-admission-exports-what-a-whole-one-does-776-later.gandr"
+            ),
+            closure = closure
         );
         let admission = |text: &str| {
             let Lowered::Module { module, arena } = lower_source(
@@ -6501,7 +6325,8 @@ def delivered() -> -F Unit {
     fn a_retired_admission_resumes_from_its_record_1547()
     {
         let grammar = grammar();
-        let text = "def one : Integer ; def one = 1 ;\ndef two : Integer ; def two = one ;\ndef three : Integer ; def three = two ;";
+        let text =
+            include_str!("compose/fixtures/a-retired-admission-resumes-from-its-record-1547.gandr");
         let admission = || {
             let Lowered::Module { module, arena } = lower_source(
                 &grammar,
@@ -6607,13 +6432,9 @@ def delivered() -> -F Unit {
         }) = compose(
             &grammar,
             CorpusRoot::Fixture,
-            SourceText::from(
-                "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed = 7 ; }\n\
-                 def held : Counter.T ;\n\
-                 def held = Counter.seed ;\n\
-                 def leak : Integer ;\n\
-                 def leak = Counter.seed ;",
-            ),
+            SourceText::from(include_str!(
+                "compose/fixtures/a-sealed-module-settles-its-abstract-type.gandr"
+            )),
             &mut lowerings,
         )
         else {
@@ -6748,12 +6569,9 @@ def delivered() -> -F Unit {
     fn form_refusals_retain_admission_order()
     {
         let grammar = grammar();
-        let source = SourceText::from(
-            "module A : *{ x : Integer, p : Integer } where { def x = 1; }\n\
-             def broken = missing ;\n\
-             def value = 3 ;\n\
-             module B : *{ y : Integer, q : Integer } where { def y = 1; }",
-        );
+        let source = SourceText::from(include_str!(
+            "compose/fixtures/form-refusals-retain-admission-order.gandr"
+        ));
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, .. } = lower_source(&grammar, source, &mut lowerings)
             .expect("the mixed module lowers")
@@ -6787,24 +6605,9 @@ def delivered() -> -F Unit {
     fn a_body_prints_with_its_exits_elided_and_reads_back_to_its_term()
     {
         let grammar = grammar();
-        let source = SourceText::from(
-            "def kept(n : Integer) -> -F Integer { return n }\n\
-             def kept_elided(n : Integer) -> -F Integer { n }\n\
-             def kept_printed : +U (Integer -> -F Integer) ;\n\
-             def kept_printed = thunk { fun (a) { a } } ;\n\
-             def called(n : Integer) -> -F Integer { become kept n }\n\
-             def called_elided(n : Integer) -> -F Integer { kept n }\n\
-             def called_printed : +U (Integer -> -F Integer) ;\n\
-             def called_printed = thunk { fun (a) { kept a } } ;\n\
-             def sequenced(n : Integer) -> -F Integer { let m = kept n ; become kept m }\n\
-             def sequenced_elided(n : Integer) -> -F Integer { let m = kept n ; kept m }\n\
-             def sequenced_printed : +U (Integer -> -F Integer) ;\n\
-             def sequenced_printed = thunk { fun (a) { let b = kept a ; kept b } } ;\n\
-             def suspended(n : Integer) -> -F (+U (-F Integer)) { return thunk { become kept n } }\n\
-             def suspended_elided(n : Integer) -> -F (+U (-F Integer)) { thunk { kept n } }\n\
-             def suspended_printed : +U (Integer -> -F (+U (-F Integer))) ;\n\
-             def suspended_printed = thunk { fun (a) { thunk { kept a } } } ;\n",
-        );
+        let source = SourceText::from(include_str!(
+            "compose/fixtures/a-body-prints-with-its-exits-elided-and-reads-back-to-its-term.gandr"
+        ));
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, arena } = lower_source(&grammar, source, &mut lowerings)
             .expect("the module lowers")
@@ -6883,8 +6686,10 @@ def delivered() -> -F Unit {
         let grammar = grammar();
         let written = "fun (a) { idAt _ a }";
         let text = format!(
-            "def idAt(a : Type, y : a) -> -F a {{ return y }}\ndef loose : +U (Integer -> -F \
-             Integer) ;\ndef loose = thunk {{ {written} }} ;\n"
+            include_str!(
+                "compose/unformatted/a-body-holding-a-wildcard-prints-back-as-written-528.gandr"
+            ),
+            written = written
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, arena } =
@@ -6982,13 +6787,9 @@ def delivered() -> -F Unit {
             })
             .collect::<Vec<String>>()
             .concat();
-        written.push_str(
-            "def pair : Integer * String ;\ndef pair = *{1, \"a\"} ;\n\
-             def pure_pair : () -> Integer * String ;\n\
-             def pure_pair = thunk { return *{1, \"a\"} } ;\n\
-             def pure_pair_sugared : () -> Integer * String ;\n\
-             def pure_pair_sugared = thunk { pure *{1, \"a\"} } ;\n",
-        );
+        written.push_str(include_str!(
+            "compose/fixtures/the-sugared-form-reads-back-to-the-term-it-prints.gandr"
+        ));
         let grammar = grammar();
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, arena } =
@@ -7105,16 +6906,9 @@ def delivered() -> -F Unit {
     fn a_body_prints_with_its_runs_elided_and_reads_back_to_its_elaboration()
     {
         let grammar = grammar();
-        let source = SourceText::from(
-            "def kept(n : Integer) -> -F Integer { n }\n\
-             def bound(n : Integer) -> -F Integer { let m = kept n ; kept m }\n\
-             def nested(n : Integer) -> -F Integer { kept (kept n) }\n\
-             def nested_printed : +U (Integer -> -F Integer) ;\n\
-             def nested_printed = thunk { fun (a) { kept (kept a) } } ;\n\
-             def written(n : Integer) -> -F Integer { kept (run kept n) }\n\
-             def written_printed : +U (Integer -> -F Integer) ;\n\
-             def written_printed = thunk { fun (a) { kept (run kept a) } } ;\n",
-        );
+        let source = SourceText::from(include_str!(
+            "compose/fixtures/a-body-prints-with-its-runs-elided-and-reads-back-to-its-elaboration.gandr"
+        ));
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, mut arena } = lower_source(&grammar, source, &mut lowerings)
             .expect("the module lowers")
@@ -7336,29 +7130,23 @@ def delivered() -> -F Unit {
             std::format!("{}:{binder}", index.saturating_add(1))
         };
         assert_eq!(
-            unused(
-                "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef pick(n : Nat, \
-                 m : Nat) -> -F Nat {\n  let k = Succ n ;\n  match n {\n    | Zero => n\n    \
-                 | Succ(p) => n\n  }\n}\ndef id : Nat -> Nat ;\ndef id = thunk { fun (y) { Zero } } ;\n"
-            ),
+            unused(include_str!(
+                "compose/fixtures/each-binder-no-variable-reads-is-unused-1.gandr"
+            )),
             ["5:m", "6:k", "9:p", "13:y"],
             "the unused parameter, `let` binder, pattern variable and lambda binder, the last in \
              the second half of a name declared in two; not the used parameter nor the \
              constructor's telescope binder"
         );
         assert_eq!(
-            unused(
-                "def chosen[x : t](t : Type) -> -F t { x }\ndef apply : (Type -> Type) -> Type \
-                 -> Type ;\ndef apply = fun (F) { fun (X) { F X } } ;\n"
-            ),
+            unused(include_str!(
+                "compose/fixtures/each-binder-no-variable-reads-is-unused-2.gandr"
+            )),
             [""; 0],
             "a binder read only in a type, or only by a static application, is used"
         );
         assert_eq!(
-            unused(
-                "def seat_left_open(n : Integer) -> -F Unit {\n  let desk = fork (seat : end) { pure \
-                 *{} };\n  close(desk)\n}\n"
-            ),
+            unused(include_str!("compose/unformatted/application.gandr")),
             ["1:n"],
             "a fork's unused end is the checker's refusal and no lambda's or bind's, but the \
              refused declaration's unused parameter may be dropped (#1504)"
@@ -7810,10 +7598,9 @@ def delivered() -> -F Unit {
         let [after, whole] = judged(
             (
                 SourceText::from("def zero = 0 ;\n"),
-                SourceText::from(
-                    "world operator ;\nworld seat ;\ndef moved() -> -F Integer { migrate [seat] { \
-                     pure 1 } }\n",
-                ),
+                SourceText::from(include_str!(
+                    "compose/fixtures/a-host-entry-names-the-worlds-a-module-declares.gandr"
+                )),
             ),
             (&entering, &entering),
         );
@@ -7844,9 +7631,17 @@ def delivered() -> -F Unit {
 
         let grammar = grammar();
         let first = "def one : Integer ;";
-        let second = "def two : Integer ;\ndef three : Integer ;\ndef add = 1 ;";
+        let second = include_str!(
+            "compose/unformatted/each-source-of-a-component-reports-its-own-share-second.gandr"
+        );
         // A component joins its sources with a newline, as the walk lays them.
-        let text = format!("{first}\n{second}");
+        let text = format!(
+            include_str!(
+                "compose/unformatted/each-source-of-a-component-reports-its-own-share.gandr"
+            ),
+            first = first,
+            second = second
+        );
         let base = ByteOffset::from(first.len().saturating_add(1_usize));
         let members = [
             Member {
@@ -7930,11 +7725,10 @@ def delivered() -> -F Unit {
 
         let grammar = grammar();
         let sources = [
-            "pub def seven : Integer ;\ndef seven = 7 ;",
-            "pub def eight : Integer ;\ndef eight = 8 ;",
-            "import \"./seven.gandr\" ;\nimport \"./eight.gandr\" ;\ndef value : Integer ;\ndef \
-             value = seven ;",
-            "import \"./eight.gandr\" ;\ndef broken : Integer ;\ndef broken = nowhere ;",
+            include_str!("compose/fixtures/an-import-no-lookup-reaches-is-unreached-sources.gandr"),
+            include_str!("compose/fixtures/an-import-no-lookup-reaches-is-unreached-1.gandr"),
+            include_str!("compose/fixtures/an-import-no-lookup-reaches-is-unreached-2.gandr"),
+            include_str!("compose/fixtures/an-import-no-lookup-reaches-is-unreached-3.gandr"),
         ];
         // A component joins its sources with a newline, as the walk lays them.
         let text = sources.join("\n");
@@ -7996,7 +7790,7 @@ def delivered() -> -F Unit {
             [
                 Vec::new(),
                 Vec::new(),
-                Vec::from(["import \"./eight.gandr\" ;"]),
+                Vec::from(["import \"./eight.gandr\";"]),
                 Vec::new()
             ],
             "the importer reports the import it reads nothing through; the refused one none"
@@ -8021,7 +7815,9 @@ def delivered() -> -F Unit {
         use super::judge_member_tabled_retiring;
 
         let grammar = grammar();
-        let source = SourceText::from("def one = 1 ;\ndef two = 2 ;\ndef three = 3 ;\n");
+        let source = SourceText::from(include_str!(
+            "compose/unformatted/a-retired-member-judgement-keeps-nothing-1663.gandr"
+        ));
         let lowered = || {
             let Lowered::Module { module, arena } =
                 lower_source(&grammar, source, &mut LoweringCount::default())
@@ -8147,15 +7943,9 @@ def delivered() -> -F Unit {
         use super::judge_member_tabled;
 
         let grammar = grammar();
-        let source = SourceText::from(
-            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\nrec {\n  data \
-             ULevel : Nat -> Type {\n    NatV : (n : Nat) --> ULevel(n);\n    TypeV : (n : Nat) \
-             --> ULevel(Succ(n));\n    PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> \
-             -F ULevel(n))) --> ULevel(n);\n  }\n\n  def rec elLevel(n : Nat, u : ULevel(n)) -> \
-             -F Type {\n    match u {\n      | NatV(m) => return Nat\n      | TypeV(m) => return \
-             (ULevel(m))\n      | PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F \
-             elLevel[<](m, b(x))))\n    }\n  }\n}\n",
-        );
+        let source = SourceText::from(include_str!(
+            "compose/unformatted/a-refused-last-block-tables-as-typed-alone-3671.gandr"
+        ));
         let typed = crate::typed::TypeTable::of(&grammar, source).expect("the source types");
         let Lowered::Module { module, arena } =
             lower_source(&grammar, source, &mut LoweringCount::default())
@@ -8245,17 +8035,16 @@ def delivered() -> -F Unit {
             );
             (answer.settled, poll.readings.get())
         };
-        let (first, read) = judged(SourceText::from(
-            "def one : Integer = 1 ;\ndef two : Path[.A = Integer](one, 1) = Path.here 1 ;\n",
-        ));
+        let (first, read) = judged(SourceText::from(include_str!(
+            "compose/unformatted/a-revision-moving-no-lowered-node-is-not-judged-again-2102-1.gandr"
+        )));
         assert_eq!(
             read, 3,
             "a first revision is judged, polled before each declaration"
         );
-        let (commented, read) = judged(SourceText::from(
-            "// one, then a path through it\ndef one : Integer = 1 ;\ndef two : Path[.A = Integer](\
-             one, 1) = Path.here(1) ;\n",
-        ));
+        let (commented, read) = judged(SourceText::from(include_str!(
+            "compose/unformatted/a-revision-moving-no-lowered-node-is-not-judged-again-2102-2.gandr"
+        )));
         assert_eq!(
             read, 1,
             "a comment moves no lowered node: the verdicts are taken, polled before the \
@@ -8265,10 +8054,9 @@ def delivered() -> -F Unit {
             commented, first,
             "and the settle is made again at the spans the comment moved"
         );
-        let (changed, read) = judged(SourceText::from(
-            "// one, then a path through it\ndef one : Integer = 2 ;\ndef two : Path[.A = Integer](\
-             one, 1) = Path.here(1) ;\n",
-        ));
+        let (changed, read) = judged(SourceText::from(include_str!(
+            "compose/unformatted/a-revision-moving-no-lowered-node-is-not-judged-again-2102-3.gandr"
+        )));
         assert_eq!(read, 3, "a value changed is judged again");
         assert_ne!(
             changed, commented,

@@ -1,0 +1,24 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+def pick(n : Nat) -> -F Nat {
+  let m = match n {
+    | Zero => return n
+    | Succ(p) => {
+      let q = match p { | Zero => return n | Succ(r) => pure r } ;
+      pure q
+    }
+  } ;
+  return Succ m
+}
+def bound(n : Nat) -> -F Nat {
+  let m = match n -> -F Nat { | Zero => pure n | Succ(p) => pure p } ;
+  return Succ m
+}
+def zero : +U (-F Nat) ;
+def zero = thunk { become pick Zero } ;
+def one : +U (-F Nat) ;
+def one = thunk { become pick (Succ Zero) } ;
+def three : +U (-F Nat) ;
+def three = thunk { become pick (Succ (Succ (Succ Zero))) } ;

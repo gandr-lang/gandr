@@ -1,0 +1,27 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+
+def twice(n : Nat) -> Nat { Succ (Succ n) }
+
+def second(a : Nat, b : Nat) -> Nat { b }
+
+def make(n : Nat) -> () -> Nat { thunk { twice n } }
+
+def apply(t : () -> Nat) -> Nat { force t }
+
+def field(n : Nat) -> Nat {
+  Succ (twice n)
+}
+
+def paired(n : Nat) -> Nat {
+  second (twice n) (twice Zero)
+}
+
+def chained(n : Nat) -> Nat {
+  let a = twice n;
+  become twice (twice a)
+}
+
+def suspended(n : Nat) -> Nat {
+  let t = make n;
+  apply t
+}

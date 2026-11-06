@@ -1,0 +1,3 @@
+import greet;
+import "./greet.gandr";
+def two = 2;

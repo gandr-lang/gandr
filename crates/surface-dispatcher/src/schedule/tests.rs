@@ -144,22 +144,9 @@ where
 #[test]
 fn the_tree_sum_names_each_pure_call()
 {
-    let named = named_calls(
-        r#"
-data Tree : Type where {
-  | Leaf : (n : Integer) --> Tree
-  | Node : (l : Tree, r : Tree) --> Tree
-}
-def rec sum(t : Tree) -> Integer {
-  match t {
-    | Leaf(n) => n
-    | Node(l, r) => { let a = sum[<] l; let b = sum[<] r; a + b }
-  }
-}
-def say(s : String) -> [std.io.Console.Eff] Unit { std.io.Console.print s }
-def shout(s : String) -> [std.io.Console.Eff] Integer { let u = say s; 1 }
-"#,
-    );
+    let named = named_calls(include_str!(
+        "tests/fixtures/the-tree-sum-names-each-pure-call-named.gandr"
+    ));
     assert_eq!(
         named,
         Vec::from([
@@ -173,17 +160,9 @@ def shout(s : String) -> [std.io.Console.Eff] Integer { let u = say s; 1 }
 #[test]
 fn a_writer_over_a_capability_stays_fused()
 {
-    let named = named_calls(
-        r#"
-def count(c : Cap { read }) -> Integer { 1 }
-def twice(n : Integer) -> Integer { n + n }
-def both(c : Cap { read }, k : Integer) -> Integer {
-  let a = count c;
-  let b = twice k;
-  a + b
-}
-"#,
-    );
+    let named = named_calls(include_str!(
+        "tests/fixtures/a-writer-over-a-capability-stays-fused-named.gandr"
+    ));
     assert_eq!(
         named,
         Vec::from([
@@ -202,20 +181,9 @@ def both(c : Cap { read }, k : Integer) -> Integer {
 #[test]
 fn a_writer_answering_a_kept_value_stays_fused_2954()
 {
-    let listed = crate::tests::Listed::hosted(
-        r#"
-def keptView() -> Integer {
-  var s = 3;
-  handle c : std.process.Exit.Eff {
-    let k : (() -> Integer) at c = access shared s as w { pure pure w };
-    force k
-  } with {
-    | pure(x) => pure x
-    | oper exit(code, k) => pure 0
-  }
-}
-"#,
-    );
+    let listed = crate::tests::Listed::hosted(include_str!(
+        "tests/fixtures/a-writer-answering-a-kept-value-stays-fused-2954-listed.gandr"
+    ));
     let (_module, core, typed) = typed(&listed);
     let core = &core;
     let binds = typed

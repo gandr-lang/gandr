@@ -1,0 +1,8 @@
+def answer : Integer;
+def answer = 42;
+def identity : +U (Integer -> -F Integer);
+def identity = thunk { fun (x) { return x } };
+def applied : +U (-F Integer);
+def applied = thunk { become (force identity) answer };
+def konst : +U (Integer -> Integer -> -F Integer);
+def konst = thunk { fun (x) { fun (y) { return x } } };

@@ -1,0 +1,2 @@
+module Counter :> *{ type T, zero : T } where { type T = Integer; def zero = 0; }
+def z = Counter.zero;

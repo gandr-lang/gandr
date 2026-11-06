@@ -2909,14 +2909,15 @@ mod tests
     fn an_importer_is_laid_after_what_it_imports()
     {
         let grammar = built_in().expect("the grammar builds");
-        let importer = SourceText::from(
-            "import \"./base.gandr\" ;\nimport \"file:///far.gandr\" as far ;\ndef two : \
-             Integer ;\ndef two = one ;",
-        );
+        let importer = SourceText::from(include_str!(
+            "component/unformatted/an-importer-is-laid-after-what-it-imports-importer.gandr"
+        ));
         let tree = Scratch::new(Path::new("laid"), &[
             (
                 Path::new("base.gandr"),
-                SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+                SourceText::from(include_str!(
+                    "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+                )),
             ),
             (Path::new("main.gandr"), importer),
         ]);
@@ -2956,11 +2957,14 @@ mod tests
     fn an_importer_not_yet_on_disk_is_laid_after_what_it_imports_1443()
     {
         let grammar = built_in().expect("the grammar builds");
-        let importer =
-            SourceText::from("import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;");
+        let importer = SourceText::from(include_str!(
+            "component/fixtures/an-importer-not-yet-on-disk-is-laid-after-what-it-imports-1443-importer.gandr"
+        ));
         let tree = Scratch::new(Path::new("unwritten"), &[(
             Path::new("base.gandr"),
-            SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+            SourceText::from(include_str!(
+                "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+            )),
         )]);
         let laid = lay_out(
             &grammar,
@@ -2993,11 +2997,14 @@ mod tests
     fn a_closure_opened_through_a_link_keeps_each_opened_path_5090()
     {
         let grammar = built_in().expect("the grammar builds");
-        let importer =
-            SourceText::from("import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;");
+        let importer = SourceText::from(include_str!(
+            "component/fixtures/an-importer-not-yet-on-disk-is-laid-after-what-it-imports-1443-importer.gandr"
+        ));
         let tree = Scratch::new(Path::new("opened"), &[(
             Path::new("base.gandr"),
-            SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+            SourceText::from(include_str!(
+                "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+            )),
         )]);
         let linked = tree.0.with_extension("linked");
         let _cleared = std::fs::remove_file(&linked);
@@ -3037,16 +3044,21 @@ mod tests
     fn an_importer_given_its_imports_is_laid_out_as_read_2439()
     {
         let grammar = built_in().expect("the grammar builds");
-        let importer =
-            SourceText::from("import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;");
+        let importer = SourceText::from(include_str!(
+            "component/unformatted/an-importer-not-yet-on-disk-is-laid-after-what-it-imports-1443-importer.gandr"
+        ));
         let tree = Scratch::new(Path::new("given"), &[
             (
                 Path::new("base.gandr"),
-                SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+                SourceText::from(include_str!(
+                    "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+                )),
             ),
             (
                 Path::new("other.gandr"),
-                SourceText::from("def one : Integer ;\ndef one = 2 ;"),
+                SourceText::from(include_str!(
+                    "component/unformatted/an-importer-given-its-imports-is-laid-out-as-read-2439.gandr"
+                )),
             ),
             (Path::new("main.gandr"), importer),
         ]);
@@ -3096,16 +3108,19 @@ mod tests
     fn a_cycle_and_a_missing_path_leave_their_imports_unresolved()
     {
         let grammar = built_in().expect("the grammar builds");
-        let first = SourceText::from(
-            "import \"./second.gandr\" ;\nimport \"./missing.gandr\" ;\nimport \
-             \"./sibling.gandr\" ;\ndef one : Integer ;\ndef one = 1 ;",
+        let first = SourceText::from(include_str!(
+            "component/fixtures/a-cycle-and-a-missing-path-leave-their-imports-unresolved-first.gandr"
+        ));
+        let sibling = include_str!(
+            "component/fixtures/a-cycle-and-a-missing-path-leave-their-imports-unresolved-sibling.gandr"
         );
-        let sibling = "def three : Integer ;\ndef three = 3 ;";
         let tree = Scratch::new(Path::new("cycle"), &[
             (Path::new("first.gandr"), first),
             (
                 Path::new("second.gandr"),
-                SourceText::from("import \"./first.gandr\" ;\ndef two : Integer ;\ndef two = 2 ;"),
+                SourceText::from(include_str!(
+                    "component/fixtures/a-cycle-and-a-missing-path-leave-their-imports-unresolved-tree.gandr"
+                )),
             ),
             (Path::new("sibling.gandr"), SourceText::from(sibling)),
         ]);
@@ -3183,13 +3198,15 @@ mod tests
     {
         let grammar = built_in().expect("the grammar builds");
         let tree = Scratch::new(Path::new("roots"), &[]);
-        let library = SourceText::from("def three : Integer ;\ndef three = 3 ;");
-        let importer = SourceText::from(
-            "import \"../library/three.gandr\" ;\ndef one : Integer ;\ndef one = 1 ;",
-        );
-        let back = SourceText::from(
-            "import \"../fixture/sibling.gandr\" ;\ndef two : Integer ;\ndef two = 2 ;",
-        );
+        let library = SourceText::from(include_str!(
+            "component/fixtures/a-cycle-and-a-missing-path-leave-their-imports-unresolved-sibling.gandr"
+        ));
+        let importer = SourceText::from(include_str!(
+            "component/fixtures/a-fixture-imports-a-strict-source-and-not-the-reverse-2767-importer.gandr"
+        ));
+        let back = SourceText::from(include_str!(
+            "component/fixtures/a-fixture-imports-a-strict-source-and-not-the-reverse-2767-back.gandr"
+        ));
         for (directory, file, text) in [
             ("fixture", "importer.gandr", importer),
             ("fixture", "sibling.gandr", library),
@@ -3264,15 +3281,16 @@ mod tests
     fn a_closure_names_every_path_its_imports_name_844()
     {
         let grammar = built_in().expect("the grammar builds");
-        let first = SourceText::from(
-            "import \"./second.gandr\" ;\nimport \"./missing.gandr\" ;\ndef one : Integer ;\ndef \
-             one = 1 ;",
-        );
+        let first = SourceText::from(include_str!(
+            "component/fixtures/a-closure-names-every-path-its-imports-name-844-first.gandr"
+        ));
         let tree = Scratch::new(Path::new("named-844"), &[
             (Path::new("first.gandr"), first),
             (
                 Path::new("second.gandr"),
-                SourceText::from("import \"./first.gandr\" ;\ndef two : Integer ;\ndef two = 2 ;"),
+                SourceText::from(include_str!(
+                    "component/fixtures/a-cycle-and-a-missing-path-leave-their-imports-unresolved-tree.gandr"
+                )),
             ),
         ]);
         let laid = lay_out(
@@ -3306,10 +3324,15 @@ mod tests
     fn a_source_read_whole_is_parsed_once_per_text_776()
     {
         let grammar = built_in().expect("the grammar builds");
-        let floor = "/// #776: the floor.\ndef six : Integer ;\ndef six = 6 ;";
-        let base = "/// #776: the base.\ndef seven : Integer ;\ndef seven = 7 ;";
-        let importer = "import \"./base.gandr\" ;\n/// #776: the importer.\ndef eight : Integer \
-                        ;\ndef eight = 8 ;";
+        let floor = include_str!(
+            "component/fixtures/a-source-read-whole-is-parsed-once-per-text-776-floor.gandr"
+        );
+        let base = include_str!(
+            "component/fixtures/a-source-read-whole-is-parsed-once-per-text-776-base.gandr"
+        );
+        let importer = include_str!(
+            "component/fixtures/a-source-read-whole-is-parsed-once-per-text-776-importer.gandr"
+        );
         let tree = Scratch::new(Path::new("read-once"), &[
             (Path::new("floor.gandr"), SourceText::from(floor)),
             (Path::new("base.gandr"), SourceText::from(base)),
@@ -3373,9 +3396,12 @@ mod tests
         use std::time::SystemTime;
 
         let grammar = built_in().expect("the grammar builds");
-        let base = "/// #776: the base.\ndef nine : Integer ;\ndef nine = 9 ;";
-        let importer = "import \"./base.gandr\" ;\n/// #776: the importer.\ndef ten : Integer \
-                        ;\ndef ten = nine ;";
+        let base = include_str!(
+            "component/fixtures/a-settled-file-is-read-once-per-change-776-base.gandr"
+        );
+        let importer = include_str!(
+            "component/fixtures/a-settled-file-is-read-once-per-change-776-importer.gandr"
+        );
         let tree = Scratch::new(Path::new("settled"), &[
             (Path::new("base.gandr"), SourceText::from(base)),
             (Path::new("importer.gandr"), SourceText::from(importer)),
@@ -3487,9 +3513,12 @@ mod tests
         use std::time::SystemTime;
 
         let grammar = built_in().expect("the grammar builds");
-        let base = "/// #1404: the base.\ndef nine : Integer ;\ndef nine = 9 ;";
-        let importer = "import \"./base.gandr\" ;\n/// #1404: the importer.\ndef ten : Integer \
-                        ;\ndef ten = nine ;";
+        let base = include_str!(
+            "component/fixtures/a-watched-file-is-read-again-once-reported-1404-base.gandr"
+        );
+        let importer = include_str!(
+            "component/fixtures/a-watched-file-is-read-again-once-reported-1404-importer.gandr"
+        );
         let tree = Scratch::new(Path::new("watched"), &[
             (Path::new("base.gandr"), SourceText::from(base)),
             (Path::new("importer.gandr"), SourceText::from(importer)),
@@ -3568,11 +3597,15 @@ mod tests
         let grammar = built_in().expect("the grammar builds");
         for (written, reason) in [
             (
-                "def one : Integer ;\ndef one = 1 ;",
+                include_str!(
+                    "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+                ),
                 "never spells `import`",
             ),
             (
-                "def important : Integer ;\ndef important = 1 ;",
+                include_str!(
+                    "component/fixtures/a-source-importing-nothing-is-laid-after-the-prelude-alone.gandr"
+                ),
                 "spells `import` only inside a name",
             ),
         ] {
@@ -3606,14 +3639,15 @@ mod tests
     fn a_shadowed_import_is_read_as_its_editor_holds_it()
     {
         let grammar = built_in().expect("the grammar builds");
-        let importer = SourceText::from(
-            "import \"./base.gandr\" ;\nimport \"./draft.gandr\" ;\ndef four : Integer ;\ndef \
-             four = one ;",
-        );
+        let importer = SourceText::from(include_str!(
+            "component/unformatted/a-shadowed-import-is-read-as-its-editor-holds-it-importer.gandr"
+        ));
         let tree = Scratch::new(Path::new("shadowed"), &[
             (
                 Path::new("base.gandr"),
-                SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+                SourceText::from(include_str!(
+                    "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+                )),
             ),
             (Path::new("main.gandr"), importer),
         ]);
@@ -3653,12 +3687,17 @@ mod tests
     fn a_component_lays_each_source_once()
     {
         let grammar = built_in().expect("the grammar builds");
-        let base = "def one : Integer ;\ndef one = 1 ;";
-        let left = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;";
-        let right = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = one ;";
-        let top = "import \"./left.gandr\" ;\nimport \"./right.gandr\" ;\ndef four : Integer \
-                   ;\ndef four = two ;";
-        let apart = "def five : Integer ;\ndef five = 5 ;";
+        let base = include_str!(
+            "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+        );
+        let left = include_str!(
+            "component/unformatted/an-importer-not-yet-on-disk-is-laid-after-what-it-imports-1443-importer.gandr"
+        );
+        let right =
+            include_str!("component/unformatted/a-component-lays-each-source-once-right.gandr");
+        let top = include_str!("component/unformatted/a-component-lays-each-source-once-top.gandr");
+        let apart =
+            include_str!("component/unformatted/a-component-lays-each-source-once-apart.gandr");
         let tree = Scratch::new(Path::new("diamond"), &[
             (Path::new("apart.gandr"), SourceText::from(apart)),
             (Path::new("base.gandr"), SourceText::from(base)),
@@ -3735,10 +3774,18 @@ mod tests
     fn importers_of_a_module_not_given_lay_it_apart_4854()
     {
         let grammar = built_in().expect("the grammar builds");
-        let shared = "def one : Integer ;\ndef one = 1 ;";
-        let left = "import \"./shared.gandr\" ;\ndef two : Integer ;\ndef two = one ;";
-        let right = "import \"./shared.gandr\" ;\ndef three : Integer ;\ndef three = one ;";
-        let top = "import \"./right.gandr\" ;\ndef four : Integer ;\ndef four = three ;";
+        let shared = include_str!(
+            "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+        );
+        let left = include_str!(
+            "component/unformatted/importers-of-a-module-not-given-lay-it-apart-4854-left.gandr"
+        );
+        let right = include_str!(
+            "component/unformatted/importers-of-a-module-not-given-lay-it-apart-4854-right.gandr"
+        );
+        let top = include_str!(
+            "component/unformatted/importers-of-a-module-not-given-lay-it-apart-4854-top.gandr"
+        );
         let tree = Scratch::new(Path::new("shared"), &[
             (Path::new("shared.gandr"), SourceText::from(shared)),
             (Path::new("left.gandr"), SourceText::from(left)),
@@ -3787,8 +3834,12 @@ mod tests
         )
         .expect("the standard library is checked out");
         let written = std::fs::read_to_string(&module).expect("the module reads");
-        let left = "import std.string (concat) ;\ndef two : Integer ;\ndef two = 2 ;";
-        let right = "import std.string (concat) ;\ndef three : Integer ;\ndef three = 3 ;";
+        let left = include_str!(
+            "component/unformatted/importers-of-a-given-std-module-lay-it-apart-4856-left.gandr"
+        );
+        let right = include_str!(
+            "component/unformatted/importers-of-a-given-std-module-lay-it-apart-4856-right.gandr"
+        );
         let tree = Scratch::new(Path::new("std-importers"), &[
             (Path::new("left.gandr"), SourceText::from(left)),
             (Path::new("right.gandr"), SourceText::from(right)),
@@ -3835,14 +3886,18 @@ mod tests
     fn an_importer_s_forms_are_read_as_its_parse_reads_them()
     {
         let grammar = built_in().expect("the grammar builds");
-        let base = "def one : Integer ;\ndef one = 1 ;";
-        let importer = "/// Imports the base.\nimport \"./base.gandr\" ;\nimport \
-                        \"file:///far.gandr\" as far ;\ndef two : Integer ;\ndef two = one ;";
+        let base = include_str!(
+            "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+        );
+        let importer = include_str!(
+            "component/fixtures/an-importer-s-forms-are-read-as-its-parse-reads-them-importer.gandr"
+        );
         // An import inside a module is no import of the source's root: read
         // from its forms alone it names the base, and the source's parse
         // does not.
-        let nested = "module inner where {\n  import \"./base.gandr\" ;\n}\ndef three : Integer ;\ndef \
-                      three = 3 ;";
+        let nested = include_str!(
+            "component/fixtures/an-importer-s-forms-are-read-as-its-parse-reads-them-nested.gandr"
+        );
         let tree = Scratch::new(Path::new("formed"), &[
             (Path::new("base.gandr"), SourceText::from(base)),
             (Path::new("importer.gandr"), SourceText::from(importer)),
@@ -3919,16 +3974,21 @@ mod tests
     fn a_module_path_through_an_alias_confirms_as_its_forms_read_it_4715()
     {
         let grammar = built_in().expect("the grammar builds");
-        let importer = "import \"path:../dep\" as dep ;\nimport dep.text.greet (greeting) ;\ndef two : \
-                        Integer ;\ndef two = greeting ;";
+        let importer = include_str!(
+            "component/fixtures/a-module-path-through-an-alias-confirms-as-its-forms-read-it-4715-importer.gandr"
+        );
         let tree = Scratch::new(Path::new("aliased"), &[
             (
                 Path::new("dep/package.gandr"),
-                SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+                SourceText::from(include_str!(
+                    "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+                )),
             ),
             (
                 Path::new("dep/text/greet.gandr"),
-                SourceText::from("pub def greeting : Integer ;\npub def greeting = 2 ;"),
+                SourceText::from(include_str!(
+                    "component/fixtures/a-module-path-through-an-alias-confirms-as-its-forms-read-it-4715.gandr"
+                )),
             ),
             (Path::new("app/importer.gandr"), SourceText::from(importer)),
         ]);
@@ -3972,13 +4032,16 @@ mod tests
     fn a_source_names_the_files_it_imports()
     {
         let grammar = built_in().expect("the grammar builds");
-        let base = "def one : Integer ;\ndef one = 1 ;";
-        let importer = "/// Imports the base.\nimport \"./base.gandr\" ;\nimport \
-                        \"file:///far.gandr\" as far ;\ndef two : Integer ;\ndef two = one ;";
+        let base = include_str!(
+            "component/unformatted/an-importer-is-laid-after-what-it-imports-tree.gandr"
+        );
+        let importer = include_str!(
+            "component/fixtures/an-importer-s-forms-are-read-as-its-parse-reads-them-importer.gandr"
+        );
         // The second import does not open its line, so the source is read
         // whole, and both are named, the file not yet written among them.
-        let crowded = "import \"./base.gandr\" ; import \"./later.gandr\" ;\ndef three : Integer \
-                       ;\ndef three = 3 ;";
+        let crowded =
+            include_str!("component/fixtures/a-source-names-the-files-it-imports-crowded.gandr");
         let tree = Scratch::new(Path::new("named"), &[(
             Path::new("base.gandr"),
             SourceText::from(base),
@@ -4021,7 +4084,9 @@ mod tests
             ),
         ]);
         std::fs::create_dir_all(packaged.0.join("text")).expect("the module directory is made");
-        let importer = "import greet ;\nimport \"./greet.gandr\" ;\ndef two = 2 ;";
+        let importer = include_str!(
+            "component/fixtures/a-module-path-is-named-from-its-package-s-root-2687-importer.gandr"
+        );
         assert_eq!(
             imports_named(
                 &grammar,
@@ -4042,7 +4107,9 @@ mod tests
             imports_named(
                 &grammar,
                 &loose.0.join("use.gandr"),
-                SourceText::from("import greet ;\ndef two = 2 ;")
+                SourceText::from(include_str!(
+                    "component/fixtures/a-module-path-is-named-from-its-package-s-root-2687.gandr"
+                ))
             ),
             [loose.0.join("greet.gandr")],
             "a source in no package roots its own modules"
@@ -4061,8 +4128,9 @@ mod tests
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std/src"),
         )
         .expect("the standard library is checked out");
-        let importer =
-            SourceText::from("import std.string (concat) ;\nimport std ;\ndef two = 2 ;");
+        let importer = SourceText::from(include_str!(
+            "component/fixtures/a-std-module-path-names-the-standard-library-from-any-root-4517-importer.gandr"
+        ));
         let standard = [
             library.join("string.gandr"),
             library
@@ -4093,7 +4161,9 @@ mod tests
             imports_named(
                 &grammar,
                 &shadowed.0.join("use.gandr"),
-                SourceText::from("import std ;\ndef two = 2 ;")
+                SourceText::from(include_str!(
+                    "component/fixtures/a-std-module-path-names-the-standard-library-from-any-root-4517.gandr"
+                ))
             ),
             [shadowed.0.join("std.gandr")],
             "a source named `std` beside the root takes the name first"
@@ -4131,8 +4201,9 @@ mod tests
     fn an_import_with_its_quote_against_the_keyword_is_read_as_a_form()
     {
         let grammar = built_in().expect("the grammar builds");
-        let nested = "module inner where {\n  import\"./base.gandr\" ;\n}\ndef three : Integer ;\ndef \
-                      three = 3 ;";
+        let nested = include_str!(
+            "component/unformatted/an-import-with-its-quote-against-the-keyword-is-read-as-a-form-nested.gandr"
+        );
         let tree = Scratch::new(Path::new("quoted"), &[]);
         assert_eq!(
             imports_named(
@@ -4157,7 +4228,9 @@ mod tests
             (Path::new("base.gandr"), SourceText::from("def one = 1")),
             (
                 Path::new("importer.gandr"),
-                SourceText::from("import \"./base.gandr\" ;\ndef two = one ;"),
+                SourceText::from(include_str!(
+                    "component/fixtures/a-component-read-whole-confirms-without-reading-its-imports.gandr"
+                )),
             ),
         ]);
         let grouped = group(

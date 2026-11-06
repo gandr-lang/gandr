@@ -1,0 +1,11 @@
+def pair(m : Integer, n : Bool) -> (quot : Integer, rem : Bool) { (m, n) }
+
+def placed() -> -F Integer {
+  let (a, b) = pair 1 true;
+  a
+}
+
+def labelled() -> -F Integer {
+  let (.rem = r, .quot = q) = pair 1 true;
+  q
+}

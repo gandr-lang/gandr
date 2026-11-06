@@ -1,0 +1,17 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+
+def rec skim(n : Nat) -> -F Nat {
+  match n {
+    | Zero => return n
+    | Succ(p) => {
+      let _ = match p {
+        | Zero => return p
+        | Succ(r) => pure r
+      };
+      become skim[<] p
+    }
+  }
+}

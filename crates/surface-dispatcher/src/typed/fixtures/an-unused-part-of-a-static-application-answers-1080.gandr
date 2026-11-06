@@ -1,0 +1,8 @@
+def twice : Type -> Type;
+def twice = fun (Y) { type(Y * Y) };
+
+def twiceFirst(p : twice(Integer)) -> -F Integer {
+  match p {
+    | *{c, d} => return c
+  }
+}

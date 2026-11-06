@@ -1,0 +1,7 @@
+import "./left.gandr";
+import "./right.gandr";
+import "./base.gandr";
+
+@[ checks ]
+def top : Point;
+def top = left;

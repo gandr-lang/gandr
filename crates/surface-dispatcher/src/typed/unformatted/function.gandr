@@ -1,0 +1,4 @@
+def pair : Type -> Type[-] ;
+def pair = fun (X) { -F (X * X) } ;
+def arrow : Type ;
+def arrow = +U (Integer -> -F Integer) ;

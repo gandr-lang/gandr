@@ -399,19 +399,14 @@ mod tests
         scratch.file(
             Path::new("tree/a-tree.gandr"),
             SourceText::from(
-                "pub data Tree : Type where {\n  | Leaf : Tree\n  | Node : (l : Tree, r : Tree) --> Tree\n  \
-                 oper left : (t : Tree) --> Tree;\n  oper twice : (t : Tree) --> Tree;\n  oper thrice : (t \
-                 : Tree) --> Tree;\n  rule : left(Leaf) ==> Leaf;\n  rule : left (Node l r) ==> \
-                 l;\n  rule : twice t ==> Node t t;\n  rule : thrice t ==> Node t (Node t \
-                 t);\n}\n",
+                include_str!("cells/unformatted/a-census-reads-each-hole-s-count-in-the-source-s-own-declarations-1.gandr"),
             ),
         );
         // The importer lowers over `Tree`, whose cells are the other step's.
         scratch.file(
             Path::new("tree/b-importer.gandr"),
             SourceText::from(
-                "import \"./a-tree.gandr\" ;\n\npub data Flag : Type where {\n  | Off : Flag\n  | On : Flag\n  oper flip : (f : Flag) --> Flag;\n  rule : flip(Off) ==> On;\n  rule : \
-                 flip(On) ==> Off;\n}\n",
+                include_str!("cells/unformatted/a-census-reads-each-hole-s-count-in-the-source-s-own-declarations-2.gandr"),
             ),
         );
         let root = scratch.root();

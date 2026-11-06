@@ -1,0 +1,10 @@
+theory Pointed where {
+  sort T : Type;
+  oper z : T;
+}
+module Stepped : Model(Pointed) where {
+  type T = Integer -> Integer;
+  def step(x : Integer) -> -F Integer { x }
+  def z : T;
+  def z = fun (n) { become step n };
+}

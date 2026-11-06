@@ -326,7 +326,7 @@ mod tests
     fn readmitted(cache: &VerdictCache) -> Vec<bridge::Outcome>
     {
         let grammar = built_in().expect("the built-in grammar builds");
-        let source = SourceText::from("def answer = 42 ;\ndef again = answer ;\n");
+        let source = SourceText::from(include_str!("verdicts/fixtures/readmitted.gandr"));
         let tree = parse(&grammar, source).expect("parses").into_tree();
         let mut arena = CoreArena::new();
         let module = lower_module(

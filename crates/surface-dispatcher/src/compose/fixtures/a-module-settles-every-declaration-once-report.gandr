@@ -1,0 +1,9 @@
+def answer : Integer;
+def answer = 42;
+def copy = answer;
+@[ owes(1) ]
+def later : Integer;
+@[ refuses("UnresolvedName") ]
+def broken = missing;
+def wrong : Integer;
+def wrong = "text";

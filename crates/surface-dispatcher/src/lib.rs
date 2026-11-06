@@ -767,7 +767,7 @@ mod tests
 
     /// The lines a source writes to import the module of every host interface
     /// (#4523), after its own text.
-    pub const HOSTING: &str = "import std.env ;\nimport std.fs ;\nimport std.io ;\nimport std.net ;\nimport std.process ;\n";
+    pub const HOSTING: &str = include_str!("lib/unformatted/hosting.gandr");
 
     /// A source laid after `std.list`, as the driver lays a source after the
     /// module it imports: the module's text first, then the source, whose

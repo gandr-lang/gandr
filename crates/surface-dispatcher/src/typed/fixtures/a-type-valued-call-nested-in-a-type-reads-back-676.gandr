@@ -1,0 +1,10 @@
+def same(x : Type) -> -F Type {
+  return x
+}
+
+def sameTwice(x : Type) -> -F Path[.A = Type](same(same(x)), x) {
+  return Path.here (x)
+}
+
+def typeSelf : Type ≃ Type;
+def typeSelf = *{same, *{*{same, sameTwice}, *{same, sameTwice}}};

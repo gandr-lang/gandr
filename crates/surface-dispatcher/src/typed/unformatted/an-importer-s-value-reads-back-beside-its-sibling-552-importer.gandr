@@ -1,0 +1,3 @@
+import "./point.gandr" ;
+def there : +U (-F +{Point, Point}) ;
+def there = thunk { return +{.1 = Here} } ;

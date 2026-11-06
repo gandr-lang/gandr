@@ -1,0 +1,7 @@
+data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }
+data Vec(a : Type) : Nat -> Type where {
+  | Nil : Vec(a, Z)
+  | Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n))
+}
+def g(k : Nat, v : Vec(Nat, k)) -> -F Vec(Nat, k) { return v }
+data Fin : Nat -> Type where { | FZ : (m : Nat) --> Fin(S(m)) }

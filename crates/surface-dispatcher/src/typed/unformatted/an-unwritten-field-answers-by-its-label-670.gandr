@@ -1,0 +1,5 @@
+def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {{
+  match i {{
+    {pattern}
+  }}
+}}

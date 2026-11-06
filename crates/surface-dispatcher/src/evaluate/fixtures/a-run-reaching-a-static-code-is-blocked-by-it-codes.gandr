@@ -1,0 +1,8 @@
+def twice : Type -> Type;
+def twice = fun (Y) { type(Y * Y) };
+def again : Type -> Type;
+def again = twice;
+def held : +U (-F (Type -> Type));
+def held = thunk { return twice };
+def kept : +U (-F (+U (-F (Type -> Type))));
+def kept = thunk { return held };

@@ -1,0 +1,3 @@
+def good = 1;
+@[ refuses("UnresolvedName") ]
+def bad = missing;

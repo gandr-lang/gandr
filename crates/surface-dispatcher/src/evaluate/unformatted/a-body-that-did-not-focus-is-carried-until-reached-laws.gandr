@@ -1,0 +1,5 @@
+def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
+  Path.walk (fun (y) { type(Path[.A = Integer](y, y)) }) (Path.step p p) (Path.here 1)
+}
+def reached : +U (-F Path[.A = Integer](1, 1)) ; def reached = thunk { law (Path.here 1) } ;
+def kept : +U (-F (+U (-F Path[.A = Integer](1, 1)))) ; def kept = thunk { return reached } ;

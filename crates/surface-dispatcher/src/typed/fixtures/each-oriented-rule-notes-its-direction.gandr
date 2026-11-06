@@ -1,0 +1,7 @@
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S (P x) ==> x;
+  rule : P (S x) ==> x;
+}

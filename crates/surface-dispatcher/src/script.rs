@@ -748,7 +748,9 @@ mod tests
         let mut lowerings = LoweringCount::default();
         let (_composed, ran) = run_source(
             &grammar,
-            SourceText::from("def main() -> -F Integer { return 3 }\ndef later = 1 ;\n"),
+            SourceText::from(include_str!(
+                "script/fixtures/a-source-declaring-main-runs-its-entry-1881.gandr"
+            )),
             &mut lowerings,
             &mut Captured::default(),
         )

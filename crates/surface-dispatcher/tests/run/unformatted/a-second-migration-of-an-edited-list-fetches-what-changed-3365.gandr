@@ -1,0 +1,24 @@
+import std.list (List);
+
+pub world operator;
+pub world seat;
+pub world gate;
+
+def rec size(xs : List(Integer)) -> Integer {{
+  match xs {{
+    | #[] => 0
+    | #[x, ..rest] => 1 + size[<] rest
+  }}
+}}
+
+@[ entry((operator, seat, seat, gate, seat, seat)) ]
+def main() -> Integer {{
+  let listed : List(Integer) at seat = migrate [seat] {{ (hold #[{listed}]) }};
+  let xs at seat = listed;
+  let edited : List(Integer) at seat = migrate [seat] {{ (hold cons 0 xs) }};
+  let ys at seat = edited;
+  let opened = migrate [gate] {{ pure 0 }};
+  let before = migrate [seat] {{ size xs }};
+  let after = migrate [seat] {{ size ys }};
+  pure (after - before + 41 + opened)
+}}
