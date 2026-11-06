@@ -14373,7 +14373,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   module homes under the member, as [`Self::applied_path`] reads it. A
     ///   path that writes an argument list after its type name, `M.F(Integer)`,
     ///   applies the member to it: a type family expands over the arguments and
-    ///   a data family stands at them (#3051).
+    ///   a data family stands at them (#3051). A path that ends at a function a
+    ///   module exports and writes an argument list calls that function, as
+    ///   [`Self::applied_path`] reads it. Where a value is read, the path is
+    ///   that call (#5213, #5383).
     /// - provides: the governed reading of a type path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a type a governing module or a
@@ -14397,19 +14400,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   value component and from an unbound head, each asserted as the exact
     ///   type or refusal; a path past a parameter's type, refused at that link;
     ///   a model binder's sort, read as its carrier; a module's family applied
-    ///   through its name, read as its expansion, and refused at another count.
+    ///   through its name, read as its expansion, and refused at another count;
+    ///   a module's function called where a value is read, read as the call.
     /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     /// - witness: `tests::modules::an_unbound_type_path_is_refused_by_name`
     /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
     /// - witness: `tests::modules::a_module_s_family_is_applied_through_its_name_3051`
+    /// - witness: `tests::modules::a_module_s_function_is_called_where_a_value_is_read_5383`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Former(..)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Former(..)))
                 )
         },
     )]

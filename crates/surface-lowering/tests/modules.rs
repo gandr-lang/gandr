@@ -3671,6 +3671,29 @@ fn a_module_s_function_is_called_in_a_type_5213()
     );
 }
 
+/// A module's function called where a value is read, as the argument of a
+/// type that a function computes, reads as the call: `width(M.twice(n))`
+/// reads `M.twice(n)` as the call of `M.twice` on `n`. A type that a match
+/// computes reads back with such a call in it (#5383).
+#[test]
+fn a_module_s_function_is_called_where_a_value_is_read_5383()
+{
+    let source = "module M where { def twice(n : Integer) -> Integer { n + n } }\ndef width(n : \
+                  Integer) -> Type { return Integer }\ndef keep(n : Integer, x : \
+                  width(M.twice(n))) -> Integer { x }";
+    let mut lowered = lower(source);
+    let judged: Vec<Judgement> = verdicts(&mut lowered)
+        .into_iter()
+        .map(|(_, judgement)| judgement)
+        .filter(|&judgement| judgement != Judgement::Declared)
+        .collect();
+    assert_eq!(
+        judged,
+        [Judgement::Checked, Judgement::Checked, Judgement::Checked],
+        "`width(M.twice(n))` is the type its code decodes to, `Integer`, so `keep` checks"
+    );
+}
+
 #[test]
 fn an_unbound_type_path_is_refused_by_name()
 {
