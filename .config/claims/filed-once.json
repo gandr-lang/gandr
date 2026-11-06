@@ -1,15 +1,15 @@
 [
   {
-    "name": "#5149: an epic that holds 100 sub-issues, GitHub's limit, gets no link, and the issue is filed under no epic with its body naming the epic and exit 0",
+    "name": "#5149: an epic that holds 100 sub-issues, GitHub's limit, gets no link, and the issue is filed under no epic with its body naming the epic and exit 0; #5709: one read, the epic's before the filing, and none after it",
     "kind": "epic",
     "subs": 100,
-    "output": "exit 0; 1 open, 0 closed; 0 links; the body ends `Epic: #4481 (full)`"
+    "output": "exit 0; 1 open, 0 closed; 0 links; reads 1; the body ends `Epic: #4481 (full)`"
   },
   {
-    "name": "#5149: an epic one sub-issue below the limit links the issue, and the body names no epic",
+    "name": "#5149: an epic one sub-issue below the limit links the issue, and the body names no epic; #5709: two reads, the epic's before the filing and the new issue's id after it",
     "kind": "epic",
     "subs": 99,
-    "output": "exit 0; 1 open, 0 closed; 1 links; the body ends `from: #5`"
+    "output": "exit 0; 1 open, 0 closed; 1 links; reads 2; the body ends `from: #5`"
   },
   {
     "name": "#5149: two refactor:file runs for one pull request, from two clones with runtime directories of their own, both read the board before either files and leave one open issue and the later one closed as its duplicate; the stub's lock holds on a host with no flock(1) (#5159)",

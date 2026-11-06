@@ -2091,7 +2091,7 @@ flag "--fix" help="set each GitHub dependency the issue owes before checking"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
-#!/usr/bin/env bash
+{% raw %}#!/usr/bin/env bash
 set -euo pipefail
 issue=${usage_issue:?}
 [[ $issue =~ ^[0-9]+$ ]] || { echo "unit:check takes an issue number, not \`$issue\`" >&2; exit 2; }
@@ -2100,8 +2100,16 @@ claims=$root/.config/claims
 source "$root/.config/references/vault.bash"
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id, issue FROM concern ORDER BY id;')
 source "$claims/deps.bash"
-repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
-issued=$(gh api "repos/$repo/issues/$issue" --jq '{number, title, labels: [.labels[].name], body: (.body // "")}')
+# gh fills `{owner}` and `{repo}` from the checkout's remote, so the
+# repository's name costs no read.
+repo='{owner}/{repo}'
+# The issue, its dependencies, its parent and its sub-issues in one query
+# (#5709). The issues it names are read in a second query, only when one
+# must be read.
+read=$(deps_issues "$repo" body "$issue")
+mine=$(jq -c --arg n "$issue" '.[$n] // empty' <<< "$read")
+[[ -n $mine ]] || { echo "unit:check: #$issue is no issue" >&2; exit 2; }
+issued=$(jq -c '{number, title, labels, body}' <<< "$mine")
 body=$(jq -r .body <<< "$issued")
 cutoff=$(jq -R -s -f "$claims/cutoff.jq" "$root/.config/references/window.toml")
 findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" --argjson labels "$(jq -c .labels <<< "$issued")" --argjson cutoff "$cutoff" --argjson number "$issue" -f "$claims/unit.jq" <<< "$body")
@@ -2112,15 +2120,34 @@ if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > 
 fi
 subs='[]'
 if jq -e '.labels | index("kind:epic")' <<< "$issued" > /dev/null; then
-  subs=$(deps_sub_issues "$repo" "$issue")
+  subs=$(jq -c .sub_issues <<< "$mine")
 fi
-plan=$(jq -n --argjson issued "$issued" --argjson blocked "$(deps_blocked_by "$repo" "$issue")" --argjson subs "$subs" \
+plan=$(jq -n --argjson issued "$issued" --argjson blocked "$(jq -c .blocked_by <<< "$mine")" --argjson subs "$subs" \
   '$issued + {blocked_by: $blocked, sub_issues: $subs}' | jq -r -L "$claims" -f "$claims/deps.jq")
+# Each epic the body names as its own and the issue does not block yet. Each
+# operation the unit's `## Embedding owes` names (#3964) blocks the unit's
+# epic, so the epic closes on its operation set. The owed issue keeps its own
+# parent: only the `blocked by` is set.
+mapfile -t named < <(jq -R -s -r -L "$claims" 'include "sections"; epic_refs[]' <<< "$body" \
+  | jq -r --argjson mine "$mine" 'select(. != $mine.number and (IN($mine.blocking[].number) | not))' | sort -nu)
+owed=$(jq -R -s -r -L "$claims" 'include "sections"; (owes // {numbers: []}).numbers[]' <<< "$body")
+parent=$(jq -r '.parent // empty' <<< "$mine")
+# The second query: the named epics, the parent when the body owes
+# operations, and under `--fix` each issue whose REST id a write takes.
+wanted=("${named[@]}")
+if [[ -n $owed && -n $parent ]]; then wanted+=("$parent"); fi
+if [[ ${usage_fix:-false} == true ]]; then
+  mapfile -t -O "${#wanted[@]}" wanted < <(awk -F'\t' '$1 == "set" { print $2 }' <<< "$plan")
+  if [[ -n $owed && -n $parent ]]; then mapfile -t -O "${#wanted[@]}" wanted <<< "$owed"; fi
+fi
+others='{}'
+if (( ${#wanted[@]} > 0 )); then others=$(deps_issues "$repo" - "${wanted[@]}"); fi
+id_of() { jq -r --arg n "$1" '.[$n].id // empty' <<< "$others"; }
 while IFS=$'\t' read -r verb blocker why; do
   case "$verb" in
     set)
       if [[ ${usage_fix:-false} == true ]]; then
-        deps_block "$repo" "$issue" "$blocker"
+        deps_set_block "$repo" "$issue" "$blocker" "$(id_of "$blocker")"
       else
         findings=$(printf '%s\n%s\n' "$findings" "#$blocker is not set as a \`blocked by\` dependency on GitHub, and $why: run \`mise run unit:check --fix $issue\`" | awk 'NF')
       fi
@@ -2128,30 +2155,23 @@ while IFS=$'\t' read -r verb blocker why; do
     extra) echo "note: #$issue is blocked by #$blocker on GitHub, and its \`## After\` does not list it" ;;
   esac
 done <<< "$plan"
-blocking=$(deps_blocking "$repo" "$issue")
-for epic in $(deps_named_epics "$repo" "$body"); do
-  [[ $epic != "$issue" ]] || continue
-  jq -e --argjson n "$epic" 'any(.[]; .number == $n)' <<< "$blocking" > /dev/null && continue
+for epic in "${named[@]}"; do
+  jq -e --arg n "$epic" '.[$n] | . != null and .state == "open" and (.labels | index("kind:epic") != null)' <<< "$others" > /dev/null || continue
   if [[ ${usage_fix:-false} == true ]]; then
-    deps_set_block "$repo" "$epic" "$issue"
+    deps_set_block "$repo" "$epic" "$issue" "$(jq -r .id <<< "$mine")"
   else
     findings=$(printf '%s\n%s\n' "$findings" "#$epic, the epic the body names, is not set \`blocked by\` #$issue on GitHub, so it would close with #$issue open: run \`mise run unit:check --fix $issue\`" | awk 'NF')
   fi
 done
-# Each operation the unit's `## Embedding owes` names (#3964) blocks the
-# unit's epic, so the epic closes on its operation set. The owed issue keeps
-# its own parent: only the `blocked by` is set.
-owed=$(jq -R -s -r -L "$claims" 'include "sections"; (owes // {numbers: []}).numbers[]' <<< "$body")
 if [[ -n $owed ]]; then
-  parent=$(gh api "repos/$repo/issues/$issue" --jq '.parent_issue_url // "" | sub(".*/"; "")')
   if [[ -z $parent ]]; then
     findings=$(printf '%s\n%s\n' "$findings" "#$issue owes operations in \`## Embedding owes\` and sits under no epic: link it under its programme's epic, so the epic closes on its operation set" | awk 'NF')
   else
-    epic_blockers=$(deps_blocked_by "$repo" "$parent")
+    epic_blockers=$(jq -c --arg n "$parent" '.[$n].blocked_by // []' <<< "$others")
     for n in $owed; do
       jq -e --argjson n "$n" 'any(.[]; .number == $n)' <<< "$epic_blockers" > /dev/null && continue
       if [[ ${usage_fix:-false} == true ]]; then
-        deps_set_block "$repo" "$parent" "$n"
+        deps_set_block "$repo" "$parent" "$n" "$(id_of "$n")"
       else
         findings=$(printf '%s\n%s\n' "$findings" "#$parent, the epic of #$issue, is not set \`blocked by\` #$n, an operation #$issue owes, so it would close with the operation unbuilt: run \`mise run unit:check --fix $issue\`" | awk 'NF')
       fi
@@ -2181,7 +2201,7 @@ if [[ -n "$shown" ]]; then
   echo "its vault pages, read against the vault \$XDG_CONFIG_HOME/gandr/references names:"
   printf '%s\n' "$shown"
 fi
-'''
+{% endraw %}'''
 
 # A seat claims its own next item, in the order `tracker.md` § tracker-claims
 # states, without asking (#2533). `claim:next <lane>` reads the lane's areas
@@ -2778,10 +2798,20 @@ while IFS=$'\t' read -r verb label; do
       ;;
   esac
 done <<< "$plan"
-repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+# gh fills `{owner}` and `{repo}` from the checkout's remote, so the
+# repository's name costs no read.
+repo='{owner}/{repo}'
+# One query before the filing reads the epic and each epic the body names as
+# its own (#5709). A second query after the filing reads the new issue's
+# REST id, only when a link or a block is written. A new issue has no parent
+# and blocks nothing, so its links are written unread.
+mapfile -t named < <(jq -R -s -r -L "$claims" 'include "sections"; epic_refs[]' "$body" | sort -nu)
+read='{}'
+if [[ -n $epic || ${#named[@]} -gt 0 ]]; then read=$(deps_issues "$repo" - ${epic:+"$epic"} "${named[@]}"); fi
 full=false
 if [[ -n $epic ]]; then
-  held=$(deps_sub_issues "$repo" "$epic" | jq length)
+  jq -e --arg n "$epic" 'has($n)' <<< "$read" > /dev/null || { echo "issue:file: --epic #$epic is no issue" >&2; exit 2; }
+  held=$(jq --arg n "$epic" '.[$n].sub_issues | length' <<< "$read")
   if (( held >= 100 )); then
     full=true
     filed=$(mktemp)
@@ -2790,16 +2820,29 @@ if [[ -n $epic ]]; then
     body=$filed
   fi
 fi
+# Each open epic the body names as its own is blocked by the new issue
+# (#3398), unless the link sets it.
+blocks=()
+for named_epic in "${named[@]}"; do
+  [[ $full == true || $named_epic != "$epic" ]] || continue
+  jq -e --arg n "$named_epic" '.[$n] | . != null and .state == "open" and (.labels | index("kind:epic") != null)' <<< "$read" > /dev/null || continue
+  blocks+=("$named_epic")
+done
 flags=()
 for label in "${labels[@]}"; do flags+=(--label "$label"); done
 url=$(gh issue create --title "$usage_title" --body-file "$body" "${flags[@]}")
 number=${url##*/}
+if [[ -n $epic && $full != true ]] || (( ${#blocks[@]} > 0 )); then
+  id=$(deps_issues "$repo" - "$number" | jq -r --arg n "$number" '.[$n].id')
+fi
 if [[ $full == true ]]; then
   echo "issue:file: #$epic holds $held sub-issues, GitHub's limit, so #$number is filed under no epic; its body names #$epic" >&2
 elif [[ -n $epic ]]; then
-  deps_link "$repo" "$epic" "$number" >&2
+  deps_link_filed "$repo" "$epic" "$number" "$id" >&2
 fi
-deps_block_named_epics "$repo" "$number" "$(< "$body")" >&2
+for blocked in "${blocks[@]}"; do
+  deps_set_block "$repo" "$blocked" "$number" "$id" >&2
+done
 if [[ $unit == true ]]; then
   mise run --quiet unit:check --fix "$number" >&2
 fi
