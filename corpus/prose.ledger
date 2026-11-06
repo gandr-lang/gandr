@@ -288,10 +288,10 @@ corpus/ledger/features/confluence-certificate.gandr STE-6.3 93451f99df0d95f0
 corpus/ledger/features/confluence-certificate.gandr STE-6.3 bb671ada17b268c0
 corpus/ledger/features/confluence-certificate.gandr STE-8.1 93451f99df0d95f0
 corpus/ledger/features/constructor-namespacing.gandr STE-3.2 38af354f29cb24a4
-corpus/ledger/features/constructor-namespacing.gandr STE-3.2 e355cbe48ba5c25e
-corpus/ledger/features/constructor-namespacing.gandr STE-6.3 cee6b2377677de27
-corpus/ledger/features/constructor-namespacing.gandr STE-6.3 e355cbe48ba5c25e
-corpus/ledger/features/constructor-namespacing.gandr STE-8.1 cee6b2377677de27
+corpus/ledger/features/constructor-namespacing.gandr STE-3.2 63be786deaa6ec51
+corpus/ledger/features/constructor-namespacing.gandr STE-6.3 63be786deaa6ec51
+corpus/ledger/features/constructor-namespacing.gandr STE-6.3 753e119dcea2da88
+corpus/ledger/features/constructor-namespacing.gandr STE-8.1 753e119dcea2da88
 corpus/ledger/features/cost-effect.gandr STE-3.2 c9a282627f2e4de0
 corpus/ledger/features/cost-effect.gandr STE-3.2 eb3d4a3fbade8e92
 corpus/ledger/features/cost-effect.gandr STE-3.5 e0cdd715de2fb04f
@@ -3984,6 +3984,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/builtins/list-pa
 crates/surface-render-terminal/tests/golden/corpus/pathological/classifier/implicit-telescope.txt STE-5.3 761ce136eef636cd
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/held-unique.txt STE-5.2 9ca76855ff60440b
 crates/surface-render-terminal/tests/golden/corpus/pathological/control/kept-view.txt STE-5.3 5388aacc3a654ccf
+crates/surface-render-terminal/tests/golden/corpus/pathological/data/constructor-two-imports.txt STE-5.3 e1b55b8af0d81241
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/descent.txt STE-5.3 82cfda2e0c36480c
 crates/surface-render-terminal/tests/golden/corpus/pathological/data/family-named-as-builtin.txt STE-5.3 d0178ac867679784
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/bind-port.txt STE-5.3 4682db7c821a7b15

@@ -1556,6 +1556,22 @@ pub enum LoweringRefusal<'source>
         more: CandidateCount,
     },
 
+    /// A bare constructor name `C` that more than one data family the use
+    /// sees declares, `Color.C` and `Light.C`.
+    AmbiguousConstructor
+    {
+        /// The bytes of the name at its use.
+        span: ByteSpan,
+        /// The constructor's name.
+        name: SurfaceName<'source>,
+        /// The family with the first slot that declares it.
+        first: SurfaceName<'source>,
+        /// The family with the second slot that declares it.
+        second: SurfaceName<'source>,
+        /// How many more families declare it.
+        more: CandidateCount,
+    },
+
     /// A method whose receiver is at a mode its telescope binds, `self : m T`,
     /// whose result is no `-F View[m](a)` over that mode, or whose body is no
     /// place of its receiver, `{ self.#[i] }`; or a view type `View[m](a)`
@@ -2360,6 +2376,28 @@ impl fmt::Display for LoweringRefusal<'_>
                     )
                 }
             },
+            Self::AmbiguousConstructor {
+                name,
+                first,
+                second,
+                more,
+                ..
+            } => {
+                if usize::from(more) == 0_usize {
+                    write!(
+                        f,
+                        "`{name}` is a constructor of both `{first}` and `{second}`, and a bare \
+                         name selects exactly one"
+                    )
+                }
+                else {
+                    write!(
+                        f,
+                        "`{name}` is a constructor of `{first}`, `{second}` and {more} more \
+                         families, and a bare name selects exactly one"
+                    )
+                }
+            },
             Self::ViewNotPlace { .. } => f.write_str(
                 "a method whose receiver's mode is deduced answers a place of its receiver: its \
                  result is `-F View[m](a)` at the receiver's mode `m`, and its body is that \
@@ -2693,6 +2731,7 @@ impl LoweringRefusal<'_>
             | Self::EntryType { span }
             | Self::StrayReceiverMode { span, .. }
             | Self::AmbiguousMethod { span, .. }
+            | Self::AmbiguousConstructor { span, .. }
             | Self::ViewNotPlace { span }
             | Self::ViewOfNoPlace { span }
             | Self::NonExhaustiveMatch { span }
@@ -2790,7 +2829,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 78_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 79_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3144,6 +3183,13 @@ mod tests
                 span: s(145_usize, 146_usize),
                 name: SurfaceName::from("count"),
             },
+            LoweringRefusal::AmbiguousConstructor {
+                span: s(149_usize, 150_usize),
+                name: SurfaceName::from("Red"),
+                first: SurfaceName::from("Color"),
+                second: SurfaceName::from("Light"),
+                more: CandidateCount::from(0_usize),
+            },
         ]
     }
 
@@ -3233,6 +3279,7 @@ mod tests
             s(139_usize, 140_usize),
             s(143_usize, 144_usize),
             s(145_usize, 146_usize),
+            s(149_usize, 150_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
@@ -3501,6 +3548,22 @@ mod tests
         assert!(
             more.contains('2') && !two.contains('0'),
             "the message counts the further modules only when there are some: {two} / {more}"
+        );
+        let shared = |more: usize| {
+            LoweringRefusal::AmbiguousConstructor {
+                span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
+                name: SurfaceName::from("Red"),
+                first: SurfaceName::from("Color"),
+                second: SurfaceName::from("Light"),
+                more: CandidateCount::from(more),
+            }
+            .to_string()
+        };
+        let (two, more) = (shared(0_usize), shared(2_usize));
+        assert_apart(&[two.clone(), more.clone()]);
+        assert!(
+            more.contains('2') && !two.contains('0'),
+            "the message counts the further families only when there are some: {two} / {more}"
         );
         let site = gandr_kernel_term::OccurrenceSite::Field {
             tag: gandr_kernel_term::ConstructorTag::from(1_usize),

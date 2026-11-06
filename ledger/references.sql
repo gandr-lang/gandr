@@ -364,6 +364,7 @@ INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surfa
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-lowering','lower::capability','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surface-lowering','lower::native','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45dc5330206a','kernel-core','check::cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45dc5330206a','kernel-term','cover','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1567c-2c32-7ed3-a102-45e54f702b4f','kernel-core','check::cover','anchor',NULL,NULL,NULL);

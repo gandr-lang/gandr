@@ -285,6 +285,7 @@ impl LoweringRefusal<'_>
             | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
+            | Self::AmbiguousConstructor { .. }
             | Self::ViewNotPlace { .. }
             | Self::ViewOfNoPlace { .. }
             | Self::NonExhaustiveMatch { .. }
@@ -363,6 +364,7 @@ impl LoweringRefusal<'_>
             | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
+            | Self::AmbiguousConstructor { .. }
             | Self::ViewNotPlace { .. }
             | Self::ViewOfNoPlace { .. }
             | Self::NonExhaustiveMatch { .. }
@@ -818,7 +820,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 80_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 81_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1149,6 +1151,13 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("count"),
             },
+            LoweringRefusal::AmbiguousConstructor {
+                span: empty,
+                name: SurfaceName::from("Red"),
+                first: SurfaceName::from("Color"),
+                second: SurfaceName::from("Light"),
+                more: crate::CandidateCount::from(0_usize),
+            },
         ]
     }
 
@@ -1235,6 +1244,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];
 

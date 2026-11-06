@@ -2392,7 +2392,7 @@ impl<'source> LinkNames<'source>
         names.constructors = collected
             .constructors
             .keys()
-            .map(|&(_, name)| name)
+            .map(|&(_, name, _)| name)
             .collect();
         names
     }
@@ -6052,9 +6052,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .and_then(named_at)
                     .or_else(|| {
                         collected
-                            .constructors
-                            .get(&(imported, name))
-                            .filter(|constructor| {
+                            .constructors_in(imported, name)
+                            .find(|constructor| {
                                 collected.slot_visibility(constructor.family) == Visibility::Public
                             })
                             .map(|constructor| constructor.named.span)
@@ -6113,11 +6112,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }));
                 }
             }
-            for (&(owner, name), constructor) in &collected.constructors {
+            for (&(owner, name, family), constructor) in &collected.constructors {
                 if owner != source {
                     continue;
                 }
-                let entered = collected.constructors.get(&(imported, name)) == Some(constructor);
+                let entered =
+                    collected.constructors.get(&(imported, name, family)) == Some(constructor);
                 if !entered && let Some(other) = bound_in_import(name) {
                     refusals.push((constructor.family, LoweringRefusal::ImportShadows {
                         span: constructor.named.span,
@@ -9537,7 +9537,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let name = self.name_at(site.at);
-        if let Maybe::Present(constructor) = self.constructor_named(site, name) {
+        if let Maybe::Present(constructor) = self.named_constructor(site, name)? {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
                 start: self.operands.entries().len(),
@@ -14356,7 +14356,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let name = self.name_at(site.at);
         if let Reading::Value(_) = site.reading
-            && let Maybe::Present(constructor) = self.constructor_named(site, name)
+            && let Maybe::Present(constructor) = self.named_constructor(site, name)?
         {
             self.constructed_at(site.at.span, constructor);
             let none = Stretch {
@@ -15770,7 +15770,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .first()
             .map(|&(sort, _)| site.fault(sort.span, FormFault::MisplacedTile));
         if let (Ok(()), Reading::Value(_)) = (read, site.reading)
-            && let Maybe::Present(constructor) = self.constructor_named(site, name)
+            && let Maybe::Present(constructor) = self
+                .named_constructor(site, name)
+                .inspect_err(|_| self.operands.truncate(At::from(start)))?
         {
             if let Some(refusal) = unmanifest.or_else(|| alone(again).err()) {
                 self.operands.truncate(At::from(start));

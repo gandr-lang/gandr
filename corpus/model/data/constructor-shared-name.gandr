@@ -1,0 +1,44 @@
+//! This source models two data families that share a constructor name.
+//!
+//! `Paint` and `Light` each declare `Red`. A use through the family names one
+//! constructor, so the two names never meet.
+//!
+//! `Paint.Red` and `Light.Red` name the two constructors, as a value and as a
+//! pattern. `Green` stays bare, because only `Paint` declares it.
+//!
+//! - see: #2713
+
+/// A paint.
+pub data Paint : Type where
+  /// The red paint.
+  | Red : Paint
+  /// The green paint.
+  | Green : Paint
+
+/// A traffic light's lamp, whose `Red` shares its name with a paint's.
+pub data Light : Type where
+  /// The red lamp.
+  | Red : Light
+  /// The amber lamp.
+  | Amber : Light
+
+/// The pause that a lamp asks for. The match names each lamp through its family.
+def pause(l : Light) -> Integer =
+  match l where
+    | Light.Red => 2
+    | Light.Amber => 1
+
+/// A paint's warmth: `Red` through its family, and `Green`, which no other
+/// family declares, bare.
+def warmth(c : Paint) -> Integer =
+  match c where
+    | Paint.Red => 1
+    | Green => 0
+
+/// The pause at the red lamp.
+@[ runs("2") ]
+def stopped() -> Integer { pause Light.Red }
+
+/// The warmth of the red paint.
+@[ runs("1") ]
+def redWarmth() -> Integer { warmth Paint.Red }

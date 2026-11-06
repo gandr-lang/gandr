@@ -1050,6 +1050,8 @@ pub enum RefusalName
     StrayReceiverMode,
     /// A method call whose name more than one module's receivers declare.
     AmbiguousMethod,
+    /// A bare constructor name more than one data family declares.
+    AmbiguousConstructor,
     /// A method at a deduced mode whose result is no view of its receiver's
     /// mode or whose body is no place of its receiver, or a view type off such
     /// a method's result.
@@ -1314,7 +1316,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 243_usize] = [
+    pub const VOCABULARY: [Self; 244_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1450,6 +1452,7 @@ impl RefusalName
         Self::EntryType,
         Self::StrayReceiverMode,
         Self::AmbiguousMethod,
+        Self::AmbiguousConstructor,
         Self::ViewNotPlace,
         Self::ViewOfNoPlace,
         Self::NonExhaustiveMatch,
@@ -1672,6 +1675,7 @@ impl RefusalName
         (Self::EntryType, b"EntryType") |
         (Self::StrayReceiverMode, b"StrayReceiverMode") |
         (Self::AmbiguousMethod, b"AmbiguousMethod") |
+        (Self::AmbiguousConstructor, b"AmbiguousConstructor") |
         (Self::ViewNotPlace, b"ViewNotPlace") |
         (Self::ViewOfNoPlace, b"ViewOfNoPlace") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
@@ -2061,6 +2065,7 @@ impl RefusalName
             Self::EntryType => "EntryType",
             Self::StrayReceiverMode => "StrayReceiverMode",
             Self::AmbiguousMethod => "AmbiguousMethod",
+            Self::AmbiguousConstructor => "AmbiguousConstructor",
             Self::ViewNotPlace => "ViewNotPlace",
             Self::ViewOfNoPlace => "ViewOfNoPlace",
             Self::NonExhaustiveMatch => "NonExhaustiveMatch",
@@ -2818,7 +2823,8 @@ impl Refusal<'_>
         RefusalName::RegionAsValue) | (LoweringRefusal::EntryType { .. },
         RefusalName::EntryType) | (LoweringRefusal::StrayReceiverMode { .. },
         RefusalName::StrayReceiverMode) | (LoweringRefusal::AmbiguousMethod { .. },
-        RefusalName::AmbiguousMethod) | (LoweringRefusal::ViewNotPlace { .. },
+        RefusalName::AmbiguousMethod) | (LoweringRefusal::AmbiguousConstructor { .. },
+        RefusalName::AmbiguousConstructor) | (LoweringRefusal::ViewNotPlace { .. },
         RefusalName::ViewNotPlace) | (LoweringRefusal::ViewOfNoPlace { .. },
         RefusalName::ViewOfNoPlace) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::MismatchedPattern { .. },
@@ -2932,6 +2938,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::EntryType { .. } => RefusalName::EntryType,
         LoweringRefusal::StrayReceiverMode { .. } => RefusalName::StrayReceiverMode,
         LoweringRefusal::AmbiguousMethod { .. } => RefusalName::AmbiguousMethod,
+        LoweringRefusal::AmbiguousConstructor { .. } => RefusalName::AmbiguousConstructor,
         LoweringRefusal::ViewNotPlace { .. } => RefusalName::ViewNotPlace,
         LoweringRefusal::ViewOfNoPlace { .. } => RefusalName::ViewOfNoPlace,
         LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
