@@ -1,6 +1,7 @@
 //! The diagram view of gandr's circuit algebras: monogamous acyclic wirings
 //! with interfaces, the spine reading of a command pattern, embedding-based
-//! matching with its convexity check, and the diagram normal form.
+//! matching with its convexity check, the diagram normal form, and the spider
+//! normal form modulo the Frobenius laws.
 //!
 //! A [`Wiring`] is one diagram with an interface: [`Generator`]s (the
 //! hyperedges, each a [`GeneratorLabel`] over ordered source and target
@@ -26,9 +27,23 @@
 //! [`same_diagram`] decides whether two wirings denote one diagram, with both
 //! relabellings on one arm and the located [`DiagramDivergence`] on the other.
 //!
+//! A [`GeneratorSort::Spider`] generator is a spider of a special commutative
+//! Frobenius algebra, and the legs of a spider have no order modulo its laws.
+//! [`spider_normal_form`] fuses each connected composite of spiders of one
+//! name into one spider and removes the identity spiders.
+//! [`spider_canonicalize`] gives the fused form a canon that is exact under
+//! the order of the legs, within a [`SpiderBudget`] of trials.
+//! [`same_modulo_frobenius`] decides equality modulo the laws, with a
+//! [`SpiderCanon`] for each side that [`SpiderCanon::verify`] checks.
+//!
 //! [`overlaps`] glues two wirings along every connected region of shared
 //! generators the fragment admits; read at two rules' left-hand sides, each
 //! [`Overlap`] is a pre-critical pair.
+//!
+//! Every walk is a loop over explicit frames, and no walk recurses on the size
+//! of a diagram. A lookup that can miss returns `Maybe` with a named reason. A
+//! refused operation returns `Result` with a typed refusal that names its
+//! locus.
 //!
 //! The crate is `no_std` and depends on `core`, `alloc`, the cell-shape
 //! substrate `gandr-theory-cell-complexes` and the shape vocabulary of
@@ -151,9 +166,9 @@
 //!   quotient, up to exchange moves, that does not stand in for the symmetric
 //!   one the canon decides.
 //! - Shahn Majid and Konstanze Rietsch. "Planar Spider Theorem and Asymmetric
-//!   Frobenius Algebras." Preprint, 2021. `arXiv:2109.12106` — the spider
-//!   normal form for diagrams whose wires merge, outside the monogamous
-//!   fragment and not built here.
+//!   Frobenius Algebras." Preprint, 2021. `arXiv:2109.12106` — the planar
+//!   spider theorem with beads, for connected diagrams drawn in the plane, that
+//!   does not stand in for the symmetric special case the spider canon decides.
 
 // Module documentation that predates the shape lint: 33 headings outside the
 // vocabulary, 5 decision records and 6 budgets exceeded. Each allow leaves with
@@ -291,6 +306,17 @@ pub use crate::normal_form::canonicalize;
 pub use crate::normal_form::relabelled_generator;
 pub use crate::normal_form::relabelled_wire;
 pub use crate::normal_form::same_diagram;
+pub use crate::normal_form::spider::SharedSpiderCanon;
+pub use crate::normal_form::spider::SpiderBudget;
+pub use crate::normal_form::spider::SpiderCanon;
+pub use crate::normal_form::spider::SpiderDefect;
+pub use crate::normal_form::spider::SpiderEquality;
+pub use crate::normal_form::spider::SpiderNormalForm;
+pub use crate::normal_form::spider::SpiderObstruction;
+pub use crate::normal_form::spider::SpiderTrials;
+pub use crate::normal_form::spider::same_modulo_frobenius;
+pub use crate::normal_form::spider::spider_canonicalize;
+pub use crate::normal_form::spider::spider_normal_form;
 pub use crate::overlap::Overlap;
 pub use crate::overlap::OverlapShape;
 pub use crate::overlap::overlaps;

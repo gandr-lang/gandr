@@ -1,16 +1,10 @@
-//! A value beside its code, read at each arm of a case on the code.
+//! This fixture defines a universe with two codes.
 //!
-//! A two-code universe decodes each code to a type. A case on a code reads the
-//! goal at each arm's code. It also reads each later binder whose type decodes
-//! the code, so a value typed at the code's decode stands at the arm's type.
+//! Each code decodes to one type.
 //!
-//! The case generalises its motive over the value. The kernel checks the case
-//! at that motive, and the machine runs the case as written.
+//! A case reads each value at its decoded type.
 //!
-//! - cites: [McBride-2002-elimination_motive] — a motive generalised over the
-//!   binders that depend on the scrutinee
-//! - see: #3483 — refinement by solution, which reads a binder after the
-//!   scrutinee at each arm
+//! - cites: [McBride-2002-elimination_motive]
 //!
 //! [McBride-2002-elimination_motive]: https://doi.org/10.1007/3-540-45842-5_13 "McBride, Elimination with a Motive"
 

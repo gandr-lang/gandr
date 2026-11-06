@@ -880,7 +880,7 @@ fn a_search_resumes_from_its_checkpoint()
     );
     let obligation = Obligation::new(&formula.plan, formula.quantifier, Demand::Holds).unwrap();
     let quotas = CheckerQuotas::default();
-    let run = |dovetail: &mut Dovetail<'_>| match dovetail
+    let run = |dovetail: &mut Dovetail<&ValidatedPlan>| match dovetail
         .run(Budget::from(u64::MAX), Rounds::from(u64::MAX), || false)
         .outcome(Position::from(0))
     {

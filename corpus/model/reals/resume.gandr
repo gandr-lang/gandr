@@ -1,0 +1,102 @@
+// A machine resumes from its checkpoint and reaches the verdict of an
+// uninterrupted run, through `std.reals.Eff`.
+//
+// The program decides `sqrt 2 < 3/2` twice. The first machine runs 16 quanta
+// and holds. The second runs one quantum, so it ends `exhausted`. The program
+// writes the checkpoint of the second machine: its plan and its steps so far,
+// in lowercase hexadecimal. That text is the one form that leaves a run.
+//
+// `restore` validates the text again and mints a third machine. The program
+// steps it until it decides, and it holds. Its counters agree with those of
+// the first machine: 7 quanta, 2 obligations, and a certificate of 4 steps.
+// So the certificate replays to the same steps. `gandr run resume.gandr`
+// prints `exhausted`, then `holds`, then `the same work`.
+//
+// - see: `corpus/model/reals/comparison.gandr` — the uninterrupted run
+// - see: `crates/theory-exact-reals/src/dovetail.rs` — the checkpoint of the
+//   scheduler
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+// The native list type.
+import std.list (List);
+
+/// The canonical bytes of the plan of `sqrt 2 < 3/2` in lowercase
+/// hexadecimal: 13 nodes in 176 bytes.
+pub def belowThreeHalves : String = "4758525001000d000000000000000100000000020000000000000000000000001200000000010000000500000000000000000201000000010000000000000001120300000004000000140200000005000000120100000000000000120400000003000000130700000008000000080001000000000100000000000000010001010000000100000000000000010006000000090000000000000002ffffffff010000000000000003120a0000000b000000";
+
+/// Step `machine` once for each element of `fuel` until it is no longer
+/// `exhausted`, and reply its last verdict.
+pub def rec settle(machine : Integer, fuel : List(Integer)) -> [std.reals.Eff] String =
+  match fuel where
+    | #[] => pure "exhausted"
+    | #[_, ..rest] => {
+      let *{now, same} = std.reals.step machine;
+      let spent = now == "exhausted";
+      match spent { | true => settle[<] machine rest | false => pure now }
+    }
+
+/// Sixteen quanta of fuel.
+pub def sixteen : List(Integer) = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+/// Whether two lists of three counters agree, place by place.
+pub def agree(first : List(Integer), second : List(Integer)) -> Bool =
+  match first where
+    | #[a, b, c] => match second where
+      | #[x, y, z] => a == x && b == y && c == z
+      | _ => false
+    | _ => false
+
+/// The words for whether two machines do the same work.
+pub def work(same : Bool) -> String =
+  match same { | true => "the same work" | false => "other work" }
+
+/// The verdict of a restored machine when its work agrees with an
+/// uninterrupted machine's, and `other` when it does not.
+pub def restored(plan : String) -> [std.reals.Eff] String =
+  let held = std.reals.admit plan
+  let *{whole, uninterrupted} = std.reals.decide held 16
+  let *{early, interrupted} = std.reals.decide held 1
+  let text = std.reals.checkpoint interrupted
+  let again = std.reals.restore text
+  let verdict = settle again sixteen
+  let before = std.reals.report uninterrupted
+  let after = std.reals.report again
+  let same = agree before after
+  match same { | true => verdict | false => "other" }
+
+/// `restored` under a handler of this source, a second model of
+/// `std.reals.Eff` whose machines hold after one step with the same work.
+@[ runs("\"holds\"") ]
+def restoredModelled() -> String =
+  handle r : std.reals.Eff {
+    restored belowThreeHalves
+  } with {
+    | pure(x) => pure x
+    | oper admit(plan, k) => k 0
+    | oper enclose(asked, k) => k "1p0" "3p-1"
+    | oper decide(asked, k) => k "exhausted" 0
+    | oper step(machine, k) => k "holds" machine
+    | oper checkpoint(machine, k) => k "00"
+    | oper restore(text, k) => k 1
+    | oper report(machine, k) => k #[7, 2, 4]
+  }
+
+/// The entry: interrupt a machine after one quantum, restore it from its
+/// checkpoint, step it to its verdict, compare its work, and exit with 0.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let held = std.reals.admit belowThreeHalves
+  let *{whole, uninterrupted} = std.reals.decide held 16
+  let *{early, interrupted} = std.reals.decide held 1
+  std.io.Console.print early
+  let text = std.reals.checkpoint interrupted
+  let again = std.reals.restore text
+  let verdict = settle again sixteen
+  std.io.Console.print verdict
+  let before = std.reals.report uninterrupted
+  let after = std.reals.report again
+  let same = agree before after
+  std.io.Console.print (work same)
+  0

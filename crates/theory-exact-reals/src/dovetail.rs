@@ -25,6 +25,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 use core::num::NonZeroU32;
+use core::ops::Deref;
 
 use anodized::spec;
 
@@ -277,14 +278,17 @@ struct Entry
 /// The scheduler: the obligations of a run over one validated plan, the
 /// bounds of each turn, and the place of the next turn.
 ///
+/// The scheduler holds its plan through `Plan`: a borrow of the plan, or a
+/// holder that shares it, so a scheduler can stay beside the plan it runs.
+///
 /// # Specification
 /// - invariant: `cursor` is below the number of obligations, or zero when there
 ///   is none, and `live` counts the obligations that are live.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Dovetail<'plan>
+pub struct Dovetail<Plan>
 {
     /// The plan that the obligations name.
-    plan: &'plan ValidatedPlan,
+    plan: Plan,
     /// The most steps of one turn.
     quantum: Quantum,
     /// The bounds of each certificate.
@@ -297,7 +301,9 @@ pub struct Dovetail<'plan>
     live: usize,
 }
 
-impl<'plan> Dovetail<'plan>
+impl<Plan> Dovetail<Plan>
+where
+    Plan: Deref<Target = ValidatedPlan>,
 {
     /// The scheduler of `obligations` over `plan`, each turn at most `quantum`
     /// steps, each certificate within `quotas`.
@@ -315,7 +321,7 @@ impl<'plan> Dovetail<'plan>
     #[inline]
     #[must_use]
     pub fn new<Obligations>(
-        plan: &'plan ValidatedPlan,
+        plan: Plan,
         obligations: Obligations,
         quantum: Quantum,
         quotas: CheckerQuotas,
@@ -377,7 +383,7 @@ impl<'plan> Dovetail<'plan>
         budget: Budget,
         rounds: Rounds,
         mut cancelled: Cancelled,
-    ) -> Report<'_, 'plan>
+    ) -> Report<'_, Plan>
     where
         Cancelled: FnMut() -> bool,
     {
@@ -389,7 +395,7 @@ impl<'plan> Dovetail<'plan>
             if rounds.0 == 0 || (self.cursor == 0 && work.rounds >= rounds.0) {
                 break Stop::Rounds;
             }
-            let plan = self.plan;
+            let plan: &ValidatedPlan = &self.plan;
             let quotas = self.quotas;
             if let Some(entry) = self
                 .entries
@@ -439,6 +445,25 @@ impl<'plan> Dovetail<'plan>
         return self.entries.get(position.0).map(|entry| Steps(entry.spent));
     }
 
+    /// The obligation at `position`, or `None` past the obligations. A resumed
+    /// scheduler holds only the obligations that were live at its checkpoint,
+    /// so a position names an obligation of this scheduler alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn obligation(
+        &self,
+        position: Position,
+    ) -> Option<Obligation>
+    {
+        return self
+            .entries
+            .get(position.0)
+            .map(|entry| entry.progress.obligation());
+    }
+
     /// Settle each obligation that has no step yet from `cache`, and the
     /// refusals of the entries that left it.
     ///
@@ -468,7 +493,7 @@ impl<'plan> Dovetail<'plan>
             else {
                 continue;
             };
-            match cache.lookup(self.plan, obligation, &self.quotas) {
+            match cache.lookup(&self.plan, obligation, &self.quotas) {
                 Lookup::Hit(certificate) => {
                     entry.progress.adopt(certificate);
                     self.live = self.live.saturating_sub(1);
@@ -514,7 +539,7 @@ impl<'plan> Dovetail<'plan>
             }
             if let Some(Outcome::Certified(certificate)) = entry.progress.settled()
                 && let Err(refusal) = cache.store(
-                    self.plan,
+                    &self.plan,
                     entry.progress.obligation(),
                     certificate,
                     &self.quotas,
@@ -610,7 +635,7 @@ impl<'plan> Dovetail<'plan>
     /// - witness: `tests::checkpoint::a_corrupt_checkpoint_is_refused_by_name`
     #[inline]
     pub fn resume(
-        plan: &'plan ValidatedPlan,
+        plan: Plan,
         bytes: EncodedCheckpoint<'_>,
     ) -> Result<Self, ResumeError>
     {
@@ -626,8 +651,8 @@ impl<'plan> Dovetail<'plan>
             .map(|held| {
                 let (node, demand, spent, steps) = held.into_parts();
                 let obligation =
-                    Obligation::new(plan, node, demand).map_err(ResumeError::Obligation)?;
-                let progress = Progress::resume(plan, obligation, steps, &quotas)?;
+                    Obligation::new(&plan, node, demand).map_err(ResumeError::Obligation)?;
+                let progress = Progress::resume(&plan, obligation, steps, &quotas)?;
                 return Ok(Entry {
                     progress,
                     spent: spent.0,
@@ -651,17 +676,19 @@ impl<'plan> Dovetail<'plan>
 
 /// What a run did, and the outcome of each obligation when it stopped.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Report<'run, 'plan>
+pub struct Report<'run, Plan>
 {
     /// The scheduler after the run.
-    dovetail: &'run Dovetail<'plan>,
+    dovetail: &'run Dovetail<Plan>,
     /// Why the run stopped.
     stop: Stop,
     /// The work of the run.
     work: Work,
 }
 
-impl<'run> Report<'run, '_>
+impl<'run, Plan> Report<'run, Plan>
+where
+    Plan: Deref<Target = ValidatedPlan>,
 {
     /// Why the run stopped.
     ///

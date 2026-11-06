@@ -176,7 +176,7 @@ fn cut(
 /// # Specification
 /// trivial.
 fn spent(
-    dovetail: &Dovetail<'_>,
+    dovetail: &Dovetail<&ValidatedPlan>,
     index: Position,
 ) -> Steps
 {

@@ -748,7 +748,7 @@ INSERT INTO purpose VALUES('core-term','effect::host::INTERFACES','constant','Th
 INSERT INTO purpose VALUES('core-term','effect::host::NET','constant','The network interface''s name: a stream to a peer named by its key.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::PARTIAL','constant','The divergence interface''s name, with no operation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::PROC','constant','The early process-exit interface''s name.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','effect::host::REALS','constant','The exact reals interface''s name: a plan admitted from its canonical bytes, and its root enclosed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','effect::host::REALS','constant','The exact reals interface''s name: a plan admitted from its canonical bytes, its root enclosed, and an open root decided by a resumable machine.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::RING','constant','The completion ring''s buffer interface''s name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::STDERR','constant','The error stream interface''s name: a line written to the process''s standard error.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','effect::host::STDIN','constant','The input interface''s name: a line read from the process''s standard input.',NULL,'fits','sound',NULL);
@@ -3555,6 +3555,17 @@ INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::RelabellingDe
 INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::SharedCanon','struct','Two diagrams that denote one diagram, with the evidence that they do.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::canonicalize','function','Renumbers a diagram in the one order the traversal admits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::same_diagram','function','Decides whether two diagrams denote one diagram.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::SharedSpiderCanon','struct','Two diagrams that are one diagram modulo the Frobenius laws, with the canon of each.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::SpiderBudget','struct','How many trials a spider canon may run.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::SpiderCanon','struct','The canon of one diagram modulo the Frobenius laws, with its evidence.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::SpiderDefect','enum','Why a spider canon is not evidence for a diagram.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::SpiderEquality','enum','Whether two diagrams are one diagram modulo the Frobenius laws, with the evidence either way.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::SpiderNormalForm','struct','A diagram whose spiders are fused: no wire joins two spiders of one name, and no spider is the identity.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::SpiderObstruction','enum','Why a spider canon or a spider decision gives no answer.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::SpiderTrials','struct','How many trials a spider canon ran, or would run.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::same_modulo_frobenius','function','Decides whether two diagrams are one diagram modulo the Frobenius laws.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::spider_canonicalize','function','The canon of a diagram modulo the Frobenius laws.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-circuit-algebras','normal_form::spider::spider_normal_form','function','Fuses the spiders of a diagram and removes its identity spiders.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-circuit-algebras','overlap::Overlap','struct','One overlap of two diagrams: the peak they glue into and where each side''s generators landed in it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-circuit-algebras','overlap::OverlapShape','enum','How an overlap''s shared generators sit in its two sides.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-circuit-algebras','overlap::overlaps','function','Every connected overlap of `left` and `right`: each distinct gluing one pair of like-labelled generators forces whose peak the fragment admits.',NULL,'fits','sound',NULL);

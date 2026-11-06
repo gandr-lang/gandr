@@ -1,70 +1,66 @@
-// The cumulative hierarchy as a W-type over the universe, after Aczel's
-// sets as well-founded trees and the HoTT book's §10.5. A set is a type of
-// members and a function picking each one: `Sup(a, f)` has the members `f(x)`
-// for `x : a`. The family occurs only to the right of the function's arrow,
-// so it is strictly positive, and it lives one universe above the types it
-// ranges over. A fold reaches each member through `f(x)` and recurses there,
-// one stage below the set; the codes these sets carry have no machine image,
-// so every item here checks and none runs.
+//! This fixture defines a cumulative hierarchy.
+//!
+//! A set has a member type and a member function.
+//!
+//! The checker admits recursive rank calculation.
+//!
+//! - see: Aczel's hierarchy
 
-// The type with no element.
 import "../data/empty.gandr";
 
-// The two branches a pair picks its members by.
 import "../data/data-base.gandr";
 
-/// Sets: a type of members, and the member at each of its elements.
+/// A set has a member type and a member function.
 @[ checks, form(explicit) ]
 data Vinf : Type[+, 1] where
   | Sup : (a : Type, f : +U (a -> -F Vinf)) --> Vinf
 
-/// Ordinals of the same shape: the limit of a family of smaller ordinals.
+/// An ordinal has a family of smaller ordinals.
 @[ checks ]
 data Ord : Type[+, 1] where
   | Lim : (a : Type, g : +U (a -> -F Ord)) --> Ord
 
-/// The rank of a set: the limit, over its members, of their ranks. Each
-/// member is reached through `f` and ranked one stage below the set.
+/// The rank function folds ranks over set members.
 @[ checks ]
 def rec rank(v : Vinf) -> -F Ord =
   match v where
     | Sup(a, f) => Lim a (thunk { fun (x) { rank[<] (f x) } })
 
-/// The type a set's members are picked by.
+/// The members function returns a set's member type.
 @[ checks ]
 def members(v : Vinf) -> -F Type =
   match v where
     | Sup(a, f) => return a
 
-/// The type with one element.
+/// The `Lone` type has one element.
 @[ checks ]
 data Lone : Type where
   | Pt : Lone
 
-/// Any set follows from an element of the empty type.
+/// An empty value defines a set.
 @[ checks ]
 def absurdSet(e : Empty) -> -F Vinf =
   match e {}
 
-/// No member: the empty set's picking function has nothing to pick from.
+/// The `none` function has no member to select.
 @[ checks ]
 def none(x : Empty) -> -F Vinf { absurdSet x }
 
-/// The empty set.
+/// The `zero` definition is the empty set.
 @[ checks ]
 def zero : Vinf;
 def zero = Sup Empty none;
 
-/// The set whose one member is `v`.
+/// The `single` function defines a one-member set.
 @[ checks ]
 def single(v : Vinf) -> -F Vinf =
   Sup Lone (thunk { fun (x) { v } })
 
-/// The set whose members are `v` and `w`.
+/// The `pair` function defines a two-member set.
 @[ checks ]
 def pair(v : Vinf, w : Vinf) -> -F Vinf =
   Sup Two (thunk { fun (x) { match x -> -F Vinf { | L => v | R => w } } })
 
-/// The rank of the set whose one member is the empty set.
+/// The `ranked` function ranks the singleton empty set.
 @[ checks ]
 def ranked() -> -F Ord { let v = single zero; rank v }
