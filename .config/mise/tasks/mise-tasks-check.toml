@@ -1960,11 +1960,14 @@ run = ".config/landing/rebase-cases.bash"
 # for each failed test of the soundness suite. `brake.jq` decides the brake
 # (#5442): verdicts after the newest pass count, a cancelled run does not,
 # a lag at a limit lets the landings go on, and a `main` that holds
-# `landing` lags by nothing. Each case in
+# `landing` lags by nothing. `runner.jq` decides the runner of the suite
+# (#5526): an online runner with the label `integration` takes it, busy or
+# not, and an offline runner, a runner without the label or a list the step
+# cannot read gives the hosted runner. Each case in
 # `.config/integration/cases.json` names its program, its input and the
 # compact JSON that the program gives.
 ["check:integration"]
-description = "The integration cycle's step, known-red list and brake give each recorded case its output"
+description = "The integration cycle's step, known-red list, brake and runner give each recorded case its output"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
