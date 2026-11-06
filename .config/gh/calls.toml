@@ -225,8 +225,8 @@ site = [
   { file = ".config/pr-stack/stack.bash", scope = "retarget_bottom", api = "graphql", identity = "landing", calls = 4, points = 8, measured = "rule", hour = 2, trigger = "landing.yml: a bottom retargeted to main" },
   { file = ".config/pr-stack/stack.bash", scope = "retarget_landing", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 4, trigger = "pr:land: the pull requests on a deleted base" },
   { file = ".config/pr-stack/stack.bash", scope = "retarget_landing", api = "graphql", identity = "landing", calls = 1, points = 2, measured = "rule", hour = 4, trigger = "landing.yml: the pull requests on a deleted base" },
-  { file = ".config/pr-stack/stack.bash", scope = "stack_entries", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "pr:open and pr:land: a stack's members" },
-  { file = ".config/pr-stack/stack.bash", scope = "stack_entries", api = "graphql", identity = "landing", calls = 1, points = 3, measured = "cost", hour = 8, trigger = "landing.yml: a stack's members at each link, about three" },
+  { file = ".config/pr-stack/stack.bash", scope = "stack_entries", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "pr:open and pr:land: one read for each server stack a chain links into, not one for each member (#5671); a chain in one stack reads once" },
+  { file = ".config/pr-stack/stack.bash", scope = "stack_entries", api = "graphql", identity = "landing", calls = 1, points = 1, measured = "cost", hour = 8, trigger = "landing.yml: one read for each server stack at each link, where it read one for each member, about three, before #5671" },
   { file = ".config/pr-stack/stack.bash", scope = "stack_link", api = "graphql", identity = "write", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "pr:open: the stack linked" },
   { file = ".config/pr-stack/stack.bash", scope = "stack_link", api = "graphql", identity = "landing", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "landing.yml: the stack linked at each queueing" },
 

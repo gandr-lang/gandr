@@ -408,13 +408,20 @@ stack_entries() {
 # stack (#2094), so such a stack is unstacked first: GitHub leaves its queued
 # and auto-merge members stacked, and drops the rest, the closed one among
 # them. The stack's number is read again from a member it kept, if any, and
-# the open members it dropped are linked again with the chain. A chain that
-# takes no arguments, one pull request in no stack, is linked nothing (#3817).
+# the open members it dropped are linked again with the chain. The entries of
+# a server stack are read once, for its first member in the chain. Every
+# member of that stack then takes the stack its first member settled, since
+# they all share its entries (#5671). A chain that takes no arguments, one
+# pull request in no stack, is linked nothing (#3817).
 stack_link() {
-  local number stack entries kept stacks=() args
+  local number stack server entries kept stacks=() args
+  local -A settled=()
   for number in $(jq -r '.[].number' <<< "$1"); do
     stack=$(stack_of "$number")
-    if [[ $stack != null ]]; then
+    if [[ $stack != null && -n ${settled[$stack]+set} ]]; then
+      stack=${settled[$stack]}
+    elif [[ $stack != null ]]; then
+      server=$stack
       entries=$(stack_entries "$number")
       if [[ $(jq 'any(.[]; .state == "CLOSED")' <<< "$entries") == true ]]; then
         # It exits nonzero (5) whenever it leaves a queued member stacked;
@@ -426,6 +433,7 @@ stack_link() {
           [[ $stack == null ]] || break
         done
       fi
+      settled[$server]=$stack
     fi
     stacks+=("$stack")
   done
