@@ -260,6 +260,8 @@ jobs:
       # library last checked it with the specification records that check
       # wrote, and the rustdoc JSON: a unit Cargo finds fresh keeps its
       # record, so a pull request lints and documents only what it changed.
+      # It also holds the inline sources each check listed, because the
+      # allowlist check of `check:dylint` reads them for a fresh unit too.
       - &restore-policy-state
         name: restore the policy state
         id: policy-state-restore
@@ -268,6 +270,7 @@ jobs:
           path: &policy-state |
             target/dylint
             target/evidence
+            target/embedded-sources
           key: policy-state-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}-${{ env.CI_POLICY_REVISION }}-${{ github.sha }}
           restore-keys: policy-state-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}-${{ env.CI_POLICY_REVISION }}-
           # Promotion already downloads the verified queue artifact.
@@ -1419,7 +1422,7 @@ jobs:
         if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success' }}
         shell: bash
         run: |
-          tar -cf - target/dylint target/evidence target/workflow-tools | zstd -T0 -3 -o "build-state-$GITHUB_JOB.tar.zst"
+          tar -cf - target/dylint target/evidence target/embedded-sources target/workflow-tools | zstd -T0 -3 -o "build-state-$GITHUB_JOB.tar.zst"
           echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"
       - *upload-build-state
       - *save-policy-state
