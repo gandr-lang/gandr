@@ -401,6 +401,58 @@ fn an_inner_case_s_equation_types_read_back_5392()
     }
 }
 
+/// #5519: a call through a mutual block's joint types no name at the joint's
+/// type. `rose.gandr`'s block of `bumpTree` and `bumpForest` returns two
+/// types, so a `match` on the sum computes the joint's result, and no type
+/// reads that `match` back.
+#[test]
+fn a_call_through_a_joint_reads_back_5519()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/data/rose.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    for spelling in [Spelling::Unicode, Spelling::Ascii] {
+        let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+            form: Form::Sugared,
+            spelling,
+        });
+        let unread: Vec<(&str, &RoundTrip)> = reads
+            .iter()
+            .filter(|read| {
+                matches!(
+                    read.trip,
+                    RoundTrip::Different
+                        | RoundTrip::Refused(_)
+                        | RoundTrip::Unparsed
+                        | RoundTrip::Unspelled
+                )
+            })
+            .map(|read| (read.spelled.as_str(), &read.trip))
+            .collect();
+        assert_eq!(
+            unread,
+            Vec::<(&str, &RoundTrip)>::new(),
+            "every printed type of `rose.gandr` reads back to its certificate"
+        );
+    }
+}
+
 /// Every typed entry, declared type and stated run value of the corpus
 /// sources of `shard` (every fourth source the walk visits), spelled and
 /// counted, and every stated value and normal form printed, read back and

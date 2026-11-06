@@ -1896,7 +1896,8 @@ impl TypeTable
             // derived rule mints, located at the statement's name; nor does the
             // hole an omitted implicit is nominated as, located at its call;
             // nor does a term of the joint a mutual block's recursive functions
-            // share, located at the block's first member (#5383).
+            // share, located at the block's first member (#5383) or at a call
+            // through the joint (#5519).
             if let Maybe::Present(origin) = origin
                 && !matches!(
                     origin.provenance(),

@@ -203,10 +203,13 @@ pub enum Insertion
     /// joint the block's recursive functions share, with the application of
     /// the joint to it.
     Fixpoint,
-    /// A node of the joint a mutual block's recursive functions share, every
-    /// one located at the block's first member: the fixpoint, its lambda, its
-    /// case on the sum of the members' domains and its ascription. The source
-    /// writes each member, never the joint or the type over the sum (#5383).
+    /// A node of the joint a mutual block's recursive functions share: the
+    /// fixpoint, its lambda, its case on the sum of the members' domains and
+    /// its ascription, each located at the block's first member; and the
+    /// joint's variable with its force at the head of a call through the
+    /// joint, located at the member's name the call writes. The source writes
+    /// each member and each call, never the joint or the type over the sum
+    /// (#5383, #5519).
     Joint,
     /// A node a loop writes that the source does not: a `while`'s case on its
     /// condition with the unit its false branch leaves with, and the re-entry
