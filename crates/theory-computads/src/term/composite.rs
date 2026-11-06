@@ -32,9 +32,11 @@ use quenchant_shape::shape::Maybe;
 
 use super::Count;
 use super::Head;
+use super::OpenApplications;
 use super::Term;
 use super::TermAlphabet;
 use super::TermPos;
+use super::TermSubst;
 
 /// The composite criterion on the terms of a presented reading, with the
 /// working memory that its walk keeps from one pair to the next.
@@ -57,7 +59,7 @@ pub struct CompositeCriterion
     /// in the pattern, and the range of its image in the peak.
     bound: Vec<(Count, Count, Count)>,
     /// The applications still owed arguments, as a scope reads an image.
-    open: Vec<(usize, bool)>,
+    open: OpenApplications,
     /// The steps of a witness's position below the seam, deepest first.
     steps: Vec<PositionStep>,
 }
@@ -89,6 +91,8 @@ impl CompositeCriterion
     /// # Adequacy
     /// - hypothesis: L3 — as [`PairScheme::class`].
     /// - witness: `term::tests::the_criterion_finds_the_listings_first_redex_below_each_position`
+    #[spec(ensures: |output| bool::from(output)
+        == bool::from(TermAlphabet::match_cmd(pattern, &target.slice(start, target.end_of(start)), &mut TermSubst::default())))]
     fn matches(
         &mut self,
         pattern: &Term,
@@ -164,6 +168,7 @@ impl CompositeCriterion
     /// # Adequacy
     /// - hypothesis: L3 — as [`PairScheme::class`].
     /// - witness: `term::tests::the_criterion_finds_the_listings_first_redex_below_each_position`
+    #[spec(ensures: |output| output.0.starts_with(&above.0))]
     fn position(
         &mut self,
         above: &TermPos,

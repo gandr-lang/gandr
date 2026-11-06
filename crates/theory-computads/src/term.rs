@@ -284,7 +284,7 @@ impl Scope
     fn admits(
         &self,
         instance: &[Head],
-        open: &mut Vec<(usize, bool)>,
+        open: &mut OpenApplications,
     ) -> ScopeAdmission
     {
         ScopeAdmission::from(Depths::new(instance, open).all(|(head, Count(depth))| {
@@ -341,6 +341,14 @@ impl Scope
     }
 }
 
+/// The applications that a walk of a term's table holds open: for each, how
+/// many arguments it is still owed, and whether it is an abstraction.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+struct OpenApplications(Vec<(usize, bool)>);
+
 /// The nodes of a term's table in prefix order, each with its depth: the
 /// number of abstractions above it.
 ///
@@ -361,9 +369,8 @@ struct Depths<'heads, 'open>
 {
     /// The nodes still to visit.
     heads: core::slice::Iter<'heads, Head>,
-    /// Each application still owed arguments: how many, and whether it is an
-    /// abstraction.
-    open: &'open mut Vec<(usize, bool)>,
+    /// Each application still owed arguments.
+    open: &'open mut OpenApplications,
     /// The depth of the next node.
     depth: usize,
 }
@@ -376,10 +383,10 @@ impl<'heads, 'open> Depths<'heads, 'open>
     /// trivial.
     fn new(
         heads: &'heads [Head],
-        open: &'open mut Vec<(usize, bool)>,
+        open: &'open mut OpenApplications,
     ) -> Self
     {
-        open.clear();
+        open.0.clear();
         Self {
             heads: heads.iter(),
             open,
@@ -411,10 +418,10 @@ impl<'heads> Iterator for Depths<'heads, '_>
             if abstraction {
                 *depth = depth.saturating_add(1);
             }
-            open.push((arity, abstraction));
+            open.0.push((arity, abstraction));
             return Some((head, at));
         }
-        while let Some(&mut (ref mut owed, abstraction)) = open.last_mut() {
+        while let Some(&mut (ref mut owed, abstraction)) = open.0.last_mut() {
             *owed = owed.saturating_sub(1);
             if *owed > 0 {
                 break;
@@ -422,7 +429,7 @@ impl<'heads> Iterator for Depths<'heads, '_>
             if abstraction {
                 *depth = depth.saturating_sub(1);
             }
-            let _closed = open.pop();
+            let _closed = open.0.pop();
         }
         Some((head, at))
     }
@@ -652,7 +659,7 @@ impl Term
     #[spec(ensures: |ret| ret.len() == self.0.len() && ret.first().is_none_or(|&root| root == Count(0)))]
     fn depths(&self) -> Vec<Count>
     {
-        let mut open = Vec::new();
+        let mut open = OpenApplications::default();
         Depths::new(&self.0, &mut open)
             .map(|(_, depth)| depth)
             .collect()
@@ -1510,8 +1517,9 @@ impl CellAlphabet for TermAlphabet
             if let Some((var, scope)) = variable {
                 let end = target.end_of(at);
                 let image = target.slice(at, end);
-                if scope.is_some_and(|scope| !bool::from(scope.admits(&image.0, &mut Vec::new())))
-                    || found.0.get(var).is_some_and(|bound| *bound != image)
+                if scope.is_some_and(|scope| {
+                    !bool::from(scope.admits(&image.0, &mut OpenApplications::default()))
+                }) || found.0.get(var).is_some_and(|bound| *bound != image)
                 {
                     return SubstitutionDecision::from(false);
                 }
