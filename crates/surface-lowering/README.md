@@ -29,7 +29,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `CaseOrigin`, `ArmOrigin`, `PatternSpan`, `OriginTable::case` and `OriginTable::cases`: each match's syntax origins ([`origin`](src/origin.rs)).
 - `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint (`lower::native`), `Insertion::Fixpoint` marking it.
 - `type_atom`, `type_former`, `TypeAtom`, `TypeFormer`, `HeadArity` and `OperandCount`: the type-head tables by arity.
-- `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through ([`resolve`](src/resolve.rs)).
+- `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through, each frame numbered within the form that pushed it ([`resolve`](src/resolve.rs)).
 - `OriginTable::binding` and `OriginTable::bindings`: the use-to-binder map, each core variable the lowering minted with the span of the binder it resolves to.
 - `former_of`, `Former`, `FormName` and `Repair`: the named-kind dispatch and the names a diagnostic writes forms as.
 - `LoweringRefusal`, `FragmentSort`, `FragmentBoundary` and `FormFault`: every refusal, located.
