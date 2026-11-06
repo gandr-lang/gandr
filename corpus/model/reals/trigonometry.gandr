@@ -27,7 +27,8 @@ import std.io;
 import std.reals;
 // The join of two strings.
 import std.string (concat);
-
+// The list type former.
+import std.list (List);
 /// The canonical bytes of the plan of `7071 < 10000 · cos (π · 1/4)` in
 /// lowercase hexadecimal: 8 nodes in 91 bytes, the magic `GXRP` first.
 pub def cosineAbove : String = "4758525001000800000000000000020000000002000000000000009f1b0204000000020000000000000071020902feffffff0100000000000000010502000000030000000a04000000050100000005000000120000000006000000";
