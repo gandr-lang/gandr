@@ -1,14 +1,17 @@
-// The circle's shape as a signature (the book's § 8.1, the point and its
-// loop with the two cancellations as laws), and two models of it: the
-// presented integers, whose laws are conversion (`Winding`), and the native
-// integers, whose laws hold by arithmetic and are owed (`NativeWinding`).
-// `loop-winding.gandr` folds the loop's words into each.
+/// This source gives the circle shape and two models.
+///
+/// The presented-integer model proves its cancellation laws by conversion.
+/// The native-integer model declares its arithmetic laws as obligations.
+///
+/// The winding fold maps loop words into both models.
+/// Each model supplies the circle operations at its selected carrier.
+///
+/// - see: corpus/model/identity/loop-winding.gandr
 
 // The presented integers.
 import "./circle-base.gandr";
 
-/// The circle's shape: the same presentation as a signature models interpret.
-/// `Model` reads a `theory` block, so the shape is spelled apart from `Words`.
+/// The `CircleShape` theory gives the circle point and its loop operations.
 theory CircleShape where
   sort Pt : Type;
 
@@ -19,27 +22,23 @@ theory CircleShape where
   rule turnUnturn : turn (unturn x) <=> x;
   rule unturnTurn : unturn (turn x) <=> x;
 
-/// The number of laws in a presentation's rule chain.
+/// The `laws` function counts rules in a theory chain.
 def rec laws(chain : Theory) -> Integer =
   match chain
     | Rule(name, left, right, rest) => { let r = laws[<] rest; r + 1 }
     | _ => 0
 
-/// The number of laws a presentation states.
+/// The `law_count` function counts the rules in one presentation.
 def law_count(presented : Theory) -> Integer =
   match presented
     | Presents(sorts, opers, rules) => laws rules
     | _ => 0
 
-/// The shape's laws join, so its `Theory` value carries both as `Rule` entries.
+/// The `shape_laws` run counts the two circle laws.
 @[ runs("2") ]
 def shape_laws() -> Integer { law_count CircleShape }
 
-/// The presented integers as a model of the shape: `base` zero, a value, as
-/// the theory's `base : Pt` is a constant; `turn` the successor and `unturn`
-/// the predecessor. Each law is proved by `Path.here`: conversion reads the inner
-/// call under the constructor the outer one builds, and the integers' rules
-/// cancel the pair.
+/// The `Winding` model interprets the circle shape with presented integers.
 pub module Winding : Model(CircleShape) where {
   type Pt = Int;
 
@@ -60,9 +59,7 @@ pub module Winding : Model(CircleShape) where {
     turn (turn base)
 }
 
-/// The same shape modelled over the native integers. The laws hold by
-/// arithmetic, which conversion leaves to the runtime, so each is owed, and
-/// a fold into this model rests on them.
+/// The `NativeWinding` model interprets the circle shape with native integers.
 pub module NativeWinding : Model(CircleShape) where {
   type Pt = Integer;
 

@@ -1,11 +1,15 @@
-// `Path.step(p, q)` moves `p` along `q` in `y. Path[.A = A](a, y)`, and that transport
-// appends on its first word whatever `q` is: the empty word is the unit, and
-// a letter stays first. Two definitions whose composites are one
-// transport, stuck on its two parameters, name one path. The
-// composite and its unit laws are the HoTT book's Lemmas 2.1.2 and 2.1.4.
-//
-// - see: #422 — `leftUnit`, `letterFirst`
-// - see: #440 — `sameComposite`, `sameAfterLetter`
+//! This source defines path composition by word append.
+//!
+//! The empty word is the left unit of a composite.
+//! A leading letter remains first after composition.
+//!
+//! The checker reads the composite as transport in a path family.
+//! The kernel identifies the two definitions of this transport.
+//!
+//! - see: HoTT Book Lemma 2.1.2
+//! - see: HoTT Book Lemma 2.1.4
+//! - see: #422 — `leftUnit`, `letterFirst`
+//! - see: #440 — `sameComposite`, `sameAfterLetter`
 
 // The circle.
 import "./circle-base.gandr";
@@ -24,7 +28,7 @@ def leftUnit(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](B
 ) =
   Path.here p
 
-/// So it is through the composite's definition.
+/// The composite definition gives the same left unit.
 def leftUnitComp(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
   comp (Path.here Base) p,
   p
@@ -38,7 +42,7 @@ def letterFirst(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle
 ) =
   Path.here (loop ∷ p)
 
-/// And no letter is dropped: the loop composed with `p` is not `p`.
+/// The loop before `p` differs from `p`.
 @[ refuses("EndpointMismatch") ]
 def letterKept(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
   comp (loop ∷ Path.here Base) p,
@@ -53,7 +57,7 @@ def other(
 ) -> Path[.A = Circle](Base, Base) =
   Path.step p q
 
-/// The composite with its two paths swapped.
+/// The `compSwapped` function reverses its two paths.
 def compSwapped(
   p : Path[.A = Circle](Base, Base),
   q : Path[.A = Circle](Base, Base)

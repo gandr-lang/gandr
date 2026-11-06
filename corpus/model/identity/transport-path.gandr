@@ -1,10 +1,12 @@
-// Transport, the HoTT book's § 2.3 (`Path.walk`), along reflexivity at a
-// motive whose fibres are path types: the element it returns is a path, an
-// element of another type is none, and transport along the path it returns
-// runs it first. Along reflexivity, at a path-type motive and in the
-// universe, transport keeps the value, by conversion and by a run.
-//
-// - see: #649 — `along_returned`
+//! This source tests transport along reflexivity at path-type motives.
+//!
+//! A path-type motive returns a path.
+//! A different motive cannot return that path.
+//!
+//! The checker evaluates a returned path before its outer transport.
+//! Transport in the universe keeps the value.
+//!
+//! - see: #649 — `along_returned`
 
 /// A reflexive transport at a path-type motive returns a path.
 def moved_end : Path[.A = Path[.A = Integer](2, 2)](

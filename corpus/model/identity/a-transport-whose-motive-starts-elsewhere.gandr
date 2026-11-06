@@ -1,19 +1,15 @@
-/// A transport whose motive starts at another point than its moved path prints
-/// as the transport it is.
+/// This source prints a transport whose motive starts away from its moved path.
 ///
-/// A transport along `r` of `Path.here(f)`, under a motive `Path[.A = C](l, c)`,
-/// is the composite `Path.step(Path.here(f), r)` exactly when `l` is `f`.
-/// Reading that composite back takes the motive's start from `Path.here(f)`.
-/// A motive that starts at `Path.step(f, Path.here(z))` is another type,
-/// which the composite does not spell.
+/// A matching motive start lets the printer show a transport as a composite.
+/// A different motive start requires the full transport syntax.
 ///
-/// The printer writes a transport as a composite only where the moved path's
-/// start is the motive's. Otherwise it writes the transport in full.
+/// The printer reads the moved path start before it chooses a spelling.
+/// The path does not determine the spelling for every motive.
 ///
-/// - see: #4218 — the printer wrote both transports as one composite
-/// - see: #754 — a returned composite of paths is written as a step
+/// - see: #4218 — transport printer
+/// - see: #754 — returned composite
 
-/// Motives whose fixed starts differ by the right unit of a variable path.
+/// The `unitVariable` proof uses motives with different fixed starts.
 def unitVariable(
   A : Type,
   x : A,

@@ -1,15 +1,12 @@
-// The loop space's equivalence one stratum down: the loop's words and the
-// presented integers are equivalent.
-//
-// It is the book's circle theorem at the presented stratum, where conversion
-// and induction decide each round trip.
-//
-// Spinning folds the integers into words, a successor a loop and a
-// predecessor an inverse. `sectWords` and `retrWords` prove the round trips
-// by induction over each presented type. The record `wordsWinding` nests the
-// four entries to the right, so `Words ≃ Int`.
-//
-// - see: the HoTT book, Theorem 8.1.9 — the circle's loop space
+/// This source gives an equivalence between loop words and presented integers.
+///
+/// `spinWords` maps counts to loops and inverse loops.
+/// `windWords` maps loop words to counts.
+///
+/// Induction proves both round trips.
+/// The equivalence record stores the maps and their proofs.
+///
+/// - see: corpus/model/identity/loop-winding.gandr
 
 // The presented integers.
 import "./circle-base.gandr";
@@ -20,20 +17,18 @@ import "./loop-shape.gandr";
 // The winding number.
 import "./loop-winding.gandr";
 
-/// Spinning, the fold out of the presented integers into the words: a
-/// successor is a loop and a predecessor an inverse. It recurses structurally
-/// and respects both rules as the winding number does.
+/// The `spinWords` function maps an integer count to loop words.
 pub def rec spinWords(n : Int) -> Words =
   match n
     | Z => Nil
     | S(x) => Loop (spinWords[<] x)
     | P(x) => Unloop (spinWords[<] x)
 
-/// Two successors spin twice around.
+/// The sample spins two successors to two loops.
 @[ runs("Loop (Loop Nil)") ]
 def spun() -> Words { spinWords (S (S Z)) }
 
-/// Conversion runs spinning at a closed word: two successors are two loops.
+/// Conversion spins two successors to two loops.
 def spun_twice : Path[.A = Words](
   spinWords (S (S Z)),
   Loop (Loop Nil)
@@ -42,62 +37,53 @@ def spun_twice : Path[.A = Words](
 /// A cancelled count spins to the empty word.
 def spun_back : Path[.A = Words](spinWords (S (P Z)), Nil) = Path.here Nil;
 
-/// A predecessor spins to the inverse loop.
+/// A predecessor spins to one inverse loop.
 def spun_under : Path[.A = Words](spinWords (P Z), Unloop Nil) = Path.here (Unloop Nil);
 
-/// The round trip at a closed word: winding a loop and spinning the count
-/// gives the loop back. The inner call stands as the outer one's argument,
-/// and conversion runs both.
+/// The first closed round trip returns a loop word.
 def spun_wound : Path[.A = Words](
   spinWords (windWords (Loop Nil)),
   Loop Nil
 ) = Path.here (Loop Nil);
 
-/// The other round trip at a closed count: spinning two successors and
-/// winding the word counts two.
+/// The second closed round trip returns an integer count.
 def wound_spun : Path[.A = Int](windWords (spinWords (S (S Z))), S (S Z)) = Path.here (S (S Z));
 
-/// A round trip returns the normal form, not the word it started from: a
-/// cancelled loop comes back as the loop.
+/// A closed round trip returns the word normal form.
 def spun_wound_cancelled : Path[.A = Words](
   spinWords (windWords (Loop (Unloop (Loop Nil)))),
   Loop Nil
 ) = Path.here (Loop Nil);
 
-/// A respelled count comes back as its normal form, one predecessor.
+/// A respelled count returns its integer normal form.
 def wound_spun_respelled : Path[.A = Int](
   windWords (spinWords (S (P (P Z)))),
   P Z
 ) = Path.here (P Z);
 
-/// The round trip does not lose the loop: it is not the empty word.
+/// The loop round trip does not return the empty word.
 @[ refuses("EndpointMismatch") ]
 def spun_wound_lost : Path[.A = Words](spinWords (windWords (Loop Nil)), Nil) = Path.here Nil;
 
-/// One inverse loop more: the function the inverse letter applies, as
-/// `around` applies the loop.
+/// The `unaround` function adds an inverse loop.
 def unaround(c : Words) -> Words =
   Unloop c
 
-/// Spinning undoes winding at every word, by induction over the presented
-/// words. Each arm carries the recursive path along its letter's function.
+/// At every word, `sectWords` proves that spinning follows winding.
 def rec sectWords(c : Words) -> Path[.A = Words](spinWords (windWords c), c) =
   match c
     | Nil => Path.here Nil
     | Loop(x) => { let p = sectWords[<] x; Path.ap around p }
     | Unloop(x) => { let p = sectWords[<] x; Path.ap unaround p }
 
-/// Winding undoes spinning at every count, by induction over the presented
-/// integers. Each successor carries the path along the model's `turn`, each
-/// predecessor along its `unturn`.
+/// At every integer, `retrWords` proves that winding follows spinning.
 def rec retrWords(n : Int) -> Path[.A = Int](windWords (spinWords n), n) =
   match n
     | Z => Path.here Z
     | S(x) => { let p = retrWords[<] x; Path.ap Winding.turn p }
     | P(x) => { let p = retrWords[<] x; Path.ap Winding.unturn p }
 
-/// The words and the integers are equivalent by winding, spinning and the
-/// two round trips. The record nests its entries to the right.
+/// The `wordsWinding` record gives the two maps and their round trips.
 def wordsWinding : *{
   into : Words -> Int,
   from : Int -> Words,

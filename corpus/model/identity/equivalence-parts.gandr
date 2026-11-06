@@ -1,30 +1,30 @@
-// One part of a quasi-inverse or an equivalence, taken by a pattern that
-// names every field and uses one, or by a label pattern that names one. The
-// fields the arm leaves alone are named all the same: the round trips mention
-// the maps before them, so a type read inside the arm names the forward map
-// the arm never uses — by the variable written for it, or by its label
-// where the pattern writes none, primed apart from a variable of that name.
-
-// The quasi-inverse and the equivalence.
+/// This source reads selected fields of quasi-inverse and equivalence records.
+///
+/// A pattern may name every field or select one label.
+/// A dependent field type can still read an unused forward map.
+///
+/// The checker keeps each field name available inside the matching arm.
+/// A label pattern uses a fresh name when no variable name occurs.
+///
+/// - see: corpus/model/identity/equivalence.gandr
 import "./equivalence.gandr";
 
-/// The map back of a quasi-inverse.
+/// The `backOf` match reads the quasi-inverse backward map.
 def backOf(a : Type, b : Type, i : a ≅ b) -> b -> a =
   match i
     | *{t, k, s, r} => k
 
-/// The left inverse of an equivalence, split along its nesting.
+/// The `leftOf` match reads the equivalence left inverse.
 def leftOf(a : Type, b : Type, e : a ≃ b) -> b -> a =
   match e
     | *{t, *{g, s}, *{h, r}} => g
 
-/// A quasi-inverse's map back, which the pattern reads by its label `from`.
+/// The label pattern reads the quasi-inverse backward map.
 def fromByLabel(a : Type, b : Type, i : a ≅ b) -> b -> a =
   match i
     | *{.from = k} => k
 
-/// The map back, which the pattern binds to `into`, the forward map's own
-/// label.
+/// The label pattern binds the backward map as `into`.
 def fromAsInto(a : Type, b : Type, i : a ≅ b) -> b -> a =
   match i
     | *{.from = into} => into

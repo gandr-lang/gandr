@@ -1,31 +1,27 @@
-/// A transport along a held call.
+/// This source compares transport with composites over a held call.
 ///
-/// A composite whose second path is a stuck call is one composite, and so is
-/// an action on that call. The call may stand alone or behind an identity,
-/// and the kernel agrees.
+/// A stuck call can occur alone or below an identity function.
+/// A composite and an action preserve that call.
 ///
-/// The append runs a held operand and writes a bind over its call. A
-/// transport along the held path is a bind over the same call. So the two
-/// compare by the call, then by the transports under one variable. Two
-/// actions write the call in their motives, which compare by its function
-/// and argument.
+/// The append lowering writes a bind over the call.
+/// The kernel compares the call and its transports below one variable.
 ///
-/// - see: #3800 — the checker declined two composites that differ only by a call of an identity
-/// - see: #3802 — the code walk compares two written calls by their function and argument
-/// - see: #3807 — the checker refused two actions whose motives each write the call
+/// - see: #3800 — composites over calls
+/// - see: #3802 — calls in code walks
+/// - see: #3807 — actions over calls
 
-/// The identity on paths from `x` to `y`.
+/// The `idq` function returns its path.
 def idq(B : Type, x : B, y : B, p : Path[.A = B](x, y)) -> Path[.A = B](x, y) =
   p
 
-/// A variable function's path, by name.
+/// The `call` function names a variable function path.
 def call(A : Type, B : Type, x : B, y : B, f : A -> Path[.A = B](x, y), a : A) -> Path[.A = B](
   x,
   y
 ) =
   f a
 
-/// `p`, then the path a variable function returns.
+/// The `thenCall` function composes `p` with the returned path.
 def thenCall(
   A : Type,
   B : Type,
@@ -38,7 +34,7 @@ def thenCall(
 ) -> Path[.A = B](w, y) =
   Path.step p (f a)
 
-/// `p`, then the same path through `idq`.
+/// The `thenCallIdq` function composes `p` with that path through `idq`.
 def thenCallIdq(
   A : Type,
   B : Type,
@@ -51,7 +47,7 @@ def thenCallIdq(
 ) -> Path[.A = B](w, y) =
   Path.step p (idq B x y (f a))
 
-/// Two composites along a variable function's path.
+/// The `thenAlongACall` proof compares the two composites.
 def thenAlongACall(
   A : Type,
   B : Type,
@@ -67,7 +63,7 @@ def thenAlongACall(
 ) =
   Path.here (thenCall A B w x y p f a)
 
-/// `p`, then the variable function's path by name.
+/// The `thenNamed` function composes `p` with the named call.
 def thenNamed(
   A : Type,
   B : Type,
@@ -80,7 +76,7 @@ def thenNamed(
 ) -> Path[.A = B](w, y) =
   Path.step p (call A B x y f a)
 
-/// `p`, then the same path by name through `idq`.
+/// The `thenNamedIdq` function composes `p` with that named call through `idq`.
 def thenNamedIdq(
   A : Type,
   B : Type,
@@ -93,7 +89,7 @@ def thenNamedIdq(
 ) -> Path[.A = B](w, y) =
   Path.step p (idq B x y (call A B x y f a))
 
-/// Two composites along a named call.
+/// The `thenAlongANamedCall` proof compares the named composites.
 def thenAlongANamedCall(
   A : Type,
   B : Type,
@@ -109,7 +105,7 @@ def thenAlongANamedCall(
 ) =
   Path.here (thenNamed A B w x y p f a)
 
-/// `g`'s action on the path a variable function returns.
+/// The `acted` function applies `g` to the returned path.
 def acted(
   A : Type,
   B : Type,
@@ -122,7 +118,7 @@ def acted(
 ) -> Path[.A = C](g x, g y) =
   Path.ap g (f a)
 
-/// The same action, on the path through `idq`.
+/// The `actedIdq` function applies `g` through `idq`.
 def actedIdq(
   A : Type,
   B : Type,
@@ -135,7 +131,7 @@ def actedIdq(
 ) -> Path[.A = C](g x, g y) =
   Path.ap g (idq B x y (f a))
 
-/// Two actions on a variable function's path.
+/// The `congAlongACall` proof compares the two actions.
 def congAlongACall(
   A : Type,
   B : Type,

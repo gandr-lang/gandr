@@ -1,19 +1,25 @@
-// A function's action on paths, the HoTT book's Lemma 2.2.1 (`ap`), at a
-// constructor's wrapper: `Path.ap` carries a path between integers to one
-// between the boxes the constructor builds around them.
+/// This source states action on a path through a constructor.
+///
+/// The action carries an integer path between its wrapped values.
+///
+/// The checker applies `wrap` to each endpoint.
+/// The run checks the carried reflexivity.
+///
+/// - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+///
+/// [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
-/// A box holding one integer.
+/// A `Box` holds one integer.
 data Box : Type where
   | Wrap : (n : Integer) --> Box
 
-/// The constructor as a function.
+/// The `wrap` function constructs a box.
 def wrap(x : Integer) -> Box =
   Wrap x
 
-/// A path between integers carried along the wrapper, to the boxes around
-/// its endpoints.
+/// The `cong_wrap` proof carries a path to the two wrapped endpoints.
 def cong_wrap(a : Integer, b : Integer, p : Path(a, b)) -> Path(Wrap a, Wrap b) =
   Path.ap wrap p
 
-/// Reflexivity at four carried along the wrapper by a run.
+/// The run carries reflexivity at four through the wrapper.
 def wrapped() -> Path(Wrap 4, Wrap 4) { cong_wrap 4 4 (Path.here 4) }

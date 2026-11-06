@@ -1,70 +1,71 @@
-//! A flow between data types given by a translator, after directed univalence
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory],
-//! Definition 1.2: a data type is covered as the sum of its constructors, each
-//! the product of its fields, so a translator that only moves fields between
-//! constructors gives a flow, and riding it moves a value of the old type to
-//! the new.
-//!
-//! - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
-//!
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
+/// This source states a data-type flow from a translator.
+///
+/// A translator moves fields between constructors of the source and target types.
+/// The flow moves each source value to its target value.
+///
+/// The flow classifier stores the translator between the two data types.
+/// The checker applies it to each value and list family.
+///
+/// - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+///
+/// [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 // The native finite lists.
 import std.list (List);
 
-/// The old type: one constructor of one integer field.
+/// The `Old` type has one integer field.
 data Old : Type where
   | Mk : (n : Integer) --> Old
 
-/// The new type: the same field under another constructor.
+/// The `Other` type has the same field under another constructor.
 data Other : Type where
   | Make : (n : Integer) --> Other
 
-/// The old shapes.
+/// A `Shape` has circle and rectangle constructors.
 pub data Shape : Type where
   | Circle : (r : Integer) --> Shape
   | Rect : (w : Integer, h : Integer) --> Shape
 
-/// The new shapes: the circle renamed, the rectangle's sides swapped.
+/// A `Figure` renames circles and swaps rectangle sides.
 pub data Figure : Type where
   | Round : (r : Integer) --> Figure
   | Box : (h : Integer, w : Integer) --> Figure
 
-/// One field moved to a constructor of another name.
+/// The `Rename` module moves one field to another constructor.
 module Rename where {
-  /// The translator: the field moved to the new constructor.
+  /// The translator moves the field to the target constructor.
   @[ checks ]
   def toOther(old : Old) -> Other =
     match old
       | Mk(n) => Make n
-  /// The flow from the old type to the new, by its translator.
+  /// The translator defines the flow from `Old` to `Other`.
   @[ checks ]
   def renamed : Flow[.A = Type](Old, Other) = Flow.into toOther;
-  /// One value ridden along the flow.
+  /// The flow rides one source value to the target type.
   @[ checks ]
   def moved(old : Old) -> Other =
     Flow.ride (fun (X) { X }) renamed old
-  /// A value migrated by a run.
+  /// The run migrates one value.
   @[ runs("Make 3") ]
   def one : () -> Other = moved (Mk 3);
 }
 
-/// Each constructor moved to its twin, a constructor's fields swapped.
+/// The `Shapes` module moves each shape to its figure.
 pub module Shapes where {
-  /// The translator: each shape to its figure, the sides swapped.
+  /// The translator swaps rectangle sides.
   @[ checks ]
   def toFigure(shape : Shape) -> Figure =
     match shape
       | Circle(r) => Round r
       | Rect(w, h) => Box h w
-  /// The flow from the old shapes to the new.
+  /// The translator defines the flow from shapes to figures.
   @[ checks ]
   def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into toFigure;
-  /// A list of shapes ridden along the flow in the family of lists.
+  /// The flow rides a shape list through the list family.
   @[ checks ]
   def all(shapes : List(Shape)) -> List(Figure) =
     Flow.ride (fun (X) { List X }) redrawn shapes
-  /// Two shapes migrated by a run.
+  /// The run migrates two shapes.
   @[ runs("cons (Round 1) (cons (Box 3 2) nil)") ]
   def two : () -> List(Figure) = all (cons (Circle 1) (cons (Rect 2 3) nil));
 }

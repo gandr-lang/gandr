@@ -1,18 +1,25 @@
-// A function's action on paths, the HoTT book's Lemma 2.2.1 (`ap`), at a
-// function whose result is a suspended computation: `Path.ap` carries a path
-// between integers to one between the thunks the function returns.
+/// This source states action on a path through a suspended computation.
+///
+/// The action carries an integer path between the returned thunks.
+///
+/// The checker evaluates the suspended doubling at each endpoint.
+/// The run checks its carried reflexivity.
+///
+/// - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+///
+/// [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
-/// An integer added to itself.
+/// The `double` computation adds an integer to itself.
 @[ checks, form(explicit) ]
 def double(x : Integer) -> -F Integer =
   become x + x
 
-/// Doubling, suspended.
+/// The `delay` function returns a suspended doubling.
 @[ checks ]
 def delay(x : Integer) -> -F (+U (-F Integer)) =
   return thunk { become double x }
 
-/// Reflexivity at a suspended doubling, written out.
+/// The `delayed` proof states reflexivity at a suspended doubling.
 @[ checks ]
 def delayed(a : Integer) -> -F Path[.A = +U (-F Integer)](
   thunk { become double a },
@@ -20,7 +27,7 @@ def delayed(a : Integer) -> -F Path[.A = +U (-F Integer)](
 ) =
   return Path.here (thunk { become double a })
 
-/// A path between integers carried along the suspended doubling.
+/// The `cong_delay` proof carries an integer path through the suspended doubling.
 @[ checks ]
 def cong_delay(a : Integer, b : Integer, p : Path(a, b)) -> -F Path(
   delay a,
@@ -31,7 +38,7 @@ def cong_delay(a : Integer, b : Integer, p : Path(a, b)) -> -F Path(
     p
     (Path.here (delay a))
 
-/// Reflexivity at four carried along the suspended doubling by a run.
+/// The run carries reflexivity at four through the suspended doubling.
 @[ checks ]
 def delayed_four() -> -F Path(delay 4, delay 4) =
   become cong_delay 4 4 (Path.here 4)

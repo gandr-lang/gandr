@@ -1,9 +1,9 @@
-/// A held run through two definitions.
+/// A held run reaches two definitions.
 ///
 /// The kernel reads the composite as its second path, as the checker does.
 ///
-/// The composite runs a held call before it reads its word. The run goes on
-/// through `zero2` and then `zero`, and it returns a reflexivity.
+/// The run evaluates a held call before it reads its word.
+/// It evaluates `zero2` and then `zero`.
 ///
 /// - see: #3789 — the kernel took one step of the run and left it at `zero`
 

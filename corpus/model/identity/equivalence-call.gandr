@@ -1,27 +1,25 @@
-// A relation a call returns splits as one a parameter holds. A `run` binder
-// is written with no type, so a match on it takes the record's layout from
-// the result the called function was written with: the four fields of a
-// quasi-inverse, and the two inverses of an equivalence, each a record of its
-// own.
-//
-// - see: #656 — `keptToEquiv`, `madeAgain`
-
-// The quasi-inverse, the equivalence and `isoToEquiv`.
+/// This source splits equivalence records returned by calls.
+///
+/// A returned quasi-inverse has four fields.
+/// A returned equivalence has two nested inverse records.
+///
+/// The match reads its layout from the called function result.
+/// The `run` binder requires no written type.
+///
+/// - see: #656 — `keptToEquiv`, `madeAgain`
 import "./equivalence.gandr";
 
-/// The quasi-inverse handed back unchanged.
+/// The `kept` function returns its quasi-inverse unchanged.
 def kept(a : Type, b : Type, i : a ≅ b) -> a ≅ b =
   i
 
-/// A quasi-inverse a call returns is bi-invertible, split as `isoToEquiv`
-/// splits its parameter.
+/// The `keptToEquiv` match splits the returned quasi-inverse into an equivalence.
 def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b =
   let j = kept a b i
   match j
     | *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}}
 
-/// An equivalence a call returns, split along its nesting and put back
-/// together.
+/// The `madeAgain` match reconstructs the returned equivalence.
 def madeAgain(a : Type, b : Type, i : a ≅ b) -> a ≃ b =
   let e = isoToEquiv a b i
   match e

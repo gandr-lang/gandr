@@ -1,39 +1,41 @@
-//! A flow between types holding lists, after directed univalence
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory],
-//! Definition 1.2: a translator that moves a list unread is decided at the
-//! empty list and at one cell over a rigid tail, and riding the flow moves a
-//! record holding any list.
-//!
-//! - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
-//!
-//! [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
+/// This source states a flow between records that contain lists.
+///
+/// The translator reorders record fields and keeps the list intact.
+/// The list flow remains at its source list type.
+///
+/// The record flow moves each source record to its target layout.
+/// The checker rides one record through that flow.
+///
+/// - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+///
+/// [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
 
 // The native finite lists.
 import std.list (List);
 
-/// A record with a list field, migrated by reordering its fields.
+/// The `Roster` module reorders records with list fields.
 module Roster where {
   type Old = String * List(Integer);
   type New = List(Integer) * String;
-  /// The translator: the fields swapped, the scores moved unread.
+  /// The translator swaps fields and preserves the score list.
   @[ checks ]
   def toNew(old : Old) -> New =
     match old
       | *{name, scores} => *{scores, name}
-  /// The flow from the old record to the new, by its translator.
+  /// The translator defines the record flow.
   @[ checks ]
   def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
-  /// A list kept whole: the flow from a list code to itself.
+  /// The `wrap` function preserves one integer list.
   @[ checks ]
   def wrap(xs : List(Integer)) -> List(Integer) =
     xs
   @[ checks ]
   def lists : Flow[.A = Type](List(Integer), List(Integer)) = Flow.into wrap;
-  /// One record ridden along the flow.
+  /// The `moved` function rides one record through the record flow.
   @[ checks ]
   def moved(old : Old) -> New =
     Flow.ride (fun (X) { X }) upgrade old
-  /// A record of two scores migrated by a run.
+  /// The run migrates one record with two scores.
   @[ runs("*{cons 90 (cons 85 nil), \"ada\"}") ]
   def one : () -> New = moved (*{"ada", cons 90 (cons 85 nil)});
 }

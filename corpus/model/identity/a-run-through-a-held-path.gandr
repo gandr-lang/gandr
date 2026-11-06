@@ -1,10 +1,10 @@
-/// A run that reaches a definition behind a held path.
+/// A run reaches a definition behind a held path.
 ///
-/// Whiskering a reflexivity twice gives a reflexivity, so it is a unit of the
-/// composite beside any path.
+/// Two reflexivity whiskerings give a reflexivity.
+/// The result is the unit beside any path.
 ///
-/// The inner whiskering is a held call inside the outer one's action on paths.
-/// The composite runs the outer call, and the run goes on through the inner one.
+/// The outer action holds an inner whiskering.
+/// The composite runs both calls.
 ///
 /// - see: #3774 — the run stopped at the held call and left the endpoint unrun
 

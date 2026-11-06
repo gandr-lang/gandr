@@ -1,25 +1,20 @@
-/// A composite over a path typed at a stated lambda meets the composite at the
-/// lambda's reduct.
+/// This source compares composites at stated lambda applications.
 ///
-/// `along`'s type writes `F x`, so `along` at a stated lambda has the lambda
-/// applied at its endpoints. A composite over that path starts at the
-/// application. Passed to `composeHere`, whose type writes `Path.step p q`, its
-/// start meets the reduct `F x` or the application written again. A lambda
-/// whose body composes, `fun (q) { Path.step q g }`, meets a composite written apart.
+/// `along` applies its stated lambda at each path endpoint.
+/// A composite can use the lambda reduct or its written application.
 ///
-/// The conversion's code walk reads a call of a stated lambda as the lambda's
-/// body, its binder bound to the call's argument. Two composites written apart
-/// meet part by part. The kernel replays each declaration by its own reading.
+/// The conversion walk substitutes the call argument into the lambda body.
+/// The kernel checks each composite by its own reading.
 ///
-/// - see: #4073 — the checker refused a stated lambda applied against its reduct
-/// - see: #4065 — a call passed to a parameter, read as the value it returns
-/// - see: #3920 — one stated lambda written twice
+/// - see: #4073 — stated lambda application
+/// - see: #4065 — call arguments
+/// - see: #3920 — repeated stated lambda
 
-/// The action of `F` on `p`.
+/// The `along` function applies `F` to `p`.
 def along(A : Type, F : A -> A, x : A, y : A, p : Path(x, y)) -> Path[.A = A](F x, F y) =
   Path.ap F p
 
-/// Reflexivity at the composite of its two parameters.
+/// The `composeHere` proof is reflexivity at a composite.
 def composeHere(
   A : Type,
   x : A,
@@ -30,7 +25,7 @@ def composeHere(
 ) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) =
   Path.here (Path.step p q)
 
-/// The composite over `along` at a stated lambda, written in the body.
+/// The body writes the composite over `along` at the stated lambda.
 def composedAtLambda(
   A : Type,
   F : A -> A,
@@ -45,7 +40,7 @@ def composedAtLambda(
 ) =
   Path.here (Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s)
 
-/// The same composite through `composeHere`, its start the reduct.
+/// The `composeHere` call uses the lambda reduct at its start.
 def passedAtLambda(
   A : Type,
   F : A -> A,
@@ -60,7 +55,7 @@ def passedAtLambda(
 ) =
   composeHere A (F x) (F y) z (along A (fun (q : A) { F q } : A -> A) x y r) s
 
-/// The same, its start the application written again.
+/// The `composeHere` call uses the written lambda application at its start.
 def passedRedex(
   A : Type,
   F : A -> A,
@@ -77,14 +72,14 @@ def passedRedex(
     F q
   } : A -> A) x y r) s
 
-/// The action of `F` on `p`, across two carriers.
+/// The `acrossCarriers` function applies `F` to `p` across two carriers.
 def acrossCarriers(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path(x, y)) -> Path[.A = B](
   F x,
   F y
 ) =
   Path.ap F p
 
-/// The composite over a lambda that composes, written in the body.
+/// The body writes the composite over the lambda that composes.
 def composedAcross(
   A : Type,
   x : A,
@@ -109,7 +104,7 @@ def composedAcross(
     z
   ))) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path(x, y) -> Path(x, z)) fm fp fa) s)
 
-/// The same through `composeHere`, its start the composite written apart.
+/// The `composeHere` call uses the separately written composite at its start.
 def passedComposite(
   A : Type,
   x : A,

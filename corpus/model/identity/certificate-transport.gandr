@@ -1,42 +1,33 @@
-//! Confluence certificates as paths in a presented type, and univalence over
-//! the types of them
-//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics], §
-//! 2.10, and
-//! [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract].
-//! The critical pair of the presented integers at `S(P(S(x)))` joins at `S(x)`
-//! two ways, and each way is a certificate: a path from the peak to the join.
-//! The two are one path, so certificate identity is an identification in the
-//! presented type rather than a relation beside it; certificates no rule
-//! relates stay apart (the pathological twin). Two boundaries that convert have
-//! certificate types that `ua` makes one, and a consumer of one boundary's
-//! certificates is carried to the other's unchanged.
-//!
-//! - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
-//! - cites: [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract]
-//!
-//! [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
-//! [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract]: https://doi.org/10.4204/EPTCS.372.23 "Behr and Kock, Tracelet Hopf Algebras and Decomposition Spaces"
+/// This source identifies confluence certificates as paths in a presented type.
+///
+/// The integer critical pair reaches one join by two certificates.
+/// The presented type identifies those certificates and separates unrelated ones.
+///
+/// Univalence equates certificate types with convertible boundaries.
+/// A certificate consumer then crosses that equality unchanged.
+///
+/// - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+/// - cites: [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract]
+///
+/// [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
+/// [Behr-2022-tracelet_hopf_algebras_decomposition_spaces_extended_abstract]: https://doi.org/10.4204/EPTCS.372.23 "Behr and Kock, Tracelet Hopf Algebras and Decomposition Spaces"
 
 // The presented integers and `up`.
 import "./circle-base.gandr";
 
-/// The certificate that rewrites the peak at its root: `S(P(y)) ==> y` with
-/// `y = S(x)`, a reflexivity once the rules convert the peak.
+/// The root rule gives a certificate from `S(P(S x))` to `S x`.
 def atRoot(x : Int) -> Path[.A = Int](S (P (S x)), S x) =
   Path.here (S x)
 
-/// The certificate that rewrites inside the successor: `P(S(x)) ==> x`
-/// carried along `up`.
+/// The inner rule gives the same certificate through `up`.
 def inside(x : Int) -> Path[.A = Int](S (P (S x)), S x) =
   Path.ap up (Path.here x)
 
-/// The two certificates of the peak's boundary are one path: the rules
-/// convert both to the reflexivity at the join.
+/// The rules identify both peak certificates with reflexivity at the join.
 def identified(x : Int) -> Path[.A = Path[.A = Int](S (P (S x)), S x)](atRoot x, inside x) =
   Path.here (atRoot x)
 
-/// The certificate types of the peak's boundary and of the join's own, one
-/// type by `ua` over the identity record.
+/// The `ua` path identifies the peak and join certificate types.
 def certificates(x : Int) -> Path[.A = Type](
   Path[.A = Int](S (P (S x)), S x),
   Path[.A = Int](S x, S x)
@@ -49,8 +40,7 @@ def certificates(x : Int) -> Path[.A = Type](
     }
   })
 
-/// A consumer of the peak's certificates, carried along `certificates`, is
-/// the same consumer at the join's, by conversion.
+/// Transport carries a peak certificate consumer to the same join consumer.
 def carried(x : Int, f : Path[.A = Int](S (P (S x)), S x) -> Int) -> Path[.A = Path[.A = Int](
   S x,
   S x
@@ -60,8 +50,7 @@ def carried(x : Int, f : Path[.A = Int](S (P (S x)), S x) -> Int) -> Path[.A = P
 ) =
   Path.here (fun (d) { f d })
 
-/// The carried consumer, run on a certificate of the join's boundary: it
-/// transports `S(Z)` along the certificate and keeps it.
+/// The carried consumer transports `S(Z)` along a join certificate.
 @[ runs("S Z") ]
 def carriedRun() -> Int =
   let g = Path.walk (fun (X) { X -> Int }) (certificates Z) (fun (c) {
