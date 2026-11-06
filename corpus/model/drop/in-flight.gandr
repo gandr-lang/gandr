@@ -1,20 +1,23 @@
-//! An abandoned stack that holds a pending completion cancels it: the stack's
-//! end of the kernel's protocol counts as ended, and the kernel's next action
-//! is the one that observes the cancellation
-//! [Fowler-2019-exceptional_asynchronous_session_types].
+//! `in-flight` models an abandoned continuation with a pending completion.
+//!
+//! An abandoned continuation ends its stack's protocol.
+//! The kernel observes cancellation in its next action.
+//!
+//! The program submits a read.
+//! Its handler abandons the continuation that would receive the completion.
 //!
 //! - see: #1334 — `inFlight`
 //! - cites: [Fowler-2019-exceptional_asynchronous_session_types]
 //!
 //! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
 
-// The ring's protocol and its entries.
+// The import provides the ring protocol and its entries.
 import "../completion/ring-base.gandr";
-// Early exit's host interface.
+// The import provides the early-exit host interface.
 import std.process;
 
-/// A read submitted and its completion abandoned in flight: the clause
-/// abandons the rest that would reap it.
+/// The handler abandons the continuation that would receive a submitted read's
+/// completion.
 @[ runs("*{}") ]
 def inFlight() -> Unit =
   handle c : std.process.Exit.Eff {
