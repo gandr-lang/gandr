@@ -24,6 +24,7 @@ use gandr_core_term::session::Protocol;
 use gandr_core_term::session::ProtocolState;
 use gandr_core_term::session::ProtocolSyntax;
 use gandr_core_term::session::SessionType;
+use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
@@ -2730,6 +2731,7 @@ fn a_result_of_the_wrong_kind_is_a_machine_fault()
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
         images: crate::judgement::worlds::Images::default(),
+        memo: crate::judgement::memo::GoalMemo::new(MemoActivity::Active),
     };
     let refusal = machine
         .resume(Frame::LambdaBody, Produced::ValueType(unit_type.into()))
@@ -2771,6 +2773,7 @@ fn machine_bookkeeping_preserves_zero_and_one_boundaries()
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
         images: crate::judgement::worlds::Images::default(),
+        memo: crate::judgement::memo::GoalMemo::new(MemoActivity::Active),
     };
     assert_eq!(machine.charge(), Ok(()));
     assert_eq!(machine.remaining, 0);
@@ -5353,6 +5356,7 @@ fn a_forged_answer_is_refused_naming_its_tactic_2762()
             root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
             staged_motives: Vec::new(),
             images: crate::judgement::worlds::Images::default(),
+            memo: crate::judgement::memo::GoalMemo::new(MemoActivity::Active),
         };
         machine.wait(Frame::Spliced { at, hole, answer });
         machine.drive(goal).map_err(|halt| halt.refusal)

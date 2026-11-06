@@ -18,7 +18,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review.
 
-**How.** One goal-and-frame machine charges each transition to `CheckBudget`; [`src/lib.rs`](src/lib.rs) states its shape, how a rule and a `Path` are both cells, and each module the boundary it owns.
+**How.** One goal-and-frame machine charges each transition to `CheckBudget`, one for a value goal met again; [`src/lib.rs`](src/lib.rs) states its shape, how a rule and a `Path` are both cells, and each module the boundary it owns.
 
 ## Provided features
 
@@ -37,7 +37,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `CheckingContext::keep_strata_in`, `CheckingContext::level_two`, `ua::StratumStore`, `ua::StratumAt`, `ua::StratumLevel`, `ua::NoStratumStore` and `ua::recalled`: the strata a context holds for its life, recalled from a store the driver implements and replayed before use.
 - `CheckRefusal::ComposeUncertified`, `ComposeNotAShape`, `ComposeDoesNotFill` and `compose::chain_budget`: a chain's unbiased composite, its chains under a budget.
 - `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
-- `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
+- `CheckingContext`, `CheckBudget`, `CheckingContext::memoise_goals` and `signature_table::Absent`: context, admission tables, allowance, goal memo.
 - `ModuleRun`, `Checkpoint`, `CheckingContext::checkpoint` and `CheckingContext::resume`: a module judged in stretches, each continuing the last one's state.
 - `Absence`, `ObligationEntry`, `ObligationLedger` and `ObligationCount`: the absence-only ledger.
 - `CheckRefusal`, `Mismatch`, `CheckingForm`, `ExpectedShape`, `UnadmittedFormer`, `TermNode`, `TypeNode` and `CoreNode`: named refusals and responsible nodes.

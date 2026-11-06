@@ -81,8 +81,9 @@ impl ContentHash
     /// # Specification
     /// - requires: nothing.
     /// - ensures: equal content folds to equal words within one run.
-    /// - provides: the digest the re-sharing memo buckets its supports by, so
-    ///   one hash serves both and the fold order is fixed in this module.
+    /// - provides: the digest the re-sharing memo and the core checker's goal
+    ///   memo bucket their keys by, so one hash serves all and the fold order
+    ///   is fixed in this module.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause relates arbitrary `Hash` encodings
@@ -97,7 +98,7 @@ impl ContentHash
     /// - witness: `guard::tests::fnv_vectors_preserve_empty_and_segmented_writes`
     #[inline]
     #[must_use]
-    pub(crate) fn of<Content>(content: &Content) -> Self
+    pub fn of<Content>(content: &Content) -> Self
     where
         Content: Hash + ?Sized,
     {

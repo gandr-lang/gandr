@@ -2103,3 +2103,30 @@ fn a_revision_reads_the_imports_its_own_parse_writes_2439()
     );
     let _removed = std::fs::remove_dir_all(&directory);
 }
+
+/// #5719: a session that keeps type tables, as the language server does once a
+/// client hovers, settles the iterated pair at depth 20. Its typed run keeps
+/// the core checker's goal memo, so it judges each shared node once, as
+/// `gandr check` does.
+#[test]
+fn a_session_keeping_tables_settles_the_iterated_pair_5719()
+{
+    let mut session = session(SourceRoot::Fixture);
+    session.keep(Tables::Kept);
+    let mut submitted = submit(
+        &mut session,
+        include_str!("../../../corpus/pathological/records/iterated-pair.gandr"),
+    );
+    let unchecked: Vec<_> = rows(submitted.composed())
+        .into_iter()
+        .filter(|row| row.1 != checks())
+        .collect();
+    assert!(
+        unchecked.is_empty(),
+        "each declaration of the pair checks in a typed run: {unchecked:?}"
+    );
+    assert!(
+        matches!(submitted.take_table(), Maybe::Present(_)),
+        "the session keeps the pair's table"
+    );
+}
