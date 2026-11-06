@@ -96,14 +96,13 @@ use gandr_surface_syntax::SourceText;
 use super::ParseResult;
 use super::molded;
 use super::molded_moving;
-use super::ordered;
+use super::spliced;
 use crate::label::Lexeme;
 use crate::label::Move;
 use crate::label::Token;
 use crate::label::cut_in;
 use crate::label::label;
 use crate::meld::Splice;
-use crate::meld::Splices;
 use crate::meld::Stands;
 use crate::meld::declaration_head;
 use crate::mold::KEYWORDS;
@@ -1277,18 +1276,13 @@ fn minted<'source>(
         };
         splices.push(splice.read_as(ghost));
     }
-    let splices = Splices::from(splices.as_slice());
-    let (tree, copied) = state.commit_spliced(source, splices).ok()?;
-    let mut obligations: Vec<ObligationInstance> = copied
-        .into_iter()
-        .map(|obligation| splices.obligation(obligation))
-        .collect();
+    let mut owed = Vec::with_capacity(kept.len());
     for gap in kept {
         match gap.act {
             Act::Writes { ref tiles, over: 0 } => {
                 let place = ByteSpan::new(gap.at, gap.at).ok()?;
                 for _tile in tiles {
-                    obligations.push(ObligationInstance::new(Oblig::MissingTile, place));
+                    owed.push(ObligationInstance::new(Oblig::MissingTile, place));
                 }
             },
             Act::Writes { over, .. } => {
@@ -1297,16 +1291,15 @@ fn minted<'source>(
                     ByteOffset::from(usize::from(gap.at).checked_add(over)?),
                 )
                 .ok()?;
-                obligations.push(ObligationInstance::new(Oblig::IncompleteTile, word));
+                owed.push(ObligationInstance::new(Oblig::IncompleteTile, word));
             },
             Act::Moves { .. } => {
                 let line = ByteSpan::new(gap.at, gap.at).ok()?;
-                obligations.push(ObligationInstance::new(Oblig::MissingTile, line));
+                owed.push(ObligationInstance::new(Oblig::MissingTile, line));
             },
         }
     }
-    ordered(&mut obligations);
-    Some(ParseResult { tree, obligations })
+    spliced(state, source, &splices, owed)
 }
 
 #[cfg(test)]

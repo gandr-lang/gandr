@@ -279,8 +279,11 @@ use crate::Frontier;
 use crate::MeldState;
 use crate::closing::TileSpelling;
 use crate::closing::tile_spelling;
+use crate::label::Bracket;
 use crate::label::Lexeme;
+use crate::label::SourceBytes;
 use crate::label::Token;
+use crate::label::bracket;
 use crate::meld::CandidateLabels;
 use crate::meld::DeclarationStart;
 use crate::meld::FormUnit;
@@ -1503,100 +1506,6 @@ fn spacing(
     }
 }
 
-/// How a token takes part in bracket nesting.
-///
-/// # Specification
-/// - ensures: `Open` for a punctuation or subshell token whose text ends in
-///   `(`, `[` or `{`, `Close` for one that is `)`, `]` or `}`, `Neither`
-///   otherwise.
-/// - panics: none.
-/// - executable: none — a plain value; [`bracket`] carries the executable
-///   clause.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Bracket
-{
-    /// The token opens a bracket: `(`, `[`, `{`, or a compound opener such as
-    /// `@[` or `#{`.
-    Open,
-    /// The token closes the innermost open bracket.
-    Close,
-    /// The token does not nest.
-    Neither,
-}
-
-/// Classify `token`, whose text is `text`, for bracket nesting.
-///
-/// Every family nests alike: a closer closes the innermost open bracket
-/// whatever opened it, so a mismatched closer still balances the count, the
-/// convention [`Molder::form_runs`] splits by.
-///
-/// # Specification
-/// - requires: `text` is `token`'s text.
-/// - ensures: [`Bracket::Open`] exactly when `token` is punctuation or a
-///   subshell bracket and `text` ends in `(`, `[` or `{`; [`Bracket::Close`]
-///   exactly when it is one of those and `text` is `)`, `]` or `}`;
-///   [`Bracket::Neither`] otherwise.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — plain and compound openers, the three closers, a word and
-///   a string fragment spelling a bracket; reading the lexeme loosely counts a
-///   bracket inside a string, and reading the closer by suffix counts `]]` or a
-///   compound closer that does not exist.
-/// - witness: `mold::tests::brackets_are_classified_by_lexeme_and_text`
-#[spec(ensures: |ret| ret == if token.lexeme == Lexeme::LayoutOpen {
-    Bracket::Open
-} else if token.lexeme == Lexeme::LayoutClose {
-    Bracket::Close
-} else if !matches!(token.lexeme, Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose) {
-    Bracket::Neither
-} else if <&str>::from(text).ends_with(['(', '[', '{']) {
-    Bracket::Open
-} else if matches!(<&str>::from(text), ")" | "]" | "}") {
-    Bracket::Close
-} else {
-    Bracket::Neither
-})]
-fn bracket(
-    token: Token,
-    text: TokenText<'_>,
-) -> Bracket
-{
-    match token.lexeme {
-        Lexeme::LayoutOpen => return Bracket::Open,
-        Lexeme::LayoutClose => return Bracket::Close,
-        Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose => {},
-        Lexeme::LowerWord
-        | Lexeme::UpperWord
-        | Lexeme::Number
-        | Lexeme::TypedNumber
-        | Lexeme::Character
-        | Lexeme::Quote
-        | Lexeme::StringFragment
-        | Lexeme::ShellStringFragment
-        | Lexeme::EscapeSequence
-        | Lexeme::ShellWord
-        | Lexeme::EnvAssign
-        | Lexeme::SingleQuotedContent
-        | Lexeme::VariableName
-        | Lexeme::FileDescriptor
-        | Lexeme::ArmBar
-        | Lexeme::LayoutSemi
-        | Lexeme::Space
-        | Lexeme::Unknown => return Bracket::Neither,
-    }
-    let text = <&str>::from(text);
-    if text.ends_with(['(', '[', '{']) {
-        Bracket::Open
-    }
-    else if matches!(text, ")" | "]" | "}") {
-        Bracket::Close
-    }
-    else {
-        Bracket::Neither
-    }
-}
-
 /// The position after the last token a run ending before `end` reads past
 /// its end: the [`LOOKAHEAD`]-th significant token from `end` on, the spaces
 /// before it included, or the stream's end when fewer remain.
@@ -2494,6 +2403,7 @@ impl<'pbg> Molder<'pbg>
         // The first one-tile item form after the terminator, as `pub`, which
         // the declaration head after it starts its run at.
         let mut prefix: Option<usize> = None;
+        let bytes = SourceBytes::from(AsRef::<str>::as_ref(&source).as_bytes());
         for (index, &token) in tokens.iter().enumerate() {
             if matches!(token.lexeme, Lexeme::Space) {
                 continue;
@@ -2512,7 +2422,7 @@ impl<'pbg> Molder<'pbg>
                 at_boundary && !heads && bool::from(prefixes_declaration(self.pbg, token, &source));
             let slice = token.text(&source);
             let text = AsRef::<str>::as_ref(&slice);
-            match bracket(token, TokenText::from(text)) {
+            match bracket(token, bytes) {
                 Bracket::Open => depth = depth.saturating_add(1),
                 Bracket::Close => depth = depth.saturating_sub(1),
                 Bracket::Neither => {},
@@ -4842,7 +4752,10 @@ mod tests
     use super::candidate_labels;
     use crate::MeldState;
     use crate::SpaceText;
+    use crate::label::Bracket;
     use crate::label::Lexeme;
+    use crate::label::SourceBytes;
+    use crate::label::bracket;
     use crate::label::label;
     use crate::testing::root_digest;
 
@@ -6020,21 +5933,21 @@ mod tests
     fn brackets_are_classified_by_lexeme_and_text()
     {
         let source = SourceFragment::from("@[ f([x], +{ y }) ] ( \"]\" z *{}");
-        let classes: Vec<(String, super::Bracket)> = label(source)
+        let bytes = SourceBytes::from(AsRef::<str>::as_ref(&source).as_bytes());
+        let classes: Vec<(String, Bracket)> = label(source)
             .into_iter()
             .filter(|token| token.lexeme != Lexeme::Space)
             .map(|token| {
                 let text = token.text(&source);
-                let spelled = AsRef::<str>::as_ref(&text);
                 (
-                    String::from(spelled),
-                    super::bracket(token, TokenText::from(spelled)),
+                    String::from(AsRef::<str>::as_ref(&text)),
+                    bracket(token, bytes),
                 )
             })
             .collect();
-        let open = super::Bracket::Open;
-        let close = super::Bracket::Close;
-        let neither = super::Bracket::Neither;
+        let open = Bracket::Open;
+        let close = Bracket::Close;
+        let neither = Bracket::Neither;
         let expected = [
             ("@[", open),
             ("f", neither),
