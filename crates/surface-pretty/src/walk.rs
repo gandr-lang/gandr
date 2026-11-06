@@ -6623,40 +6623,27 @@ impl Walk<'_, '_>
         ))
     }
 
-    /// How a type former applied to its operands binds on the walk's surface,
-    /// as [`type_applied`] states, noting the juxtaposed form a type inside
-    /// an expression takes.
+    /// The surface a path or a bridge type writes its endpoints on: a type's
+    /// where an expression reads a type, as the type grammar reads
+    /// `Path(x, y)` and no juxtaposed path, and the walk's own elsewhere.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`type_applied`]'s binding for the walk's surface and `rule`;
-    ///   on the expression surface where `admits` reads a type,
-    ///   `Notation::TypeApplication` is among the notes, since the type grammar
-    ///   reads no juxtaposed application until #5200. A value the expression
-    ///   grammar reads, `pure (Vec MkIx)`, takes no note.
-    /// - provides: the one way a type former's applied binding is chosen.
+    /// - ensures: `Surface::Type` on the expression surface where `admits`
+    ///   reads a type; the walk's surface otherwise.
+    /// - provides: the one way a path or a bridge type chooses its form.
     /// - panics: none.
-    /// - executable: none — the binding is `type_applied`'s, and the note is
-    ///   one call.
+    /// - executable: none — one comparison.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `endForced`'s ascription to `Path(3, _)` inside an
     ///   expression is held by the body parity sweep, and `pure (Vec MkIx)`
     ///   stays faithful.
     /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            answer_totality,
-            reason = "a juxtaposed type application has no type syntax until #5200: written \
-                      in the printer's notation"
-        )
-    )]
-    fn applied_type(
-        &mut self,
-        rule: Production,
+    fn endpoint_surface(
+        &self,
         admits: Admits,
-    ) -> Binding
+    ) -> Surface
     {
         if self.surface == Surface::Expression
             && matches!(
@@ -6664,9 +6651,11 @@ impl Walk<'_, '_>
                 Admits::Type | Admits::ValueType | Admits::CompType | Admits::Thunked
             )
         {
-            self.note(Unspelled::Notation(Notation::TypeApplication));
+            Surface::Type
         }
-        type_applied(self.surface, rule)
+        else {
+            self.surface
+        }
     }
 
     /// Pushes a finished atom holding `glyphs`.
@@ -11889,21 +11878,24 @@ impl Walk<'_, '_>
                 .text(")");
         };
         let binding = match *former {
-            // `Path(x, y)`, `Bridge(x, y)` and `Flow(x, y)`: a carrier the
-            // source omitted reads back as nothing. A path or a bridge spells
-            // through its own production, its endpoints terms; a flow is a
-            // type application.
+            // `Path(x, y)` and `Bridge(x, y)`: a carrier the source omitted
+            // reads back as nothing, and each spells through its own
+            // production, its endpoints terms, in the call form wherever a
+            // type is read. A flow is a type application, juxtaposed as a
+            // family's, `Flow x y`.
             Former::Path { carrier: None, .. } => {
-                let _ = parts.text("Path").applied(Arity(2_usize), self.surface);
-                self.applied_type(Production("path_type"), admits)
+                let surface = self.endpoint_surface(admits);
+                let _ = parts.text("Path").applied(Arity(2_usize), surface);
+                type_applied(surface, Production("path_type"))
             },
             Former::Bridge { carrier: None, .. } => {
-                let _ = parts.text("Bridge").applied(Arity(2_usize), self.surface);
-                self.applied_type(Production("bridge_type"), admits)
+                let surface = self.endpoint_surface(admits);
+                let _ = parts.text("Bridge").applied(Arity(2_usize), surface);
+                type_applied(surface, Production("bridge_type"))
             },
             Former::Flow { carrier: None, .. } => {
-                let _ = parts.text("Flow").applied(Arity(2_usize), self.surface);
-                self.applied_type(Production("type_application"), admits)
+                let _ = parts.text("Flow").family(Arity(2_usize), self.surface);
+                family_applied(self.surface)
             },
             Former::Path {
                 carrier: Some(_), ..
@@ -11927,8 +11919,8 @@ impl Walk<'_, '_>
                 let spelled = relation_spelled(relation);
                 match (self.spelling, spelled.ascii) {
                     (grammar::Spelling::Ascii, grammar::Ascii::Head(head)) => {
-                        let _ = parts.text(head.0).applied(Arity(2_usize), self.surface);
-                        self.applied_type(Production("type_application"), admits)
+                        let _ = parts.text(head.0).family(Arity(2_usize), self.surface);
+                        family_applied(self.surface)
                     },
                     (grammar::Spelling::Unicode, _)
                     | (grammar::Spelling::Ascii, grammar::Ascii::Token(_)) => {

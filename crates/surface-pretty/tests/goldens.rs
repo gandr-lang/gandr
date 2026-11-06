@@ -1989,7 +1989,7 @@ fn each_glyph_former_is_written_in_the_spelling_asked_782()
         (
             Root::Type(CoreNode::ValueType(record)),
             "Integer ≅ String",
-            "Iso(Integer, String)",
+            "Iso Integer String",
         ),
         (
             Root::Type(CoreNode::ValueType(equivalence)),
@@ -3434,17 +3434,17 @@ fn a_binder_the_print_leaves_out_moves_no_name_5402()
         (
             CoreNode::CompType(plain),
             CoreNode::CompType(unnamed),
-            "Unit -> -F Picked(Unit, fun (a) { pure Unit })",
+            "Unit -> -F Picked Unit (fun (a) { pure Unit })",
         ),
         (
             CoreNode::ValueType(plain_thunk),
             CoreNode::ValueType(unnamed_thunk),
-            "Unit -> Picked(Unit, fun (a) { pure Unit })",
+            "Unit -> Picked Unit (fun (a) { pure Unit })",
         ),
         (
             CoreNode::ValueType(product),
             CoreNode::ValueType(pair),
-            "Unit * Picked(Unit, fun (a) { pure Unit })",
+            "Unit * Picked Unit (fun (a) { pure Unit })",
         ),
     ] {
         for root in [written, left_out] {
@@ -3487,7 +3487,7 @@ fn a_family_argument_leaves_its_function_s_thunk_out_5408()
         let presented = presented_in(&source, Root::Type(CoreNode::ValueType(root)), wide(), form);
         assert_eq!(
             (presented.as_ref(), presented.fidelity()),
-            ("Picked(Unit, fun (a) { pure Unit })", Fidelity::Faithful),
+            ("Picked Unit (fun (a) { pure Unit })", Fidelity::Faithful),
             "a family's argument over a function leaves its thunk out in the {form:?} form"
         );
     }
@@ -3499,7 +3499,7 @@ fn a_family_argument_leaves_its_function_s_thunk_out_5408()
     );
     assert_eq!(
         (presented.as_ref(), presented.fidelity()),
-        ("Picked(Unit, thunk { twice 1 })", Fidelity::Faithful),
+        ("Picked Unit (thunk { twice 1 })", Fidelity::Faithful),
         "a family's argument over a call keeps its thunk"
     );
 }
@@ -3534,7 +3534,7 @@ fn a_call_inside_a_lambda_inside_a_type_is_juxtaposed_5211()
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
         (applied, "kept(fun (a) { twice a })"),
-        (picked, "Picked(Unit, fun (a) { twice a })"),
+        (picked, "Picked Unit (fun (a) { twice a })"),
     ] {
         let presented = presented_in(
             &source,
