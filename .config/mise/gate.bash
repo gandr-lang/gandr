@@ -59,16 +59,45 @@ hold_gate_slot() {
   trap 'host_unlock 9; host_unlock 8' EXIT
 }
 
-# The test threads a gate's suite takes: the host's cores divided by the
-# slots, at least one, and never more than a `NEXTEST_TEST_THREADS` already
-# set.
-gate_threads() {
+# A gate's share of the host: the host's cores divided by the slots, at least
+# one (#5424). The share bounds the suite's test threads,
+# `NEXTEST_TEST_THREADS`, and the gate's builds as one pool. A gate runs up to
+# 8 mise tasks at once, and each cargo among them starts one `rustc` for each
+# core. A bound on each cargo (`CARGO_BUILD_JOBS`) multiplies by the count of
+# cargo commands, so it does not bound the gate.
+#
+# So the gate makes one jobserver: a FIFO that holds one token for each job of
+# the share. `MAKEFLAGS` names it as GNU make names its own
+# (`--jobserver-auth=fifo:<path>`). Each cargo of the gate takes its tokens
+# from the FIFO and gives them to `rustc`. A cargo also keeps one token of its
+# own, so a gate runs at most the share plus one `rustc` for each cargo. A
+# jobserver that `MAKEFLAGS` already names stays, and so does a lower
+# `NEXTEST_TEST_THREADS`.
+gate_bound() {
   local cores share
   cores=$(getconf _NPROCESSORS_ONLN)
   share=$(( cores / gate_slots ))
   (( share >= 1 )) || share=1
-  if [[ ${NEXTEST_TEST_THREADS:-} =~ ^[1-9][0-9]*$ ]] && (( NEXTEST_TEST_THREADS < share )); then
-    share=$NEXTEST_TEST_THREADS
+  NEXTEST_TEST_THREADS=$(gate_lower "${NEXTEST_TEST_THREADS:-}" "$share")
+  export NEXTEST_TEST_THREADS
+  gate_jobs=$share
+  if [[ ${MAKEFLAGS:-} == *--jobserver-auth=* ]]; then
+    gate_jobs="the inherited jobserver's"
+    return
   fi
-  printf '%s\n' "$share"
+  gate_jobs_fifo=$(mktemp -u "${TMPDIR:-/tmp}/gandr-gate-jobs.XXXXXX")
+  mkfifo -m 600 "$gate_jobs_fifo"
+  exec {gate_jobs_fd}<>"$gate_jobs_fifo"
+  printf '%*s' "$share" '' >&"$gate_jobs_fd"
+  export MAKEFLAGS="-j$share --jobserver-auth=fifo:$gate_jobs_fifo"
+  trap 'host_unlock 9; host_unlock 8; rm -f "$gate_jobs_fifo"' EXIT
+}
+
+# The lower of a value already set, when it is a positive count, and a share.
+gate_lower() {
+  if [[ $1 =~ ^[1-9][0-9]*$ ]] && (( $1 < $2 )); then
+    printf '%s\n' "$1"
+  else
+    printf '%s\n' "$2"
+  fi
 }
