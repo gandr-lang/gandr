@@ -61,7 +61,7 @@
 748..754 Other "checks"
 755..756 Other "]"
 757..760 Keyword "def"
-761..769 FunctionDef "gathered"
+761..769 FunctionDef "together"
 770..771 Other "="
 772..774 Other "*{"
 774..775 Variable "a"

@@ -1,11 +1,11 @@
-/// A loop that breaks at once. Its row states `Partial`, because a loop may
-/// diverge.
+/// `UnenclosedRun`: an effectful run with no computation enclosing it to run
+/// before. A loop that breaks at once. Its row states `Partial`, because a
+/// loop may diverge.
 def once(x : Integer) -> [Partial] Integer =
   let y = loop { break(x) };
   y
 
-/// `UnenclosedRun`: an effectful run with no computation enclosing it to run
-/// before.
+/// The seed runs the loop in a definition's value.
 @[ refuses("UnenclosedRun") ]
 def seed : Integer;
 

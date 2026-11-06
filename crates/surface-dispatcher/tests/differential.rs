@@ -33,6 +33,7 @@ use gandr_core_checker::Verdict;
 use gandr_core_nbe::Definitions;
 use gandr_core_nbe::DomainArena;
 use gandr_core_nbe::DomainComp;
+use gandr_core_nbe::DomainValue;
 use gandr_core_nbe::Fuel;
 use gandr_core_nbe::NeutralHead;
 use gandr_core_nbe::ReadbackMode;
@@ -312,9 +313,9 @@ enum Apart
 /// - requires: `normal` is a normal form of `core` read under `definitions`.
 /// - ensures: [`Decline::Fixpoint`] when `normal` evaluates to a fixpoint at no
 ///   gate, [`Decline::Native`] when it evaluates to a computation stuck on a
-///   native operation, [`Decline::Certificate`] when it returns a path, flow,
-///   session or recorded-run former, and [`Apart::Unexplained`] for every other
-///   term.
+///   native operation or to one that returns a value stuck on one,
+///   [`Decline::Certificate`] when it returns a path, flow, session or
+///   recorded-run former, and [`Apart::Unexplained`] for every other term.
 /// - panics: none.
 /// - executable: none — the classes are the corpus's; the witness counts them.
 ///
@@ -332,12 +333,35 @@ fn apart(
 {
     let mut domain = DomainArena::new();
     let head = eval_computation(core, &mut domain, definitions, Fuel::from(FUEL), normal);
+    // A pure value stands as what its call returns: a neutral whose head is
+    // the returning computation. The call is native when that computation is
+    // stuck on a native operation.
+    let native = |neutral| {
+        let mut focus = domain.neutral(neutral);
+        while let Some(held) = focus {
+            match held.head() {
+                NeutralHead::Primitive(_) => return true,
+                NeutralHead::Returned(computation) => match domain.computation(computation) {
+                    Some(&DomainComp::Neutral { neutral: inner, .. }) => {
+                        focus = domain.neutral(inner);
+                    },
+                    Some(_) | None => return false,
+                },
+                NeutralHead::Variable { .. }
+                | NeutralHead::Constant(_)
+                | NeutralHead::Module(_)
+                | NeutralHead::Hole { .. }
+                | NeutralHead::Mark { .. } => return false,
+            }
+        }
+        false
+    };
     match head.ok().and_then(|head| domain.computation(head)) {
         Some(&DomainComp::Fixpoint { .. }) => return Apart::Held(Decline::Fixpoint),
-        Some(&DomainComp::Neutral { neutral, .. })
-            if domain
-                .neutral(neutral)
-                .is_some_and(|held| matches!(held.head(), NeutralHead::Primitive(_))) =>
+        Some(&DomainComp::Neutral { neutral, .. }) if native(neutral) => {
+            return Apart::Held(Decline::Native);
+        },
+        Some(&DomainComp::Return { value, .. }) if matches!(domain.value(value), Some(&DomainValue::Neutral { neutral, .. }) if native(neutral)) =>
         {
             return Apart::Held(Decline::Native);
         },
