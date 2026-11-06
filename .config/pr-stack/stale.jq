@@ -10,7 +10,7 @@
 #            event, head_branch, head_sha, status}`;
 #   heads    each moved branch's new head, `{"<branch>": "<sha>"}`;
 #   numbers  the cut pull requests' numbers, the red one and the moved ones;
-#   trunk    the default branch.
+#   trunk    the trunk of `trunk.bash`.
 # Output: the stale runs' ids, ascending.
 
 .heads as $heads

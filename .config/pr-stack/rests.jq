@@ -9,7 +9,7 @@
 #
 # Input: the open pull requests (`open_prs`), each `{number, head, base,
 # hold}`, held ones among them.
-# Arguments: `$n`, the pull request; `$trunk`, the default branch.
+# Arguments: `$n`, the pull request; `$trunk`, the trunk of `trunk.bash`.
 # Output: `{number, hold}` for the hold, or null when nothing at or below `$n`
 # is held, or `$n` is not open.
 

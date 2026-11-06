@@ -3,7 +3,9 @@
 # each one stands on, as `chain.jq` walks it down.
 #
 # Input: the open pull requests, each with `head` (its branch) and `base`.
-# Argument: `$trunk`, the default branch.
+# Argument: `$trunk`, the trunk of `trunk.bash`. A pull request on another
+# branch that no open pull request heads, as `landing` during its try, is at
+# depth 1.
 # Output: the same pull requests, each with `depth`. A walk stops at 64.
 
 . as $open

@@ -35,7 +35,8 @@
 # A local run is scoped to the jobs a change touches (#2541): the task
 # refuses, before anything starts, without a `-j <job>` among its arguments,
 # and when the committed branch changes nothing under `.github/` or
-# `.config/mise/tasks/` against its fork from `origin/main`. The owner runs
+# `.config/mise/tasks/` against its fork from the trunk, `origin/$trunk`
+# (`.config/pr-stack/trunk.bash`, #5443). The owner runs
 # `act` directly for anything else.
 ["ci:act"]
 description = "Run the committed CI workflow's named jobs locally, after a workflow or task change"
@@ -53,8 +54,9 @@ if [[ "$job" != true ]]; then
   echo 'ci:act: name the jobs the change touches with `-j <job>`; the whole workflow runs in hosted CI' >&2
   exit 2
 fi
-if [[ -z $(git diff --name-only origin/main...HEAD -- .github .config/mise/tasks) ]]; then
-  echo 'ci:act: the committed branch changes nothing under .github/ or .config/mise/tasks/ against origin/main; act runs only after a workflow or task change' >&2
+source .config/pr-stack/trunk.bash
+if [[ -z $(git diff --name-only "origin/$trunk...HEAD" -- .github .config/mise/tasks) ]]; then
+  echo "ci:act: the committed branch changes nothing under .github/ or .config/mise/tasks/ against origin/$trunk; act runs only after a workflow or task change" >&2
   exit 2
 fi
 remove_run() {
@@ -1601,6 +1603,28 @@ if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then printf '%s\n' "$line" >> "$GITHUB_STE
 description = "Rebase landing onto main, its merges kept, each new commit signed and each old one noted"
 run = ".config/landing/rebase.bash"
 
+# The cycle's known-red list (#5443, `ci:cycle`), read by a seat. The tests,
+# the sweeps and the specification obligations run only in the integration
+# cycle. A red that the list names is the fixer's, and it is not the seat's
+# own. Thus a seat reads the list before it takes a red test of its worktree
+# as its own. The task prints the list's issue and body, or says that the
+# cycle has written no list. GH_REPO names the repository when it is set.
+["ci:known-red"]
+description = "Print the integration cycle's known-red list, whose reds are the fixer's"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+repo=${GH_REPO:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}
+source .config/issues/keep.bash
+found=$(issue_found "$repo" "integration: the known-red list")
+if [[ $found == null ]]; then
+  echo "the integration cycle has written no known-red list yet"
+  exit 0
+fi
+jq -r '"the known-red list #\(.number) (\(.state | ascii_downcase)):\n\n\(.body)"' <<< "$found"
+'''
+
 # A worktree is removed when its branch lands, mechanically: nothing else
 # removed one but a seat remembering to, and a `pr:watch` that dies with its
 # shell never prints `pr-merged`, so landed worktrees and their build
@@ -1880,7 +1904,8 @@ run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+source .config/pr-stack/trunk.bash
+kept=$(printf '%s\n' "${kept_branches[@]}" | jq -R . | jq -cs .)
 remote=$(git ls-remote --heads origin | awk '{ sub("^refs/heads/", "", $2); print $2 }' | jq -R . | jq -cs .)
 local_branches='[]'
 if [[ ${usage_remote:-false} != true ]]; then
@@ -1892,11 +1917,15 @@ if [[ ${usage_remote:-false} != true ]]; then
     } | jq -cs 'group_by(.name) | map({name: .[0].name, worktree: (map(.worktree | values) | first)})'
   )
 fi
-heads=$(gh pr list -R "$repo" --state open --limit 1000 --json headRefName --jq '[.[].headRefName]')
-issues=$(gh issue list -R "$repo" --state open --limit 5000 --json title,body --jq '[.[] | "\(.title)\n\(.body)"]')
-reading=$(jq -n --arg trunk "$trunk" --argjson remote "$remote" --argjson local "$local_branches" \
-  --argjson heads "$heads" --argjson issues "$issues" \
-  '{trunk: $trunk, remote: $remote, local: $local, heads: $heads, issues: $issues}' \
+# The open issues' bodies hold more than the 131072 bytes that Linux allows
+# in one argument, so the pulls and the issues reach jq as files (#5220).
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+gh pr list -R "$repo" --state open --limit 1000 --json headRefName --jq '[.[].headRefName]' > "$scratch/heads"
+gh issue list -R "$repo" --state open --limit 5000 --json title,body --jq '[.[] | "\(.title)\n\(.body)"]' > "$scratch/issues"
+reading=$(jq -n --argjson kept "$kept" --argjson remote "$remote" --argjson local "$local_branches" \
+  --slurpfile heads "$scratch/heads" --slurpfile issues "$scratch/issues" \
+  '{kept: $kept, remote: $remote, local: $local, heads: $heads[0], issues: $issues[0]}' \
   | jq -c -f .config/pr-stack/branches.jq)
 list() {
   local title=$1 lines=$2
@@ -3628,7 +3657,7 @@ description = "Open the pull request on the server's top once its tree passes th
 usage = '''
 arg "<title>" help="the pull request title: a conventional header"
 arg "<body>" help="the body file; a defect's observation block is written in place"
-flag "--unblocks <number>" help="the open pull request this fix unblocks: open on main and queue on its own"
+flag "--unblocks <number>" help="the open pull request this fix unblocks: open on the trunk and queue on its own"
 flag "--hold <reason>" help="the owner holds it: open it as a draft labelled `hold:owner` (`pr:hold --owner`), unlinked"
 '''
 # `findings.jq` stops jq 1.8.2 at an assertion; the claim tasks pin 1.8.1.
@@ -3639,7 +3668,6 @@ run = '''
 set -euo pipefail
 body=$(realpath "${usage_body:?}")
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 own=$(git branch --show-current)
 [[ -n "$own" && "$own" != "$trunk" ]] || { echo "pr:open opens the checked-out branch; check out a unit branch, not $trunk" >&2; exit 2; }
@@ -3865,7 +3893,7 @@ if [[ -n "$hold" ]]; then
 fi
 if [[ -n "$unblocks" ]]; then
   gh pr merge "${url##*/}" -R "$repo" --merge --auto
-  echo "#${url##*/} opens on $trunk to unblock #$unblocks and queues on its own; once it merges, \`pr:land\` from the red stack restacks it onto main"
+  echo "#${url##*/} opens on $trunk to unblock #$unblocks and queues on its own; once it merges, \`pr:land\` from the red stack restacks it onto $trunk"
 fi
 # Two `pr:open`s that read the same top at once open on one base, and the
 # stack goes on from one of them only (`beside.jq`). The later one moves
@@ -3920,7 +3948,7 @@ fi
 # of several commits: it titles the pull request with the branch name.
 #
 # Every landing is a stack's (#1264), read from the server, the only record:
-# the pull request's base chain down to main and the open pull requests based
+# the pull request's base chain down to the trunk and the open pull requests based
 # on it up to the top (`chain.jq`). What lands is the largest prefix that is
 # ready (#1988, `land_prefix`, decided by `.config/pr-stack/prefix.jq`, its
 # cases held by `check:pr-stack`), in units (#2046): every member green on
@@ -3947,10 +3975,10 @@ fi
 # pull request heads: its queue merges nothing, so the stack lands past it
 # and names it (`carried.jq`, #4168).
 # Before any queueing, every open pull request on a branch the landing
-# deletes, outside it, is retargeted to main (`retarget_landing`, #1420); one
+# deletes, outside it, is retargeted to the trunk (`retarget_landing`, #1420); one
 # linked into the landing's stack is left alone (#1520). A bottom standing
 # off the trunk, on a base that merged or is gone, leaves the queue and its
-# server stack and is retargeted to main; one on an unmerged branch is
+# server stack and is retargeted to the trunk; one on an unmerged branch is
 # refused by name (`bottom.jq`, `retarget_bottom`, #4168).
 #
 # Nothing is restacked before the queue: a restack moves every head and
@@ -4052,7 +4080,7 @@ conflicts() {
     done <<< "$files"
     if [[ "$shared" == false ]]; then echo '  (none)'; fi
   done <<< "$ahead"
-  echo "rebase onto main once they merge, then run \`pr:land\` again"
+  echo "rebase onto $trunk once they merge, then run \`pr:land\` again"
 }
 
 # The landing is the stack's largest ready prefix (#1988, `land_prefix`), in
@@ -4062,7 +4090,6 @@ conflicts() {
 # until the caller's own pull request is queued. A stack that holds the
 # commits of a pull request queued on its own waits for that one to merge,
 # then reads the stack again.
-trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 trap 'release_landing; drop_scratch' EXIT
 trap 'exit 130' INT
@@ -4141,7 +4168,7 @@ while :; do
 done
 # A stack whose bottom is red while it sits behind main, with nothing of it
 # queued, may be red for what main has fixed since, as a fix opened with
-# `pr:open --unblocks` is: it is restacked onto main, its checks run again,
+# `pr:open --unblocks` is: it is restacked onto the trunk, its checks run again,
 # and `pr:watch` lands it once they are green. The rebase runs in a scratch
 # worktree; the checked-out branch, when the stack moved it, is taken back.
 IFS=$'\t' read -r verdict _upto stop <<< "$prefix_decision"
@@ -4351,7 +4378,6 @@ timeout=${usage_timeout:-10800}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected an issue or pull request number' >&2; exit 2; }
 [[ "$timeout" =~ ^[0-9]+$ ]] || { echo 'Expected --timeout in seconds' >&2; exit 2; }
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 deadline=$((SECONDS + timeout))
 # The lock's key: one wait a number on a host (#4268), so a second
@@ -4455,7 +4481,7 @@ done
 # (#2701, #2984): it lands it, or tells its seat.
 #
 # A dequeue or a conflict with no red check anywhere in the pull request's
-# server stack needs no hand (#1264): the stack is restacked onto main, what
+# server stack needs no hand (#1264): the stack is restacked onto the trunk, what
 # moved is printed on stderr, the landing trigger queues it again once its
 # checks are green, and the watch goes on, up to three times. A branch the
 # restack moved is moved on the server only; its seat's checkout reads it at
@@ -4537,7 +4563,6 @@ red_check() {
     return 0
   done < <(jq -r --argjson failed "$failed" 'sort_by(.startedAt // "") as $rollup | $failed[] as $name | ([$rollup[] | select((.name // .context) == $name)] | last) | "\($name)\t\(if .conclusion == "CANCELLED" then (.detailsUrl // "") else "" end)"' <<< "$rollup")
 }
-trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/pr-stack/stack.bash"
 # The seat's next claim once the pull request merges (#3736): the item
@@ -4577,7 +4602,7 @@ trap 'exit 143' TERM
 trap 'exit 129' HUP
 heals=0
 required=$(required_contexts)
-# Restack this pull request's server stack onto main, when no pull request in
+# Restack this pull request's server stack onto the trunk, when no pull request in
 # it has a red check; the landing trigger queues it again once its checks are
 # green. A member in the merge queue never moves (`heal.jq`, #3615): the
 # heal waits for it to merge, printing `pr-waits` once, and the watch polls
@@ -4816,7 +4841,7 @@ run = '''
 set -euo pipefail
 source .config/stall/stall.bash
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+source .config/pr-stack/trunk.bash
 reading=$(stall_reading "$repo" "$trunk" "$(stall_memory)") || { echo "stall:check: the reading failed" >&2; exit 2; }
 live=$(stall_liveness)
 if [[ -n "$live" ]]; then echo "$live"; fi
@@ -4991,7 +5016,6 @@ listen() {
   done
 }
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source .config/pr-stack/stack.bash
 required=$(required_contexts)
 trap 'drop_scratch' EXIT

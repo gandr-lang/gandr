@@ -5,7 +5,9 @@
 # one argument. No row of the table maps them, so the selection prints every
 # check.
 set -euo pipefail
-select="$(cd "${BASH_SOURCE[0]%/*}" && pwd)/select.bash"
+here="$(cd "${BASH_SOURCE[0]%/*}" && pwd)"
+select="$here/select.bash"
+source "$here/../pr-stack/trunk.bash"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 failed=0
@@ -18,8 +20,9 @@ fail() {
   failed=1
 }
 
-# A repository at `$1` whose `origin/main` is its base commit, with 4000
-# untracked paths under `wide/`.
+# A repository at `$1` whose `origin/$trunk`, the trunk of
+# `.config/pr-stack/trunk.bash`, is its base commit, with 4000 untracked
+# paths under `wide/`.
 setup() {
   git init --quiet -b main "$1"
   cd "$1"
@@ -28,7 +31,7 @@ setup() {
   git config commit.gpgsign false
   : > base
   git add base && git commit --quiet -m base
-  git update-ref refs/remotes/origin/main HEAD
+  git update-ref "refs/remotes/origin/$trunk" HEAD
   mkdir wide
   for i in $(seq 1 4000); do : > "wide/a-path-that-no-row-of-the-table-maps-$i"; done
 }

@@ -4,14 +4,16 @@
 # it. The listing deletes nothing.
 #
 # Input: an object with
-#   trunk    the default branch;
+#   kept     the branches that outlive every unit: the default branch, the
+#            landing branch, the integration cycle's branch and the badge's
+#            branch (`trunk.bash`);
 #   remote   the remote's branch names;
 #   local    this clone's branches, each `{name, worktree}`, `worktree` the
 #            path holding it or null;
 #   heads    the head branch of every open pull request;
 #   issues   the title and body of every open issue, each one string.
 #
-# A branch is accounted for when it is the trunk, the head of an open pull
+# A branch is accounted for when it is a kept branch, the head of an open pull
 # request, a merge-queue branch (`gh-readonly-queue/…`, GitHub's own), or a
 # `wip/` branch: those are listed apart, unaccounted for when no open issue
 # names `wip/<name>` whole.
@@ -23,10 +25,10 @@
 def wip: startswith("wip/");
 def named($issues): . as $name | any($issues[]; test("(^|[^A-Za-z0-9_./-])\($name | gsub("[.]"; "\\."))($|[^A-Za-z0-9_./-])"));
 
-.trunk as $trunk
+(.kept // []) as $kept
 | (.heads // []) as $heads
 | (.issues // []) as $issues
-| def stray: (. == $trunk or startswith("gh-readonly-queue/") or wip or IN($heads[])) | not;
+| def stray: (IN($kept[]) or startswith("gh-readonly-queue/") or wip or IN($heads[])) | not;
 {
   remote: [(.remote // [])[] | select(stray)] | sort,
   local: [(.local // [])[] | select(.name | stray)] | sort_by(.name),

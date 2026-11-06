@@ -8,7 +8,7 @@
 # merged or is gone, and refuses it by name otherwise.
 #
 # Input: the open pull requests (`open.jq`).
-# Arguments: `$n`, the stack's bottom; `$trunk`, the default branch.
+# Arguments: `$n`, the stack's bottom; `$trunk`, the trunk of `trunk.bash`.
 # Output: the bottom as `{number, base, landing, stack}` when it stands off
 # the trunk; null when its base is the trunk or an open pull request's head,
 # or when it is not open.

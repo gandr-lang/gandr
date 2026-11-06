@@ -29,6 +29,25 @@ case "$mode" in
   *) echo "unknown mode: $mode" >&2; exit 2 ;;
 esac
 
+# GitHub closes the issue that a closing keyword names only when the pull
+# request merges into the default branch. A unit lands on the trunk,
+# `landing` (#5443), so a merge into any other branch closes each such issue
+# here, as GitHub would. The run then reads the issue as closed.
+base=${CLAIMS_MERGED_BASE:-}
+if [[ $mode == merged && -n $base && $base != "${CLAIMS_DEFAULT_BRANCH:-main}" ]]; then
+  for number in $(jq -rn -L "$here" 'include "targets"; env.CLAIMS_MERGED_BODY // "" | targets(closing) | unique[]'); do
+    if [[ "$dry" == --dry-run ]]; then
+      printf 'would close #%s\n' "$number"
+      continue
+    fi
+    if [[ $(gh issue view "$number" -R "$repo" --json state --jq .state) == OPEN ]]; then
+      gh issue close "$number" -R "$repo" --reason completed \
+        --comment "The landing${CLAIMS_MERGED_NUMBER:+ #$CLAIMS_MERGED_NUMBER} on \`$base\` closes this issue." > /dev/null
+      printf 'closed #%s (the landing on %s)\n' "$number" "$base"
+    fi
+  done
+fi
+
 listed=$(gh api --paginate "repos/$repo/issues?state=all&labels=$label&per_page=100" \
   --jq '[.[] | select(.pull_request == null) | {number, state, labels: [.labels[].name], created_at, updated_at}]' | jq -s 'add // []')
 open_prs=$(gh api --paginate "repos/$repo/pulls?state=open&per_page=100" \

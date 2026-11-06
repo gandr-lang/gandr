@@ -4,9 +4,12 @@
 # local state. Rebase order is the invariant: each branch sits on the one
 # below it, and a restack moves the whole chain in one push.
 #
-# The caller sets `repo` (owner/name) and `trunk` (the default branch).
+# The caller sets `repo` (owner/name). `trunk` is the branch every lane lands
+# on (`trunk.bash`, #5443).
 
 pr_stack_dir="$(git rev-parse --show-toplevel)/.config/pr-stack"
+# shellcheck source=trunk.bash
+source "$pr_stack_dir/trunk.bash"
 # shellcheck source=../gh/budget.bash
 source "$pr_stack_dir/../gh/budget.bash"
 # shellcheck source=../mise/host-lock.bash

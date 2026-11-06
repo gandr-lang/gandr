@@ -28,7 +28,7 @@
 
 site = [
   # Claims: the claims.yml sweep (Actions) and the claim tasks (a host).
-  { file = ".config/claims/claims.sh", scope = "-", api = "graphql", identity = "actions", calls = 3, points = 5, measured = "rule", hour = 10, trigger = "claims.yml: each pull request closed, and every two hours; the repository, then a close and an edit of a collector" },
+  { file = ".config/claims/claims.sh", scope = "-", api = "graphql", identity = "actions", calls = 5, points = 6, measured = "rule", hour = 10, trigger = "claims.yml: each pull request closed, and every two hours; the repository, then a close and an edit of a collector, and the state and the close of each issue that a landing on the trunk finishes" },
   { file = ".config/claims/claims.sh", scope = "-", api = "rest", identity = "actions", calls = 8, points = 4, measured = "rest", hour = 10, trigger = "claims.yml: a merge's run reads the claimed list and the open pulls and no events, about 3 requests with its releases; the two-hourly sweep reads events only for the claims whose age decides them, 16 requests on 2026-11-04" },
   { file = ".config/claims/deps.bash", scope = "deps_blocked_by", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "issue:file and claim:next: one read before each block is set" },
   { file = ".config/claims/deps.bash", scope = "deps_blocking", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 8, trigger = "epic:deps and epics.sh's library use: one read an issue" },
@@ -80,9 +80,10 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-check.toml", scope = "report:gate-time", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 1, trigger = "gate:all on main's tree past its budget: the repository's name; a gate on main runs at most once an hour on a host" },
 
   # The ci tasks (Actions).
-  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "branches:sweep", api = "graphql", identity = "read", calls = 4, points = 11, measured = "cost", hour = 1, trigger = "branches:sweep by hand: the repository twice, the open pulls, the open issues in 8 pages" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "branches:sweep", api = "graphql", identity = "read", calls = 3, points = 10, measured = "cost", hour = 1, trigger = "branches:sweep by hand: the repository once, the open pulls, the open issues in 8 pages" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:coverage-badge", api = "rest", identity = "actions", calls = 7, points = 7, measured = "rest", hour = 1, trigger = "coverage.yml: once a day" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:delete-superseded", api = "rest", identity = "actions", calls = 2, points = 5, measured = "rest", hour = 8, trigger = "ci.yml's push to main: the caches list, then a delete each superseded" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:known-red", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 8, trigger = "ci:known-red by a seat before it takes a red test as its own: the repository; the list itself is keep.bash's issue_found" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:hotpath-base", api = "rest", identity = "actions", calls = 2, points = 2, measured = "rest", hour = 24, trigger = "each pull request's hotpath job" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:hotpath-judge", api = "rest", identity = "actions", calls = 2, points = 2, measured = "rest", hour = 24, trigger = "each pull request's hotpath job" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ci:hotpath-landed", api = "graphql", identity = "actions", calls = 6, points = 7, measured = "rule", hour = 8, trigger = "ci.yml's push to main: each landing's pull request, its rows and the ledger" },
@@ -111,22 +112,22 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "issue:labels", api = "rest", identity = "read", calls = 3, points = 3, measured = "rest", hour = 2, trigger = "issue:labels by hand" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "issue:labels", api = "rest", identity = "write", calls = 2, points = 2, measured = "rest", hour = 2, trigger = "issue:labels by hand" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "ledger:reserved", api = "graphql", identity = "read", calls = 1, points = 3, measured = "cost", hour = 16, trigger = "pr:open and pr:land: one issue view for each of about three rows" },
-  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:await", api = "graphql", identity = "read", calls = 2, points = 2, measured = "cost", hour = 8, trigger = "pr:await's start: the repository" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:await", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 8, trigger = "pr:await's start: the repository" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:await/reading", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 240, trigger = "pr:await polls each 30 s, about two seats at once: an issue's sign-off by REST; an open pull request from pulls_reading at no read of its own" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:hold", api = "graphql", identity = "read", calls = 2, points = 2, measured = "cost", hour = 1, trigger = "pr:hold by the owner" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:hold", api = "graphql", identity = "write", calls = 6, points = 6, measured = "rule", hour = 1, trigger = "pr:hold by the owner: about three of its writes a run" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:hold", api = "rest", identity = "write", calls = 1, points = 1, measured = "rest", hour = 1, trigger = "pr:hold by the owner: the label, once" },
-  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:land", api = "graphql", identity = "read", calls = 7, points = 5, measured = "cost", hour = 8, trigger = "pr:land once a landing: the repository, the pull request's fields and its checks" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:land", api = "graphql", identity = "read", calls = 6, points = 4, measured = "cost", hour = 8, trigger = "pr:land once a landing: the repository, the pull request's fields and its checks" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:land", api = "rest", identity = "read", calls = 5, points = 5, measured = "rest", hour = 8, trigger = "pr:land: the failed runs' logs" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:land/conflicts", api = "graphql", identity = "read", calls = 3, points = 3, measured = "cost", hour = 1, trigger = "pr:land, on an unmergeable queue entry" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:land/group_runs", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 16, trigger = "pr:land, once merged or dequeued" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:land/job_times", api = "rest", identity = "read", calls = 1, points = 3, measured = "rest", hour = 8, trigger = "pr:land: each merge-group run's jobs, about three" },
-  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:open", api = "graphql", identity = "read", calls = 4, points = 4, measured = "cost", hour = 8, trigger = "pr:open once a seat an hour: the repository and the pull request" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:open", api = "graphql", identity = "read", calls = 3, points = 3, measured = "cost", hour = 8, trigger = "pr:open once a seat an hour: the repository and the pull request" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:open", api = "graphql", identity = "write", calls = 3, points = 5, measured = "rule", hour = 8, trigger = "pr:open: the pull request created, then auto-merge; the base moved only when two opened at once on one base" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:open", api = "rest", identity = "read", calls = 2, points = 4, measured = "rest", hour = 8, trigger = "pr:open: each issue the body works and each issue a ceiling cites" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:release", api = "graphql", identity = "read", calls = 2, points = 2, measured = "cost", hour = 1, trigger = "pr:release by the owner" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:release", api = "graphql", identity = "write", calls = 2, points = 4, measured = "rule", hour = 1, trigger = "pr:release by the owner" },
-  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:watch", api = "graphql", identity = "read", calls = 2, points = 2, measured = "cost", hour = 8, trigger = "pr:watch's start: the repository" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:watch", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 8, trigger = "pr:watch's start: the repository" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:watch", api = "graphql", identity = "write", calls = 1, points = 2, measured = "rule", hour = 8, trigger = "pr:watch: the label, once" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:watch/next_claim", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 8, trigger = "pr:watch, once landed" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "pr:watch/red_check", api = "rest", identity = "read", calls = 2, points = 2, measured = "rest", hour = 8, trigger = "pr:watch, on a red check" },
@@ -147,8 +148,8 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:obligations/render", api = "graphql", identity = "actions", calls = 1, points = 9, measured = "cost", hour = 1, trigger = "nightly.yml: a day's merged pulls, 3 pages at 3 points" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:prose", api = "graphql", identity = "actions", calls = 1, points = 3, measured = "rule", hour = 1, trigger = "nightly.yml: once a day, the report's issue created on its first finding; the repository and labels looked up, then the issue created" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "report:prose", api = "rest", identity = "actions", calls = 2, points = 2, measured = "rest", hour = 1, trigger = "nightly.yml: once a day" },
-  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "stall:check", api = "graphql", identity = "read", calls = 2, points = 2, measured = "cost", hour = 4, trigger = "stall:check by the coordinator" },
-  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "stall:watch", api = "graphql", identity = "read", calls = 2, points = 2, measured = "cost", hour = 1, trigger = "stall:watch's start" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "stall:check", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 4, trigger = "stall:check by the coordinator" },
+  { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "stall:watch", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 1, trigger = "stall:watch's start" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "stall:watch", api = "graphql", identity = "write", calls = 2, points = 4, measured = "rule", hour = 4, trigger = "stall:watch: a comment and an edit on a stalled pull request" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "stall:watch/release", api = "rest", identity = "read", calls = 1, points = 1, measured = "rest", hour = 4, trigger = "stall:watch: a stale claim" },
   { file = ".config/mise/tasks/mise-tasks-ci.toml", scope = "stall:watch/release", api = "rest", identity = "write", calls = 2, points = 2, measured = "rest", hour = 4, trigger = "stall:watch: a stale claim's labels" },
@@ -163,12 +164,12 @@ site = [
   { file = ".config/mise/tasks/mise-tasks-toolchain.toml", scope = "toolchain:bump/clippy_channel_at", api = "rest", identity = "actions", calls = 1, points = 10, measured = "rest", hour = 1, trigger = "toolchain:bump: one read for each clippy commit it walks, about ten" },
 
   # The landing watcher (Actions).
-  { file = ".config/pr-stack/landing.bash", scope = "-", api = "graphql", identity = "actions", calls = 2, points = 2, measured = "cost", hour = 45, trigger = "landing.yml: each CI run completed, each dequeue" },
+  { file = ".config/pr-stack/landing.bash", scope = "-", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 45, trigger = "landing.yml: each CI run completed, each dequeue" },
   { file = ".config/pr-stack/landing.bash", scope = "-", api = "rest", identity = "actions", calls = 4, points = 2, measured = "rest", hour = 45, trigger = "landing.yml: two rate_limit reads, free, and for each pull request the depth gate stopped that a landing moved to depth 3, its run read and rerun once" },
   { file = ".config/pr-stack/landing.bash", scope = "read_prs", api = "graphql", identity = "actions", calls = 1, points = 1, measured = "cost", hour = 45, trigger = "landing.yml: the open pulls, one page of 20 at 1 point (rateLimit, 2026-11-04)" },
   { file = ".config/pr-stack/landing.bash", scope = "tell", api = "graphql", identity = "actions", calls = 1, points = 2, measured = "rule", hour = 4, trigger = "landing.yml: a comment on a restacked pull request" },
   { file = ".config/pr-stack/landing.bash", scope = "depth_gate", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 8, trigger = "ci.yml's depth gate: a pull request above depth 3 cancels its own run" },
-  { file = ".config/pr-stack/queued-push.bash", scope = "-", api = "graphql", identity = "read", calls = 2, points = 2, measured = "cost", hour = 16, trigger = "the pre-push hook, each push" },
+  { file = ".config/pr-stack/queued-push.bash", scope = "-", api = "graphql", identity = "read", calls = 1, points = 1, measured = "cost", hour = 16, trigger = "the pre-push hook, each push" },
 
   # The stack library, sourced by the pr tasks on a host.
   { file = ".config/pr-stack/stack.bash", scope = "cancel_stale", api = "rest", identity = "read", calls = 1, points = 2, measured = "rest", hour = 2, trigger = "stall:watch: a cut lists the queued and the running runs" },

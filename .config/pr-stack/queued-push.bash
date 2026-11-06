@@ -12,9 +12,8 @@ branch=${PRE_COMMIT_REMOTE_BRANCH:-}
 branch=${branch#refs/heads/}
 [[ -n "$branch" ]] || exit 0
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
-[[ "$branch" != "$trunk" ]] || exit 0
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
+[[ "$branch" != "$trunk" ]] || exit 0
 blocking=$(open_prs | jq -c --arg branch "$branch" -f "$pr_stack_dir/queued.jq")
 [[ "$blocking" != "[]" ]] || exit 0
 state=$(jq -r 'map("#\(.number) \(if .state == "queued" then "in the merge queue" else "held for it (the `landing` label)" end)") | join(", ")' <<< "$blocking")
