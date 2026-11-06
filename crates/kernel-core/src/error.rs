@@ -551,6 +551,14 @@ pub enum KernelError
     },
     /// A constructor supplies the wrong number of fields.
     ConstructorArity,
+    /// A constructor names one family, and its classifier names another.
+    ConstructorFamily
+    {
+        /// The family the constructor names.
+        family: gandr_kernel_term::ConstantIndex,
+        /// The family its classifier names.
+        declaration: gandr_kernel_term::ConstantIndex,
+    },
     /// A constructor of an indexed family is classified at another index than
     /// the one it states.
     ConstructorIndex
@@ -947,6 +955,9 @@ impl core::fmt::Display for KernelError
                 f.write_str("a constructor tag was absent from its declaration")
             },
             Self::ConstructorArity => f.write_str("a constructor had the wrong field arity"),
+            Self::ConstructorFamily { .. } => {
+                f.write_str("a constructor named another family than its classifier")
+            },
             Self::ConstructorIndex { .. } => {
                 f.write_str("a constructor was classified at another index than it states")
             },
@@ -1339,6 +1350,10 @@ mod tests
             KernelError::CodataOccurrence,
             KernelError::UnknownConstructor { tag },
             KernelError::ConstructorArity,
+            KernelError::ConstructorFamily {
+                family: index,
+                declaration: index,
+            },
             KernelError::ConstructorIndex { tag },
             KernelError::IndexedSignature,
             KernelError::NonExhaustiveDataCase,

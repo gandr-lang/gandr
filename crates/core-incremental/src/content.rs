@@ -90,7 +90,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x11`; programs use `GPROG\0\0\x0a`. Their
+//! Checkpoint sets use `GCKPT\0\0\x12`; programs use `GPROG\0\0\x0b`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -435,9 +435,11 @@ pub enum ContentNode
     },
     /// A structural record classifier, ordered by field label.
     RecordType(BTreeMap<gandr_core_term::FieldLabel, NodeIndex>),
-    /// A constructor at its complete nominal classifier.
+    /// A constructor at its classifier, preserving its family's identity.
     Constructor
     {
+        /// The stable item reference of the constructor's family.
+        family: Reference,
         /// The classifier of the constructed value.
         datatype: NodeIndex,
         /// The constructor's ordinal in its declaration.
@@ -4702,8 +4704,12 @@ fn value_content(
     let found = &mut found.slots();
     Ok(match *value {
         Value::Constructor {
-            tag, ref fields, ..
+            family,
+            tag,
+            ref fields,
+            ..
         } => ContentNode::Constructor {
+            family: layout.resolve(family),
             datatype: found.value_type()?,
             tag,
             fields: found.take(Sort::Value, fields)?,
@@ -5288,10 +5294,12 @@ where
                 .collect(),
         ),
         ContentNode::Constructor {
+            ref family,
             datatype,
             tag,
             ref fields,
         } => ContentNode::Constructor {
+            family: family.clone(),
             datatype: image(datatype),
             tag,
             fields: fields.iter().map(|&field| image(field)).collect(),

@@ -136,6 +136,7 @@ fn every_node_former_round_trips_under_its_own_frame()
         },
         ContentNode::RecordType(fields.clone()),
         ContentNode::Constructor {
+            family: reference.clone(),
             datatype: a,
             tag: gandr_core_term::ConstructorTag::from(1_usize),
             fields: vec![b, c],
@@ -1746,7 +1747,7 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
 {
     let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
     let expected = [
-        b'G', b'C', b'K', b'P', b'T', 0, 0, 17, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        b'G', b'C', b'K', b'P', b'T', 0, 0, 18, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     assert_eq!(
         encode_checkpoints(&checkpoints)
@@ -1756,14 +1757,14 @@ fn empty_envelopes_preserve_budget_and_separate_formats()
     );
     assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
     let mut wrong_version = expected;
-    *wrong_version.get_mut(7).expect("version byte") = 16;
+    *wrong_version.get_mut(7).expect("version byte") = 17;
     assert_eq!(
         decode_checkpoints(Bytes(&wrong_version)),
         Err(CodecError::Corrupt)
     );
     let mut program = CheckpointBytes::default();
     write_program::<_, crate::content::ItemContent>(&mut program, &[]).expect("empty program");
-    assert_eq!(program.as_ref(), b"GPROG\0\0\x0a\0\0\0\0\0\0\0\0");
+    assert_eq!(program.as_ref(), b"GPROG\0\0\x0b\0\0\0\0\0\0\0\0");
     assert_eq!(
         decode_checkpoints(Bytes(program.as_ref())),
         Err(CodecError::Corrupt)

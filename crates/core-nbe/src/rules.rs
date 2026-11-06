@@ -2528,25 +2528,32 @@ fn plan_values(
     let planned = match (one, other) {
         (
             DomainValue::Constructor {
+                family: left_family,
                 datatype: left_source,
                 tag: left_tag,
                 fields: left_fields,
                 ..
             },
             DomainValue::Constructor {
+                family: right_family,
                 datatype: right_source,
                 tag: right_tag,
                 fields: right_fields,
                 ..
             },
         ) => {
+            // Constructors of two families are apart before their
+            // classifiers are read.
+            if left_family != right_family || left_tag != right_tag {
+                return Ok(Plan::Leaf(Settled::NotConvertible));
+            }
             let left_fields = domain
                 .fields(left_fields)
                 .map_err(ConversionFault::Domain)?;
             let right_fields = domain
                 .fields(right_fields)
                 .map_err(ConversionFault::Domain)?;
-            if left_tag != right_tag || left_fields.len() != right_fields.len() {
+            if left_fields.len() != right_fields.len() {
                 return Ok(Plan::Leaf(Settled::NotConvertible));
             }
             let mut subgoals = Vec::with_capacity(left_fields.len().saturating_add(1_usize));

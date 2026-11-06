@@ -703,6 +703,35 @@ fn two_flows_of_different_formers_are_apart_over_the_same_parts()
     );
 }
 
+/// Two constructors of one tag over the same parts and one classifier are
+/// apart when they name two families: the tag counts within each family, so
+/// they are two constructors (#5400).
+#[test]
+fn two_constructors_of_different_families_are_apart_at_one_classifier()
+{
+    let mut core = CoreArena::new();
+    let mut domain = DomainArena::new();
+    let thunk = shared_thunk(&mut core, &mut domain);
+    let unit_type = core.value_type_unit();
+    let datatype = domain.value_closure_node(ValueBody::ValueType(unit_type), Environment::new());
+    let mut constructor = |family: usize| {
+        let fields = domain.hold_fields([thunk]);
+        domain.value_constructor(
+            gandr_kernel_term::ConstantIndex::from(family),
+            datatype,
+            ConstructorTag::from(0_usize),
+            fields,
+            TermFace::Reduced,
+        )
+    };
+    let own = constructor(0);
+    let namesake = constructor(1);
+    assert_eq!(
+        Ok(Settlement::StructurallyApart),
+        convert_values(&core, &domain, own, namesake)
+    );
+}
+
 #[test]
 fn a_record_with_more_labels_than_fields_is_refused_on_either_side()
 {

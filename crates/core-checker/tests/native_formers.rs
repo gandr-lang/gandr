@@ -4267,3 +4267,64 @@ fn a_constructor_at_a_computed_type_checks_at_its_family_3570()
         crossed.readmitted()[2].outcome()
     );
 }
+
+/// A constructor of one family at the classifier of another family of one
+/// shape is refused: its tag counts within its own family. The refusal finds
+/// the constructor's own family against the classifier, whether the source
+/// writes the classifier or a definition computes it (#5400).
+#[test]
+fn a_constructor_of_another_family_is_refused_at_its_classifier_5400()
+{
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let celsius = ConstantIndex::from(0_usize);
+    let fahrenheit = ConstantIndex::from(1_usize);
+    let fahrenheit_type = arena.value_type_data(fahrenheit, vec![]);
+    let code = arena.value_quote(fahrenheit_type);
+    let named = arena.value_constant(ConstantIndex::from(2_usize));
+    let computed = arena.value_type_element(named, Level::zero());
+    let written = arena.value_constructor(
+        celsius,
+        fahrenheit_type,
+        ConstructorTag::from(0_usize),
+        vec![unit],
+    );
+    let unfolded =
+        arena.value_constructor(celsius, computed, ConstructorTag::from(0_usize), vec![unit]);
+    let shape = || DataSignature::new(vec![], vec![vec![unit_type]], kind).into();
+    let (report, _) = run(&mut arena, &[
+        Declaration::data(celsius, shape(), OriginToken::from(0_usize)),
+        Declaration::data(fahrenheit, shape(), OriginToken::from(1_usize)),
+        definition(ConstantIndex::from(2_usize), kind, code),
+        definition(ConstantIndex::from(3_usize), fahrenheit_type, written),
+        definition(ConstantIndex::from(4_usize), computed, unfolded),
+    ]);
+    for (position, at, expected) in [(3_usize, written, fahrenheit_type), (4, unfolded, computed)] {
+        let Verdict::Refused(CheckRefusal::TypeMismatch(Mismatch::Value {
+            at: refused,
+            synthesised,
+            expected: wanted,
+        })) = report.judged()[position].verdict()
+        else {
+            panic!(
+                "a constructor of another family is refused as a mismatch: {:?}",
+                report.judged()[position].verdict()
+            );
+        };
+        assert_eq!(
+            (refused, wanted),
+            (at, expected),
+            "at the classifier it names"
+        );
+        assert_eq!(
+            arena.value_type(synthesised),
+            Some(&ValueType::Data {
+                declaration: celsius,
+                arguments: vec![],
+            }),
+            "the found type is the constructor's own family"
+        );
+    }
+}

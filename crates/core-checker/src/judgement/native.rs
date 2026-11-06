@@ -32,6 +32,7 @@ use gandr_core_term::instantiate_comp_type;
 use gandr_core_term::shift_comp_type_under;
 use gandr_kernel_term::Apartness;
 use gandr_kernel_term::Component;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::StagedPosition;
 use quenchant_shape::shape::Maybe;
@@ -63,12 +64,14 @@ impl Machine<'_, '_>
     /// - ensures: the annotation forms before the declaration-ordered field
     ///   checks; their success synthesizes that same nominal annotation. The
     ///   fields and the stated indices read the annotation at its weak head, so
-    ///   an annotation a definition computes reads as its family. An annotation
-    ///   whose indices compute the stated ones records the constructor restated
-    ///   ([`Self::stands_at`]).
-    /// - fails: wrong nominal shape at the weak head, unknown tag, or wrong
-    ///   field arity; an annotation at indices that neither agree with nor
-    ///   convert with the ones the constructor states ([`Self::stands_at`]).
+    ///   an annotation a definition computes reads as its family. The family
+    ///   the constructor names is the family at that weak head
+    ///   ([`Self::of_its_family`]). An annotation whose indices compute the
+    ///   stated ones records the constructor restated ([`Self::stands_at`]).
+    /// - fails: wrong nominal shape at the weak head, a constructor of another
+    ///   family than the weak head names, unknown tag, or wrong field arity; an
+    ///   annotation at indices that neither agree with nor convert with the
+    ///   ones the constructor states ([`Self::stands_at`]).
     /// - panics: none.
     ///
     /// # Errors
@@ -82,6 +85,7 @@ impl Machine<'_, '_>
     /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
     /// - witness: `tests::native_formers::a_constructor_at_a_computed_type_checks_at_its_family_3570`
     /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
+    /// - witness: `tests::native_formers::a_constructor_of_another_family_is_refused_at_its_classifier_5400`
     /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn native_constructor(
@@ -89,13 +93,14 @@ impl Machine<'_, '_>
         term: ValueId,
     ) -> Result<Step, CheckRefusal>
     {
-        let (datatype, tag, count) = match self.value(term)? {
+        let (family, datatype, tag, count) = match self.value(term)? {
             &Value::Constructor {
+                family,
                 ref datatype,
                 ref tag,
                 ref fields,
                 ..
-            } => (*datatype, *tag, fields.len()),
+            } => (family, *datatype, *tag, fields.len()),
             &Value::Primitive { .. }
             | &Value::PathRefl(_)
             | &Value::PathProduct(..)
@@ -154,6 +159,7 @@ impl Machine<'_, '_>
                 unfolded: TypeNode::Value(head),
             });
         }
+        self.of_its_family(term, family, head, datatype)?;
         let signature = former::signature(self.context, head)?;
         let declared = signature
             .constructors()
@@ -277,10 +283,10 @@ impl Machine<'_, '_>
     ) -> Result<Step, CheckRefusal>
     {
         let &Value::Constructor {
+            family,
             datatype,
             tag,
             ref fields,
-            ..
         } = self.value(term)?
         else {
             return Err(CheckRefusal::MachineInvariant);
@@ -298,6 +304,7 @@ impl Machine<'_, '_>
             ));
         }
         let signature = former::signature(self.context, datatype)?;
+        self.of_its_family(term, family, datatype, datatype)?;
         let declared = signature
             .constructors()
             .get(usize::from(tag))
@@ -447,6 +454,66 @@ impl Machine<'_, '_>
             }));
         }
         Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// Refuse a constructor whose family is not the family its classifier
+    /// names: its tag counts within its own family, never within another
+    /// family of one shape.
+    ///
+    /// # Specification
+    /// - requires: `term` is a constructor value that names `family`; `head` is
+    ///   its annotation `written` or that annotation's weak head.
+    /// - ensures: success exactly when `head` is a data type that names
+    ///   `family`.
+    /// - fails: [`CheckRefusal::TypeMismatch`] with `written` as expected and,
+    ///   as found, `family` over the arguments of `head`, or over none when the
+    ///   family takes another count of arguments;
+    ///   [`CheckRefusal::MachineInvariant`] when `head` is no data type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor of one family at a classifier of
+    ///   another family of one shape is refused, at the classifier as written
+    ///   and at a classifier a definition computes.
+    /// - witness: `tests::native_formers::a_constructor_of_another_family_is_refused_at_its_classifier_5400`
+    #[spec(ensures: |ret| ret.is_ok() == matches!(self.context.arena().value_type(head), Some(&ValueType::Data { declaration, .. }) if declaration == family))]
+    fn of_its_family(
+        &mut self,
+        term: ValueId,
+        family: ConstantIndex,
+        head: ValueTypeId,
+        written: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(&ValueType::Data {
+            declaration,
+            ref arguments,
+        }) = self.context.arena().value_type(head)
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        if declaration == family {
+            return Ok(());
+        }
+        // The found type is the constructor's own family, over the
+        // classifier's arguments when the family takes as many.
+        let arguments = match self.context.data_in_scope(family) {
+            Maybe::Present(signature) if signature.arity().0 == arguments.len() => {
+                arguments.clone()
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Vec::new(),
+        };
+        let found = self.context.arena_mut().value_type_data(family, arguments);
+        Err(CheckRefusal::TypeMismatch(
+            crate::refusal::Mismatch::Value {
+                at: term,
+                synthesised: found,
+                expected: written,
+            },
+        ))
     }
 
     /// Decide each field of the constructor `term` that a type reads as a

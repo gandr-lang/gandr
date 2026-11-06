@@ -221,6 +221,27 @@ fn a_signature_decoding_a_changed_code_is_judged_again_2102()
     );
 }
 
+/// The namesake twin of #5400: two families of one shape, and a definition
+/// that builds `Fah 20` at `Fahrenheit` in one revision and `Cel 20` at
+/// `Fahrenheit` in the next. The two constructors differ only in their
+/// family. The gate requires the fresh checker's verdict in each direction:
+/// the refusal of the namesake and the acceptance of the genuine constructor.
+#[test]
+fn a_constructor_of_another_family_is_judged_again_5400()
+{
+    let families = "data Celsius : Type where\n  | Cel : (x : Integer) --> Celsius\n\ndata \
+                    Fahrenheit : Type where\n  | Fah : (x : Integer) --> Fahrenheit\n\n";
+    let genuine = format!("{families}def v = (Fah 20 : Fahrenheit);\n");
+    let namesake = format!("{families}def v = (Cel 20 : Fahrenheit);\n");
+    for (base, edited) in [(&genuine, &namesake), (&namesake, &genuine)] {
+        assert_eq!(
+            gate(base.as_str(), edited.as_str()),
+            vec![Adoption::Adopted, Adoption::Adopted, Adoption::Judged],
+            "the definition whose constructor changes its family is judged, not adopted"
+        );
+    }
+}
+
 #[test]
 fn deletion_matches_from_scratch()
 {
