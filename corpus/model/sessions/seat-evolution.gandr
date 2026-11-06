@@ -1,8 +1,13 @@
-//! A seat's protocol evolved: session subtyping as a flow and equi-recursive
-//! unfolding as a path [Gay-2005-subtyping_session_types_pi_calculus]. A
-//! protocol that adds a choice the seat may take is a supertype, so a recorded
-//! run of the old protocol rides forward to the new one; a run that takes the
-//! new choice is no run of the old.
+//! This source evolves a seat protocol.
+//!
+//! Session subtyping gives a flow.
+//! Equi-recursive unfolding gives a path.
+//! A protocol with an added seat choice is a supertype.
+//! An old run rides forward to the new protocol.
+//! The old protocol rejects a run that takes the new choice.
+//!
+//! The checker verifies the flow and the path.
+//! The checker refuses an unadmitted old run.
 //!
 //! - cites: [Gay-2005-subtyping_session_types_pi_calculus]
 //!
@@ -14,8 +19,8 @@ import std.session (Run);
 // The seat's protocol and its messages.
 import "./seat-base.gandr";
 
-/// The seat's protocol, the protocol with a pause added, and the protocol
-/// unrolled once, related by simulation and bisimulation.
+/// `Evolution` defines the original protocol and its paused form.
+/// It provides an unrolling and certificates that relate these forms.
 pub module Evolution where {
   type Dispatch = Seat.Dispatch;
   type Report = Seat.Report;

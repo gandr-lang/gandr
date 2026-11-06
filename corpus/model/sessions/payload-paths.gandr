@@ -1,9 +1,13 @@
-//! Two protocols that differ only in how their messages are encoded are one
-//! type, once each pair of payload types that differ is paid with a path:
-//! bisimilarity up to an equivalence of the payloads, the paths the session
-//! certificate carries to the kernel. Gay and Hole
-//! [Gay-2005-subtyping_session_types_pi_calculus] relate payloads by type
-//! equality; the path generalises the equality to an equivalence.
+//! This source proves protocol equivalence with payload paths.
+//!
+//! Two protocols can encode messages differently.
+//! Each unequal payload pair needs a path.
+//! The session certificate carries each path to the kernel.
+//! Bisimilarity follows the payload equivalence.
+//! Gay and Hole relate payloads by type equality.
+//!
+//! A path generalises equality to an equivalence.
+//! `Path.bisim` checks one path for each unequal payload pair.
 //!
 //! - cites: [Gay-2005-subtyping_session_types_pi_calculus]
 //!
@@ -26,23 +30,23 @@ def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) =
 /// The two nestings are one type, the two maps inverse by computation.
 def nestings : Path[.A = Type](Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv toLeft toRight;
 
-/// A judge that hears a verdict and acknowledges it, written over either
-/// nesting, and a judge that hears two verdicts.
+/// `Judge` defines protocols with one or two verdicts.
+/// It writes each protocol with either verdict nesting.
 module Judge where
   type Right = ?(Unit + (Unit + Unit)). !Unit. end;
   type Left = ?((Unit + Unit) + Unit). !Unit. end;
   type RightTwice = ?(Unit + (Unit + Unit)). ?(Unit + (Unit + Unit)). end;
   type LeftTwice = ?((Unit + Unit) + Unit). ?((Unit + Unit) + Unit). end;
 
-/// The two judges are one protocol along the path between the nestings: the
-/// acknowledgements' payloads convert, so only the verdict's pair is owed.
+/// `renested` proves that the `Judge` protocols have one type.
+/// `nestings` converts their verdict payloads.
 def renested : Path[.A = Type](
   Judge.Right,
   Judge.Left
 ) = Path.bisim Judge.Right Judge.Left nestings;
 
-/// Each verdict a judge hears is its own payload pair, so hearing two owes
-/// two paths, in the order the protocol hears them.
+/// `renestedTwice` proves equivalence for two verdict payload pairs.
+/// It uses the two paths in protocol order.
 def renestedTwice : Path[.A = Type](
   Judge.RightTwice,
   Judge.LeftTwice

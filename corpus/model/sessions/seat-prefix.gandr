@@ -1,10 +1,14 @@
-//! The prefixes of a seat's protocol: the record of the moves a seat has made
-//! so far, admitted while its run is still open, as a monitor checks a session
-//! one message at a time
-//! [Bocchi-2017-monitoring_networks_through_multiparty_session_types].
-//! `Prefix(S)` holds every record the protocol accepts so far, complete or not;
-//! `Run(S)` holds only the complete ones (`./seat-evolution.gandr`).
+//! This source records prefixes of a seat protocol.
 //!
+//! A prefix records each completed seat move.
+//! A prefix remains valid while its run stays open.
+//! A monitor checks one session message at a time.
+//! `Prefix(S)` holds each accepted record.
+//! `Run(S)` holds only complete records.
+//!
+//! The checker admits each record that the protocol accepts.
+//!
+//! - see: `./seat-evolution.gandr` — complete seat runs
 //! - see: #1861 — `reporting`
 //! - cites: [Bocchi-2017-monitoring_networks_through_multiparty_session_types]
 //!
@@ -19,8 +23,8 @@ import "./seat-base.gandr";
 /// The seat before its first move: the empty record is a prefix.
 def unstarted : Prefix(Seat.SeatEnd) = recorded ();
 
-/// A seat that took its task and reported, its next move the offer to go on
-/// or retire: open, so a prefix.
+/// `reporting` records a seat that received its task and reported.
+/// Its next move offers continuation or retirement.
 pub def reporting : Prefix(Seat.SeatEnd) = recorded
   (received Seat.task)
   (selected report)

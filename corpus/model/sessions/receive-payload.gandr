@@ -1,8 +1,14 @@
-// A receive's payload written in parentheses reads as the payload whatever
-// type it holds, as a send's does, a sum among them. The receive and
-// the unknown type share the tile `?`, and the parenthesis after it settles
-// the receive: the unknown type is a whole type, and no type form goes on
-// with `(` after one.
+// This source parses a parenthesised payload after a receive.
+//
+// A receive reads the parenthesised type as its payload.
+// A send uses the same payload rule.
+// A sum can serve as a payload.
+// `?` marks both a receive and an unknown type.
+// Parentheses after `?` select a receive.
+//
+// An unknown type is complete.
+// No type form follows `(` after an unknown type.
+// The parser uses parentheses to select the receive form.
 //
 // - see: #1229
 

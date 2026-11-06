@@ -1,6 +1,10 @@
-// A module's type written where an expression stands, `Seat.SeatEnd`, is the
-// code of the type it names, as its unqualified alias is: it reads as an
-// argument before a comma as after one.
+// This source passes a module type as an expression argument.
+//
+// `Seat.SeatEnd` names a type code.
+// Its unqualified alias names the same type code.
+// The argument can occur before or after a comma.
+//
+// The lowering reads both names before it places the argument.
 //
 // - see: #1126
 
