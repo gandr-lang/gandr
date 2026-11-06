@@ -14,9 +14,8 @@
 // The host encloses each builtin by its rule at a precision that doubles, and
 // the checker replays each step before the host replies. `gandr run
 // trigonometry.gandr` prints `holds` four times on one line. It then prints
-// the two ends of an enclosure of `β₁` no wider than `2^-16`, near
-// `0.4305285`. The same `decided` and `enclosed` run under a handler of this
-// source, a second model of the interface.
+// the two ends of an enclosure of `β₁` no wider than `2^-16`, near `0.4305285`.
+// A handler below gives a second model of the interface.
 //
 // - see: `crates/theory-exact-reals/src/elementary.rs` — the enclosure rules
 //   of the builtins
@@ -50,22 +49,22 @@ pub def sineBelow : String = "47585250010008000000000000000204000000020000000000
 pub def betaOne : String = "4758525001001500000000000000020000000001000000000000000102ffffffff0100000000000000010500000000010000000a020000000300000000010000000504000000010000000a050000000503000000060000000b020000000405000000010000000a0900000005080000000a0000000c070000000b0000000b0500000005030000000d000000020000000000000000000000000b09000000050800000010000000040f000000110000000c0e00000012000000030c00000013000000";
 
 /// The verdict on the open root of `plan` after at most `quanta` quanta.
-pub def decided(plan : String, quanta : Integer) -> [std.reals.Eff] String =
+pub def trigonometryDecided(plan : String, quanta : Integer) -> [std.reals.Eff] String =
   let held = std.reals.admit plan
   let *{verdict, machine} = std.reals.decide held quanta
   verdict
 
 /// The verdicts on the four bounds, a space between each two.
 pub def bounds() -> [std.reals.Eff] String =
-  let first = decided cosineAbove 16
-  let second = decided cosineBelow 16
-  let third = decided sineAbove 16
-  let fourth = decided sineBelow 16
+  let first = trigonometryDecided cosineAbove 16
+  let second = trigonometryDecided cosineBelow 16
+  let third = trigonometryDecided sineAbove 16
+  let fourth = trigonometryDecided sineBelow 16
   concat first (concat " " (concat second (concat " " (concat third (concat " " fourth)))))
 
 /// The ends of an enclosure of the root of `plan` no wider than `2^-k`, the
 /// lower end first and a space between them.
-pub def enclosed(plan : String, k : Integer) -> [std.reals.Eff] String =
+pub def trigonometryEnclosed(plan : String, k : Integer) -> [std.reals.Eff] String =
   let held = std.reals.admit plan
   let *{lower, upper} = std.reals.enclose held k
   concat lower (concat " " upper)
@@ -87,12 +86,12 @@ def boundsModelled() -> String =
     | oper report(machine, k) => k #[15, 2, 8]
   }
 
-/// `enclosed` under a handler of this source, a second model of
+/// `trigonometryEnclosed` under a handler of this source, a second model of
 /// `std.reals.Eff` that answers each enclosure with `0` and `1/2`.
 @[ runs("\"0p0 1p-1\"") ]
-def enclosedModelled() -> String =
+def trigonometryEnclosedModelled() -> String =
   handle r : std.reals.Eff {
-    enclosed betaOne 16
+    trigonometryEnclosed betaOne 16
   } with {
     | pure(x) => pure x
     | oper admit(plan, k) => k 0
@@ -110,6 +109,6 @@ def enclosedModelled() -> String =
 def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
   let verdicts = bounds ()
   std.io.Console.print verdicts
-  let ends = enclosed betaOne 16
+  let ends = trigonometryEnclosed betaOne 16
   std.io.Console.print ends
   0
