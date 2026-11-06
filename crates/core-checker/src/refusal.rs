@@ -143,6 +143,11 @@ pub enum ExpectedShape
     /// A dependent pair `Σ (x : A). B`: what a dependent split's scrutinee
     /// must synthesise, and what a pair of other than two components meets.
     Sigma,
+    /// Components in an order, as an eager product or a dependent pair has:
+    /// what a split by position and a projection by position meet at a record
+    /// whose type a call computes. A record keeps its fields by label, and the
+    /// order the source writes them in is gone once the call unfolds.
+    Positional,
     /// A native List, required by nil and cons introductions.
     List,
     /// A static Pi: what a static lambda is checked against.

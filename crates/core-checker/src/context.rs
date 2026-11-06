@@ -4045,6 +4045,33 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             .insert(TermNode::Value(at), TermNode::Value(restated));
     }
 
+    /// Record that the kernel reads `restated` in the place of the split `at`:
+    /// the dependent split of `at`'s scrutinee and body at the type `at` has.
+    ///
+    /// # Specification
+    /// - requires: `at` splits a scrutinee whose type unfolds to a dependent
+    ///   pair, at the ambient motive, and `restated` is the dependent split of
+    ///   the same scrutinee and body at that motive.
+    /// - ensures: `at` has `restated` as its refinement, replacing an earlier
+    ///   one, until the next take.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a split by position of a pair a call computes crosses
+    ///   restated, and the kernel admits it.
+    /// - witness: `bridge::tests::a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290`
+    #[spec(ensures: self.restating.get(&TermNode::Computation(at)) == Some(&TermNode::Computation(restated)))]
+    pub(crate) fn record_restated_split(
+        &mut self,
+        at: ComputationId,
+        restated: ComputationId,
+    )
+    {
+        let _earlier = self
+            .restating
+            .insert(TermNode::Computation(at), TermNode::Computation(restated));
+    }
+
     /// The written value `at` stands for: the value a refinement rewrote into
     /// `at`, read back to the body as written, or `at` itself.
     ///

@@ -1241,6 +1241,10 @@ fn checked(
             wanted: ExpectedShape::Summand,
             ..
         } => f.write_str("this injection names a summand its sum does not have"),
+        CheckRefusal::ShapeMismatch {
+            wanted: ExpectedShape::Positional,
+            ..
+        } => f.write_str("a record that a call computes has no written order"),
         CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
         CheckRefusal::NotSynthesisable { form } => write!(
             f,

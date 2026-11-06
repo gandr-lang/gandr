@@ -2516,6 +2516,38 @@ mod kernel_presented_readmission
         Environment::replay(decoded.arena().clone(), &declarations)
             .expect("the kernel readmits the walk along the field's path");
     }
+
+    /// #5290: a split by position of a pair whose type a call computes binds
+    /// the second component at the first, in the checker and in the kernel,
+    /// which reads the split as the dependent split at the type it has.
+    #[test]
+    fn a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/data/computed-pair-split.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the splits lower");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let segment = NameSegment::from_text("splitPair".into()).expect("a name segment");
+        let named = StructuredName::from(vec![segment]);
+        let marked = declarations
+            .iter()
+            .find(|marked| *marked.declaration().name() == named)
+            .expect("`splitPair` crossed");
+        assert_eq!(
+            marked.mark(),
+            gandr_kernel_term::AdmissionMark::Checked,
+            "the checker checks `splitPair`"
+        );
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits the split of the pair at its fibre");
+    }
 }
 
 /// A step case at a variable readmits by the kernel's own reading of the bind

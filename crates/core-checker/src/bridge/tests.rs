@@ -2070,6 +2070,81 @@ fn a_call_in_a_stuck_arm_of_a_returned_code_replays_2831()
 }
 
 #[test]
+fn a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290()
+{
+    // def repr : U(Unit -> F Type) = \_. return ⌜Σ (n : Integer). Path[.A =
+    // Integer](n, n)⌝ ; def p : El(⟨repr ()⟩) = (0, here 0) ;
+    // def atLoop : U((n : Integer) -> Path[.A = Integer](n, n) -> F Integer) = \n.
+    // \r. return n ; def splitPair : U(Unit -> F Integer) = \_. split p as (n,
+    // r) in atLoop n r ;
+    //
+    // The call hides the dependent pair from the split, which has no motive.
+    let mut arena = CoreArena::new();
+    let small = small(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let returns_code = arena.comp_type_returner(small);
+    let returns_integer = arena.comp_type_returner(integer);
+    let near = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let far = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let fibre = arena.value_type_path(integer, near, near);
+    let pair = arena.value_type_sigma(integer, fibre);
+    let pair_code = arena.value_quote(pair);
+    let to_pair = arena.computation_return(pair_code);
+    let repr = arena.computation_lambda(to_pair);
+    let repr = arena.value_thunk(repr);
+    let arrowing = arena.comp_type_arrow(unit_type, returns_code);
+    let arrowing = arena.value_type_thunk(arrowing);
+    let unit = arena.value_unit();
+    let repr_head = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced_repr = arena.computation_force(repr_head);
+    let at_repr = arena.computation_application(forced_repr, unit);
+    let at_repr = arena.value_returned(at_repr);
+    let computed = arena.value_type_element(at_repr, Level::zero());
+    let zero = arena.value_literal(integer_literal());
+    let here = arena.value_here(zero);
+    let packed = arena.value_tuple(&[zero, here]);
+    let reading = arena.comp_type_arrow(fibre, returns_integer);
+    let reading = arena.comp_type_pi(integer, reading);
+    let reading = arena.value_type_thunk(reading);
+    let returns_first = arena.computation_return(far);
+    let at_loop = arena.computation_lambda(returns_first);
+    let at_loop = arena.computation_lambda(at_loop);
+    let at_loop = arena.value_thunk(at_loop);
+    let at_loop_head = arena.value_constant(ConstantIndex::from(2_usize));
+    let forced = arena.computation_force(at_loop_head);
+    let at_first = arena.computation_application(forced, far);
+    let at_second = arena.computation_application(at_first, near);
+    let p = arena.value_constant(ConstantIndex::from(1_usize));
+    let arity = gandr_core_term::ComponentCount::from(2_usize);
+    let split = arena.computation_split(p, arity, at_second);
+    let split = arena.computation_lambda(split);
+    let split = arena.value_thunk(split);
+    let splitting = arena.comp_type_arrow(unit_type, returns_integer);
+    let splitting = arena.value_type_thunk(splitting);
+    let module = [
+        declaration(At(0), Maybe::Present(arrowing), Maybe::Present(repr)),
+        declaration(At(1), Maybe::Present(computed), Maybe::Present(packed)),
+        declaration(At(2), Maybe::Present(reading), Maybe::Present(at_loop)),
+        declaration(At(3), Maybe::Present(splitting), Maybe::Present(split)),
+    ];
+    let (report, readmission) = judge_and_readmit(&mut arena, &module);
+    for judged in report.judged() {
+        assert!(
+            matches!(judged.verdict(), Verdict::Checked { .. }),
+            "the split binds the second component at the first: {:?}",
+            judged.verdict()
+        );
+    }
+    let split_entry = &readmission.readmitted()[3];
+    assert!(
+        matches!(*split_entry.outcome(), Outcome::Defined { .. }),
+        "the kernel reads the split as the dependent split at its type: {:?}",
+        split_entry.outcome()
+    );
+}
+
+#[test]
 fn a_declining_certificate_faults_the_declaration()
 {
     // def Pair : Type -> Type = \X. El X * El X ;

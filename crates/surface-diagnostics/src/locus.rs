@@ -2021,6 +2021,9 @@ impl fmt::Display for Shape
             ExpectedShape::Arrow => "an arrow `A → C`",
             ExpectedShape::Product => "an eager product `A * B`",
             ExpectedShape::Sigma => "a dependent record `#{x : A, y : B(x)}`",
+            ExpectedShape::Positional => {
+                "a type whose components stand in order, an eager product or a dependent record"
+            },
             ExpectedShape::StaticPi => "a type operator's classifier `K -> J`",
             ExpectedShape::Path => "an element path type `Path[.A = A](a, b)`",
             ExpectedShape::Telescope => "a telescope motive `Π (y : A). Π (z : B). F C`",
@@ -4715,6 +4718,7 @@ mod tests
             ExpectedShape::Returns,
             ExpectedShape::Product,
             ExpectedShape::Sigma,
+            ExpectedShape::Positional,
             ExpectedShape::StaticPi,
             ExpectedShape::Path,
             ExpectedShape::Telescope,

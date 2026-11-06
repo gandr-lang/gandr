@@ -228,8 +228,11 @@
 //! its two binders, `x : A` and then `y : B`; and the split synthesises `C`
 //! at the scrutinee, so its answer may read what it eliminates. Any other
 //! scrutinee, or another arity, is a `ShapeMismatch` wanting a dependent
-//! pair; a split without a motive at a Σ is the shape mismatch wanting a
-//! product, since its answer could not read the pair.
+//! pair; a split without a motive at a written Σ is the shape mismatch
+//! wanting a product, since its answer could not read the pair. A split
+//! without a motive at a Σ that a call computes opens the pair's two binders
+//! and is restated as the dependent split at the type it is checked against
+//! (#5290): the lowering sees no Σ there, so it writes no motive.
 //! `judgement::tests::a_dependent_split_synthesises_its_motive_at_the_scrutinee`
 //! asserts each arm.
 //!
@@ -459,6 +462,7 @@ use gandr_core_term::Sort;
 use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::capability::CapabilityGrade;
@@ -1427,6 +1431,36 @@ enum NestedRead
     Call,
 }
 
+/// How the kernel reads a split.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Crossing
+{
+    /// As written: a split at the ambient motive as its projection binds, and
+    /// a split under a motive as the kernel's dependent split.
+    Written,
+    /// As the dependent split at the type the split has: a split at the
+    /// ambient motive whose scrutinee unfolds to a dependent pair.
+    Restated,
+}
+
+/// The binders a split opens, read off its scrutinee's unfolded type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Opened
+{
+    /// The components of an eager product or of the unknown type, each in the
+    /// ambient context.
+    Product(Components),
+    /// The two factors of a dependent pair, the second under a binder of the
+    /// first.
+    Pair
+    {
+        /// The first factor.
+        first: ValueTypeId,
+        /// The second factor, under one binder of the first.
+        second: ValueTypeId,
+    },
+}
+
 /// A rule waiting on the judgement of one of its subterms.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Frame
@@ -2132,6 +2166,8 @@ enum Frame
         at: ComputationId,
         /// Its component count: the binders the body is judged under.
         arity: gandr_core_term::ComponentCount,
+        /// How the kernel reads it.
+        crossing: Crossing,
     },
     /// Once the previous branch has checked, check `branch` under a binder of
     /// its summand.
@@ -10355,7 +10391,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
-            (Frame::SplitBody { at, arity }, Produced::CompType(synthesised)) => {
+            (
+                Frame::SplitBody {
+                    at,
+                    arity,
+                    crossing,
+                },
+                Produced::CompType(synthesised),
+            ) => {
                 // Every binder stays open until the type has left them all, so a
                 // refusal attributes each to this frame.
                 let mut lowered = synthesised;
@@ -10369,6 +10412,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }
                 for _ in 0_usize .. usize::from(arity) {
                     self.close()?;
+                }
+                if crossing == Crossing::Restated {
+                    self.restate_pair(at, lowered)?;
                 }
                 Ok(Step::Ascend(Produced::CompType(lowered)))
             },
@@ -11030,10 +11076,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   each typed by its component shifted past the binders before it, and
     ///   the body is the next goal, synthesised, or checked against the
     ///   expected type shifted past all of them; a split of no components
-    ///   checks its body against the expected type itself.
-    /// - fails: [`CheckRefusal::ShapeMismatch`] at the scrutinee, wanting a
-    ///   product, for a classifier that is no product or a product of another
-    ///   arity; the unfolding's refusal.
+    ///   checks its body against the expected type itself. A scrutinee whose
+    ///   type a call computes and unfolds to a dependent pair opens its first
+    ///   factor, then its second under the first's binder, and a split checked
+    ///   against a type is restated as the dependent split at that type.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at the scrutinee: wanting a
+    ///   product, for a dependent pair that the classifier writes, which takes
+    ///   a motive; wanting a dependent pair, for a computed dependent pair
+    ///   split into other than two components; wanting components in order, for
+    ///   a record, which keeps its fields by label; wanting a product, for any
+    ///   other classifier that is no product or a product of another arity; the
+    ///   unfolding's refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -11045,9 +11098,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   separate the binder order, the shift and both refusals; a split
     ///   synthesising its body's type, and one whose body's type mentions a
     ///   component, separate the strengthening past the binders from its
-    ///   refusal.
+    ///   refusal. A dependent pair and a record that a call computes separate
+    ///   the pair's binders from the record's refusal.
     /// - witness: `judgement::tests::a_split_binds_every_component_of_its_product`
     /// - witness: `judgement::tests::a_split_synthesises_its_body_type_outside_its_binders`
+    /// - witness: `bridge::tests::a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290`
     #[spec(
         captures: before = usize::from(self.context.depth(Zone::Intuitionistic)),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { direction: judged, .. }))
@@ -11067,43 +11122,143 @@ impl<'context, 'arena> Machine<'context, 'arena>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        let components = self.product_expected(scrutinee, classifier)?;
+        let head = self.context.whnf_value_type(classifier)?;
+        let mismatch = |wanted, unfolded| CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(scrutinee),
+            wanted,
+            found: TypeNode::Value(classifier),
+            unfolded: TypeNode::Value(unfolded),
+        };
         let count = usize::from(arity);
-        if matches!(components, Components::Known(ref parts) if parts.len() != count) {
-            return Err(CheckRefusal::ShapeMismatch {
-                at: TermNode::Value(scrutinee),
-                wanted: ExpectedShape::Product,
-                found: TypeNode::Value(classifier),
-                unfolded: TypeNode::Value(classifier),
-            });
-        }
+        // A call that computes the scrutinee's type hides its former from the
+        // lowering, which then writes no motive (#5290). A dependent pair that
+        // the type writes takes a motive, so a split with none is refused.
+        let written_pair = matches!(
+            self.context.arena().value_type(classifier),
+            Some(&ValueType::Sigma { .. })
+        );
+        let opened = match self.context.arena().value_type(head) {
+            Some(&ValueType::Sigma { .. }) if written_pair => {
+                return Err(mismatch(ExpectedShape::Product, head));
+            },
+            Some(&ValueType::Sigma { first, second }) if count == 2_usize => {
+                Opened::Pair { first, second }
+            },
+            Some(&ValueType::Sigma { .. }) => {
+                return Err(mismatch(ExpectedShape::Sigma, head));
+            },
+            Some(&ValueType::Record(_)) => {
+                return Err(mismatch(ExpectedShape::Positional, head));
+            },
+            _ => match matched_product(self.context.arena_mut(), head) {
+                Maybe::Present(Components::Known(ref parts)) if parts.len() != count => {
+                    return Err(mismatch(ExpectedShape::Product, classifier));
+                },
+                Maybe::Present(components) => Opened::Product(components),
+                Maybe::Absent(absent) => {
+                    return Err(unmatched(
+                        absent,
+                        TypeNode::Value(head),
+                        mismatch(ExpectedShape::Product, head),
+                    ));
+                },
+            },
+        };
+        let crossing = match opened {
+            Opened::Product(_) => Crossing::Written,
+            Opened::Pair { .. } => Crossing::Restated,
+        };
         let binders = u32::try_from(count).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
         let judged = match direction {
             Direction::Synthesise => Direction::Synthesise,
             Direction::Check(expected) => {
+                if crossing == Crossing::Restated {
+                    self.restate_pair(at, expected)?;
+                }
                 let arena = self.context.arena_mut();
                 Direction::Check(
                     shift_comp_type(arena, expected, Binders::from(binders)).settle(arena),
                 )
             },
         };
-        for (index, shift) in (0_u32 .. binders).enumerate() {
-            let component = match components {
-                Components::Known(ref parts) => {
-                    *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
-                },
-                Components::Unknown(unknown) => unknown,
-            };
-            let component =
-                shift_value_type(self.context.arena_mut(), component, Binders::from(shift))
-                    .settle(self.context.arena_mut());
-            self.context.binders().open(Zone::Intuitionistic, component);
+        match opened {
+            // The second factor already stands under the binder of the first,
+            // which the split opens just before it.
+            Opened::Pair { first, second } => {
+                self.context.binders().open(Zone::Intuitionistic, first);
+                self.context.binders().open(Zone::Intuitionistic, second);
+            },
+            Opened::Product(components) => {
+                for (index, shift) in (0_u32 .. binders).enumerate() {
+                    let component = match components {
+                        Components::Known(ref parts) => {
+                            *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
+                        },
+                        Components::Unknown(unknown) => unknown,
+                    };
+                    let component =
+                        shift_value_type(self.context.arena_mut(), component, Binders::from(shift))
+                            .settle(self.context.arena_mut());
+                    self.context.binders().open(Zone::Intuitionistic, component);
+                }
+            },
         }
-        self.wait(Frame::SplitBody { at, arity });
+        self.wait(Frame::SplitBody {
+            at,
+            arity,
+            crossing,
+        });
         Ok(Step::Descend(Goal::Computation {
             term: body,
             direction: judged,
         }))
+    }
+
+    /// Restate the split `at`, of a dependent pair, as the dependent split at
+    /// `result`, the type the split has outside its binders.
+    ///
+    /// # Specification
+    /// - requires: `at` is a split of two components at the ambient motive,
+    ///   whose scrutinee unfolds to a dependent pair, and `result` stands
+    ///   outside the split's binders.
+    /// - ensures: the kernel reads, in `at`'s place, the dependent split of the
+    ///   same scrutinee and body, its motive `result` under the scrutinee's
+    ///   binder. The projection binds the bridge otherwise reads type the
+    ///   second component at the projection of the first, not at the first
+    ///   component the body binds.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for an `at` that is no
+    ///   split.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a split by position of a pair a call computes, whose
+    ///   body reads its second component at its first, crosses restated, and
+    ///   the kernel admits it.
+    /// - witness: `bridge::tests::a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290`
+    #[spec(ensures: |ret| ret.is_err() != matches!(self.context.arena().computation(at), Some(Computation::Split { .. })))]
+    fn restate_pair(
+        &mut self,
+        at: ComputationId,
+        result: CompTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(&Computation::Split {
+            scrutinee,
+            arity,
+            body,
+            ..
+        }) = self.context.arena().computation(at)
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let arena = self.context.arena_mut();
+        let motive = shift_comp_type(arena, result, Binders::from(1_u32)).settle(arena);
+        let restated = arena.computation_dependent_split(scrutinee, arity, motive, body);
+        self.context.record_restated_split(at, restated);
+        Ok(())
     }
 
     /// Read the two decoded endpoints of a native path classifier.
