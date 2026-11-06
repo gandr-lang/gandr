@@ -1,13 +1,16 @@
-// A view lives as long as its access. A thunk over it, kept past the resume
-// that ends the access, would read a cell nothing lends any more: the
-// dangling self-reference a moved Rust future risks without `Pin`.
-//
-// - see: #1183 — `dangling`
-
-// Early exit's host interface.
+//! `dangling` returns a thunk that captures an access view.
+//!
+//! The access ends when `resume` runs. The checker refuses the later use as
+//! `ViewEscaped`.
+//!
+//! The source imports the host early exit interface.
+//! The handler invokes the returned thunk after it resumes the access.
+//!
+//! Rust `Pin` prevents a moved future from dangling self-reference.
+//! - see: #1183 — `dangling`
 import std.process;
 
-/// A thunk over the view handed out of the access after its resume.
+/// `dangling` returns a thunk that captures the access view.
 @[ refuses("ViewEscaped") ]
 def dangling() -> Integer =
   var x = 5
