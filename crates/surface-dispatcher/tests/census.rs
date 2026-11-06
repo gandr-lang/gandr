@@ -201,29 +201,6 @@ fn unlisted(text: SourceText<'_>) -> String
     out
 }
 
-/// `text` with the binder of each lambda `fun (x)` written `fun (_)`: the
-/// spelling two prints compare when they name a lambda's binder apart.
-///
-/// # Specification
-/// trivial.
-fn unnamed(text: SourceText<'_>) -> String
-{
-    const OPENS: &str = "fun (";
-    let mut out = String::with_capacity(text.as_ref().len());
-    let mut rest = text.as_ref();
-    while let Some(at) = rest.find(OPENS) {
-        let (before, after) = rest.split_at(at.saturating_add(OPENS.len()));
-        out.push_str(before);
-        rest = after;
-        if let Some(close) = rest.find(')') {
-            out.push('_');
-            rest = rest.get(close ..).unwrap_or_default();
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
 /// The table of the walk's source at `path`, typed beside the prelude and
 /// the siblings it imports: the walk's `text` lays out the source's
 /// component, its own text from `base`, and read as one source the
@@ -653,11 +630,6 @@ mod sweeps
     /// argument list `f(a, b)` as one tuple, `f(*{a, b})`.
     const LISTED_CALL: &str = "#5211, a call inside a lambda inside a type prints in the list form";
 
-    /// Why the census holds a spelling whose reprint names a lambda's binder
-    /// apart and changes nothing else.
-    const RENAMED_LAMBDA: &str =
-        "#5402, a lambda inside a type reprints its binder under another name";
-
     /// Every printed type of every source `sweep` visits reads back to its
     /// certificate.
     ///
@@ -740,9 +712,7 @@ mod sweeps
                     // A call inside a lambda inside a type prints in the list
                     // form, which the expression reads as one tuple (#5211):
                     // held when the reprint writes `f(*{…})` for each `f(…)`
-                    // alone. A lambda inside a type reprints its binder under
-                    // another name (#5402): held when the two prints differ
-                    // at the lambdas' binders alone.
+                    // alone.
                     let why = match read.reprinted {
                         Maybe::Present(ref again) => {
                             if spelled.contains("*{}")
@@ -757,14 +727,6 @@ mod sweeps
                                 )) == spelled
                             {
                                 Some(LISTED_CALL)
-                            }
-                            else if spelled.contains("fun (")
-                                && unnamed(SourceText::from(spelled.as_str()))
-                                    == unnamed(SourceText::from(
-                                        collapsed(SourceText::from(again.as_str())).as_str(),
-                                    ))
-                            {
-                                Some(RENAMED_LAMBDA)
                             }
                             else {
                                 None
