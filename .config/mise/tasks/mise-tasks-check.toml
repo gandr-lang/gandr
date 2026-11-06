@@ -2703,7 +2703,10 @@ echo "follow check OK: $(jq length .config/follow/cases.json) cases read as reco
 # upload's outcome does to the job, each case in `.config/hotpath/upload.json`
 # an outcome and that decision; `unsent.jq` writes the one issue that holds
 # main's reports not uploaded, each case in `.config/hotpath/unsent.json` the
-# open issue, a run and the compact JSON it must give. A budget its report
+# open issue, a run and the compact JSON it must give. The landed deltas
+# (#3596): `landed.jq` writes the body of the `Hotpath: the landed deltas`
+# ledger, each case in `.config/hotpath/landed.json` the open ledger's body
+# or none, the push's rows and the body it must give. A budget its report
 # cannot judge (#5125): hotpath takes the `alloc` of a function budget only in
 # bytes. `budgets.jq` names each `alloc` budget of a policy whose report counts
 # allocations, each case in `.config/hotpath/budgets.json` a policy and the
@@ -2724,6 +2727,7 @@ cases() {
 cases c report.jq cases.json
 cases r upload.jq upload.json
 cases c unsent.jq unsent.json
+cases r landed.jq landed.json
 cases c budgets.jq budgets.json
 metric=$(yq '.jobs.hotpath.env.HOTPATH_ALLOC_METRIC // "bytes"' .github/workflows/ci.yml)
 policies=0
@@ -2742,7 +2746,7 @@ for policy in hotpath/*-policy.toml; do
   policies=$((policies + 1))
 done
 (( failed == 0 )) || exit 1
-echo "hotpath check OK: $(jq length .config/hotpath/cases.json) reports, $(jq length .config/hotpath/upload.json) upload outcomes, $(jq length .config/hotpath/unsent.json) unsent issues and $(jq length .config/hotpath/budgets.json) budget readings read as recorded, and $policies policies hold only the budgets their reports can judge"
+echo "hotpath check OK: $(jq length .config/hotpath/cases.json) reports, $(jq length .config/hotpath/upload.json) upload outcomes, $(jq length .config/hotpath/unsent.json) unsent issues, $(jq length .config/hotpath/landed.json) landed ledgers and $(jq length .config/hotpath/budgets.json) budget readings read as recorded, and $policies policies hold only the budgets their reports can judge"
 '''
 
 # A clone may wire merge drivers. A driver that merges a rebase "cleanly" into
