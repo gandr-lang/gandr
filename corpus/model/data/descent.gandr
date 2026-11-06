@@ -19,25 +19,25 @@ import "./data-base.gandr";
 /// Addition by recursion on the first argument, the second an accumulator
 /// each call grows: `plus(Succ(p), n) = plus(p, Succ(n))`.
 def rec plusFirst(m : Nat, n : Nat) -> Nat =
-  match m
+  match m where
     | Zero => n
     | Succ(p) => plusFirst[<] p (Succ n)
 
 /// Half a number, rounded down: the inner match takes apart the outer one's
 /// field, so the call on its field still descends on `n`.
 def rec half(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
-    | Succ(m) => match m
+    | Succ(m) => match m where
       | Zero => Zero
       | Succ(q) => Succ (half[<] q)
 
 /// Fibonacci numbers: the first call rebuilds `Succ(q)` from the inner
 /// match's field, a value below `n` though not one of its fields.
 def rec fib(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
-    | Succ(m) => match m
+    | Succ(m) => match m where
       | Zero => Succ Zero
       | Succ(q) => plusFirst (fib[<] (Succ q)) (fib[<] q)
 
@@ -45,7 +45,7 @@ def rec fib(n : Nat) -> Nat =
 /// the accumulator each call grows is a constructor written bare, its type
 /// read off the parameter it fills, the element type standing for itself.
 def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> List(a) =
-  match xs
+  match xs where
     | Nil => acc
     | Cons(x, rest) => reverseOnto[<] a rest (Cons x acc)
 
@@ -53,11 +53,11 @@ def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> List(a) =
 /// on `xs` and consumes `ys` alongside it, so the call under the match on
 /// `ys` still descends on `xs`, the parameter a match above it takes apart.
 def rec pairwise(xs : List(Integer), ys : List(Integer)) -> List(Integer) =
-  match xs
+  match xs where
     | Nil => Nil
-    | Cons(x, rest) => match x == 0
+    | Cons(x, rest) => match x == 0 where
       | true => pairwise[<] rest ys
-      | false => match ys
+      | false => match ys where
         | Nil => Nil
         | Cons(y, more) => Cons (x + y) (pairwise[<] rest more)
 
@@ -90,7 +90,7 @@ def sumsSkippingZero : () -> List(Integer) = pairwise
 /// A recursive definition that makes no recursive call: nothing to descend
 /// on, so it is a definition, and a type naming it unfolds at a constructor.
 def rec isZero(n : Nat) -> Type =
-  match n
+  match n where
     | Zero => return Unit
     | Succ(_m) => return Void
 

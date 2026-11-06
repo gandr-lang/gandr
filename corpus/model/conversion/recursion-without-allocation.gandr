@@ -20,9 +20,9 @@ import "./conversion-base.gandr";
 
 /// Two recursive calls at each level, which answer a constant.
 def rec calls(n : Nat) -> Bool =
-  match n
+  match n where
     | Zero => true
-    | Succ(m) => match calls[<] m
+    | Succ(m) => match calls[<] m where
       | true => calls[<] m
       | false => false
 

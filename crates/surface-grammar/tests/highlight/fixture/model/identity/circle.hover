@@ -113,7 +113,7 @@
 40:56-40:56 = ⇒ tell : Path[.A = Circle](Base, Base) -> Integer⏎⏎refused: the match is not shown to respect rule 0 of its datatype⏎⏎The checker refuses `tell` because it reads the empty word as 1. @40:1-44:26
 41:3-41:7 match ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
 41:9-41:9 p ⇒ p : Path[.A = Circle](Base, Base) @41:9-41:10
-42:5-42:5 | ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
+41:11-42:5 where⏎    | ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
 42:7-42:10 here ⇒ here : Path[.A = Circle](Base, Base) @42:7-42:11
 42:12-42:13 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @41:3-44:26
 42:15-42:15 0 ⇒ Integer @42:15-42:16

@@ -461,7 +461,8 @@ fn out_of_fragment(
         | FragmentBoundary::Held
         | FragmentBoundary::View
         | FragmentBoundary::Unbound
-        | FragmentBoundary::ChainedArrow => FailureClass::MalformedSource,
+        | FragmentBoundary::ChainedArrow
+        | FragmentBoundary::BareArms => FailureClass::MalformedSource,
     }
 }
 
@@ -561,7 +562,8 @@ impl FragmentFeature
             | FragmentBoundary::Held
             | FragmentBoundary::View
             | FragmentBoundary::Unbound
-            | FragmentBoundary::ChainedArrow => Self::Crossed(boundary),
+            | FragmentBoundary::ChainedArrow
+            | FragmentBoundary::BareArms => Self::Crossed(boundary),
         }
     }
 }
@@ -1460,6 +1462,7 @@ mod tests
             FragmentBoundary::View,
             FragmentBoundary::Unbound,
             FragmentBoundary::ChainedArrow,
+            FragmentBoundary::BareArms,
         ];
         let boundaries: alloc::vec::Vec<FragmentBoundary> = Unbuilt::ALL
             .iter()

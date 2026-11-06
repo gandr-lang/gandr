@@ -53,9 +53,9 @@ def rec wp(
   post : (Unit, Integer) -> Type,
   s : Integer
 ) -> Type =
-  match p
+  match p where
     | Done(x) => post x s
-    | Op(o, k) => match o
+    | Op(o, k) => match o where
       | Left(Get) => wp[<] (k s) post s
       | Left(Put(t)) => wp[<] (k 0) post t
       | Right(none) => match none {}

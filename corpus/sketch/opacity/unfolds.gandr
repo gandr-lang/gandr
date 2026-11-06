@@ -13,7 +13,7 @@
 
 /// Natural addition by recursion on its first argument.
 def _+_(m : Nat, n : Nat) -> Nat =
-  match m
+  match m where
     | Zero => n
     | Succ(k) => Succ (k + n)
 
@@ -21,7 +21,7 @@ def _+_(m : Nat, n : Nat) -> Nat =
 /// branch's only through addition's body, so the head unfolds `_+_`.
 @[unfolds(_+_)]
 def _++_[A : Type, m n : Nat](u : Vec(A, m), v : Vec(A, n)) -> Vec(A, m + n) =
-  match u
+  match u where
     | VNil => v
     | VCons(x, rest) => VCons x (rest ++ v)
 

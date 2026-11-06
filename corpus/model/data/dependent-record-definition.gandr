@@ -18,8 +18,8 @@ data T : Type where
 
 /// What a tag owes of a heap: emptiness at zero, by a call of `emp`, and nothing else.
 def p(r : T, h : Heap) -> Type =
-  match r
-    | Tg(t) => match t
+  match r where
+    | Tg(t) => match t where
       | Zero => emp h
       | Succ(_s) => return Void
 
@@ -33,8 +33,8 @@ def zeroTagged(e : p(Tg(Zero), Emp)) -> repr(Emp) =
 
 /// What a tag owes of the empty heap, the arm's call closed: `emp(Emp)`.
 def owedClosed(r : T) -> Type =
-  match r
-    | Tg(t) => match t
+  match r where
+    | Tg(t) => match t where
       | Zero => emp Emp
       | Succ(_s) => return Void
 

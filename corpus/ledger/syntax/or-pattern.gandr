@@ -6,6 +6,6 @@ data Color : Type where
   | Blue : Color
 @[ checks ]
 def cool(c : Color) -> -F Integer =
-  match c
+  match c where
     | Red | Green => return 0
     | Blue => return 1

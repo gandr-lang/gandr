@@ -69,7 +69,7 @@ def climb() -> [Partial] Integer =
   let m = loop {
     access n as v { resume v (v + 1) };
     let done = n >= 5;
-    match done
+    match done where
       | true => break(n)
       | false => continue
   };
@@ -82,7 +82,7 @@ def stride() -> [Partial] Integer =
   loop {
     access n as v { resume v (v + 2) };
     let done = n >= 4;
-    match done
+    match done where
       | true => break
       | false => continue
   };

@@ -8,7 +8,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 49 │ │    spin (wind p),
 50 │ │    p
 51 │ │  ) =
-52 │ │┌   match p
+52 │ │┌   match p where
 53 │ ││     | here => Path.here (Path.here Base)
 54 │ ││     | loop ∷ q => forged[<] q
    │ ││                   ━━━━━━━━━━━ its type does not convert: expected `-F Path[.A = Path[.A = Circle](Base, Base)](spin (wind (loop ∷ q)), loop ∷ q)`, found `-F Path[.A = Path[.A = Circle](Base, Base)](spin (wind q), q)`
@@ -31,7 +31,7 @@ error[RuleNotRespected]: this case might tell apart terms its datatype's rules i
 64 │ │    p,
 65 │ │    p
 66 │ │  ) =
-67 │ │┏   match p
+67 │ │┏   match p where
 68 │ │┃     | here => Path.here (Path.here Base)
 69 │ │┃     | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
 70 │ │┃     | back(loop) ∷ q => Path.here (back loop ∷ q)

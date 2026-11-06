@@ -33,7 +33,7 @@ pub theory Places where
 /// THIR's meaning, which folds each node into the specification monad over
 /// `Places`.
 pub def wp(e : Thir.Expr) -> Spec(Places, Thir.Value) =
-  match e
+  match e where
     | Thir.Expr.Deref(p) => Places.load (place p)
     | Thir.Expr.Assign(p, v) => Places.store (place p) (wp v)
     | Thir.Expr.Return(v) => Spec.exit (wp v)
@@ -42,7 +42,7 @@ pub def wp(e : Thir.Expr) -> Spec(Places, Thir.Value) =
 /// A second analysis over the same data: the places each expression
 /// borrows, and whether mutably.
 pub def borrows(e : Thir.Expr) -> List(*{place : Thir.Place, mutable : Bool}) =
-  match e
+  match e where
     | Thir.Expr.Borrow(p, kind) => #[*{place = p, mutable = kind == Thir.BorrowKind.Mut}]
     | Thir.Expr.Call(_f, args) => concatMap args borrows
     | _ => #[]

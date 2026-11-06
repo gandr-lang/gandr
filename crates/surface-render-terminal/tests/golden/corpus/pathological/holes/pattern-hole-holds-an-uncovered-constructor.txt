@@ -5,7 +5,7 @@ error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
    │    │            ─ checked against `Color -> -F Integer`; while checking the body of this function; binds c : Color
    │ ┌──┘
    │ │
-13 │ │┏   match c
+13 │ │┏   match c where
 14 │ │┃     | Red => 0
 15 │ │┃     | ? => 1
 16 │ │┃     | Blue => 2

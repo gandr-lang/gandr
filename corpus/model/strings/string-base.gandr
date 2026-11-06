@@ -22,19 +22,19 @@ pub data Repr : Type where
 
 /// The bytes a string holds, wherever they live.
 pub def bytes(s : Repr) -> List(Integer) =
-  match s
+  match s where
     | Inline(bs) => bs
     | Shared(n, bs) => bs
 
 /// The number of bytes in a list.
 pub def rec count(bs : List(Integer)) -> Integer =
-  match bs
+  match bs where
     | Nil => 0
     | Cons(b, rest) => { let n = count[<] rest; n + 1 }
 
 /// One byte list followed by another.
 pub def rec concat(xs : List(Integer), ys : List(Integer)) -> List(Integer) =
-  match xs
+  match xs where
     | Nil => ys
     | Cons(x, rest) => (Cons x (concat[<] rest ys) : List(Integer))
 

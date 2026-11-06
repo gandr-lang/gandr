@@ -17,13 +17,13 @@ data Nat : Type where
 
 @[ checks ]
 def rec down(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => return n
     | Succ(p) => become down[<] p
 
 @[ checks ]
 def rec down_elided(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => n
     | Succ(p) => down_elided[<] p
 
@@ -81,13 +81,13 @@ def named_elided(n : Nat) -> -F Nat =
 
 @[ checks ]
 def rec stated(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => { return n; }
     | Succ(p) => { become stated[<] p; }
 
 @[ checks ]
 def rec stated_elided(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => { n }
     | Succ(p) => { stated_elided[<] p }
 
@@ -179,21 +179,21 @@ def returned = return Zero;
 
 @[ checks ]
 def predecessor(n : Nat) -> -F Nat =
-  let m = match n
+  let m = match n where
     | Zero => return n
     | Succ(p) => pure p
   return m
 
 @[ checks ]
 def predecessor_elided(n : Nat) -> -F Nat =
-  let m = match n
+  let m = match n where
     | Zero => return n
     | Succ(p) => pure p
   m
 
 @[ checks ]
 def pick(n : Nat) -> -F Nat =
-  let m = match n
+  let m = match n where
     | Zero => return n
     | Succ(p) => {
       let q = match p {
@@ -206,7 +206,7 @@ def pick(n : Nat) -> -F Nat =
 
 @[ checks ]
 def pick_elided(n : Nat) -> -F Nat =
-  let m = match n
+  let m = match n where
     | Zero => return n
     | Succ(p) => {
       let q = match p {
@@ -237,24 +237,24 @@ def pick_three_elided() -> -F Nat { pick_elided (Succ (Succ (Succ Zero))) }
 
 @[ checks ]
 def handed(n : Nat) -> -F Nat =
-  let m = match n
+  let m = match n where
     | Zero => become down n
     | Succ(p) => pure p
   return Succ m
 
 @[ checks ]
 def handed_elided(n : Nat) -> -F Nat =
-  let m = match n
+  let m = match n where
     | Zero => become down n
     | Succ(p) => pure p
   Succ m
 
 @[ checks ]
 def rec skim(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => return n
     | Succ(p) => {
-      let _ = match p
+      let _ = match p where
         | Zero => return p
         | Succ(r) => pure r
       become skim[<] p
@@ -262,10 +262,10 @@ def rec skim(n : Nat) -> -F Nat =
 
 @[ checks ]
 def rec skim_elided(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => n
     | Succ(p) => {
-      let _ = match p
+      let _ = match p where
         | Zero => return p
         | Succ(r) => pure r
       skim_elided[<] p
@@ -279,14 +279,14 @@ def skimmed_elided() -> -F Nat { skim_elided (Succ (Succ (Succ Zero))) }
 
 @[ refuses("OutOfFragment.JoinsBlock") ]
 def joined(n : Nat) -> -F Nat =
-  let m = match n -> -F Nat
+  let m = match n -> -F Nat where
     | Zero => return n
     | Succ(p) => pure p
   return m
 
 @[ refuses("OutOfFragment.JoinsBlock") ]
 def joined_elided(n : Nat) -> -F Nat =
-  let m = match n -> -F Nat
+  let m = match n -> -F Nat where
     | Zero => return n
     | Succ(p) => pure p
   m

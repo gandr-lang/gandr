@@ -9,6 +9,6 @@ data Nat : Type where
 
 @[ refuses("StageNotCarried") ]
 def rec alongLoop(n : Nat, q : Path(Base, Base)) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(m) => Succ (alongLoop[<] (Path.walk (fun (x) { Nat }) q m) q)

@@ -4,12 +4,12 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 
 def rec double(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => Succ (Succ (double[<] p))
 
 def rec power(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => Succ Zero
     | Succ(p) => double (power[<] p)
 
@@ -19,7 +19,7 @@ data Circle : Type where
 
 @[ refuses("LoopUndecided") ]
 def costly(x : Circle) -> -F Path[.A = Circle](x, x) =
-  match x
-    | Base => match power (power (Succ (Succ (Succ Zero))))
+  match x where
+    | Base => match power (power (Succ (Succ (Succ Zero)))) where
       | Zero => Path.here Base
       | Succ(p) => Path.here Base

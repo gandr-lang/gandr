@@ -5,7 +5,7 @@ error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
    │    │            ─ checked against `Maybe -> -F Integer`; while checking the body of this function; binds m : Maybe
    │ ┌──┘
    │ │
-14 │ │┏   match m
+14 │ │┏   match m where
 15 │ │┃     | Just(?) => 100
 16 │ │┃     | Nothing => 200
    │ │┃                    ╿

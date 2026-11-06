@@ -40,7 +40,7 @@ pub data IR(d : Type) : Type[+, 1] where
 /// the family.
 @[ checks ]
 pub def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type =
-  match c
+  match c where
     | Iota(e) => return Unit
     | SigmaC(a, f) => return (Sig a (thunk { fun (y) { args[<] d (f y) x t } }))
     | DeltaC(a, f) => return (Sig (+U (a -> -F x)) (thunk {
@@ -53,7 +53,7 @@ pub def rec args(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type =
 /// - see: #5291 — a run in a lambda that a descent in a type takes
 @[ checks ]
 pub def rec sigmaArgs(d : Type, c : IR(d), x : Type, t : +U (x -> -F d)) -> -F Type =
-  match c
+  match c where
     | Iota(e) => return Unit
     | SigmaC(a, f) => return type(*{y : a, r : sigmaArgs[<](d, f(y), x, t)})
     | DeltaC(a, f) => return type(*{
@@ -77,7 +77,7 @@ pub def rest(
   t : +U (x -> -F d),
   v : args(d, (SigmaC(a, f) : IR(d)), x, t)
 ) -> Unit =
-  match v
+  match v where
     | MkSig(y, r) => keep d (f y) x t r
 
 /// Opens the arguments of a delta code. The rest has the arguments of the
@@ -91,5 +91,5 @@ pub def restDelta(
   t : +U (x -> -F d),
   v : args(d, (DeltaC(a, f) : IR(d)), x, t)
 ) -> Unit =
-  match v
+  match v where
     | MkSig(h, r) => keep d (f (thunk { fun (z) { t (h z) } })) x t r

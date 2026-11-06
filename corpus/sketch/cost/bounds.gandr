@@ -34,7 +34,7 @@ def threeSteps() -> [Cost] Integer #spec{
 def rec total(xs : List(Nat)) -> [Cost] Nat #spec{
   measure { cost length xs with chargesLength(xs) }
 } {
-  match xs
+  match xs where
     | Nil => 0
     | Cons(x, rest) =>
       charge 1;
@@ -46,7 +46,7 @@ def rec total(xs : List(Nat)) -> [Cost] Nat #spec{
 def rec merge(xs : List(Integer), ys : List(Integer)) -> [Cost] List(Integer) #spec{
   measure { cost length xs + length ys with ~smt }
 } {
-  match *{xs, ys}
+  match *{xs, ys} where
     | *{Nil, _} => ys
     | *{_, Nil} => xs
     | *{Cons(x, xr), Cons(y, yr)} =>

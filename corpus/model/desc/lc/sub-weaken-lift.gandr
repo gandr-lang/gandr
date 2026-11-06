@@ -30,7 +30,7 @@ def weakenLiftAgree(
   s : Env,
   n : N
 ) -> Path(subst (look n (Shift (S Z)) Z) (Lift s), subst (look n s Z) (Shift (S Z))) =
-  match n
+  match n where
     | Z => lookShiftedOnce s Z
     | S(j) => lookShiftedOnce s (S j)
 

@@ -144,7 +144,7 @@ pub type Ren(d : Ctx, g : Ctx) = (a : ObjTy) -> (Var(g, a) -> Var(d, a));
 /// The semantic type of `a` at the context `g`. At an arrow it is the
 /// Kripke function space: a function at each renaming of `g`.
 pub def rec sem(a : ObjTy, g : Ctx) -> Type =
-  match a
+  match a where
     | Base => return Nf g Base
     | Arr(dom, cod) => return type((d : Ctx) -> (Ren(d, g) -> (sem[<](dom, d) -> sem[<](cod, d))))
 
@@ -166,7 +166,7 @@ pub def liftAt(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g), b : ObjTy, x : Var(Ex
   Extend(d, a),
   b
 ) =
-  match x
+  match x where
     | Here(_h, c) => Here d c
     | There(_h, c, _e, y) => There d c a ((r c) y)
 
@@ -177,7 +177,7 @@ pub def lift(d : Ctx, g : Ctx, a : ObjTy, r : Ren(d, g)) -> Ren(Extend(d, a), Ex
 /// The size of a term. Each recursive call is at the indices its pattern
 /// binds.
 pub def rec size(g : Ctx, a : ObjTy, t : Tm(g, a)) -> Integer =
-  match t
+  match t where
     | V(_g, _a, _x) => 1
     | Lam(h, b, c, u) => size[<] (Extend h b) c u + 1
     | Ap(h, b, c, f, u) => size[<] h (Arr b c) f + size[<] h b u + 1
@@ -214,13 +214,13 @@ pub data SemEnv : (g : Ctx, d : Ctx) --> Type where
 rec {
   /// The depth of a semantic value's type.
   def rec reflectDepth(a : ObjTy, _v : sem(a, Empty)) -> Integer {
-    match a
+    match a where
       | Base => 0
       | Arr(dom, _cod) => { let n = reifyDepth[<] dom Empty; n + 1 }
   }
   /// The depth of a type at a context.
   def rec reifyDepth(a : ObjTy, g : Ctx) -> Integer =
-    match a
+    match a where
       | Base => 0
       | Arr(_dom, cod) => { let n = reifyDepth[<] cod g; n + 1 }
 }
@@ -232,8 +232,8 @@ def arrowDepth() -> Integer { reifyDepth (Arr Base Base) Empty }
 /// The lookup of a variable in an environment. Each inner case omits `ENil`
 /// and learns the indices of `ECons` from the equations that it binds.
 pub def rec lookVar(g : Ctx, a : ObjTy, x : Var(g, a), d : Ctx, rho : SemEnv(g, d)) -> sem(a, d) =
-  match x
-    | Here(_h, _b) => match rho
+  match x where
+    | Here(_h, _b) => match rho where
       | ECons(_h, _b, _d, _rest, v) => v
-    | There(h, b, _c, y) => match rho
+    | There(h, b, _c, y) => match rho where
       | ECons(_h, _c, _d, rest, _v) => lookVar[<] h b y d rest

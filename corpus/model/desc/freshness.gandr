@@ -31,7 +31,7 @@ theory Pi where
 /// Structural recursion over a rule chain: one per `Fresh` link, the
 /// conditions its written rules state.
 def rec conditions(chain : Theory) -> Integer =
-  match chain
+  match chain where
     | Rule(name, lhs, rhs, rest) => conditions[<] rest
     | Turned(name, lhs, rhs, rest) => conditions[<] rest
     | Fresh(atom, term, rest) => {

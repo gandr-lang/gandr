@@ -19,7 +19,7 @@ data Nat : Type where
 
 @[ checks ]
 def rec down(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => n
     | Succ(p) => down[<] p
 
@@ -33,14 +33,14 @@ def ran = down Zero;
 
 @[ checks ]
 def scrutinised(n : Nat) -> -F Nat =
-  match down n
+  match down n where
     | Zero => n
     | Succ(p) => p
 
 @[ checks ]
 def scrutinised_run(n : Nat) -> -F Nat =
   let m = down n
-  match m
+  match m where
     | Zero => n
     | Succ(p) => p
 
@@ -50,7 +50,7 @@ def kept(n : Nat) -> -F (+U (-F Nat)) =
 
 @[ checks ]
 def armed(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => Succ (down p)
 

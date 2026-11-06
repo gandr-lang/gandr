@@ -62,14 +62,14 @@ module Bits : Model(Toggle) where {
   type T = Bit;
 
   def flip(b : Bit) -> Bit =
-    match b
+    match b where
       | Low => High
       | High => Low
 
   /// The law, by cases.
   @[ checks ]
   def twice(b : Bit) -> Path(flip (flip b), b) =
-    match b
+    match b where
       | Low => Path.here Low
       | High => Path.here High
 }

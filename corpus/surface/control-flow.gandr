@@ -35,7 +35,7 @@ def first_zero() -> [Partial] Nat { become first Zero }
 /// Each arm of a case leaves the loop with its own value.
 def pick(n : Nat) -> [Partial] Nat =
   let m = loop {
-    match n
+    match n where
       | Zero => break(n)
       | Succ(p) => break(p)
   };
@@ -48,7 +48,7 @@ def pick_two() -> [Partial] Nat { become pick (Succ (Succ Zero)) }
 /// A `return` inside the loop leaves the function; `continue` runs the loop again.
 def leave(n : Nat) -> [Partial] Nat =
   loop {
-    match n
+    match n where
       | Zero => continue
       | Succ(p) => return p
   }
@@ -81,7 +81,7 @@ def until_none() -> [Partial] Integer { become until_done 0 }
 /// A bare `break` leaves the loop with unit, and what follows reads the binder.
 def sift(n : Nat) -> [Partial] Nat =
   loop {
-    match n
+    match n where
       | Zero => { break; }
       | Succ(p) => { tick p; continue; }
   };
@@ -125,7 +125,7 @@ def held(n : Nat) -> -F Nat =
 /// the loop reads the binders around it.
 def find_succ(xs : List(Nat), otherwise : Nat) -> Nat =
   for x in xs {
-    match x
+    match x where
       | Zero => continue
       | Succ(p) => return p
   };

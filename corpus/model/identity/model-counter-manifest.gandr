@@ -51,7 +51,7 @@ pub theory ReadCounter where
 
 /// The `observeShown` consumer reads and shows one stepped counter value.
 pub def observeShown(m : Model(ReadCounter)) -> Integer =
-  match m
+  match m where
     | *{.zero = z, .incr = i, .read = r, .shown = s} => s (r (i z))
 
 /// The `asIs` reader returns its integer unchanged.
@@ -93,7 +93,7 @@ def observedNegatedBoth() -> Integer { observeShown negatedBoth }
 
 /// The `stepShared` function steps and reads a value through a counter that shares its carrier.
 def stepShared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C) -> Integer =
-  match b
+  match b where
     | *{.zero = z, .incr = i, .read = r} => r (i c)
 
 /// The manifest counter shares the up counter's carrier.
@@ -165,7 +165,7 @@ def bothManifest : Model(Pairing) with sort A = Integer with sort B = Unit = *{
 
 /// The `leftBeside` function reads a first value beside a second-carrier value.
 pub def leftBeside(m : Model(Pairing) with sort A = Integer, b : m.B) -> Integer =
-  match m
+  match m where
     | *{.left = l, .right = r} => l
 
 /// The `leftOfOne` run pairs one with the unit value.
@@ -177,7 +177,7 @@ def rightBeside(
   m : Model(Pairing) with sort A = Integer,
   n : Model(Pairing) with sort A = Integer with sort B = m.B
 ) -> Integer =
-  match n
+  match n where
     | *{.left = l, .right = r} => leftBeside m r
 
 /// The two manifest pairings share the unit second carrier.

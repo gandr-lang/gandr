@@ -12,7 +12,7 @@ def setBand : Band = *{low = 200000, high = 800000};
 
 /// The width of a band, its fields read through the synonym.
 pub def width(band : Band) -> Integer =
-  match band
+  match band where
     | *{.low = low, .high = high} => high - low
 
 /// The set's band is six tenths wide.

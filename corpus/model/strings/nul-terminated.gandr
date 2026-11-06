@@ -31,23 +31,23 @@ pub def terminated(cs : List(Integer)) -> List(Integer) =
 /// `cView` borrows a byte list when its only zero ends the list.
 /// It reports `Interior` for an interior zero.
 def rec cView(bs : List(Integer)) -> CView =
-  match bs
+  match bs where
     | Nil => Interior
     | Cons(b, rest) => {
       let zero = b == 0;
       let left = count rest;
       let last = left == 0;
-      match last
+      match last where
         | true =>
-          match zero
+          match zero where
             | true => Borrowed bs
             | false => Interior
         | false => {
-          match zero
+          match zero where
             | true => Interior
             | false => {
               let tail = cView[<] rest;
-              match tail
+              match tail where
                 | Borrowed(t) => Borrowed bs
                 | Interior => Interior
             }

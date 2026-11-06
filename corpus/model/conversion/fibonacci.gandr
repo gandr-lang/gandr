@@ -18,15 +18,15 @@ import "./conversion-base.gandr";
 
 /// Fibonacci, the doubly recursive definition.
 def rec fib(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
-    | Succ(m) => match m
+    | Succ(m) => match m where
       | Zero => Succ Zero
       | Succ(k) => plus (fib[<] m) (fib[<] k)
 
 /// Fibonacci by iteration over a pair of accumulators.
 def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat =
-  match n
+  match n where
     | Zero => a
     | Succ(m) => fibFrom[<] m b (plus a b)
 

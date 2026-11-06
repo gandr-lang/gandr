@@ -228,8 +228,9 @@ impl fmt::Display for FragmentSort
 /// - requires: the producer identifies the boundary crossed by the source form.
 /// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed,
 ///   unannotated, not-a-function, non-uniform, foreign-claim, not-in-tail,
-///   joins-block, empty-list, endpoint, non-contractive, held and view reports
-///   remain distinct; an arity report carries the number of operands offered.
+///   joins-block, empty-list, endpoint, non-contractive, held, view, chained
+///   and bare-arms reports remain distinct; an arity report carries the number
+///   of operands offered.
 /// - provides: why a parsed form has no representation at this position.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -345,6 +346,11 @@ pub enum FragmentBoundary
     /// one box of two inputs, `(A, B) -> C`, or a box whose output is a box,
     /// `A -> (B -> C)`.
     ChainedArrow,
+    /// The form is a match in layout form whose arms follow its scrutinee
+    /// with no `where`: `match e` ends its line and its arms come after. A
+    /// layout match writes `where` after its scrutinee, `match e where`, so
+    /// the eye finds the arms of each match of a nested one.
+    BareArms,
 }
 
 /// Why a source does not export a declaration an importer names.
@@ -449,6 +455,10 @@ impl fmt::Display for FragmentBoundary
             Self::ChainedArrow => f.write_str(
                 "chains arrows, which do not chain: one box of two inputs is `(A, B) -> C`, and a \
                  box whose output is a box is `A -> (B -> C)`",
+            ),
+            Self::BareArms => f.write_str(
+                "puts its arms after its scrutinee with no `where` between them: a layout match \
+                 is `match e where`, its arms on the lines after it",
             ),
         }
     }
@@ -3391,6 +3401,7 @@ mod tests
             &FragmentBoundary::View,
             &FragmentBoundary::Unbound,
             &FragmentBoundary::ChainedArrow,
+            &FragmentBoundary::BareArms,
         ]));
         let ill_formed = |kind: crate::WfKind, second: Maybe<SurfaceName<'static>, _>| {
             LoweringRefusal::IllFormedDescription {

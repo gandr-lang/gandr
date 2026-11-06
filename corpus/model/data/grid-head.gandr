@@ -25,14 +25,14 @@ pub data Grid : (r : Nat, c : Nat) --> Type where
 /// The last cell of a grid of at least one row. `GNil` stands at no row, and
 /// the case omits its arm at the first index.
 def rowCell(n : Nat, m : Nat, g : Grid(Succ(n), m)) -> Integer =
-  match g
+  match g where
     | GRow(r, c, cell, rest) => cell
     | GCol(r, c, cell, rest) => cell
 
 /// The last cell of a grid of at least one column. `GNil` stands at no
 /// column, and the case omits its arm at the second index.
 def colCell(n : Nat, m : Nat, g : Grid(m, Succ(n))) -> Integer =
-  match g
+  match g where
     | GRow(r, c, cell, rest) => cell
     | GCol(r, c, cell, rest) => cell
 

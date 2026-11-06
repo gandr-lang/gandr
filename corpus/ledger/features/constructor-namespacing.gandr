@@ -12,7 +12,7 @@ data Shape : Type where
 /// The length of a line, zero for a dot, each matched by its qualified name.
 @[ checks ]
 def length(s : Shape) -> Integer =
-  match s
+  match s where
     | Shape.Dot => 0
     | Shape.Line(n) => n
 
@@ -29,7 +29,7 @@ data Expr : Type where
 /// The size of an expression, each port matched by its qualified name.
 @[ checks ]
 def rec size(e : Expr) -> -F Integer =
-  match e
+  match e where
     | Expr.Lit(n) => return 1
     | Expr.Share(x).left => size[<] x
     | Expr.Share(x).right => size[<] x

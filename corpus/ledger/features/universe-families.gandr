@@ -24,7 +24,7 @@ def twice : Type -> Type = fun (Y) { type(Y * Y) } ;
 /// application.
 @[ checks ]
 def sum(p : apply(twice, Integer)) -> Integer =
-  match p
+  match p where
     | *{a, b} => a + b
 
 /// `sum` at a pair of integers runs as at `Integer * Integer`.

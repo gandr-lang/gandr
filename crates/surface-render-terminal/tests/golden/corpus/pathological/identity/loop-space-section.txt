@@ -5,7 +5,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │    │              ─ checked against `(a : Circle) -> -F Path[.A = Circle](spin (wind a), a)`; while checking the body of this function; binds c : Circle
    │ ┌──┘
    │ │
-47 │ │┌   match c
+47 │ │┌   match c where
 48 │ ││     | Base => Path.here Base
 49 │ ││     | Loop(x) => forged[<] x
    │ ││                  ━━━━━━━━━━━ its type does not convert: expected `-F Path[.A = Circle](spin (wind (Loop x)), Loop x)`, found `-F Path[.A = Circle](spin (wind x), x)`

@@ -17,7 +17,7 @@ data Expr : Type where
 /// `size` counts an expression's nodes and reads each port on its own.
 @[ checks ]
 def rec size(e : Expr) -> -F Integer =
-  match e
+  match e where
     | Lit(n) => return 1
     | Add(a, b) => { let x = size[<] a; let y = size[<] b; return x + y + 1 }
     | Share(x).left => size[<] x

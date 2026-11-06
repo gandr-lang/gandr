@@ -20,7 +20,7 @@ data Chosen : Type where
 /// refused.
 @[ refuses("UndecidedCoverage") ]
 def classify(c : Color) -> Integer =
-  match c
+  match c where
     | Red => 0
     | ? => 1
     | Blue => 2
@@ -28,6 +28,6 @@ def classify(c : Color) -> Integer =
 /// A hole in a constructor's field leaves the arm for `Chose` undecided too.
 @[ refuses("UndecidedCoverage") ]
 def unwrap(m : Chosen) -> Integer =
-  match m
+  match m where
     | Unchosen => 0
     | Chose(?) => 1

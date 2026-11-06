@@ -33,7 +33,7 @@ data Codes(d : Type) : Type[+, 1] where
 /// from the family into `a`.
 @[ builtin(irArgs), refuses("BuiltinNotCanonical") ]
 def rec fields(d : Type, c : Codes(d), x : Type, t : x -> d) -> Type =
-  match c
+  match c where
     | Stop(e) => return Unit
     | Ask(a, f) => return (Pair a (fun (y) { fields[<] d (f y) x t }))
     | Read(a, f) => return (Pair (x -> a) (fun (h) { return Unit }))

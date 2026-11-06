@@ -7,7 +7,7 @@ error[NotApart]: this case has no arm, but its path's endpoints are not shown ap
    │    │           │        checked against `(m : Nat) -> Grid(n, m) -> -F Integer`; while checking the body of this function; binds m : Nat
    │ ┌──┘           checked against `(n : Nat) -> (m : Nat) -> Grid(n, m) -> -F Integer`; while checking the body of this function; binds n : Nat
    │ │
-20 │ │┏   match g
+20 │ │┏   match g where
 21 │ │┃     | GRow(r, c, cell, rest) => cell
 22 │ │┃     | GCol(r, c, cell, rest) => cell
    │ │┃                                    ╿

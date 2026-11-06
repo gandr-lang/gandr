@@ -35,7 +35,7 @@ def absurd(x : +{}) -> -F Integer =
 
 @[ checks ]
 def pick(v : +{ok : Integer, err : String, gone : Unit}) -> -F Integer =
-  match v
+  match v where
     | +{.ok = n} => return n
     | +{.err = e} => return 20
     | +{.gone = u} => return 30
@@ -55,12 +55,12 @@ def signed_picked() -> -F Integer { pick signed }
 
 @[ checks ]
 def unwrap(v : +{only : Integer}) -> -F Integer =
-  match v
+  match v where
     | +{.only = n} => return n
 
 @[ checks ]
 def nested(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
-  match t
+  match t where
     | *{+{.1 = x}, y} => return x
     | *{_, y} => return y
 
@@ -72,7 +72,7 @@ def inner() -> -F Integer { nested (*{+{.1 = 8}, 9}) }
 /// spelling.
 @[ checks ]
 def chained(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
-  match t
+  match t where
     | *{+{.1 = x}, y} => return x
     | *{_, y} => return y
 
@@ -85,8 +85,8 @@ def outer() -> -F Integer { chained (*{+{.1 = 8}, 9}) }
 /// that component states, the shape the printer writes `nested` in.
 @[ checks ]
 def split(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
-  match t
-    | *{s, y} => match s
+  match t where
+    | *{s, y} => match s where
       | +{.0 = x} => return y
       | +{.1 = x} => return x
 

@@ -42,7 +42,7 @@ def mean (xs : List Float, count : Nat) -> Float =
 
 /// The verdict on `xs`, exported as `summarize`.
 pub def summarize (xs : List Float) -> Verdict =
-  match List.length xs
+  match List.length xs where
     | 0 => Empty
     | count =>
       let m = mean xs count
@@ -54,6 +54,6 @@ pub def summarize (xs : List Float) -> Verdict =
 pub def summarizeAt (url : String) -> [Fetch, Async] Verdict =
   let response = Fetch.fetch url
   let body = Fetch.Response.json response
-  match Json.decode (List Float) body
+  match Json.decode (List Float) body where
     | None => Empty
     | Some xs => summarize xs

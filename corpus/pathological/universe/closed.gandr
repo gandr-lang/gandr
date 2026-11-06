@@ -19,7 +19,7 @@ data U : Type where
 
 /// The decoder: each arm returns the type its code names.
 def rec el(u : U) -> Type =
-  match u
+  match u where
     | NatC => return Nat
     | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (x -> y) }
 

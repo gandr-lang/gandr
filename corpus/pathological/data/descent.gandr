@@ -16,7 +16,7 @@ data Nat : Type where
 /// below the stage the match took it apart at.
 @[ refuses("StageNotBelow") ]
 def rec again(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => again[<] n
 
@@ -24,8 +24,8 @@ def rec again(n : Nat) -> Nat =
 /// definition would descend on both, a measure the sized rung states.
 @[ refuses("DescentOnSeveralParameters") ]
 def rec both(m : Nat, n : Nat) -> -F Nat =
-  match m
-    | Zero => match n
+  match m where
+    | Zero => match n where
       | Zero => Zero
       | Succ(q) => both[<] m q
     | Succ(p) => both[<] p n

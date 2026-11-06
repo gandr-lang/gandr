@@ -80,28 +80,28 @@ pub data Env : Type where
 
 /// Addition, by recursion on the second summand.
 pub def rec plus(n : N, k : N) -> N =
-  match k
+  match k where
     | Z => n
     | S(j) => S (plus[<] n j)
 
 /// `n + j + k`, by recursion on `k`: a shift's index under `k` more binders.
 pub def rec plusTwo(n : N, j : N, k : N) -> N =
-  match k
+  match k where
     | Z => plus n j
     | S(i) => S (plusTwo[<] n j i)
 
 /// The index a renaming sends `n` to: a lift keeps zero and renames under
 /// it.
 pub def rec rlook(n : N, r : Ren) -> N =
-  match r
+  match r where
     | RShift(k) => plus n k
-    | RLift(q) => match n
+    | RLift(q) => match n where
       | Z => Z
       | S(m) => S (rlook[<] m q)
 
 /// A renaming applied to a term, lifted under each abstraction.
 pub def rec rename(t : Term, r : Ren) -> Term =
-  match t
+  match t where
     | Ix(n) => Ix (rlook n r)
     | Lam(b) => Lam (rename[<] b (RLift r))
     | Ap(f, a) => Ap (rename[<] f r) (rename[<] a r)
@@ -112,25 +112,25 @@ pub def wk(t : Term) -> Term =
 
 /// A term under `k` more binders: itself under none.
 pub def shiftBy(a : Term, k : N) -> Term =
-  match k
+  match k where
     | Z => a
     | S(j) => rename a (RShift (S j))
 
 /// The term a substitution sends index `n` to, under `k` binders the lookup
 /// has crossed: each lift it passes adds one.
 pub def rec look(n : N, s : Env, k : N) -> Term =
-  match s
+  match s where
     | Shift(j) => Ix (plusTwo n j k)
-    | Cons(a, r) => match n
+    | Cons(a, r) => match n where
       | Z => shiftBy a k
       | S(m) => look[<] m r k
-    | Lift(r) => match n
+    | Lift(r) => match n where
       | Z => Ix (plus Z k)
       | S(m) => look[<] m r (S k)
 
 /// A substitution applied to a term, lifted under each abstraction.
 pub def rec subst(t : Term, s : Env) -> Term =
-  match t
+  match t where
     | Ix(n) => look n s Z
     | Lam(b) => Lam (subst[<] b (Lift s))
     | Ap(f, a) => Ap (subst[<] f s) (subst[<] a s)

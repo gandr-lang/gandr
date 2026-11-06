@@ -40,14 +40,14 @@ pub data Nat : Type where
 
 /// The `wind` function counts loop and inverse letters.
 pub def rec wind(p : Path[.A = Circle](Base, Base)) -> Int =
-  match p
+  match p where
     | here => Z
     | loop ∷ q => S (wind[<] q)
     | back(loop) ∷ q => P (wind[<] q)
 
 /// The `spin` function maps each integer step to its loop letter.
 pub def rec spin(n : Int) -> Path[.A = Circle](Base, Base) =
-  match n
+  match n where
     | Z => Path.here Base
     | S(x) => loop ∷ spin[<] x
     | P(x) => back loop ∷ spin[<] x
@@ -65,36 +65,36 @@ pub def rec sect(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circl
   spin (wind p),
   p
 ) =
-  match p
+  match p where
     | here => Path.here (Path.here Base)
     | loop ∷ q => Path.ap loopOn (sect[<] q)
     | back(loop) ∷ q => Path.ap unloopOn (sect[<] q)
 
 /// The `retr` induction makes `wind(spin n)` equal `n`.
 pub def rec retr(n : Int) -> Path[.A = Int](wind (spin n), n) =
-  match n
+  match n where
     | Z => Path.here Z
     | S(x) => Path.ap up (retr[<] x)
     | P(x) => Path.ap down (retr[<] x)
 
 /// Conjugation carries the self loop at every circle point.
 pub def selfloop(x : Circle) -> Path[.A = Circle](x, x) =
-  match x
+  match x where
     | Base => loop
 
 /// Conjugation fixes reflexivity at every circle point.
 pub def selfrefl(x : Circle) -> Path[.A = Circle](x, x) =
-  match x
+  match x where
     | Base => Path.here Base
 
 /// The flip fixes the point and inverts the loop.
 pub def invLooper(x : Circle) -> Circle =
-  match x
+  match x where
     | Base => Base
     | loop => Path.back loop
 
 /// Multiplication uses the first circle argument to rotate the second.
 pub def mul(a : Circle, b : Circle) -> Circle =
-  match a
+  match a where
     | Base => b
     | loop => selfloop b

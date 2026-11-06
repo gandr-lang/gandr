@@ -78,7 +78,7 @@ def kept_beta : Path(Path.walk (fun (X) { X }) lists both, both) = Path.here bot
 /// A flag beside a list of booleans, negated, the list left as it is.
 @[ checks ]
 def flip_flag(entry : Bool * List(Bool)) -> Bool * List(Bool) =
-  match entry
+  match entry where
     | *{b, xs} => *{not b, xs}
 
 /// Negating the flag is its own inverse: at each boolean beside the empty

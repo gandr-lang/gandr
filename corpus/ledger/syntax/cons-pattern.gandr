@@ -13,13 +13,13 @@ data Int : Type where {
 }
 @[ checks ]
 def rec wind(p : Path(Base, Base)) -> -F Int =
-  match p
+  match p where
     | here => Z
     | loop ∷ q => S (wind[<] q)
     | back(loop) ∷ q => P (wind[<] q)
 @[ checks ]
 def rec windAscii(p : Path(Base, Base)) -> -F Int =
-  match p
+  match p where
     | here => Z
     | loop :: q => S (windAscii[<] q)
     | back(loop) :: q => P (windAscii[<] q)

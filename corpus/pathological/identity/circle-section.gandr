@@ -20,14 +20,14 @@ data Int : Type where {
 
 /// The winding number: a loop counts one up, its inverse one down.
 def rec wind(p : Path[.A = Circle](Base, Base)) -> Int =
-  match p
+  match p where
     | here => Z
     | loop ∷ q => S (wind[<] q)
     | back(loop) ∷ q => P (wind[<] q)
 
 /// Spinning: a successor is a loop, a predecessor its inverse.
 def rec spin(n : Int) -> Path[.A = Circle](Base, Base) =
-  match n
+  match n where
     | Z => Path.here Base
     | S(x) => loop ∷ spin[<] x
     | P(x) => back loop ∷ spin[<] x
@@ -49,7 +49,7 @@ def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle]
   spin (wind p),
   p
 ) =
-  match p
+  match p where
     | here => Path.here (Path.here Base)
     | loop ∷ q => forged[<] q
     | back(loop) ∷ q => { let ih = forged[<] q; Path.ap unloopOn ih }
@@ -64,7 +64,7 @@ def rec rewound(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle
   p,
   p
 ) =
-  match p
+  match p where
     | here => Path.here (Path.here Base)
     | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
     | back(loop) ∷ q => Path.here (back loop ∷ q)

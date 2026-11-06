@@ -3826,6 +3826,38 @@ fn a_match_without_an_answer_is_unannotated()
 }
 
 #[test]
+fn a_layout_match_writes_where_before_its_arms_5557()
+{
+    let source = include_str!(
+        "tests/fixtures/a-layout-match-writes-where-before-its-arms-5557-module.gandr"
+    );
+    let head = source
+        .find("match c\n")
+        .map(|at| at.saturating_add("match c".len()));
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("bare")),
+            LoweringRefusal::OutOfFragment {
+                span,
+                form: FormName::MATCH,
+                boundary: FragmentBoundary::BareArms,
+                ..
+            } if Some(usize::from(span.start())) == head && span.start() == span.end()
+        ),
+        "a layout match with no `where` is refused at the end of its head"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("marked")),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "the same match with `where` after its scrutinee lowers"
+    );
+}
+
+#[test]
 fn a_nested_match_records_its_cover_5103()
 {
     use gandr_kernel_term::FieldCount;

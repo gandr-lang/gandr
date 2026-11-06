@@ -17,7 +17,7 @@ module ReaderSchema where {
   /// The translator swaps the old record fields.
   @[ checks ]
   def toNew(old : Old) -> New =
-    match old
+    match old where
       | *{name, age} => *{age, name}
   /// The translator defines the schema upgrade flow.
   @[ checks ]
@@ -30,7 +30,7 @@ module ReaderSchema where {
   /// The new-schema reader returns the age field.
   @[ checks ]
   def age(record : New) -> Integer =
-    match record
+    match record where
       | *{years, name} => years
   /// The legacy reader rides the age reader to the old schema.
   @[ checks ]

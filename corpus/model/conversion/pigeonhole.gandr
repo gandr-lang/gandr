@@ -41,31 +41,31 @@ data Assignment : Type where
 
 /// The value of variable `i`, counted from the last one set.
 def rec lookup(i : Nat, a : Assignment) -> Bool =
-  match a
+  match a where
     | Unset => false
-    | Set(value, rest) => match i
+    | Set(value, rest) => match i where
       | Zero => value
       | Succ(j) => lookup[<] j rest
 
 /// Whether a formula holds under an assignment of its variables.
 def rec holds(f : Formula, a : Assignment) -> Bool =
-  match f
+  match f where
     | Atom(i) => lookup i a
-    | Not(g) => match holds[<] g a
+    | Not(g) => match holds[<] g a where
       | true => false
       | false => true
-    | And(l, r) => match holds[<] l a
+    | And(l, r) => match holds[<] l a where
       | true => holds[<] r a
       | false => false
-    | Or(l, r) => match holds[<] l a
+    | Or(l, r) => match holds[<] l a where
       | true => true
       | false => holds[<] r a
 
 /// Whether a formula holds under every assignment of `k` more variables.
 def rec tautology(k : Nat, f : Formula, a : Assignment) -> Bool =
-  match k
+  match k where
     | Zero => holds f a
-    | Succ(j) => match tautology[<] j f (Set true a)
+    | Succ(j) => match tautology[<] j f (Set true a) where
       | true => tautology[<] j f (Set false a)
       | false => false
 

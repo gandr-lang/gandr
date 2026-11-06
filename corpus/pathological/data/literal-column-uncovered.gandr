@@ -4,6 +4,6 @@ data Outer : Type where
 
 @[ refuses("NonExhaustiveMatch") ]
 def by_literal(m : Outer) -> -F Integer =
-  match m
+  match m where
     | Some(0) => return 0
     | None => return 1

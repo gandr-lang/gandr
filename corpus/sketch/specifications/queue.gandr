@@ -72,7 +72,7 @@ pub def rec drain[a : Type](q : Queue(a)) -> [State(Heap)] Nat #spec{
   }
   decreases size q
 } {
-  match pop q
+  match pop q where
     | None => 0
     | Some(_) => drain q + 1
 }
