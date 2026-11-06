@@ -19,7 +19,7 @@
     "queued": [1],
     "upto": 2,
     "stacks": { "1": 9, "2": 9 },
-    "output": "status 0; gh: stack link 9 2 | stack merge 2 --yes --merge"
+    "output": "status 0; gh: stack link --base main 9 2 | stack merge 2 --yes --merge"
   },
   {
     "name": "#4843: two open pull requests above a queued one are linked as a new stack and merged up to the top",
@@ -31,6 +31,6 @@
     "queued": [1],
     "upto": 3,
     "stacks": {},
-    "output": "status 0; gh: stack link 2 3 | stack merge 3 --yes --merge"
+    "output": "status 0; gh: stack link --base main 2 3 | stack merge 3 --yes --merge"
   }
 ]

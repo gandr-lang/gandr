@@ -3540,9 +3540,9 @@ fi
 # the top's stack (`gh stack link`). Above members already in the merge queue
 # only the open members are linked (#1988); where GitHub refuses that link,
 # as it does over a pull request queued on its own (#1353), the pull request
-# waits unlinked on the top, and GitHub moves it to main when the queued one
-# merges. The task prints which path it took. With nothing open it opens
-# against main. The top is read again just before the push: a
+# waits unlinked on the top, and GitHub moves it to the trunk when the queued
+# one merges. The task prints which path it took. With nothing open it opens
+# against the trunk. The top is read again just before the push: a
 # new top stacked above the read one that changes none of the branch's
 # paths takes the branch without a new gate, and any other move is
 # refused (`restack_moved`, `moved.jq`, #3849).

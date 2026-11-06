@@ -27,7 +27,9 @@ for (( i = 0; i < count; i++ )); do
   gh() {
     printf '%s\n' "$*" >> "$work/gh"
     if [[ $1 == stack && $2 == link ]]; then
-      servers=$(jq -c '. + ($ARGS.positional | map({(.): 9}) | add)' --args "${@:3}" <<< "$servers")
+      shift 2
+      [[ $1 != --base ]] || shift 2
+      servers=$(jq -c '. + ($ARGS.positional | map({(.): 9}) | add)' --args "$@" <<< "$servers")
     fi
   }
   stack_of() { jq -r --arg n "$1" '.[$n] // "null"' <<< "$servers"; }
