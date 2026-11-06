@@ -89,6 +89,7 @@ use gandr_surface_syntax::CloseReach;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::DelimSpelling;
 use gandr_surface_syntax::GroutShape;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -187,13 +188,16 @@ struct Gap
     act: Act,
     /// Whether the place is kept only when its copy owes nothing in the
     /// top-level form it stands in: a closer, a sibling separator, an arrow,
-    /// a keyword or a move. A `,` alone before a line is kept by its count.
+    /// an attribute opener, a keyword or a move. A `,` alone before a line is
+    /// kept by its count.
     cleared: bool,
 }
 
 /// The places the signals give: the gap's before each line, the sibling
 /// separators' between two operands side by side, the arrows' between an
-/// operand and a returner, and the words a keyword may stand for.
+/// operand and a returner, the attribute openers' before a line that a `]`
+/// with no `[` ends or a keyword follows, and the words a keyword may stand
+/// for.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Places<'text>
 {
@@ -204,6 +208,10 @@ struct Places<'text>
     /// A `->` between an operand and a `-F` after it on its line, in source
     /// order.
     arrows: Vec<Gap>,
+    /// A `@[` before the first word of a line that holds a `]` with no open
+    /// `[` before it, when the `]` ends the line or a keyword follows it, in
+    /// source order.
+    openers: Vec<Gap>,
     /// Each word of two or more characters that is no keyword, where it
     /// stands, in source order.
     words: Vec<(ByteOffset, SourceText<'text>)>,
@@ -349,8 +357,9 @@ fn class(
 }
 
 /// The places the gap before each line, the layout closers before it, the
-/// sibling separators and the arrows before a returner give in `text`,
-/// labelled as `tokens`, and the words a keyword may stand for.
+/// sibling separators, the arrows before a returner and the attribute
+/// openers before a stray `]` give in `text`, labelled as `tokens`, and the
+/// words a keyword may stand for.
 ///
 /// # Specification
 /// - requires: `tokens` label `text`.
@@ -366,13 +375,20 @@ fn class(
 ///   a group. In `arrows`, a `->` between each two tokens on one line, apart,
 ///   the first ending an operand and the second `-F`, with no shell block or
 ///   interpolation open. Each place stands at the end of the token before it,
-///   in source order. Also in `lines`, `k` moves at the first token of each
-///   line before which the layout pass closes `k > 0` blocks, one for each
-///   count of closes from 0 to `k - 1`, when the token neither closes nor
-///   separates, no shell block or interpolation is open, and the innermost open
-///   frame is none or a layout block whose items stand at another column. In
-///   `words`, each lower-case word of two or more bytes that is no keyword,
-///   outside a shell block or an interpolation, in source order.
+///   in source order. In `openers`, a `@[` at the first token of the line or of
+///   the block member that holds each `]` with no shell block or interpolation
+///   open and with a brace or layout block or no bracket innermost, when that
+///   first token is a lower-case word of two or more bytes that is no keyword
+///   and stands before the `]`, and when the `]` is the last significant token,
+///   the next one begins a line, or the next one is a keyword. A block member
+///   begins after a block opens and after a written `;`. Also in `lines`, `k`
+///   moves at the first token of each line before which the layout pass closes
+///   `k > 0` blocks, one for each count of closes from 0 to `k - 1`, when the
+///   token neither closes nor separates, no shell block or interpolation is
+///   open, and the innermost open frame is none or a layout block whose items
+///   stand at another column. In `words`, each lower-case word of two or more
+///   bytes that is no keyword, outside a shell block or an interpolation, in
+///   source order.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
@@ -381,10 +397,13 @@ fn class(
 /// - hypothesis: L3 — a field left without its type before the next field, a
 ///   field whose `(` the line leaves open, a valid record, a line at column
 ///   zero, two parameters side by side in a parameter list, a type beside a
-///   returner, and a misspelt keyword each give their places or none.
+///   returner, an attribute without its `@[` on its own line or after a block's
+///   `{`, a whole attribute, a stray `]` before an operator, and a misspelt
+///   keyword each give their places or none.
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_separator_left_out_between_siblings_is_minted_5433`
 /// - witness: `parse::gap::tests::an_arrow_left_out_before_a_returner_is_minted_5501`
+/// - witness: `parse::gap::tests::an_attribute_opener_left_out_is_minted_4398`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
 /// - witness: `parse::gap::tests::a_source_that_owes_nothing_keeps_its_parse_5433`
 /// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
@@ -407,6 +426,26 @@ fn gaps<'text>(
     // The token before the current one: where it ends, whether it opens a
     // bracket, whether it is a `,`, and whether it ends an operand.
     let mut previous: Option<(u32, bool, bool, bool)> = None;
+    // The first token of the current line or block member: where it starts,
+    // and whether it is a word that an attribute may begin with.
+    let mut head: Option<(u32, bool)> = None;
+    // Whether the next significant token begins a block member: after a
+    // block opens, or after a written `;`. The layout pass writes its `;`
+    // where a line ends, and the next line's first token begins it.
+    let mut member = false;
+    // The first word of the member that holds a `]` that may close an
+    // attribute without its `@[`. The token after the `]` decides it: an
+    // attribute's `]` ends its line or comes before a keyword, and a `]` before
+    // an operator or an operand closes an expression.
+    let mut attribute: Option<u32> = None;
+    let opener = |start: u32| Gap {
+        at: ByteOffset::from(usize::try_from(start).unwrap_or(usize::MAX)),
+        act: Act::Writes {
+            tiles: alloc::vec!["@["],
+            over: 0,
+        },
+        cleared: true,
+    };
     let open = |kind: Kind, limit: u32, items: Items| Frame { kind, limit, items };
     for &token in tokens {
         match token.lexeme {
@@ -423,6 +462,7 @@ fn gaps<'text>(
             Lexeme::LayoutSemi => continue,
             Lexeme::LayoutOpen => {
                 stack.push(open(Kind::Block, line_column, Items::Unread));
+                member = true;
                 continue;
             },
             Lexeme::LayoutClose => {
@@ -457,6 +497,14 @@ fn gaps<'text>(
         let leads = core::mem::replace(&mut broken, false);
         if leads {
             line_column = column;
+        }
+        if let Some(start) = attribute.take()
+            && (leads || KEYWORDS.contains(&<&str>::from(spelling(text, token))))
+        {
+            places.openers.push(opener(start));
+        }
+        if leads || core::mem::replace(&mut member, false) {
+            head = Some((token.start, class.word));
         }
         // A line before which the layout pass closes blocks, and which stands
         // at no column of a block left open, may stay in each block it closes.
@@ -561,6 +609,24 @@ fn gaps<'text>(
                 cleared: true,
             });
         }
+        // An attribute whose `@[` the source leaves out leaves its words and a
+        // `]` that closes no `[` in its block. The words read as a type or a
+        // call, and the `]` takes down the block around them. A `@[` before
+        // the member's first word reads them as the attribute again.
+        if opaque == 0
+            && <&str>::from(spelling(text, token)) == "]"
+            && matches!(
+                stack.last(),
+                None | Some(&Frame {
+                    kind: Kind::Block,
+                    ..
+                })
+            )
+            && let Some((start, true)) = head
+            && start < token.start
+        {
+            attribute = Some(start);
+        }
         if let Some(frame) = stack.last_mut()
             && frame.items == Items::Unread
         {
@@ -591,6 +657,8 @@ fn gaps<'text>(
             },
             Bracketing::Neither => {},
         }
+        member = class.separates && <&str>::from(spelling(text, token)) == ";"
+            || class.bracketing == Bracketing::Opens(Kind::Block);
         previous = Some((
             token.end,
             matches!(class.bracketing, Bracketing::Opens(_)),
@@ -598,6 +666,9 @@ fn gaps<'text>(
             matches!(class.edge, Edge::Ends | Edge::Both),
         ));
         closing = 0;
+    }
+    if let Some(start) = attribute {
+        places.openers.push(opener(start));
     }
     places
 }
@@ -1011,15 +1082,15 @@ struct Form<'gap>
 ///   each moved line, and one [`Oblig::IncompleteTile`] over each misspelt
 ///   word. The scan reads only the top-level forms, [`form_around`], that hold
 ///   an obligation. The search tries their places before each line in source
-///   order, each move of a line innermost block first, then their sibling and
-///   arrow places and the keywords [`misspelt`] gives for the [`COPIES`] words
-///   nearest an obligation, nearest first, [`COPIES`] places in all. Each place
-///   is judged in a copy of its form with the places kept there before it, a
-///   move in place of a move of its own line. A place is kept when that copy
-///   owes fewer obligations than the form alone, each minted tile and each
-///   moved line counting as one. A closer, a sibling separator, an arrow, a
-///   keyword or a move is kept only when the copy owes nothing but its minted
-///   tiles and its moved lines.
+///   order, each move of a line innermost block first, then their sibling,
+///   arrow and attribute opener places and the keywords [`misspelt`] gives for
+///   the [`COPIES`] words nearest an obligation, nearest first, [`COPIES`]
+///   places in all. Each place is judged in a copy of its form with the places
+///   kept there before it, a move in place of a move of its own line. A place
+///   is kept when that copy owes fewer obligations than the form alone, each
+///   minted tile and each moved line counting as one. A closer, a sibling
+///   separator, an arrow, an attribute opener, a keyword or a move is kept only
+///   when the copy owes nothing but its minted tiles and its moved lines.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -1029,13 +1100,15 @@ struct Form<'gap>
 ///   one `,` on its own line and nothing after it; a field whose `(` the line
 ///   leaves open owes the `)` and the `,` there; two arguments side by side owe
 ///   the `,` between them; a type beside a returner owes the `->` between them;
-///   a misspelt `matc` owes its word alone; a `)` deleted inside a line with a
-///   repair after it is not minted at the line's end; a line at column zero
-///   inside nested blocks owes only its own line; a source that owes nothing,
-///   and one whose places all owe more, keep their parse.
+///   an attribute without its `@[` owes the `@[` alone; a misspelt `matc` owes
+///   its word alone; a `)` deleted inside a line with a repair after it is not
+///   minted at the line's end; a line at column zero inside nested blocks owes
+///   only its own line; a source that owes nothing, and one whose places all
+///   owe more, keep their parse.
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::a_separator_left_out_between_siblings_is_minted_5433`
 /// - witness: `parse::gap::tests::an_arrow_left_out_before_a_returner_is_minted_5501`
+/// - witness: `parse::gap::tests::an_attribute_opener_left_out_is_minted_4398`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
 /// - witness: `parse::gap::tests::a_closer_deleted_inside_a_line_is_not_minted_at_its_end_5433`
 /// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
@@ -1082,6 +1155,10 @@ pub(super) fn gapped<'source>(
             ..gap
         }));
         near.extend(found.arrows.into_iter().map(|gap| Gap {
+            at: shift(gap.at),
+            ..gap
+        }));
+        near.extend(found.openers.into_iter().map(|gap| Gap {
             at: shift(gap.at),
             ..gap
         }));
@@ -1221,13 +1298,15 @@ fn form_around(
 /// The parse of `source` with the tiles of `kept` written in and read back as
 /// minted, and with each line `kept` moves kept in its block: a closer as a
 /// minted close, a `,` as an empty postfix grout, a `->` as an empty infix
-/// grout between the two operands it joins, and a keyword written over a
-/// misspelt word as a prefix grout over the word.
+/// grout between the two operands it joins, a `@[` as an empty prefix grout
+/// before the attribute's words, and a keyword written over a misspelt word
+/// as a prefix grout over the word.
 ///
 /// # Specification
 /// - requires: `kept` stand in source order, a move before a tile at one place.
 /// - ensures: as [`gapped`] for its kept places; `None` when a written tile
-///   reads as no tile of the copy, or the commit fails.
+///   reads as no tile of the copy, when documentation holds a written tile
+///   ([`undocumented`]), or when the commit fails.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the commit.
@@ -1236,6 +1315,7 @@ fn form_around(
 /// - hypothesis: L3 — as [`gapped`].
 /// - witness: `parse::gap::tests::a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433`
 /// - witness: `parse::gap::tests::an_arrow_left_out_before_a_returner_is_minted_5501`
+/// - witness: `parse::gap::tests::an_attribute_opener_left_out_is_minted_4398`
 /// - witness: `parse::gap::tests::a_misspelt_keyword_owes_its_word_5433`
 /// - witness: `parse::gap::tests::a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434`
 fn minted<'source>(
@@ -1265,11 +1345,10 @@ fn minted<'source>(
             Stands::LeftOut => ClosingClass::closing(DelimSpelling::from(tile)).map_or(
                 NodeLabel::Grout {
                     sort,
-                    shape: if tile == "->" {
-                        GroutShape::Infix
-                    }
-                    else {
-                        GroutShape::Postfix
+                    shape: match tile {
+                        "->" => GroutShape::Infix,
+                        "@[" => GroutShape::Prefix,
+                        _ => GroutShape::Postfix,
                     },
                 },
                 |class| NodeLabel::GhostClose {
@@ -1304,7 +1383,61 @@ fn minted<'source>(
             },
         }
     }
-    spliced(state, source, &splices, owed)
+    undocumented(spliced(state, source, &splices, owed)?, kept)
+}
+
+/// `parsed` when no documentation in it holds a tile that `kept` writes in.
+/// The melder reads an attribute block of `doc` entries as documentation,
+/// with a `@[` written in before the entries too. The lowering reads no
+/// repair in documentation, so it refuses no such tile, and the source
+/// checks clean.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `None` exactly when a [`NodeLabel::Grout`] or a
+///   [`NodeLabel::GhostClose`] node that starts at the place of one of `kept`
+///   stands inside a [`NodeLabel::Doc`] node of `parsed`'s tree; otherwise
+///   `parsed` as it is.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the walk.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `doc` entry left without its `@[` in a module, on the
+///   member's line and on its own line, holds no minted `@[` in documentation.
+/// - witness: `parse::gap::tests::an_attribute_opener_left_out_is_minted_4398`
+fn undocumented<'source>(
+    parsed: ParseResult<'source>,
+    kept: &[&Gap],
+) -> Option<ParseResult<'source>>
+{
+    let tree = &parsed.tree;
+    let mut pending: Vec<(NodeIndex, bool)> =
+        tree.roots().iter().map(|&root| (root, false)).collect();
+    // The starts of the repairs that documentation holds. Most parses hold
+    // none, and an empty vector allocates nothing.
+    let mut held: Vec<ByteOffset> = Vec::new();
+    while let Some((next, documented)) = pending.pop() {
+        let Some(node) = tree.node(next)
+        else {
+            continue;
+        };
+        let label = node.label();
+        let documented = documented || label == NodeLabel::Doc;
+        if documented
+            && matches!(
+                label,
+                NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }
+            )
+        {
+            held.push(node.span().start());
+        }
+        pending.extend(tree.children(next).map(|child| (child, documented)));
+    }
+    held.sort_unstable();
+    kept.iter()
+        .all(|gap| held.binary_search(&gap.at).is_err())
+        .then_some(parsed)
 }
 
 #[cfg(test)]
@@ -1744,6 +1877,104 @@ mod tests
                 [(Oblig::MissingMeld, operator, operator)],
                 "{source}: the `;` ends `first`, so the parse owes only the left operand of `+`"
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn an_attribute_opener_left_out_is_minted_4398() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        // Row 4 of `pathological/module-duplicate-member.gandr`'s recovery
+        // record, an attribute on its own line, and row 4 of
+        // `pathological/module-linker-no-run-target.gandr`'s, an attribute
+        // after a block's `{` on the block's line.
+        for (source, word) in [
+            (
+                include_str!("gap/unformatted/an-attribute-opener-left-out-is-minted-4398-1.gandr"),
+                "refuses",
+            ),
+            ("module Only where {  runs(\"1\") ] def x = 1; }\n", "runs"),
+        ] {
+            let at = source.find(word).ok_or("the attribute's word is written")?;
+            let parsed = parse(&pbg, SourceText::from(source))?;
+            let tree = parsed.tree();
+            assert_eq!(
+                crate::testing::reconstruct(tree),
+                source,
+                "{source}: the tree spells the source"
+            );
+            assert_eq!(
+                parsed
+                    .obligations()
+                    .iter()
+                    .map(|obligation| (
+                        obligation.class,
+                        usize::from(obligation.span.start()),
+                        usize::from(obligation.span.end())
+                    ))
+                    .collect::<alloc::vec::Vec<_>>(),
+                [(Oblig::MissingTile, at, at)],
+                "{source}: the attribute owes its `@[` alone"
+            );
+            assert!(
+                tree.positions()
+                    .filter_map(|position| tree.node(position))
+                    .any(|node| {
+                        matches!(node.label(), gandr_surface_syntax::NodeLabel::Grout {
+                            shape: gandr_surface_syntax::GroutShape::Prefix,
+                            ..
+                        }) && usize::from(node.span().start()) == at
+                            && usize::from(node.span().end()) == at
+                    }),
+                "{source}: the `@[` stands as a repair before the attribute's words"
+            );
+        }
+        // `corpus/ledger/syntax/block.gandr` with an index's `.#[` left out
+        // and with its `]` written twice. Each stray `]` comes before an
+        // operator, so it closes an expression and no attribute.
+        for source in [
+            include_str!("gap/unformatted/an-attribute-opener-left-out-is-minted-4398-2.gandr"),
+            include_str!("gap/unformatted/an-attribute-opener-left-out-is-minted-4398-3.gandr"),
+            include_str!("gap/unformatted/an-attribute-opener-left-out-is-minted-4398-4.gandr"),
+        ] {
+            assert_eq!(
+                super::gaps(
+                    SourceText::from(source),
+                    &crate::label::label(gandr_surface_syntax::SourceFragment::from(source))
+                )
+                .openers,
+                [],
+                "{source}: a `]` that closes its `@[` or comes before an operator gives no place"
+            );
+        }
+        // `corpus/ledger/syntax/attributed-module-member.gandr` with its `@[`
+        // left out, the entry on the member's line and on its own line. The
+        // melder reads a block of `doc` entries as documentation, where the
+        // lowering refuses no repair, so every repair stands outside it.
+        for source in [
+            include_str!("gap/unformatted/an-attribute-opener-left-out-is-minted-4398-5.gandr"),
+            include_str!("gap/unformatted/an-attribute-opener-left-out-is-minted-4398-6.gandr"),
+        ] {
+            let parsed = parse(&pbg, SourceText::from(source))?;
+            let tree = parsed.tree();
+            let mut pending: alloc::vec::Vec<(gandr_surface_syntax::NodeIndex, bool)> =
+                tree.roots().iter().map(|&root| (root, false)).collect();
+            while let Some((next, documented)) = pending.pop() {
+                let node = tree.node(next).ok_or("a root or a child is a node")?;
+                let documented = documented || node.label() == gandr_surface_syntax::NodeLabel::Doc;
+                assert!(
+                    !(documented
+                        && matches!(
+                            node.label(),
+                            gandr_surface_syntax::NodeLabel::Grout { .. }
+                                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                        )),
+                    "{source}: the repair at {:?} stands inside documentation",
+                    node.span()
+                );
+                pending.extend(tree.children(next).map(|child| (child, documented)));
+            }
         }
         Ok(())
     }
