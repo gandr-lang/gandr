@@ -10,13 +10,13 @@ theory Semi where
 
 @[ checks ]
 def widen(b : Bool) -> -F (Unit + Unit + Unit + Unit) =
-  match b
+  match b where
     | true => +{.0 = *{}}
     | false => +{.1 = *{}}
 
 @[ checks ]
 def narrow(e : Unit + Unit + Unit + Unit) -> -F Bool =
-  match e
+  match e where
     | +{.0 = u} => +{.0 = u}
     | +{.1 = u} => +{.1 = u}
     | +{.2 = u} => +{.0 = u}

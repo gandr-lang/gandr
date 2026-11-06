@@ -41,11 +41,11 @@ def base_case() -> Path[.A = Words](spinWords (windWords Nil), Nil) =
 
 /// The `parity` recursion cases on free naturals.
 def rec parity(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => {
       let q = parity[<] p;
-      match q
+      match q where
         | Zero => Succ Zero
         | Succ(r) => Zero
     }

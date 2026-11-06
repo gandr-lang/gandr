@@ -5,7 +5,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │    │                     ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-29 │ │┌   match n
+29 │ │┌   match n where
 30 │ ││     | Zero => Zero
 31 │ ││     | Succ(p) => Succ (apply Nat Nat applied_again[<] n)
    │ ││                  ┬─────┬─────────────┯━━━━━━━━━━━━━━━──│
@@ -26,7 +26,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │    │                        ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-37 │ │┌   match n
+37 │ │┌   match n where
 38 │ ││     | Zero => Zero
 39 │ ││     | Succ(p) => Succ (applyAt applied_at_again[<] n)
    │ ││                  ┬─────┬───────────────────────────┯│
@@ -65,7 +65,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │    │                      ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-62 │ │┌   match n
+62 │ │┌   match n where
 63 │ ││     | Zero => Zero
 64 │ ││     | Succ(p) => Succ (applyNat plainly_helped[<] p)
    │ ││                  ┬─────┬────────┯━━━━━━━━━━━━━━━━──│
@@ -86,7 +86,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │    │                           ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-79 │ │┌   match n
+79 │ │┌   match n where
 80 │ ││     | Zero => Zero
 81 │ ││     | Succ(p) => { let q = pred p; Succ (halved_through_pred[<] q) }
    │ ││                    ┬──             ┬─────┬──────────────────────┯─ │
@@ -108,7 +108,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │    │                             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
    │ ┌──┘
    │ │
-90 │ │┌   match n
+90 │ │┌   match n where
 91 │ ││     | Zero => Zero
 92 │ ││     | Succ(p) => { let q = boundedAt p n; looping_through_bound[<] q }
    │ ││                    ┬──     ┬───────────┯                             │
@@ -130,7 +130,7 @@ error[StagesDisagree]: the call's arguments stand at stages that no single stage
     │    │                   ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
     │ ┌──┘
     │ │
-101 │ │┌   match n
+101 │ │┌   match n where
 102 │ ││     | Zero => Zero
 103 │ ││     | Succ(p) => Succ (sameAt disagreeing[<] n)
     │ ││                  ┬─────┬──────┯━━━━━━━━━━━━━──│

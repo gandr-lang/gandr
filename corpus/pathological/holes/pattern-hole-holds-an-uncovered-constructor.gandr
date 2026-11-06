@@ -10,7 +10,7 @@ data Color : Type where
 /// `Green` falls to the hole.
 @[ refuses("UndecidedCoverage") ]
 def classify(c : Color) -> Integer =
-  match c
+  match c where
     | Red => 0
     | ? => 1
     | Blue => 2

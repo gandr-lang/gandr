@@ -36,7 +36,7 @@ rec {
   /// at the field's decode.
   @[ refuses("TypeMismatch") ]
   def rec elSigRun(u : USigRun) -> Type =
-    match u
+    match u where
       | NatR => return Nat
       | SigR(a, b) => {
         let t = elSigRun[<] a;

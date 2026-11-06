@@ -46,7 +46,7 @@ def idle(waiting : Bool, operator : mu open. &{
   retire : ?Integer. end
 }) -> Unit =
   loop {
-    match waiting
+    match waiting where
       | true => continue
       | false => offer operator {
         | report => { let next = recv operator; continue }

@@ -6879,7 +6879,7 @@ mod tests
             ))
         };
         assert_eq!(
-            at("m\n"),
+            at("m where\n"),
             named("m : Nat)", "m"),
             "a parameter's use, its binder"
         );
@@ -7128,7 +7128,7 @@ mod tests
         );
         assert_eq!(
             uses("m : Nat)"),
-            [at("m\n")],
+            [at("m where\n")],
             "the other parameter: its one use"
         );
         assert_eq!(
@@ -7152,7 +7152,7 @@ mod tests
             "a constructor: in a pattern and in terms, nested ones included"
         );
         assert!(
-            matches!(table.named_at(at("m\n")), Maybe::Absent(_)),
+            matches!(table.named_at(at("m where\n")), Maybe::Absent(_)),
             "a use is no declaring name"
         );
     }
@@ -7229,7 +7229,11 @@ mod tests
             SourceText::from("Nat : Type"),
             SourceText::from("Nat"),
         )]);
-        assert_eq!(at("m\n"), nat, "a parameter's use, at its type's family");
+        assert_eq!(
+            at("m where\n"),
+            nat,
+            "a parameter's use, at its type's family"
+        );
         assert_eq!(
             at("plus[<]"),
             nat,

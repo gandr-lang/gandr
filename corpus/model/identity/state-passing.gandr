@@ -20,7 +20,7 @@ pub data Stores : Type where {
 
 /// The `final` function returns the state from the final store.
 def rec final(p : Stores, s : Integer) -> Integer =
-  match p
+  match p where
     | End(_x) => s
     | Store(t, k) => final[<] k t
 

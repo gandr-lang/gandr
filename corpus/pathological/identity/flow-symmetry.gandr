@@ -4,7 +4,7 @@ module Schema where {
   type Count = Integer;
   @[ checks ]
   def toNew(old : Old) -> New =
-    match old
+    match old where
       | *{name, age} => *{age, name}
   @[ checks ]
   def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
@@ -13,7 +13,7 @@ module Schema where {
     Flow.ride (fun (X) { type(Flow[.A = Type](X, Old)) }) upgrade (Flow.stay Old)
   @[ checks ]
   def age(record : Old) -> Count =
-    match record
+    match record where
       | *{name, years} => years
   @[ refuses("NonCovariantMotive") ]
   def reader() -> New -> Count =

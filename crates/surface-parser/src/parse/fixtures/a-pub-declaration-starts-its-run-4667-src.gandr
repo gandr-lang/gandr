@@ -3,7 +3,7 @@ pub def one : Nat = Zero
 
 /// Two.
 pub def rec two(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(m) => two[<] m
 

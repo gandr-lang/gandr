@@ -20,7 +20,7 @@ module Roster where {
   /// The translator swaps fields and preserves the score list.
   @[ checks ]
   def toNew(old : Old) -> New =
-    match old
+    match old where
       | *{name, scores} => *{scores, name}
   /// The translator defines the record flow.
   @[ checks ]

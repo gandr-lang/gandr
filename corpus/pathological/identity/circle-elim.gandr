@@ -17,7 +17,7 @@ data Circle : Type where
 /// between them. The circle is not contractible.
 @[ refuses("LoopNotRespected") ]
 def contractible(x : Circle) -> Path[.A = Circle](Base, x) =
-  match x
+  match x where
     | Base => Path.here Base
 
 /// The same nesting as `circle-rotation.gandr`'s `rotInv1`, at a fibre that
@@ -26,15 +26,15 @@ def contractible(x : Circle) -> Path[.A = Circle](Base, x) =
 /// set leaves unowed, so the case is refused naming the fibre.
 @[ refuses("LoopNotRespected") ]
 def rotTwin(a : Circle, b : Circle) -> *{centre : Circle, around : Path[.A = Circle](a, a)} =
-  match a
-    | Base => match b
+  match a where
+    | Base => match b where
       | Base => *{centre = Base, around = loop}
 
 /// The degree-two map: the loop goes round twice. A loop arm of a
 /// non-dependent case chooses any loop at the image of the point, so the map
 /// is admitted.
 def doubled(x : Circle) -> Circle =
-  match x
+  match x where
     | Base => Base
     | loop => loop ∷ loop ∷ Path.here Base
 
@@ -43,7 +43,7 @@ def doubled(x : Circle) -> Circle =
 /// answers reflexivity at reflexivity.
 @[ refuses("EndpointMismatch") ]
 def misjoined(x : Circle) -> Path[.A = Circle](Base, x) =
-  match x
+  match x where
     | Base => Path.here Base
     | loop => Path.here (Path.here Base)
 
@@ -62,7 +62,7 @@ def misjoined_then : Path(Mark, Elsewhere) = Path.step turn (Path.here Elsewhere
 /// Every point to itself, by cases: no loop arm, and the motive reads no
 /// point, so the turn is owed nothing.
 def kept(x : Marked) -> Marked =
-  match x
+  match x where
     | Mark => Mark
     | Elsewhere => Elsewhere
 

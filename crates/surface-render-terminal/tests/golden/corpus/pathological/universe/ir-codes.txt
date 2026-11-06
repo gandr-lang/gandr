@@ -19,7 +19,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │      │                │         checked against `(c : IR(d)) -> Mu(d, c) -> -F d`; while checking the body of this function; binds c : IR(d)
    │ ┌────┘                checked against `(d : Type) -> (c : IR(d)) -> Mu(d, c) -> -F d`; while checking the body of this function; binds d : Type
    │ │
-47 │ │┌     match m
+47 │ │┌     match m where
 48 │ ││       | In(v) => decodeArgs d c (Mu d c) (thunk { fun (n) { decodeMu[<] d c n } }) v
    │ ││                  ┬────────────────────────┬───────┬─────────┬───────────────┯──────│
    │ └│──────────────────│────────────────────────│───────│─────────│───────────────│──────│

@@ -21,7 +21,7 @@ data Tree : Type where
 /// The sum of a tree's leaves. Each half is a pure cut, so the scheduler may
 /// run the two apart, and the answer stays the sequential one.
 def sum(t : Tree) -> Integer =
-  match t
+  match t where
     | Leaf(n) => n
     | Node(l, r) => {
       let a = sum l;

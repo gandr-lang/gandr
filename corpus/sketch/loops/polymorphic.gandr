@@ -20,6 +20,6 @@ data Nest(A : Type) : Type where
 /// The number of elements a nest holds. The recursive call runs at `A * A`,
 /// and the stated signature lets it check.
 def size[A : Type](xs : Nest(A)) -> Nat =
-  match xs
+  match xs where
     | Nil => 0
     | Cons(_, tail) => 1 + 2 * size tail

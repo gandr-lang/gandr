@@ -19,12 +19,12 @@ def shorthand = *{n = 3, s = "x"};
 
 @[ checks ]
 def punned(r : *{n : Integer, s : String}) -> -F String =
-  match r
+  match r where
     | *{.n, .s} => return s
 
 @[ checks ]
 def renamed(r : *{n : Integer, s : String}) -> -F Integer =
-  match r
+  match r where
     | *{.n = m} => return m
 
 @[ runs("*{.n = 3, .s = \"x\"}") ]

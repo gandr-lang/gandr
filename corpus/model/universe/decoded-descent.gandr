@@ -29,7 +29,7 @@ rec {
   /// The decoder, recursing below the code.
   @[ checks ]
   pub def rec elL(u : UL) -> -F Type =
-    match u
+    match u where
       | NatL => return Nat
       | ListL(a) => {
         let e = elL[<] a;
@@ -41,7 +41,7 @@ rec {
 /// A list of an element code's values summed through `f`, recursing on the
 /// list: the stage is the list's, the element code and `f` held fixed.
 def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List(elL(a))) -> Nat =
-  match v
+  match v where
     | Nil => Zero
     | Cons(h, t) => plus (f h) (sumAt[<] a f t)
 
@@ -50,7 +50,7 @@ def rec sumAt(a : UL, f : +U (elL(a) -> -F Nat), v : List(elL(a))) -> Nat =
 /// list to `sumAt`, whose stage is the list's own, with the element code's
 /// sum, which descends on the code.
 def rec total(c : UL) -> +U (elL(c) -> -F Nat) =
-  match c
+  match c where
     | NatL => thunk { fun (v) { v } }
     | ListL(a) => thunk { fun (v) { sumAt a (total[<] a) v } }
     | PiL(a, b) => thunk { fun (f) { Zero } }
@@ -59,7 +59,7 @@ def rec total(c : UL) -> +U (elL(c) -> -F Nat) =
 /// `Nat`.
 @[ checks ]
 def rec countBeside(c : UL, v : elL(c)) -> Nat =
-  match c
+  match c where
     | NatL => v
     | ListL(a) => Zero
     | PiL(a, b) => Zero

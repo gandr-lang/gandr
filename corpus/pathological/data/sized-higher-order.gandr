@@ -26,7 +26,7 @@ import "../../model/data/sized-higher-order.gandr";
 /// below.
 @[ refuses("StageNotBelow") ]
 def rec applied_again(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => Succ (apply Nat Nat applied_again[<] n)
 
@@ -34,7 +34,7 @@ def rec applied_again(n : Nat) -> Nat =
 /// the parameter's own stage, and `applied_at_again[<]` takes nothing there.
 @[ refuses("StageNotBelow") ]
 def rec applied_at_again(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => Succ (applyAt applied_at_again[<] n)
 
@@ -59,13 +59,13 @@ def applyNat(f : Nat -> Nat, x : Nat) -> Nat =
 /// stand for its function; the model's `helped` goes through `applyAt`.
 @[ refuses("StageNotBelow") ]
 def rec plainly_helped(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => Succ (applyNat plainly_helped[<] p)
 
 /// The predecessor of a number, zero's its own.
 def pred(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => p
 
@@ -76,7 +76,7 @@ def pred(n : Nat) -> Nat =
 /// quantified signature states it (`predAt` and `halvedAt` in the model).
 @[ refuses("StageNotBelow") ]
 def rec halved_through_pred(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => { let q = pred p; Succ (halved_through_pred[<] q) }
 
@@ -87,7 +87,7 @@ def rec halved_through_pred(n : Nat) -> Nat =
 /// call is refused where `k` is read.
 @[ refuses("StageNotBelow") ]
 def rec looping_through_bound(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => { let q = boundedAt p n; looping_through_bound[<] q }
 
@@ -98,7 +98,7 @@ def rec looping_through_bound(n : Nat) -> Nat =
 /// reading the number's stage leaves unmet.
 @[ refuses("StagesDisagree") ]
 def rec disagreeing(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => Succ (sameAt disagreeing[<] n)
 

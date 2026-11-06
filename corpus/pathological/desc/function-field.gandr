@@ -12,7 +12,7 @@ import "../../model/desc/function-field.gandr";
 /// stores and one tell the law's sides apart.
 @[ refuses("RuleNotRespected") ]
 def rec stores(p : Program) -> Integer =
-  match p
+  match p where
     | Done(_x) => 0
     | Get(k) => {
       let q = k 0;

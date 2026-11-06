@@ -13,12 +13,12 @@ import "./circle-base.gandr";
 
 /// The flip is involutive because its loop image is the loop.
 def involutive(x : Circle) -> Path[.A = Circle](invLooper (invLooper x), x) =
-  match x
+  match x where
     | Base => Path.here Base
 
 /// The collapse maps the loop to reflexivity.
 def collapse(x : Circle) -> Circle =
-  match x
+  match x where
     | Base => Base
 
 /// The collapse maps the loop to reflexivity through `Path.ap`.

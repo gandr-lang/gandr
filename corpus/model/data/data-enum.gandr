@@ -11,7 +11,7 @@ import "./data-base.gandr";
 
 /// The rank of green among the colours, read off the arm green takes.
 def rank() -> Integer =
-  match (Green : Color)
+  match (Green : Color) where
     | Red => 0
     | Green => 1
     | Blue => 2

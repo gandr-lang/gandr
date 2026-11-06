@@ -14,13 +14,13 @@ import "./data-base.gandr";
 
 /// The family that is `Void` at zero and `Unit` past it.
 pub def isVoid(n : Nat) -> Type =
-  match n
+  match n where
     | Zero => return Void
     | Succ(_m) => return Unit
 
 /// A function from the family at `n` to the naturals, whose arm at zero cases on no value.
 pub def absurdArm(n : Nat) -> (isVoid(n)) -> Nat =
-  match n
+  match n where
     | Zero => return fun (u) { match u {} }
     | Succ(_m) => return fun (_u) { return Zero }
 

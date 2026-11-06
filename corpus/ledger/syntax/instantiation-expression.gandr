@@ -5,6 +5,6 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 @[ checks ]
 def rec countdown(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => return n
     | Succ(p) => countdown[<] p

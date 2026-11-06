@@ -9,7 +9,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 13 │ │    let y = loop {
    │ │┏━━━━━━━━━━━┛
 14 │ │┃     let below = 1 < 0;
-15 │ │┃     match below
+15 │ │┃     match below where
 16 │ │┃       | true => break(x)
 17 │ │┃       | false => continue
 18 │ │┃   };

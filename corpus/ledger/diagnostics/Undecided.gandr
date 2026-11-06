@@ -19,7 +19,7 @@ def observed(m : +U &{get : -F Bool}) -> Bool =
 @[ checks ]
 def measured(b : Bool) -> -F Bool =
   if observed flag {
-    match b
+    match b where
       | true => +{.1 = *{}}
       | false => +{.0 = *{}}
   } else {

@@ -2346,7 +2346,7 @@ const MEMBER_FAULTS: [MemberFault; 21_usize] = [
 /// - hypothesis: L3 — a crossed boundary named by no other producer, the
 ///   endpoint's, is minted and read back only through this list.
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
-fn crossed() -> [FragmentBoundary; 19_usize]
+fn crossed() -> [FragmentBoundary; 20_usize]
 {
     [
         FragmentBoundary::Misplaced,
@@ -2368,6 +2368,7 @@ fn crossed() -> [FragmentBoundary; 19_usize]
         FragmentBoundary::View,
         FragmentBoundary::Unbound,
         FragmentBoundary::ChainedArrow,
+        FragmentBoundary::BareArms,
     ]
 }
 
@@ -2461,6 +2462,7 @@ const fn boundary_tag(boundary: FragmentBoundary) -> Tag
         FragmentBoundary::View => "View",
         FragmentBoundary::Unbound => "Unbound",
         FragmentBoundary::ChainedArrow => "ChainedArrow",
+        FragmentBoundary::BareArms => "BareArms",
     })
 }
 

@@ -8,7 +8,7 @@
 /// One for a value below 128 and two otherwise, cased on as the boolean.
 def written(c : Integer) -> Integer =
   let small = c < 128
-  match small
+  match small where
     | true => 1
     | false => 2
 
@@ -16,7 +16,7 @@ def written(c : Integer) -> Integer =
 /// boolean stands for.
 def printed(c : Integer) -> Integer =
   let small = c < 128
-  match small
+  match small where
     | +{.0 = u} => 1
     | +{.1 = u} => 2
 
@@ -25,6 +25,6 @@ def printed(c : Integer) -> Integer =
 @[ refuses("OutOfFragment.Unannotated") ]
 def open(c : Integer) -> -F Integer =
   let small = c < 128
-  match small
+  match small where
     | +{.0 = u} => return 1
     | _ => return 2

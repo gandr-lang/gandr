@@ -27,7 +27,7 @@ def substRenamesLift(
   h : (n : N) -> Path[.A = Term](look n s Z, Ix (rlook n r)),
   n : N
 ) -> Path[.A = Term](look n (Lift s) Z, Ix (rlook n (RLift r))) =
-  match n
+  match n where
     | Z => Path.here (Ix Z)
     | S(m) => compose[5, 7] (chain 3) (
       lookWeakens m s Z,
@@ -42,7 +42,7 @@ pub def rec substRenames(
   r : Ren,
   h : (n : N) -> Path[.A = Term](look n s Z, Ix (rlook n r))
 ) -> Path[.A = Term](subst t s, rename t r) =
-  match t
+  match t where
     | Ix(n) => h n
     | Lam(b) => Path.ap
       lamOf
@@ -56,6 +56,6 @@ pub def rec substRenames(
 
 /// The substitution shifting by one renames each index by the shift by one.
 pub def shiftOneRenames(i : N) -> Path[.A = Term](look i (Shift (S Z)) Z, Ix (rlook i (RShift (S Z)))) =
-  match i
+  match i where
     | Z => Path.here (Ix (S Z))
     | S(j) => Path.here (Ix (S (S j)))

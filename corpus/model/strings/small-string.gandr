@@ -24,7 +24,7 @@ pub data Place : Type where
 pub def store(bs : List(Integer)) -> Repr =
   let n = count bs
   let fits = n <= inlineCapacity
-  match fits
+  match fits where
     | true => Inline bs
     | false => Shared 1 bs
 
@@ -34,7 +34,7 @@ pub def own(cs : List(Integer)) -> Repr =
 
 /// `place` reads byte storage from a string representation.
 pub def place(s : Repr) -> Place =
-  match s
+  match s where
     | Inline(bs) => Inside
     | Shared(n, bs) => OnHeap
 

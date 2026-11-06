@@ -26,16 +26,16 @@ module Written : Model(Monoid) where {
   def unitL(x : Sign) -> Path(mul e x, x) { Path.here x }
   /// The right unit law, case by case.
   def unitR(x : Sign) -> Path(mul x e, x) =
-    match x
+    match x where
       | Plus => Path.here Plus
       | Minus => Path.here Minus
   /// Binary associativity, case by case.
   def assoc(x : Sign, y : Sign, z : Sign) -> Path(mul (mul x y) z, mul x (mul y z)) =
-    match x
+    match x where
       | Plus => Path.here (times y z)
-      | Minus => match y
+      | Minus => match y where
         | Plus => Path.here (times Minus z)
-        | Minus => match z
+        | Minus => match z where
           | Plus => Path.here Plus
           | Minus => Path.here Minus
   /// The associator of four, refused: the derivation fills it.

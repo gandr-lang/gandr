@@ -2,6 +2,6 @@
 /// the name first, `x @ p`, or through the dotted alias, `x .@ p`.
 @[ checks ]
 def same(n : Integer) -> -F Integer =
-  match n
+  match n where
     | zero @ 0 => return zero
     | _ => return n

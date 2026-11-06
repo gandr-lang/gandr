@@ -13,7 +13,7 @@ data Color : Type where
 /// Every colour reaches the hole.
 @[ refuses("UndecidedCoverage") ]
 def classify(c : Color) -> Integer =
-  match c
+  match c where
     | ?branch => 1
 
 /// The function, named again: it checks against `classify`'s signature, whose

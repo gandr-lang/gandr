@@ -13,6 +13,6 @@ import "../../model/data/data-base.gandr";
 /// `halvedThroughPlus[<]` does not take.
 @[ refuses("StageNotBelow") ]
 def rec halvedThroughPlus(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => Zero
     | Succ(p) => { let q = plus Zero p; Succ (halvedThroughPlus[<] q) }

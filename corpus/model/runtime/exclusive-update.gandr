@@ -30,12 +30,12 @@ pub module Pairs where {
 
 /// The pair `q` with its first component one more.
 pub def bump(q : Pair) -> Pair =
-  match q
+  match q where
     | Pair(a, b) => Pair (a + 1) b
 
 /// The first component of `q`.
 pub def first(q : Pair) -> Integer =
-  match q
+  match q where
     | Pair(a, b) => a
 
 /// A pair held once, its first component bumped through the exclusive view.

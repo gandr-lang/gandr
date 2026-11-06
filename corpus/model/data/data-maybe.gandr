@@ -15,14 +15,14 @@ pub data Maybe(a : Type) : Type where
 
 /// The value inside a present option, or zero for an absent one.
 def unwrap_or_zero() -> Integer =
-  match (Some 3 : Maybe(Integer))
+  match (Some 3 : Maybe(Integer)) where
     | None => 0
     | Some(x) => x
 
 /// A match over a family of parameters whose answer names its scrutinee:
 /// each arm answers the type as written, `m` read as itself.
 def kept(m : Maybe(Integer)) -> Path(m, m) =
-  match m
+  match m where
     | None => Path.here m
     | Some(x) => Path.here m
 

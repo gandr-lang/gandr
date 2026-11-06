@@ -37,29 +37,29 @@ pub data Heap : Type where
 
 /// `yes` when the two words are one, `no` otherwise.
 def rec pick(a : Nat, b : Nat, yes : Maybe(Nat), no : Maybe(Nat)) -> Maybe(Nat) =
-  match a
-    | Zero => match b
+  match a where
+    | Zero => match b where
       | Zero => yes
       | Succ(_q) => no
-    | Succ(p) => match b
+    | Succ(p) => match b where
       | Zero => no
       | Succ(q) => pick[<] p q yes no
 
 /// The word a heap holds at a location, the first cell naming it.
 def rec lookup(h : Heap, x : Nat) -> Maybe(Nat) =
-  match h
+  match h where
     | Emp => None
     | Cell(l, v, rest) => pick l x (Some v) (lookup[<] rest x)
 
 /// The empty heap.
 pub def emp(h : Heap) -> Type =
-  match h
+  match h where
     | Emp => return Unit
     | Cell(_l, _v, _rest) => return Void
 
 /// The singleton heap holding `v` at `l`.
 pub def pointsTo(l : Nat, v : Nat, h : Heap) -> Type =
-  match h
+  match h where
     | Emp => return Void
     | Cell(m, w, rest) => return type(*{
       loc : Path[.A = Nat](m, l),
@@ -71,7 +71,7 @@ pub def pointsTo(l : Nat, v : Nat, h : Heap) -> Type =
 /// union holds what the right part does; or a word on the left, the right
 /// part holding nothing there.
 def union(o : Maybe(Nat), o1 : Maybe(Nat), o2 : Maybe(Nat)) -> Type =
-  match o1
+  match o1 where
     | None => return Path o o2
     | Some(v) => return type(*{
       free : Path[.A = Maybe(Nat)](o2, (None : Maybe(Nat))),
@@ -99,13 +99,13 @@ pub def realisedAt(vt : (Nat, Heap) -> Type, v : Nat) -> Heap -> Type =
 
 /// A reference to a `T`: a non-null word whose cell holds a realiser of `T`.
 pub def vRef(vt : (Nat, Heap) -> Type, w : Nat, h : Heap) -> Type =
-  match w
+  match w where
     | Zero => return Void
     | Succ(_n) => return type(*{v : Nat, cell : star(pointsToAt(w, v), realisedAt(vt, v), h)})
 
 /// The null niche: null, owning nothing, or a reference.
 pub def vOpt(vt : (Nat, Heap) -> Type, w : Nat, h : Heap) -> Type =
-  match w
+  match w where
     | Zero => emp h
     | Succ(_n) => vRef vt w h
 
@@ -116,25 +116,25 @@ pub data Tagged : Type where
 /// The tagged layout: tag zero with a null payload, owning nothing, or tag
 /// one with a reference.
 pub def vTag(vt : (Nat, Heap) -> Type, r : Tagged, h : Heap) -> Type =
-  match r
-    | Tag(t, p) => match t
-      | Zero => match p
+  match r where
+    | Tag(t, p) => match t where
+      | Zero => match p where
         | Zero => emp h
         | Succ(_n) => return Void
-      | Succ(s) => match s
+      | Succ(s) => match s where
         | Zero => vRef vt p h
         | Succ(_n) => return Void
 
 /// Marshal the niche to the tagged layout.
 pub def fromOpt(w : Nat) -> Tagged =
-  match w
+  match w where
     | Zero => Tag Zero Zero
     | Succ(_n) => Tag (Succ Zero) w
 
 /// Marshal the tagged layout to the niche.
 pub def toOpt(r : Tagged) -> Nat =
-  match r
-    | Tag(t, p) => match t
+  match r where
+    | Tag(t, p) => match t where
       | Zero => Zero
       | Succ(_s) => p
 
@@ -144,8 +144,8 @@ def fromOptMeets(vt : (Nat, Heap) -> Type, w : Nat, h : Heap) -> (vOpt(vt, w, h)
   fromOpt(w),
   h
 ) =
-  match w
-    | Zero => match h
+  match w where
+    | Zero => match h where
       | Emp => return fun (e) { e }
       | Cell(_l, _v, _rest) => return fun (e) { e }
     | Succ(_n) => return fun (r) { r }
@@ -156,8 +156,8 @@ def toOptNone(vt : (Nat, Heap) -> Type, p : Nat, h : Heap) -> (vTag(vt, Tag(Zero
   toOpt(Tag(Zero, p)),
   h
 ) =
-  match p
-    | Zero => match h
+  match p where
+    | Zero => match h where
       | Emp => return fun (e) { e }
       | Cell(_l, _v, _rest) => return fun (e) { e }
     | Succ(_n) => return fun (none) { match (none : Void) {} }
@@ -168,8 +168,8 @@ def toOptSome(vt : (Nat, Heap) -> Type, s : Nat, p : Nat, h : Heap) -> (vTag(
   Tag(Succ(s), p),
   h
 )) -> vOpt(vt, toOpt(Tag(Succ(s), p)), h) =
-  match s
-    | Zero => match p
+  match s where
+    | Zero => match p where
       | Zero => return fun (none) { match (none : Void) {} }
       | Succ(_n) => return fun (q) { q }
     | Succ(_n) => return fun (none) { match (none : Void) {} }
@@ -180,7 +180,7 @@ def toOptAt(vt : (Nat, Heap) -> Type, t : Nat, p : Nat, h : Heap) -> vTag(
   Tag(t, p),
   h
 ) -> vOpt(vt, toOpt(Tag(t, p)), h) =
-  match t
+  match t where
     | Zero => toOptNone vt p h
     | Succ(s) => toOptSome vt s p h
 
@@ -190,7 +190,7 @@ def toOptMeets(vt : (Nat, Heap) -> Type, r : Tagged, h : Heap) -> vTag(vt, r, h)
   toOpt(r),
   h
 ) =
-  match r
+  match r where
     | Tag(t, p) => toOptAt vt t p h
 
 /// A niche realiser marshalled: the pair `fromOpt` answers, with the
@@ -199,8 +199,8 @@ def marshalled(vt : (Nat, Heap) -> Type, h : Heap, w : Nat) -> (vOpt(vt, w, h)) 
   r : Tagged,
   ok : vTag(vt, r, h)
 } =
-  match w
-    | Zero => match h
+  match w where
+    | Zero => match h where
       | Emp => return fun (ok) {
         let meets = fromOptMeets vt Zero Emp;
         let e = meets ok;
@@ -223,8 +223,8 @@ def unmarshalledNone(vt : (Nat, Heap) -> Type, h : Heap, p : Nat) -> (vTag(
   Tag(Zero, p),
   h
 )) -> *{w : Nat, ok : vOpt(vt, w, h)} =
-  match p
-    | Zero => match h
+  match p where
+    | Zero => match h where
       | Emp => return fun (ok) {
         let meets = toOptMeets vt (Tag Zero Zero) Emp;
         let e = meets ok;
@@ -243,8 +243,8 @@ def unmarshalledSome(vt : (Nat, Heap) -> Type, h : Heap, s : Nat, p : Nat) -> (v
   Tag(Succ(s), p),
   h
 )) -> *{w : Nat, ok : vOpt(vt, w, h)} =
-  match s
-    | Zero => match p
+  match s where
+    | Zero => match p where
       | Zero => return fun (none) { match (none : Void) {} }
       | Succ(n) => return fun (ok) {
         let meets = toOptMeets vt (Tag (Succ Zero) (Succ n)) h;
@@ -259,7 +259,7 @@ def unmarshalledAt(vt : (Nat, Heap) -> Type, h : Heap, t : Nat, p : Nat) -> vTag
   Tag(t, p),
   h
 ) -> *{w : Nat, ok : vOpt(vt, w, h)} =
-  match t
+  match t where
     | Zero => unmarshalledNone vt h p
     | Succ(s) => unmarshalledSome vt h s p
 
@@ -269,7 +269,7 @@ def unmarshalled(vt : (Nat, Heap) -> Type, h : Heap, r : Tagged) -> vTag(vt, r, 
   w : Nat,
   ok : vOpt(vt, w, h)
 } =
-  match r
+  match r where
     | Tag(t, p) => unmarshalledAt vt h t p
 
 /// The niche layout's realisers to the tagged layout's.
@@ -277,7 +277,7 @@ def toTagged(vt : (Nat, Heap) -> Type, h : Heap, x : *{w : Nat, ok : vOpt(vt, w,
   r : Tagged,
   ok : vTag(vt, r, h)
 } =
-  match x
+  match x where
     | *{w, ok} => {
       let m = marshalled vt h w;
       m ok
@@ -288,7 +288,7 @@ def fromTagged(vt : (Nat, Heap) -> Type, h : Heap, y : *{r : Tagged, ok : vTag(v
   w : Nat,
   ok : vOpt(vt, w, h)
 } =
-  match y
+  match y where
     | *{r, ok} => {
       let u = unmarshalled vt h r;
       u ok
@@ -302,8 +302,8 @@ def sectAt(vt : (Nat, Heap) -> Type, h : Heap, w : Nat) -> (ok : vOpt(vt, w, h))
   fromTagged vt h (toTagged vt h (*{w, ok})),
   *{w, ok}
 ) =
-  match w
-    | Zero => match h
+  match w where
+    | Zero => match h where
       | Emp => return fun (ok) { Path.here (*{Zero, ok}) }
       | Cell(l, v, rest) => return fun (ok) { Path.here (*{Zero, ok}) }
     | Succ(n) => return fun (ok) { Path.here (*{Succ n, ok}) }
@@ -313,7 +313,7 @@ def nicheSect(vt : (Nat, Heap) -> Type, h : Heap, x : *{w : Nat, ok : vOpt(vt, w
   fromTagged vt h (toTagged vt h x),
   x
 ) =
-  match x
+  match x where
     | *{w, ok} => {
       let s = sectAt vt h w;
       s ok
@@ -328,8 +328,8 @@ def retrNone(vt : (Nat, Heap) -> Type, h : Heap, p : Nat) -> (ok : vTag(
   toTagged vt h (fromTagged vt h (*{Tag Zero p, ok})),
   *{Tag Zero p, ok}
 ) =
-  match p
-    | Zero => match h
+  match p where
+    | Zero => match h where
       | Emp => return fun (ok) { Path.here (*{Tag Zero Zero, ok}) }
       | Cell(l, v, rest) => return fun (ok) { Path.here (*{Tag Zero Zero, ok}) }
     | Succ(_n) => return fun (none) { match (none : Void) {} }
@@ -343,8 +343,8 @@ def retrSome(vt : (Nat, Heap) -> Type, h : Heap, s : Nat, p : Nat) -> (ok : vTag
   toTagged vt h (fromTagged vt h (*{Tag (Succ s) p, ok})),
   *{Tag (Succ s) p, ok}
 ) =
-  match s
-    | Zero => match p
+  match s where
+    | Zero => match p where
       | Zero => return fun (none) { match (none : Void) {} }
       | Succ(n) => return fun (ok) { Path.here (*{Tag (Succ Zero) (Succ n), ok}) }
     | Succ(_n) => return fun (none) { match (none : Void) {} }
@@ -358,7 +358,7 @@ def retrAt(vt : (Nat, Heap) -> Type, h : Heap, t : Nat, p : Nat) -> (ok : vTag(
   toTagged vt h (fromTagged vt h (*{Tag t p, ok})),
   *{Tag t p, ok}
 ) =
-  match t
+  match t where
     | Zero => retrNone vt h p
     | Succ(s) => retrSome vt h s p
 
@@ -371,7 +371,7 @@ def retrTagged(vt : (Nat, Heap) -> Type, h : Heap, r : Tagged) -> (ok : vTag(
   toTagged vt h (fromTagged vt h (*{r, ok})),
   *{r, ok}
 ) =
-  match r
+  match r where
     | Tag(t, p) => retrAt vt h t p
 
 /// A tagged realiser marshalled back and again is itself.
@@ -379,7 +379,7 @@ def taggedRetr(vt : (Nat, Heap) -> Type, h : Heap, y : *{r : Tagged, ok : vTag(v
   toTagged vt h (fromTagged vt h y),
   y
 ) =
-  match y
+  match y where
     | *{r, ok} => {
       let s = retrTagged vt h r;
       s ok
@@ -428,7 +428,7 @@ pub def keptOpt(p : Nat, _r : Nat, h : Heap) -> Type =
 /// meets this is assumed, not checked: `extern` declarations are not lowered
 /// , so nothing here names the body.
 pub def derefOrWp(w : Nat, d : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
-  match w
+  match w where
     | Zero => q w d h
     | Succ(_n) => return type(*{
       v : Nat,
@@ -448,14 +448,14 @@ pub def derefOrSome(
   cell : star(pointsToAt(Succ(n), v), realisedAt(vInt, v), h),
   post : keptOpt(Succ(n), v, h)
 } =
-  match r
+  match r where
     | *{v, cell} => *{v, *{cell, r}}
 
 /// `Option<&int>` passed to `deref_or`: `{V_opt(w)} deref_or(w, d)
 /// {V_opt(w)}`, the reference handed back.
 pub def derefOrMeets(w : Nat, d : Nat, h : Heap) -> (vOpt(vInt, w, h)) -> derefOrWp(w, d, keptOpt, h) =
-  match w
-    | Zero => match h
+  match w where
+    | Zero => match h where
       | Emp => return fun (e) { e }
       | Cell(_l, _v, _rest) => return fun (e) { e }
     | Succ(n) => return fun (r) { derefOrSome n d h r }
