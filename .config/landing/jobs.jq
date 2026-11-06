@@ -1,14 +1,16 @@
 # The queue on `landing` runs the blocking set alone (#5439). A merge group
-# on `landing` runs the jobs that run the tasks of `check:landing` and the
-# jobs that they need, which are the run's setup. Every other job that a merge
-# group can run skips a group on `landing`. The blocking jobs run each task of
-# `check:landing` and no other check. A pull request on `landing` runs no
-# Clippy, because its author ran `check:landing` before `pr:open`.
+# on `landing` runs the jobs that run the tasks of `check:landing`, the
+# brake (#5442) and the jobs that they need, which are the run's setup.
+# Every other job that a merge group can run skips a group on `landing`. The
+# blocking jobs run each task of `check:landing` and no other check. A pull
+# request on `landing` runs no Clippy, because its author ran
+# `check:landing` before `pr:open`.
 #
 # The program reads a job's `if` as text. A job can run in a merge group when
 # its `if` names `merge_group`, or when it holds no `github.event_name ==`
 # test. A job skips a group on `landing` when its `if` holds `skip`. A job
-# runs a check for each `mise run check:<name>` in its steps.
+# runs a check for each `mise run check:<name>` in its steps, and it is the
+# brake when a step runs `mise run ci:brake`.
 #
 # Input: `{jobs, landing}`. `jobs` is `.github/workflows/ci.yml`'s `jobs`,
 # anchors expanded. `landing` is the list of tasks that `check:landing`
@@ -29,6 +31,8 @@ def skips: condition | contains(skip);
 
 def checks: [(.steps // [])[] | (.run // "") | tostring | scan("\\bmise run (check:[a-z0-9-]+)") | .[0]] | unique;
 
+def brakes: any((.steps // [])[]; (.run // "") | tostring | test("\\bmise run ci:brake(?![\\w:-])"));
+
 def needed: (.needs // []) | if type == "string" then [.] else . end;
 
 def closure($jobs):
@@ -39,7 +43,7 @@ def closure($jobs):
 .landing as $landing
 | .jobs as $jobs
 | [$jobs | to_entries[] | select(.key != "template" and (.value | grouped) and (.value | skips | not))] as $running
-| [$running[] | select(.value | checks | length > 0)] as $blocking
+| [$running[] | select((.value | checks | length > 0) or (.value | brakes))] as $blocking
 | ([$blocking[].key] | unique | closure($jobs)) as $allowed
 | ([$blocking[].value | checks[]] | unique) as $run
 | [($running[]

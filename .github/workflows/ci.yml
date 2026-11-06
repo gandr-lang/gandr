@@ -32,9 +32,11 @@
 # - Heavy jobs run in the CI image, which every job extracts whole before its
 #   first step; its payload stays what most jobs run (ci.Dockerfile).
 # - A merge group on `landing` runs the blocking set alone (#5438, #5439).
-#   The set is the run's setup, Clippy and the compiler policy, and
-#   `pr-title.yml` lints the title. Clippy and the compiler policy run the
-#   tasks of `check:landing`. Every other job skips a group on `landing`.
+#   The set is the run's setup, Clippy, the compiler policy and the brake,
+#   and `pr-title.yml` lints the title. Clippy and the compiler policy run
+#   the tasks of `check:landing`. The brake fails while `main` lags
+#   `landing` past its limits (#5442). Every other job skips a group on
+#   `landing`.
 #   The integration cycle tests `landing`. A pull request on `landing` runs
 #   no Clippy, because its lane ran `check:landing` before `pr:open`.
 #   `check:landing-queue` holds the jobs to these rules.
@@ -166,6 +168,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: ${{ env.CI_FETCH_DEPTH || '1' }}
+          # A job that reads the history of commits names the partial clone
+          # filter in CI_CHECKOUT_FILTER. Then the fetch takes no tree of an
+          # older commit, and the checkout takes only its own commit's trees.
+          # An empty filter is no filter.
+          filter: ${{ env.CI_CHECKOUT_FILTER || '' }}
           ref: ${{ env.CI_CHECKOUT_REF || '' }}
       - &trust-workspace
         name: trust the workspace for git
@@ -710,6 +717,48 @@ jobs:
       - name: cancel the run above depth 3
         continue-on-error: true
         run: .config/pr-stack/landing.bash depth
+
+  # The brake on `landing` (#5442): a merge group on `landing` fails this
+  # check while `main` lags `landing` past a limit of
+  # `.config/integration/brake.json` (`ci:brake`). Only a huge backlog takes
+  # the brake. The job needs no setup, so it runs beside the blocking set.
+  # The checkout holds the commits of the whole history and the trees of its
+  # own commit alone, so git reads the lag in hours. The cycle's App reads
+  # the runs of the cycle, because the workflow's token has no room for the
+  # call. A job with no App fails, so the brake holds until the App exists.
+  brake:
+    name: hold the landings while main lags
+    if: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_ref == 'refs/heads/landing' }}
+    runs-on: *linux
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      CI_FETCH_DEPTH: "0"
+      CI_CHECKOUT_FILTER: "tree:0"
+      # mise.toml pins no jq: the task's own pin installs it when it runs.
+      MISE_ENABLE_TOOLS: "jq"
+    steps:
+      - *git-checkout
+      - name: mint the cycle App's token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.GANDR_CYCLE_APP_ID }}
+          private-key: ${{ secrets.GANDR_CYCLE_APP_KEY }}
+          # The brake's need, no more: read the runs of the cycle.
+          permission-actions: read
+      # No cache, as in pr-title.yml: the shared cache holds every tool of
+      # CI, and this job installs none of mise.toml's.
+      - name: install mise
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+        with:
+          cache: "false"
+      - name: read the lag of main behind landing
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run ci:brake
 
   # Builds and publishes the missing tag with the image workflow itself.
   # Every image job needs it, so all of them wait for a build. A job's

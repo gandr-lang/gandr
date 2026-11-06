@@ -1895,7 +1895,8 @@ echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as 
 
 # The queue on `landing` runs the blocking set alone (#5439).
 # `.config/landing/jobs.jq` refuses four faults. The first is a job that runs
-# in a merge group on `landing` outside the blocking set and the run's setup.
+# in a merge group on `landing` outside the blocking set, the brake (#5442)
+# and the run's setup.
 # The second is a check in that set that `check:landing` does not name. The
 # third is a task of `check:landing` that no job of that set runs. The fourth
 # is Clippy on a pull request on `landing`. Each case in
@@ -1903,7 +1904,7 @@ echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as 
 # `.github/workflows/ci.yml`, anchors expanded, give none against the tasks
 # that `check:landing` depends on.
 ["check:landing-queue"]
-description = "A merge group on landing runs only the run's setup and the tasks of check:landing, and a pull request on landing runs no Clippy"
+description = "A merge group on landing runs only the run's setup, the brake and the tasks of check:landing, and a pull request on landing runs no Clippy"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1916,7 +1917,7 @@ if [[ -n "$refusals" ]]; then
   printf '%s\n' "$refusals" >&2
   exit 1
 fi
-echo "landing queue check OK: $(jq length .config/landing/cases.json) cases read as recorded; a merge group on landing runs the setup and the $(jq length <<< "$landing") tasks of check:landing alone"
+echo "landing queue check OK: $(jq length .config/landing/cases.json) cases read as recorded; a merge group on landing runs the setup, the brake and the $(jq length <<< "$landing") tasks of check:landing alone"
 '''
 
 # The integration cycle's decisions (#5440, `ci:cycle`). `.config/
@@ -1924,11 +1925,14 @@ echo "landing queue check OK: $(jq length .config/landing/cases.json) cases read
 # of the suite. A cancelled run gives no verdict, and nothing moves while a
 # run goes on. `known-red.jq` writes the known-red list: one row for a test
 # that fails in two lanes, no row for a flaky pass, and an issue of its own
-# for each failed test of the soundness suite. Each case in
+# for each failed test of the soundness suite. `brake.jq` decides the brake
+# (#5442): verdicts after the newest pass count, a cancelled run does not,
+# a lag at a limit lets the landings go on, and a `main` that holds
+# `landing` lags by nothing. Each case in
 # `.config/integration/cases.json` names its program, its input and the
 # compact JSON that the program gives.
 ["check:integration"]
-description = "The integration cycle's step and known-red list give each recorded case its output"
+description = "The integration cycle's step, known-red list and brake give each recorded case its output"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
