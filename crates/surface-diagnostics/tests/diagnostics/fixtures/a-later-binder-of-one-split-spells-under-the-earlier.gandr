@@ -1,0 +1,15 @@
+data Theory : Type where {
+  | Monoid : Theory
+  | Group : Theory
+}
+def counted_at(s : Theory) -> -F Type {
+  match s {
+    | Monoid => return Integer
+    | Group => return String
+  }
+}
+def bad(p : *{s : Theory, n : counted_at(s)}, other : Theory) -> -F counted_at(other) {
+  match p {
+    | *{s, n} => return n
+  }
+}

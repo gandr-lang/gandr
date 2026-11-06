@@ -95,37 +95,25 @@ use quenchant_shape::shape::Maybe;
 
 /// A declaration whose definition synthesises a type its signature does
 /// not convert to.
-const MISMATCH: &str = "def wrong : Integer ;\ndef wrong = \"text\" ;\n";
+const MISMATCH: &str = include_str!("diagnostics/fixtures/mismatch.gandr");
 
 /// A force of an integer, inside a thunk.
-const FORCE: &str = "def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n";
+const FORCE: &str = include_str!("diagnostics/fixtures/force.gandr");
 
 /// An application whose head is a return, not a function.
-const APPLICATION: &str = "def b : +U (-F Integer) ;\ndef b = thunk { become (pure 1) 2 } \
-                               ;\n";
+const APPLICATION: &str = include_str!("diagnostics/fixtures/application.gandr");
 
 /// A mismatch under a `let` binder.
-const BOUND: &str = "def id(x : Integer) -> -F Integer { return x }\ndef f(n : Integer) -> -F \
-                         String { let m = id n ; return m }\n";
+const BOUND: &str = include_str!("diagnostics/fixtures/bound.gandr");
 
 /// Unary naturals, addition, Fibonacci both ways and two closed points.
-const FIBONACCI: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\ndef rec \
-                         plus(a : Nat, b : Nat) -> Nat {\n  match a {\n    | Zero => b\n    \
-                         | Succ(m) => Succ (plus[<] m b)\n  }\n}\ndef rec fib(n : Nat) -> Nat {\n  \
-                         match n {\n    | Zero => Zero\n    | Succ(m) => match m {\n      | Zero => \
-                         Succ Zero\n      | Succ(k) => plus (fib[<] m) (fib[<] k)\n    }\n  }\n}\n\
-                         def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {\n  match n {\n    \
-                         | Zero => a\n    | Succ(m) => fibFrom[<] m b (plus a b)\n  }\n}\ndef \
-                         five() -> Nat {\n  Succ (Succ (Succ (Succ (Succ Zero))))\n}\ndef nineteen() \
-                         -> Nat {\n  Succ (Succ (Succ (Succ (plus (five ()) (plus (five ()) (five ()))))))\n}\n";
+const FIBONACCI: &str = include_str!("diagnostics/fixtures/fibonacci.gandr");
 
 /// Both definitions at nineteen: equal, but past the conversion's step budget.
-const FIBONACCI_AGREE: &str = "def agree() -> Path[.A = Nat](fib (nineteen ()), fibFrom (nineteen ()) \
-                               Zero (Succ Zero)) {\n  Path.here (fib (nineteen ()))\n}\n";
+const FIBONACCI_AGREE: &str = include_str!("diagnostics/fixtures/fibonacci-agree.gandr");
 
 /// Fibonacci at five against the iteration started one step on: apart.
-const FIBONACCI_APART: &str = "def apart() -> Path[.A = Nat](fib (five ()), fibFrom (five ()) (Succ Zero) \
-                               (Succ Zero)) {\n  Path.here (fib (five ()))\n}\n";
+const FIBONACCI_APART: &str = include_str!("diagnostics/fixtures/fibonacci-apart.gandr");
 
 /// A fresh scratch directory, removed when dropped.
 #[repr(transparent)]
@@ -593,12 +581,16 @@ fn an_injection_past_the_summands_names_what_the_sum_lacks_2340()
 {
     for (text, message, label) in [
         (
-            "def none() -> -F +{} {\n  return +{.0 = 1}\n}\n",
+            include_str!(
+                "diagnostics/fixtures/an-injection-past-the-summands-names-what-the-sum-lacks-2340-1.gandr"
+            ),
             "the empty sum `+{}` has no summand for this injection to name",
             "the type met, where a sum with a summand is required",
         ),
         (
-            "def past() -> -F +{Integer} {\n  return +{.1 = 1}\n}\n",
+            include_str!(
+                "diagnostics/fixtures/an-injection-past-the-summands-names-what-the-sum-lacks-2340-2.gandr"
+            ),
             "this injection names a summand its sum does not have",
             "the type met, where a sum with the summand this injection names is required",
         ),
@@ -645,7 +637,9 @@ fn a_mismatch_label_spells_both_types()
     );
     let head = label(&only(
         Path::new("spelled.gandr"),
-        SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-mismatch-label-spells-both-types-head.gandr"
+        )),
     ));
     assert!(
         !head.contains(": "),
@@ -663,10 +657,9 @@ fn a_shape_mismatch_names_the_type_its_found_type_unfolds_to_5034()
 {
     let refused = only(
         Path::new("unfolded.gandr"),
-        SourceText::from(
-            "def pairOf(a : Type, b : Type) -> Type { return type(*{x : a, y : b}) }\n\ndef \
-             h1(u : Integer, s : Bool) -> pairOf(Integer, Bool) { *{u, s} }\n",
-        ),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-shape-mismatch-names-the-type-its-found-type-unfolds-to-5034-refused.gandr"
+        )),
     );
     assert_eq!(
         (
@@ -698,26 +691,9 @@ fn a_shape_mismatch_names_the_type_its_found_type_unfolds_to_5034()
     let computed = printed(
         Path::new("computed.gandr"),
         SourceRoot::Strict,
-        SourceText::from(
-            "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\ndata Ty : \
-             Type where {\n  | Base : Ty\n  | Arr : (dom : Ty, cod : Ty) --> Ty\n}\n\ndata Ctx : \
-             Type where {\n  | Empty : Ctx\n  | Extend : (g : Ctx, a : Ty) --> Ctx\n}\n\ndef \
-             prodOf(a : Type, b : Type) -> Type { return type(a * b) }\n\ndef paired(u : \
-             Integer, s : Bool) -> prodOf(Integer, Bool) { *{u, s} }\n\ndef first(v : \
-             prodOf(Integer, Bool)) -> Integer { v.0 }\n\ndef second(v : prodOf(Integer, \
-             Bool)) -> Bool { v.1 }\n\ndef pairOf(a : Type, b : Type) -> Type { return \
-             type(*{x : a, y : b}) }\n\ndef literal(u : Integer, s : Bool) -> pairOf(Integer, \
-             Bool) { *{x = u, y = s} }\n\ndef rec tower(n : Nat) -> Type {\n  match n {\n    \
-             | Zero => return Integer\n    | Succ(m) => return type(Integer * tower[<](m))\n  \
-             }\n}\n\ndef towered(u : Integer, w : Integer) -> tower(Succ(Zero)) { *{u, w} }\n\ndef \
-             towerFirst(v : tower(Succ(Zero))) -> Integer { v.0 }\n\ndef sem(a : Ty, _d : Ctx) \
-             -> Type {\n  match a {\n    | Base => return Integer\n    | Arr(_x, _y) => return \
-             Unit\n  }\n}\n\ndef rec env(g : Ctx, d : Ctx) -> Type {\n  match g {\n    | Empty => \
-             return Unit\n    | Extend(h, a) => return type(env[<](h, d) * sem(a, d))\n  \
-             }\n}\n\ndef lookup(d : Ctx, v : env(Extend(Empty, Base), d)) -> Integer { v.1 \
-             }\n\ndef single(d : Ctx, n : Integer) -> env(Extend(Empty, Base), d) { *{*{}, n} \
-             }\n",
-        ),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-shape-mismatch-names-the-type-its-found-type-unfolds-to-5034-computed.gandr"
+        )),
         Verb::Check(Goals::Gated),
     );
     assert!(
@@ -731,10 +707,9 @@ fn a_mismatch_spells_the_constructors_its_type_mentions()
 {
     let mismatch = only(
         Path::new("constructed.gandr"),
-        SourceText::from(
-            "data Box : Type where {\n  | Wrap : (n : Integer) --> Box\n}\ndef wrapped : Path[.A = Box](\
-                 Wrap 4, Wrap 5) ;\ndef wrapped = 1 ;\n",
-        ),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-mismatch-spells-the-constructors-its-type-mentions-mismatch.gandr"
+        )),
     );
     assert_eq!(
         mismatch.detail.compared.expected,
@@ -775,11 +750,9 @@ fn a_word_spells_by_its_letters()
 fn a_body_names_its_match_arms_by_their_constructors_809()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let text = SourceText::from(
-        "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (p : Nat) --> Nat\n}\ndef rec down(n : Nat) \
-         -> -F Nat {\n  match n {\n    | Zero => return n\n    | Succ(p) => become down[<] p\n  \
-         }\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-body-names-its-match-arms-by-their-constructors-809.gandr"
+    ));
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
             .expect("the source lowers")
@@ -844,11 +817,9 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
 fn a_shadowed_constructor_spells_by_its_family_2428()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let text = SourceText::from(
-        "data Term : Type where {\n  | Var : (n : Integer) --> Term\n  | App : (t : Term, u : Term) --> Term\n}\ntheory Pointed where {\n  sort P : Type;\n  oper point : () --> (p : P);\n}\ndef \
-         applies(link : Theory) -> Integer {\n  match link {\n    | Theory.App(head, rest) => 1\n    \
-         | _ => 0\n  }\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-shadowed-constructor-spells-by-its-family-2428.gandr"
+    ));
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
             .expect("the source lowers")
@@ -911,11 +882,9 @@ fn a_shadowed_constructor_spells_by_its_family_2428()
 fn a_declaration_s_binders_are_named_as_written_803()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let text = SourceText::from(
-        "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (p : Nat) --> Nat\n}\ndef rec down(n : Nat) \
-         -> -F Nat {\n  match n {\n    | Zero => return n\n    | Succ(m) => become down[<] m\n  \
-         }\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-declaration-s-binders-are-named-as-written-803.gandr"
+    ));
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
             .expect("the source lowers")
@@ -966,11 +935,9 @@ fn a_declaration_s_binders_are_named_as_written_803()
 fn a_model_implicit_s_components_are_named_by_their_paths_2364()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let text = SourceText::from(
-        "theory Counter where { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c \
-         : C) --> Integer; }\ndef stepped[s : Model(Counter)](c : s.C) -> -F Integer { \
-         s.read (s.incr c) }\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-model-implicit-s-components-are-named-by-their-paths-2364.gandr"
+    ));
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
             .expect("the source lowers")
@@ -1020,12 +987,9 @@ fn a_model_implicit_s_components_are_named_by_their_paths_2364()
 fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let text = SourceText::from(
-        "def selfEquiv(b : Type) -> -F (*{ x : b, y : b, p : Path[.A = b](x, y) } ≃ *{ x : b, y : b, \
-         p : Path[.A = b](x, y) }) {\n  *{\n    thunk { fun (w) { w } },\n    *{*{thunk { fun (w) { w } }, \
-         thunk { fun (w) { Path.here w } }}, *{thunk { fun (w) { w } }, thunk { fun (w) { Path.here w } }}}\n  \
-         }\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-shared-field-variable-answers-at-the-depth-it-was-judged-1515.gandr"
+    ));
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
             .expect("the source lowers")
@@ -1083,11 +1047,9 @@ fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
 fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let (laid, unit) = hosted(
-        "def f() -> -F Unit {\n  var s = 3;\n  handle c : std.process.Exit.Eff {\n    let k : Integer at s = \
-         pure 1 ;\n    let m = k ;\n    c.exit 1\n  } with {\n    | pure(x) => return x\n    \
-         | oper exit(code, k) => return *{}\n  }\n}\n",
-    );
+    let (laid, unit) = hosted(include_str!(
+        "diagnostics/fixtures/a-node-stands-in-the-regions-of-each-scope-and-hold-around-it.gandr"
+    ));
     let text = SourceText::from(laid.as_str());
     let Lowered::Module { module, arena } =
         lower_unit_source(&grammar, text, &unit, &mut LoweringCount::default())
@@ -1139,10 +1101,9 @@ fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
 fn a_loop_arm_is_named_by_its_loop_823()
 {
     let grammar = built_in().expect("the built-in grammar builds");
-    let text = SourceText::from(
-        "data Circle : Type where {\n  | Base : Circle\n  | loop : Base <-> Base\n}\ndef invLooper(x : \
-         Circle) -> -F Circle {\n  match x {\n    | Base => Base\n    | loop => Path.back loop\n  }\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-loop-arm-is-named-by-its-loop-823.gandr"
+    ));
     let Lowered::Module { module, arena } =
         lower_source(&grammar, text, &mut LoweringCount::default())
             .expect("the source lowers")
@@ -1325,7 +1286,8 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
 
     let pbg = built_in().expect("the built-in grammar builds");
     let own = format!(
-        "import \"./base.gandr\" ;\n{BOUND}def worse : Integer ;\ndef worse = \"worse\" ;\n"
+        include_str!("diagnostics/unformatted/spelled-own.gandr"),
+        BOUND = BOUND
     );
     let text = format!("{MISMATCH}{own}");
     let text = SourceText::from(text.as_str());
@@ -1413,10 +1375,9 @@ fn a_sealed_type_is_spelled_by_its_path()
     let step = unsettled(
         Path::new("sealed.gandr"),
         SourceRoot::Strict,
-        SourceText::from(
-            "module Counter :> *{ type T, zero : T } where { type T = Integer ; def zero = 0 ; }\ndef \
-                 leaked : Integer ;\ndef leaked = Counter.zero ;\n",
-        ),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-sealed-type-is-spelled-by-its-path.gandr"
+        )),
     );
     let Step::Source {
         composed:
@@ -1462,12 +1423,16 @@ fn a_refusal_spells_its_types_in_either_spelling_782()
 {
     for (source, unicode, ascii) in [
         (
-            "def r : Integer ≃ String ;\ndef r = 1 ;\n",
+            include_str!(
+                "diagnostics/fixtures/a-refusal-spells-its-types-in-either-spelling-782-1.gandr"
+            ),
             "Integer ≃ String",
             "Integer <~> String",
         ),
         (
-            "def r : Integer ≅ String ;\ndef r = 1 ;\n",
+            include_str!(
+                "diagnostics/fixtures/a-refusal-spells-its-types-in-either-spelling-782-2.gandr"
+            ),
             "Integer ≅ String",
             "Iso(Integer, String)",
         ),
@@ -1618,12 +1583,9 @@ fn a_mismatch_under_a_binder_names_it()
 #[test]
 fn a_refusal_spells_its_binders_by_name_418()
 {
-    let text = SourceText::from(
-        "data Theory : Type where {\n  | Monoid : Theory\n  | Group : Theory\n}\ndef counted_at(s : Theory) -> \
-             -F Type {\n  match s {\n    | Monoid => return Integer\n    | Group => return \
-             String\n  }\n}\ndef moved(presented : Theory, other : Theory, n : counted_at(presented)) \
-             -> -F counted_at(other) {\n  n\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-refusal-spells-its-binders-by-name-418.gandr"
+    ));
     let diagnostic = only(Path::new("moved.gandr"), text);
     assert_eq!(
         (
@@ -1670,36 +1632,20 @@ fn a_refusal_spells_its_binders_by_name_418()
 #[test]
 fn a_data_declaration_s_refusal_spells_its_binders_by_name_4028()
 {
-    const BOUNDS: &str = r#"data Nat : Type where {
-  | Zero : Nat
-  | Succ : (n : Nat) --> Nat
-}
-data Fin : Nat -> Type where {
-  | FZ : (n : Nat) --> Fin(Succ(n))
-}
-"#;
+    const BOUNDS: &str = include_str!("diagnostics/fixtures/bounds-1.gandr");
     for (declaration, expected, found) in [
         (
-            r#"data Bad(n : Nat) : Type where {
-  | B : (i : Fin(n), j : Fin(i)) --> Bad(n)
-}
-"#,
+            include_str!("diagnostics/fixtures/bounds-2.gandr"),
             "Nat",
             "Fin(n)",
         ),
         (
-            r#"data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type where {
-  | Read : (n : Nat, i : Fin(n), j : Fin(n)) --> Misread(n, i, j)
-}
-"#,
+            include_str!("diagnostics/fixtures/bounds-3.gandr"),
             "Nat",
             "Fin(n)",
         ),
         (
-            r#"data Past : (n : Nat, i : Fin(n)) --> Type where {
-  | Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i)
-}
-"#,
+            include_str!("diagnostics/fixtures/bounds-4.gandr"),
             "Fin(Succ(n))",
             "Fin(n)",
         ),
@@ -1737,14 +1683,7 @@ data Fin : Nat -> Type where {
 #[test]
 fn a_signature_s_refusal_spells_its_binders_by_name_4043()
 {
-    const BOUNDS: &str = r#"data Nat : Type where {
-  | Zero : Nat
-  | Succ : (n : Nat) --> Nat
-}
-data Fin : Nat -> Type where {
-  | FZ : (n : Nat) --> Fin(Succ(n))
-}
-"#;
+    const BOUNDS: &str = include_str!("diagnostics/fixtures/bounds-1.gandr");
     for (declaration, hypotheses) in [
         (
             "def atZero(k : Nat, f : (x : Fin(k)) -> Fin(x)) -> Nat { Zero }\n",
@@ -1786,21 +1725,15 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
     for (kept, text) in [
         (
             "c",
-            SourceText::from(
-                "import std.process ;\n\
-                 def traced() -> -F Integer {\n  var s = 3;\n  handle c : std.process.Exit.Eff {\n    let k : (() -> \
-                 Integer) at c = access shared s as w { pure thunk { pure thunk { pure w } } } ;\n    \
-                 force k\n  } with {\n    | pure(x) => pure x\n    | oper exit(code, k) => pure 0\n  }\n}\n",
-            ),
+            SourceText::from(include_str!(
+                "diagnostics/fixtures/a-trace-spells-a-kept-region-by-its-name-1494-1.gandr"
+            )),
         ),
         (
             "l",
-            SourceText::from(
-                "import std.process ;\n\
-                 def traced() -> -F Integer {\n  handle c : std.process.Exit.Eff {\n    var l = 42;\n    let k : (() -> \
-                 Integer) at l = access shared l as w { pure thunk { pure thunk { pure w } } } ;\n    \
-                 force k\n  } with {\n    | pure(x) => pure x\n    | oper exit(code, k) => pure 0\n  }\n}\n",
-            ),
+            SourceText::from(include_str!(
+                "diagnostics/fixtures/a-trace-spells-a-kept-region-by-its-name-1494-2.gandr"
+            )),
         ),
     ] {
         let mut printed = walked(Path::new(&format!("traced-{kept}")), text);
@@ -1828,11 +1761,9 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
 #[test]
 fn a_mismatch_between_two_region_binders_names_both_2138()
 {
-    let text = SourceText::from(
-        "def read[r : Region](k : (() -> Integer) at r) -> -F Integer { force k }\n\ndef crossed \
-         [r : Region, s : Region] (k : (() -> Integer) at r, j : (() -> Integer) at s) -> -F \
-         Integer {\n  let m : (() -> Integer) at s = k ;\n  read m\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-mismatch-between-two-region-binders-names-both-2138.gandr"
+    ));
     let diagnostic = only(Path::new("crossed.gandr"), text);
     assert_eq!(
         match diagnostic.primary() {
@@ -1933,8 +1864,12 @@ fn a_return_position_failure_points_at_the_returned_value()
 #[test]
 fn a_head_that_is_no_function_names_its_repair_5474()
 {
-    let list = "import std.list (List);\ndef pair() -> List(Integer) =\n  #[7 8]\n";
-    let repaired_list = "import std.list (List);\ndef pair() -> List(Integer) =\n  #[7, 8]\n";
+    let list = include_str!(
+        "diagnostics/unformatted/a-head-that-is-no-function-names-its-repair-5474-list.gandr"
+    );
+    let repaired_list = include_str!(
+        "diagnostics/unformatted/a-head-that-is-no-function-names-its-repair-5474-repaired-list.gandr"
+    );
     for (source, help, repaired) in [
         (
             list,
@@ -1942,7 +1877,9 @@ fn a_head_that_is_no_function_names_its_repair_5474()
             repaired_list,
         ),
         (
-            "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n   y\n  a\n",
+            include_str!(
+                "diagnostics/unformatted/a-head-that-is-no-function-names-its-repair-5474-1.gandr"
+            ),
             "move the line after `x` to its block's column to start a statement",
             "def g(x : Integer, y : Integer) -> Integer =\n  let a = x\n  y\n  a\n",
         ),
@@ -1993,7 +1930,9 @@ fn a_head_that_is_no_function_names_its_repair_5474()
     assert_eq!(
         only(
             Path::new("applied.gandr"),
-            SourceText::from("def g(x : Integer) -> Integer =\n  x 1\n")
+            SourceText::from(include_str!(
+                "diagnostics/unformatted/a-head-that-is-no-function-names-its-repair-5474-2.gandr"
+            ))
         )
         .repair,
         Maybe::Absent(repair::Absent::Unnamed),
@@ -2004,8 +1943,9 @@ fn a_head_that_is_no_function_names_its_repair_5474()
 #[test]
 fn repeated_equal_siblings_point_at_the_right_occurrence()
 {
-    let text = "def h(a : String, b : Integer) -> -F Integer { return b }\ndef k(u : Integer) \
-                    -> -F Integer { become h \"no\" \"no\" }\n";
+    let text = include_str!(
+        "diagnostics/fixtures/repeated-equal-siblings-point-at-the-right-occurrence.gandr"
+    );
     assert_eq!(
         only(Path::new("siblings.gandr"), SourceText::from(text)).span,
         Maybe::Present(nth(SourceText::from(text), SourceText::from("\"no\""))[1]),
@@ -2018,13 +1958,9 @@ fn repeated_equal_siblings_point_at_the_right_occurrence()
 #[test]
 fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
 {
-    let text = "theory Tally where {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n  oper read : (c : \
-                C) --> Integer;\n}\ndef stepped[s : Model(Tally)](c : s.C) -> Integer { \
-                s.read (s.incr c) }\nmodule Up : Model(Tally) where {\n  type C = Integer;\n  def \
-                incr(c : Integer) -> Integer { c + 1 }\n  def read(c : Integer) -> Integer { c \
-                }\n}\nmodule Tens : Model(Tally) where {\n  type C = Integer;\n  def incr(c : Integer) \
-                -> Integer { c + 10 }\n  def read(c : Integer) -> Integer { c }\n}\ndef twin() \
-                -> Integer { stepped 4 }\n";
+    let text = include_str!(
+        "diagnostics/fixtures/an-ambiguous-model-slot-names-every-module-that-answers-it-739.gandr"
+    );
     assert_eq!(
         only(Path::new("ambiguous.gandr"), SourceText::from(text))
             .message
@@ -2037,8 +1973,7 @@ fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
 #[test]
 fn a_shadowed_builtin_is_a_warning()
 {
-    let text = "def add : Integer ;\ndef add = 1 ;\ndef f(int : Integer) -> -F Integer { return \
-                    int }\ndef g : Integer ;\ndef g = missing ;\n";
+    let text = include_str!("diagnostics/fixtures/a-shadowed-builtin-is-a-warning-1.gandr");
     let checked = printed(
         Path::new("shadow.gandr"),
         SourceRoot::Strict,
@@ -2108,7 +2043,9 @@ fn a_shadowed_builtin_is_a_warning()
         printed(
             Path::new("shadow.gandr"),
             SourceRoot::Strict,
-            SourceText::from("def add : Integer ;\ndef add = 1 ;\n"),
+            SourceText::from(include_str!(
+                "diagnostics/fixtures/a-shadowed-builtin-is-a-warning-2.gandr"
+            )),
             Verb::Check(Goals::Gated),
         )
         .iter()
@@ -2120,10 +2057,8 @@ fn a_shadowed_builtin_is_a_warning()
 #[test]
 fn a_deprecated_use_is_a_finding_naming_its_note()
 {
-    let text = "@[ deprecated(*{ since = \"0.2\", note = \"use cube\" }) ] def square = 1 ;\n@[ \
-                deprecated(*{ note = \"use one\" }) ] def single = 1 ;\n@[ deprecated ] def old \
-                = 2 ;\ndef cube = 3 ;\ndef a = square ;\ndef b = single ;\ndef c = old ;\ndef d \
-                = cube ;\n";
+    let text =
+        include_str!("diagnostics/fixtures/a-deprecated-use-is-a-finding-naming-its-note.gandr");
     let checked = printed(
         Path::new("deprecated.gandr"),
         SourceRoot::Strict,
@@ -2132,7 +2067,7 @@ fn a_deprecated_use_is_a_finding_naming_its_note()
     );
     let at = |name: &str| {
         let start = text
-            .find(&format!("= {name} ;"))
+            .find(&format!("= {name};"))
             .expect("the use is written")
             .saturating_add(2);
         Maybe::Present(
@@ -2193,8 +2128,9 @@ fn a_deprecated_use_is_a_finding_naming_its_note()
 #[test]
 fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
 {
-    let text = "@[ explicit_exits ]\ndef kept(n : Integer) -> -F Integer { n }\ndef called(n : \
-                    Integer) -> -F Integer { kept n }\n";
+    let text = include_str!(
+        "diagnostics/fixtures/an-inferred-exit-is-a-finding-whose-fix-writes-its-keyword.gandr"
+    );
     let path = Path::new("exits.gandr");
     let tail = |needle: &str| {
         let start = text
@@ -2315,10 +2251,9 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
 #[test]
 fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
 {
-    let text = "def id(n : Integer) -> -F Integer { n }\n@[ explicit_runs ]\ndef nested(n : \
-                    Integer) -> -F Integer { id (id n) }\ndef returned(n : Integer) -> -F Integer \
-                    { return id n }\ndef leading(n : Integer) -> -F Integer { id n + 1 }\ndef \
-                    grouped(n : Integer) -> -F Integer { return n + 1 }\n";
+    let text = include_str!(
+        "diagnostics/fixtures/an-inferred-run-is-a-finding-whose-fix-writes-its-keyword.gandr"
+    );
     let path = Path::new("runs.gandr");
     let call = |context: &str, offset: usize, width: usize| {
         let start = text
@@ -2433,7 +2368,9 @@ fn refusals_of_one_class_label_what_their_locus_is()
     let mismatch = only(Path::new("mismatch.gandr"), SourceText::from(MISMATCH));
     let head = only(
         Path::new("head.gandr"),
-        SourceText::from("def f(xs : Vec(Integer)) -> -F Integer {\n  pure 1\n}\n"),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-mismatch-label-spells-both-types-head.gandr"
+        )),
     );
     assert_eq!(
         (mismatch.detail.class, head.detail.class),
@@ -2487,7 +2424,8 @@ fn a_report_exposes_the_context_it_marks()
         )],
         "the signature stands as the expected type; the synthesised type has no origin"
     );
-    let duplicate = "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n";
+    let duplicate =
+        include_str!("diagnostics/fixtures/a-report-exposes-the-context-it-marks-duplicate.gandr");
     assert_eq!(
         marked(&only(
             Path::new("duplicate.gandr"),
@@ -2496,7 +2434,7 @@ fn a_report_exposes_the_context_it_marks()
         [(
             nth(
                 SourceText::from(duplicate),
-                SourceText::from("def a : Integer ;")
+                SourceText::from("def a : Integer;")
             )[0],
             String::from("first written here")
         )],
@@ -2522,7 +2460,9 @@ fn a_suspended_goal_names_the_hole_it_waits_on()
     let goals = printed(
         Path::new("suspended.gandr"),
         SourceRoot::Strict,
-        SourceText::from("def code : Type ;\ndef three : code ;\ndef three = 3 ;\n"),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/a-suspended-goal-names-the-hole-it-waits-on-goals.gandr"
+        )),
         Verb::Check(Goals::Reported),
     );
     let [ref hole, ref waiting] = *goals.as_slice()
@@ -2548,7 +2488,8 @@ fn a_suspended_goal_names_the_hole_it_waits_on()
 #[test]
 fn a_labeled_context_retains_its_locus_and_cause()
 {
-    let duplicate = "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n";
+    let duplicate =
+        include_str!("diagnostics/fixtures/a-report-exposes-the-context-it-marks-duplicate.gandr");
     let diagnostic = only(Path::new("duplicate.gandr"), SourceText::from(duplicate));
     assert_eq!(
         diagnostic
@@ -2833,8 +2774,7 @@ fn a_fault_with_no_second_normal_form_fills_no_shape()
 #[test]
 fn a_refused_declaration_is_located()
 {
-    let text = "def answer = 42 ;\ndef broken = missing ;\ndef wrong : Integer ;\ndef wrong = \
-                    \"text\" ;\n@[ owes(1) ] def later : Integer ;\n";
+    let text = include_str!("diagnostics/fixtures/a-refused-declaration-is-located.gandr");
     let malformed = Class::Refusal(FailureClass::MalformedSource);
     for verb in [
         Verb::Check(Goals::Gated),
@@ -2875,10 +2815,14 @@ fn a_refused_declaration_is_located()
 fn an_importer_s_refusal_is_located_in_its_own_text()
 {
     let scratch = Scratch::new(Path::new("importer"));
-    let user = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = missing ;\n";
+    let user = include_str!(
+        "diagnostics/fixtures/an-importer-s-refusal-is-located-in-its-own-text-user.gandr"
+    );
     scratch.file(
         Path::new("strict/base.gandr"),
-        SourceText::from("def one : Integer ;\ndef one = 1 ;\n"),
+        SourceText::from(include_str!(
+            "diagnostics/fixtures/an-importer-s-refusal-is-located-in-its-own-text.gandr"
+        )),
     );
     scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
     let mut found = Vec::new();
@@ -2916,7 +2860,7 @@ fn an_importer_s_refusal_is_located_in_its_own_text()
     };
     assert_eq!(
         (excerpt.line, excerpt.text.lines().next()),
-        (3_usize, Some("def two = missing ;")),
+        (3_usize, Some("def two = missing;")),
         "the excerpt is the importer's line, not the sibling's"
     );
 }
@@ -2925,10 +2869,12 @@ fn an_importer_s_refusal_is_located_in_its_own_text()
 fn an_importer_keeps_the_marks_its_import_holds_1199()
 {
     let scratch = Scratch::new(Path::new("consumable"));
-    let base = "module P :> *{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
-    let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  let ring = fork (kernel : \
-                P.Moving) {\n    let held = recv(kernel);\n    close(kernel)\n  };\n  \
-                close(ring)\n}\n";
+    let base = include_str!(
+        "diagnostics/fixtures/an-importer-keeps-the-marks-its-import-holds-1199-base.gandr"
+    );
+    let user = include_str!(
+        "diagnostics/fixtures/an-importer-keeps-the-marks-its-import-holds-1199-user.gandr"
+    );
     scratch.file(Path::new("strict/base.gandr"), SourceText::from(base));
     scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
     let mut found = Vec::new();
@@ -2967,7 +2913,7 @@ fn an_importer_keeps_the_marks_its_import_holds_1199()
         .expect("every mark lies in the unit");
     assert_eq!(
         marked,
-        ["Cap[1] {write}"],
+        ["Cap[1] { write }"],
         "the refused payload, where the import writes it"
     );
 }
@@ -3151,17 +3097,16 @@ fn each_verb_prints_its_entries()
 #[test]
 fn a_declaration_naming_a_refused_one_is_a_note()
 {
-    let text = SourceText::from(
-        "def a() -> Integer {\n  return 1 ^ 2\n}\n\ndef b() -> Integer {\n  return a()\n}\n\ndef \
-             c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c()\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-declaration-naming-a-refused-one-is-a-note.gandr"
+    ));
     let printed = printed(
         Path::new("cascade.gandr"),
         SourceRoot::Strict,
         text,
         Verb::Check(Goals::Gated),
     );
-    let called = nth(text, SourceText::from("a()"))[1];
+    let called = nth(text, SourceText::from("a ()"))[0];
     let call = ByteSpan::new(
         called.start(),
         ByteOffset::from(usize::from(called.start()) + 1),
@@ -3190,10 +3135,9 @@ fn a_declaration_naming_a_refused_one_is_a_note()
         note, "`b` is expected to check, and the refusal of `a` leaves it unsettled",
         "a declaration expected to check owing nothing is told what leaves it unsettled"
     );
-    let owing = SourceText::from(
-        "def a() -> Integer {\n  return 1 ~ 2\n}\n\n@[ owes(1) ]\ndef b() -> Integer {\n  \
-             return a()\n}\n",
-    );
+    let owing = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-declaration-naming-a-refused-one-is-a-note-owing.gandr"
+    ));
     let owing_printed = self::printed(
         Path::new("owing.gandr"),
         SourceRoot::Fixture,
@@ -3222,7 +3166,9 @@ fn a_declaration_naming_a_refused_one_is_a_note()
 #[test]
 fn a_signature_whose_definition_is_refused_is_a_note_2339()
 {
-    let text = SourceText::from("@[ checks ]\ndef pair : Integer ;\nde pair = 1 ;\n");
+    let text = SourceText::from(include_str!(
+        "diagnostics/unformatted/a-signature-whose-definition-is-refused-is-a-note-2339.gandr"
+    ));
     let printed = printed(
         Path::new("unread.gandr"),
         SourceRoot::Strict,
@@ -3478,10 +3424,9 @@ fn a_words_point_spells_its_constructors_arguments()
     use gandr_surface_lowering::Role;
 
     let grammar = built_in().expect("the grammar builds");
-    let text = SourceText::from(
-        "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (p : Nat) --> Nat\n  | Pair : (a : Nat, b :  Nat) --> Nat\n  | step : Succ Zero <-> Succ Zero\n  | both : Pair Zero Zero <-> \
-         Pair Zero Zero\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-words-point-spells-its-constructors-arguments.gandr"
+    ));
     let Lowered::Module { module, .. } =
         lower_source(&grammar, text, &mut LoweringCount::default())
             .expect("the source lowers")
@@ -3525,7 +3470,12 @@ fn a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498(
 
     let pbg = built_in().expect("the built-in grammar builds");
     let exported = "pub def reply : Integer = 42 ;\n";
-    let text = format!("{exported}import \"./base.gandr\" as base ;\ndef relayed = base.reply ;\n");
+    let text = format!(
+        include_str!(
+            "diagnostics/unformatted/a-declaration-read-through-an-import-is-spelled-as-its-reader-writes-it-3498.gandr"
+        ),
+        exported = exported
+    );
     let unit = Unit::new(vec![
         UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
         UnitSource::new(ByteOffset::from(exported.len()), vec![
@@ -3588,7 +3538,14 @@ fn a_list_type_is_spelled_as_its_reader_reads_it_4835()
     let aliased = "import std.list as l ;\n";
     let neither = "def n : Integer = 1 ;\n";
     // The stand-in for `std.list`, which declares nothing, then the readers.
-    let text = format!("\n{listed}{aliased}{neither}");
+    let text = format!(
+        include_str!(
+            "diagnostics/unformatted/a-list-type-is-spelled-as-its-reader-reads-it-4835.gandr"
+        ),
+        aliased = aliased,
+        listed = listed,
+        neither = neither
+    );
     let at = |offset: usize| ByteOffset::from(offset);
     let stand_in = ImportTarget::Source(SourceIndex::from(0_usize));
     let unit = Unit::new(vec![
@@ -3651,9 +3608,15 @@ fn a_refusal_is_spelled_as_its_own_source_reads_it_4813()
     use gandr_surface_lowering::UnitSource;
 
     let pbg = built_in().expect("the built-in grammar builds");
-    let exported = "pub data Box : Type where {\n  | Wrap : (n : Integer) --> Box\n}\n";
-    let aliased = "import \"./base.gandr\" as base ;\ndef boxed : base.Box ;\ndef boxed = 1 ;\n";
-    let opened = "import \"./base.gandr\" ;\ndef other : Integer ;\ndef other = 2 ;\n";
+    let exported = include_str!(
+        "diagnostics/fixtures/a-refusal-is-spelled-as-its-own-source-reads-it-4813-exported.gandr"
+    );
+    let aliased = include_str!(
+        "diagnostics/fixtures/a-refusal-is-spelled-as-its-own-source-reads-it-4813-aliased.gandr"
+    );
+    let opened = include_str!(
+        "diagnostics/fixtures/a-refusal-is-spelled-as-its-own-source-reads-it-4813-opened.gandr"
+    );
     let text = format!("{exported}{aliased}{opened}");
     let imports = || vec![ImportTarget::Source(SourceIndex::from(0_usize))];
     let unit = Unit::new(vec![
@@ -3726,12 +3689,9 @@ fn a_refusal_is_spelled_as_its_own_source_reads_it_4813()
 #[test]
 fn a_later_binder_of_one_split_spells_under_the_earlier()
 {
-    let text = SourceText::from(
-        "data Theory : Type where {\n  | Monoid : Theory\n  | Group : Theory\n}\ndef counted_at(s : \
-         Theory) -> -F Type {\n  match s {\n    | Monoid => return Integer\n    | Group => return \
-         String\n  }\n}\ndef bad(p : *{s : Theory, n : counted_at(s)}, other : Theory) -> -F \
-         counted_at(other) {\n  match p {\n    | *{s, n} => return n\n  }\n}\n",
-    );
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/a-later-binder-of-one-split-spells-under-the-earlier.gandr"
+    ));
     let diagnostic = only(Path::new("packed.gandr"), text);
     assert_eq!(
         diagnostic.detail.compared.found,
@@ -3771,9 +3731,9 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
 #[test]
 fn a_mistake_is_reported_before_what_it_causes_2048()
 {
-    let text = "import std.list (List) ;\ndat Circle : Type {\n  Base : Circle;\n}\ndef twice : \
-                Path[.A = Circle](Base, Base) ;\ndef twice = refl(Base) ;\ndef none(xs : List()) -> -F \
-                Unit { pure *{} }\n";
+    let text = include_str!(
+        "diagnostics/unformatted/a-mistake-is-reported-before-what-it-causes-2048.gandr"
+    );
     // The source lists `List` from `std.list`, so it is walked from a file,
     // which lays it after the module it imports (#4520).
     let scratch = Scratch::new(Path::new("strayed"));

@@ -1,0 +1,7 @@
+theory Counter where {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+}
+def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read (s.incr c) }

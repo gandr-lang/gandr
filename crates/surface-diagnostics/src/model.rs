@@ -1368,7 +1368,9 @@ mod tests
     #[test]
     fn a_locus_counts_lines_and_characters()
     {
-        let text = SourceText::from("αβ\nγ x");
+        let text = SourceText::from(include_str!(
+            "model/unformatted/a-locus-counts-lines-and-characters.gandr"
+        ));
         let at = |start: usize, end: usize| {
             ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("ordered")
         };

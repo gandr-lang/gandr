@@ -1,0 +1,5 @@
+def add : Integer;
+def add = 1;
+def f(int : Integer) -> -F Integer { return int }
+def g : Integer;
+def g = missing;

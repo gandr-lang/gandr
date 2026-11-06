@@ -1,0 +1,2 @@
+def h(a : String, b : Integer) -> -F Integer { return b }
+def k(u : Integer) -> -F Integer { become h "no" "no" }

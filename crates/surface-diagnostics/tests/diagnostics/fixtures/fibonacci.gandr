@@ -1,0 +1,31 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+def rec plus(a : Nat, b : Nat) -> Nat {
+  match a {
+    | Zero => b
+    | Succ(m) => Succ (plus[<] m b)
+  }
+}
+def rec fib(n : Nat) -> Nat {
+  match n {
+    | Zero => Zero
+    | Succ(m) => match m {
+      | Zero => Succ Zero
+      | Succ(k) => plus (fib[<] m) (fib[<] k)
+    }
+  }
+}
+def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat {
+  match n {
+    | Zero => a
+    | Succ(m) => fibFrom[<] m b (plus a b)
+  }
+}
+def five() -> Nat {
+  Succ (Succ (Succ (Succ (Succ Zero))))
+}
+def nineteen() -> Nat {
+  Succ (Succ (Succ (Succ (plus (five ()) (plus (five ()) (five ()))))))
+}

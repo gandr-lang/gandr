@@ -1,0 +1,3 @@
+data Misread : (n : Nat, i : Fin(n), j : Fin(i)) --> Type where {
+  | Read : (n : Nat, i : Fin(n), j : Fin(n)) --> Misread(n, i, j)
+}
