@@ -1,0 +1,15 @@
+theory Continued where {
+  sort N : Type;
+  sort V : Type+;
+  sort E : Type;
+  sort C : Type;
+  oper z : () --> N;
+  oper int : (n : N) --> V;
+  oper lit : (n : N) --> E;
+  oper ret : (e : E) --> E;
+  oper hole : () --> E;
+  oper post : (v : V) --> C;
+  oper wp : (e : E, k : pi+ (v : V). C, r : pi+ (v : V). C) --> C;
+  rule literal : wp (lit n) k r ==> k (int n);
+  rule returned : wp (ret e) k r ==> wp e r r;
+}

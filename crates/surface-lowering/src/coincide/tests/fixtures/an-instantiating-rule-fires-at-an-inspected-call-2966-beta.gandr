@@ -1,0 +1,8 @@
+theory Beta where {
+  sort V : Type+;
+  sort C : Type;
+  oper z : () --> V;
+  oper post : (v : V) --> C;
+  oper app : (k : pi+ (x : V). C, a : V) --> C;
+  rule beta : app k a ==> k a;
+}

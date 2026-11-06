@@ -1,0 +1,6 @@
+module M where { type C = -F Integer; def one() -> C { return 1 } }
+type D = -F Integer;
+def two() -> D { return 2 }
+module Fam where { type T(a : Type) = -F a; def some1() -> T(Integer) { return 1 } }
+type G = Integer -> -F Integer;
+def inc() -> G { fun (n) { return n } }

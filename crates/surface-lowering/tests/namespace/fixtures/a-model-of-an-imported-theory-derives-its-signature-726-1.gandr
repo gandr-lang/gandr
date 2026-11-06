@@ -1,0 +1,5 @@
+pub theory Nat where {
+  sort Nat : Type;
+  oper zero : () --> Nat;
+  oper succ : (n : Nat) --> Nat;
+}

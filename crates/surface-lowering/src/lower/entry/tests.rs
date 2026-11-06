@@ -171,8 +171,7 @@ fn an_entry_returns_the_unit_2279()
 #[test]
 fn an_entry_takes_the_ambient_authority_2970()
 {
-    let source = "def main(authority : Cap { print }) -> [std.io.Console.Eff] Unit {\n  \
-                  authority.print \"hello, world!\"\n}\n";
+    let source = include_str!("tests/fixtures/an-entry-takes-the-ambient-authority-2970.gandr");
     let mut arena = CoreArena::new();
     let text = hosting(source);
     let module = hosted(&text, &mut arena);

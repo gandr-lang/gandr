@@ -1,0 +1,10 @@
+data List(a : Type) : Type where { | Nil : List(a) | Cons : (head : a, tail : List(a)) --> List(a) }
+def rec onto(xs : List(Integer), acc : List(Integer)) -> -F List(Integer) {
+  match xs { | Nil => return acc | Cons(x, rest) => become onto[<] rest (Cons x acc) }
+}
+def rec padded(k : Integer, xs : List(Integer), acc : List(Integer)) -> -F List(Integer) {
+  match xs { | Nil => return acc | Cons(x, rest) => become padded[<] k rest (Cons k acc) }
+}
+def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> -F List(a) {
+  match xs { | Nil => return acc | Cons(x, rest) => become reverseOnto[<] a rest (Cons x acc) }
+}

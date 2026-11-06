@@ -1,0 +1,3 @@
+def proc : Cap { exit };
+def main() -> -F [std.process.Exit.Eff] Integer { proc.exit 7; return 0 }
+import std.process;

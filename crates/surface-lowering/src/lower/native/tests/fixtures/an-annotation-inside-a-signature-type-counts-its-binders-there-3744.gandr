@@ -1,0 +1,12 @@
+data J(d : Type) : Type where { | Jota : (e : d) --> J(d) }
+data K(a : Type) : Type where { | Wrap : (x : a) --> K(a) }
+def jargs(d : Type, c : J(d)) -> -F Type { return Unit }
+def named(d : Type, e : d, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer { return 1 }
+def unnamed(d : Type, v : Integer, e : d, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer { return 1 }
+def between(d : Type, e : d, v : Integer, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer { return 1 }
+def outermost(v : Integer, d : Type, e : d, w : jargs(d, (Jota(e) : J(d)))) -> -F Integer {
+  return 1
+}
+def inBody(d : Type, v : Integer, e : d) -> -F J(d) { return (Jota e : J(d)) }
+def quoted(d : Type, v : Integer, e : d) -> -F Type { return (jargs d (Jota e : J(d))) }
+def wrapped(d : Type, v : Integer, e : d) -> -F K(J(d)) { return (Wrap (Jota e) : K(J(d))) }

@@ -1,0 +1,4 @@
+data Chain(a : Type) : Type where { | End : Chain(a) | Link : (h : a, t : Chain(a)) --> Chain(a) }
+def rec size[a : Type](xs : Chain(a)) -> -F Integer {
+  match xs { | End => return 0 | Link(h, t) => size[<] t }
+}

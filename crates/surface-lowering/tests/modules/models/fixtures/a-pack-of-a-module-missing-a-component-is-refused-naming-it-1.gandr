@@ -1,0 +1,3 @@
+module Bare : *{ type C = Integer } where {
+  type C = Integer;
+}

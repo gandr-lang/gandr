@@ -1,0 +1,5 @@
+module S :> *{ type T, z : T, type P = Path[.A = T](z, z) } where {
+  type T = Integer;
+  def z = 0;
+  type P = Path[.A = Integer](0, 0);
+}

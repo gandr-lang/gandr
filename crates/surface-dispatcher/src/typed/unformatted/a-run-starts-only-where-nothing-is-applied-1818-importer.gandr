@@ -1,0 +1,16 @@
+import "./here.gandr" ;
+data Point : Type where {
+  | Origin : Point
+}
+def answer = 42 ;
+def step() -> -F Integer { return 1 }
+def double(n : Integer) -> -F Integer { return n + n }
+def idAt(A : Type, x : A) -> -F A { x }
+def opt : Type -> Type[-] ;
+def opt = fun (A) { -F A } ;
+def filled : Type ;
+def filled = Integer ;
+def later : +U (-F Integer) ;
+def broken : String ;
+def broken = 1 ;
+def origin = Origin ;

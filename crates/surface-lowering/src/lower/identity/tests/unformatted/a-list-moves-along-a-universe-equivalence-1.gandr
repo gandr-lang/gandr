@@ -1,0 +1,8 @@
+{negation}def moved(xs : List(Bool)) -> -F List(Bool) {{
+  become Path.walk (fun (X) {{ List X }}) negation xs
+}}
+def again(xs : List(Bool)) -> -F List(Bool) {{
+  become Path.walk (fun (X) {{ List X }}) negation xs
+}}
+def both : List(Bool);
+def both = cons (+{{.0 = *{{}}}}) (cons (+{{.1 = *{{}}}}) nil);

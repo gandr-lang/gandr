@@ -1,0 +1,5 @@
+module Square(S : *{ type T, seed : T }) :> *{ type U, w : U } where {
+  type U = S.T * S.T;
+  def w = *{S.seed, S.seed};
+}
+module Squared = Square(Seed);

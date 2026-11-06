@@ -1,0 +1,10 @@
+theory Pointed where {
+  sort T : Type;
+  oper z : T;
+}
+module ZeroPointed : Model(Pointed) where {
+  type T = Integer;
+  def z = 0;
+}
+def helper(x : Integer) -> -F Integer { x }
+def wrap : Integer -> Integer ; def wrap = fun (n) { become helper n } ;

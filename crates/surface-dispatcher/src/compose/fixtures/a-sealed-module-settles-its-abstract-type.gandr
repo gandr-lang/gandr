@@ -1,0 +1,5 @@
+module Counter :> *{ type T, seed : T } where { type T = Integer; def seed = 7; }
+def held : Counter.T;
+def held = Counter.seed;
+def leak : Integer;
+def leak = Counter.seed;

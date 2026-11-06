@@ -1,0 +1,2 @@
+theory State where { sort S : Type; }
+theory Console where { sort C : Type; }

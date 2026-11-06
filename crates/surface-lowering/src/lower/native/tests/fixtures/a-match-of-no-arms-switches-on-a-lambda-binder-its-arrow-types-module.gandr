@@ -1,0 +1,5 @@
+data Empty : Type where {}
+def bare : +U (Empty -> -F Integer);
+def bare = thunk { fun (x) { match x {} } };
+def stated : +U (Empty -> -F Integer);
+def stated = thunk { fun (x) { match x -> -F Integer {} } };

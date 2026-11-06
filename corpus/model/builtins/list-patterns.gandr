@@ -1,18 +1,23 @@
-// A native list taken apart by its patterns: `[]`, the elements a list
-// pattern writes, a rest `..r` binding the list past them, and `p as x`
-// binding the whole value a pattern matches. Each list pattern compiles to the
-// list case on the empty list and a cell, so a recursion on the rest descends
-// structurally, as a list's tail stands one stage below it.
+// This source tests native list patterns.
+//
+// A list pattern names the empty list, elements, a rest binding and an
+// as-pattern binding for the whole value.
+//
+// The compiler turns each pattern into a list case over the empty list and a
+// cell. A recursive rest match descends structurally.
+//
+// - see: `pathological/builtins/list-patterns.gandr` — unmatched and mixed patterns
 
-// The native finite lists.
+// This import provides native finite lists.
 import std.list (List);
 
-/// A rubric's grade.
+/// `Grade` records a rubric grade.
 data Grade : Type where
   | Met : Grade
   | Unmet : Grade
 
-/// The grades composed: unmet as soon as one is, met when none is.
+/// `compose` returns `Unmet` when any grade is unmet. It returns `Met`
+/// otherwise.
 def rec compose(grades : List(Grade)) -> Grade =
   match grades
     | #[] => Met
@@ -20,7 +25,7 @@ def rec compose(grades : List(Grade)) -> Grade =
       | Unmet => Unmet
       | Met => compose[<] rest
 
-/// One unmet grade among met ones fails the composition.
+/// `failing` has one unmet grade.
 @[ runs("Unmet") ]
 def failing() -> Grade =
   compose (#[Met, Unmet, Met])
@@ -30,7 +35,7 @@ def failing() -> Grade =
 def passing() -> Grade =
   compose (#[Met, Met])
 
-/// A list's length up to three, read off its shape.
+/// `shortLength` reads a list shape up to length three.
 def shortLength(xs : List(Integer)) -> Integer =
   match xs
     | #[] => 0
@@ -38,29 +43,29 @@ def shortLength(xs : List(Integer)) -> Integer =
     | #[a, b] => 2
     | _ => 3
 
-/// Two elements match the pattern of two.
+/// `two` matches the two-element pattern.
 @[ runs("2") ]
 def two() -> Integer =
   shortLength (#[7, 8])
 
-/// Four fall past every written length to the catch-all.
+/// `many` reaches the catch-all after every written length.
 @[ runs("3") ]
 def many() -> Integer =
   shortLength (#[7, 8, 9, 10])
 
-/// The second element, past the first, whatever the rest holds.
+/// `secondOf` reads the second element after the first.
 def secondOf(xs : List(Integer)) -> Integer =
   match xs
     | #[_, b, ..rest] => b
     | _ => 0
 
-/// The second of three.
+/// `eight` reads the second element of three.
 @[ runs("8") ]
 def eight() -> Integer =
   secondOf (#[7, 8, 9])
 
-/// A list's head added to its length up to three: the as-pattern binds the
-/// whole list the cell pattern matched.
+/// `headed` adds a list head to its short length. Its as-pattern binds the
+/// whole matched list.
 def headed(xs : List(Integer)) -> Integer =
   match xs
     | all @ #[a, .._] => {
@@ -69,7 +74,7 @@ def headed(xs : List(Integer)) -> Integer =
     }
     | #[] => 0
 
-/// Five and the two elements it heads.
+/// `seven` reads five and the two elements it heads.
 @[ runs("7") ]
 def seven() -> Integer =
   headed (#[5, 6])

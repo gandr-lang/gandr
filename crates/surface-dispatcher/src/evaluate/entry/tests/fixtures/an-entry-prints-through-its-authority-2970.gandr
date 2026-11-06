@@ -1,0 +1,7 @@
+type Authority = Cap { print };
+def console(authority : Authority) -> Cap { print } { authority }
+def say(c : Cap { print }, line : String) -> [std.io.Console.Eff] Unit { c.print line }
+def main(authority : Authority) -> [std.io.Console.Eff] Unit {
+  say authority "hello";
+  say (console authority) "world"
+}

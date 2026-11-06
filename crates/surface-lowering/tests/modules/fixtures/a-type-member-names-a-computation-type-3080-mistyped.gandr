@@ -1,0 +1,2 @@
+type D = -F Integer;
+def two() -> D { return "two" }

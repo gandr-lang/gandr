@@ -90,15 +90,8 @@ fn a_groups_certificate_replays_in_the_kernel()
         Coincidence::Joined(ref certificates) => certificates.derived_terms.len(),
         Coincidence::Unexamined | Coincidence::Orthogonal | Coincidence::Refused(_) => 0,
     };
-    let group = r#"theory Group where {
-    sort G : Type;
-    oper e : G;
-    oper inv : (x : G) --> G;
-    oper mul : (x : G, y : G) --> G;
-    rule unitL : mul (e ()) x <=> x;
-    rule assoc : mul (mul x y) z <=> mul x (mul y z);
-    rule invL : mul (inv x) x <=> e ();
-}"#;
+    let group =
+        include_str!("tests/unformatted/a-groups-certificate-replays-in-the-kernel-group.gandr");
     lowered(SourceText::from(group), |module| {
         let (certificate, verdict) = certified(module);
         let derived = derived(module);
@@ -111,12 +104,8 @@ fn a_groups_certificate_replays_in_the_kernel()
         assert_eq!(certificate.turns, [RuleTurn::AsWritten; 3]);
         assert_eq!(verdict, Ok(()), "{certificate:?}");
     });
-    let unital = r#"theory Unital where {
-    sort M : Type;
-    oper e : M;
-    oper mul : (x : M, y : M) --> M;
-    rule unitL : x <=> mul (e ()) x;
-}"#;
+    let unital =
+        include_str!("tests/unformatted/a-groups-certificate-replays-in-the-kernel-unital.gandr");
     lowered(SourceText::from(unital), |module| {
         let (certificate, verdict) = certified(module);
         let derived = derived(module);
@@ -128,11 +117,8 @@ fn a_groups_certificate_replays_in_the_kernel()
         );
         assert_eq!(verdict, Ok(()));
     });
-    let pointed = r#"theory Pointed where {
-    sort P : Type;
-    oper e : P;
-    oper twice : (x : P) --> P;
-}"#;
+    let pointed =
+        include_str!("tests/unformatted/a-groups-certificate-replays-in-the-kernel-pointed.gandr");
     lowered(SourceText::from(pointed), |module| {
         let (certificate, verdict) = certified(module);
         assert!(

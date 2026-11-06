@@ -20,10 +20,12 @@ if ! base=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then
   echo --workspace
   exit 0
 fi
-changed=$({ git diff --no-renames --name-only "$base"; git ls-files --others --exclude-standard; } | jq -R . | jq -cs .)
 packages=$(cargo metadata --format-version 1 --no-deps --locked --manifest-path "$root/Cargo.toml" \
   | jq -c --arg root "$root/" '[.packages[] | {name, dir: (.manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml")), deps: [.dependencies[].name]}]')
-set=$(jq -n --argjson changed "$changed" --argjson packages "$packages" '{changed: $changed, packages: $packages}' \
+# The change goes to `jq` on stdin, as `select.bash` reads it: one argument
+# holds at most 128 KiB, and a change of many paths holds more.
+set=$({ git diff --no-renames --name-only "$base"; git ls-files --others --exclude-standard; } \
+  | jq -nR --argjson packages "$packages" '{changed: [inputs], packages: $packages}' \
   | jq -c -L "$here" -f "$here/packages.jq")
 jq -r --argjson packages "$packages" \
   'if . == "workspace" then "scope: the whole workspace"

@@ -1,0 +1,6 @@
+def counter(n : Integer) -> -F Integer {
+  var c = 0;
+  access c as v { resume(v, v + 1) };
+  access c as v { abort(v) } unwind { pure *{} };
+  return c
+}

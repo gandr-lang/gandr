@@ -1,0 +1,2 @@
+pub def reply : String = "42";
+pub def label : Integer = 7;

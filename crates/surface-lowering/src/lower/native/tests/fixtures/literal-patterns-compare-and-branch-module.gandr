@@ -1,0 +1,4 @@
+def small(n : Integer) -> -F Integer {
+  match n { | 0 => return 10 | 1 => return 11 | _ => return 12 }
+}
+def flip(b : Bool) -> -F Integer { match b { | true => return 1 | false => return 0 } }

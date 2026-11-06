@@ -1,0 +1,10 @@
+data N : Type where { | Z : N | S : (n : N) --> N }
+data Prog : N -> Type where {
+  | Stop : Prog(Z)
+  | Ask : (k : Prog(Z)) --> Prog(S(Z))
+  | Tell : (s : Integer, k : Prog(Z)) --> Prog(Z) rule : Tell s (Tell u k) <=> Tell u k;
+}
+data Skip : N -> Type where {
+  | Halt : Skip(Z) oper skip : (k : Skip(Z)) --> Skip(Z);
+  rule : skip k ==> k;
+}

@@ -1,0 +1,3 @@
+def known = 1;
+def misspelt = migrat[2];
+def resolved = known[2];

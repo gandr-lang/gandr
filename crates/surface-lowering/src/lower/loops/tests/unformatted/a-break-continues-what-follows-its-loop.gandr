@@ -1,0 +1,6 @@
+{PRELUDE}def pick(n : Nat) -> -F [Partial] Nat {{ let m = loop {{ match n {{ | Zero => break(n) | Succ(p) => break(p) }} }} ; return Succ m }}
+def pick_by_hand(n : Nat) -> -F [Partial] Nat {{ loop {{ match n {{ | Zero => return Succ n | Succ(p) => return Succ p }} }} }}
+def bare(n : Nat) -> -F [Partial] Nat {{ let u = loop {{ break }} ; return n }}
+def bare_by_hand(n : Nat) -> -F [Partial] Nat {{ loop {{ return n }} }}
+def kept(n : Nat) -> -F [Partial] Nat {{ let m = loop {{ let k = loop {{ break(n) }} ; break(Succ k) }} ; return Succ m }}
+def kept_by_hand(n : Nat) -> -F [Partial] Nat {{ loop {{ loop {{ return Succ (Succ n) }} }} }}

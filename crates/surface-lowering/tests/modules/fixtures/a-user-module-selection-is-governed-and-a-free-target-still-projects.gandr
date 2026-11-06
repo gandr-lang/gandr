@@ -1,0 +1,4 @@
+module M where { def field = 1; }
+def use_field = M.field;
+def free = 1;
+def free_field = free.field;

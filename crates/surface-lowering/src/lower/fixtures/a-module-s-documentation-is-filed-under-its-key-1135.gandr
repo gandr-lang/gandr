@@ -1,0 +1,10 @@
+/// A module.
+module A where {
+  /// A def.
+  def x = 1;
+  /// The inner module.
+  module B where { def y = 2; }
+}
+/// An attribute decorates this module. See [gone].
+@[ explicit_exits ]
+module C where { def z = 3; }

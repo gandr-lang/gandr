@@ -1,0 +1,5 @@
+data Int : Type where { | Z : Int | S : (x : Int) --> Int }
+def r(n : Int) -> -F Path[.A = Int](n, n) { Path.here n }
+def f(a : Int, b : Int) -> -F Path[.A = Int](a, a) {
+  match b { | Z => Path.back (r a) | S(x) => Path.back (r a) }
+}

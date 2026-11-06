@@ -1,0 +1,8 @@
+def peek(c : Cap { read }) -> -F [std.fs.Eff] String { c.read "notes" }
+def quit() -> -F Unit {
+  handle c : std.process.Exit.Eff {
+    c.exit 1
+  } with { | pure(x) => pure x | oper exit(code, k) => k *{} }
+}
+def answer : Integer;
+def answer = 42;

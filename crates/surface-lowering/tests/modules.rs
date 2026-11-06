@@ -1303,9 +1303,7 @@ where
 #[test]
 fn modules_lower_to_named_member_declarations()
 {
-    let source = "module Config where {\n  def first = 0;\n  module limits where { module hard where { module \
-                      detail where { def note = 1; } } }\n  def after = 2;\n}\ndef top = \
-                      Config.limits.hard.detail.note;";
+    let source = include_str!("modules/fixtures/modules-lower-to-named-member-declarations.gandr");
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -1388,8 +1386,7 @@ fn modules_lower_to_named_member_declarations()
 #[test]
 fn module_members_admit_in_source_order()
 {
-    let source =
-        "module M where { def a = 1; module n where { def b = a; } def c = a; }\ndef d = M.n.b;";
+    let source = include_str!("modules/fixtures/module-members-admit-in-source-order.gandr");
     let mut lowered = lower(source);
     let positions: Vec<(String, ConstantIndex)> = lowered
         .module
@@ -1435,8 +1432,9 @@ fn module_members_admit_in_source_order()
 #[test]
 fn a_user_module_selection_is_governed_and_a_free_target_still_projects()
 {
-    let source = "module M where { def field = 1; }\ndef use_field = M.field;\ndef free = 1;\ndef \
-                      free_field = free.field;";
+    let source = include_str!(
+        "modules/fixtures/a-user-module-selection-is-governed-and-a-free-target-still-projects.gandr"
+    );
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -1469,9 +1467,8 @@ fn a_user_module_selection_is_governed_and_a_free_target_still_projects()
 #[test]
 fn nested_modules_lower_as_parent_members_and_project()
 {
-    let source = "module Outer : *{ inner : *{ answer : Integer } } where { def outer_hidden = 1; \
-                      module inner : *{ answer : Integer } where { def inner_hidden = 2; def answer = \
-                      42; } }\ndef use_answer = Outer.inner.answer;";
+    let source =
+        include_str!("modules/fixtures/nested-modules-lower-as-parent-members-and-project.gandr");
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -1526,7 +1523,9 @@ fn deeply_nested_modules_lower_and_resolve_at_every_depth()
     for _level in 0_usize .. depth {
         source.push_str(" }");
     }
-    source.push_str(" }\ndef use_outer = Outer.depth_outer;\n");
+    source.push_str(include_str!(
+        "modules/fixtures/deeply-nested-modules-lower-and-resolve-at-every-depth.gandr"
+    ));
     let mut prefix = String::from("Outer");
     for level in 0_usize .. depth {
         write!(prefix, ".level{level}").expect("writing to a string never fails");
@@ -1583,9 +1582,9 @@ fn deeply_nested_modules_lower_and_resolve_at_every_depth()
 #[test]
 fn a_dotted_name_declares_in_the_modules_its_prefix_names_2687()
 {
-    let source = "theory Gandr.Shape where {\n  oper label : String;\n}\nmodule Gandr.Tools where {\n  def \
-                  answer : Integer = 42;\n}\nmodule Shaped : Model(Gandr.Shape) where {\n  def label : \
-                  String = \"shaped\";\n}\ndef asked : Integer = Gandr.Tools.answer;\n";
+    let source = include_str!(
+        "modules/fixtures/a-dotted-name-declares-in-the-modules-its-prefix-names-2687.gandr"
+    );
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -1619,8 +1618,9 @@ fn a_dotted_name_declares_in_the_modules_its_prefix_names_2687()
 #[test]
 fn a_dotted_prefix_naming_a_written_module_is_refused_2687()
 {
-    let source = "module Gandr where {\n  def x : Integer = 1;\n}\ntheory Gandr.Shape where {\n  oper label \
-                  : String;\n}\n";
+    let source = include_str!(
+        "modules/fixtures/a-dotted-prefix-naming-a-written-module-is-refused-2687.gandr"
+    );
     assert_eq!(
         rows(&lower(source)),
         [
@@ -1742,8 +1742,9 @@ fn a_nonempty_ascription_checks_each_component_at_its_member()
 #[test]
 fn a_manifest_type_component_expands_in_later_components()
 {
-    let source = "module M : *{ type T = Integer, value : T } where { def value = 1; }\ndef used = \
-                      M.value;";
+    let source = include_str!(
+        "modules/fixtures/a-manifest-type-component-expands-in-later-components.gandr"
+    );
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -1796,7 +1797,9 @@ fn a_manifest_type_component_expands_in_later_components()
 #[test]
 fn manifest_refusals_propagate_transitively_before_minting()
 {
-    let source = "module M : *{ type A = Missing, type B = A, value : B } where { def value = unbound; }\ndef after = 2;";
+    let source = include_str!(
+        "modules/fixtures/manifest-refusals-propagate-transitively-before-minting.gandr"
+    );
     let lowered = lower(source);
     let fault = Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
         span: span_of(source, "Missing", 0_usize),
@@ -1981,7 +1984,9 @@ fn a_component_check_carries_its_members_expectation()
 #[test]
 fn an_attributed_top_level_type_member_is_read_as_the_plain_one_4464()
 {
-    let source = "@[ refuses(\"UnresolvedTypeHead\") ]\ntype T = Nope;\ndef after = 1;\n";
+    let source = include_str!(
+        "modules/fixtures/an-attributed-top-level-type-member-is-read-as-the-plain-one-4464.gandr"
+    );
     let found = rows(&lower(source));
     assert!(
         matches!(found.as_slice(), [
@@ -1996,8 +2001,8 @@ fn an_attributed_top_level_type_member_is_read_as_the_plain_one_4464()
 #[test]
 fn a_type_member_s_refusal_is_reported_once_1087()
 {
-    let source = "module M : *{ count : Integer, type Q } where {\n  def count = 3;\n  @[ checks ] type Q \
-                  = Path[.A = Integer](count, 3);\n}\n";
+    let source =
+        include_str!("modules/fixtures/a-type-member-s-refusal-is-reported-once-1087.gandr");
     let found = rows(&lower(source));
     let refused: Vec<Role> = found
         .iter()
@@ -2284,8 +2289,9 @@ fn a_type_component_arity_mismatch_is_refused_by_name()
 #[test]
 fn a_transparent_abstract_component_reads_its_type_member()
 {
-    let source = "module M : *{ type T, value : T } where { type T = Integer; def value = 1; }\ndef \
-                      used : M.T;\ndef used = M.value;\ndef wrong : M.T;\ndef wrong = \"text\";";
+    let source = include_str!(
+        "modules/fixtures/a-transparent-abstract-component-reads-its-type-member.gandr"
+    );
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -2395,7 +2401,9 @@ fn an_abstract_component_with_no_type_member_is_refused_by_name()
         "the component names a type member the body does not declare, and its sibling \
              is matched"
     );
-    let sealed = "module M :> *{ type T, value : T } where { def value = 1; }\ndef after = 2;";
+    let sealed = include_str!(
+        "modules/fixtures/an-abstract-component-with-no-type-member-is-refused-by-name-sealed.gandr"
+    );
     assert_eq!(
         rows(&lower(sealed)),
         [
@@ -2502,10 +2510,8 @@ fn a_record_type_names_its_faces_over_its_labels()
     use gandr_theory_shapes::Membership::Inside;
     use gandr_theory_shapes::Membership::Outside;
 
-    let source = faced!(
-        "face secure = {tls, port}; face addr = {host, port}; face none = {};",
-        "def local : Config; def local = *{ .host = \"h\", .port = 1, .tls = true };"
-    );
+    let source =
+        include_str!("modules/fixtures/a-record-type-names-its-faces-over-its-labels.gandr");
     let mut lowered = lower(source);
     assert_eq!(
         verdicts(&mut lowered),
@@ -2595,10 +2601,7 @@ fn a_face_past_a_record_s_labels_is_refused_by_the_label()
 #[test]
 fn a_type_member_names_a_computation_type_3080()
 {
-    let source = "module M where { type C = -F Integer; def one() -> C { return 1 } }\ntype D = -F \
-                  Integer;\ndef two() -> D { return 2 }\nmodule Fam where { type T(a : Type) = -F a; \
-                  def some1() -> T(Integer) { return 1 } }\ntype G = Integer -> -F Integer;\ndef \
-                  inc() -> G { fun (n) { return n } }";
+    let source = include_str!("modules/fixtures/a-type-member-names-a-computation-type-3080.gandr");
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -2629,14 +2632,16 @@ fn a_type_member_names_a_computation_type_3080()
         "the module exports the member as a computation type, not as one that did not lower"
     );
 
-    let mistyped = "type D = -F Integer;\ndef two() -> D { return \"two\" }";
+    let mistyped =
+        include_str!("modules/fixtures/a-type-member-names-a-computation-type-3080-mistyped.gandr");
     assert_eq!(
         verdicts(&mut lower(mistyped)),
         [judged(1_usize, Judgement::Mismatched)],
         "a body returning another type is refused at the member's computation type"
     );
 
-    let misread = "type D = -F Integer;\ndef bad(x : D) -> -F Integer { return 1 }";
+    let misread =
+        include_str!("modules/fixtures/a-type-member-names-a-computation-type-3080-misread.gandr");
     assert!(
         matches!(
             rows(&lower(misread)).as_slice(),
@@ -2667,10 +2672,8 @@ fn a_type_member_names_a_computation_type_3080()
          readers with it"
     );
 
-    let instance = "module Pt :> *{ type V, v : V } where { type V = Integer; def v = 3; }\nmodule \
-                    Mk(S : *{ type V, v : V }) where { type K = -F S.V; def k() -> K { return S.v } \
-                    }\nmodule I = Mk(Pt);\ndef through() -> I.K { I.k () }\ndef lie() -> I.K { \
-                    return true }";
+    let instance =
+        include_str!("modules/fixtures/a-type-member-names-a-computation-type-3080-instance.gandr");
     let judgements = verdicts(&mut lower(instance));
     assert_eq!(
         judgements
@@ -2684,8 +2687,8 @@ fn a_type_member_names_a_computation_type_3080()
          atom: the instance's run inhabits it and a boolean does not"
     );
 
-    let argued = "module Q where { type V = -F Integer; }\nmodule Mk(S : *{ type V }) where { def one() -> \
-                  Integer { 1 } }\nmodule J = Mk(Q);";
+    let argued =
+        include_str!("modules/fixtures/a-type-member-names-a-computation-type-3080-argued.gandr");
     assert!(
         rows(&lower(argued)).iter().any(|found| matches!(
             *found,
@@ -2706,8 +2709,9 @@ fn a_type_member_names_a_computation_type_3080()
 #[test]
 fn a_family_s_parameter_under_a_data_type_answers_at_its_kind_3142()
 {
-    let source = "data Maybe(a : Type) : Type where {\n  | None : Maybe(a)\n  | Some : (x : a) --> Maybe(a)\n}\nmodule Loose where { type R(a : Type) = Maybe(a); }\ntype Top(a : \
-                  Type) = Maybe(a);\ndef g(a : Type, m : Maybe(a)) -> Integer { 0 }\n";
+    let source = include_str!(
+        "modules/fixtures/a-family-s-parameter-under-a-data-type-answers-at-its-kind-3142.gandr"
+    );
     let argument = |declared: &str| {
         let start = source.find(declared).expect("the family is written") + declared.len() - 2;
         ByteSpan::new(ByteOffset::from(start), ByteOffset::from(start + 1))
@@ -2796,8 +2800,9 @@ fn a_type_member_is_named_only_after_it_is_written()
 #[test]
 fn a_sealed_component_over_a_refused_member_is_refused_with_it()
 {
-    let source = "module M :> *{ type T, value : T } where { type T = Missing; def value = 1; }\ndef \
-                      client : M.T;\ndef client = M.value;\ndef after = 2;";
+    let source = include_str!(
+        "modules/fixtures/a-sealed-component-over-a-refused-member-is-refused-with-it.gandr"
+    );
     let fault = Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
         span: span_of(source, "Missing", 0_usize),
         name: name("Missing"),
@@ -2819,9 +2824,9 @@ fn a_sealed_component_over_a_refused_member_is_refused_with_it()
 #[test]
 fn a_module_path_is_governed_through_lowering_not_merely_registered()
 {
-    let source = "module Facts : *{ total : Integer } where { def hidden = 1; def total = 2; module \
-                      inner where { def answer = 3; } }\ndef total_used = Facts.total;\ndef hidden_used = \
-                      Facts.hidden;\ndef inner_used = Facts.inner;\ndef never_used = Facts.never;";
+    let source = include_str!(
+        "modules/fixtures/a-module-path-is-governed-through-lowering-not-merely-registered.gandr"
+    );
     let lowered = lower(source);
     let unknown = |written: &'static str, member: &'static str| {
         Amounts::Refused(LoweringRefusal::UnknownMember {
@@ -2870,9 +2875,9 @@ fn a_module_path_is_governed_through_lowering_not_merely_registered()
 #[test]
 fn a_deep_module_path_is_governed_at_the_depth_that_binds_it()
 {
-    let source = "module Facts where { module inner where { module core where { def answer = 3; } } }\ndef \
-                      answer_used = Facts.inner.core.answer;\ndef missing_used = \
-                      Facts.inner.core.missing;\ndef nowhere_used = Facts.nowhere.core.answer;";
+    let source = include_str!(
+        "modules/fixtures/a-deep-module-path-is-governed-at-the-depth-that-binds-it.gandr"
+    );
     let lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -2910,8 +2915,8 @@ fn a_deep_module_path_is_governed_at_the_depth_that_binds_it()
 #[test]
 fn a_module_namespace_is_not_a_projectable_record()
 {
-    let source = "module M where { def x = 1; module inner where { def y = 2; } }\ndef known = M.x;\ndef \
-                      unknown = M.nonesuch;\ndef whole = M.inner;";
+    let source =
+        include_str!("modules/fixtures/a-module-namespace-is-not-a-projectable-record.gandr");
     let lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -2952,9 +2957,9 @@ fn a_module_namespace_is_not_a_projectable_record()
 #[test]
 fn a_hidden_or_absent_user_module_component_is_declined_as_a_hole()
 {
-    let source = "module Facts : *{ total : Integer } where { def hidden = 1; def total = 2; }\ndef \
-                      total_used = Facts.total;\ndef hidden_used = Facts.hidden;\ndef never_used = \
-                      Facts.never;";
+    let source = include_str!(
+        "modules/fixtures/a-hidden-or-absent-user-module-component-is-declined-as-a-hole.gandr"
+    );
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -2997,8 +3002,8 @@ fn a_hidden_or_absent_user_module_component_is_declined_as_a_hole()
 #[test]
 fn module_signature_matching_hides_extra_members()
 {
-    let source = "module M : *{ visible : Integer } where { def hidden = 1; def visible = 2; }\ndef \
-                      shown = M.visible;\ndef hid = M.hidden;";
+    let source =
+        include_str!("modules/fixtures/module-signature-matching-hides-extra-members.gandr");
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -3187,8 +3192,7 @@ fn member_signature_attaches_and_wins_over_derived_function_type()
 #[test]
 fn signatures_attach_to_their_defs()
 {
-    let source = "def answer : Integer;\ndef answer = 42;\ndef f : +U (Integer -> -F \
-                      Integer);\ndef f(x : Integer) -> -F Integer { return x }";
+    let source = include_str!("modules/fixtures/signatures-attach-to-their-defs.gandr");
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -3227,7 +3231,9 @@ fn signatures_attach_to_their_defs()
 fn computation_signed_module_member_origin_mirrors_ascription_encoding()
 {
     let member = "module M where { def x : -F Integer; def x = pure 1; }";
-    let top = "def x : -F Integer;\ndef x = pure 1;";
+    let top = include_str!(
+        "modules/fixtures/computation-signed-module-member-origin-mirrors-ascription-encoding-top.gandr"
+    );
     let refusal = |source| {
         Amounts::Refused(LoweringRefusal::OutOfFragment {
             span: span_of(source, "-F Integer", 0_usize),
@@ -3283,8 +3289,8 @@ fn a_later_seal_leaves_an_earlier_extent()
     };
     let alone =
         "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed = 7 ; }";
-    let followed = "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed = 7 ; \
-                        }\nmodule Other :> *{ type U, one : U } where { type U = Integer ; def one = 1 ; }";
+    let followed =
+        include_str!("modules/fixtures/a-later-seal-leaves-an-earlier-extent-followed.gandr");
     assert_eq!(
         extent(followed),
         extent(alone),
@@ -3296,9 +3302,7 @@ fn a_later_seal_leaves_an_earlier_extent()
 #[test]
 fn opaque_ascription_seals()
 {
-    let source = "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed = 7 ; \
-                      }\ndef held : Counter.T ;\ndef held = Counter.seed ;\ndef n : Integer ;\ndef \
-                      n = Counter.seed ;";
+    let source = include_str!("modules/fixtures/opaque-ascription-seals.gandr");
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -3416,8 +3420,7 @@ fn opaque_ascription_seals()
         "naming the atom it found"
     );
 
-    let early = "def early : Counter.T ;\ndef early = 1 ;\nmodule Counter :> *{ type T } where { \
-                     type T = Integer ; }";
+    let early = include_str!("modules/fixtures/opaque-ascription-seals-early.gandr");
     assert_eq!(
         rows(&lower(early)),
         [
@@ -3439,8 +3442,9 @@ fn opaque_ascription_seals()
 #[test]
 fn a_signed_member_of_a_sealed_module_exports_its_witness()
 {
-    let source = "module Counter :> *{ type T, seed : T } where { type T = Integer ; def seed : \
-                      Integer ; def seed = 7 ; }\ndef held : Counter.T ;\ndef held = Counter.seed ;";
+    let source = include_str!(
+        "modules/fixtures/a-signed-member-of-a-sealed-module-exports-its-witness.gandr"
+    );
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -3477,10 +3481,9 @@ fn a_signed_member_of_a_sealed_module_exports_its_witness()
 #[test]
 fn a_qualified_type_reference_resolves_through_the_namespace()
 {
-    let source = "module Shapes where { type Side = Integer ; module Inner where { type Label = String ; } \
-                      }\nmodule Box : *{ type Item = Integer, item : Item } where { def item = 1 ; \
-                      }\ndef side : Shapes.Side ;\ndef side = 3 ;\ndef label : Shapes.Inner.Label \
-                      ;\ndef label = \"l\" ;\ndef boxed : Box.Item ;\ndef boxed = Box.item ;";
+    let source = include_str!(
+        "modules/fixtures/a-qualified-type-reference-resolves-through-the-namespace.gandr"
+    );
     let mut lowered = lower(source);
     let expected = [
         ("side", BaseType::Integer),
@@ -3512,9 +3515,9 @@ fn a_qualified_type_reference_resolves_through_the_namespace()
 #[test]
 fn a_module_member_family_is_named_through_the_module_4298()
 {
-    let source = "module M where { data Box : Type where { | B : (x : Integer) --> Box } def one \
-                      : Box = B 1; }\ndef two : M.Box = M.B 2;\ndef three : M.Box = \
-                      M.Box.B 3;\ndef open(b : M.Box) -> Integer { match b { | M.B(x) => x } }";
+    let source = include_str!(
+        "modules/fixtures/a-module-member-family-is-named-through-the-module-4298.gandr"
+    );
     let mut lowered = lower(source);
     let family = lowered
         .arena
@@ -3574,11 +3577,8 @@ fn a_module_member_family_is_named_through_the_module_4298()
 #[test]
 fn a_module_s_family_is_applied_through_its_name_3051()
 {
-    let source = "data Maybe(a : Type) : Type where { | Nothing : Maybe(a) | Just : (x : a) --> \
-                  Maybe(a) }\nmodule M where { type F(a : Type) = Maybe(a) ; data Box(a : Type) \
-                  : Type where { | Hold : (x : a) --> Box(a) } }\ndef keep(x : M.F(Integer)) -> \
-                  Maybe(Integer) { x }\ndef boxed(x : M.Box(Integer)) -> M.Box(Integer) { x \
-                  }\ndef other(x : M.F(Integer)) -> Maybe(String) { x }";
+    let source =
+        include_str!("modules/fixtures/a-module-s-family-is-applied-through-its-name-3051.gandr");
     let mut lowered = lower(source);
     let judged: Vec<Judgement> = verdicts(&mut lowered)
         .into_iter()
@@ -3597,8 +3597,11 @@ fn a_module_s_family_is_applied_through_its_name_3051()
     );
     let counted = |path: &'static str, written: &'static str, count: usize| {
         let source = format!(
-            "module M where {{ type F(a : Type) = a ; type T = Integer ; }}\ndef {path} : \
-             {written} ;"
+            include_str!(
+                "modules/unformatted/a-module-s-family-is-applied-through-its-name-3051-source.gandr"
+            ),
+            path = path,
+            written = written
         );
         let found = rows(&lower(source.as_str()));
         assert_eq!(
@@ -3628,11 +3631,8 @@ fn a_module_s_family_is_applied_through_its_name_3051()
 #[test]
 fn a_module_s_function_is_called_in_a_type_5213()
 {
-    let source = "module M where { def empty() -> Type { return Integer } def same(a : Type) -> \
-                  Type { return a } def after(a : Type) -> Integer -> Type = return fun (x) { a \
-                  } ; }\ndef none(x : M.empty()) -> Integer { x }\ndef one(x : M.same(Integer)) -> \
-                  Integer { x }\ndef twice(n : Integer, x : M.after(Integer)(n)) -> Integer { x \
-                  }\ndef other(x : M.same(Integer)) -> String { x }";
+    let source =
+        include_str!("modules/fixtures/a-module-s-function-is-called-in-a-type-5213-1.gandr");
     let mut lowered = lower(source);
     let judged: Vec<Judgement> = verdicts(&mut lowered)
         .into_iter()
@@ -3654,7 +3654,10 @@ fn a_module_s_function_is_called_in_a_type_5213()
          `String` is another type"
     );
     let written = "M.F(Integer)(Integer)";
-    let source = format!("module M where {{ type F(a : Type) = a ; }}\ndef again : {written} ;");
+    let source = format!(
+        include_str!("modules/unformatted/a-module-s-function-is-called-in-a-type-5213-2.gandr"),
+        written = written
+    );
     assert_eq!(
         rows(&lower(source.as_str())),
         [row(
@@ -3678,9 +3681,9 @@ fn a_module_s_function_is_called_in_a_type_5213()
 #[test]
 fn a_module_s_function_is_called_where_a_value_is_read_5383()
 {
-    let source = "module M where { def twice(n : Integer) -> Integer { n + n } }\ndef width(n : \
-                  Integer) -> Type { return Integer }\ndef keep(n : Integer, x : \
-                  width(M.twice(n))) -> Integer { x }";
+    let source = include_str!(
+        "modules/fixtures/a-module-s-function-is-called-where-a-value-is-read-5383.gandr"
+    );
     let mut lowered = lower(source);
     let judged: Vec<Judgement> = verdicts(&mut lowered)
         .into_iter()
@@ -3697,9 +3700,7 @@ fn a_module_s_function_is_called_where_a_value_is_read_5383()
 #[test]
 fn an_unbound_type_path_is_refused_by_name()
 {
-    let source = "module Shapes :> *{ side : Integer } where { type Hidden = Integer ; def side = 1 \
-                      ; }\ndef corner : Shapes.Corner ;\ndef hidden : Shapes.Hidden ;\ndef \
-                      stranger : Nowhere.Side ;";
+    let source = include_str!("modules/fixtures/an-unbound-type-path-is-refused-by-name.gandr");
     let unknown = |member: &'static str| {
         Amounts::Refused(LoweringRefusal::UnknownMember {
             span: selected(source, format!("Shapes.{member}")),
@@ -3830,7 +3831,9 @@ fn a_member_definition_misspelt_is_held_under_its_name_2484()
             })
             .collect()
     };
-    let source = "module Counts where {\n  def zero : Integer ;\n  de zero = 0 ;\n}\n";
+    let source = include_str!(
+        "modules/unformatted/a-member-definition-misspelt-is-held-under-its-name-2484-source.gandr"
+    );
     let word = source.find("de zero").expect("the misspelt keyword");
     let held = refused(source);
     assert!(
@@ -3842,7 +3845,9 @@ fn a_member_definition_misspelt_is_held_under_its_name_2484()
             } if usize::from(span.start()) == word && usize::from(span.end()) == word.saturating_add(2))),
         "the member is refused at `de` under `zero`: {held:?}"
     );
-    let stray = refused("module Counts where {\n  zero one ;\n}\n");
+    let stray = refused(include_str!(
+        "modules/unformatted/a-member-definition-misspelt-is-held-under-its-name-2484-stray.gandr"
+    ));
     assert!(
         stray.iter().all(|&(ref name, ref refusal)| name == "Counts"
             && !matches!(*refusal, LoweringRefusal::MalformedForm {
@@ -3856,8 +3861,9 @@ fn a_member_definition_misspelt_is_held_under_its_name_2484()
 #[test]
 fn a_malformed_member_named_by_the_signature_is_reported_once()
 {
-    let source = "module Facts : *{ inner : *{ answer : Integer } } where {\n  module inner : *{ \
-                      answer : Integer } where {\n";
+    let source = include_str!(
+        "modules/unformatted/a-malformed-member-named-by-the-signature-is-reported-once.gandr"
+    );
     let lowered = repaired(source);
     let refused: Vec<_> = rows(&lowered)
         .into_iter()
@@ -3881,8 +3887,9 @@ fn a_malformed_member_named_by_the_signature_is_reported_once()
              component naming it raising no unknown member: {refused:?}"
     );
 
-    let sibling = "module Facts : *{ answer : Integer, other : Integer } where {\n  def answer = ( 1 \
-                       ;\n}\n";
+    let sibling = include_str!(
+        "modules/unformatted/a-malformed-member-named-by-the-signature-is-reported-once-sibling.gandr"
+    );
     let lowered = repaired(sibling);
     let refused: Vec<_> = rows(&lowered)
         .into_iter()
@@ -3913,7 +3920,7 @@ fn a_malformed_member_named_by_the_signature_is_reported_once()
 #[test]
 fn a_repaired_container_keeps_its_member()
 {
-    let source = "module M where { def bad = ( 1 ; def good = 2; }\ndef good = 7;\n";
+    let source = include_str!("modules/unformatted/a-repaired-container-keeps-its-member.gandr");
     let mut lowered = repaired(source);
     let found = rows(&lowered);
     assert!(
@@ -3957,7 +3964,7 @@ fn a_repaired_container_keeps_its_member()
 fn an_unread_module_body_is_refused_not_emptied()
 {
     let source =
-        "module M : *{\n  sort x : Integer\n} where {\n  def x = 1;\n}\n\ndef after = 1;\n";
+        include_str!("modules/unformatted/an-unread-module-body-is-refused-not-emptied.gandr");
     let lowered = lower(source);
     let found = rows(&lowered);
     assert!(
@@ -3987,7 +3994,9 @@ fn an_unread_module_body_is_refused_not_emptied()
 #[test]
 fn a_readable_module_keeps_its_members_and_its_successor()
 {
-    let source = "module M where {\n  def y = 2;\n}\n\ndef after = 1;\n";
+    let source = include_str!(
+        "modules/fixtures/a-readable-module-keeps-its-members-and-its-successor.gandr"
+    );
     let mut lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -4010,7 +4019,7 @@ fn a_readable_module_keeps_its_members_and_its_successor()
 #[test]
 fn an_empty_module_is_not_an_unread_one()
 {
-    let source = "module M where {}\n\ndef after = 1;\n";
+    let source = include_str!("modules/fixtures/an-empty-module-is-not-an-unread-one.gandr");
     let lowered = lower(source);
     assert_eq!(
         rows(&lowered),
@@ -4027,7 +4036,7 @@ fn an_empty_module_is_not_an_unread_one()
 #[test]
 fn an_unread_member_keeps_its_own_report()
 {
-    let source = "module M where {\n  type = Type;\n}\n\ndef after = 1;\n";
+    let source = include_str!("modules/unformatted/an-unread-member-keeps-its-own-report.gandr");
     let lowered = repaired(source);
     let missing_name = span_of(source, "type", 0_usize).end();
     assert_eq!(
@@ -4087,8 +4096,9 @@ fn a_top_level_module_is_named_in_either_case_4529()
 #[test]
 fn a_nested_module_declares_under_either_case_spelling()
 {
-    let uppercase =
-        "module Config where {\n  module Limits where { def hard = 1; }\n  def soft = 2;\n}\n";
+    let uppercase = include_str!(
+        "modules/fixtures/a-nested-module-declares-under-either-case-spelling-uppercase.gandr"
+    );
     assert_eq!(
         rows(&lower(uppercase)),
         [
@@ -4097,7 +4107,9 @@ fn a_nested_module_declares_under_either_case_spelling()
         ],
         "an uppercase nested module is a module"
     );
-    let lowercase = "module Config where {\n  module limits where { def hard = 1; }\n}\n";
+    let lowercase = include_str!(
+        "modules/fixtures/a-nested-module-declares-under-either-case-spelling-lowercase.gandr"
+    );
     assert_eq!(
         rows(&lower(lowercase)),
         [row("Config.limits.hard", Role::Declared, Amounts::Bodied)],
@@ -4136,8 +4148,7 @@ fn a_forward_member_reference_is_refused_by_position()
         0_usize,
     );
     forward(
-        "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\nmodule M where { def w : \
-             Path[.A = Circle](Base, Base) ; def w = loop ∷ Path.here Base ; def loop = 1 ; }",
+        include_str!("modules/fixtures/a-forward-member-reference-is-refused-by-position.gandr"),
         "M.w",
         "loop",
         1_usize,
@@ -4157,7 +4168,9 @@ fn a_forward_member_reference_is_refused_by_position()
         0_usize,
         1_usize,
     );
-    let path_first = "def a = M.x;\nmodule M where { def x = 1; }";
+    let path_first = include_str!(
+        "modules/fixtures/a-forward-member-reference-is-refused-by-position-path-first.gandr"
+    );
     assert_eq!(
         rows(&lower(path_first)),
         [
@@ -4198,27 +4211,26 @@ fn a_type_member_reads_types_and_never_values()
         );
     };
     phase(
-        "module M where {\n  def count = 3;\n  type Q = Path[.A = Integer](count, 3);\n}\n",
+        include_str!("modules/unformatted/a-type-member-reads-types-and-never-values-1.gandr"),
         "Q",
         "count",
         ("count", 1_usize),
     );
     phase(
-        "module M where {\n  def count = 3;\n  module N where { type Q = Path[.A = Integer](M.count, 3); }\n}\n",
+        include_str!("modules/unformatted/a-type-member-reads-types-and-never-values-2.gandr"),
         "Q",
         "count",
         ("M.count", 0_usize),
     );
     phase(
-        "module S :> *{ type T, z : T, type P = Path[.A = T](z, z) } where {\n  type T = Integer;\n  def \
-         z = 0;\n  type P = Path[.A = Integer](0, 0);\n}\n",
+        include_str!("modules/unformatted/a-type-member-reads-types-and-never-values-3.gandr"),
         "P",
         "z",
         ("z", 1_usize),
     );
-    let static_only = "data Bit : Type where { | Low : Bit | High : Bit }\nmodule M where {\n  type Three = \
-                       Path[.A = Integer](3, 3);\n  type Lowered = Path[.A = Bit](Low, Low);\n  def three \
-                       : Three ;\n  def three = Path.here 3;\n}\n";
+    let static_only = include_str!(
+        "modules/unformatted/a-type-member-reads-types-and-never-values-static-only.gandr"
+    );
     let mut lowered = lower(static_only);
     let found = rows(&lowered);
     assert!(
@@ -4320,10 +4332,8 @@ fn a_nested_module_is_named_from_inside_its_enclosing_module_1106()
 #[test]
 fn a_recursive_member_declares_under_its_module_4145()
 {
-    let source = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\nmodule M \
-                  where {\n  def rec down(n : Nat) -> Nat {\n    match n { | Zero => Zero | Succ(k) => \
-                  down[<] k }\n  }\n  @[ checks ]\n  def rec again(n : Nat) -> Nat {\n    match n { \
-                  | Zero => Zero | Succ(k) => again[<] k }\n  }\n}\n";
+    let source =
+        include_str!("modules/fixtures/a-recursive-member-declares-under-its-module-4145.gandr");
     let mut lowered = lower(source);
     let found = rows(&lowered);
     for member in ["M.down", "M.again"] {
@@ -4347,9 +4357,8 @@ fn a_recursive_member_declares_under_its_module_4145()
 #[test]
 fn a_definitions_matches_carry_their_derivations_5104()
 {
-    let source = "data Two : Type where {\n  | Z : Two\n  | S : (u : Integer) --> Two\n}\ndef f(t : Two) \
-                  -> Integer {\n  match t { | Z => 0 | S(n) => n }\n}\ndef g(n : Integer) -> Integer \
-                  {\n  n\n}\n";
+    let source =
+        include_str!("modules/fixtures/a-definitions-matches-carry-their-derivations-5104.gandr");
     let lowered = lower(source);
     let covered = |name: &str| {
         let declaration = lowered

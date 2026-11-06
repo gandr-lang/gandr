@@ -1,0 +1,2 @@
+module M : *{ x : Integer, z : Integer } where { def x = 1; }
+def broken = missing;

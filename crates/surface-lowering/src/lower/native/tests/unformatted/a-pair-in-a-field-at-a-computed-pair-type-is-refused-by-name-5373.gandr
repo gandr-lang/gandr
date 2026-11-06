@@ -1,0 +1,2 @@
+{family}def ascribed(k : Nat) -> twoType(Z) =
+  MkP Z (MkP Z *{{}} : P(Nat, fun (m) {{ return Unit }}))

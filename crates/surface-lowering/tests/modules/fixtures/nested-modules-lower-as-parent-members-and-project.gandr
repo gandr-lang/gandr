@@ -1,0 +1,5 @@
+module Outer : *{ inner : *{answer : Integer} } where {
+  def outer_hidden = 1;
+  module inner : *{ answer : Integer } where { def inner_hidden = 2; def answer = 42; }
+}
+def use_answer = Outer.inner.answer;

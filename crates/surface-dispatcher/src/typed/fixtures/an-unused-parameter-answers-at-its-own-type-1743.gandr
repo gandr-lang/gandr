@@ -1,0 +1,3 @@
+def plus(n : Integer, m : Integer) -> -F Integer { return n }
+
+def keep(a : Type, x : a) -> -F Type { return a }

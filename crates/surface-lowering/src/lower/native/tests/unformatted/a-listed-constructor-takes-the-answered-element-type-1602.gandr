@@ -1,0 +1,5 @@
+{MAYBE}def returned(n : Integer) -> -F List(Maybe(Integer)) {{ #[Some n, None] }}
+def alias : () -> List(Maybe(Integer)) ;
+def alias = thunk {{ #[None, Some 2] }} ;
+def nested() -> -F List(List(Maybe(Integer))) {{ #[#[Some 3], #[None]] }}
+def polymorphic(a : Type, x : a) -> -F List(Maybe(a)) {{ #[Some x, None] }}

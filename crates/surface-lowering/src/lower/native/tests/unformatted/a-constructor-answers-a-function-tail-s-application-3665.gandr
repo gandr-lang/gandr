@@ -1,0 +1,4 @@
+{MAYBE}def same(A : Type) -> -F Type {{ return A }}
+def wrapped(A : Type) -> -F Type {{ let t = same A; return (Maybe t) }}
+def bare() -> wrapped(Integer) {{ Some 1 }}
+def returned() -> wrapped(Integer) {{ return Some 2 }}

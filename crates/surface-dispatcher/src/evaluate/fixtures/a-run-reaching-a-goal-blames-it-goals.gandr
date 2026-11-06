@@ -1,0 +1,15 @@
+def later : Integer;
+def copy : Integer;
+def copy = later;
+def suspended : +U (-F Integer);
+def forced : +U (-F Integer);
+def forced = thunk { become force suspended };
+def function : +U (Integer -> -F Integer);
+def applied : +U (-F Integer);
+def applied = thunk { become (force function) 1 };
+def untouched : +U (-F Integer);
+def untouched = thunk { return 3 };
+def holder : +U (-F Integer);
+def holder = thunk { become force suspended };
+def kept : +U (-F (+U (-F Integer)));
+def kept = thunk { return holder };

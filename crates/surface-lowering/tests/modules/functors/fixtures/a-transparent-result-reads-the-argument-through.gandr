@@ -1,0 +1,7 @@
+module Keep(S : *{ type T, seed : T }) : *{ type T = S.T, seed : T } where { def seed = S.seed; }
+module K = Keep(Seed);
+module KK = Keep(K);
+def k : Seed.T;
+def k = K.seed;
+def kk : Seed.T;
+def kk = KK.seed;

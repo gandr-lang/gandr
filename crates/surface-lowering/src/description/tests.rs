@@ -14,10 +14,7 @@ use crate::fixture::parsed;
 fn data_lowering_preserves_constructor_fields()
 {
     let grammar = grammar();
-    let source = r#"data List(a : Type) : Type where {
-        | Nil : List(a)
-        | Cons : (head : a, tail : List(a)) --> List(a)
-    }"#;
+    let source = include_str!("tests/fixtures/data-lowering-preserves-constructor-fields.gandr");
     let tree = parsed(&grammar, source.into());
     let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     assert_eq!(report.diagnostics, Vec::new());
@@ -50,9 +47,8 @@ fn data_lowering_preserves_constructor_fields()
 fn a_graded_field_keeps_its_grade_in_the_code_1295()
 {
     let grammar = grammar();
-    let source = r#"data Pair(a : Type) : Type where {
-        | Both : (first[1] : a, second[ω] : a) --> Pair(a)
-    }"#;
+    let source =
+        include_str!("tests/fixtures/a-graded-field-keeps-its-grade-in-the-code-1295.gandr");
     let tree = parsed(&grammar, source.into());
     let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     assert_eq!(report.diagnostics, Vec::new());
@@ -84,11 +80,7 @@ fn codata_observations_preserve_their_codes()
     let grammar = grammar();
     let tree = parsed(
         &grammar,
-        r#"codata Stream(a : Type) : Type where {
-        head[1] : a;
-        tail[ω] : Stream(a);
-    }"#
-        .into(),
+        include_str!("tests/fixtures/codata-observations-preserve-their-codes-tree.gandr").into(),
     );
     let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     assert_eq!(report.diagnostics, Vec::new());
@@ -114,14 +106,8 @@ fn operations_and_rules_preserve_their_boundaries()
     let grammar = grammar();
     let tree = parsed(
         &grammar,
-        r#"data Nat : Type where {
-        | Zero : Nat
-        | Succ : (Nat) --> Nat
-        oper add : (m : Nat, n : Nat) --> Nat;
-        rule : add Zero n ==> n;
-        rule : add (Succ m) n ==> Succ (add m n);
-    }"#
-        .into(),
+        include_str!("tests/fixtures/operations-and-rules-preserve-their-boundaries-tree.gandr")
+            .into(),
     );
     let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     assert_eq!(report.diagnostics, Vec::new());
@@ -307,15 +293,9 @@ fn elaborated(source: SourceText<'_>) -> DescriptionReport
 #[test]
 fn the_data_corpus_fixture_elaborates_to_its_descriptions()
 {
-    let report = elaborated(SourceText::from(
-        r#"
-    data Color : Type where { | Red : Color | Green : Color | Blue : Color }
-    data Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }
-    data Tree(a : Type) : Type where { | Leaf : Tree(a) | Node : (l : Tree(a), x : a, r : Tree(a)) --> Tree(a) }
-    data Vec(a : Type) : Nat -> Type where { | Nil : Vec(a, 0) | Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, 1 + n) }
-    data Empty : Type where {}
-        "#,
-    ));
+    let report = elaborated(SourceText::from(include_str!(
+        "tests/fixtures/the-data-corpus-fixture-elaborates-to-its-descriptions-report.gandr"
+    )));
     assert_eq!(report.diagnostics, []);
     let actual: Vec<_> = report
         .declarations
@@ -422,13 +402,9 @@ fn description_wrapper_boundaries_stay_observable_to_pipeline_consumers()
 #[test]
 fn operation_and_rule_members_elaborate_with_arities_and_faces()
 {
-    let report = elaborated(SourceText::from(
-        r#"
-    data NatOp : Type where { | Zero : NatOp | Succ : (n : NatOp) --> NatOp oper add : (m : NatOp, n : NatOp) --> NatOp; }
-    data NatRule : Type where { | Zero : NatRule | Succ : (n : NatRule) --> NatRule rule : id Zero ==> Zero; }
-    data NatDiv : Type where { | Zero : NatDiv oper divmod : (m : NatDiv, n : NatDiv) --> (q : NatDiv, r : NatDiv); }
-        "#,
-    ));
+    let report = elaborated(SourceText::from(include_str!(
+        "tests/fixtures/operation-and-rule-members-elaborate-with-arities-and-faces-report.gandr"
+    )));
     let [ref operation, ref rule, ref division] = *report.declarations.as_slice()
     else {
         panic!("three declarations")
@@ -963,9 +939,8 @@ fn a_result_head_of_the_wrong_arity_declines()
 #[test]
 fn a_named_index_telescope_counts_its_indices_4022()
 {
-    let source = "data N : Type where { | Z : N }\ndata Two : (n : N, m : N) --> Type where { | Both : (n : N, m : \
-                  N) --> Two(n, m) }\ndata Short : (n : N, m : N) --> Type where { | One : (n : N) --> \
-                  Short(n) }";
+    let source =
+        include_str!("tests/fixtures/a-named-index-telescope-counts-its-indices-4022.gandr");
     let report = elaborated(SourceText::from(source));
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -1070,8 +1045,8 @@ fn a_codata_oper_declines_without_swallowing_observation_and_rule_siblings()
 #[test]
 fn a_field_reads_each_primitive_and_each_applied_argument()
 {
-    let source = "data Box(a : Type) : Type where {\n  | Prims : (i : Integer, s : String, b : Boolean, \
-                  u : Unit) --> Box(a)\n  | Nested : (inner : Pair(a, Pair(a, a))) --> Box(a)\n}";
+    let source =
+        include_str!("tests/fixtures/a-field-reads-each-primitive-and-each-applied-argument.gandr");
     let report = elaborated(SourceText::from(source));
     assert_eq!(report.diagnostics, Vec::new());
     let [ref entry] = *report.declarations.as_slice()
@@ -1235,7 +1210,8 @@ fn a_held_member_states_its_own_expectation_1462()
         "and, written without a block, reads none of the family's"
     );
 
-    let stray = "data Bit : Type where {\n  @[ checks ]\n  | Low : Bit\n  | High : Bit\n}";
+    let stray =
+        include_str!("tests/unformatted/a-held-member-states-its-own-expectation-1462-stray.gandr");
     let tree = parsed(&grammar, stray.into());
     let module = lower_module(
         &grammar,
@@ -1268,11 +1244,15 @@ fn an_unended_family_is_refused_once_at_its_close()
     let grammar = grammar();
     for (source, why) in [
         (
-            "data Bit : Type where {\n  | Zero : Bit\n  | One : Bit\n  rule : and x x ==> x;\n",
+            include_str!(
+                "tests/unformatted/an-unended-family-is-refused-once-at-its-close-1.gandr"
+            ),
             "a data family whose last member the cell gate refuses",
         ),
         (
-            "codata Point : Type where {\n  x : Integer;\n",
+            include_str!(
+                "tests/unformatted/an-unended-family-is-refused-once-at-its-close-2.gandr"
+            ),
             "a codata family the decoder would refuse",
         ),
     ] {
@@ -1332,7 +1312,7 @@ fn a_codata_declaration_lowers_to_its_signature()
     use crate::lower_module;
     use crate::namespace::Recognition;
     let grammar = grammar();
-    let source = "data Flag : Type where { | Off : Flag | On : Flag }\ncodata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef ones : +U Stream(Integer) ;\ndef later = 7;";
+    let source = include_str!("tests/fixtures/a-codata-declaration-lowers-to-its-signature.gandr");
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1412,7 +1392,9 @@ fn a_codata_self_reference_keeps_its_written_arguments_2188()
     use crate::lower_module;
     use crate::namespace::Recognition;
     let grammar = grammar();
-    let source = "codata Swap(a : Type, b : Type) : Type[-] where { head : a; tail : Swap(b, a); }\ncodata Twisted(a : Type) : Type[-] where { head : a; tail : Twisted(Twisted(a)); }\ncodata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }";
+    let source = include_str!(
+        "tests/fixtures/a-codata-self-reference-keeps-its-written-arguments-2188.gandr"
+    );
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1490,7 +1472,9 @@ fn an_attribute_block_decorates_the_codata_declaration_after_it()
     use crate::namespace::Recognition;
     use crate::resolve::SurfaceName;
     let grammar = grammar();
-    let source = "@[ checks ]\ncodata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef later = 7;";
+    let source = include_str!(
+        "tests/fixtures/an-attribute-block-decorates-the-codata-declaration-after-it.gandr"
+    );
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1629,15 +1613,9 @@ fn occurrences(code: &gandr_theory_levitation::Code<DescriptionGrade>)
 fn a_mutual_block_s_data_families_read_as_one_description_5018()
 {
     let grammar = grammar();
-    let source = r#"rec {
-        data Rose(a : Type) : Type where {
-            | Node : (label : a, kids : Forest(a)) --> Rose(a)
-        }
-        data Forest(a : Type) : Type where {
-            | Empty : Forest(a)
-            | More : (head : Rose(a), tail : Forest(a)) --> Forest(a)
-        }
-    }"#;
+    let source = include_str!(
+        "tests/fixtures/a-mutual-block-s-data-families-read-as-one-description-5018.gandr"
+    );
     let tree = parsed(&grammar, source.into());
     let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     assert_eq!(report.diagnostics, Vec::new());
@@ -1709,24 +1687,9 @@ fn a_mutual_block_s_data_families_read_as_one_description_5018()
 fn a_mutual_block_with_one_data_family_reads_no_group_5018()
 {
     let grammar = grammar();
-    let source = r#"rec {
-        data Nat : Type where {
-            | Zero : Nat
-            | Succ : (n : Nat) --> Nat
-        }
-        def rec twice(n : Nat) -> Nat {
-            match n { | Zero => Zero | Succ(m) => Succ (Succ (twice[<] m)) }
-        }
-    }
-    rec {
-        data Left(a : Type) : Type where {
-            | Here : (x : a) --> Left(a)
-            | There : (r : Right) --> Left(a)
-        }
-        data Right : Type where {
-            | Stop : Right
-        }
-    }"#;
+    let source = include_str!(
+        "tests/fixtures/a-mutual-block-with-one-data-family-reads-no-group-5018.gandr"
+    );
     let tree = parsed(&grammar, source.into());
     let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
     assert_eq!(report.diagnostics, Vec::new());

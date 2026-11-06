@@ -3784,18 +3784,9 @@ mod tests
     #[test]
     fn a_value_runs_to_its_spelling()
     {
-        let mut values = program(
-            r#"def answer : Integer ; def answer = 42 ;
-def greeting : String ; def greeting = "a \"quoted\"\nline" ;
-def nothing : Unit ; def nothing = *{} ;
-def copy = answer ;
-def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ;
-def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fun (x) { fun (y) { return x } } } ;
-def applied : +U (-F Integer) ; def applied = thunk { become (force identity) answer } ;
-def chosen : +U (-F Integer) ; def chosen = thunk { become (force first) answer 7 } ;
-def delayed : +U (-F String) ; def delayed = thunk { return "later" } ;
-def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;"#,
-        );
+        let mut values = program(include_str!(
+            "evaluate/unformatted/a-value-runs-to-its-spelling-values.gandr"
+        ));
         for (name, spelled) in [
             ("answer", "42"),
             ("greeting", r#""a \"quoted\"\nline""#),
@@ -3827,10 +3818,9 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     #[test]
     fn a_printed_line_reaches_the_console_2279()
     {
-        let listed = crate::tests::Listed::hosted(
-            "def greet() -> -F [std.io.Console.Eff] Unit {\n  std.io.Console.print \"a\" ;\n  \
-             std.io.Console.print \"b\"\n}\n",
-        );
+        let listed = crate::tests::Listed::hosted(include_str!(
+            "evaluate/unformatted/a-printed-line-reaches-the-console-2279-listed.gandr"
+        ));
         let mut printing = listed_program(&listed);
         let greet = printing
             .declarations
@@ -3868,11 +3858,9 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     #[test]
     fn a_traced_run_names_each_channel_by_its_fork_3338()
     {
-        let mut forking = program(
-            "def ping() -> Unit {\n  let p = fork (a : ?Integer. !Integer. end) { let n = recv(a); \
-             send(a, n); close(a) };\n  let q = fork (b : !Integer. end) { send(b, 2); close(b) \
-             };\n  send(p, 1);\n  let m = recv(p);\n  let k = recv(q);\n  close(p);\n  close(q)\n}\n",
-        );
+        let mut forking = program(include_str!(
+            "evaluate/fixtures/a-traced-run-names-each-channel-by-its-fork-3338-forking.gandr"
+        ));
         let ping = forking
             .declarations
             .iter()
@@ -3912,10 +3900,9 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     #[test]
     fn a_value_runs_to_its_spelling_in_either_spelling_782()
     {
-        let mut words = program(
-            "data Circle : Type where { | Base : Circle | loop : Base <-> Base }\ndef once : +U (-F \
-             Path[.A = Circle](Base, Base)) ; def once = thunk { loop } ;",
-        );
+        let mut words = program(include_str!(
+            "evaluate/unformatted/a-value-runs-to-its-spelling-in-either-spelling-782-words.gandr"
+        ));
         for (spelling, spelled) in [
             (Spelling::Unicode, "loop ∷ Path.here Base"),
             (Spelling::Ascii, "loop :: Path.here Base"),
@@ -3936,16 +3923,9 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     #[test]
     fn a_run_answering_an_unmarked_sealed_type_is_opaque_at_its_seal_3375()
     {
-        let listed = crate::tests::Listed::new(SourceText::from(
-            "import std.list (List) ;\npub module Secret :> *{ type T, seal : String -> T } where \
-             {\n  type T = String;\n  def seal(text : String) -> String { text }\n}\npub module \
-             Counter :> *{ type T, zero : T } where {\n  type T = Integer;\n  def zero = 0;\n}\npub \
-             module Seat :> *{ mobile type Report, progress : Report } where {\n  type Report = \
-             String;\n  def progress = \"progress\";\n}\ndef returned() -> Secret.T { \
-             Secret.seal(\"x\") }\ndef listed() -> List(Secret.T) {\n  let s = \
-             Secret.seal(\"z\");\n  pure #[s]\n}\ndef reported() -> Seat.Report { pure \
-             Seat.progress }\n",
-        ));
+        let listed = crate::tests::Listed::new(SourceText::from(include_str!(
+            "evaluate/fixtures/a-run-answering-an-unmarked-sealed-type-is-opaque-at-its-seal-3375-listed.gandr"
+        )));
         let mut sealed = listed_program(&listed);
         for (path, spelled) in [
             ("returned", "⟨opaque at Secret⟩ : () -> Secret.T"),
@@ -3971,20 +3951,9 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
     #[test]
     fn every_engine_spells_a_run_alike()
     {
-        let mut values = program(
-            r#"def answer : Integer ; def answer = 42 ;
-def greeting : String ; def greeting = "words" ;
-def nothing : Unit ; def nothing = *{} ;
-def copy = answer ;
-def identity : +U (Integer -> -F Integer) ; def identity = thunk { fun (x) { return x } } ;
-def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fun (x) { fun (y) { return x } } } ;
-def applied : +U (-F Integer) ; def applied = thunk { become (force identity) answer } ;
-def chosen : +U (-F Integer) ; def chosen = thunk { become ((force first) answer) 7 } ;
-def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { return 1 } } ;
-def small : Type ; def small = Integer ;
-def same(a : Type, x : a) -> -F a { return x }
-def instantiated : +U (-F Integer) ; def instantiated = thunk { become same (Integer) 5 } ;"#,
-        );
+        let mut values = program(include_str!(
+            "evaluate/unformatted/every-engine-spells-a-run-alike-values.gandr"
+        ));
         let declared: Vec<_> = values.declarations.keys().copied().collect();
         for constant in declared {
             let name = values.name(constant);
@@ -4006,17 +3975,9 @@ def instantiated : +U (-F Integer) ; def instantiated = thunk { become same (Int
     #[test]
     fn a_run_reaching_a_goal_blames_it()
     {
-        let mut goals = program(
-            r#"def later : Integer ;
-def copy : Integer ; def copy = later ;
-def suspended : +U (-F Integer) ;
-def forced : +U (-F Integer) ; def forced = thunk { become force suspended } ;
-def function : +U (Integer -> -F Integer) ;
-def applied : +U (-F Integer) ; def applied = thunk { become (force function) 1 } ;
-def untouched : +U (-F Integer) ; def untouched = thunk { return 3 } ;
-def holder : +U (-F Integer) ; def holder = thunk { become force suspended } ;
-def kept : +U (-F (+U (-F Integer))) ; def kept = thunk { return holder } ;"#,
-        );
+        let mut goals = program(include_str!(
+            "evaluate/fixtures/a-run-reaching-a-goal-blames-it-goals.gandr"
+        ));
         for (name, goal) in [
             ("later", "later"),
             ("copy", "later"),
@@ -4046,11 +4007,9 @@ def kept : +U (-F (+U (-F Integer))) ; def kept = thunk { return holder } ;"#,
     #[test]
     fn a_reference_the_machine_cannot_carry_is_never_run()
     {
-        let mut carried = program(
-            r#"def bad : Integer ; def bad = "text" ;
-def uses : Integer ; def uses = bad ;
-def later : Integer ; def lost = missing ; def answer = 42 ;"#,
-        );
+        let mut carried = program(include_str!(
+            "evaluate/fixtures/a-reference-the-machine-cannot-carry-is-never-run-carried.gandr"
+        ));
         let before = carried.arena.watermark();
         for name in ["bad", "uses"] {
             assert_eq!(
@@ -4082,12 +4041,9 @@ def later : Integer ; def lost = missing ; def answer = 42 ;"#,
     #[test]
     fn a_refused_declaration_runs_only_as_its_own_root()
     {
-        let mut refused = program(
-            r#"def wrong : String ; def wrong = 42 ;
-def bad : Integer ; def bad = "text" ;
-def leans : String ; def leans = bad ;
-def lost = missing ; def answer = 42 ;"#,
-        );
+        let mut refused = program(include_str!(
+            "evaluate/fixtures/a-refused-declaration-runs-only-as-its-own-root-refused.gandr"
+        ));
         let at = |program: &Program<'_>, name: &str| {
             program
                 .declarations
@@ -4134,15 +4090,9 @@ def lost = missing ; def answer = 42 ;"#,
     #[test]
     fn a_code_and_every_reference_to_it_run_to_the_type_it_quotes()
     {
-        let mut codes = program(
-            r"def small : Type ; def small = Integer ;
-def alias : Type ; def alias = small ;
-def again : Type ; def again = alias ;
-def wide : Type ; def wide = String ;
-def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
-  Path.walk (fun (y) { type(Path[.A = Integer](y, y)) }) (Path.step p p) (Path.here 1)
-}",
-        );
+        let mut codes = program(include_str!(
+            "evaluate/unformatted/a-code-and-every-reference-to-it-run-to-the-type-it-quotes-codes.gandr"
+        ));
         assert!(
             codes
                 .focus_refusals()
@@ -4169,13 +4119,9 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
     #[test]
     fn a_body_that_did_not_focus_is_carried_until_reached()
     {
-        let mut laws = program(
-            r"def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
-  Path.walk (fun (y) { type(Path[.A = Integer](y, y)) }) (Path.step p p) (Path.here 1)
-}
-def reached : +U (-F Path[.A = Integer](1, 1)) ; def reached = thunk { law (Path.here 1) } ;
-def kept : +U (-F (+U (-F Path[.A = Integer](1, 1)))) ; def kept = thunk { return reached } ;",
-        );
+        let mut laws = program(include_str!(
+            "evaluate/unformatted/a-body-that-did-not-focus-is-carried-until-reached-laws.gandr"
+        ));
         for name in ["law", "reached"] {
             let evaluation = run(&mut laws, SurfaceName::from(name));
             assert!(
@@ -4202,12 +4148,9 @@ def kept : +U (-F (+U (-F Path[.A = Integer](1, 1)))) ; def kept = thunk { retur
     #[test]
     fn a_run_reaching_a_static_code_is_blocked_by_it()
     {
-        let mut codes = program(
-            r"def twice : Type -> Type ; def twice = fun (Y) { type(Y * Y) } ;
-def again : Type -> Type ; def again = twice ;
-def held : +U (-F (Type -> Type)) ; def held = thunk { return twice } ;
-def kept : +U (-F (+U (-F (Type -> Type)))) ; def kept = thunk { return held } ;",
-        );
+        let mut codes = program(include_str!(
+            "evaluate/fixtures/a-run-reaching-a-static-code-is-blocked-by-it-codes.gandr"
+        ));
         for name in ["twice", "again", "held", "kept"] {
             let evaluation = run(&mut codes, SurfaceName::from(name));
             assert!(
@@ -4228,18 +4171,9 @@ def kept : +U (-F (+U (-F (Type -> Type)))) ; def kept = thunk { return held } ;
     #[test]
     fn a_run_naming_a_declaration_outside_every_sealed_module_is_spelled()
     {
-        let mut beside = program(
-            r"theory Pointed where {
-  sort T : Type;
-  oper z : T;
-}
-module ZeroPointed : Model(Pointed) where {
-  type T = Integer;
-  def z = 0;
-}
-def helper(x : Integer) -> -F Integer { x }
-def wrap : Integer -> Integer ; def wrap = fun (n) { become helper n } ;",
-        );
+        let mut beside = program(include_str!(
+            "evaluate/unformatted/a-run-naming-a-declaration-outside-every-sealed-module-is-spelled-beside.gandr"
+        ));
         let evaluation = run(&mut beside, SurfaceName::from("wrap"));
         assert!(
             matches!(evaluation, Evaluation::Value(_)),
@@ -4253,17 +4187,9 @@ def wrap : Integer -> Integer ; def wrap = fun (n) { become helper n } ;",
     #[test]
     fn a_run_naming_a_hidden_member_is_opaque_at_its_module()
     {
-        let mut hiding = program(
-            r"theory Pointed where {
-  sort T : Type;
-  oper z : T;
-}
-module Stepped : Model(Pointed) where {
-  type T = Integer -> Integer;
-  def step(x : Integer) -> -F Integer { x }
-  def z : T ; def z = fun (n) { become step n } ;
-}",
-        );
+        let mut hiding = program(include_str!(
+            "evaluate/fixtures/a-run-naming-a-hidden-member-is-opaque-at-its-module-hiding.gandr"
+        ));
         assert_eq!(
             run(&mut hiding, SurfaceName::from("z")),
             Evaluation::Sealed(SealedRun {
@@ -4277,10 +4203,9 @@ module Stepped : Model(Pointed) where {
     #[test]
     fn each_outcome_class_has_its_status()
     {
-        let mut written = program(
-            r#"def later : Integer ; def answer = 42 ; def copy : Integer ; def copy = later ;
-def bad : Integer ; def bad = "text" ;"#,
-        );
+        let mut written = program(include_str!(
+            "evaluate/fixtures/each-outcome-class-has-its-status-written.gandr"
+        ));
         let rows = [
             (
                 run(&mut written, SurfaceName::from("answer")),
@@ -4433,13 +4358,9 @@ def bad : Integer ; def bad = "text" ;"#,
     #[test]
     fn terminal_classification_preserves_declaration_identity()
     {
-        let written = program(
-            r#"def answer = 42 ; def later : Integer ;
-def bad : Integer ; def bad = "text" ;
-def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
-  Path.walk (fun (y) { type(Path[.A = Integer](y, y)) }) (Path.step p p) (Path.here 1)
-}"#,
-        );
+        let written = program(include_str!(
+            "evaluate/unformatted/terminal-classification-preserves-declaration-identity-written.gandr"
+        ));
         let defined = written.met(ConstantIndex::from(0_usize));
         assert_eq!(
             defined,
@@ -4550,10 +4471,9 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
     #[test]
     fn a_skipped_admission_position_holds_no_declaration()
     {
-        let mut program = program(
-            "module M where { type T = Integer ; def seed : T ; def seed = 41 ; }\ndef copy : Integer \
-             ;\ndef copy = M.seed ;",
-        );
+        let mut program = program(include_str!(
+            "evaluate/unformatted/a-skipped-admission-position-holds-no-declaration-program.gandr"
+        ));
         assert_eq!(
             program
                 .declarations
@@ -4642,12 +4562,7 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
     /// bound inner loop that breaks, and a `while` whose test always holds.
     /// The bound statement's loop states its `Partial`, so it checks and its
     /// call runs as the bind the elaboration rebuilds it as.
-    const LOOPS: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
-         def tick(n : Nat) -> -F Unit { return *{} }\n\
-         def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick Zero; } } ;\n\
-         def bound : +U (-F [Partial] Nat) ;\ndef bound = thunk { loop { let u = tick Zero ; continue } } ;\n\
-         def broken : +U (-F Nat) ;\ndef broken = thunk { loop { let u = loop { break } ; continue } } ;\n\
-         def tested : +U (-F Nat) ;\ndef tested = thunk { while 1 > 0 { tick Zero } ; return Zero } ;\n";
+    const LOOPS: &str = include_str!("evaluate/unformatted/loops.gandr");
 
     // One test per loop and tier: each spends its whole fuel, so the eight
     // runs together passed the thirty-second bound on a loaded machine
@@ -4703,15 +4618,7 @@ def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
 
     /// The source of a function whose exits stand one and two matches deep
     /// under a bound statement, and of its runs over three inputs.
-    const PICK: &str = "data Nat : Type where {\n  | Zero : Nat\n  | Succ : (n : Nat) --> Nat\n}\n\
-         def pick(n : Nat) -> -F Nat {\n  let m = match n {\n    | Zero => return n\n    \
-         | Succ(p) => {\n      let q = match p { | Zero => return n | Succ(r) => pure r } ;\n      \
-         pure q\n    }\n  } ;\n  return Succ m\n}\n\
-         def bound(n : Nat) -> -F Nat {\n  let m = match n -> -F Nat { | Zero => pure n | Succ(p) => pure p } ;\n  \
-         return Succ m\n}\n\
-         def zero : +U (-F Nat) ;\ndef zero = thunk { become pick Zero } ;\n\
-         def one : +U (-F Nat) ;\ndef one = thunk { become pick (Succ Zero) } ;\n\
-         def three : +U (-F Nat) ;\ndef three = thunk { become pick (Succ (Succ (Succ Zero))) } ;\n";
+    const PICK: &str = include_str!("evaluate/unformatted/pick.gandr");
 
     #[test]
     fn a_nested_return_delivers_its_value_from_its_function()

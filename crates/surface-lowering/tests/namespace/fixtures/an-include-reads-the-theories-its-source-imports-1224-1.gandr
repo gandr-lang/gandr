@@ -1,0 +1,5 @@
+import "./pointed.gandr";
+theory Through where {
+  include Mag;
+  oper two : () --> M;
+}

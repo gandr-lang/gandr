@@ -1,0 +1,4 @@
+/// Names nothing.
+@[ refuses("MissingPayload") ]
+@[ doc ]
+def f = 42;

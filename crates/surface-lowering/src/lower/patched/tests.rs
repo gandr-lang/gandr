@@ -19,7 +19,7 @@ use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
 
 /// A record type member with two faces that meet at the port.
-const CONFIG: &str = "type Config = *{host : String, port : Integer, tls : Bool} where\n  face secure = { port, tls };\n  face addr = { host, port };\n";
+const CONFIG: &str = include_str!("tests/unformatted/config.gandr");
 
 #[test]
 fn a_patched_type_is_the_record_of_its_free_fields()
@@ -27,7 +27,8 @@ fn a_patched_type_is_the_record_of_its_free_fields()
     // Both spellings, and a quantified function whose stage sits beside a
     // patched parameter: the stage is marked, the patch is not.
     let source = format!(
-        "{CONFIG}def fielded : Config[.port = 443, .tls = true] = *{{.host = \"localhost\"}};\ndef faced : Config[secure ↦ *{{.port = 443, .tls = true}}] = *{{.host = \"localhost\"}};\ndef ascii : Config[secure |-> *{{.port = 443, .tls = true}}] = *{{.host = \"localhost\"}};\ndef placed : *{{a : Integer, b : Bool}}[.b = true] = *{{.a = 1}};\ndata Nat : Type where {{ | Zero : Nat | Succ : (n : Nat) --> Nat }}\ndef staged[i : Size](n : Nat[i], c : Config[.port = 443, .tls = true]) -> -F Nat[i] {{\n  return n\n}}\n"
+        include_str!("tests/unformatted/a-patched-type-is-the-record-of-its-free-fields.gandr"),
+        CONFIG = CONFIG
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -47,7 +48,8 @@ fn a_patched_type_is_the_record_of_its_free_fields()
 fn a_fixed_field_reads_its_value_back()
 {
     let source = format!(
-        "{CONFIG}def port(c : Config[.port = 443, .tls = true]) -> Integer {{ c.port }}\ndef tls(c : Config[secure ↦ *{{.port = 443, .tls = true}}]) -> Bool {{ c.tls }}\ndef host(c : Config[.port = 443, .tls = true]) -> String {{ c.host }}\n"
+        include_str!("tests/unformatted/a-fixed-field-reads-its-value-back.gandr"),
+        CONFIG = CONFIG
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -89,7 +91,10 @@ fn a_fixed_field_reads_its_value_back()
 fn a_bracket_naming_what_its_base_lacks_is_refused_by_the_name()
 {
     let source = format!(
-        "{CONFIG}def moded(c : Config[.mode = 1]) -> Integer {{ 0 }}\ndef remote(c : Config[remote ↦ *{{.host = \"h\"}}]) -> Integer {{ 0 }}\ndef leaking(c : Config[secure ↦ *{{.port = 1, .tls = true, .host = \"h\"}}]) -> Integer {{ 0 }}\ndef atomic(c : Integer[.port = 1]) -> Integer {{ 0 }}\ndef partial(c : Config[secure ↦ *{{.port = 1}}]) -> Integer {{ 0 }}\n"
+        include_str!(
+            "tests/unformatted/a-bracket-naming-what-its-base-lacks-is-refused-by-the-name.gandr"
+        ),
+        CONFIG = CONFIG
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -121,7 +126,10 @@ fn a_bracket_naming_what_its_base_lacks_is_refused_by_the_name()
 fn a_fixed_value_the_lowering_does_not_read_leaves_the_fragment()
 {
     let source = format!(
-        "{CONFIG}def standard : Integer = 443;\ndef named(c : Config[.port = standard, .tls = true]) -> Integer {{ c.port }}\ndef kept(c : Config[.port = standard, .tls = true]) -> String {{ c.host }}\ndef bound(c : Config[secure ↦ standard]) -> Integer {{ 0 }}\n"
+        include_str!(
+            "tests/unformatted/a-fixed-value-the-lowering-does-not-read-leaves-the-fragment.gandr"
+        ),
+        CONFIG = CONFIG
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

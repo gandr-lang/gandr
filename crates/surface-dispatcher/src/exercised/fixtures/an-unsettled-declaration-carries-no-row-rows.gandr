@@ -1,0 +1,8 @@
+def a = missing;
+def b : Natural;
+@[ refuses("TypeMismatch") ]
+def c : Integer * Integer;
+def d : Integer;
+@[ refuses("UnresolvedName") ]
+def e : +U (-F Integer);
+def e = thunk { return 3 };

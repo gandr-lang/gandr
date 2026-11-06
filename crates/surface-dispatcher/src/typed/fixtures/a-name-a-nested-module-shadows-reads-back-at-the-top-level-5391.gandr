@@ -1,0 +1,12 @@
+def fam(_n : Integer) -> Type { return Integer }
+def top(x : fam(1)) -> fam(1) { return x }
+module Outer where
+  def fam(_n : Integer) -> Type { return Bool }
+  def g(x : fam(1)) -> fam(1) { return x }
+  def u = top;
+  module Inner where
+    def fam(_n : Integer) -> Type { return Unit }
+    def h(x : Outer.fam(1)) -> Outer.fam(1) { return x }
+    def k(x : fam(1)) -> fam(1) { return x }
+    def v = g;
+def after(n : Integer) -> Integer { return n }

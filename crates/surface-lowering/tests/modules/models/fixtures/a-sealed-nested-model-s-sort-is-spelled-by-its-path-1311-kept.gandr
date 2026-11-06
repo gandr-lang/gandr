@@ -1,0 +1,2 @@
+def kept : Sealed.inner.T;
+def kept = Sealed.inner.zero;

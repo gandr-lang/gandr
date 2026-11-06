@@ -1,0 +1,4 @@
+data Rgb : Type where {
+  | RGB : (r : Integer, g : Integer, b : Integer) --> Rgb
+}
+def green(c : Rgb) -> -F Integer { match c { | RGB(r, g, b) => { let n : Integer = g; return n } } }

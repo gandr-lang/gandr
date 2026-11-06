@@ -1,0 +1,7 @@
+{MAYBE}def opt : Type -> Type[-] ;
+def opt = fun (A) {{ -F Maybe(A) }} ;
+def again : Type -> Type[-] ;
+def again = fun (A) {{ opt A }} ;
+def some1() -> opt(Integer) {{ return Some 1 }}
+def none(A : Type) -> opt(A) {{ return None }}
+def twice() -> again(Integer) {{ return Some 2 }}

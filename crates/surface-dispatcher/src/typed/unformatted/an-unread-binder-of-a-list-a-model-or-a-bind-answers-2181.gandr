@@ -1,0 +1,38 @@
+import std.list (List) ;
+def shortLength(xs : List(Integer)) -> -F Integer {
+  match xs {
+    | #[] => 0
+    | #[a] => 1
+    | #[c, d] => 2
+    | _ => 3
+  }
+}
+def secondOf(xs : List(Integer)) -> -F Integer {
+  match xs {
+    | #[_, b, ..rest] => b
+    | _ => 0
+  }
+}
+def headed(xs : List(Integer)) -> -F Integer {
+  match xs {
+    | all @ #[h, .._] => become shortLength(all)
+    | #[] => 0
+  }
+}
+theory Semigroup where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+}
+def multiplies(s : Model(Semigroup)) -> -F Integer {
+  match s {
+    | *{.mul = m} => 0
+  }
+}
+def bound() -> -F Integer {
+  let *{p, n} = *{(true : Bool), 2};
+  n
+}
+def split() -> -F Integer {
+  let (y, z) : Integer * Integer = (1, 2);
+  y
+}

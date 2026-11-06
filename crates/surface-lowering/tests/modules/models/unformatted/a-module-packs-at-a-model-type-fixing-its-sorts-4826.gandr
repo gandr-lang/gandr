@@ -1,0 +1,15 @@
+{}module Words : Model(Counter) where {{
+  type C = String;
+  def start() -> -F String {{ "" }}
+  def step(s : String) -> -F String {{ s }}
+  def read(s : String) -> -F Integer {{ 0 }}
+}}
+def packed : Model(Counter) with sort C = Integer ;
+def packed = pack Opened at Model(Counter) ;
+def bare : Model(Counter) with sort C = Integer ;
+def bare = Opened ;
+def started(m : Model(Counter) with sort C = Integer) -> Integer {{ 0 }}
+def passed() -> Integer {{ started(Opened) }}
+def wrong() -> Integer {{ started(Words) }}
+def whole : Model(Counter) ;
+def whole = Opened ;

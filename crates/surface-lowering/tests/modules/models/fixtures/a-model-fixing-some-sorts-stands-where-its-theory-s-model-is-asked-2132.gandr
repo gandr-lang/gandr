@@ -1,0 +1,19 @@
+theory Pairing where {
+  sort A : Type;
+  sort B : Type;
+  oper left : A;
+  oper right : B;
+}
+def any(m : Model(Pairing)) -> -F Model(Pairing) { return m }
+def both(m : Model(Pairing) with sort A = Integer with sort B = Unit) -> -F Model(Pairing) {
+  become any m
+}
+def first(m : Model(Pairing) with sort A = Integer) -> -F Model(Pairing) {
+  become any m
+}
+def second(y : Type, m : Model(Pairing) with sort B = y) -> -F Model(Pairing) {
+  become any m
+}
+def again(m : Model(Pairing) with sort A = Unit) -> -F Model(Pairing) {
+  become any m
+}

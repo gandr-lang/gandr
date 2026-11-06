@@ -31,17 +31,7 @@ use crate::fixture::grammar;
 use crate::unit::Unit;
 
 /// The theory the flagship model signature is derived from.
-const CAT_SHAPE: &str = r"theory CatShape where {
-  sort Ob : Type;
-  sort Hom(dom : Ob, cod : Ob) : Type;
-
-  oper id : (a : Ob) --> Hom(a, a);
-  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
-
-  rule unitL : comp (id a) f ==> f;
-  rule unitR : comp f (id b) ==> f;
-  rule assoc : comp (comp f g) h ==> comp f (comp g h);
-}";
+const CAT_SHAPE: &str = include_str!("tests/unformatted/cat-shape.gandr");
 
 /// The presentation of the one theory `source` declares.
 ///
@@ -220,14 +210,9 @@ fn the_cat_shape_sorts_are_a_type_and_a_family()
 #[test]
 fn a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114()
 {
-    let model = derived(
-        r"theory Carrier where {
-  sort Ob : Type;
-  sort T(A : Type) : Type;
-  sort At(o : Ob, A : Type) : Type;
-  oper same : (x : T(a)) --> T(a);
-}",
-    );
+    let model = derived(include_str!(
+        "tests/fixtures/a-sort-indexed-by-host-types-is-a-family-over-the-universe-2114-model.gandr"
+    ));
 
     assert_eq!(
         spelled(&model, "T"),
@@ -252,12 +237,9 @@ fn a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114()
 #[test]
 fn a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079()
 {
-    let model = derived(
-        r"theory Counted where {
-  sort T(n : Integer) : Type;
-  oper same : (x : T(n)) --> T(n);
-}",
-    );
+    let model = derived(include_str!(
+        "tests/fixtures/a-sort-indexed-by-a-builtin-type-is-a-family-over-it-3079-model.gandr"
+    ));
 
     assert_eq!(
         spelled(&model, "T"),
@@ -277,16 +259,9 @@ fn a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079()
 #[test]
 fn a_computation_sort_derives_a_family_into_computation_types()
 {
-    let model = derived(
-        r"theory Carrier where {
-  sort C : Type[-];
-  sort T(A : Type) : Type[-];
-  sort V(A : Type) : Type;
-  sort Over(c : C) : Type;
-  oper start : C;
-  oper read : (c : C) --> Integer;
-}",
-    );
+    let model = derived(include_str!(
+        "tests/fixtures/a-computation-sort-derives-a-family-into-computation-types-model.gandr"
+    ));
 
     assert_eq!(
         spelled(&model, "C"),
@@ -319,9 +294,9 @@ fn a_computation_sort_derives_a_family_into_computation_types()
 #[test]
 fn a_stated_law_binds_its_written_variables_2356()
 {
-    let model = derived(
-        "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool](same a b, same b a);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path[.A = Bool](same a b, true), q : Path[.A = Bool](same b c, true)) -> Path[.A = Bool](same a c, true);\n  law loose : (a : Carrier) -> Path[.A = Bool](same a b, true);\n  law odd : (a : Carrier) -> Path[.A = Carrier](a, true);\n}",
-    );
+    let model = derived(include_str!(
+        "tests/fixtures/a-stated-law-binds-its-written-variables-2356-model.gandr"
+    ));
     let names: Vec<&str> = model
         .components
         .iter()
@@ -356,16 +331,9 @@ fn a_stated_law_binds_its_written_variables_2356()
 #[test]
 fn a_constant_derives_its_type_alone()
 {
-    let model = derived(
-        r"theory Pointed where {
-  sort Ob : Type;
-  sort Hom(dom : Ob, cod : Ob) : Type;
-  oper zero : Ob;
-  oper one : () --> Ob;
-  oper base : Integer;
-  oper loop : Hom(a, a);
-}",
-    );
+    let model = derived(include_str!(
+        "tests/fixtures/a-constant-derives-its-type-alone-model.gandr"
+    ));
 
     assert_eq!(
         [
@@ -427,25 +395,9 @@ fn the_cat_shape_laws_relate_elaborated_terms()
 #[test]
 fn an_underivable_component_keeps_its_fault()
 {
-    let model = derived(
-        r"theory Faulty where {
-  sort Ob : Type;
-  sort Hom(dom : Ob, cod : Ob) : Type;
-  sort Tm : Type+;
-  sort Name : Atom;
-  oper id : (a : Ob) --> Hom(a, a);
-  oper split : (a : Ob) --> (l : Ob, r : Ob);
-  oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
-  oper nu : (p : bind (c : Name) . Ob) --> Ob;
-  rule twice : id (id a) ==> id a;
-  rule same : lam (bind x . (t x)) ==> lam (bind y . (t y));
-  rule loose : x ==> x;
-  rule halves : split a ==> split a;
-  rule wired : (data x : Ob) ==> (o : Hom(x, x)) {
-    node w : id(x) --> (o);
-  };
-}",
-    );
+    let model = derived(include_str!(
+        "tests/fixtures/an-underivable-component-keeps-its-fault-model.gandr"
+    ));
 
     assert_eq!(
         spelled(&model, "twice"),
@@ -497,18 +449,9 @@ fn an_underivable_component_keeps_its_fault()
 #[test]
 fn a_binding_port_derives_the_function_from_its_variables_765()
 {
-    let model = derived(
-        r"theory Typed where {
-  sort VTy : Type;
-  sort CTy : Type;
-  sort VTm(a : VTy) : Type+;
-  sort CTm(b : CTy) : Type;
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  oper lam : (t : pi+ (x : VTm(a)) . CTm(b)) --> CTm(b);
-}",
-    );
+    let model = derived(include_str!(
+        "tests/fixtures/a-binding-port-derives-the-function-from-its-variables-765-model.gandr"
+    ));
 
     assert_eq!(
         spelled(&model, "get"),
@@ -580,22 +523,9 @@ fn each_interface_fault_reads_as_its_own_clause()
 #[test]
 fn a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted()
 {
-    let model = derived(
-        r"theory Mixed where {
-  sort Ob : Type;
-  sort Pt : Type;
-  sort Hom(dom : Ob, cod : Ob) : Type;
-  oper flip : (x : Ob) --> (y : Pt);
-  oper succ : (x : Ob) --> (y : Ob);
-  oper pred : (x : Ob) --> (y : Ob);
-  oper diag : (f : Hom(c, d)) --> Hom(d, d);
-  oper down : (x : Ob) --> Hom(x, pred(x));
-  oper back : (f : Hom(a, succ(a))) --> (z : Ob);
-  rule mixed : flip (flip x) ==> flip x;
-  rule cyc : back (diag h) ==> back (diag h);
-  rule skew : back (down o) ==> o;
-}",
-    );
+    let model = derived(include_str!(
+        "tests/fixtures/a-term-at-another-sort-or-inside-its-own-index-is-ill-sorted-model.gandr"
+    ));
 
     assert_eq!(
         spelled(&model, "mixed"),
@@ -617,15 +547,9 @@ fn a_term_at_another_sort_or_inside_its_own_index_is_ill_sorted()
 #[test]
 fn a_result_sort_indexed_by_an_operation_instantiates_at_each_use()
 {
-    let model = derived(
-        r"theory Stepped where {
-  sort Ob : Type;
-  sort Hom(dom : Ob, cod : Ob) : Type;
-  oper next : (a : Ob) --> Ob;
-  oper step : (a : Ob) --> Hom(a, next(a));
-  rule again : step a ==> step a;
-}",
-    );
+    let model = derived(include_str!(
+        "tests/fixtures/a-result-sort-indexed-by-an-operation-instantiates-at-each-use-model.gandr"
+    ));
     assert_eq!(
         spelled(&model, "again"),
         "again : (a : Ob) => Path[.A = Hom(a, next(a))](step(a), step(a))",
@@ -647,8 +571,7 @@ fn an_implicit_object_past_the_last_free_letter_is_numbered()
         right = format!("comp {morphism} ({right})");
     }
     let model = derived(format!(
-        "theory Long where {{\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper comp : (f : \
-         Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule chain : {left} ==> {right};\n}}"
+        include_str!("tests/unformatted/an-implicit-object-past-the-last-free-letter-is-numbered-model.gandr"), left = left, right = right
     ).as_str());
     let law = spelled(&model, "chain");
     assert!(

@@ -1,0 +1,4 @@
+def lifted : Bridge[.A = List(Integer)](#[1, 2], #[1, 2]);
+def lifted = *{*{}, *{*{}, *{}}};
+def related : Bridge[.A = Type](Unit, String);
+def related = thunk { fun (x : Unit) { fun (y : String) { return Unit } } };

@@ -1,0 +1,8 @@
+import std.list (List);
+def rec count(xs : List(String)) -> -F Integer {
+  match xs {
+    | #[] => 0
+    | #[x, ..rest] => { let n = count[<] rest; n + 1 }
+  }
+}
+def main(args : List(String)) -> -F Integer { become count args }

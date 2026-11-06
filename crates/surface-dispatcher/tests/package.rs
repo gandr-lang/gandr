@@ -1431,7 +1431,12 @@ fn every_corpus_package_s_address_ignores_its_inert_fields_3030()
         );
         let added = Held(BTreeMap::from([(
             library.clone(),
-            format!("{stated}\n/// A declaration the sweep adds.\npub def swept = 1;\n"),
+            format!(
+                include_str!(
+                    "package/unformatted/every-corpus-package-s-address-ignores-its-inert-fields-3030-added.gandr"
+                ),
+                stated = stated
+            ),
         )]));
         assert_ne!(
             address(&added),

@@ -14828,7 +14828,8 @@ mod tests
     fn a_stray_root_child_refuses_itself_alone_1058()
     {
         let pbg = grammar();
-        let text = "def a = 1 ;\n\u{a7}\nrelease x ;\ndef b = a ;\n1 + 2 ;\ndef c = b ;\n";
+        let text =
+            include_str!("module/unformatted/a-stray-root-child-refuses-itself-alone-1058.gandr");
         let tree = repaired(&pbg, SourceText::from(text));
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let read: Vec<_> = collected
@@ -14892,7 +14893,9 @@ mod tests
     fn a_root_expression_is_refused_naming_main_2572()
     {
         let pbg = grammar();
-        let text = "1 ;\ndef a = 2 ;\n3 ;\n@[ runs(\"4\") ]\n4 ;\n";
+        let text = include_str!(
+            "module/unformatted/a-root-expression-is-refused-naming-main-2572-1.gandr"
+        );
         let tree = parsed(&pbg, SourceText::from(text));
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let top_level = |refusal: &LoweringRefusal<'_>| {
@@ -14957,12 +14960,22 @@ mod tests
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            refused(&repaired(&pbg, SourceText::from("def a = 1 ;\n1 +\n"))),
+            refused(&repaired(
+                &pbg,
+                SourceText::from(include_str!(
+                    "module/unformatted/a-root-expression-is-refused-naming-main-2572-2.gandr"
+                ))
+            )),
             [(Role::Declared, false), (Role::Held, false)],
             "an expression the parser repaired is malformed, not refused at the top level"
         );
         assert_eq!(
-            refused(&repaired(&pbg, SourceText::from("def a = 1 ;\n}\n"))),
+            refused(&repaired(
+                &pbg,
+                SourceText::from(include_str!(
+                    "module/unformatted/a-root-expression-is-refused-naming-main-2572-3.gandr"
+                ))
+            )),
             [(Role::Declared, false), (Role::Held, false)],
             "a closer standing alone is malformed, not refused at the top level"
         );
@@ -14988,7 +15001,9 @@ mod tests
             .map(|slot| (slot.name, slot.role))
             .collect::<Vec<_>>()
         };
-        let hugged = names("(1, 2);\ndef s = *{b = 1};\n*{s | b = 2}\n");
+        let hugged = names(include_str!(
+            "module/unformatted/a-respaced-stray-keeps-its-name-2758-hugged.gandr"
+        ));
         assert_eq!(
             hugged,
             [
@@ -14999,7 +15014,9 @@ mod tests
             "each is named by its first token"
         );
         assert_eq!(
-            names("( 1 , 2 );\ndef s = *{ b = 1 };\n*{ s | b = 2 }\n"),
+            names(include_str!(
+                "module/unformatted/a-respaced-stray-keeps-its-name-2758-1.gandr"
+            )),
             hugged,
             "the spaced spelling collects the same names"
         );
@@ -15036,8 +15053,9 @@ mod tests
             )
         };
 
-        let doubled =
-            "def give_up() -> -F Unit {\n  var c = 0;\n  access c as v { abort(v) }}\n}\n";
+        let doubled = include_str!(
+            "module/unformatted/a-doubled-closer-is-refused-where-it-was-written-2047-doubled.gandr"
+        );
         assert_eq!(
             refusals(doubled),
             [LoweringRefusal::MalformedForm {
@@ -15048,7 +15066,9 @@ mod tests
             "the stray is refused at the second `}}` of the access line"
         );
 
-        let nested = "module M where {\n  def give_up() -> -F Unit {\n    var c = 0;\n    access c as v { abort(v) }}\n  }\n}\n";
+        let nested = include_str!(
+            "module/unformatted/a-doubled-closer-is-refused-where-it-was-written-2047-nested.gandr"
+        );
         assert_eq!(
             refusals(nested),
             [LoweringRefusal::MalformedForm {
@@ -15059,7 +15079,9 @@ mod tests
             "the module's closer stands where the definition's belonged"
         );
 
-        let settled = "def done() -> -F Unit {\n  var c = 0;\n  access c as v { abort(v) } }\ndef next = 1 ;\n}\n";
+        let settled = include_str!(
+            "module/unformatted/a-doubled-closer-is-refused-where-it-was-written-2047-settled.gandr"
+        );
         let refused = refusals(settled);
         assert!(
             matches!(
@@ -15105,7 +15127,9 @@ mod tests
             )
         };
 
-        let shell = "def today = #!{ echo $!{ date }}; } ;\ndef kept = 1 ;\n";
+        let shell = include_str!(
+            "module/unformatted/a-fault-before-a-declaration-is-refused-where-it-was-written-2082-shell.gandr"
+        );
         let refused = refusals(shell);
         assert!(
             matches!(
@@ -15119,7 +15143,9 @@ mod tests
             "the line is refused once, at the second of the twins: {refused:?}"
         );
 
-        let attribute = "@[ refuses(\"x\")) ]\nextern \"c\" from \"sensor\" {\n  def read(channel : i32) -> i64;\n}\ndef kept = 1 ;\n";
+        let attribute = include_str!(
+            "module/unformatted/a-fault-before-a-declaration-is-refused-where-it-was-written-2082-attribute.gandr"
+        );
         let refused = refusals(attribute);
         assert!(
             matches!(
@@ -15142,7 +15168,9 @@ mod tests
     fn a_torn_declaration_is_refused_where_it_broke_2110()
     {
         let pbg = grammar();
-        let text = "theory Restriction where {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu (bind a . (nil ())) =>= nil ();\n}\n";
+        let text = include_str!(
+            "module/unformatted/a-torn-declaration-is-refused-where-it-broke-2110.gandr"
+        );
         let tree = repaired(&pbg, SourceText::from(text));
         // The theory is the source's one item, so its refusal is the source's.
         let refused = match collect(&pbg, &tree, &Unit::single(), &mut tank()) {
@@ -15180,7 +15208,9 @@ mod tests
     fn a_torn_declaration_is_refused_where_it_stopped_2877()
     {
         let pbg = grammar();
-        let text = "codata Stream : Type[] where {\n  head : Integer;\n}\n";
+        let text = include_str!(
+            "module/unformatted/a-torn-declaration-is-refused-where-it-stopped-2877.gandr"
+        );
         let tree = repaired(&pbg, SourceText::from(text));
         let refused = match collect(&pbg, &tree, &Unit::single(), &mut tank()) {
             Ok(collected) => collected
@@ -15239,12 +15269,16 @@ mod tests
 
         for (text, doubled, close) in [
             (
-                "codata Stream : Type[-]] {\n  head[ω] : Integer;\n}\ndef kept = 1 ;\n",
+                include_str!(
+                    "module/unformatted/a-closer-doubled-on-its-line-is-refused-where-it-was-written-2051-1.gandr"
+                ),
                 "]]",
                 ClosingClass::Bracket,
             ),
             (
-                "oper split : (b : Bit)) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\ndef kept = 1 ;\n",
+                include_str!(
+                    "module/unformatted/a-closer-doubled-on-its-line-is-refused-where-it-was-written-2051-2.gandr"
+                ),
                 "))",
                 ClosingClass::Paren,
             ),
@@ -15263,7 +15297,9 @@ mod tests
             );
         }
 
-        let left_out = "checks ]\ndef kept = 1 ;\n";
+        let left_out = include_str!(
+            "module/unformatted/a-closer-doubled-on-its-line-is-refused-where-it-was-written-2051-left-out.gandr"
+        );
         let refused = refusals(left_out);
         assert!(
             !refused
@@ -15282,7 +15318,9 @@ mod tests
     fn a_lone_item_out_of_the_fragment_refuses_itself_1753()
     {
         let pbg = grammar();
-        let text = "extern \"c\" from \"sensor\" {\n  def read(channel : i32) -> i64;\n}";
+        let text = include_str!(
+            "module/fixtures/a-lone-item-out-of-the-fragment-refuses-itself-1753.gandr"
+        );
         let tree = parsed(&pbg, SourceText::from(text));
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let read: Vec<_> = collected
@@ -15310,7 +15348,12 @@ mod tests
     fn an_empty_module_beside_a_stray_declares()
     {
         let pbg = grammar();
-        let tree = parsed(&pbg, SourceText::from("3 ;\nmodule M where { }"));
+        let tree = parsed(
+            &pbg,
+            SourceText::from(include_str!(
+                "module/fixtures/an-empty-module-beside-a-stray-declares-tree.gandr"
+            )),
+        );
         let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
         let read: Vec<_> = collected
             .slots

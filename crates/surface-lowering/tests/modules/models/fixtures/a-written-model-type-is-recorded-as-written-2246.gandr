@@ -1,0 +1,10 @@
+theory Pair where {
+  sort A : Type;
+  sort B : Type;
+  oper a : A;
+  oper b : B;
+}
+def plain : Model(Pair);
+def fixed : Model(Pair) with sort B = Integer with sort A = Unit;
+def integer : Integer;
+def empty : Unit;

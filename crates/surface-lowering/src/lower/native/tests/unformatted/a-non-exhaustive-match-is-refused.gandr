@@ -1,0 +1,2 @@
+{COLOR}def partial(c : Color) -> -F Integer {{ match c {{ | Red => return 0 | Green => return 1 }} }}
+def open(n : Integer) -> -F Integer {{ match n {{ | 0 => return 0 }} }}

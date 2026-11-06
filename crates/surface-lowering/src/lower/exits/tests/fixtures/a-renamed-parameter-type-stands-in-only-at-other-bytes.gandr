@@ -1,0 +1,17 @@
+module Seed :> *{ type T, zero : T, next : +U[ω] (T -> -F T) } where {
+  type T = Integer;
+  def zero = 0;
+  def next(n : T) -> -F T { become n + 1 }
+}
+
+module MkCounter(S : *{ type T, zero : T, next : +U[ω] (T -> -F T) }) :> *{
+  type T,
+  seed : T,
+  step : +U[ω] (T -> -F T)
+} where {
+  type T = S.T;
+  def seed = S.zero;
+  def step = S.next;
+}
+
+module A = MkCounter(Seed);

@@ -35,20 +35,9 @@ fn described<'source>(source: impl Into<SourceText<'source>>) -> DescriptionRepo
 #[test]
 fn a_ruled_theory_block_lowers_its_members_into_a_description()
 {
-    let report = described(
-        r#"data Nat : Type where {
-        | Zero : Nat
-        | Succ : (n : Nat) --> Nat
-    }
-    theory Nat where {
-        sort Nat : Type;
-        oper add : (Nat, Nat) --> Nat;
-        rule cong1 : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (z : Nat) {
-            node : p(x) ==> (x′);
-            node : add(x′, y) --> (z);
-        };
-    }"#,
-    );
+    let report = described(include_str!(
+        "tests/fixtures/a-ruled-theory-block-lowers-its-members-into-a-description-report.gandr"
+    ));
     assert_eq!(report.diagnostics, []);
     let [ref data, ref theory] = *report.declarations.as_slice()
     else {
@@ -136,14 +125,7 @@ fn an_item_level_data_member_declines_with_the_nested_block_respelling()
 
 /// The rewrite node of a two-output congruence: `p` rewrites the dividend
 /// before `divmod` reads it, and both of `divmod`'s ports leave the body.
-const DIVMOD_CONGRUENCE: &str = "theory Div where {
-  sort Nat : Type;
-  oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat);
-  rule pass : (rule p : Nat ==> Nat, data m : Nat, data n : Nat) ==> (q : Nat, r : Nat) {
-    node : p(m) ==> (m′);
-    node : divmod(m′, n) --> (q, r);
-  };
-}";
+const DIVMOD_CONGRUENCE: &str = include_str!("tests/fixtures/divmod-congruence.gandr");
 
 #[test]
 fn a_many_out_frame_binds_every_port_and_roots_the_body()
@@ -301,9 +283,9 @@ fn a_port_name_on_both_sides_is_two_ports()
 #[test]
 fn an_inert_operation_is_marked_on_its_presentation_3029()
 {
-    let report = described(
-        "theory Released where { @[ inert ] oper version : String; }\ntheory Named where { include Released; @[ inert ] oper name : String; oper greeting : String; }",
-    );
+    let report = described(include_str!(
+        "tests/unformatted/an-inert-operation-is-marked-on-its-presentation-3029-report.gandr"
+    ));
     assert_eq!(report.diagnostics, []);
     let marks = |at: usize| {
         let Maybe::Present(ref presentation) = report.declarations[at].presentation
@@ -502,17 +484,9 @@ fn a_reversible_map_is_reserved_and_an_equation_is_a_face()
 #[test]
 fn the_cat_shape_laws_are_written_faces()
 {
-    let report = described(
-        "theory CatShape where {
-  sort Ob : Type;
-  sort Hom(dom : Ob, cod : Ob) : Type;
-  oper id : (a : Ob) --> Hom(a, a);
-  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
-  rule unitL : comp (id a) f ==> f;
-  rule unitR : comp f (id b) ==> f;
-  rule assoc : comp (comp f g) h ==> comp f (comp g h);
-}",
-    );
+    let report = described(include_str!(
+        "tests/fixtures/the-cat-shape-laws-are-written-faces-report.gandr"
+    ));
     assert_eq!(report.diagnostics, []);
     let description = &report.declarations[0].description;
     assert_eq!(
@@ -568,16 +542,9 @@ fn the_cat_shape_laws_are_written_faces()
 #[test]
 fn a_pinned_rewrite_endpoint_reads_as_a_variable()
 {
-    let report = described(
-        "theory Labelled where {
-  sort Nat : Type;
-  oper step : (i : Nat) --> (o : Nat);
-  rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
-    node w1 : p(x) ==> (m);
-    node w2 : step(m) --> (o);
-  };
-}",
-    );
+    let report = described(include_str!(
+        "tests/fixtures/a-pinned-rewrite-endpoint-reads-as-a-variable-report.gandr"
+    ));
     assert_eq!(report.diagnostics, []);
     let [ref rule] = *report.declarations[0].description.circuits.as_ref()
     else {
@@ -591,16 +558,9 @@ fn a_pinned_rewrite_endpoint_reads_as_a_variable()
         source: FreeTerm::var("x"),
         target: FreeTerm::var("x′"),
     });
-    let fixed = described(
-        "theory Labelled where {
-  sort Nat : Type;
-  oper step : (i : Nat) --> (o : Nat);
-  rule twice : (rule p : x ==> x, data x : Nat) ==> (o : Nat) {
-    node w1 : p(x) ==> (m);
-    node w2 : step(m) --> (o);
-  };
-}",
-    );
+    let fixed = described(include_str!(
+        "tests/fixtures/a-pinned-rewrite-endpoint-reads-as-a-variable-fixed.gandr"
+    ));
     let [ref rule] = *fixed.declarations[0].description.circuits.as_ref()
     else {
         panic!("one circuit rule: {:?}", fixed.diagnostics)
@@ -623,7 +583,7 @@ fn a_pinned_rewrite_endpoint_reads_as_a_variable()
 fn a_top_level_operation_declines_its_filler_by_name()
 {
     let source =
-        "oper split : (b : Bit) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\n";
+        include_str!("tests/unformatted/a-top-level-operation-declines-its-filler-by-name.gandr");
     let report = described(source);
     let [ref declaration] = *report.declarations.as_slice()
     else {
@@ -706,16 +666,7 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
 #[test]
 fn a_refused_theory_block_states_its_refusal()
 {
-    let source = r#"@[ refuses("BareFeedback") ]
-theory Wheel where {
-  sort Nat : Type;
-  oper zip : (s : Nat, t : Nat) --> (u : Nat);
-  rule spin : (data stream : Nat) ==> (out : Nat) {
-    node : zip(stream, state) --> (out);
-    feed : (out) --> (state);
-  };
-}
-"#;
+    let source = include_str!("tests/fixtures/a-refused-theory-block-states-its-refusal.gandr");
     let grammar = grammar();
     let tree = parse(&grammar, SourceText::from(source))
         .unwrap()
@@ -779,26 +730,8 @@ theory Wheel where {
 #[test]
 fn an_inner_attribute_decorates_its_theory_3586()
 {
-    let source = r#"theory Wheel where {
-  @![ refuses("BareFeedback") ]
-  sort Nat : Type;
-  oper zip : (s : Nat, t : Nat) --> (u : Nat);
-  rule spin : (data stream : Nat) ==> (out : Nat) {
-    node : zip(stream, state) --> (out);
-    feed : (out) --> (state);
-  };
-}
-theory Late where {
-  sort C : Type;
-  @![ explicit_exits ]
-  oper mark : (k : C) --> C;
-}
-@[ explicit_exits ]
-theory Doubled where {
-  @![ explicit_exits ]
-  sort D : Type;
-}
-"#;
+    let source =
+        include_str!("tests/unformatted/an-inner-attribute-decorates-its-theory-3586.gandr");
     let grammar = grammar();
     let tree = parse(&grammar, SourceText::from(source))
         .unwrap()
@@ -879,11 +812,9 @@ theory Doubled where {
 #[test]
 fn an_ill_formed_theory_is_refused_with_the_checks_reason_1553()
 {
-    let source = "theory Unbindable where {
-  sort Tm : Type;
-  oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
-}
-";
+    let source = include_str!(
+        "tests/fixtures/an-ill-formed-theory-is-refused-with-the-checks-reason-1553.gandr"
+    );
     let grammar = grammar();
     let tree = parse(&grammar, SourceText::from(source))
         .unwrap()
@@ -931,7 +862,8 @@ fn an_ill_formed_theory_is_refused_with_the_checks_reason_1553()
 #[test]
 fn a_refused_top_level_operation_states_its_refusal()
 {
-    let source = "@[ refuses(\"UndescribedMember.OperationFiller\") ]\noper split : (b : Bit) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\n";
+    let source =
+        include_str!("tests/fixtures/a-refused-top-level-operation-states-its-refusal.gandr");
     let grammar = grammar();
     let tree = parse(&grammar, SourceText::from(source))
         .unwrap()
@@ -983,7 +915,7 @@ fn a_refused_top_level_operation_states_its_refusal()
 fn an_unreadable_decoration_refuses_a_refused_operation_first_4113()
 {
     let operation =
-        "oper split : (b : Bit) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\n";
+        include_str!("tests/unformatted/a-top-level-operation-declines-its-filler-by-name.gandr");
     // The `(` deleted leaves the payload an operand after the name; the `)`
     // doubled leaves the second one an operand after the attribute.
     for (decoration, stray) in [
@@ -1034,7 +966,9 @@ fn an_unreadable_decoration_refuses_a_refused_operation_first_4113()
 #[test]
 fn a_decorated_top_level_operation_is_refused_at_itself_3073()
 {
-    let source = "@[ checks ]\noper split : (b : Bit) --> (_ : Bit, _ : Bit)\n\ndef one = 1 ;\n";
+    let source = include_str!(
+        "tests/fixtures/a-decorated-top-level-operation-is-refused-at-itself-3073.gandr"
+    );
     let grammar = grammar();
     let tree = parse(&grammar, SourceText::from(source))
         .unwrap()
@@ -1294,9 +1228,9 @@ fn node_arrow_resolution_distinguishes_declared_and_unknown_heads()
 #[test]
 fn an_out_of_signature_frame_head_earns_the_declaration_tables_refusal()
 {
-    let report = described(
-        "theory Stray where {\n  sort Nat : Type;\n  rule stray : (data x : Nat) ==> (z : Nat) {\n    node : mystery(x) --> (z);\n  };\n}\n",
-    );
+    let report = described(include_str!(
+        "tests/fixtures/an-out-of-signature-frame-head-earns-the-declaration-tables-refusal-report.gandr"
+    ));
     assert!(report.diagnostics.iter().any(|diagnostic| matches!(
         diagnostic.fault,
         DescriptionFault::IllFormed(ref reason)
@@ -1309,9 +1243,9 @@ fn an_out_of_signature_frame_head_earns_the_declaration_tables_refusal()
 #[test]
 fn a_redex_applying_an_undeclared_rewrite_earns_its_own_refusal()
 {
-    let report = described(
-        "theory NoPort where {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n\n  rule stray : (rule p : Nat ==> Nat, data x : Nat) ==> (z : Nat) {\n    node : p(x) ==> (m);\n    node : f(m) --> (z);\n  };\n}\n",
-    );
+    let report = described(include_str!(
+        "tests/fixtures/a-redex-applying-an-undeclared-rewrite-earns-its-own-refusal-report.gandr"
+    ));
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.circuits.len(), 1);
 }
@@ -1319,9 +1253,9 @@ fn a_redex_applying_an_undeclared_rewrite_earns_its_own_refusal()
 #[test]
 fn a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal()
 {
-    let report = described(
-        "theory Loop where {\n  sort Nat : Type;\n  oper f : (a : Nat) --> (b : Nat);\n  oper g : (a : Nat) --> (b : Nat);\n\n  rule spin : (data x : Nat) ==> (z : Nat) {\n    node : f(w) --> (z);\n    node : g(z) --> (w);\n  };\n}\n",
-    );
+    let report = described(include_str!(
+        "tests/fixtures/a-wiring-that-closes-a-cycle-earns-the-declaration-tables-refusal-report.gandr"
+    ));
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
         panic!("one cyclic wiring")
@@ -1338,18 +1272,24 @@ fn a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal()
 #[test]
 fn a_doubling_body_declines_on_the_derivation_node_budget()
 {
-    let mut source = alloc::string::String::from(
-        "theory Doubling where {\n  sort Nat : Type;\n  oper l : (a : Nat) --> (b : Nat);\n  oper r : (a : Nat) --> (b : Nat);\n  oper add : (a : Nat, b : Nat) --> (c : Nat);\n  rule blow : (data w0 : Nat) ==> (w12 : Nat) {\n",
-    );
+    let mut source = alloc::string::String::from(include_str!(
+        "tests/unformatted/a-doubling-body-declines-on-the-derivation-node-budget-1.gandr"
+    ));
     for level in 1 ..= 12_u32 {
         let below = level.saturating_sub(1);
         write!(
             source,
-            "    node : l(w{below}) --> (a{level});\n    node : r(w{below}) --> (b{level});\n    node : add(a{level}, b{level}) --> (w{level});\n"
+            include_str!(
+                "tests/unformatted/a-doubling-body-declines-on-the-derivation-node-budget-3.gandr"
+            ),
+            below = below,
+            level = level,
         )
         .unwrap();
     }
-    source.push_str("  };\n}\n");
+    source.push_str(include_str!(
+        "tests/unformatted/a-doubling-body-declines-on-the-derivation-node-budget-2.gandr"
+    ));
     let report = described(source.as_str());
     assert!(report.diagnostics.iter().any(|diagnostic| matches!(
         diagnostic.fault,
@@ -1423,9 +1363,9 @@ fn a_theory_block_defines_its_presentation()
     let grammar = grammar();
     let tree = parse(
         &grammar,
-        SourceText::from(
-            "theory Nat where { sort Nat : Type; oper add : (Nat, Nat) --> Nat; }\ntheory Pointed where { sort One : Type; oper pt : () --> (p : One); }\n",
-        ),
+        SourceText::from(include_str!(
+            "tests/fixtures/a-theory-block-defines-its-presentation-tree.gandr"
+        )),
     )
     .unwrap()
     .into_tree();
@@ -1543,9 +1483,9 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
     let grammar = grammar();
     let tree = parse(
         &grammar,
-        SourceText::from(
-            "theory CircleShape where { sort Pt : Type; oper base : Pt; oper turn : (x : Pt) --> Pt; oper unturn : (x : Pt) --> Pt; rule turnUnturn : turn (unturn x) ==> x; rule unturnTurn : unturn (turn x) ==> x; }\ntheory CatShape where { sort Ob : Type; sort Hom(dom : Ob, cod : Ob) : Type; oper id : (a : Ob) --> Hom(a,a); oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c); rule unitL : comp (id a) f ==> f; }\n",
-        ),
+        SourceText::from(include_str!(
+            "tests/fixtures/a-rule-bearing-theory-defines-its-presentation-with-its-laws-tree.gandr"
+        )),
     )
     .unwrap()
     .into_tree();
@@ -1648,7 +1588,7 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
 #[test]
 fn the_description_is_read_off_the_value()
 {
-    let source = "theory CatShape where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : Ob) --> Hom(a,a);\n  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);\n  rule unitL : comp (id a) f ==> f;\n}\n";
+    let source = include_str!("tests/fixtures/the-description-is-read-off-the-value.gandr");
     let report = described(source);
     assert_eq!(report.diagnostics, []);
     let [ref theory] = *report.declarations.as_slice()
@@ -2332,7 +2272,9 @@ fn an_abstraction_stands_outside_the_binders()
 #[test]
 fn a_member_with_no_judgment_head_declines_rather_than_vanishing()
 {
-    let source = "theory Broken where {\n  sort Nat : Type;\n  rule ;\n}\n";
+    let source = include_str!(
+        "tests/fixtures/a-member-with-no-judgment-head-declines-rather-than-vanishing.gandr"
+    );
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2352,9 +2294,9 @@ fn a_member_with_no_judgment_head_declines_rather_than_vanishing()
 #[test]
 fn a_terminated_block_is_not_told_it_lacks_terminators()
 {
-    let report = described(
-        "theory S where {\n  sort Ob : Type;\n  sort Hom(dom : Ob, cod : Ob) : Type;\n  oper id : (a : Ob) --> Ob;\n}\n",
-    );
+    let report = described(include_str!(
+        "tests/fixtures/a-terminated-block-is-not-told-it-lacks-terminators-report.gandr"
+    ));
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.sorts.len(), 2);
     assert_eq!(report.declarations[0].description.opers.len(), 1);
@@ -2363,7 +2305,8 @@ fn a_terminated_block_is_not_told_it_lacks_terminators()
 #[test]
 fn unseparated_members_are_declined_rather_than_dropped()
 {
-    let source = "theory S where {\n  sort Ob : Type sort Ar : Type\n}\n";
+    let source =
+        include_str!("tests/fixtures/unseparated-members-are-declined-rather-than-dropped.gandr");
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2388,7 +2331,9 @@ fn unseparated_members_are_declined_rather_than_dropped()
 #[test]
 fn members_on_their_own_lines_are_separated_by_their_column_4853()
 {
-    let report = described("theory S where {\n  sort Ob : Type\n  sort Ar : Type\n}\n");
+    let report = described(include_str!(
+        "tests/fixtures/members-on-their-own-lines-are-separated-by-their-column-4853-report.gandr"
+    ));
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.sorts.len(), 2);
 }
@@ -2396,9 +2341,9 @@ fn members_on_their_own_lines_are_separated_by_their_column_4853()
 #[test]
 fn terminated_members_are_all_presented()
 {
-    let report = described(
-        "theory S where {\n  sort Ob : Type;\n  sort Ar : Type;\n  oper f : (a : Ob) --> Ob;\n}\n",
-    );
+    let report = described(include_str!(
+        "tests/fixtures/terminated-members-are-all-presented-report.gandr"
+    ));
     assert_eq!(report.diagnostics, []);
     assert_eq!(report.declarations[0].description.sorts.len(), 2);
     assert_eq!(report.declarations[0].description.opers.len(), 1);
@@ -2407,7 +2352,7 @@ fn terminated_members_are_all_presented()
 #[test]
 fn an_unreadable_member_keeps_its_own_report()
 {
-    let source = "theory Adder where {\n  sort Nat : Type;\n  oper add : (Nat, Nat) --> Nat;\n  rule ident ==> add;\n}\n";
+    let source = include_str!("tests/fixtures/an-unreadable-member-keeps-its-own-report.gandr");
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -2426,13 +2371,8 @@ fn an_unreadable_member_keeps_its_own_report()
 #[test]
 fn a_coherence_between_composites_is_a_higher_cell()
 {
-    let source = "theory C where {
-  sort Ob : Type;
-  oper id : (a : Ob) --> Ob;
-  rule unitL : id a ==> a;
-  rule triangle : (Path.step (unitL a) (unitL a)) ==> unitL a;
-  rule face : (f) ==> (z : Ob) { node : id(f) --> (z); };
-}";
+    let source =
+        include_str!("tests/fixtures/a-coherence-between-composites-is-a-higher-cell.gandr");
     let report = described(source);
     let faults: Vec<_> = report
         .diagnostics
@@ -2479,7 +2419,8 @@ fn presented(declaration: &DescribedDeclaration) -> &Presentation
 #[test]
 fn an_included_theory_is_the_extension_restricted()
 {
-    let source = "theory Mag where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule assoc : mul (mul x y) z ==> mul x (mul y z);\n}\ntheory Pointed where {\n  include Mag;\n  oper one : () --> M;\n  rule unitL : mul (one ()) x ==> x;\n}\ntheory Comm where {\n  include Mag;\n  oper zero : () --> M;\n}\ntheory Both where {\n  include Pointed;\n  include Comm;\n}\n";
+    let source =
+        include_str!("tests/fixtures/an-included-theory-is-the-extension-restricted.gandr");
     let report = described(source);
     assert_eq!(report.diagnostics, []);
     let magma = presented(&report.declarations[0]).value.decode().unwrap();
@@ -2598,7 +2539,7 @@ fn the_include_subject_s_ways_round_compose_to_one_inclusion()
 #[test]
 fn an_include_is_refused_at_its_member()
 {
-    let source = "theory Pointed where {\n  include Mag;\n  sort M : Type;\n}\ntheory Mag where {\n  sort M : Type;\n  oper e : () --> M;\n}\ntheory Unary where {\n  sort M : Type;\n  oper e : (x : M) --> M;\n}\ntheory Both where {\n  include Mag;\n  include Unary;\n}\n";
+    let source = include_str!("tests/fixtures/an-include-is-refused-at-its-member.gandr");
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2642,7 +2583,8 @@ fn an_include_is_refused_at_its_member()
 #[test]
 fn an_included_member_is_refused_at_its_include_2752()
 {
-    let source = "theory Monad where {\n  sort V : Type+;\n  sort C : Type;\n  oper ret : (a : V) --> C;\n  oper ext : (m : C, k : pi+ (x : V) . C) --> C;\n  rule unitR : ext m (bind x . (ret x)) <=> m;\n}\ntheory Ordered where {\n  include Monad;\n  sort Below(w : C, v : C) : Type;\n  oper refl : (w : C) --> Below(w, w);\n}\n";
+    let source =
+        include_str!("tests/fixtures/an-included-member-is-refused-at-its-include-2752.gandr");
     let grammar = grammar();
     let tree = parse(&grammar, SourceText::from(source))
         .unwrap()
@@ -2701,7 +2643,7 @@ fn an_included_member_is_refused_at_its_include_2752()
 #[test]
 fn a_law_member_reads_its_statement_2356()
 {
-    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) -> Path[.A = Bool](eq a a, true);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) -> Path[.A = Bool](eq a b, eq b a);\n  law flat : (a : C) -> Bool;\n  law late : (a : C, p : Path[.A = Bool](eq a a, true), b : C) -> Path[.A = Bool](eq a b, true);\n  law eq : (a : C) -> Path[.A = Bool](eq a a, true);\n}\n";
+    let source = include_str!("tests/fixtures/a-law-member-reads-its-statement-2356.gandr");
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2769,7 +2711,9 @@ fn a_law_member_reads_its_statement_2356()
 #[test]
 fn a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115()
 {
-    let source = "theory Base where {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) -> Path[.A = Bool](eq a a, yes);\n}\ntheory Same where {\n  include Base;\n  law sym : (a : C, b : C) -> Path[.A = Bool](eq a b, eq b a);\n  law odd : (a : C) -> Path[.A = Bool](qe a a, true);\n}\n";
+    let source = include_str!(
+        "tests/fixtures/a-stated-law-naming-an-unbound-variable-is-refused-at-its-theory-4115.gandr"
+    );
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2807,7 +2751,7 @@ fn a_stated_law_naming_an_unbound_variable_is_refused_at_its_theory_4115()
 #[test]
 fn two_joins_of_one_pair_are_refused_by_name()
 {
-    let source = "theory Pointed where {\n  sort M : Type;\n  oper point : () --> M;\n}\ntheory Magma where {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\ntheory UnitalMagma where {\n  include Pointed;\n  include Magma;\n}\ntheory MagmaWithUnit where {\n  include Pointed;\n  include Magma;\n}\ntheory Above where {\n  include UnitalMagma;\n}\n";
+    let source = include_str!("tests/fixtures/two-joins-of-one-pair-are-refused-by-name.gandr");
     let report = described(source);
     let faults = report
         .diagnostics
@@ -2831,21 +2775,21 @@ fn two_joins_of_one_pair_are_refused_by_name()
         })),
         "theory MagmaWithUnit where {"
     )]);
-    let diamond = described(
-        "theory Base where {\n  sort M : Type;\n}\ntheory Left where {\n  include Base;\n  oper l : () --> M;\n}\ntheory Right where {\n  include Base;\n  oper r : () --> M;\n}\ntheory Both where {\n  include Left;\n  include Right;\n}\n",
-    );
+    let diamond = described(include_str!(
+        "tests/fixtures/two-joins-of-one-pair-are-refused-by-name-diamond.gandr"
+    ));
     assert_eq!(diamond.diagnostics, [], "one join over one base reads");
 }
 
 #[test]
 fn an_extension_generates_its_signature()
 {
-    let generated = described(
-        "theory Gen where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  oper zero : Val;\n  oper one : Val;\n  ext Cell = Val on left is zero;\n}\n",
-    );
-    let written = described(
-        "theory Gen where {\n  boundary Two { p, q };\n  face left = { p };\n  sort Val : Type;\n  sort Cell : Type;\n  oper zero : Val;\n  oper one : Val;\n  oper inCell : (yq : Val) --> Cell;\n  oper outCellp : (e : Cell) --> Val;\n  oper outCellq : (e : Cell) --> Val;\n  rule boundaryCellp : outCellp e ==> zero ();\n  rule betaCellq : outCellq (inCell yq) ==> yq;\n  rule etaCell : inCell (outCellq e) ==> e;\n}\n",
-    );
+    let generated = described(include_str!(
+        "tests/fixtures/an-extension-generates-its-signature-generated.gandr"
+    ));
+    let written = described(include_str!(
+        "tests/fixtures/an-extension-generates-its-signature-written.gandr"
+    ));
     assert_eq!(generated.diagnostics, []);
     assert_eq!(written.diagnostics, []);
     assert_eq!(
@@ -2861,7 +2805,7 @@ fn an_extension_generates_its_signature()
 #[test]
 fn an_extension_is_refused_by_name()
 {
-    let shaped = "  boundary Two { p, q };\n  face left = { p };\n  face both = { p, q };\n";
+    let shaped = include_str!("tests/fixtures/an-extension-is-refused-by-name-shaped.gandr");
     let refused = |fault| DescriptionFault::Signature(SignatureFault::Extension(fault));
     for (shape, member, fault) in [
         (
@@ -2897,7 +2841,9 @@ fn an_extension_is_refused_by_name()
         ),
     ] {
         let source = format!(
-            "theory T where {{\n{shape}  sort Val : Type;\n  oper zero : Val;\n  oper twice : (v : Val) --> Val;\n  {member};\n}}\n"
+            include_str!("tests/unformatted/an-extension-is-refused-by-name.gandr"),
+            member = member,
+            shape = shape
         );
         let report = described(source.as_str());
         let faults = report
@@ -3143,8 +3089,9 @@ fn a_where_clause_states_each_condition_on_its_rule()
 #[test]
 fn an_under_row_names_each_theory_in_scope_once_2448()
 {
-    let theories =
-        "theory State where { sort S : Type; }\ntheory Console where { sort C : Type; }\n";
+    let theories = include_str!(
+        "tests/fixtures/an-under-row-names-each-theory-in-scope-once-2448-theories.gandr"
+    );
     let signature =
         "sort T : Type; oper f : (x : T) --> T; oper g : (x : T) --> T; oper h : (x : T) --> T;";
     let report = described(
@@ -3201,7 +3148,9 @@ fn an_under_row_names_each_theory_in_scope_once_2448()
         "the theory spelling closes on the row"
     );
     let source = format!(
-        "{theories}theory Unknown where {{ {signature} rule r : f(x) <=> x where {{ | under [State, Missing] }}; }}\ntheory Twice where {{ {signature} rule r : f(x) <=> x where {{ | under [State, Console, State | r] }}; }}\n"
+        include_str!("tests/unformatted/an-under-row-names-each-theory-in-scope-once-2448.gandr"),
+        signature = signature,
+        theories = theories
     );
     let report = described(source.as_str());
     let at = |span: ByteSpan| {
@@ -3247,7 +3196,10 @@ fn an_under_row_names_a_theory_at_a_dotted_path_4514()
     let signature = "sort T : Type; oper f : (x : T) --> T; oper g : (x : T) --> T;";
     let report = described(
         format!(
-            "theory Store.Eff where {{ sort S : Type; }}\ntheory Logged where {{ {signature} rule r : f (g x) <=> g x where {{ | under [Store.Eff | r] }}; }}"
+            include_str!(
+                "tests/unformatted/an-under-row-names-a-theory-at-a-dotted-path-4514-report.gandr"
+            ),
+            signature = signature
         )
         .as_str(),
     );

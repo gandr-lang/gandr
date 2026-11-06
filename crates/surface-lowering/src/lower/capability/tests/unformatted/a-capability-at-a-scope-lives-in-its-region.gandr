@@ -1,0 +1,4 @@
+def regions() -> -F Unit {{ handle c : std.process.Exit.Eff {{ handle e : std.process.Exit.Eff {{ let d : Cap {{exit}} at c = c ; let f : Cap {{exit}} at e = e ; pure *{{}} }} {clauses} }} {clauses} }}
+def unbound(c : Integer) -> -F Unit {{ handle e : std.process.Exit.Eff {{ let d : Cap {{exit}} at c = e ; pure *{{}} }} {clauses} }}
+def plain() -> -F Unit {{ handle c : std.process.Exit.Eff {{ let d : Integer at c = 1 ; pure *{{}} }} {clauses} }}
+def held() -> -F Unit {{ var s = 1 ; handle c : std.process.Exit.Eff {{ let d : Integer at s = 1 ; let e : Integer at c = 2 ; pure *{{}} }} {clauses} }}

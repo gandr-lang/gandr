@@ -1,0 +1,3 @@
+{NAT}{stream}def rec ahead(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become ahead[>] p }} }}
+def rec wrapped(n : Nat) -> Stream(Nat) {{ &{{.head => return n, .tail => become wrapped[>] n}} }}
+def rec both(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become both[<, >] p }} }}

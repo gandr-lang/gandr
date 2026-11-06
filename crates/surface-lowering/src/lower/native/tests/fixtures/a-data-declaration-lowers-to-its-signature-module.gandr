@@ -1,0 +1,2 @@
+data Pair(a : Type, b : Type) : Type where { | Mk : (x : a, y : b) --> Pair(a, b) }
+data Flag : Type where { | On : Flag | Off : Flag }

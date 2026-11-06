@@ -1,11 +1,14 @@
-// The host modules `fs`, `path` and `env` reach the file system, paths and
-// the environment from a block. The lowering admits no member selection on a
-// module yet.
+// This source tests host modules inside a block.
+//
+// `fs`, `path` and `env` access the file system, paths and environment.
+//
+// The lowering does not yet admit module member selection. The pathological
+// examples cover uncalled selection, an unknown member and wrong arity.
 //
 // - see: #1106 — `tour`
 
-/// A file written, read back, globbed and stated in a fresh directory, beside
-/// the working directory, the tracked files and the search path.
+/// `tour` creates a directory and exercises `fs`, `path` and `env`. It writes,
+/// reads, globs and states a file beside the working directory and search path.
 @[ refuses("OutOfFragment.projection_expression") ]
 def tour() -> -F *{content : String, name : String, ext : String, kind : String} =
   let dir = fs.tempdir ()

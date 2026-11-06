@@ -1,0 +1,10 @@
+{INCLUDED}def endo : Model(Monoid) ;
+def endo = pack Endo at Model(Monoid) ;
+def multiplies(s : Model(Semigroup)) -> -F Integer {{
+  match s {{ | *{{.mul = m}} => 0 }}
+}}
+def asked() -> -F Integer {{ become multiplies(endo) }}
+def named() -> -F Integer {{
+  let s = Monoid.Semigroup(endo) ;
+  become multiplies(s)
+}}

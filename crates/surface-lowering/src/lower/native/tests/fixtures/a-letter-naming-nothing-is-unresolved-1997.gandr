@@ -1,0 +1,9 @@
+data Circle : Type where { | Base : Circle | loop : Base <-> Base }
+def turn : Integer;
+def turn = 1;
+def plain : Path[.A = Circle](Base, Base);
+def plain = lop ∷ Path.here Base;
+def inverse : Path[.A = Circle](Base, Base);
+def inverse = back lop ∷ Path.here Base;
+def other : Path[.A = Circle](Base, Base);
+def other = turn ∷ Path.here Base;

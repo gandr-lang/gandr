@@ -1,0 +1,2 @@
+def pick(a : Type) -> -F Integer { 0 }
+def chosen = thunk { become pick f64 };

@@ -1,0 +1,14 @@
+theory Gen where {
+  boundary Two { p, q };
+  face left = {p};
+  sort Val : Type;
+  sort Cell : Type;
+  oper zero : Val;
+  oper one : Val;
+  oper inCell : (yq : Val) --> Cell;
+  oper outCellp : (e : Cell) --> Val;
+  oper outCellq : (e : Cell) --> Val;
+  rule boundaryCellp : outCellp e ==> zero ();
+  rule betaCellq : outCellq (inCell yq) ==> yq;
+  rule etaCell : inCell (outCellq e) ==> e;
+}

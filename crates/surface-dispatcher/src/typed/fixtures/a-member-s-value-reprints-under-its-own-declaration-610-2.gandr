@@ -1,0 +1,5 @@
+import "./base.gandr";
+def one : Nat;
+def one = Succ Zero;
+def two : Nat;
+def two = Succ one;

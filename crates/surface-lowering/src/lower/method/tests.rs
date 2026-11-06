@@ -30,21 +30,7 @@ use crate::resolve::SurfaceName;
 
 /// A counter's methods, one per receiver mode, and a block calling each on
 /// one held count.
-const COUNTER: &str = r"module Counter where {
-  def read(self : shared Integer) -> -F Integer { pure self }
-  def bump(self : Integer, by : Integer) -> -F Unit {
-    access self as v { resume(v, v + by) }
-  }
-  def spend(self : consumed Integer) -> -F Integer { pure self + 1 }
-}
-def used() -> -F Integer {
-  var s = 1;
-  let n = s.read ();
-  let _ = s.bump 2;
-  let m = s.spend ();
-  pure n + m
-}
-";
+const COUNTER: &str = include_str!("tests/unformatted/counter.gandr");
 
 #[test]
 fn each_mode_lowers_to_its_access()
@@ -123,8 +109,8 @@ fn a_written_through_body_returns_its_receiver()
 fn a_receiver_not_held_is_passed_or_refused()
 {
     let source = format!(
-        "{COUNTER}def passed(t : Integer) -> -F Integer {{\n  let n = t.read ();\n  t.spend ()\n}}\n\
-         def written(t : Integer) -> -F Unit {{ t.bump 1 }}\n"
+        include_str!("tests/unformatted/a-receiver-not-held-is-passed-or-refused.gandr"),
+        COUNTER = COUNTER
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -149,9 +135,8 @@ fn a_receiver_not_held_is_passed_or_refused()
 #[test]
 fn a_method_two_modules_declare_is_refused_naming_both()
 {
-    let source = "module A where { def size(self : shared Integer) -> -F Integer { pure self } }\n\
-                  module B where { def size(self : shared Integer) -> -F Integer { pure 0 } }\n\
-                  def measured() -> -F Integer { var s = 1; s.size () }\n";
+    let source =
+        include_str!("tests/fixtures/a-method-two-modules-declare-is-refused-naming-both.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert!(
@@ -171,12 +156,7 @@ fn a_method_two_modules_declare_is_refused_naming_both()
 #[test]
 fn a_mode_word_off_a_receiver_is_refused()
 {
-    let source = "def top(x : shared Integer) -> -F Integer { pure x }\n\
-                  module M where { def second(self : shared Integer, y : consumed Integer) -> -F \
-                  Integer { pure y } }\n\
-                  def deduced[m : Mode](x : m Integer) -> -F Integer { pure 0 }\n\
-                  def nested(xs : List(m Integer)) -> -F Integer { pure 0 }\n\
-                  def pick(t : Type, x : t) -> -F t { pure x }\n";
+    let source = include_str!("tests/fixtures/a-mode-word-off-a-receiver-is-refused.gandr");
     let mut arena = CoreArena::new();
     let source = listing(source);
     let module = listed(&source, &mut arena);
@@ -205,8 +185,9 @@ fn a_mode_variable_off_a_receiver_is_refused_over_its_moded_type_3813()
 {
     // `x wit` for `x with`: a type variable beside a type reads as a moded
     // type, so the refusal marks the pair, the misspelt word among it.
-    let source = "def nested(xs : List(m Integer)) -> -F Integer { pure 0 }\n\
-                  def misspelt(x : Type) -> -F Type { return type(x wit) }\n";
+    let source = include_str!(
+        "tests/fixtures/a-mode-variable-off-a-receiver-is-refused-over-its-moded-type-3813.gandr"
+    );
     let mut arena = CoreArena::new();
     let source = listing(source);
     let module = listed(&source, &mut arena);
@@ -228,14 +209,7 @@ fn a_mode_variable_off_a_receiver_is_refused_over_its_moded_type_3813()
 #[test]
 fn a_receiver_is_a_typed_first_self()
 {
-    let source = "module M where {\n\
-                  def untyped(self) -> -F Integer { pure 0 }\n\
-                  def other(x : Integer) -> -F Integer { pure x }\n\
-                  def generic[a : Type](self : shared a) -> -F a { pure self }\n\
-                  }\n\
-                  def first() -> -F Integer { var s = 1; s.untyped () }\n\
-                  def second() -> -F Integer { var s = 1; s.other () }\n\
-                  def third() -> -F Integer { var s = 1; s.generic () }\n";
+    let source = include_str!("tests/fixtures/a-receiver-is-a-typed-first-self.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     for name in ["first", "second"] {
@@ -261,24 +235,14 @@ fn a_receiver_is_a_typed_first_self()
 /// A held list's places: a method answering the first element, one answering
 /// the element at an index, and calls lending each to a block that reads it and
 /// to one that writes it back.
-const PLACES: &str = r"def pair : List(Integer) ;
-def pair = cons 1 (cons 2 nil) ;
-module Places where {
-  def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) { self.#[0] }
-  def nth[m : Mode](self : m List(Integer), i : Integer) -> View[m](Integer) { self.#[i] }
-}
-def head() -> -F Integer { var xs = pair; let h = xs.first (); pure h }
-def doubled() -> -F Integer { var xs = pair; (xs.first ()) as w { pure w + w } }
-def raised() -> -F Integer { var xs = pair; (xs.nth 1) as w { resume(w, w + 3) }; pure 0 }
-def untouched() -> -F Integer { var xs = pair; (xs.first ()) as w { abort(w) }; pure 0 }
-";
+const PLACES: &str = include_str!("tests/unformatted/places.gandr");
 
 #[test]
 fn a_deduced_mode_is_erased_from_the_telescope()
 {
     let source = format!(
-        "{PLACES}module Unbound where {{\n  def lost[m : Mode](self : k List(Integer)) -> -F \
-         View[m](Integer) {{ self.#[0] }}\n}}\n"
+        include_str!("tests/unformatted/a-deduced-mode-is-erased-from-the-telescope.gandr"),
+        PLACES = PLACES
     );
     let mut arena = CoreArena::new();
     let source = listing(&source);
@@ -348,12 +312,8 @@ fn a_view_method_answers_its_place_index()
 fn a_view_method_answering_no_place_is_refused()
 {
     let source = format!(
-        "{PLACES}module Misplaced where {{\n  def valued[m : Mode](self : m List(Integer)) -> -F \
-         Integer {{ self.#[0] }}\n  def computed[m : Mode](self : m List(Integer)) -> -F \
-         View[m](Integer) {{ pure 0 }}\n  def crossed[m : Mode, n : Mode](self : m \
-         List(Integer)) -> -F View[n](Integer) {{ self.#[0] }}\n}}\ndef stray(v : \
-         View[m](Integer)) -> -F Integer {{ pure 0 }}\ndef bare(xs : List(Integer), i : Integer) \
-         -> -F Integer {{ let y = xs.#[i]; pure y }}\n"
+        include_str!("tests/unformatted/a-view-method-answering-no-place-is-refused.gandr"),
+        PLACES = PLACES
     );
     let mut arena = CoreArena::new();
     let source = listing(&source);
@@ -385,8 +345,8 @@ fn a_view_method_answering_no_place_is_refused()
 fn an_index_reads_its_held_element()
 {
     let source = format!(
-        "{PLACES}def element(i : Integer) -> -F Integer {{ var xs = pair; let y = xs.#[i]; pure \
-         y }}\ndef zeroth() -> -F Integer {{ var xs = pair; let y = xs.#[0]; pure y }}\n"
+        include_str!("tests/unformatted/an-index-reads-its-held-element.gandr"),
+        PLACES = PLACES
     );
     let mut arena = CoreArena::new();
     let source = listing(&source);
@@ -410,9 +370,8 @@ fn an_index_reads_its_held_element()
 fn a_bare_index_is_refused_naming_the_selector_4944()
 {
     let source = format!(
-        "{PLACES}module Bare where {{\n  def zeroth[m : Mode](self : m List(Integer)) -> -F \
-         View[m](Integer) {{ self[0] }}\n}}\ndef held() -> -F Integer {{ var xs = pair; let y = \
-         xs[1]; pure y }}\n"
+        include_str!("tests/unformatted/a-bare-index-is-refused-naming-the-selector-4944.gandr"),
+        PLACES = PLACES
     );
     let mut arena = CoreArena::new();
     let source = listing(&source);
@@ -483,8 +442,8 @@ fn a_view_block_lends_at_the_mode_it_asks()
 fn a_view_block_after_no_place_is_refused()
 {
     let source = format!(
-        "{COUNTER}def viewed() -> -F Integer {{ var s = 1; (s.read ()) as w {{ pure w }} }}\n\
-         def called() -> -F Integer {{ var s = 1; s as w {{ pure w }} }}\n"
+        include_str!("tests/unformatted/a-view-block-after-no-place-is-refused.gandr"),
+        COUNTER = COUNTER
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);

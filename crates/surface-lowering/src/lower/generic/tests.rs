@@ -17,12 +17,7 @@ use crate::resolve::SurfaceName;
 use crate::unit::Unit;
 
 /// A point, unary naturals and a declaration holding a function.
-const DATA: &str = "\
-data Point : Type where { | Point : (x : Integer, y : Integer) --> Point }
-data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-data Shape : Type where { | Shape : (f : (Integer) -> Integer) --> Shape }
-data Box(a : Type) : Type where { | Box : (x : a) --> Box(a) }
-";
+const DATA: &str = include_str!("tests/fixtures/data.gandr");
 
 /// `source`, after [`DATA`], laid out after the prelude.
 ///
@@ -61,13 +56,9 @@ fn a_generic_equality_lowers_to_the_derived_declaration_2302()
     // Unsigned, the derived type stands; signed, the written one, which is
     // the same type. A recursive declaration's equality derives too. The
     // prelude's `Eq.generic` yields no declaration of its own.
-    let (text, unit) = laid(SourceText::from(
-        "\
-def eqPoint = Eq.generic Point ;
-def stated : (Point, Point) -> Bool = Eq.generic Point ;
-def eqNat = Eq.generic Nat ;
-",
-    ));
+    let (text, unit) = laid(SourceText::from(include_str!(
+        "tests/fixtures/a-generic-equality-lowers-to-the-derived-declaration-2302.gandr"
+    )));
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
     assert!(
@@ -96,12 +87,9 @@ fn a_leaf_reads_a_source_s_family_before_the_prelude_s_3287()
     // a source that declares unary naturals as `Nat` reads the source's, as
     // resolution does, so the derived equality compares unary naturals and
     // checks rather than meeting the prelude's at the field.
-    let (text, unit) = laid(SourceText::from(
-        "\
-data Tagged : Type where { | Tagged : (shown : Bool, count : Nat) --> Tagged }
-def eqTagged = Eq.generic Tagged ;
-",
-    ));
+    let (text, unit) = laid(SourceText::from(include_str!(
+        "tests/fixtures/a-leaf-reads-a-source-s-family-before-the-prelude-s-3287.gandr"
+    )));
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
     assert_checked(&module, &mut arena);
@@ -113,18 +101,9 @@ fn a_derived_law_lowers_to_its_proof_2302()
     // A point's laws, alone and as a model's members: each proof checks
     // against its own derived statement, and the model's against `Eq`'s, so
     // `==` reaches points through it.
-    let (text, unit) = laid(SourceText::from(
-        "\
-def reflPoint = Eq.generic.refl Point ;
-def symPoint = Eq.generic.sym Point ;
-module EqPoint : Model(Eq) with sort Carrier = Point where {
-  def eq = Eq.generic Point ;
-  def refl = Eq.generic.refl Point ;
-  def sym = Eq.generic.sym Point ;
-}
-def same() -> Bool { Point 1 2 == Point 1 2 }
-",
-    ));
+    let (text, unit) = laid(SourceText::from(include_str!(
+        "tests/fixtures/a-derived-law-lowers-to-its-proof-2302.gandr"
+    )));
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
     for name in ["reflPoint", "symPoint"] {
@@ -166,10 +145,8 @@ fn a_generic_equality_names_the_declaration_each_case_eliminates_2363()
 fn a_source_s_own_eq_module_is_no_derivation_2302()
 {
     // With no prelude, `Eq.generic` is whatever the source declares.
-    let source = "\
-module Eq where { def generic(a : Integer) -> -F Integer { return a } }
-def one() -> -F Integer { Eq.generic 1 }
-";
+    let source =
+        include_str!("tests/fixtures/a-source-s-own-eq-module-is-no-derivation-2302.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     assert_checked(&module, &mut arena);
@@ -180,14 +157,9 @@ fn a_misplaced_generic_is_refused_at_the_call_2302()
 {
     // Inside a larger body, at a type that is no data declaration, and read
     // as a value, each refused at the form.
-    let (text, unit) = laid(SourceText::from(
-        "\
-def inside() -> Bool { (Eq.generic Point) (Point 1 2) (Point 1 2) }
-def integers = Eq.generic (Integer) ;
-def bare = Eq.generic ;
-def reflIntegers = Eq.generic.refl (Integer) ;
-",
-    ));
+    let (text, unit) = laid(SourceText::from(include_str!(
+        "tests/unformatted/a-misplaced-generic-is-refused-at-the-call-2302.gandr"
+    )));
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
     for (name, written) in [
@@ -217,13 +189,9 @@ fn an_uncovered_declaration_is_refused_at_its_name_2302()
     // A function field has no equality; a declaration with parameters is
     // not yet covered; the naturals' reflexivity is an induction. Each is
     // refused at the name of the type.
-    let (text, unit) = laid(SourceText::from(
-        "\
-def shapes = Eq.generic Shape ;
-def boxes = Eq.generic Box ;
-def reflNats = Eq.generic.refl Nat ;
-",
-    ));
+    let (text, unit) = laid(SourceText::from(include_str!(
+        "tests/fixtures/an-uncovered-declaration-is-refused-at-its-name-2302.gandr"
+    )));
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
     for (name, data, written) in [

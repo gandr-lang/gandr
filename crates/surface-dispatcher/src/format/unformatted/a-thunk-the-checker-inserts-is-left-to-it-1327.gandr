@@ -1,0 +1,17 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+
+def twice(n : Nat) -> -F Nat { Succ (Succ n) }
+
+def make(n : Nat) -> -F (() -> Nat) { thunk { twice n } }
+
+def bump : Nat -> Nat;
+def bump = thunk { fun (n) { Succ n } };
+
+def counted : () -> Nat;
+def counted = thunk { twice Zero };
+
+def tailed : () -> Nat;
+def tailed = thunk { become twice Zero };
+
+def none : () -> Nat;
+def none = thunk { Zero };

@@ -7669,6 +7669,201 @@ field!(
     }
 );
 
+/// A stored payload that holds type contents: the tables the codec writes
+/// whole and bounds by their levels. The build script passes each field of a
+/// refusal whose role `refusals.toml` marks with `contents` through this
+/// trait, in declaration order.
+///
+/// # Specification
+/// - ensures: a payload passes each type content it holds, in the order the
+///   codec writes them.
+/// - executable: none — the trait's method states its own clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every refusal of every kind, its types holding a level
+///   the decoder caps, is refused when written or reads back as written.
+/// - witness: `codec::tests::every_refusal_holding_a_capped_level_is_refused_when_written_4451`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+trait Contents
+{
+    /// Pass each type content the payload holds to `visit`, in the order the
+    /// codec writes them.
+    ///
+    /// # Specification
+    /// - ensures: `visit` sees each type content once, in write order.
+    /// - fails: the first error `visit` returns, which stops the walk.
+    /// - panics: none.
+    /// - executable: none — a required method; each payload's walk is its own,
+    ///   and the trait holds no body to check.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Contents`].
+    /// - witness: `codec::tests::every_refusal_holding_a_capped_level_is_refused_when_written_4451`
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>;
+}
+
+impl Contents for TypeContent
+{
+    /// Pass the content itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&Self) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        visit(self)
+    }
+}
+
+impl Contents for Mismatched
+{
+    /// Pass the synthesised type, then the expected one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        visit(&self.synthesised)?;
+        visit(&self.expected)
+    }
+}
+
+impl Contents for Linearity
+{
+    /// Pass a residue's session type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        match *self {
+            Self::Residue { ref state, .. } => visit(state),
+            Self::Closed { .. }
+            | Self::UsedTwice { .. }
+            | Self::Captured { .. }
+            | Self::AsValue { .. }
+            | Self::ArmsDisagree { .. }
+            | Self::Unrestricted
+            | Self::Unbound { .. }
+            | Self::BufferUnreturned { .. }
+            | Self::BufferReturnedTwice { .. }
+            | Self::BufferRead { .. }
+            | Self::ContinuationUnspent { .. }
+            | Self::ContinuationUsedTwice { .. }
+            | Self::ContinuationCaptured { .. }
+            | Self::ContinuationAsValue { .. } => Ok(()),
+        }
+    }
+}
+
+impl Contents for Located
+{
+    /// Pass the types a located defect holds: an immobile value's type, then
+    /// the former that fails, or the former alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        match *self {
+            Self::Immobile {
+                ref ty, ref former, ..
+            } => {
+                visit(ty)?;
+                visit(former)
+            },
+            Self::MarkUnfounded { ref former, .. } | Self::NotAHandle { found: ref former } => {
+                visit(former)
+            },
+            Self::CapabilityMissing { .. }
+            | Self::CapabilityCaptured { .. }
+            | Self::Elsewhere { .. }
+            | Self::HoldElsewhere { .. }
+            | Self::OpenedElsewhere { .. }
+            | Self::Unlocated
+            | Self::UndeclaredWorld { .. }
+            | Self::HostWorldUndeclared
+            | Self::EntryNamed { .. }
+            | Self::EntryUngranted { .. } => Ok(()),
+        }
+    }
+}
+
+impl Contents for Refusal
+{
+    /// Pass the types of each field `refusals.toml` marks, in declaration
+    /// order: the arms the build script generates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        refusal_contents!(self, visit)
+    }
+}
+
+impl Contents for Typing
+{
+    /// Pass a synthesised type, or the types a refusal holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn each_content<Error>(
+        &self,
+        visit: &mut impl FnMut(&TypeContent) -> Result<(), Error>,
+    ) -> Result<(), Error>
+    {
+        match *self {
+            Self::Synthesised { ref produced, .. } => visit(produced),
+            Self::Refused(ref refusal) => refusal.each_content(visit),
+            Self::Data | Self::Checked { .. } | Self::Owed | Self::Suspended => Ok(()),
+        }
+    }
+}
+
+/// The sort of the first unresolved node of `nodes`, as the error, or
+/// nothing when every node resolves: what writing the nodes refuses.
+///
+/// # Specification
+/// trivial.
+fn first_unresolved(nodes: &[SupportedNode]) -> Result<(), Sort>
+{
+    nodes.iter().try_for_each(|node| {
+        if let ContentNode::Unresolved(sort) = *node.former() {
+            Err(sort)
+        }
+        else {
+            Ok(())
+        }
+    })
+}
+
 /// Write a refusal.
 ///
 /// # Specification
@@ -7684,49 +7879,10 @@ field!(
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 #[spec(
     ensures: |ret| {
-        let tables: [&[SupportedNode]; 2] = match *refusal {
-            | Refusal::TypeMismatch(Mismatched {
-                ref synthesised,
-                ref expected,
-                ..
-            })
-            | Refusal::SortMismatch {
-                ref synthesised,
-                ref expected,
-                ..
-            }
-            | Refusal::LevelMismatch {
-                ref synthesised,
-                ref expected,
-                ..
-            }
-            | Refusal::FamilyArgumentClassifier {
-                ref synthesised,
-                ref expected,
-                ..
-            } => [synthesised.nodes(), expected.nodes()],
-            Refusal::ShapeMismatch { ref found, ref unfolded, .. } => [found.nodes(), unfolded.nodes()],
-            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..}
-            | Refusal::SessionMismatch { state: ref found, .. } | Refusal::Linearity { defect: Linearity::Residue { state: ref found, .. }, .. }
-            | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
-            | Refusal::DependentBind {
-                ref synthesised, ..
-            } => [synthesised.nodes(), &[]],
-            | Refusal::Located { defect: Located::Immobile { ref ty, ref former, .. }, .. } => [ty.nodes(), former.nodes()],
-            | Refusal::Located { defect: Located::MarkUnfounded { ref former, .. } | Located::NotAHandle { found: ref former }, .. } => [former.nodes(), &[]],
-            | _ => [&[], &[]],
-        };
+        let first = refusal.each_content(&mut |content| first_unresolved(content.nodes()));
         match ret {
-            | Ok(()) => tables
-                .into_iter()
-                .flatten()
-                .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
-            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
-                tables.into_iter().flatten().find_map(|node| match *node.former() {
-                    | ContentNode::Unresolved(found) => Some(found),
-                    | _ => None,
-                }) == Some(sort)
-            },
+            | Ok(()) => first.is_ok(),
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
             | Err(CodecError::Unrepresentable) => true,
             | _ => false,
         }
@@ -7884,63 +8040,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 .map_err(|_overflow| CodecError::Unrepresentable)
         },
         | _ => {
-            let tables: [&[SupportedNode]; 2] = match *typing {
-                | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
-                | Typing::Refused(ref refusal) => match *refusal {
-            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} => [found.nodes(),&[]],
-                    | Refusal::TypeMismatch(Mismatched {
-                        ref synthesised,
-                        ref expected,
-                        ..
-                    })
-                    | Refusal::SortMismatch {
-                        ref synthesised,
-                        ref expected,
-                        ..
-                    }
-                    | Refusal::LevelMismatch {
-                        ref synthesised,
-                        ref expected,
-                        ..
-                    }
-                    | Refusal::FamilyArgumentClassifier {
-                        ref synthesised,
-                        ref expected,
-                        ..
-                    } => [synthesised.nodes(), expected.nodes()],
-                    | Refusal::ShapeMismatch { ref found, ref unfolded, .. } => [found.nodes(), unfolded.nodes()],
-                    | Refusal::SessionMismatch {
-                        state: ref found, ..
-                    }
-                    | Refusal::Linearity {
-                        defect: Linearity::Residue {
-                            state: ref found, ..
-                        },
-                        ..
-                    }
-                    | Refusal::StaticClassifierExpected { ref found, .. } => {
-                        [found.nodes(), &[]]
-                    },
-                    | Refusal::DependentBind {
-                        ref synthesised, ..
-                    } => [synthesised.nodes(), &[]],
-                    | Refusal::Located { defect: Located::Immobile { ref ty, ref former, .. }, .. } => [ty.nodes(), former.nodes()],
-                    | Refusal::Located { defect: Located::MarkUnfounded { ref former, .. } | Located::NotAHandle { found: ref former }, .. } => [former.nodes(), &[]],
-                    | _ => [&[], &[]],
-                },
-                | Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Suspended => [&[], &[]],
-            };
+            let first = typing.each_content(&mut |content| first_unresolved(content.nodes()));
             match ret {
-                | Ok(()) => tables
-                    .into_iter()
-                    .flatten()
-                    .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
-                | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
-                    tables.into_iter().flatten().find_map(|node| match *node.former() {
-                        | ContentNode::Unresolved(found) => Some(found),
-                        | _ => None,
-                    }) == Some(sort)
-                },
+                | Ok(()) => first.is_ok(),
+                | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
                 | Err(CodecError::Unrepresentable) => true,
                 | _ => false,
             }
@@ -8157,69 +8260,24 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[spec(
     ensures: |ret| {
-        let typing = checkpoint.typing();
-        let tables: [&[SupportedNode]; 2] = match *typing {
-            | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
-            | Typing::Refused(ref refusal) => match *refusal {
-            | Refusal::TypeMismatch(Mismatched {
-                    ref synthesised,
-                    ref expected,
-                    ..
-                })
-                | Refusal::SortMismatch {
-                    ref synthesised,
-                    ref expected,
-                    ..
-                }
-                | Refusal::LevelMismatch {
-                    ref synthesised,
-                    ref expected,
-                    ..
-                }
-                | Refusal::FamilyArgumentClassifier {
-                    ref synthesised,
-                    ref expected,
-                    ..
-                } => [synthesised.nodes(), expected.nodes()],
-                Refusal::ShapeMismatch { ref found, ref unfolded, .. } => [found.nodes(), unfolded.nodes()],
-                Refusal::DataFieldLevel {kind:ref found,..} | Refusal::RepresentationAboveKind {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..}
-                | Refusal::SessionMismatch { state: ref found, .. } | Refusal::Linearity { defect: Linearity::Residue { state: ref found, .. }, .. }
-                | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
-                | Refusal::DependentBind {
-                    ref synthesised, ..
-                } => [synthesised.nodes(), &[]],
-                | Refusal::Located { defect: Located::Immobile { ref ty, ref former, .. }, .. } => [ty.nodes(), former.nodes()],
-                | Refusal::Located { defect: Located::MarkUnfounded { ref former, .. } | Located::NotAHandle { found: ref former }, .. } => [former.nodes(), &[]],
-                | _ => [&[], &[]],
-            },
-            | Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Suspended => [&[], &[]],
-        };
-        let support =
-            checkpoint
-                .support()
-                .iter()
-                .flat_map(|answered| answered.answer().nodes());
-        let mut nodes = checkpoint
-            .content()
-            .nodes()
-            .iter()
+        let support = checkpoint.support().iter().map(|answered| answered.answer().nodes());
+        let first = core::iter::once(checkpoint.content().nodes())
             .chain(support)
-            .chain(tables.into_iter().flatten());
+            .try_for_each(first_unresolved)
+            .and_then(|()| {
+                checkpoint
+                    .typing()
+                    .each_content(&mut |content| first_unresolved(content.nodes()))
+            });
         match ret {
-            | Ok(()) => checkpoint.content().locus() == crate::content::Locus::Unlocated
-                && nodes.all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
+            | Ok(()) => checkpoint.content().locus() == crate::content::Locus::Unlocated && first.is_ok(),
             | Err(CodecError::Unsupported(UnsupportedPersistence::Located)) => {
                 checkpoint.content().locus() == crate::content::Locus::Located
             },
             | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
                 matches!(*checkpoint.content().declaration(), crate::content::DeclarationRoots::Codata)
             },
-            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
-                nodes.find_map(|node| match *node.former() {
-                    | ContentNode::Unresolved(found) => Some(found),
-                    | _ => None,
-                }) == Some(sort)
-            },
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
             | Err(CodecError::Unrepresentable) => true,
             | _ => false,
         }
@@ -8330,6 +8388,7 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
 /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
 /// - witness: `codec::tests::encoding_bounds_levels_in_every_node_family_and_plane`
 /// - witness: `codec::tests::encoding_bounds_levels_in_every_auxiliary_type_table`
+/// - witness: `codec::tests::every_refusal_holding_a_capped_level_is_refused_when_written_4451`
 #[spec(
     ensures: |ret| match ret {
         | Ok(()) => checkpoint.content().nodes().iter().all(|node| match *node.former() {
@@ -8352,195 +8411,36 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
 )]
 fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError>
 {
-    let types = match *checkpoint.typing() {
-        Typing::Synthesised { ref produced, .. } => [Some(produced), None],
-        Typing::Refused(ref refusal) => match *refusal {
-            Refusal::TypeMismatch(Mismatched {
-                ref synthesised,
-                ref expected,
-                ..
-            })
-            | Refusal::SortMismatch {
-                ref synthesised,
-                ref expected,
-                ..
+    let bounded = |nodes: &[SupportedNode]| {
+        for node in nodes {
+            let (ContentNode::ValueLift { ref target, .. }
+            | ContentNode::TypeLift { ref target, .. }
+            | ContentNode::Element { ref target, .. }
+            | ContentNode::ComputationElement { ref target, .. }
+            | ContentNode::Universe {
+                level: ref target, ..
+            }) = *node.former()
+            else {
+                continue;
+            };
+            for (_, offset) in target.atoms() {
+                if u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET {
+                    return Err(CodecError::LevelOffsetTooLarge { offset });
+                }
             }
-            | Refusal::LevelMismatch {
-                ref synthesised,
-                ref expected,
-                ..
-            }
-            | Refusal::FamilyArgumentClassifier {
-                ref synthesised,
-                ref expected,
-                ..
-            } => [Some(synthesised), Some(expected)],
-            Refusal::DataFieldLevel {
-                kind: ref found, ..
-            }
-            | Refusal::RepresentationAboveKind {
-                kind: ref found, ..
-            }
-            | Refusal::MissingRecordField {
-                expected: ref found,
-                ..
-            }
-            | Refusal::SessionMismatch {
-                state: ref found, ..
-            }
-            | Refusal::Linearity {
-                defect:
-                    Linearity::Residue {
-                        state: ref found, ..
-                    },
-                ..
-            }
-            | Refusal::StaticClassifierExpected { ref found, .. } => [Some(found), None],
-            Refusal::ShapeMismatch {
-                ref found,
-                ref unfolded,
-                ..
-            } => [Some(found), Some(unfolded)],
-            Refusal::DependentBind {
-                ref synthesised, ..
-            } => [Some(synthesised), None],
-            Refusal::Located {
-                defect:
-                    Located::Immobile {
-                        ref ty, ref former, ..
-                    },
-                ..
-            } => [Some(ty), Some(former)],
-            Refusal::Located {
-                defect:
-                    Located::MarkUnfounded { ref former, .. }
-                    | Located::NotAHandle { found: ref former },
-                ..
-            } => [Some(former), None],
-            Refusal::NotADataType(_)
-            | Refusal::DataKindNotUniverse(_)
-            | Refusal::RuleNotPresentable { .. }
-            | Refusal::RuleNotRespected { .. }
-            | Refusal::NotApart { .. }
-            | Refusal::LoopNotRespected { .. }
-            | Refusal::LoopUndecided { .. }
-            | Refusal::DataArgumentArity(_)
-            | Refusal::UnknownConstructor { .. }
-            | Refusal::ConstructorArity(_)
-            | Refusal::NonExhaustiveDataCase(_)
-            | Refusal::UndecidedCoverage(_)
-            | Refusal::AbsentRecordField(_)
-            | Refusal::AbsentTupleComponent(_)
-            | Refusal::UnknownOperation { .. }
-            | Refusal::HandlerCoverage { .. }
-            | Refusal::HandlerUnlawful { .. }
-            | Refusal::ShiftWithoutReset { .. }
-            | Refusal::DependentStack { .. }
-            | Refusal::PathCode(_)
-            | Refusal::EndpointMismatch { .. }
-            | Refusal::CompoundEndpoint { .. }
-            | Refusal::FunextUnsupported { .. }
-            | Refusal::PointwiseDistinct { .. }
-            | Refusal::EquivUnsupported { .. }
-            | Refusal::UncertifiedStratum { .. }
-            | Refusal::OutsideFold { .. }
-            | Refusal::RoundTripDistinct { .. }
-            | Refusal::NotOver { .. }
-            | Refusal::UaUncertified { .. }
-            | Refusal::UaInequivalent { .. }
-            | Refusal::ComposeUncertified { .. }
-            | Refusal::ComposeNotAShape { .. }
-            | Refusal::ComposeDoesNotFill { .. }
-            | Refusal::FillUncertified { .. }
-            | Refusal::NoFiller { .. }
-            | Refusal::GeneratorFamilyUnsupported { .. }
-            | Refusal::NotSynthesisable { .. }
-            | Refusal::UnknownConstant { .. }
-            | Refusal::OutOfFragment { .. }
-            | Refusal::UnboundIndex { .. }
-            | Refusal::BudgetExceeded { .. }
-            | Refusal::DanglingNode { .. }
-            | Refusal::AdmissionOrder
-            | Refusal::MachineInvariant
-            | Refusal::Undecided { .. }
-            | Refusal::FamilyArity { .. }
-            | Refusal::StaticLambdaArgument { .. }
-            | Refusal::NegativeOccurrence(_)
-            | Refusal::NestedOccurrence(_)
-            | Refusal::IndexOccurrence(_)
-            | Refusal::NonUniformOccurrence(_)
-            | Refusal::CrossBlockReference { .. }
-            | Refusal::StageNotBelow { .. }
-            | Refusal::StagesDisagree { .. }
-            | Refusal::StageNotCarried { .. }
-            | Refusal::EffectSignatureConflict { .. }
-            | Refusal::AbstractKindNotUniverse(_)
-            | Refusal::NotAnAbstractType(_)
-            | Refusal::AtomTransport { .. }
-            | Refusal::BridgeAtSealedType { .. }
-            | Refusal::SealSiteRepeated(_)
-            | Refusal::BuiltinRepeated { .. }
-            | Refusal::BuiltinMisplaced(_)
-            | Refusal::BuiltinNotCanonical { .. }
-            | Refusal::UnenclosedRun { .. }
-            | Refusal::ImplicitUnsolved { .. }
-            | Refusal::ModelUnanswered { .. }
-            | Refusal::ModelAmbiguous { .. }
-            | Refusal::TacticRefused { .. }
-            | Refusal::Linearity { .. }
-            | Refusal::CapabilityForged { .. }
-            | Refusal::LiteralAmbiguous { .. }
-            | Refusal::CapabilityAmplified { .. }
-            | Refusal::CapabilityOutsideAuthority { .. }
-            | Refusal::CapabilityEscaped { .. }
-            | Refusal::CapabilityConsumable(_)
-            | Refusal::CapabilityUngranted { .. }
-            | Refusal::FootprintsOverlap { .. }
-            | Refusal::SessionNotEquivalent { .. }
-            | Refusal::SessionNotSubtype { .. }
-            | Refusal::SessionCodeExpected { .. }
-            | Refusal::OpenSessionPayload { .. }
-            | Refusal::UnassertedLaw { .. }
-            | Refusal::UndischargedLaw { .. }
-            | Refusal::NonCovariantMotive { .. }
-            | Refusal::RideUnsupported { .. }
-            | Refusal::RunNotAdmitted { .. }
-            | Refusal::DialogueUnmatched { .. }
-            | Refusal::DialogueInverted { .. }
-            | Refusal::ForwardUnsupported { .. }
-            | Refusal::Boundary { .. }
-            | Refusal::Access { .. }
-            | Refusal::Codata { .. }
-            | Refusal::Located { .. } => [None, None],
-        },
-        Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Suspended => [None, None],
+        }
+        Ok(())
     };
     let support = checkpoint
         .support()
         .iter()
         .map(|answered| answered.answer().nodes());
-    let nodes = core::iter::once(checkpoint.content().nodes())
+    core::iter::once(checkpoint.content().nodes())
         .chain(support)
-        .chain(types.into_iter().flatten().map(TypeContent::nodes))
-        .flatten();
-    for node in nodes {
-        let (ContentNode::ValueLift { ref target, .. }
-        | ContentNode::TypeLift { ref target, .. }
-        | ContentNode::Element { ref target, .. }
-        | ContentNode::ComputationElement { ref target, .. }
-        | ContentNode::Universe {
-            level: ref target, ..
-        }) = *node.former()
-        else {
-            continue;
-        };
-        for (_, offset) in target.atoms() {
-            if u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET {
-                return Err(CodecError::LevelOffsetTooLarge { offset });
-            }
-        }
-    }
-    Ok(())
+        .try_for_each(bounded)?;
+    checkpoint
+        .typing()
+        .each_content(&mut |content| bounded(content.nodes()))
 }
 
 /// The canonical bytes of a checkpoint set.

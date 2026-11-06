@@ -1,0 +1,2 @@
+def twice() -> -F [std.fs.Eff, std.fs.Eff] Integer { pure 1 }
+def apart() -> -F [std.fs.Eff, Partial] Integer { pure 1 }

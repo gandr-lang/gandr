@@ -1,0 +1,6 @@
+module Facts : *{ inner : *{ answer : Integer }, total : Integer } where {
+  module inner : *{ answer : Integer } where {
+    def answer = 1;
+  }
+  def total = inner.answer + 1;
+}

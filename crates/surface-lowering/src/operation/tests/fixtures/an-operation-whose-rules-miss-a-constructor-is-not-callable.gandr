@@ -1,0 +1,6 @@
+data NatOp : Type where {
+  | Zero : NatOp
+  | One : NatOp
+  oper half : (m : NatOp, n : NatOp) --> NatOp;
+  rule : half Zero n ==> n;
+}

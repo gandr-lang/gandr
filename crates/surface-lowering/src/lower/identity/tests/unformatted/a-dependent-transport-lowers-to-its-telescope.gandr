@@ -1,0 +1,9 @@
+def moved(a : Integer, b : Integer, q : Path[.A = Integer](a, b), z0 : Path[.A = Integer](a, a), o : Integer, v : Integer) -> -F Integer {
+  become Path.walk (+U ((y : Integer) -> (z : Path[.A = Integer](a, y)) -> -F Path[.A = Path[.A = Integer](a, y)](z, z))) q z0 o v
+}
+def plain(n : Integer, q : Path[.A = Integer](1, 2), v : Integer) -> -F Integer {
+  become Path.walk (+U (Integer -> Integer -> -F Path[.A = Integer](n, n))) q v v v
+}
+def short(q : Path[.A = Integer](1, 2), v : Integer) -> -F Integer {
+  become Path.walk (+U (Integer -> Integer -> -F Integer)) q v v
+}

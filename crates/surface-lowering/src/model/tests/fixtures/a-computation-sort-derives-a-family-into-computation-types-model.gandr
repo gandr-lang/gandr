@@ -1,0 +1,8 @@
+theory Carrier where {
+  sort C : Type[-];
+  sort T(A : Type) : Type[-];
+  sort V(A : Type) : Type;
+  sort Over(c : C) : Type;
+  oper start : C;
+  oper read : (c : C) --> Integer;
+}

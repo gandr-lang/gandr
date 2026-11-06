@@ -1,0 +1,56 @@
+/// The 2-path `Path.here (Path.step f g1)` along `b`.
+def liftLeft(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path[.A = A](x, y),
+  g1 : Path[.A = A](y, z),
+  g2 : Path[.A = A](y, z),
+  b : Path[.A = Path[.A = A](y, z)](g1, g2)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g2) {
+  Path.walk
+    (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f c)) })
+    b
+    (Path.here (Path.step f g1))
+}
+/// The composite of two lifts.
+def two(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path[.A = A](x, y),
+  g1 : Path[.A = A](y, z),
+  g2 : Path[.A = A](y, z),
+  b : Path[.A = Path[.A = A](y, z)](g1, g2),
+  g3 : Path[.A = A](y, z),
+  c : Path[.A = Path[.A = A](y, z)](g2, g3)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g3) {
+  Path.step (liftLeft A x y z f g1 g2 b) (liftLeft A x y z f g2 g3 c)
+}
+/// `two` then a third lift, against its body then the third lift.
+def unfolded(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path[.A = A](x, y),
+  g1 : Path[.A = A](y, z),
+  g2 : Path[.A = A](y, z),
+  b : Path[.A = Path[.A = A](y, z)](g1, g2),
+  g3 : Path[.A = A](y, z),
+  c : Path[.A = Path[.A = A](y, z)](g2, g3),
+  g4 : Path[.A = A](y, z),
+  d : Path[.A = Path[.A = A](y, z)](g3, g4)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g4)](
+  Path.step (two A x y z f g1 g2 b g3 c) (liftLeft A x y z f g3 g4 d),
+  Path.step
+    (Path.step (liftLeft A x y z f g1 g2 b) (liftLeft A x y z f g2 g3 c))
+    (liftLeft A x y z f g3 g4 d)
+) {
+  Path.here
+    (Path.step
+      (Path.step (liftLeft A x y z f g1 g2 b) (liftLeft A x y z f g2 g3 c))
+      (liftLeft A x y z f g3 g4 d))
+}

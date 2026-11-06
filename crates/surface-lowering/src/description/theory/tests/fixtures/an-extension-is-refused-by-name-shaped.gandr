@@ -1,0 +1,5 @@
+boundary
+Two
+{ p, q };
+  face left = { p };
+  face both = { p, q };

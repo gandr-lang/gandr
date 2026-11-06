@@ -1,0 +1,15 @@
+def a() -> Integer {
+  return 1 ^ 2
+}
+
+def b() -> Integer {
+  return a ()
+}
+
+def c() -> Integer {
+  return 1
+}
+
+def d() -> Integer {
+  return c ()
+}

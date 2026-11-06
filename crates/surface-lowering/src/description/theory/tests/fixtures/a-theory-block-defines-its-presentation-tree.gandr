@@ -1,0 +1,2 @@
+theory Nat where { sort Nat : Type; oper add : (Nat, Nat) --> Nat; }
+theory Pointed where { sort One : Type; oper pt : () --> (p : One); }

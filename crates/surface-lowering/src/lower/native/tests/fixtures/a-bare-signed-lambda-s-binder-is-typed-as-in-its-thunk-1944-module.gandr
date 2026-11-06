@@ -1,0 +1,10 @@
+data Empty : Type where {}
+@[ checks ]
+def aliased : Empty -> Integer;
+def aliased = fun (x) { match x {} };
+@[ checks ]
+def bare : +U (Empty -> -F Integer);
+def bare = fun (x) { match x {} };
+@[ checks ]
+def stated : +U (Empty -> -F Integer);
+def stated = fun (x) { match x -> -F Integer {} };

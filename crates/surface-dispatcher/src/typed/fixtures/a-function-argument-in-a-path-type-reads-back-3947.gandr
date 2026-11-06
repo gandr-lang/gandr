@@ -1,0 +1,26 @@
+def first(b : Type, w : *{x : b, y : b}) -> b {
+  match w {
+    | *{.x = u, .y = v} => u
+  }
+}
+
+def pass(
+  b : Type,
+  s : *{x : b, y : b} -> b,
+  e : Path[.A = *{x : b, y : b} -> b](s, s)
+) -> Path[.A = *{x : b, y : b} -> b](s, s) {
+  e
+}
+
+def user(
+  b : Type,
+  e : Path[.A = *{x : b, y : b} -> b](
+    thunk { fun (w) { first b w } },
+    thunk { fun (w) { first b w } }
+  )
+) -> Path[.A = *{x : b, y : b} -> b](
+  thunk { fun (w) { first b w } },
+  thunk { fun (w) { first b w } }
+) {
+  pass b (fun (w) { first b w }) e
+}

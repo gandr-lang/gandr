@@ -2174,6 +2174,65 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
     }
 }
 
+/// A checkpoint the encoder accepts reads back: a refusal whose type holds a
+/// level the decoder caps is refused when it is written, whichever refusal
+/// holds the type (#4451).
+#[test]
+fn every_refusal_holding_a_capped_level_is_refused_when_written_4451()
+{
+    let mut level = super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(0_u32)));
+    for _ in 0 .. super::MAX_DECODED_LEVEL_OFFSET {
+        level = level.succ().expect("representable offset");
+    }
+    let capped = || {
+        crate::fixture::type_content(&[ContentNode::Universe {
+            sort: super::TypeSort::Ground(super::GroundSort::Value),
+            level: level.clone(),
+        }])
+    };
+    for refusal in every_refusal_holding(&capped) {
+        let content = crate::fixture::item_content(
+            Reference::Unoccupied,
+            &crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(signature::Absent::Unsigned),
+                body: Maybe::Present(NodeIndex::from(0_usize)),
+                laws: Vec::new(),
+                rules: Vec::new(),
+                stages: Vec::new(),
+                supplies: Vec::new(),
+                models: Vec::new(),
+            },
+            &[ContentNode::Tuple(Vec::new())],
+        );
+        let item = ItemCheckpoint::new(
+            content,
+            Footprint::from_parts(
+                BTreeSet::new(),
+                BTreeSet::new(),
+                Opacity::Transparent,
+                HoleMark::Filled,
+            ),
+            Vec::new(),
+            Typing::Refused(refusal.clone()),
+        );
+        let checkpoints = Checkpoints::new(CheckBudget::DEFAULT, vec![item]);
+        match encode_checkpoints(&checkpoints) {
+            Ok(bytes) => assert_eq!(
+                decode_checkpoints(Bytes(bytes.as_ref())),
+                Ok(checkpoints),
+                "{refusal:?} reads back as it was written"
+            ),
+            Err(error) => assert_eq!(
+                error,
+                CodecError::LevelOffsetTooLarge {
+                    offset: super::LevelOffset::from(super::MAX_DECODED_LEVEL_OFFSET)
+                },
+                "{refusal:?} is refused for its level"
+            ),
+        }
+    }
+}
+
 #[test]
 fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
 {
@@ -2714,6 +2773,15 @@ fn an_indexed_family_round_trips_its_indices()
 /// trivial.
 fn every_refusal() -> Vec<Refusal>
 {
+    every_refusal_holding(&|| crate::fixture::type_content(&[ContentNode::Product(Vec::new())]))
+}
+
+/// [`every_refusal`], each type a refusal holds made by `ty`.
+///
+/// # Specification
+/// trivial.
+fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
+{
     use gandr_core_checker::ComponentOrdinal;
     use gandr_core_checker::LoopRespect;
     use gandr_core_checker::SealSite;
@@ -2745,7 +2813,6 @@ fn every_refusal() -> Vec<Refusal>
 
     let at = Site::Node(NodeIndex::from(3_usize));
     let other = Site::Node(NodeIndex::from(5_usize));
-    let ty = || crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     let reference = Reference::Item {
         key: ItemKey::from([1].as_slice()),
         occurrence: Occurrence::from(0_usize),

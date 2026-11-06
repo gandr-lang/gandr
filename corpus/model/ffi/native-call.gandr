@@ -1,10 +1,12 @@
-// A foreign call: an extern block binds a C library's functions under an
-// alias, and a run calls them as effects at the host seam. The
-// lowering does not reach the extern block yet.
-//
-// - see: #327 — `gandr_test_add`, `measured`
-// - see: #1106 — `measured`
-
+//! `native-call` models host-seam calls to the `testlib` C library.
+//!
+//! The `testlib` alias names its adder and string-length functions.
+//! The FFI twins refuse an interior NUL and a call with too few arguments.
+//!
+//! The current lowering refuses the `extern` block and its projection expression.
+//!
+//! - see: #327 — `gandr_test_add`, `measured`
+//! - see: #1106 — `measured`
 /// The test library's adder and string length.
 @[ refuses("OutOfFragment.extern_block") ]
 extern "c" from "./testlib" as testlib {
@@ -12,8 +14,7 @@ extern "c" from "./testlib" as testlib {
   def gandr_test_strlen(s : CStr) -> u64;
 }
 
-/// Twenty-one added to itself and a string measured; the lowering reads no
-/// projection yet, and `testlib` is the extern block's.
+/// `measured` names the adder at twenty-one and the string-length call through `testlib` before the current lowering reaches their projections.
 @[ refuses("OutOfFragment.projection_expression") ]
 def measured() -> -F (i64 * i64) =
   let doubled = testlib.gandr_test_add 21i64 21i64

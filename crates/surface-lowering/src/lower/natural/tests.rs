@@ -112,11 +112,8 @@ fn a_numeral_at_nat_is_its_binary_constructor_term_3287()
     // binary digits spell, the lowest outermost: zero is `Zero`, five is one,
     // zero, one read from the outside in, and two to the thirty-first is
     // thirty-one doublings of one. Each checks at `Nat`.
-    let source = "\
-def zero = (0 : Nat) ;
-def five = (5 : Nat) ;
-def large = (2147483648 : Nat) ;
-";
+    let source =
+        include_str!("tests/fixtures/a-numeral-at-nat-is-its-binary-constructor-term-3287.gandr");
     let (text, unit) = crate::prelude::lay(SourceText::from(source), &Unit::single()).unwrap();
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
@@ -140,10 +137,8 @@ fn a_numeral_at_a_source_s_own_nat_stays_an_integer_3287()
 {
     // A source's own `Nat` shadows the prelude's where the annotation is
     // written, so the numeral stays the integer its lexeme is.
-    let source = "\
-data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-def five = (5 : Nat) ;
-";
+    let source =
+        include_str!("tests/fixtures/a-numeral-at-a-source-s-own-nat-stays-an-integer-3287.gandr");
     let (text, unit) = crate::prelude::lay(SourceText::from(source), &Unit::single()).unwrap();
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);

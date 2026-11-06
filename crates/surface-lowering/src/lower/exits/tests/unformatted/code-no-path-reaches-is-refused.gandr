@@ -1,0 +1,3 @@
+{NAT}def after(n : Nat) -> -F Nat {{ let m = match n {{ | Zero => return n | Succ(p) => return p }} ; let k = m ; return k }}
+def last(n : Nat) -> -F Nat {{ let m = match n {{ | Zero => return n | Succ(p) => return p }} ; return m }}
+def nested(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => {{ let q = become pure p ; return Succ q }} }} }}

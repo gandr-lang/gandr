@@ -1,0 +1,6 @@
+/// See [M], [Red] and [x].
+def a = 1;
+module M where { def x = 1; }
+data Color : Type where { | Red : Color }
+/// Not [gone].
+def b = 2;

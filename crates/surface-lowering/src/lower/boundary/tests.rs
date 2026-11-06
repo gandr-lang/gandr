@@ -31,17 +31,7 @@ use crate::unit::UnitSource;
 
 /// The data a boundary check builds, declared as `std.boundary` and
 /// `std.layout` declare them, with one row.
-const DATA: &str = concat!(
-    "data Scalar : Type where { | U32 : Scalar | U64 : Scalar | I32 : Scalar | I64 : Scalar }\n",
-    "data Code : Type where { | Plain : (s : Scalar) --> Code }\n",
-    "data Coded : Type where { | NoCoded : Coded | Coded : (name : String, c : Code, rest : Coded) --> Coded }\n",
-    "data Signature : Type where { | Signature : (params : Coded, result : Code) --> Signature }\n",
-    "data Signatures : Type where { | NoSignature : Signatures | Member : (s : Signature, rest : Signatures) --> Signatures }\n",
-    "data Row : Type where { | Row : (result : Code) --> Row }\n",
-    "data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }\n",
-    "data Admission : Type where { | Admitted : Admission }\n",
-    "def addRow : Row = Row (Plain U32);\n",
-);
+const DATA: &str = include_str!("tests/unformatted/data.gandr");
 
 /// The call a boundary check makes.
 const ADMIT: &str = "def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }\n";
@@ -221,17 +211,37 @@ fn a_check_naming_no_admission_is_refused_at_its_payload_2901()
         "extern \"rust\" from \"boundary\" as Boundary { def add(x : u32, n : u32) -> u32; }\n";
     let cases: [(String, &str, Option<&str>); 3] = [
         (
-            format!("{DATA}@[ boundary(addRow) ]\n{block}"),
+            format!(
+                include_str!(
+                    "tests/unformatted/a-check-naming-no-admission-is-refused-at-its-payload-2901-1.gandr"
+                ),
+                DATA = DATA,
+                block = block
+            ),
             "addRow",
             Some("admitBlock"),
         ),
         (
-            format!("{DATA}{ADMIT}@[ boundary(nowhere) ]\n{block}"),
+            format!(
+                include_str!(
+                    "tests/unformatted/a-check-naming-no-admission-is-refused-at-its-payload-2901-2.gandr"
+                ),
+                ADMIT = ADMIT,
+                DATA = DATA,
+                block = block
+            ),
             "nowhere",
             Some("nowhere"),
         ),
         (
-            format!("{DATA}{ADMIT}@[ boundary(\"addRow\") ]\n{block}"),
+            format!(
+                include_str!(
+                    "tests/unformatted/a-check-naming-no-admission-is-refused-at-its-payload-2901-3.gandr"
+                ),
+                ADMIT = ADMIT,
+                DATA = DATA,
+                block = block
+            ),
             "\"addRow\"",
             None,
         ),
@@ -272,29 +282,14 @@ fn a_check_reads_its_names_where_the_imports_reach_them_4698()
 {
     let layout = "pub data Scalar : Type where { | U32 : Scalar | U64 : Scalar | I32 : Scalar | I64 \
                   : Scalar }\n";
-    let boundary = concat!(
-        "import \"./layout.gandr\" ;\n",
-        "pub data Code : Type where { | Plain : (s : Scalar) --> Code }\n",
-        "pub data Coded : Type where { | NoCoded : Coded | Coded : (name : String, c : Code, rest \
-         : Coded) --> Coded }\n",
-        "pub data Signature : Type where { | Signature : (params : Coded, result : Code) --> \
-         Signature }\n",
-        "pub data Signatures : Type where { | NoSignature : Signatures | Member : (s : Signature, \
-         rest : Signatures) --> Signatures }\n",
-        "pub data Row : Type where { | Row : (result : Code) --> Row }\n",
-        "pub data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }\n",
-        "pub data Admission : Type where { | Admitted : Admission }\n",
-        "pub def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }\n",
+    let boundary = include_str!(
+        "tests/fixtures/a-check-reads-its-names-where-the-imports-reach-them-4698-boundary.gandr"
     );
-    let rows = concat!(
-        "import \"./boundary.gandr\" (Row, Plain) ;\n",
-        "import \"./layout.gandr\" (U32) ;\n",
-        "pub def addRow : Row = Row(Plain(U32));\n",
+    let rows = include_str!(
+        "tests/fixtures/a-check-reads-its-names-where-the-imports-reach-them-4698-rows.gandr"
     );
-    let block = concat!(
-        "import \"./rows.gandr\" (addRow) ;\n",
-        "@[ boundary(addRow) ]\n",
-        "extern \"rust\" from \"boundary\" as Boundary { def add(x : u32, n : u64) -> u32; }\n",
+    let block = include_str!(
+        "tests/fixtures/a-check-reads-its-names-where-the-imports-reach-them-4698-block.gandr"
     );
     let on = |source: usize| ImportTarget::Source(SourceIndex::from(source));
     let mut text = String::new();

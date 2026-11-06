@@ -1,0 +1,3 @@
+module Reassociating(S : Model(Semi)) where {
+  def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path[.A = S.M](S.mul x (S.mul y z), S.mul (S.mul x y) z) { Path.back (S.assoc x y z) }
+}

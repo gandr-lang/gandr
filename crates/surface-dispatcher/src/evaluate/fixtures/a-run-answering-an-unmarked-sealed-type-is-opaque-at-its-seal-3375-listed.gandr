@@ -1,0 +1,19 @@
+import std.list (List);
+pub module Secret :> *{ type T, seal : String -> T } where {
+  type T = String;
+  def seal(text : String) -> String { text }
+}
+pub module Counter :> *{ type T, zero : T } where {
+  type T = Integer;
+  def zero = 0;
+}
+pub module Seat :> *{ mobile type Report, progress : Report } where {
+  type Report = String;
+  def progress = "progress";
+}
+def returned() -> Secret.T { Secret.seal ("x") }
+def listed() -> List(Secret.T) {
+  let s = Secret.seal ("z");
+  pure #[s]
+}
+def reported() -> Seat.Report { pure Seat.progress }

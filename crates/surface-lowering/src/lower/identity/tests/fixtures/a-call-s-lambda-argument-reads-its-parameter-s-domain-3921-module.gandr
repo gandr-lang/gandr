@@ -1,0 +1,46 @@
+def applyPath(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  F : Path[.A = A](x, y) -> Path[.A = A](x, z),
+  p : Path[.A = A](x, y)
+) -> Path[.A = A](x, z) {
+  F p
+}
+
+def dependentThen(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  g : Path[.A = A](y, z),
+  p : Path[.A = A](x, y)
+) -> Path[.A = A](x, z) {
+  applyPath A x y z (fun (q) { Path.step q g }) p
+}
+
+def statedThen(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  g : Path[.A = A](y, z),
+  p : Path[.A = A](x, y)
+) -> Path[.A = A](x, z) {
+  applyPath A x y z (fun (q : Path[.A = A](x, y)) { Path.step q g }) p
+}
+
+def applyBack(
+  b : Type,
+  u : b,
+  v : b,
+  f : Path[.A = b](u, v) -> Path[.A = b](v, u),
+  p : Path[.A = b](u, v)
+) -> Path[.A = b](v, u) {
+  f p
+}
+
+def reversed(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](y, x) {
+  applyBack A x y (fun (q) { Path.back q }) p
+}

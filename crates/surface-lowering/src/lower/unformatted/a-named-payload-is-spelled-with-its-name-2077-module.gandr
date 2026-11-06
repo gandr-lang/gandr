@@ -1,0 +1,3 @@
+@[ decomposes(primes  =
+ 2) ]
+def a : Integer ;

@@ -1,0 +1,12 @@
+theory TwoCells where {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  sort Two(src : Hom(x, y), tgt : Hom(x, y)) : Type;
+  oper o : () --> Ob;
+  oper e : () --> Hom(o(), o());
+  oper alpha : () --> Two(e(), e());
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  oper vcomp : (s : Two(f, g), t : Two(g, k)) --> Two(f, k);
+  oper whiskerR : (s : Two(f, g), h : Hom(b, c)) --> Two(comp(f, h), comp(g, h));
+  rule vassoc : vcomp (vcomp s t) u ==> vcomp s (vcomp t u);
+}

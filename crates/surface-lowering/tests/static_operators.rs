@@ -60,14 +60,7 @@ use quenchant_shape::shape::Maybe;
 ///   are owed, and the instantiated and explicitly expanded types export equal
 ///   content digests.
 /// - witness: `tests::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
-const EXPLICIT: &str = "\
-        def raw_rel_monad : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Type[+, 0] ;
-        def raw_rel_monad = fun (T) { fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } } ;
-        def unit_and_bind : raw_rel_monad(fun (X) { -F (X * X) }, Integer, Integer) ;
-        def unit_and_bind_spelled :
-          (Integer -> Integer * Integer)
-          * ((+U (-F (Integer * Integer)), Integer -> Integer * Integer) -> Integer * Integer) ;
-    ";
+const EXPLICIT: &str = include_str!("static_operators/fixtures/explicit.gandr");
 
 /// The same witness with the sort and level defaults left off.
 ///
@@ -86,14 +79,7 @@ const EXPLICIT: &str = "\
 /// - hypothesis: L2 on the paired fixtures only — explicit and elided spellings
 ///   have identical normalized verdict and exported-digest views.
 /// - witness: `tests::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
-const ELIDED: &str = "\
-        def raw_rel_monad : (Type -> Type[-]) -> Type -> Type -> Type ;
-        def raw_rel_monad = fun (T) { fun (A) { fun (B) { type(+U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B))) } } } ;
-        def unit_and_bind : raw_rel_monad(fun (X) { -F (X * X) }, Integer, Integer) ;
-        def unit_and_bind_spelled :
-          (Integer -> Integer * Integer)
-          * ((+U (-F (Integer * Integer)), Integer -> Integer * Integer) -> Integer * Integer) ;
-    ";
+const ELIDED: &str = include_str!("static_operators/fixtures/elided.gandr");
 
 /// The witness's two sort errors: the carrier `T(A)`, a computation type,
 /// standing bare in an eager product and under a returner, where a value
@@ -114,12 +100,7 @@ const ELIDED: &str = "\
 /// - hypothesis: L3 — the product and returner contexts independently expose
 ///   the expected and synthesized sorts and levels, not just any refusal.
 /// - witness: `tests::static_operators::a_negative_carrier_where_a_value_type_is_read_names_both_universes`
-const SORT_ERRORS: &str = "\
-        def in_a_product : (Type -> Type[-]) -> Type -> Type ;
-        def in_a_product = fun (T) { fun (A) { type(T(A) * A) } } ;
-        def under_a_returner : (Type -> Type[-]) -> Type -> Type[-] ;
-        def under_a_returner = fun (T) { fun (A) { -F (T(A)) } } ;
-    ";
+const SORT_ERRORS: &str = include_str!("static_operators/fixtures/sort-errors.gandr");
 
 /// What one spelling elaborates to: the checker's verdict on each
 /// declaration, and each exported declaration's name with the content

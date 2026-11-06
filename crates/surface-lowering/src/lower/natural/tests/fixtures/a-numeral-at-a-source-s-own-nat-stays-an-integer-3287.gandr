@@ -1,0 +1,2 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+def five = (5 : Nat);

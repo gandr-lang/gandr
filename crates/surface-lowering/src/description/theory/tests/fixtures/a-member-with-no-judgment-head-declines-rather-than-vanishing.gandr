@@ -1,0 +1,4 @@
+theory Broken where {
+  sort Nat : Type;
+  rule ;
+}

@@ -1,0 +1,4 @@
+@[ checks ]
+data One : Type where {
+  | Pt : One
+}

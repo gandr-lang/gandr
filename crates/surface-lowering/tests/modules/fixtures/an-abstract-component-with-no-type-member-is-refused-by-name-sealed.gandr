@@ -1,0 +1,2 @@
+module M :> *{ type T, value : T } where { def value = 1; }
+def after = 2;

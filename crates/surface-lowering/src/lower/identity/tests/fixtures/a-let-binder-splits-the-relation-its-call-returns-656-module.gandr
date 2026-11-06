@@ -1,0 +1,16 @@
+def kept(i : Bool ≅ Integer) -> -F (Bool ≅ Integer) { return i }
+def made(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) {
+  match i { | *{t, k, s, r} => return *{t, *{*{k, s}, *{k, r}}} }
+}
+def split(i : Bool ≅ Integer) -> -F (Bool ≃ Integer) {
+  let j = kept i;
+  match j { | *{t, k, s, r} => return *{t, *{*{k, s}, *{k, r}}} }
+}
+def forwardOf(i : Bool ≅ Integer) -> -F +U (Bool -> -F Integer) {
+  let e = made i;
+  match e { | *{t, *{g, s}, *{h, r}} => return t }
+}
+def backOf(i : Bool ≅ Integer) -> -F +U (Integer -> -F Bool) {
+  let j = kept i;
+  match j { | *{.from = k} => return k }
+}

@@ -852,20 +852,9 @@ fn no_subject_declares_a_name_twice()
 #[test]
 fn a_reads_claim_settles_against_the_carried_footprint_2520()
 {
-    let text = "data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-data Flag : Type where { | On : Flag | Off : Flag }
-@[ reads(*{Flag, Nat}) ]
-data Either : Type where { | Count : (m : Nat) --> Either | Mark : (f : Flag) --> Either }
-@[ reads(*{Either, Nat}) ]
-def side(n : Nat, e : Either) -> -F Nat { match e -> -F Nat { | Count(_m) => n | Mark(_f) => n } }
-@[ reads(*{side, Nat, Flag, Either}) ]
-def marked() -> -F Nat { side (Succ Zero) (Mark On) }
-def answer : Integer ;
-@[ reads(()) ]
-def answer = 42 ;
-@[ reads(Either) ]
-def short(x : Nat) -> -F Nat { return x }
-";
+    let text = include_str!(
+        "corpus/fixtures/a-reads-claim-settles-against-the-carried-footprint-2520.gandr"
+    );
     let grammar = built_in().expect("the built-in grammar builds");
     let mut lowerings = LoweringCount::default();
     let Lowered::Module { module, arena } =

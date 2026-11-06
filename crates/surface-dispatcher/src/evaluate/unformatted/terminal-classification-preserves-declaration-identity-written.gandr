@@ -1,0 +1,5 @@
+def answer = 42 ; def later : Integer ;
+def bad : Integer ; def bad = "text" ;
+def law(p : Path[.A = Integer](1, 1)) -> -F Path[.A = Integer](1, 1) {
+  Path.walk (fun (y) { type(Path[.A = Integer](y, y)) }) (Path.step p p) (Path.here 1)
+}

@@ -1,0 +1,4 @@
+def in_a_product : (Type -> Type[-]) -> Type -> Type;
+def in_a_product = fun (T) { fun (A) { type(T(A) * A) } };
+def under_a_returner : (Type -> Type[-]) -> Type -> Type[-];
+def under_a_returner = fun (T) { fun (A) { -F (T(A)) } };

@@ -1,0 +1,3 @@
+{PRELUDE}def each(xs : List(Nat), n : Nat) -> -F Nat {{ for x in xs {{ tick x }} ; return n }}
+def skipped(xs : List(Nat)) -> -F Nat {{ for x in xs {{ match x {{ | Zero => continue | Succ(p) => return p }} }} ; return Zero }}
+def inner(xs : List(Nat)) -> -F [Partial] Unit {{ for x in xs {{ loop {{ continue }} }} }}

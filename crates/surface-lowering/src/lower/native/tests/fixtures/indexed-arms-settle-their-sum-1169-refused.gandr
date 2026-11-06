@@ -1,0 +1,9 @@
+def wild(c : Integer) -> -F Integer {
+  let b = c < 128;
+  match b { | +{.0 = u} => return 1 | _ => return 2 }
+}
+def gap(c : Integer) -> -F Integer { let b = c < 128; match b { | +{.1 = u} => return 1 } }
+def nested(c : Integer) -> -F Integer {
+  let b = c < 128;
+  match *{b, c} { | *{+{.0 = u}, x} => return 1 | *{+{.1 = u}, x} => return 2 }
+}

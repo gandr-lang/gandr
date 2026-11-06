@@ -1,0 +1,4 @@
+def seat_left_open(n : Integer) -> -F Unit {
+  let desk = fork (seat : end) { pure *{} };
+  close(desk)
+}

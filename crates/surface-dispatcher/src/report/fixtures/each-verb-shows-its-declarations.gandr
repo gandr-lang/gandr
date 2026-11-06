@@ -1,0 +1,5 @@
+@[ checks ]
+def fixture = 1;
+def plain = 2;
+def hole : Integer;
+def broken = missing;

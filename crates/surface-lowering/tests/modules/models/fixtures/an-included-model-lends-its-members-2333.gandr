@@ -1,0 +1,17 @@
+theory Pointed where {
+  sort C : Type;
+  oper point : C;
+}
+theory Doubly where {
+  include Pointed;
+  oper other : C;
+}
+module Seven : Model(Pointed) with sort C = Integer where {
+  def point = 7;
+}
+module Pair : Model(Doubly) with sort C = Integer where {
+  include Seven;
+  def other = 8;
+}
+def read : () -> Integer;
+def read = thunk { return Pair.point };

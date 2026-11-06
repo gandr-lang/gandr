@@ -1,0 +1,8 @@
+theory Pointed where {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  oper zero : Ob;
+  oper one : () --> Ob;
+  oper base : Integer;
+  oper loop : Hom(a, a);
+}

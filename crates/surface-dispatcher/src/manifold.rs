@@ -1637,21 +1637,24 @@ impl Offering<'_>
         };
         let modules: BTreeSet<&str> = bound.iter().map(|label| label.module).collect();
         let mut written = format!(
-            "{program}\nimport \"{address}\" as {SITE_ALIAS} ({modules});\n",
+            include_str!("manifold/unformatted/modelled-written.gandr"),
             program = self.program,
             modules = modules.into_iter().collect::<Vec<_>>().join(", "),
+            SITE_ALIAS = SITE_ALIAS,
+            address = address,
         );
         let mut wrote = Vec::with_capacity(bound.len());
         for label in bound {
             let start = ByteOffset::from(written.len());
             let _written = write!(
                 written,
-                "module {REQUIRED}{at}(M : Model({interface}){manifest}) where {{}}\nmodule \
-                 {OFFERED}{at} = {REQUIRED}{at}({module});\n",
+                include_str!("manifold/unformatted/modelled-written-label.gandr"),
                 at = label.position.0,
                 interface = label.entry.interface,
                 manifest = label.entry.manifest,
                 module = label.module,
+                OFFERED = OFFERED,
+                REQUIRED = REQUIRED,
             );
             wrote.push(Wrote {
                 position: label.position,

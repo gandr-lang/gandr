@@ -1200,7 +1200,9 @@ fn a_session_entry_reads_the_select_and_the_offer()
         "over value types the braces are the sum"
     );
     let module = lowered(
-        "def choose : +{ok : ! Integer . end} ;\ndef menu : &{get : ! Integer . end, put : ? Integer . end} ;\ndef nested : +{ok : &{go : end}} ;",
+        include_str!(
+            "tests/unformatted/a-session-entry-reads-the-select-and-the-offer-module.gandr"
+        ),
         &mut arena,
     );
     for (name, select) in [("choose", true), ("menu", false), ("nested", true)] {
@@ -1309,9 +1311,9 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def stated(n : Integer) -> &{get : -F Integer, put : -F String} { &{.put => return \
-         \"s\", .get => return n} }\ndef positional(n : Integer) -> &{-F Integer, -F String} { \
-         &{.1 => return \"s\", .0 => return n} }\n",
+        include_str!(
+            "tests/unformatted/a-copattern-block-orders-its-clauses-by-its-answer-module-1.gandr"
+        ),
         &mut arena,
     );
     let with = |name: &str| -> Vec<String> {
@@ -1359,8 +1361,9 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
     );
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def one(n : Integer) -> &{get : -F Integer} { &{.get => return n} }\ndef none(n : \
-         Integer) -> &{} { &{} }\n",
+        include_str!(
+            "tests/unformatted/a-copattern-block-orders-its-clauses-by-its-answer-module-2.gandr"
+        ),
         &mut arena,
     );
     let lazy = |name: &str| -> Vec<String> {
@@ -1415,10 +1418,9 @@ fn labelled_forms_take_their_order_from_the_definition_s_signature_4376()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def err : +{ok : Integer, err : String} ;\ndef err = +{.err = \"no\"} ;\ndef swapped : \
-         +U &{name : -F String, size : -F Integer} ;\ndef swapped = &{.size => 1, .name => \
-         \"unit\"} ;\ndef positional : +U &{-F String, -F Integer} ;\ndef positional = &{.0 => \
-         \"unit\", .1 => 1} ;\n",
+        include_str!(
+            "tests/fixtures/labelled-forms-take-their-order-from-the-definition-s-signature-4376-module.gandr"
+        ),
         &mut arena,
     );
 
@@ -1432,7 +1434,9 @@ fn labelled_forms_take_their_order_from_the_definition_s_signature_4376()
         body(&arena, &module, "positional"),
         "labelled clauses take the order of the lazy record the signature states"
     );
-    let source = "def absent : +{ok : Integer} ;\ndef absent = +{.gone = 1} ;\n";
+    let source = include_str!(
+        "tests/fixtures/labelled-forms-take-their-order-from-the-definition-s-signature-4376.gandr"
+    );
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("gone")),
         "a label the signed sum lacks is unresolved"
@@ -1445,8 +1449,10 @@ fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
     let pair = "codata Duo : Type[-] where { fst : Integer; snd : String; }\n";
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{pair}def ordered(n : Integer) -> Duo {{ &{{.fst => return n, .snd => return \"s\"}} \
-         }}\ndef swapped(n : Integer) -> Duo {{ &{{.snd => return \"s\", .fst => return n}} }}\n"
+        include_str!(
+            "tests/unformatted/a-copattern-block-orders-its-clauses-by-its-codata-answer-2.gandr"
+        ),
+        pair = pair
     );
     let module = lowered(source.as_str(), &mut arena);
     let with = |name: &str| -> Vec<String> {
@@ -1482,10 +1488,9 @@ fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
         "a label the codata family does not observe is unresolved: {:?}",
         refused(source.as_str())
     );
-    let source = String::from(
-        "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef short(n : Integer) \
-         -> Trio { &{.a => return n, .b => return n} }\n",
-    );
+    let source = String::from(include_str!(
+        "tests/unformatted/a-copattern-block-orders-its-clauses-by-its-codata-answer-1.gandr"
+    ));
     assert!(
         matches!(refused(source.as_str()), LoweringRefusal::MalformedForm {
             fault: FormFault::MissingOperand,
@@ -1517,11 +1522,7 @@ fn an_observation_projects_its_entry()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def first(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> -F Integer { \
-         become m.a }\ndef middle(m : +U &{a : -F Integer, b : -F Integer, c : -F Integer}) -> \
-         -F Integer { become m.b }\ndef last(m : +U &{a : -F Integer, b : -F Integer, c : -F \
-         Integer}) -> -F Integer { become m.c }\ndef only(m : +U &{a : -F Integer}) -> -F \
-         Integer { become m.a }\n",
+        include_str!("tests/fixtures/an-observation-projects-its-entry-module.gandr"),
         &mut arena,
     );
     let observed = |name: &str| -> Vec<String> {
@@ -1564,12 +1565,9 @@ fn an_observation_by_position_projects_its_entry_941()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef labelled(m : +U \
-         &{a : -F Integer, b : -F Integer}) -> -F Integer { become m.b }\ndef placed(m : +U &{a \
-         : -F Integer, b : -F Integer}) -> -F Integer { become m.1 }\ndef chained(m : +U (-F \
-         Integer & -F String & -F Integer)) -> -F Integer { become m.2 }\ndef named(t : +U \
-         Trio) -> -F Integer { become t.b }\ndef counted(t : +U Trio) -> -F Integer { become \
-         t.1 }\n",
+        include_str!(
+            "tests/fixtures/an-observation-by-position-projects-its-entry-941-module.gandr"
+        ),
         &mut arena,
     );
     let observed = |name: &str| -> Vec<String> {
@@ -1621,12 +1619,9 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }\ndef trio(n : Integer) \
-         -> Trio { &{ .a => n, .b => n, .c => n } }\ndef pair(n : Integer) -> &{a : -F Integer, \
-         b : -F Integer} { &{ .a => n, .b => n } }\ndef named() -> -F Integer { (trio 1).b \
-         }\ndef counted() -> -F Integer { (trio 1).1 }\ndef recorded() -> -F Integer { \
-         (pair 1).b }\ndef above() -> -F Bool { (trio 1).c >= 1 }\ndef grouped() -> -F Integer { \
-         (trio 1).b }\n",
+        include_str!(
+            "tests/fixtures/an-observation-off-a-call-projects-the-run-result-1106-module.gandr"
+        ),
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
@@ -1667,8 +1662,8 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
         "an observation off a call stands as an operand: {:?}",
         outcome(&module, "above")
     );
-    let source = "codata Duo : Type[-] where { a : Integer; b : Integer; }\ndef duo() -> Duo { &{ .a => \
-                  1, .b => 2 } }\ndef gone() -> -F Integer { (duo ()).z }\n";
+    let source =
+        include_str!("tests/fixtures/an-observation-off-a-call-projects-the-run-result-1106.gandr");
     assert!(
         matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("z")),
         "a label the callee's family lacks is unresolved: {:?}",
@@ -1686,12 +1681,7 @@ fn a_chain_of_observations_projects_each_link_1106()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(a); }\ndef rec upward(n : \
-         Integer) -> Stream(Integer) { &{ .head => n, .tail => upward[>] (n + 1) } }\ndef \
-         second(s : +U Stream(Integer)) -> -F Integer { s.tail.head }\ndef third() -> -F Integer \
-         { (upward 1).tail.tail.head }\ndef counted() -> -F Integer { (upward 1).1.tail.0 }\ndef \
-         deeper(s : +U Stream(Integer)) -> -F Integer { s.head.tail }\ndef grouped() -> -F Integer \
-         { (upward 1).tail.tail.head }\n",
+        include_str!("tests/fixtures/a-chain-of-observations-projects-each-link-1106-module.gandr"),
         &mut arena,
     );
     // The projections, forces and applications of a body, in its walk's
@@ -1735,10 +1725,9 @@ fn a_telescope_binds_each_entry_in_the_ones_after_it()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def dependent : (a : Type, x : a) -> a ; def mixed : (x : Integer, String) -> Integer ; \
-         def plain : (Integer, String) -> Integer ; def endpoint : (n : Integer) -> Path[.A = Integer](\
-         n, n) ; def tail(n : Integer) -> -F Integer { return n }\ndef spelled : (n : Integer) \
-         -> Integer ;",
+        include_str!(
+            "tests/fixtures/a-telescope-binds-each-entry-in-the-ones-after-it-module.gandr"
+        ),
         &mut arena,
     );
 
@@ -1925,12 +1914,7 @@ fn a_group_of_outputs_is_the_many_value_returner()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def named(m : Integer) -> (q : Integer, r : String) { return m }\ndef unnamed(m : \
-         Integer) -> (Integer, String) { return m }\ndef none(m : Integer) -> () { return m \
-         }\ndef one(m : Integer) -> (q : Integer) { return m }\ndef bare(m : Integer) -> Integer { \
-         return m }\ndef grouped(m : Integer) -> (Integer) { return m }\ndef dependent(m : \
-         Integer) -> (a : Type, x : a) { return m }\ndef explicit(m : Integer) -> -F (Integer, \
-         String) { return m }\ndef signed : +U (Integer -> -F (Integer, String)) ;",
+        include_str!("tests/fixtures/a-group-of-outputs-is-the-many-value-returner-module.gandr"),
         &mut arena,
     );
 
@@ -1994,8 +1978,9 @@ fn a_tuple_ending_a_body_of_outputs_returns_each_member()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def swap(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (n, m) }\ndef \
-         paired(m : Integer, n : Integer) -> Integer * Integer { *{n, m} }",
+        include_str!(
+            "tests/fixtures/a-tuple-ending-a-body-of-outputs-returns-each-member-module.gandr"
+        ),
         &mut arena,
     );
 
@@ -2016,11 +2001,7 @@ fn a_tuple_pattern_binds_each_output_of_a_call()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-         second(a : Integer, b : Integer) -> Integer { let *{q, r} = divmod a b; r }\ndef \
-         first(a : Integer, b : Integer) -> Integer { let *{q, r} = divmod a b; q }\ndef \
-         pair(a : Integer) -> Integer * Integer { *{a, a} }\ndef split(a : Integer) -> Integer { \
-         let *{x, y} = pair a; y }",
+        include_str!("tests/fixtures/a-tuple-pattern-binds-each-output-of-a-call-module.gandr"),
         &mut arena,
     );
 
@@ -2053,8 +2034,7 @@ fn a_tuple_pattern_binds_each_output_of_a_call()
             .any(|token| token.starts_with("bindall")),
         "a call returning a pair is split, not bound output by output"
     );
-    let source = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-                  three(a : Integer) -> Integer { let *{q, r, s} = divmod a a; q }";
+    let source = include_str!("tests/fixtures/a-tuple-pattern-binds-each-output-of-a-call.gandr");
     assert!(
         matches!(
             refused(source),
@@ -2073,9 +2053,9 @@ fn a_tuple_pattern_binds_each_output_of_a_call()
 #[test]
 fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
 {
-    let operation = "data Flag : Type where {\n    | Down : Flag\n    | Up : Flag\n    oper \
-                     swap : (a : Flag, b : Flag) --> (x : Flag, y : Flag);\n    rule : swap a \
-                     b ==> (b, a);\n}\n";
+    let operation = include_str!(
+        "tests/unformatted/a-tuple-pattern-binds-each-output-of-an-operation-4855-operation.gandr"
+    );
     let source = format!(
         "{operation}def second(a : Flag, b : Flag) -> Flag {{ let (x, y) = swap(a, b); y }}\n"
     );
@@ -2120,14 +2100,14 @@ fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
 #[test]
 fn an_operation_s_outputs_are_selected_and_bound_by_label_5147()
 {
-    let operation = "data Flag : Type where {\n    | Down : Flag\n    | Up : Flag\n    oper \
-                     swap : (a : Flag, b : Flag) --> (x : Flag, y : Flag);\n    rule : swap a \
-                     b ==> (b, a);\n}\n";
+    let operation = include_str!(
+        "tests/unformatted/a-tuple-pattern-binds-each-output-of-an-operation-4855-operation.gandr"
+    );
     let source = format!(
-        "{operation}def first(a : Flag, b : Flag) -> Flag {{ (swap a b).x }}\ndef last(a : Flag, \
-         b : Flag) -> Flag {{ (swap a b).y }}\ndef punned(a : Flag, b : Flag) -> Flag {{ let *{{.y, \
-         .x}} = swap a b; y }}\ndef renamed(a : Flag, b : Flag) -> Flag {{ let *{{.y = q, .x = p}} \
-         = swap a b; p }}\n"
+        include_str!(
+            "tests/unformatted/an-operation-s-outputs-are-selected-and-bound-by-label-5147.gandr"
+        ),
+        operation = operation
     );
     let mut arena = CoreArena::new();
     let module = lowered(source.as_str(), &mut arena);
@@ -2183,9 +2163,9 @@ fn a_selected_output_binds_every_output_and_returns_one()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-         half(n : Integer) -> Integer { (divmod n n).q }\ndef rest(n : Integer) -> Integer { \
-         (divmod n n).r }",
+        include_str!(
+            "tests/fixtures/a-selected-output-binds-every-output-and-returns-one-module.gandr"
+        ),
         &mut arena,
     );
 
@@ -2219,10 +2199,7 @@ fn a_plugging_passes_every_output_in_order()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-         recombine(q : Integer, r : Integer) -> Integer { q }\ndef round(n : Integer) -> Integer \
-         { divmod n n |> recombine }\ndef double(n : Integer) -> Integer { n }\ndef single(n : \
-         Integer) -> Integer { double n |> double }",
+        include_str!("tests/fixtures/a-plugging-passes-every-output-in-order-module.gandr"),
         &mut arena,
     );
 
@@ -2260,10 +2237,9 @@ fn a_call_of_outputs_standing_as_one_value_is_their_record()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-         pair(m : Integer, n : Integer) -> (Integer, Integer) { (m, n) }\ndef named(a : Integer) \
-         -> Integer { let r = divmod a a; r.q }\ndef whole(a : Integer) -> Integer { let t = \
-         pair a a; 0 }",
+        include_str!(
+            "tests/fixtures/a-call-of-outputs-standing-as-one-value-is-their-record-module.gandr"
+        ),
         &mut arena,
     );
 
@@ -2286,10 +2262,7 @@ fn a_row_returns_a_group_of_outputs()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def spin(n : Integer) -> [Partial] (q : Integer, r : Integer) { (n, n) }\ndef \
-         explicit(n : Integer) -> -F [Partial] (Integer, Integer) { (n, n) }\ndef caller(n : \
-         Integer) -> [Partial] Integer { let *{q, r} = spin n; q }\ndef none(n : Integer) -> \
-         [Partial] () { () }",
+        include_str!("tests/fixtures/a-row-returns-a-group-of-outputs-module.gandr"),
         &mut arena,
     );
 
@@ -2326,8 +2299,9 @@ fn a_labelled_group_returns_each_value_at_its_output()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (.r = m, .q = n) \
-         }\ndef nothing(a : Integer) -> () { () }",
+        include_str!(
+            "tests/unformatted/a-labelled-group-returns-each-value-at-its-output-module.gandr"
+        ),
         &mut arena,
     );
 
@@ -2365,10 +2339,9 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\ndef \
-         punned(a : Integer, b : Integer) -> Integer { let *{.r, .q} = divmod a b; r }\ndef \
-         renamed(a : Integer, b : Integer) -> Integer { let *{.r = rem, .q = quo} = divmod a b; \
-         quo }",
+        include_str!(
+            "tests/unformatted/a-labelled-pattern-binds-each-output-by-its-label-module.gandr"
+        ),
         &mut arena,
     );
 
@@ -2408,8 +2381,9 @@ fn a_labelled_pattern_binds_each_output_by_its_label()
         "a group is all positional or all labelled: a dotted entry among positional ones is no \
          pattern, {mixed:?}"
     );
-    let record = "def pair(a : Integer) -> Integer * Integer { *{a, a} }\ndef split(a : Integer) -> \
-                  Integer { let *{.x, .y} = pair a; x }";
+    let record = include_str!(
+        "tests/unformatted/a-labelled-pattern-binds-each-output-by-its-label-record.gandr"
+    );
     assert!(
         matches!(refused(record), LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::WrongSort,
@@ -2454,9 +2428,7 @@ fn a_dependent_arrow_binds_a_type_named_binder_2179()
 fn each_label_names_what_it_labels()
 {
     let mut arena = CoreArena::new();
-    let source = "def point : *{n : Integer} ;\ndef pair = *{m = 3} ;\ndef pick : +U ((y : \
-                  Integer) -> -F Integer) ;\ndef dependent : (a : Type, x : a) -> a ;\ndef ring \
-                  : *{k : Integer, w : Path[.A = Integer](k, k)} ;";
+    let source = include_str!("tests/fixtures/each-label-names-what-it-labels.gandr");
     let module = lowered(source, &mut arena);
     let written = |label: &Label| {
         source
@@ -2569,9 +2541,7 @@ fn a_box_returns_a_group_under_a_row_4853()
         );
     }
     let module = lowered(
-        "def divmod : (m : Integer, n : Integer) -> (q : Integer, r : Integer) ;\ndef half(n : \
-         Integer) -> Integer { let *{q, r} = divmod n n; q }\ndef apply(f : (Integer, Integer) -> \
-         (Integer, Integer), x : Integer) -> Integer { let *{a, b} = f x x; b }",
+        include_str!("tests/fixtures/a-box-returns-a-group-under-a-row-4853-module.gandr"),
         &mut arena,
     );
     for name in ["half", "apply"] {
@@ -2591,11 +2561,7 @@ fn a_body_after_equals_is_its_block_4853()
 {
     let mut arena = CoreArena::new();
     let module = lowered(
-        "def braced(n : Integer) -> Integer { n }\ndef equals(n : Integer) -> Integer = n ;\ndef \
-         divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n) ;\ndef half(n : \
-         Integer) -> Integer = (divmod n 2).q ;\ndef stepped(n : Integer) -> (Integer -> Integer) \
-         = fun (k : Integer) { n } ;\ndef steppedT : +U (Integer -> -F (+U (Integer -> -F \
-         Integer))) ;",
+        include_str!("tests/fixtures/a-body-after-equals-is-its-block-4853-module.gandr"),
         &mut arena,
     );
     assert_eq!(

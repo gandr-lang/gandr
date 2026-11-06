@@ -1,0 +1,3 @@
+@[ builtin(irArgs) ]
+def a : Integer;
+def b : Integer;

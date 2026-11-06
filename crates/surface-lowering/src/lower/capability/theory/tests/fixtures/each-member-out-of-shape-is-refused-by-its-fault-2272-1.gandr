@@ -1,0 +1,5 @@
+theory Ix where {
+  sort C : Type;
+  sort V(c : C) : Type;
+  oper get : (k : pi+ (s : C). C) --> C;
+}
