@@ -986,7 +986,9 @@ mod tests
     fn an_uncommented_item_is_refused_by_name()
     {
         let bare = key(Text("bare"), Text("def bare = 1;"));
-        let owed = lines(Text("// what the file shows\n\ndef bare = 1;\n"));
+        let owed = lines(Text(include_str!(
+            "unformatted/blank-line-after-file-comment.gandr"
+        )));
         assert_eq!(
             owed,
             [bare.as_str()],
@@ -996,7 +998,9 @@ mod tests
         let found = findings_of(
             &pbg,
             Text("sample.gandr"),
-            Text("// what the file shows\n\ndef bare = 1;\n"),
+            Text(include_str!(
+                "unformatted/blank-line-after-file-comment.gandr"
+            )),
         )
         .expect("the source commits a tree");
         let refused = discrepancies(&found, Text("")).expect("the ledger reads");
@@ -1013,7 +1017,9 @@ mod tests
         let found = findings_of(
             &pbg,
             Text("sample.gandr"),
-            Text("// what the file shows\n\ndef bare = 1;\n"),
+            Text(include_str!(
+                "unformatted/blank-line-after-file-comment.gandr"
+            )),
         )
         .expect("the source commits a tree");
         let ledger = format!(
@@ -1031,8 +1037,12 @@ mod tests
     fn a_stale_ledger_line_is_refused()
     {
         let pbg = grammar().expect("the built-in grammar builds");
-        let found = findings_of(&pbg, Text("sample.gandr"), Text("// kept\ndef kept = 1;\n"))
-            .expect("the source commits a tree");
+        let found = findings_of(
+            &pbg,
+            Text("sample.gandr"),
+            Text(include_str!("unformatted/commented-item.gandr")),
+        )
+        .expect("the source commits a tree");
         assert!(found.is_empty(), "a commented item owes nothing");
         let gone = key(Text("gone"), Text("def gone = 1;"));
         let refused = discrepancies(&found, Text(&format!("{gone}\n"))).expect("the ledger reads");
@@ -1047,7 +1057,7 @@ mod tests
     #[test]
     fn a_file_without_a_leading_comment_is_refused()
     {
-        let source = Text("def first = 1;\n\n// second\ndef second = 1;\n");
+        let source = Text(include_str!("unformatted/no-leading-comment.gandr"));
         let owed = lines(source);
         assert_eq!(
             owed,
@@ -1074,12 +1084,16 @@ mod tests
     #[test]
     fn a_comment_after_the_attribute_block_does_not_count()
     {
-        let before = lines(Text("// shown\n@[ checks ]\ndef shown = 1;\n"));
+        let before = lines(Text(include_str!(
+            "unformatted/comment-before-attribute.gandr"
+        )));
         assert!(
             before.is_empty(),
             "a comment immediately before the attribute block comments the item"
         );
-        let after = lines(Text("@[ checks ]\n// late\ndef late = 1;\n"));
+        let after = lines(Text(include_str!(
+            "unformatted/comment-after-attribute.gandr"
+        )));
         assert_eq!(
             after,
             [
@@ -1095,29 +1109,26 @@ mod tests
     fn a_body_inherits_its_signatures_comment()
     {
         assert!(
-            lines(Text(
-                "// file\n\n// counted\ndef counted : Integer ;\ndef counted = 1 ;\n"
-            ))
-            .is_empty(),
+            lines(Text(include_str!("unformatted/body-after-signature.gandr"))).is_empty(),
             "a body on the line after its commented signature carries that comment"
         );
         assert_eq!(
-            lines(Text(
-                "// file\n\n// counted\ndef counted : Integer ;\n\ndef counted = 1 ;\n"
-            )),
+            lines(Text(include_str!(
+                "unformatted/body-after-blank-line.gandr"
+            ))),
             [key(Text("counted"), Text("def counted = 1 ;"))],
             "a blank line ends the run, so the body owes its own comment"
         );
         assert_eq!(
-            lines(Text(
-                "// file\n\n// counted\ndef counted : Integer ;\ndef other = 1 ;\n"
-            )),
+            lines(Text(include_str!(
+                "unformatted/other-name-after-signature.gandr"
+            ))),
             [key(Text("other"), Text("def other = 1 ;"))],
             "an item of another name on the next line does not inherit"
         );
-        let mut both = lines(Text(
-            "// file\n\ndef counted : Integer ;\ndef counted = 1 ;\n",
-        ));
+        let mut both = lines(Text(include_str!(
+            "unformatted/uncommented-signature.gandr"
+        )));
         both.sort();
         let mut expected = vec![
             key(Text("counted"), Text("def counted : Integer ;")),
@@ -1135,47 +1146,45 @@ mod tests
     fn the_key_is_the_items_content()
     {
         let bare = key(Text("bare"), Text("def bare = 1;"));
-        let alone = lines(Text("// file\n\ndef bare = 1;\n"));
+        let alone = lines(Text(include_str!("unformatted/bare-alone.gandr")));
         assert_eq!(
             alone,
             [bare.as_str()],
             "the digest is over the item's collapsed text"
         );
-        let moved = lines(Text(
-            "// file\n\n// other\ndef other = 2;\n\ndef bare = 1;\n",
-        ));
+        let moved = lines(Text(include_str!("unformatted/bare-after-other.gandr")));
         assert_eq!(
             moved,
             [bare.as_str()],
             "an edit elsewhere leaves the key alone"
         );
-        let mut reordered = lines(Text("// file\n\ndef second = 2;\n\ndef bare = 1;\n"));
-        let mut ordered = lines(Text("// file\n\ndef bare = 1;\n\ndef second = 2;\n"));
+        let mut reordered = lines(Text(include_str!("unformatted/reordered.gandr")));
+        let mut ordered = lines(Text(include_str!("unformatted/ordered.gandr")));
         reordered.sort();
         ordered.sort();
         assert_eq!(
             reordered, ordered,
             "reordering items leaves every key alone"
         );
-        let respaced = lines(Text("// file\n\ndef   bare\n  =\n 1;\n"));
+        let respaced = lines(Text(include_str!("unformatted/respaced.gandr")));
         assert_eq!(
             respaced,
             [bare.as_str()],
             "whitespace collapses before the digest"
         );
-        let annotated = lines(Text("// file\n\n@[ checks ]\ndef bare = 1;\n"));
+        let annotated = lines(Text(include_str!("unformatted/annotated.gandr")));
         assert_eq!(
             annotated,
             [bare.as_str()],
             "the attribute block is not the item's text"
         );
-        let remarked = lines(Text("// file\n\ndef bare = // one\n 1;\n"));
+        let remarked = lines(Text(include_str!("unformatted/remarked.gandr")));
         assert_eq!(
             remarked,
             [bare.as_str()],
             "a comment inside the item is not its text"
         );
-        let edited = lines(Text("// file\n\ndef bare = 2;\n"));
+        let edited = lines(Text(include_str!("unformatted/edited.gandr")));
         assert_eq!(
             edited,
             [key(Text("bare"), Text("def bare = 2;"))],

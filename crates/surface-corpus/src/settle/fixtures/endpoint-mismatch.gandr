@@ -1,0 +1,11 @@
+theory Idem where {
+  sort T : Type;
+  oper f : (x : T) --> T;
+  rule idem : f (f x) <=> f x;
+}
+module Bad : Model(Idem) where {
+  type T = Bool;
+  def f(x : Bool) -> Bool { match x { | true => false | false => true } }
+  @[ refuses("EndpointMismatch") ]
+  def idem(x : Bool) -> Path[.A = Bool](f (f x), f x) { Path.here (f x) }
+}

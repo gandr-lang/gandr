@@ -2884,9 +2884,7 @@ mod tests
     {
         let report = settled(
             CorpusRoot::Fixture,
-            SourceText::from(
-                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n}\nmodule SameInteger : Model(Same) with sort Carrier = Integer where {\n  def same(a : Integer, b : Integer) -> Bool { int.eq a b }\n  law refl = ~admitted;\n}\n",
-            ),
+            SourceText::from(include_str!("settle/fixtures/admitted-law.gandr")),
         );
         let refl = report
             .declarations()
@@ -2923,9 +2921,7 @@ mod tests
     {
         let report = settled(
             CorpusRoot::Strict,
-            SourceText::from(
-                "theory Same where {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);\n}\ndata One : Type where {\n  | Only : One\n}\nmodule Converts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { true }\n}\nmodule Parts : Model(Same) with sort Carrier = One where {\n  def same(a : One, b : One) -> Bool { false }\n}\n",
-            ),
+            SourceText::from(include_str!("settle/fixtures/discharged-law.gandr")),
         );
         let cells = report
             .declarations()
@@ -3050,18 +3046,7 @@ mod tests
     #[test]
     fn a_boundary_check_stands_as_its_run_answers_2901()
     {
-        let declared = concat!(
-            "data Scalar : Type where { | U32 : Scalar }\n",
-            "data Code : Type where { | Plain : (s : Scalar) --> Code }\n",
-            "data Coded : Type where { | NoCoded : Coded | Coded : (name : String, c : Code, rest : Coded) --> Coded }\n",
-            "data Signature : Type where { | Signature : (params : Coded, result : Code) --> Signature }\n",
-            "data Signatures : Type where { | NoSignature : Signatures | Member : (s : Signature, rest : Signatures) --> Signatures }\n",
-            "data Row : Type where { | Row : (result : Code) --> Row }\n",
-            "data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }\n",
-            "data Admission : Type where { | Admitted : Admission }\n",
-            "def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }\n",
-            "def addRow : Row = Row (Plain U32);\n",
-        );
+        let declared = include_str!("settle/fixtures/boundary-declarations.gandr");
         let size = RefusalName::BoundaryUnrealised(crate::refusal::BoundaryClause::Size.tag());
         let rows = [
             (
@@ -3101,7 +3086,9 @@ mod tests
         ];
         for (stated, ran, outcome, settlement) in rows {
             let text = format!(
-                "{declared}@[ boundary(addRow){stated} ]\nextern \"rust\" from \"b\" as B {{ def add(x : u32) -> u32; }}\n"
+                include_str!("settle/unformatted/boundary-extern.gandr"),
+                declared = declared,
+                stated = stated
             );
             let module = checked(SourceText::from(text.as_str()));
             let mut asked = Vec::new();
@@ -3249,7 +3236,7 @@ mod tests
             ),
             (
                 CorpusRoot::Fixture,
-                "@[ decomposes(\n  event\n    left\n    0\n) ] def a = 3 ;",
+                include_str!("settle/unformatted/decomposes-across-lines.gandr"),
                 web("0"),
                 Settlement::Settled,
                 &[("decompose", 0_usize)][..],
@@ -3716,8 +3703,7 @@ data NatUnits : Type where {{
                 FailureClass::MalformedSource,
             ),
             (
-                "def once(x : Integer) -> [Partial] Integer =\n  let y = loop { break(x) };\n  y\n\
-                 @[ refuses(\"UnenclosedRun\") ] def a : Integer ; def a = once 1 ;",
+                include_str!("settle/fixtures/unenclosed-run.gandr"),
                 RefusalName::UnenclosedRun,
                 FailureClass::MalformedSource,
             ),
@@ -3837,17 +3823,7 @@ data NatUnits : Type where {{
                 RefusalName::TypeMismatch,
             ),
             (
-                r#"theory Idem where {
-                  sort T : Type;
-                  oper f : (x : T) --> T;
-                  rule idem : f (f x) <=> f x;
-                }
-                module Bad : Model(Idem) where {
-                  type T = Bool;
-                  def f(x : Bool) -> Bool { match x { | true => false | false => true } }
-                  @[ refuses("EndpointMismatch") ]
-                  def idem(x : Bool) -> Path[.A = Bool](f (f x), f x) { Path.here (f x) }
-                }"#,
+                include_str!("settle/fixtures/endpoint-mismatch.gandr"),
                 RefusalName::EndpointMismatch,
             ),
         ];
@@ -4198,14 +4174,7 @@ data NatUnits : Type where {{
     #[test]
     fn a_declaration_refused_at_refused_terms_states_their_cause_4143()
     {
-        let theory = "theory Mon where {
-          sort M : Type;
-          oper one : () --> M;
-          oper mul : (x : M, y : M) --> M;
-          rule unitL : mul (one ()) x <=> x;
-          rule unitR : mul x (one ()) <=> x;
-          rule assoc : mul (mul x y) z <=> mul x (mul y z);
-        }";
+        let theory = include_str!("settle/fixtures/monoid-theory.gandr");
         let rows = [
             (RefusalName::RuleNotPresentable, Settlement::Settled),
             (RefusalName::NotADataType, Settlement::Unsettled),

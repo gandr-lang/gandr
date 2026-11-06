@@ -7883,6 +7883,88 @@ fn an_endpoint_over_a_bound_implicit_reads_its_solution_5480()
         "a point whose filled reading is not the endpoint is refused: {verdicts:?}"
     );
 }
+
+/// A path type whose endpoints are reflexivities over a call that omits an
+/// implicit, the signature's formation binding the implicit, forms again once
+/// filled. Each reflexivity of the filled type crosses with its dialogues, and
+/// the kernel admits the declaration (#5521).
+#[test]
+fn a_filled_signature_s_reflexivity_crosses_with_its_dialogues_5521()
+{
+    // def proj : U ((a : Integer) -> Path[.A = Integer](a, a) -> F Integer)
+    //   = thunk λa λp. return a ;
+    // def two : U ((x : Integer) -> (p : Path[.A = Integer](x, x))
+    //   -> F Path[.A = Path[.A = Integer](⟨proj ?a p⟩, x)](
+    //        here(⟨proj ?b p⟩), here(x)))
+    //   = thunk λx λp. return here(here(x)) ;
+    // The signature's formation binds each hole to `x` from the type of `p`.
+    // The left endpoint relates its point to `x` only through the body of
+    // `proj`.
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let [carried_hole, pointed_hole] = nominated_holes::<2>().map(|hole| arena.value_hole(hole));
+    // `(a : Integer) -> (p : Path[.A = Integer](a, a)) -> F result`, `a` at
+    // index zero in the type of `p`.
+    let over_loop = |arena: &mut CoreArena, result: gandr_core_term::CompTypeId| {
+        let point = variable(arena, 0);
+        let path = arena.value_type_path(integer, point, point);
+        let inner = arena.comp_type_pi(path, result);
+        let outer = arena.comp_type_pi(integer, inner);
+        arena.value_type_thunk(outer)
+    };
+    let twice = |arena: &mut CoreArena, body: gandr_core_term::ComputationId| {
+        let inner = arena.computation_lambda(body);
+        let outer = arena.computation_lambda(inner);
+        arena.value_thunk(outer)
+    };
+    // `⟨proj a p⟩`, `proj` the first declaration.
+    let projected = |arena: &mut CoreArena, a: ValueId, p: ValueId| {
+        let head = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(head);
+        let applied = arena.computation_application(forced, a);
+        let applied = arena.computation_application(applied, p);
+        arena.value_returned(applied)
+    };
+    let returns_integer = arena.comp_type_returner(integer);
+    let proj_type = over_loop(&mut arena, returns_integer);
+    let a = variable(&mut arena, 1);
+    let returned = arena.computation_return(a);
+    let proj = twice(&mut arena, returned);
+    // Under `x` and `p`, `x` is index one and `p` zero.
+    let [p, x] = [0, 1].map(|index| variable(&mut arena, index));
+    let carried = projected(&mut arena, carried_hole, p);
+    let carrier = arena.value_type_path(integer, carried, x);
+    let pointed = projected(&mut arena, pointed_hole, p);
+    let left = arena.value_here(pointed);
+    let right = arena.value_here(x);
+    let path = arena.value_type_path(carrier, left, right);
+    let returns_path = arena.comp_type_returner(path);
+    let two_type = over_loop(&mut arena, returns_path);
+    let inner = arena.value_here(x);
+    let outer = arena.value_here(inner);
+    let returned = arena.computation_return(outer);
+    let two = twice(&mut arena, returned);
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(At(0), Maybe::Present(proj_type), Maybe::Present(proj)),
+        declaration(At(1), Maybe::Present(two_type), Maybe::Present(two)),
+    ]);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.get(1), Some(Verdict::Checked { .. })),
+        "the reflexivity meets its endpoints at the bound implicits: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            readmission.readmitted().get(1).map(Readmitted::outcome),
+            Some(&Outcome::Defined { .. })
+        ),
+        "the kernel admits the filled declaration: {:?}",
+        readmission.readmitted()
+    );
+}
 mod bridges;
 
 #[test]
