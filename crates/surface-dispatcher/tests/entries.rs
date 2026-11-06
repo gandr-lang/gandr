@@ -180,6 +180,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression ~", Standing::Owed(0)),
     ("Expression ∷", Standing::Owed(0)),
     ("Pattern #[", Standing::Owed(0)),
+    ("Pattern (", Standing::Owed(0)),
     ("Pattern *{", Standing::Owed(0)),
     ("Pattern +{", Standing::Owed(0)),
     ("Pattern _", Standing::Owed(0)),
