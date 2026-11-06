@@ -679,6 +679,82 @@ fn a_rule_names_a_port_through_parentheses_4853()
     );
 }
 
+/// #4293: a data block's rule names its family's constructors qualified by
+/// the family's name as it names them bare: a constructor alone, `Tree.Tip`;
+/// a constructor at an application's head, `Tree.Node l r`; and a port,
+/// `Tree.Split(t).front`.
+#[test]
+fn a_rule_names_its_family_s_constructors_qualified_4293()
+{
+    let rules = |tip: &str, node: &str, port: &str| {
+        let source = alloc::format!(
+            "data Tree : Type where {{ | Tip : Tree | Node : (l : Tree, r : Tree) --> Tree | Split \
+             : (t : Tree) --> (front : Tree, back : Tree) oper prune : (t : Tree) --> Tree; rule : \
+             prune {tip} ==> {tip}; rule : prune ({node}) ==> l; rule : prune ({port}) ==> t; }}"
+        );
+        let report = elaborated(SourceText::from(source.as_str()));
+        assert_eq!(
+            report.diagnostics,
+            [],
+            "`{tip}`, `{node}` and `{port}` read"
+        );
+        let [ref entry] = *report.declarations.as_slice()
+        else {
+            panic!("one description")
+        };
+        entry
+            .description
+            .rules
+            .iter()
+            .map(|face| (face.lhs.clone(), face.rhs.clone()))
+            .collect::<alloc::vec::Vec<_>>()
+    };
+    assert_eq!(
+        rules("Tree.Tip", "Tree.Node l r", "Tree.Split(t).front"),
+        rules("Tip", "Node l r", "Split(t).front"),
+        "a constructor qualified by its family is the constructor written bare"
+    );
+}
+
+/// #4293: a rule term that qualifies a constructor by another name than its
+/// block's family is refused at the qualifier, by name, since the block's
+/// terms range over its own family.
+#[test]
+fn a_constructor_qualified_by_another_family_is_refused_4293()
+{
+    let source = "data Shape : Type where { | Dot : Shape } data Tree : Type where { | Tip : Tree oper \
+                  prune : (t : Tree) --> Tree; rule : prune Shape.Dot ==> Tip; }";
+    let report = elaborated(SourceText::from(source));
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    assert_eq!(diagnostic.fault, DescriptionFault::ForeignQualifier {
+        family: Name::from("Tree"),
+        qualifier: Name::from("Shape"),
+    });
+    let at = usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end());
+    assert_eq!(
+        source.get(at.clone()),
+        Some("Shape"),
+        "the refusal stands at the qualifier"
+    );
+    assert!(
+        source
+            .get(.. at.start)
+            .is_some_and(|before| before.ends_with("prune ")),
+        "at the rule's qualifier, not the family's declaration"
+    );
+    assert!(
+        matches!(
+            diagnostic.lowering_refusal(gandr_surface_syntax::SourceFragment::from(source)),
+            crate::LoweringRefusal::ForeignQualifier { family, qualifier, .. }
+                if family.as_ref() == "Tree" && qualifier.as_ref() == "Shape"
+        ),
+        "the module refusal names the family and the qualifier"
+    );
+}
+
 #[test]
 fn a_value_function_field_is_the_function_former()
 {

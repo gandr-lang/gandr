@@ -1256,6 +1256,19 @@ pub enum LoweringRefusal<'source>
         member: SurfaceName<'source>,
     },
 
+    /// A rule term of a data block names a constructor qualified by a name
+    /// other than the block's family, `Other.c` in the block of `D`: the
+    /// block's terms range over its own family.
+    ForeignQualifier
+    {
+        /// The bytes of the qualifier.
+        span: ByteSpan,
+        /// The block's family, as the declaration spells it.
+        family: SurfaceName<'source>,
+        /// The qualifier, as the term spells it.
+        qualifier: SurfaceName<'source>,
+    },
+
     /// A field read off a data value by its name, `e.l`, where a constructor
     /// of the value's family declares no field of that name: the value it
     /// builds has none to read.
@@ -2202,6 +2215,13 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::UnknownMember { module, member, .. } => {
                 write!(f, "the module `{module}` exports no member `{member}`")
             },
+            Self::ForeignQualifier {
+                family, qualifier, ..
+            } => write!(
+                f,
+                "the rule names a constructor of `{qualifier}`, and a rule of the family \
+                 `{family}` names only the constructors of `{family}`"
+            ),
             Self::PartialField {
                 field, constructor, ..
             } => write!(
@@ -2664,6 +2684,7 @@ impl LoweringRefusal<'_>
             | Self::PhaseDependence { span, .. }
             | Self::InertRead { span, .. }
             | Self::UnknownMember { span, .. }
+            | Self::ForeignQualifier { span, .. }
             | Self::PartialField { span, .. }
             | Self::NotAFunctor { span, .. }
             | Self::NotAModel { span, .. }
@@ -2785,7 +2806,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 78_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 79_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3139,6 +3160,11 @@ mod tests
                 span: s(145_usize, 146_usize),
                 name: SurfaceName::from("count"),
             },
+            LoweringRefusal::ForeignQualifier {
+                span: s(149_usize, 150_usize),
+                family: SurfaceName::from("Tree"),
+                qualifier: SurfaceName::from("Shape"),
+            },
         ]
     }
 
@@ -3228,6 +3254,7 @@ mod tests
             s(139_usize, 140_usize),
             s(143_usize, 144_usize),
             s(145_usize, 146_usize),
+            s(149_usize, 150_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

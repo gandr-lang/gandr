@@ -584,7 +584,7 @@ impl Annotations
                 LoweringRefusal::UnknownTactic { .. } |
                 LoweringRefusal::GenericUncovered { .. } |
                 LoweringRefusal::IllFormedDescription { .. } |
-                LoweringRefusal::PartialField { .. } |
+                LoweringRefusal::PartialField { .. } | LoweringRefusal::ForeignQualifier { .. } |
                 LoweringRefusal::InstanceUnanswered { .. } | LoweringRefusal::InstanceAmbiguous { .. } |
                 LoweringRefusal::NoUniverseAbove { .. } | LoweringRefusal::HostConflict { .. } |
                 LoweringRefusal::UnreadCells { .. } |
@@ -671,6 +671,7 @@ impl Annotations
             | LoweringRefusal::InertRead { .. }
             | LoweringRefusal::UnlockedDependency { .. }
             | LoweringRefusal::UnknownMember { .. }
+            | LoweringRefusal::ForeignQualifier { .. }
             | LoweringRefusal::PartialField { .. }
             | LoweringRefusal::NotAFunctor { .. }
             | LoweringRefusal::NotAModel { .. }

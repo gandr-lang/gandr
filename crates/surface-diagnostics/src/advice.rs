@@ -168,6 +168,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::UnknownMember { module, member, .. } => {
             format!("use a member that `{module}` declares, or add `{member}` to `{module}`")
         },
+        LoweringRefusal::ForeignQualifier { family, .. } => {
+            format!("name a constructor of `{family}`, bare or as `{family}.C`")
+        },
         LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::ForeignClaim,
             ..
@@ -1327,7 +1330,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 238] = [
+    const WORDED: [&str; 239] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1337,6 +1340,7 @@ mod tests
         "OutOfFragment.WrongSort",
         "ViewEscaped",
         "UnknownMember",
+        "ForeignQualifier",
         "DuplicateDefinition",
         "HeldLent",
         "ImplicitUnsolved",

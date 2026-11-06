@@ -1,0 +1,14 @@
+/// `ForeignQualifier`: a data block's rule term naming a constructor qualified by a name other than the block's family.
+///
+/// A block's terms range over its own family. A rule of `Tree` names the constructors of `Tree`, bare or as `Tree.C`, and `Shape.Dot` names a constructor of `Shape`.
+///
+/// A shape with one constructor.
+data Shape : Type where
+  | Dot : Shape
+
+/// A tree whose rule names the constructor of `Shape`.
+@[ refuses("ForeignQualifier") ]
+data Tree : Type where
+  | Tip : Tree
+  oper prune : (t : Tree) --> Tree;
+  rule : prune Shape.Dot ==> Tip;

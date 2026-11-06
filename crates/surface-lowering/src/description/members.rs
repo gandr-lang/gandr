@@ -201,7 +201,7 @@ impl Reader<'_, '_>
         let mut terms = Vec::new();
         let mut indices = Vec::new();
         while !run.eat(Spelling(")")).0 {
-            let (term, nodes) = self.term(run.take()?, &BTreeSet::new(), Spot::Index)?;
+            let (term, nodes) = self.term(run.take()?, &BTreeSet::new(), Spot::Index, None)?;
             terms.push(term);
             indices.push(nodes);
             if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
@@ -227,7 +227,9 @@ impl Reader<'_, '_>
     /// - ensures: the face keeps both terms and the member's exact byte span;
     ///   the written face holds its name tile when one is written, and each
     ///   side's nodes. `<=>` states [`RuleOrientation::Unpinned`]; `==>` states
-    ///   [`RuleOrientation::Pinned`] left to right.
+    ///   [`RuleOrientation::Pinned`] left to right. Each side is read as a term
+    ///   of the block of `family`, which names the family's constructors bare
+    ///   or qualified by its name.
     /// - fails: a member with no colon is malformed; only `==>` and `<=>` are
     ///   written face arrows; `~>` is the retired spelling; unsupported terms
     ///   are located.
@@ -246,6 +248,7 @@ impl Reader<'_, '_>
     pub(super) fn rule(
         &self,
         run: &mut Run<'_>,
+        family: &Name,
     ) -> Result<(RuleFace, WrittenFace), DescriptionDiagnostic>
     {
         let named = if run.eat(Spelling(":")).0 {
@@ -278,8 +281,13 @@ impl Reader<'_, '_>
         let arrow = run.take()?.span;
         let rhs = run.take()?;
         run.end()?;
-        let (lhs, left) = self.free_term(lhs, &BTreeSet::new())?;
-        let (rhs, right) = self.free_term(rhs, &lhs.to_node().vars().collect())?;
+        let (lhs, left) = self.term(lhs, &BTreeSet::new(), Spot::Expression, Some(family))?;
+        let (rhs, right) = self.term(
+            rhs,
+            &lhs.to_node().vars().collect(),
+            Spot::Expression,
+            Some(family),
+        )?;
         let variables = derive_cell_var_meta(&lhs);
         let span = SurfaceSpan::new(
             usize::from(run.span.start()).into(),
@@ -339,37 +347,44 @@ impl Reader<'_, '_>
         instantiable: &BTreeSet<&Name>,
     ) -> Result<(FreeTerm, WrittenTerm), DescriptionDiagnostic>
     {
-        self.term(at, instantiable, Spot::Expression)
+        self.term(at, instantiable, Spot::Expression, None)
     }
 
     /// Read a term written at `spot`, as [`Self::free_term`] reads one, and
-    /// keep where each node is written.
+    /// keep where each node is written. A term written in the block of the
+    /// family `owner` names that family's constructors bare or qualified by
+    /// its name.
     ///
     /// # Specification
     /// - ensures: as [`Self::free_term`]; at [`Spot::Index`] a capitalised
     ///   name, which a type spells as a type name, is a constructor, alone or
-    ///   at an application's head.
-    /// - fails: as [`Self::free_term`].
+    ///   at an application's head; with an `owner`, a constructor `c` that
+    ///   [`Self::qualified`] reads off the family's name, `D.c`, is the
+    ///   constructor `c`, alone, at an application's head and at a port's.
+    /// - fails: as [`Self::free_term`], and as [`Self::qualified`] for a
+    ///   constructor qualified by another name.
     /// - panics: none.
     ///
     /// # Errors
-    /// As [`Self::free_term`].
+    /// As [`Self::free_term`], and `ForeignQualifier` for a constructor
+    /// qualified by another name than the family's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Z` and `S(Z)` in `Skip(S(Z))` read as constructor
-    ///   terms.
+    ///   terms; `Tree.Tip`, `Tree.Split(t)` and `Tree.Split(t).front` in a rule
+    ///   of `Tree` read as `Tip`, `Split(t)` and `Split(t).front`.
     /// - witness: `described::tests::an_indexed_family_s_operation_answers_at_its_index_2940`
+    /// - witness: `description::tests::a_rule_names_its_family_s_constructors_qualified_4293`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     fn term(
         &self,
         at: Placed,
         instantiable: &BTreeSet<&Name>,
         spot: Spot,
+        owner: Option<&Name>,
     ) -> Result<(FreeTerm, WrittenTerm), DescriptionDiagnostic>
     {
-        let constructor = |label: &str| {
-            label == "constructor" || (spot == Spot::Index && label == "type_identifier")
-        };
+        let constructor = |label: &str| names_constructor(label, spot);
         let mut pending = vec![TermFrame::Read(at)];
         // The atoms the enclosing `bind`s abstract, each with how many of them
         // abstract it.
@@ -407,6 +422,11 @@ impl Reader<'_, '_>
                                 });
                             },
                         }
+                        continue;
+                    }
+                    if let Some(member) = self.qualified(at, owner, spot)? {
+                        terms.push(FreeTerm::ctor(self.text(member).0, []));
+                        written.nodes.push(leaf(at.span));
                         continue;
                     }
                     let mut run = Run::new(&pieces, at.span);
@@ -483,13 +503,20 @@ impl Reader<'_, '_>
                         }
                         let mut call = Run::new(&called, target.span);
                         let head = call.take()?;
-                        if !matches!(self.pieces(head)?.as_slice(), [Piece::Tile { label, .. }] if constructor(label.as_ref()))
-                        {
-                            return Err(DescriptionDiagnostic {
-                                span: at.span,
-                                fault: DescriptionFault::Malformed,
-                            });
-                        }
+                        // The constructor's own name: `C` of `D.C` written
+                        // qualified.
+                        let spelled = match self.qualified(head, owner, spot)? {
+                            Some(member) => member,
+                            None if matches!(self.pieces(head)?.as_slice(), [Piece::Tile { label, .. }] if constructor(label.as_ref())) => {
+                                head
+                            },
+                            None => {
+                                return Err(DescriptionDiagnostic {
+                                    span: at.span,
+                                    fault: DescriptionFault::Malformed,
+                                });
+                            },
+                        };
                         let mut args = Vec::new();
                         if call.eat(Spelling("(")).0 {
                             while !call.eat(Spelling(")")).0 {
@@ -504,7 +531,8 @@ impl Reader<'_, '_>
                             span: at.span,
                             head: Maybe::Present(head.span),
                         });
-                        let port = alloc::format!("{}.{}", self.text(head).0, self.text(output).0);
+                        let port =
+                            alloc::format!("{}.{}", self.text(spelled).0, self.text(output).0);
                         pending.push(TermFrame::Apply(
                             Name::from(port),
                             ArgumentCount(args.len()),
@@ -528,17 +556,23 @@ impl Reader<'_, '_>
                         span: at.span,
                         head: Maybe::Present(head.span),
                     });
-                    let head_pieces = self.pieces(head)?;
-                    let name = Name::from(self.text(head).0);
-                    let kind = if matches!(head_pieces.as_slice(), [Piece::Tile { label, .. }] if constructor(label.as_ref()))
-                    {
-                        TermKind::Constructor
-                    }
-                    else if instantiable.contains(&name) {
-                        TermKind::Instantiation
+                    let (name, kind) = if let Some(member) = self.qualified(head, owner, spot)? {
+                        (Name::from(self.text(member).0), TermKind::Constructor)
                     }
                     else {
-                        TermKind::Operation
+                        let head_pieces = self.pieces(head)?;
+                        let name = Name::from(self.text(head).0);
+                        let kind = if matches!(head_pieces.as_slice(), [Piece::Tile { label, .. }] if constructor(label.as_ref()))
+                        {
+                            TermKind::Constructor
+                        }
+                        else if instantiable.contains(&name) {
+                            TermKind::Instantiation
+                        }
+                        else {
+                            TermKind::Operation
+                        };
+                        (name, kind)
                     };
                     pending.push(TermFrame::Apply(name, ArgumentCount(args.len()), kind));
                     pending.extend(args.into_iter().rev().map(TermFrame::Read));
@@ -595,6 +629,70 @@ impl Reader<'_, '_>
         })?;
         Ok((term, written))
     }
+
+    /// The tile of the constructor `c` that `at` names when it is the
+    /// qualified name `D.c` and `D` is the name of `owner`, the family whose
+    /// block the term is written in.
+    ///
+    /// # Specification
+    /// - ensures: `Ok(Some(c))` exactly when `owner` is a family, `at` selects
+    ///   a constructor `c` off one capitalised name, and that name is the
+    ///   family's; `Ok(None)` when `owner` is `None` or `at` is no selection of
+    ///   a constructor off one capitalised name.
+    /// - fails: a selection of a constructor off another capitalised name is
+    ///   refused as [`DescriptionFault::ForeignQualifier`] at that name, since
+    ///   the block's terms range over its own family.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `ForeignQualifier` for a qualifier that is not the family's
+    /// name.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Tree.Tip` in the block of `Tree` reads as `Tip`;
+    ///   `Shape.Tip` there is refused at `Shape`; `x.l` is no qualified name.
+    /// - witness: `description::tests::a_rule_names_its_family_s_constructors_qualified_4293`
+    /// - witness: `description::tests::a_constructor_qualified_by_another_family_is_refused_4293`
+    #[spec(ensures: |result| owner.is_some() || matches!(result, Ok(None)))]
+    fn qualified(
+        &self,
+        at: Placed,
+        owner: Option<&Name>,
+        spot: Spot,
+    ) -> Result<Option<Placed>, DescriptionDiagnostic>
+    {
+        let Some(family) = owner
+        else {
+            return Ok(None);
+        };
+        let pieces = self.pieces(at)?;
+        let [
+            Piece::Operand(qualifier),
+            Piece::Tile { label: dot, .. },
+            Piece::Tile { label, at: member },
+        ] = *pieces.as_slice()
+        else {
+            return Ok(None);
+        };
+        if dot != TileName::DOT || !names_constructor(label.as_ref(), spot) {
+            return Ok(None);
+        }
+        if !matches!(self.pieces(qualifier)?.as_slice(), [Piece::Tile { label, .. }] if names_constructor(label.as_ref(), spot))
+        {
+            return Ok(None);
+        }
+        let written = self.text(qualifier).0;
+        if written != family.as_ref() {
+            return Err(DescriptionDiagnostic {
+                span: qualifier.span,
+                fault: DescriptionFault::ForeignQualifier {
+                    family: family.clone(),
+                    qualifier: Name::from(written),
+                },
+            });
+        }
+        Ok(Some(member))
+    }
 }
 
 /// The category carried by an application head.
@@ -616,6 +714,19 @@ enum Spot
     Expression,
     /// As an index term of a family a type applies.
     Index,
+}
+
+/// Whether a tile labelled `label` names a constructor at `spot`: a
+/// capitalised name, which a type spells as a type name at [`Spot::Index`].
+///
+/// # Specification
+/// trivial.
+fn names_constructor(
+    label: &str,
+    spot: Spot,
+) -> bool
+{
+    label == "constructor" || (spot == Spot::Index && label == "type_identifier")
 }
 
 /// A suspended free-term reading.

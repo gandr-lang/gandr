@@ -976,6 +976,9 @@ pub enum RefusalName
     InertRead,
     /// A selection or a signature component a module does not supply.
     UnknownMember,
+    /// A data block's rule term naming a constructor qualified by a name other
+    /// than the block's family.
+    ForeignQualifier,
     /// A law of a module's model admitted where the host asserts no such law,
     /// qualified `Admitted`: the law is the author's to prove.
     UnprovenLaw,
@@ -1314,7 +1317,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 243_usize] = [
+    pub const VOCABULARY: [Self; 244_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1424,6 +1427,7 @@ impl RefusalName
         Self::PhaseDependence,
         Self::InertRead,
         Self::UnknownMember,
+        Self::ForeignQualifier,
         Self::PartialField,
         Self::NotAFunctor,
         Self::NotAModel,
@@ -1645,7 +1649,8 @@ impl RefusalName
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
         b"IllTypedPayload") | (Self::ForwardMemberReference, b"ForwardMemberReference") |
         (Self::PhaseDependence, b"PhaseDependence") | (Self::InertRead, b"InertRead") |
-        (Self::UnknownMember, b"UnknownMember") | (Self::UnprovenLaw, b"UnprovenLaw") | (Self::PartialField, b"PartialField")
+        (Self::UnknownMember, b"UnknownMember") | (Self::ForeignQualifier, b"ForeignQualifier")
+        | (Self::UnprovenLaw, b"UnprovenLaw") | (Self::PartialField, b"PartialField")
         | (Self::NotAFunctor, b"NotAFunctor")
         | (Self::NotAModel, b"NotAModel")
         | (Self::NotATranslation, b"NotATranslation")
@@ -2032,6 +2037,7 @@ impl RefusalName
             Self::PhaseDependence => "PhaseDependence",
             Self::InertRead => "InertRead",
             Self::UnknownMember => "UnknownMember",
+            Self::ForeignQualifier => "ForeignQualifier",
             Self::UnprovenLaw => "UnprovenLaw",
             Self::PartialField => "PartialField",
             Self::NotAFunctor => "NotAFunctor",
@@ -2791,7 +2797,8 @@ impl Refusal<'_>
         RefusalName::ForwardMemberReference) | (LoweringRefusal::PhaseDependence { .. },
         RefusalName::PhaseDependence) | (LoweringRefusal::InertRead { .. },
         RefusalName::InertRead) | (LoweringRefusal::UnknownMember { .. },
-        RefusalName::UnknownMember) | (LoweringRefusal::PartialField { .. },
+        RefusalName::UnknownMember) | (LoweringRefusal::ForeignQualifier { .. },
+        RefusalName::ForeignQualifier) | (LoweringRefusal::PartialField { .. },
         RefusalName::PartialField) | (LoweringRefusal::NotAFunctor { .. },
         RefusalName::NotAFunctor) | (LoweringRefusal::NotAModel { .. },
         RefusalName::NotAModel) | (LoweringRefusal::NotATranslation { .. },
@@ -2899,6 +2906,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::PhaseDependence { .. } => RefusalName::PhaseDependence,
         LoweringRefusal::InertRead { .. } => RefusalName::InertRead,
         LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
+        LoweringRefusal::ForeignQualifier { .. } => RefusalName::ForeignQualifier,
         LoweringRefusal::PartialField { .. } => RefusalName::PartialField,
         LoweringRefusal::NotAFunctor { .. } => RefusalName::NotAFunctor,
         LoweringRefusal::NotAModel { .. } => RefusalName::NotAModel,

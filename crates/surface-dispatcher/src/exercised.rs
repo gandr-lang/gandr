@@ -631,7 +631,7 @@ fn is_whole_unsigned_body(
             LoweringRefusal::UnknownTactic { .. } |
             LoweringRefusal::GenericUncovered { .. } |
             LoweringRefusal::MismatchedPattern { .. } |
-            LoweringRefusal::PartialField { .. } |
+            LoweringRefusal::PartialField { .. } | LoweringRefusal::ForeignQualifier { .. } |
             LoweringRefusal::InstanceUnanswered { .. } | LoweringRefusal::InstanceAmbiguous { .. } |
             LoweringRefusal::NoUniverseAbove { .. } | LoweringRefusal::HostConflict { .. } |
             LoweringRefusal::UnreadCells { .. } |
@@ -710,6 +710,7 @@ fn lowering_row(
         | LoweringRefusal::PhaseDependence { .. }
         | LoweringRefusal::InertRead { .. }
         | LoweringRefusal::UnknownMember { .. }
+        | LoweringRefusal::ForeignQualifier { .. }
         | LoweringRefusal::PartialField { .. }
         | LoweringRefusal::NotAFunctor { .. }
         | LoweringRefusal::NotAModel { .. }

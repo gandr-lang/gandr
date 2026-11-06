@@ -217,6 +217,16 @@ pub enum DescriptionFault
         /// Why the model derivation refuses it.
         fault: crate::model::ModelFault,
     },
+    /// A rule term names a constructor qualified by a name other than its
+    /// block's family, `Other.c` in the block of `D`: the block's terms range
+    /// over its own family.
+    ForeignQualifier
+    {
+        /// The block's family.
+        family: gandr_theory_levitation::Name,
+        /// The qualifier the term writes.
+        qualifier: gandr_theory_levitation::Name,
+    },
 }
 
 /// Why a member of a description declaration is not read: the description
@@ -441,7 +451,9 @@ impl DescriptionDiagnostic
     ///   head and one it names twice a duplicate definition, a point a
     ///   `boundary` lists twice a duplicate definition, each named as `written`
     ///   spells it, a `shape` member a malformed form naming `boundary` as the
-    ///   keyword it retires to, and every other fault a malformed form.
+    ///   keyword it retires to, a constructor qualified by another family than
+    ///   its block's a foreign qualifier naming both as `written` spells them,
+    ///   and every other fault a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -450,6 +462,7 @@ impl DescriptionDiagnostic
     ///   cycle keep three classes apart; a binder over an unrepresentable sort
     ///   is refused naming the sort and the port as written.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `description::tests::a_constructor_qualified_by_another_family_is_refused_4293`
     /// - witness: `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`
     /// - witness: `description::theory::tests::an_ill_formed_theory_is_refused_with_the_checks_reason_1553`
     /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
@@ -535,6 +548,23 @@ impl DescriptionDiagnostic
                     fault,
                 },
                 Maybe::Absent(_) => malformed(),
+            },
+            DescriptionFault::ForeignQualifier {
+                ref family,
+                ref qualifier,
+            } => match (
+                spelled(Some(family), written),
+                spelled(Some(qualifier), written),
+            ) {
+                (Maybe::Present(family), Maybe::Present(qualifier)) => {
+                    LoweringRefusal::ForeignQualifier {
+                        span: self.span,
+                        family,
+                        qualifier,
+                    }
+                },
+                (Maybe::Absent(_), Maybe::Present(_) | Maybe::Absent(_))
+                | (Maybe::Present(_), Maybe::Absent(_)) => malformed(),
             },
             DescriptionFault::Malformed
             | DescriptionFault::FamilyHead
@@ -1417,7 +1447,7 @@ impl Reader<'_, '_>
                 continue;
             }
             let result = if member.eat(Spelling("rule")).0 {
-                self.rule(&mut member).map(|(rule, face)| {
+                self.rule(&mut member, &family).map(|(rule, face)| {
                     rules.push(rule);
                     written.faces.push(face);
                 })

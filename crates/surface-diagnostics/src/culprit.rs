@@ -262,6 +262,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
         LoweringRefusal::InertRead { .. } => "an inert field read",
         LoweringRefusal::UnknownMember { .. } => "no member of this name",
+        LoweringRefusal::ForeignQualifier { .. } => "a constructor of another family",
         LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
         LoweringRefusal::NotAFunctor { .. } => "not a functor",
         LoweringRefusal::NotAModel { .. } => "not a model",
@@ -810,6 +811,7 @@ mod tests
             LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
             LoweringRefusal::InertRead { .. } => "an inert field read",
             LoweringRefusal::UnknownMember { .. } => "no member of this name",
+            LoweringRefusal::ForeignQualifier { .. } => "a constructor of another family",
             LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
             LoweringRefusal::NotAFunctor { .. } => "not a functor",
             LoweringRefusal::NotAModel { .. } => "not a model",
@@ -1095,6 +1097,11 @@ mod tests
                 span: at,
                 module: name,
                 member: name,
+            },
+            LoweringRefusal::ForeignQualifier {
+                span: at,
+                family: name,
+                qualifier: name,
             },
             LoweringRefusal::PartialField {
                 span: at,

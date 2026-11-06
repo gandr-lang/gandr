@@ -948,7 +948,8 @@ fn uncarried(
                 | DescriptionFault::NativeDecode(_)
                 | DescriptionFault::IllFormed(_)
                 | DescriptionFault::Signature(_)
-                | DescriptionFault::Unstated { .. } => Uncovered::Uncoded(position, site),
+                | DescriptionFault::Unstated { .. }
+                | DescriptionFault::ForeignQualifier { .. } => Uncovered::Uncoded(position, site),
             })
         })
 }

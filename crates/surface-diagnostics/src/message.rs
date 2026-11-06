@@ -609,6 +609,13 @@ fn lowered(
         LoweringRefusal::UnknownMember { module, member, .. } => {
             write!(f, "the module `{module}` has no member `{member}`")
         },
+        LoweringRefusal::ForeignQualifier {
+            family, qualifier, ..
+        } => write!(
+            f,
+            "the rule names a constructor of `{qualifier}`, and a rule of `{family}` names only \
+             the constructors of `{family}`"
+        ),
         LoweringRefusal::PartialField {
             field, constructor, ..
         } => write!(
@@ -2007,6 +2014,11 @@ pub mod tests
                 span,
                 module: name,
                 member: name,
+            },
+            LoweringRefusal::ForeignQualifier {
+                span,
+                family: name,
+                qualifier: name,
             },
             LoweringRefusal::PartialField {
                 span,

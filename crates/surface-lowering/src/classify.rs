@@ -267,6 +267,7 @@ impl LoweringRefusal<'_>
             | Self::PhaseDependence { .. }
             | Self::InertRead { .. }
             | Self::UnknownMember { .. }
+            | Self::ForeignQualifier { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
             | Self::NotAModel { .. }
@@ -344,6 +345,7 @@ impl LoweringRefusal<'_>
             | Self::PhaseDependence { .. }
             | Self::InertRead { .. }
             | Self::UnknownMember { .. }
+            | Self::ForeignQualifier { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
             | Self::NotAModel { .. }
@@ -819,7 +821,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 80_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 81_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1150,6 +1152,11 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("count"),
             },
+            LoweringRefusal::ForeignQualifier {
+                span: empty,
+                family: SurfaceName::from("Tree"),
+                qualifier: SurfaceName::from("Shape"),
+            },
         ]
     }
 
@@ -1236,6 +1243,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];
 
