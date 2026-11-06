@@ -1630,11 +1630,13 @@ pub fn indices_agree(
 ///   replays; an ascription whose endpoints are the same syntax keeps none; one
 ///   whose endpoints call a definition over an omitted model converts once the
 ///   model is resolved; a composite whose first path omits its carrier converts
-///   at the carrier its signature solves.
+///   at the carrier its signature solves; one whose endpoint maps an implicit
+///   its call omits converts once the argument binds the implicit.
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 /// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
 /// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
 /// - witness: `kernel_export::kernel_presented_readmission::a_body_reads_the_carrier_its_signature_solves_5272`
+/// - witness: `bridge::tests::an_endpoint_over_a_bound_implicit_reads_its_solution_5480`
 fn endpoints_agree(
     context: &mut CheckingContext<'_>,
     left: ValueId,

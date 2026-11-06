@@ -7603,6 +7603,122 @@ fn a_path_type_over_an_omitted_model_converts_once_resolved_2391()
     );
 }
 
+/// An endpoint that calls a definition over an implicit the argument binds is
+/// read through the solution, at a reflexivity's point and in a type the call
+/// synthesises, and the kernel admits the filled declarations. A point whose
+/// filled reading differs from an endpoint is refused (#5480).
+#[test]
+fn an_endpoint_over_a_bound_implicit_reads_its_solution_5480()
+{
+    // def proj : U ((a : Integer) -> Path[.A = Integer](a, a) -> F Integer)
+    //   = thunk λa λp. return a ;
+    // def wrap : U ((a : Integer) -> (p : Path[.A = Integer](a, a))
+    //   -> F Path[.A = Integer](⟨proj a p⟩, a)) = thunk λa λp. return p ;
+    // def met : U ((x : Integer) -> (p : Path[.A = Integer](x, x))
+    //   -> F Path[.A = Integer](⟨proj x p⟩, ⟨proj x p⟩))
+    //   = thunk λx λp. return here(⟨proj ?a p⟩) ;
+    // def typed : … -> F Path[.A = Integer](⟨proj x p⟩, x)
+    //   = thunk λx λp. (force wrap) ?b p ;
+    // def apart : … -> F Path[.A = Integer](⟨proj x p⟩, 0)
+    //   = thunk λx λp. return here(⟨proj ?c p⟩) ;
+    // Each call's argument `p` binds its hole to `x`, while the point still
+    // reads `⟨proj ?a p⟩`, stuck on the hole.
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let [first, second, third] = nominated_holes::<3>().map(|hole| arena.value_hole(hole));
+    // `(a : Integer) -> (p : Path[.A = Integer](a, a)) -> F result`, `a` at
+    // index zero in `p`'s type.
+    let over_loop = |arena: &mut CoreArena, result: gandr_core_term::CompTypeId| {
+        let point = variable(arena, 0);
+        let path = arena.value_type_path(integer, point, point);
+        let inner = arena.comp_type_pi(path, result);
+        let outer = arena.comp_type_pi(integer, inner);
+        arena.value_type_thunk(outer)
+    };
+    let twice = |arena: &mut CoreArena, body: gandr_core_term::ComputationId| {
+        let inner = arena.computation_lambda(body);
+        let outer = arena.computation_lambda(inner);
+        arena.value_thunk(outer)
+    };
+    // `⟨proj a p⟩`, `proj` the first declaration.
+    let projected = |arena: &mut CoreArena, a: ValueId, p: ValueId| {
+        let head = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(head);
+        let applied = arena.computation_application(forced, a);
+        let applied = arena.computation_application(applied, p);
+        arena.value_returned(applied)
+    };
+    let returns_integer = arena.comp_type_returner(integer);
+    let proj_type = over_loop(&mut arena, returns_integer);
+    let a = variable(&mut arena, 1);
+    let returned = arena.computation_return(a);
+    let proj = twice(&mut arena, returned);
+    // Under `a` and `p`, `a` is index one and `p` zero.
+    let [p, a] = [0, 1].map(|index| variable(&mut arena, index));
+    let wrapped_left = projected(&mut arena, a, p);
+    let wrapped = arena.value_type_path(integer, wrapped_left, a);
+    let wrapped = arena.comp_type_returner(wrapped);
+    let wrap_type = over_loop(&mut arena, wrapped);
+    let returned = arena.computation_return(p);
+    let wrap = twice(&mut arena, returned);
+    let ends = |arena: &mut CoreArena, right: Option<ValueId>| {
+        let left = projected(arena, a, p);
+        let right = right.unwrap_or_else(|| projected(arena, a, p));
+        let path = arena.value_type_path(integer, left, right);
+        let returns = arena.comp_type_returner(path);
+        over_loop(arena, returns)
+    };
+    let here_at = |arena: &mut CoreArena, hole: ValueId| {
+        let point = projected(arena, hole, p);
+        let here = arena.value_here(point);
+        let returned = arena.computation_return(here);
+        twice(arena, returned)
+    };
+    let met_type = ends(&mut arena, None);
+    let met = here_at(&mut arena, first);
+    let typed_type = ends(&mut arena, Some(a));
+    let head = arena.value_constant(ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(head);
+    let applied = arena.computation_application(forced, second);
+    let applied = arena.computation_application(applied, p);
+    let typed = twice(&mut arena, applied);
+    let zero = arena.value_literal(integer_literal());
+    let apart_type = ends(&mut arena, Some(zero));
+    let apart = here_at(&mut arena, third);
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(At(0), Maybe::Present(proj_type), Maybe::Present(proj)),
+        declaration(At(1), Maybe::Present(wrap_type), Maybe::Present(wrap)),
+        declaration(At(2), Maybe::Present(met_type), Maybe::Present(met)),
+        declaration(At(3), Maybe::Present(typed_type), Maybe::Present(typed)),
+        declaration(At(4), Maybe::Present(apart_type), Maybe::Present(apart)),
+    ]);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    for at in [2_usize, 3] {
+        assert!(
+            matches!(verdicts.get(at), Some(Verdict::Checked { .. })),
+            "declaration {at} meets its endpoints at the bound implicit: {verdicts:?}"
+        );
+        assert!(
+            matches!(
+                readmission.readmitted().get(at).map(Readmitted::outcome),
+                Some(&Outcome::Defined { .. })
+            ),
+            "the kernel admits the filled declaration {at}: {:?}",
+            readmission.readmitted()
+        );
+    }
+    assert!(
+        matches!(
+            verdicts.get(4),
+            Some(Verdict::Refused(CheckRefusal::EndpointMismatch { .. }))
+        ),
+        "a point whose filled reading is not the endpoint is refused: {verdicts:?}"
+    );
+}
+
 mod bridges;
 
 #[test]
