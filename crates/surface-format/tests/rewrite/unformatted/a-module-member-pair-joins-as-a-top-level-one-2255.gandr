@@ -1,0 +1,19 @@
+module Outer where {
+  /// The one.
+  def one : Integer ;
+  def one = 1 ;
+
+  def two : Integer = 2 ;
+
+  def three : Integer ;
+  // parts them
+  def three = 3 ;
+
+  def four : () -> Integer ;
+  def four = thunk { 4 } ;
+
+  module Inner where {
+    def five : Integer ;
+    def five = 5 ;
+  }
+}

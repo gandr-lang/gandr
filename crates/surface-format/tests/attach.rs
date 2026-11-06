@@ -111,8 +111,7 @@ fn expected(
 /// A body a narrow page breaks one statement per line, a comment of each
 /// role inside it: the definition owns its block's statements, whose
 /// keywords are its own tiles, and a call owns what its brackets hold.
-const BODY: &str = "def f(x : Integer) -> -F Integer {\n  // first\n  let y = inc x ; /* \
-                    after y */\n  let z = inc\n    // why\n    y ;\n  z\n  // done\n}\n";
+const BODY: &str = include_str!("attach/unformatted/body.gandr");
 
 #[test]
 fn a_comment_on_its_own_line_leads_the_form_below_it()
@@ -165,7 +164,7 @@ fn a_comment_before_a_closing_bracket_dangles_on_its_block()
     assert_eq!(
         found.get(3),
         Some(&expected(
-            "// done",
+            "// end",
             CommentKind::Line,
             Role::Dangling,
             "def_value"
@@ -173,7 +172,13 @@ fn a_comment_before_a_closing_bracket_dangles_on_its_block()
         "a comment with nothing of its form after it but the closer dangles: {found:#?}"
     );
     assert_eq!(
-        attached(&grammar, "def e = #[\n  /* none */\n] ;\n").first(),
+        attached(
+            &grammar,
+            include_str!(
+                "attach/unformatted/a-comment-before-a-closing-bracket-dangles-on-its-block.gandr"
+            )
+        )
+        .first(),
         Some(&expected(
             "/* none */",
             CommentKind::Block,
@@ -190,7 +195,7 @@ fn documentation_and_the_root_keep_their_owners()
     let grammar = grammar();
     let found = attached(
         &grammar,
-        "/// One.\n/// Two.\ndef one = 1 ;\n\n// alone\n\ndef two = 2 ;\n",
+        include_str!("attach/unformatted/documentation-and-the-root-keep-their-owners-found.gandr"),
     );
     assert_eq!(
         found,

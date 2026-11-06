@@ -1,0 +1,46 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+
+def succeeded(n : Nat) -> -F Nat {
+  return Succ n
+}
+
+def early(k : Nat) -> -F Nat {
+  match k {
+    | Zero => return k
+    | Succ(j) => {
+      let q = match j {
+        | Zero => return j
+        | Succ(r) => pure r
+      };
+      pure q
+    }
+  }
+}
+
+def computed(n : Nat) -> -F Nat {
+  return succeeded n
+}
+
+def stated(n : Nat) -> -F Nat {
+  return n;
+}
+
+def nested(n : Nat) -> -F (+U (Nat -> -F Nat)) {
+  return thunk { fun (x) { return Succ x } }
+}
+
+def blocked(n : Nat) -> -F Nat {
+  match n {
+    | Zero => { let y = succeeded n; return y }
+    | Succ(p) => p
+  }
+}
+
+def noted(n : Nat) -> -F Nat {
+  return /* the argument */ n
+}
+
+@[ explicit_exits ]
+def asked(n : Nat) -> -F Nat {
+  return n
+}

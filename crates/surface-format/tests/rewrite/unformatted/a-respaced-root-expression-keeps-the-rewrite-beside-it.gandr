@@ -1,0 +1,3 @@
+def pair : Integer * String;
+def s = *{b = 1};
+*{ s | b = 2 }

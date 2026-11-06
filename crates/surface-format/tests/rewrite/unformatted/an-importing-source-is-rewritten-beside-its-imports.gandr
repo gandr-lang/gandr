@@ -1,0 +1,6 @@
+import "./circle.gandr";
+
+def twice : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop loop,
+  Path.here Base
+);
