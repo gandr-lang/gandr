@@ -88,6 +88,8 @@ use crate::mold::TokenIndex;
 
 mod layout;
 
+pub use layout::Move;
+
 /// The lexical class of one maximal lexeme.
 ///
 /// The class is the labeler's whole output vocabulary; the molder maps each
@@ -841,6 +843,31 @@ const BYTE_ORDER_MARK_UTF8: [u8; 3] = [0xef, 0xbb, 0xbf];
     && ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left.end == right.start))]
 pub fn label(src: SourceFragment<'_>) -> Vec<Token>
 {
+    label_moving(src, &[])
+}
+
+/// Label `src` as [`label`] does, with each line of `moves` kept in a layout
+/// block that its column closes: the melder's dry run reads a line at column
+/// zero inside nested blocks in each block it may stand in.
+///
+/// # Specification
+/// - requires: `moves` ascend by line.
+/// - ensures: the tokens [`label`] answers, but that the layout pass keeps each
+///   line of `moves` in the block its move names.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the call.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the layout pass, whose witness labels one line in each
+///   block it may stand in.
+/// - witness: `label::layout::tests::a_moved_line_stays_in_the_block_its_move_names_5434`
+#[must_use]
+pub fn label_moving(
+    src: SourceFragment<'_>,
+    moves: &[Move],
+) -> Vec<Token>
+{
     let source_bytes = SourceBytes::from(AsRef::<str>::as_ref(&src).as_bytes());
     let mut tokens = Vec::new();
     let mut mode = LabelMode::default();
@@ -851,7 +878,7 @@ pub fn label(src: SourceFragment<'_>) -> Vec<Token>
         pos = next;
     }
     mark_arm_bars(source_bytes, &mut tokens);
-    layout::lay_out(source_bytes, &mut tokens, layout::Next::End);
+    layout::lay_out(source_bytes, &mut tokens, layout::Next::End, moves);
     tokens
 }
 
@@ -1495,7 +1522,7 @@ impl Labeling
             pos = next;
         }
         mark_arm_bars(source_bytes, &mut labeling.tokens);
-        layout::lay_out(source_bytes, &mut labeling.tokens, layout::Next::End);
+        layout::lay_out(source_bytes, &mut labeling.tokens, layout::Next::End, &[]);
         labeling.tokens.shrink_to_fit();
         labeling.within.shrink_to_fit();
         labeling
@@ -1658,6 +1685,7 @@ impl Labeling
             else {
                 layout::Next::End
             },
+            &[],
         );
         let resync = resync.unwrap_or(tokens.len());
         let resynced = tokens.get(resync).map_or(old.len(), start);

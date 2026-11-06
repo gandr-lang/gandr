@@ -32,6 +32,34 @@
     "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `crates/core-checker/tests/debug-traces/judgement.tests.reflexivity_checks_by_endpoint_conversion.txt` stops `judgement::tests::reflexivity_checks_by_endpoint_conversion` at `judgement.rs:10390:32`.\n<!-- gandr-observed:end -->"
   },
   {
+    "name": "#5341: a stop in a frame of the optimised standard library is read before lldb's ` [opt]` mark",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `recheck::tests::a_hover_splits`.",
+      "transcripts": [
+        {
+          "path": "crates/surface-lsp/tests/debug-traces/recheck.tests.a_hover_splits.txt",
+          "text": "test: recheck::tests::a_hover_splits\npackage: gandr-surface-lsp\ncommand: mise run debug:test gandr-surface-lsp recheck::tests::a_hover_splits\n\n(lldb) run\n* thread #2, name = 'recheck::tests', stop reason = breakpoint 1.1\n    frame #0: 0x0000000103813da8 gandr_surface_lsp-68fb3854266909c2`__rustc::rust_panic at panicking.rs:887:25 [opt]\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [x] observed — `crates/surface-lsp/tests/debug-traces/recheck.tests.a_hover_splits.txt` stops `recheck::tests::a_hover_splits` at `panicking.rs:887:25`.\n<!-- gandr-observed:end -->"
+  },
+  {
+    "name": "#5341: a breakpoint with no frame 0 line still witnesses nothing",
+    "input": {
+      "defect": true,
+      "body": "Closes #9\n\nThe regression is `recheck::tests::a_hover_splits`.",
+      "transcripts": [
+        {
+          "path": "crates/surface-lsp/tests/debug-traces/recheck.tests.a_hover_splits.txt",
+          "text": "test: recheck::tests::a_hover_splits\npackage: gandr-surface-lsp\ncommand: mise run debug:test gandr-surface-lsp recheck::tests::a_hover_splits\n\n(lldb) run\n* thread #2, name = 'recheck::tests', stop reason = breakpoint 1.1\n [opt]\n"
+        }
+      ]
+    },
+    "output": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
+  },
+  {
     "name": "#3758: a transcript of a test the body does not name witnesses nothing",
     "input": {
       "defect": true,

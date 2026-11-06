@@ -141,6 +141,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::constructor_classifier;
 use gandr_core_term::constructor_classifier_at;
 use gandr_core_term::decoded_comp_reading;
+use gandr_core_term::effect::host::HOMES;
 use gandr_core_term::equal_type_reading;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::instantiate_value_type_under;
@@ -189,6 +190,7 @@ use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SplitComponent;
+use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::WrittenModel;
 use gandr_surface_lowering::coincide::CallText;
@@ -987,6 +989,10 @@ pub struct TypeTable
     /// The name the printer writes for each homed type head the source does
     /// not write bare.
     homes: Vec<HomedName>,
+    /// The module path of each `std` module that homes a host interface and
+    /// that the source neither is nor imports: a printed row names such an
+    /// interface after its home's path, `std.io.Console.Eff` (#5209).
+    hosts: Vec<&'static str>,
     /// What the table keeps to name the binders an entry stands under.
     naming: Naming,
     /// The constructors of the source's data declarations, by family.
@@ -1826,6 +1832,17 @@ impl TypeTable
         endpoints.dedup_by_key(|&mut (term, ..)| term);
         let names = constant_names(&module, module.unit().last());
         let homes = homed_names(&module, module.unit().last());
+        let reader = module.unit().last();
+        let mut hosts: Vec<&'static str> = HOMES.iter().map(|&(_, home)| home).collect();
+        hosts.sort_unstable();
+        hosts.dedup();
+        hosts.retain(|&home| {
+            !matches!(module.unit().home(reader), Maybe::Present(own) if own.as_ref() == home)
+                && !module.imports().iter().any(|import| {
+                    import.source() == reader
+                        && matches!(import.module(), Maybe::Present(written) if written.as_ref() == home)
+                })
+        });
         // Each term the value bridge carried by a reduct, or by a forgetting
         // map at carriers the explicit form spells, with the map, which a face
         // names beside the term's type.
@@ -3020,6 +3037,7 @@ impl TypeTable
             arena,
             names,
             homes,
+            hosts,
             naming,
             unit: unit.clone(),
             base,
@@ -4621,11 +4639,15 @@ impl TypeTable
     ///   type `C` as `+U (C)` — the whole lowered once in the unit the table
     ///   was built in, an import of each `std` module whose head the source
     ///   writes after the module's path appended after them and bound to the
-    ///   unit's source of that module, and is [`RoundTrip::Equal`] when the
-    ///   type read is the table's node, `U C` for a computation type, compared
-    ///   by [`equal_type_reading`] under the source's data signatures — the
-    ///   same syntax with path evidence erased, a type of words as the path at
-    ///   its point, a session type by its protocol's behaviour from its state;
+    ///   unit's source of that module. A host interface a printed row names
+    ///   imports its home the same way when the source neither is nor imports
+    ///   that home; where the unit lays no source of the home, the import binds
+    ///   a stand-in of one newline before the source ([`Unit::standing_in`]).
+    ///   The read back is [`RoundTrip::Equal`] when the type read is the
+    ///   table's node, `U C` for a computation type, compared by
+    ///   [`equal_type_reading`] under the source's data signatures — the same
+    ///   syntax with path evidence erased, a type of words as the path at its
+    ///   point, a session type by its protocol's behaviour from its state;
     ///   [`RoundTrip::Different`] otherwise; and [`RoundTrip::Refused`] with
     ///   the refusal when the lowering refused a closed signature or the whole
     ///   source. Each type read is printed again under the same binders, with
@@ -4646,15 +4668,17 @@ impl TypeTable
     ///   types disagree reads back at both; a type inside a recursive
     ///   definition that names the declaration reads back equal, and one that
     ///   names the definition's own binder spells its claim; a type of a source
-    ///   that imports a sibling reads back beside it; and the corpus census
-    ///   reads back every printed type of every source, failing on a class the
-    ///   findings do not pin.
+    ///   that imports a sibling reads back beside it; a row naming a host
+    ///   interface reads back through its home's source or a stand-in; and the
+    ///   corpus census reads back every printed type of every source, failing
+    ///   on a class the findings do not pin.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
     /// - witness: `typed::tests::a_record_parameter_reprints_with_its_labels_1655`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     /// - witness: `typed::tests::a_mismatched_term_reads_back_at_both_its_types`
     /// - witness: `typed::tests::a_recursive_definitions_own_binder_reads_apart_from_its_declaration_3584`
     /// - witness: `typed::tests::a_list_type_reads_back_through_its_home_4835`
+    /// - witness: `typed::tests::a_printed_row_reads_back_through_its_interface_s_home_5209`
     /// - witness: `tests::census::sweeps::every_printed_type_reads_back_to_its_certificate`
     #[spec(ensures: |ret| ret.len() >= self.entries.len())]
     #[inline]
@@ -4810,23 +4834,53 @@ impl TypeTable
         }
         // A homed head the source does not import prints after its home's
         // path, `std.list.List(A)`, which reads back with the import of that
-        // home appended, bound to the unit's source of that module.
+        // home appended, bound to the unit's source of that module. So does a
+        // host interface a printed row names, `std.io.Console.Eff` (#5209).
+        // A host interface is native, so where the unit lays no source of its
+        // home, a stand-in of one newline before the source takes the import.
         let mut unit = self.unit.clone();
         let mut homes: BTreeSet<&str> = BTreeSet::new();
-        for homed in self.homes.iter().filter(|homed| !homed.imported) {
-            if !homes.insert(homed.home.as_str()) {
+        let hosted = self
+            .hosts
+            .iter()
+            .copied()
+            .filter(|&home| {
+                HOMES.iter().any(|&(interface, held)| {
+                    held == home
+                        && printed
+                            .iter()
+                            .any(|read| read.settled.is_none() && read.spelled.contains(interface))
+                })
+            })
+            .map(|home| (home, true));
+        for (home, native) in self
+            .homes
+            .iter()
+            .filter(|homed| !homed.imported)
+            .map(|homed| (homed.home.as_str(), false))
+            .chain(hosted)
+        {
+            if !homes.insert(home) {
                 continue;
             }
-            let Some(at) = unit.sources().iter().position(|source| {
-                matches!(source.home(), Maybe::Present(module) if module.as_ref() == homed.home)
-            })
-            else {
-                continue;
-            };
-            for part in ["\nimport ", homed.home.as_str(), " ;"] {
+            let laid = unit.sources().iter().position(
+                |source| matches!(source.home(), Maybe::Present(module) if module.as_ref() == home),
+            );
+            match laid {
+                Some(at) => unit = unit.importing(ImportTarget::Source(SourceIndex::from(at))),
+                None if native => {
+                    let start = unit
+                        .sources()
+                        .last()
+                        .map_or(0_usize, |source| usize::from(source.start()));
+                    augmented.insert(start, '\n');
+                    unit = unit.standing_in(SurfaceName::from(home));
+                },
+                None => continue,
+            }
+            for part in ["\nimport ", home, " ;"] {
                 augmented.push_str(part);
             }
-            unit = unit.importing(ImportTarget::Source(SourceIndex::from(at)));
         }
         // The appended types, imported into a copy of the table's arena beside
         // the nodes they are compared with.
@@ -7443,6 +7497,72 @@ mod tests
             assert!(
                 trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
                 "{import:?}: every printed type reads back: {trips:?}"
+            );
+        }
+    }
+
+    /// #5209: a row naming a host interface prints after its home's path,
+    /// and reads back with the import of that home the read-back appends. The
+    /// import binds the unit's source of the home where the unit lays one, as
+    /// for a sibling's import of `std.io`. It binds a stand-in where the unit
+    /// lays none, as for a capability the source names by its operation.
+    #[test]
+    fn a_printed_row_reads_back_through_its_interface_s_home_5209()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::SurfaceName;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let grammar = built_in().expect("the built-in grammar builds");
+        let quit = "def quit(p : Cap {exit}) -> Integer {\n  p.exit 1 ;\n  pure 0\n}\n";
+        let sibling = "import std.io ;\npub def say(c : Cap {print}) -> -F [std.io.Console.Eff] \
+                       Unit { c.print \"said\" }\n";
+        let said = "import \"./say.gandr\" ;\ndef said(c : Cap {print}) -> Integer {\n  say c \
+                    ;\n  pure 0\n}\n";
+        let home = ImportTarget::Source(SourceIndex::from(0_usize));
+        let base = ByteOffset::from(1_usize.saturating_add(sibling.len()));
+        let laid = format!("\n{sibling}{said}");
+        for (text, unit, base, row) in [
+            (
+                String::from(quit),
+                Unit::single(),
+                ByteOffset::from(0_usize),
+                "[std.process.Exit.Eff]",
+            ),
+            (
+                laid,
+                Unit::new(vec![
+                    UnitSource::new(ByteOffset::from(0_usize), Vec::new())
+                        .homed(SurfaceName::from("std.io")),
+                    UnitSource::new(ByteOffset::from(1_usize), vec![home]),
+                    UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(1_usize))]),
+                ])
+                .expect("the unit's sources start in order"),
+                base,
+                "[std.io.Console.Eff]",
+            ),
+        ] {
+            let table = TypeTable::of_unit(&grammar, SourceText::from(text.as_str()), &unit, base)
+                .expect("the unit parses");
+            let trips: Vec<(String, RoundTrip)> = table
+                .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+                .into_iter()
+                .map(|back| (back.spelled, back.trip))
+                .collect();
+            assert!(
+                trips
+                    .iter()
+                    .any(|&(ref spelled, ref trip)| spelled.contains(row)
+                        && *trip == RoundTrip::Equal),
+                "a type whose row is `{row}` reads back to its certificate: {trips:?}"
+            );
+            assert!(
+                trips
+                    .iter()
+                    .all(|&(_, ref trip)| matches!(*trip, RoundTrip::Equal | RoundTrip::Open)),
+                "every printed type reads back: {trips:?}"
             );
         }
     }

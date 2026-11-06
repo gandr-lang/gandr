@@ -3999,6 +3999,42 @@
     "output": "false"
   },
   {
+    "name": "#5517: a gated head waits though the brake, a required job of the CI workflow that runs on a merge group only, skips on its pull request",
+    "program": "unstarted.jq",
+    "args": {
+      "required": [
+        "hold the landings while main lags",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "workflow": "CI"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "prepare the run",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "CI" } } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "hold the landings while main lags",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "CI" } } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "PR title" } } }
+      }
+    ],
+    "output": "true"
+  },
+  {
     "name": "#5340 stands beside #5339: both opened at once on #5325's branch",
     "program": "beside.jq",
     "args": { "n": 5340, "base": "workflow-5325-recovery" },

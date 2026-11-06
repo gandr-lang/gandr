@@ -14,15 +14,19 @@
 #   defect       whether the body works a `kind:defect` issue
 #   body         the pull request's body
 #   transcripts  the transcripts the change adds or edits: [{path, text}]
-#   paths        every path the change touches; absent, the change is read
-#                as touching Rust
+#   paths        every path the change touches, less each Rust file whose
+#                diff changes only comments (#5498); absent, the change is
+#                read as touching Rust
 #   cases        the `.config` cases the change adds: [{path, name}]
 #
 # Output: the block's lines between its markers, or nothing when the body
 # works no defect. An open box is the obligation owed.
 
 def header($name): [capture("(?m)^" + $name + ": (?<value>.+)$").value][0];
-def stop: [capture("(?m)^\\s*\\*?\\s*frame #0: .* at (?<at>\\S+:[0-9]+(:[0-9]+)?)\\s*$").at][0];
+# The location of frame 0. lldb may end the line with marks such as ` [opt]`,
+# for a frame of the optimised standard library (#5341); the location stands
+# before them.
+def stop: [capture("(?m)^\\s*\\*?\\s*frame #0: .* at (?<at>\\S+:[0-9]+(:[0-9]+)?)(\\s+\\[[a-z]+\\])*\\s*$").at][0];
 
 select(.defect)
 | .body as $body

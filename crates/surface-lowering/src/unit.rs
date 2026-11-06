@@ -577,6 +577,50 @@ impl Unit
         self
     }
 
+    /// This unit with a stand-in for the standard library's module `module`
+    /// before its last source: a source of one byte, homed as `module`, at
+    /// the last source's start. The last source moves one byte on and
+    /// imports the stand-in after every import it writes. A host
+    /// interface is native, so the import of its home reads no declaration,
+    /// and the stand-in holds none (#5209).
+    ///
+    /// # Specification
+    /// - requires: the caller lays one byte, a newline, at the last source's
+    ///   start in the unit's text.
+    /// - ensures: one source more, the stand-in homed as `module` just before
+    ///   the last, which imports it last; every other source and the prelude as
+    ///   before.
+    /// - provides: the import of a host interface's home where the unit lays no
+    ///   source of that home.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row naming a host interface whose home the unit
+    ///   lays no source of is admitted through the stand-in, and refused
+    ///   without it.
+    /// - witness: `lower::capability::tests::a_stand_in_takes_the_import_of_a_home_the_unit_lacks_5209`
+    #[spec(captures: laid = (self.sources.len(), self.prelude), ensures: |ret| ret.sources.len() == laid.0.saturating_add(1_usize) && ret.prelude == laid.1)]
+    #[inline]
+    #[must_use]
+    pub fn standing_in(
+        mut self,
+        module: SurfaceName<'_>,
+    ) -> Self
+    {
+        let Some(mut last) = self.sources.pop()
+        else {
+            return self;
+        };
+        let stand_in = SourceIndex(self.sources.len());
+        self.sources
+            .push(UnitSource::new(last.start, Vec::new()).homed(module));
+        last.start = ByteOffset::from(usize::from(last.start).saturating_add(1_usize));
+        last.imports.push(ImportTarget::Source(stand_in));
+        self.sources.push(last);
+        self
+    }
+
     /// The sources, in admission order.
     ///
     /// # Specification
