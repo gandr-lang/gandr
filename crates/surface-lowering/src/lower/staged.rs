@@ -78,6 +78,8 @@ use super::Site;
 use super::closed;
 use super::exhausted;
 use super::lowered;
+use super::patched;
+use super::patched::Bracket;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -465,7 +467,9 @@ impl<'source> Lowerer<'_, 'source>
             let placed = Placed::of(at, node);
             let formed = self.form_at(placed)?;
             read_pieces(self.pbg, self.tree, at, scratch)?;
-            if let Some((form, Former::StagedType)) = formed {
+            if let Some((form, Former::StagedType)) = formed
+                && patched::bracket_of(&scratch.pieces) == patched::Written::Stage
+            {
                 if placement == Placement::Unplaced {
                     return Err(LoweringRefusal::OutOfFragment {
                         span: placed.span,
@@ -522,20 +526,23 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a staged type, `Nat[i]` or `Nat[< i]`, or the view type
-    /// `View[m](a)` a method answering a place declares its result at.
+    /// Classify a staged type, `Nat[i]` or `Nat[< i]`, the view type
+    /// `View[m](a)` a method answering a place declares its result at, or a
+    /// record type patched by a static bracket, `T[.l = v]` or `T[f ↦ v]`.
     ///
     /// # Specification
     /// - requires: `site` is a staged type.
     /// - ensures: the type stands as its operand at the stage its function's
     ///   telescope marked it with, the operand read where the staged type
     ///   stands; a view type its function recorded stands as its place's index,
-    ///   the atom `Integer`, its element read by the function.
+    ///   the atom `Integer`, its element read by the function; a patched type
+    ///   is read as [`Self::patched_fields`] and [`Self::patched_face`] read
+    ///   it.
     /// - fails: the wrong-sort refusal where no value type is read; a fault
     ///   naming the form for a tile out of place; the out-of-fragment refusal
     ///   for a staged type no quantified function's signature marked;
     ///   [`LoweringRefusal::ViewNotPlace`] for a view type no method answering
-    ///   a place declares its result at.
+    ///   a place declares its result at; a patched type's own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -549,7 +556,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::staged::tests::a_stage_outside_a_signature_leaves_the_fragment`
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Atom(TypeAtom::Integer)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Patched(_) | Plan::Atom(TypeAtom::Integer)))))]
     pub(super) fn staged_type(
         &mut self,
         site: Site,
@@ -559,6 +566,11 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::ValueType)?;
         let base = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
+        match self.bracket(site, &mut cursor)? {
+            Bracket::Stage => {},
+            Bracket::Fields(fixed) => return self.patched_fields(site, frame, base, &fixed),
+            Bracket::Face(face, value) => return self.patched_face(site, frame, base, face, value),
+        }
         let _below = cursor.tile(TileName::LESS_THAN);
         let Maybe::Present(_) = cursor.tile(TileName::IDENTIFIER)
         else {

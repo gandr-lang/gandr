@@ -1,8 +1,10 @@
 /// `extension-types`: Extension types as face-theory signatures.
-/// Implemented: an extension type stated as a face-theory signature over its base type, face and partial element, the zero-fibre case checked.
-/// Not implemented: every other case, refused by name.
+/// Implemented: an extension type as a face-theory signature, and a record type under a static bracket, `T[.l = v]` or `T[f ↦ v]`.
+/// Not implemented: the coercions between a patched record type and its base, two faces in one bracket, and every other case.
 ///
 /// - owes: #641
+/// - owes: #5536
+/// - owes: #5106
 //! An extension type stated as the signature the face theory generates for it.
 //! `ext Val on left is zero` over the two points of `Two` is the type of cells
 //! fixed to `zero` on the face `left`: a cell holds its value off the face,
@@ -38,3 +40,12 @@ theory ZeroFiber where
   rule boundary : outp e ==> zero ();
   rule beta : outq (ins y) ==> y;
   rule eta : ins (outq e) ==> e;
+
+/// A server's configuration, whose face `secure` holds its port and its
+/// transport.
+type Config = *{host : String, port : Integer, tls : Bool} where
+  face secure = { port, tls };
+
+/// A configuration on the secure face holds its host alone, and reads its
+/// fixed port back.
+def port_of(c : Config[secure ↦ *{.port = 443, .tls = true}]) -> Integer { c.port }

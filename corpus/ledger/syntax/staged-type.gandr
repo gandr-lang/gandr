@@ -1,7 +1,13 @@
-/// `staged_type`: a type at a stage its signature binds.
+/// `staged_type`: a type at a stage its signature binds, or a record type
+/// whose static bracket fixes fields by label or by face.
 @[ checks ]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 @[ checks ]
-def kept[i : Size](n : Nat[i]) -> -F Nat[i] { return n }
+type Pair = *{left : Integer, right : Integer} where
+  face lefty = { left };
+@[ checks ]
+def kept[i : Size](n : Nat[i], p : Pair[.left = 1], q : Pair[lefty ↦ *{.left = 1}]) -> -F Nat[i] { return n }
+@[ checks ]
+def faced : Pair[lefty |-> *{.left = 1}] = *{.right = 2};

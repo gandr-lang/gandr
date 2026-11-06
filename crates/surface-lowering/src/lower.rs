@@ -800,6 +800,8 @@ mod natural;
 
 mod opening;
 
+mod patched;
+
 mod phase;
 
 use crate::table::NodeTable;
@@ -2994,6 +2996,9 @@ enum Plan
     /// A data type at a stage its function's telescope binds: the type and
     /// the stage.
     Staged(NodeIndex, gandr_kernel_term::Stage),
+    /// A record type patched by a static bracket, `T[.l = v]`: the record of
+    /// the fields the bracket leaves free, each at the type `T` writes for it.
+    Patched(BTreeMap<FieldLabel, NodeIndex>),
     /// A value type kept in a region: the type and the region, a capability
     /// scope's or a hold's by its depth, or the definition's region binder.
     Kept(NodeIndex, gandr_core_term::effect::capability::Region),
@@ -13577,23 +13582,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   written, as [`Self::positional`] reads it; a selection read as a
     ///   computation off a name whose written type is a thunked lazy record
     ///   over labels observes the entry its label names; a selection off a name
-    ///   whose written type is a type over labels projects the entry its label
-    ///   names, as [`Self::selection`] reads it; a selection off a name whose
-    ///   written type is a data family without indices reads the field its
-    ///   label names off every constructor, as [`Self::data_field`] reads it; a
-    ///   selection off a flattened model implicit is the parameter of the
-    ///   component it names, as [`Self::flattened_member`] reads it; a
-    ///   selection off a value no written type states, a chain of selections
-    ///   ending at a binder's or a declaration's name not capitalised, projects
-    ///   the field its label names of the record the value is, as
-    ///   [`Self::field`] reads it. A chain of selections whose head is a
-    ///   capitalised name is a path: inside a functor whose parameter the head
-    ///   names, a one-link path is that parameter's value component, as
-    ///   [`Self::parameter_value`] reads it; a path whose head, capitalised or
-    ///   not, names a module an enclosing module declares reaches the member
-    ///   that module exports, as [`Self::enclosed_member`] reads it, and stands
-    ///   as that member's constant as below; otherwise it is resolved through
-    ///   the outermost scope, its head the module the path's source sees
+    ///   written at a record type a static bracket patches reads a fixed
+    ///   field's literal or projects a free field, as [`Self::patched_field`]
+    ///   reads it; a selection off a name whose written type is a type over
+    ///   labels projects the entry its label names, as [`Self::selection`]
+    ///   reads it; a selection off a name whose written type is a data family
+    ///   without indices reads the field its label names off every constructor,
+    ///   as [`Self::data_field`] reads it; a selection off a flattened model
+    ///   implicit is the parameter of the component it names, as
+    ///   [`Self::flattened_member`] reads it; a selection off a value no
+    ///   written type states, a chain of selections ending at a binder's or a
+    ///   declaration's name not capitalised, projects the field its label names
+    ///   of the record the value is, as [`Self::field`] reads it. A chain of
+    ///   selections whose head is a capitalised name is a path: inside a
+    ///   functor whose parameter the head names, a one-link path is that
+    ///   parameter's value component, as [`Self::parameter_value`] reads it; a
+    ///   path whose head, capitalised or not, names a module an enclosing
+    ///   module declares reaches the member that module exports, as
+    ///   [`Self::enclosed_member`] reads it, and stands as that member's
+    ///   constant as below; otherwise it is resolved through the outermost
+    ///   scope, its head the module the path's source sees
     ///   ([`Self::see_module`]), at the depth that binds it: a path ending at
     ///   an exported value component stands as that member's constant when the
     ///   member is declared strictly before the declaration the path is written
@@ -13641,12 +13649,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    /// - witness: `lower::patched::tests::a_fixed_field_reads_its_value_back`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Literal(_) | Plan::Boolean(_) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -13685,6 +13694,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         if self.positional(site, pieces)? == arity::Planned(true) {
+            return Ok(());
+        }
+        if self.patched_field(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         if self.selection(site, pieces)? == arity::Planned(true) {
@@ -19391,6 +19403,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Session(..)
                 | Plan::World(world::Worlded::At { .. })
                 | Plan::Staged(..)
+                | Plan::Patched(_)
                 | Plan::Kept(..)
                 | Plan::Carrier(..)
                 | Plan::FixedCarrier(..) => Some(Produced::ValueType),
@@ -19740,6 +19753,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Access(accessed) => self.mint_access(accessed, sink, origin),
             Plan::World(worlded) => self.mint_world(worlded, sink, origin),
             Plan::Staged(base, stage) => self.mint_staged(base, stage, sink, origin),
+            Plan::Patched(ref fields) => self.mint_record_type(fields, sink, origin),
             Plan::Kept(inner, region) => self.value_type_at(inner).map(|inner| {
                 let id = sink.arena.value_type_kept(inner, region);
                 sink.origins.record_value_type(id, origin);
@@ -20982,6 +20996,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Access(_)
             | Plan::World(_)
             | Plan::Staged(..)
+            | Plan::Patched(_)
             | Plan::Kept(..)
             | Plan::TelescopeTransport(_)
             | Plan::Capability(..)
