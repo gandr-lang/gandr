@@ -238,8 +238,10 @@ impl TrackingIssue
     pub const HIGHER_ORDER_FIELD: Self = Self(2859);
     /// A field whose type names a field before it.
     pub const DEPENDENT_FIELD: Self = Self(2663);
-    /// A type with no first-order description reference.
-    pub const TYPE_SHAPE: Self = Self(2664);
+    /// A type with no first-order description reference: a sort above level
+    /// zero, a universe field, a term index, or a union, staged or session
+    /// field.
+    pub const TYPE_SHAPE: Self = Self(5662);
     /// A description the native interpreter gives no interpretation.
     pub const NATIVE_DECODE: Self = Self(2665);
     /// An operation feeding an output from several monomials, or of an arity

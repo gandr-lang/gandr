@@ -1188,18 +1188,17 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: the sort as `Theory` codes it — its index ports in written
     ///   order, each port's sort read as a sort over index terms, and its
-    ///   representability, `Type+` representable, `Atom` an atom sort and
-    ///   `Type` ordinary — beside its name tile and where its name, its
-    ///   classifier and each index are written.
-    /// - fails: an incomplete judgment earns a member-local refusal; a
-    ///   classifier other than the two universes and `Atom` is a type-shape
-    ///   refusal.
+    ///   representability as [`Self::classifier`] reads it — beside its name
+    ///   tile and where its name, its classifier and each index are written.
+    /// - fails: an incomplete judgment earns a member-local refusal, and so
+    ///   does a classifier [`Self::classifier`] refuses.
     /// - panics: none.
     /// - executable: none — the written telescope is source syntax the result
     ///   does not retain beside the sort.
     ///
     /// # Errors
-    /// Returns malformed syntax or an unreadable port.
+    /// Returns malformed syntax, an unreadable port, a classifier that is no
+    /// universe, or a universe above level zero.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an indexed sort beside a plain one is read whole, two
@@ -1247,13 +1246,7 @@ impl Reader<'_, '_>
             return Err(run.signature_fault(SignatureFault::MissingJudgment));
         }
         let classifier = run.take()?;
-        let representability = match self.text(classifier).0 {
-            "Type" => Representability::Ordinary,
-            "Type+" => Representability::Representable,
-            "Atom" => Representability::Atom,
-            "Type[-]" => Representability::Computation,
-            _ => return Err(run.fault(DescriptionFault::TypeShape)),
-        };
+        let representability = self.classifier(classifier, run)?;
         run.end()?;
         Ok((
             TheorySort {
@@ -1268,6 +1261,70 @@ impl Reader<'_, '_>
                 indices: written,
             },
         ))
+    }
+
+    /// The representability a sort's classifier names: `Type`, `Type[+]` and
+    /// `Type[+, 0]` an ordinary sort, `Type+` a representable one, `Atom` an
+    /// atom sort, and `Type[-]` and `Type[-, 0]` a computation sort.
+    ///
+    /// # Specification
+    /// - ensures: each spelling above reads as the representability it names,
+    ///   however its tiles are spaced.
+    /// - fails: a universe at a level numeral above zero is a type-shape
+    ///   refusal, which no sort holds yet; every other classifier is no
+    ///   universe. Each refusal is at `member`'s bytes.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `TypeShape` or `NoUniverse`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each universe spelling at level zero reads, a level
+    ///   above zero is a type shape, and a type or a bracketed name is no
+    ///   universe.
+    /// - witness: `description::theory::tests::each_universe_at_level_zero_classifies_a_sort_2664`
+    /// - witness: `description::theory::tests::each_malformed_member_is_refused_by_its_fault`
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| refusal.span == member.span && matches!(refusal.fault, DescriptionFault::TypeShape | DescriptionFault::NoUniverse), |_| true))]
+    fn classifier(
+        &self,
+        classifier: Placed,
+        member: &Run<'_>,
+    ) -> Result<Representability, DescriptionDiagnostic>
+    {
+        match self.text(classifier).0 {
+            "Type" => return Ok(Representability::Ordinary),
+            "Type+" => return Ok(Representability::Representable),
+            "Atom" => return Ok(Representability::Atom),
+            _ => {},
+        }
+        let no_universe = || member.fault(DescriptionFault::NoUniverse);
+        let pieces = self.pieces(classifier).map_err(|_unread| no_universe())?;
+        let mut universe = Run::new(&pieces, classifier.span);
+        if !(universe.eat(Spelling("Type")).0 && universe.eat(Spelling("[")).0) {
+            return Err(no_universe());
+        }
+        let representability = if universe.eat(Spelling("+")).0 {
+            Representability::Ordinary
+        }
+        else if universe.eat(Spelling("-")).0 {
+            Representability::Computation
+        }
+        else {
+            return Err(no_universe());
+        };
+        if universe.eat(Spelling(",")).0 {
+            if !universe.at(Spelling("number")).0 {
+                return Err(no_universe());
+            }
+            let level = universe.take()?;
+            if self.text(level).0.parse::<u64>() != Ok(0) {
+                return Err(member.fault(DescriptionFault::TypeShape));
+            }
+        }
+        if !universe.eat(Spelling("]")).0 || !universe.remaining().is_empty() {
+            return Err(no_universe());
+        }
+        Ok(representability)
     }
 
     /// Read a `boundary` member after its keyword, `Square { tl, tr, bl, br }`:

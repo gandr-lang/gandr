@@ -2159,6 +2159,10 @@ pub mod tests
                 span,
                 fault: gandr_surface_lowering::description::MemberFault::IllSorted,
             },
+            LoweringRefusal::UndescribedMember {
+                span,
+                fault: gandr_surface_lowering::description::MemberFault::NoUniverse,
+            },
             LoweringRefusal::RulesDiverge { span, first: span },
             LoweringRefusal::RulesUncompleted { span, first: span },
             LoweringRefusal::RulesNeverComplete { span, first: span },

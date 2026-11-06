@@ -152,6 +152,7 @@ use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::lower::read_as_type;
 use crate::module::Visibility;
 use crate::unit::SourceIndex;
 use crate::unit::Unit;
@@ -197,6 +198,13 @@ pub enum DescriptionFault
     MemberPolarity,
     /// A type shape has no symbolic first-order reference.
     TypeShape,
+    /// A data field's written type is no type: a form the lowering refuses
+    /// where a type is read, or a parenthesised type over other than one
+    /// operand. The lowering refuses the same bytes where it reads the
+    /// field's type; a codata observation reads it as `Malformed` instead.
+    NoType,
+    /// A sort's classifier is no universe.
+    NoUniverse,
     /// The retired rule arrow has no rewrite-face reading.
     RetiredRuleArrow,
     /// The retired operation lead is not a synonym for an operation member.
@@ -246,6 +254,8 @@ pub enum MemberFault
     DependentField,
     /// A type shape with no first-order reference.
     TypeShape,
+    /// A sort whose classifier is no universe.
+    NoUniverse,
     /// A description the native interpreter gives no interpretation.
     NativeDecode,
     /// An operation written with a circuit body.
@@ -308,6 +318,7 @@ impl fmt::Display for MemberFault
                  description code does not hold"
             },
             Self::TypeShape => "names a type with no first-order description reference",
+            Self::NoUniverse => "is a sort whose classifier is no universe",
             Self::NativeDecode => "has no interpretation the native description reading gives",
             Self::OperationFiller => {
                 "is an operation with a circuit body, which the description route does not read \
@@ -356,11 +367,13 @@ impl fmt::Display for MemberFault
 }
 
 /// The field refusals that mark the description code's limit rather than a
-/// fault of the source: the native reading admits each such field.
-const UNCODED: [DescriptionFault; 3] = [
+/// fault of the source, and a field that is no type, which the lowering
+/// refuses: the native reading admits or refuses each such field itself.
+const UNCODED: [DescriptionFault; 4] = [
     DescriptionFault::HigherOrderField,
     DescriptionFault::DependentField,
     DescriptionFault::TypeShape,
+    DescriptionFault::NoType,
 ];
 
 /// What the route reads a declaration form as.
@@ -431,17 +444,18 @@ impl DescriptionDiagnostic
     ///
     /// # Specification
     /// - ensures: the module refusal covers exactly the diagnostic's source
-    ///   site; a field past the description code, an undecodable description,
-    ///   an operation filler, a top-level operation, a fillerless higher cell
-    ///   and the reserved glyph are an undescribed member carrying their own
-    ///   fault, a feed no observation guards its own refusal, a description the
-    ///   description check refuses an ill-formed description carrying the
-    ///   check's kind and its first two subjects as `written` spells them, a
-    ///   theory an `under` row names that no block presents an unresolved type
-    ///   head and one it names twice a duplicate definition, a point a
-    ///   `boundary` lists twice a duplicate definition, each named as `written`
-    ///   spells it, a `shape` member a malformed form naming `boundary` as the
-    ///   keyword it retires to, and every other fault a malformed form.
+    ///   site; a field past the description code, an undecodable description, a
+    ///   sort whose classifier is no universe, an operation filler, a top-level
+    ///   operation, a fillerless higher cell and the reserved glyph are an
+    ///   undescribed member carrying their own fault, a feed no observation
+    ///   guards its own refusal, a description the description check refuses an
+    ///   ill-formed description carrying the check's kind and its first two
+    ///   subjects as `written` spells them, a theory an `under` row names that
+    ///   no block presents an unresolved type head and one it names twice a
+    ///   duplicate definition, a point a `boundary` lists twice a duplicate
+    ///   definition, each named as `written` spells it, a `shape` member a
+    ///   malformed form naming `boundary` as the keyword it retires to, and
+    ///   every other fault a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -473,6 +487,7 @@ impl DescriptionDiagnostic
             DescriptionFault::HigherOrderField => undescribed(MemberFault::HigherOrderField),
             DescriptionFault::DependentField => undescribed(MemberFault::DependentField),
             DescriptionFault::TypeShape => undescribed(MemberFault::TypeShape),
+            DescriptionFault::NoUniverse => undescribed(MemberFault::NoUniverse),
             DescriptionFault::NativeDecode(_) => undescribed(MemberFault::NativeDecode),
             DescriptionFault::Signature(crate::circuit::SignatureFault::OperationFiller) => {
                 undescribed(MemberFault::OperationFiller)
@@ -540,6 +555,7 @@ impl DescriptionDiagnostic
             | DescriptionFault::FamilyHead
             | DescriptionFault::NonUniformResult
             | DescriptionFault::MemberPolarity
+            | DescriptionFault::NoType
             | DescriptionFault::RetiredRuleArrow
             | DescriptionFault::RetiredOperation
             | DescriptionFault::Signature(_) => malformed(),
@@ -1734,16 +1750,21 @@ impl Reader<'_, '_>
     ///   nullary observation where its name and each node of its type are
     ///   written, and the family applied as its result writes it when the
     ///   family heads the result.
-    /// - fails: constructor and operation leads refuse the wrong polarity.
+    /// - fails: constructor and operation leads refuse the wrong polarity. No
+    ///   native reading reads an observation's type, so a type that is no type
+    ///   is malformed here.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `MemberPolarity` or the field's refusal.
+    /// Returns `MemberPolarity`, `Malformed` for a type that is no type, or
+    /// the field's refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — observation witnesses distinguish lowercase
-    ///   observations from data generators.
+    ///   observations from data generators, and an observation that is no type
+    ///   is refused once.
     /// - witness: `description::tests::codata_observations_preserve_their_codes`
+    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
     #[spec(ensures: |result| match result {
         Ok(Observation::Nullary(ref ctor, ref written)) => ctor.result == *family
             && !written.ty.nodes.is_empty()
@@ -1787,7 +1808,17 @@ impl Reader<'_, '_>
             ));
         }
         let ty = run.take()?;
-        let (code, written) = self.field(ty, family, grade, &[])?;
+        let (code, written) = self.field(ty, family, grade, &[]).map_err(|refusal| {
+            if refusal.fault == DescriptionFault::NoType {
+                DescriptionDiagnostic {
+                    span: refusal.span,
+                    fault: DescriptionFault::Malformed,
+                }
+            }
+            else {
+                refusal
+            }
+        })?;
         // The code names the family alone; the arguments the result applies
         // it at are kept beside it, for the decoder to state.
         let itself = if code.recursive_sorts().next().is_some() {
@@ -1956,7 +1987,7 @@ impl Reader<'_, '_>
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `TypeShape`, `HigherOrderField`, `DependentField` or
+    /// Returns `NoType`, `TypeShape`, `HigherOrderField`, `DependentField` or
     /// `Malformed`.
     ///
     /// # Termination
@@ -2030,7 +2061,7 @@ impl Reader<'_, '_>
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `TypeShape`, `HigherOrderField`, `DependentField` or
+    /// Returns `NoType`, `TypeShape`, `HigherOrderField`, `DependentField` or
     /// `Malformed`.
     ///
     /// # Termination
@@ -2043,7 +2074,7 @@ impl Reader<'_, '_>
     ///   domain, over two, over none and nested to the right reads as the `=>`
     ///   spelling does.
     /// - witness: `description::tests::the_thunked_arrow_is_the_function_former_it_spells_3194`
-    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::TypeShape | DescriptionFault::HigherOrderField | DescriptionFault::DependentField | DescriptionFault::Malformed), |_| true))]
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::NoType | DescriptionFault::TypeShape | DescriptionFault::HigherOrderField | DescriptionFault::DependentField | DescriptionFault::Malformed), |_| true))]
     fn thunked_arrow(
         &self,
         pieces: &[Piece],
@@ -2154,13 +2185,13 @@ impl Reader<'_, '_>
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `TypeShape`, `HigherOrderField`, `DependentField` or
+    /// Returns `NoType`, `TypeShape`, `HigherOrderField`, `DependentField` or
     /// `Malformed`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one domain and a list of two read in written order.
     /// - witness: `description::tests::a_value_function_field_is_the_function_former`
-    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::TypeShape | DescriptionFault::HigherOrderField | DescriptionFault::DependentField | DescriptionFault::Malformed), |_| true))]
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::NoType | DescriptionFault::TypeShape | DescriptionFault::HigherOrderField | DescriptionFault::DependentField | DescriptionFault::Malformed), |_| true))]
     fn domains(
         &self,
         domain: Placed,
@@ -2216,13 +2247,13 @@ impl Reader<'_, '_>
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `TypeShape`, `HigherOrderField`, `DependentField` or
+    /// Returns `NoType`, `TypeShape`, `HigherOrderField`, `DependentField` or
     /// `Malformed`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a domain is read as a field's type is.
     /// - witness: `description::tests::a_value_function_field_is_the_function_former`
-    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::TypeShape | DescriptionFault::HigherOrderField | DescriptionFault::DependentField | DescriptionFault::Malformed), |_| true))]
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| matches!(refusal.fault, DescriptionFault::NoType | DescriptionFault::TypeShape | DescriptionFault::HigherOrderField | DescriptionFault::DependentField | DescriptionFault::Malformed), |_| true))]
     fn domain(
         &self,
         at: Placed,
@@ -2296,15 +2327,15 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: applications preserve the head and argument order without
-    ///   Rust recursion. The written term holds one node per node of the type,
-    ///   in pre-order, each at its own bytes and an application with its
-    ///   head's.
-    /// - fails: function fields, universes and unknown type shapes are refused
-    ///   at their written node.
+    ///   Rust recursion, and a parenthesised type reads as the type it groups.
+    ///   The written term holds one node per node of the type, in pre-order,
+    ///   each at its own bytes and an application with its head's.
+    /// - fails: a root that is no type, function fields, universes and unknown
+    ///   type shapes are refused at their written node.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `HigherOrderField`, `TypeShape` or `Malformed`.
+    /// Returns `NoType`, `HigherOrderField`, `TypeShape` or `Malformed`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nested applications, the four primitives, universes
@@ -2331,7 +2362,7 @@ impl Reader<'_, '_>
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `HigherOrderField`, `TypeShape` or `Malformed`.
+    /// Returns `NoType`, `HigherOrderField`, `TypeShape` or `Malformed`.
     ///
     /// # Termination
     /// - reason: the read is a `while let` loop over an explicit stack, not
@@ -2357,12 +2388,20 @@ impl Reader<'_, '_>
         while let Some(frame) = pending.pop() {
             match frame {
                 TypeFrame::Read(at) => {
-                    let pieces = match root.take() {
+                    let rooted = root.take();
+                    let at_root = rooted.is_some();
+                    let pieces = match rooted {
                         Some(pieces) => pieces,
                         None => self.pieces(at)?,
                     };
+                    // A parenthesised type reads as the type it groups, kept
+                    // at the bytes of its parentheses.
+                    let (read, pieces) = self.ungrouped(at, pieces)?;
+                    if at_root {
+                        self.typed(read)?;
+                    }
                     if let [Piece::Tile { label, .. }] = *pieces.as_slice() {
-                        let text = self.text(at).0;
+                        let text = self.text(read).0;
                         let ty = match (label.as_ref(), text) {
                             (_, "Integer") => ValueTypeRef::prim(PrimTy::Integer),
                             (_, "String") => ValueTypeRef::prim(PrimTy::StringTy),
@@ -2438,6 +2477,112 @@ impl Reader<'_, '_>
             fault: DescriptionFault::TypeShape,
         })?;
         Ok((value, written))
+    }
+
+    /// The form at `at` read through the parentheses that group it: past each
+    /// parenthesised type over one operand, the form it groups and its pieces.
+    ///
+    /// # Specification
+    /// - requires: `pieces` are the pieces written at `at`.
+    /// - ensures: `at` and `pieces` when `at` is no parenthesised type over one
+    ///   operand; otherwise the answer at that operand, so the form read lies
+    ///   inside `at`.
+    /// - fails: `Malformed` where an operand's pieces do not read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `Malformed`.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop steps once per pair of parentheses, each
+    ///   into a strictly smaller operand of a finite tree, not recursion.
+    /// - measure: the pairs of parentheses around the form.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field written in parentheses reads as the field it
+    ///   groups, and a group over two types is left whole.
+    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |&(read, _)| read.span.start() >= at.span.start() && read.span.end() <= at.span.end()))]
+    fn ungrouped(
+        &self,
+        at: Placed,
+        pieces: Vec<Piece>,
+    ) -> Result<(Placed, Vec<Piece>), DescriptionDiagnostic>
+    {
+        let (mut read, mut pieces) = (at, pieces);
+        while let [
+            Piece::Tile {
+                label: ref open, ..
+            },
+            Piece::Operand(inner),
+            Piece::Tile {
+                label: ref close, ..
+            },
+        ] = *pieces.as_slice()
+            && open.as_ref() == "("
+            && close.as_ref() == ")"
+            && self.former(read) == Some(Former::ParenthesizedType)
+        {
+            read = inner;
+            pieces = self.pieces(inner)?;
+        }
+        Ok((read, pieces))
+    }
+
+    /// Refuse the type written at `at` as no type where the lowering refuses
+    /// it as one: a form [`read_as_type`] does not take, or a parenthesised
+    /// type that groups other than one operand.
+    ///
+    /// # Specification
+    /// - requires: `at` is read through the parentheses that group it.
+    /// - ensures: success exactly when `at` is no form, or a form other than a
+    ///   parenthesised type that [`read_as_type`] takes.
+    /// - fails: `NoType` at `at` otherwise.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `NoType`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a numeral, a string, a boolean, a character, a hole,
+    ///   `()`, a group over two types and a grouped numeral are no type, and
+    ///   the lowering refuses each once.
+    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
+    #[spec(ensures: |result| result.as_ref().map_or_else(|refusal| refusal.span == at.span && refusal.fault == DescriptionFault::NoType, |&()| true))]
+    fn typed(
+        &self,
+        at: Placed,
+    ) -> Result<(), DescriptionDiagnostic>
+    {
+        match self.former(at) {
+            Some(former) if !read_as_type(former).0 || former == Former::ParenthesizedType => {
+                Err(DescriptionDiagnostic {
+                    span: at.span,
+                    fault: DescriptionFault::NoType,
+                })
+            },
+            Some(_) | None => Ok(()),
+        }
+    }
+
+    /// The former the lowering reads the form at `at` as; none for a node
+    /// that is no form.
+    ///
+    /// # Specification
+    /// trivial.
+    fn former(
+        &self,
+        at: Placed,
+    ) -> Option<Former>
+    {
+        match self
+            .tree
+            .node(at.node)
+            .map(|node| shape_of(self.grammar, node))
+        {
+            Some(Ok(Shape::Form { former, .. })) => Some(former),
+            Some(Ok(Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_)) | None => None,
+        }
     }
 }
 

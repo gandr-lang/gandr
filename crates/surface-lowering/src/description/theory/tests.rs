@@ -3230,9 +3230,9 @@ fn an_under_row_names_a_theory_at_a_dotted_path_4514()
 }
 
 /// Each member the parser reads whole but writes wrongly is refused at that
-/// member by the fault its reader names: a classifier no universe answers,
-/// a shape's face listing points without a separator, a feed of no wires,
-/// and a node or a rule producing no output.
+/// member by the fault its reader names: a classifier that is no universe, a
+/// universe above level zero, a shape's face listing points without a
+/// separator, a feed of no wires, and a node or a rule producing no output.
 #[test]
 fn each_malformed_member_is_refused_by_its_fault()
 {
@@ -3240,6 +3240,22 @@ fn each_malformed_member_is_refused_by_its_fault()
     let rows = [
         (
             "theory T where { sort Tm : Type+; sort S : Kind; }",
+            DescriptionFault::NoUniverse,
+        ),
+        (
+            "theory T where { sort Tm : Type+; sort S : Integer; }",
+            DescriptionFault::NoUniverse,
+        ),
+        (
+            "theory T where { sort Tm : Type+; sort S : List(Integer); }",
+            DescriptionFault::NoUniverse,
+        ),
+        (
+            "theory T where { sort Tm : Type+; sort S : Type[+, 1]; }",
+            DescriptionFault::TypeShape,
+        ),
+        (
+            "theory T where { sort Tm : Type+; sort S : Type[-, 2]; }",
             DescriptionFault::TypeShape,
         ),
         (
@@ -3266,5 +3282,36 @@ fn each_malformed_member_is_refused_by_its_fault()
             panic!("`{source}`: one refusal: {:?}", report.diagnostics)
         };
         assert_eq!(diagnostic.fault, fault, "`{source}`");
+    }
+}
+
+/// A sort reads the universe its classifier spells at level zero, however its
+/// tiles are spaced (#2664).
+#[test]
+fn each_universe_at_level_zero_classifies_a_sort_2664()
+{
+    let rows = [
+        ("Type", Representability::Ordinary),
+        ("Type+", Representability::Representable),
+        ("Atom", Representability::Atom),
+        ("Type[-]", Representability::Computation),
+        ("Type[+]", Representability::Ordinary),
+        ("Type[+, 0]", Representability::Ordinary),
+        ("Type[-, 0]", Representability::Computation),
+        ("Type[ - ]", Representability::Computation),
+    ];
+    for (classifier, representability) in rows {
+        let source = alloc::format!("theory T where {{ sort S : {classifier}; }}");
+        let report = described(source.as_str());
+        assert_eq!(report.diagnostics, [], "`{source}` reads");
+        let [ref theory] = *report.declarations.as_slice()
+        else {
+            panic!("`{source}`: one theory")
+        };
+        let [ref sort] = *theory.description.sorts.as_ref()
+        else {
+            panic!("`{source}`: one sort")
+        };
+        assert_eq!(sort.representability, representability, "`{source}`");
     }
 }

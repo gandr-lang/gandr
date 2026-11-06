@@ -707,8 +707,8 @@ fn uncovered(fault: Uncovered) -> FailureClass
 ///   issue; a circuit redex off its own derived boundary is an engine fault;
 ///   every other fault — a rule from no operation, from an empty one, of the
 ///   wrong result count, copying a variable, wearing one name at both
-///   polarities, a wiring with no boundary, an operation with no output — is
-///   malformed source.
+///   polarities, a wiring with no boundary, an operation with no output, a sort
+///   whose classifier is no universe — is malformed source.
 /// - provides: the lowering classifier's arm for `UndescribedMember`.
 /// - fails: never.
 /// - panics: none.
@@ -751,6 +751,7 @@ fn undescribed(fault: MemberFault) -> FailureClass
         },
         MemberFault::OffBoundary => FailureClass::EngineFault,
         MemberFault::NoOutput
+        | MemberFault::NoUniverse
         | MemberFault::LhsNotOperation
         | MemberFault::EmptyOperation
         | MemberFault::ResultArity
@@ -1566,6 +1567,7 @@ mod tests
                 FailureClass::Unimplemented(TrackingIssue::OPERATION_SHAPE),
             ),
             (MemberFault::NoOutput, FailureClass::MalformedSource),
+            (MemberFault::NoUniverse, FailureClass::MalformedSource),
             (MemberFault::LhsNotOperation, FailureClass::MalformedSource),
             (MemberFault::EmptyOperation, FailureClass::MalformedSource),
             (MemberFault::ResultArity, FailureClass::MalformedSource),

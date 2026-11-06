@@ -1,0 +1,9 @@
+/// `UndescribedMember.NoUniverse`: a sort whose classifier is no universe.
+///
+/// A sort's classifier is `Type`, `Type+`, `Type[-]` or `Atom`. The classifier `Integer` is a type, not a universe.
+///
+/// - see: #2664
+@[ refuses("UndescribedMember.NoUniverse") ]
+theory Shape where
+  sort Nat : Type+;
+  sort Bad : Integer;
