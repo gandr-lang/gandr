@@ -2312,8 +2312,6 @@ impl<'pbg> MeldState<'pbg>
     ///   is an operand that ends where that one starts. The slope is unchanged
     ///   otherwise. The source is unchanged.
     /// - panics: none.
-    /// - economy: three cell reads, two byte reads and one precedence
-    ///   comparison.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `f(x).l` projects the call, `f (x).l` and `f x.l`
