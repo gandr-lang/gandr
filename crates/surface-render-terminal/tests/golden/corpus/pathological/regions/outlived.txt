@@ -1,21 +1,21 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/regions/outlived.gandr:17:32
+   ╭▸ corpus/pathological/regions/outlived.gandr:21:32
    │
-13 │ ┌  def outlived() -> Integer =
-14 │ │    var s = 4
+17 │ ┌  def outlived() -> Integer =
+18 │ │    var s = 4
    │ │    ─── checked against `-F Integer`; while checking the scope of this hold
-15 │ │┌   handle c : std.process.Exit.Eff {
-16 │ ││     let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
+19 │ │┌   handle c : std.process.Exit.Eff {
+20 │ ││     let k : (() -> Integer) at c = access shared s as w { pure thunk { pure w } };
    │ ││     ─── checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() -> Integer) at c
-17 │ ││     let back : () -> Integer = pass k;
+21 │ ││     let back : () -> Integer = pass k;
    │ ││     ┬──        ┬────────────   ━━━━━━ its type does not convert: expected `-F Integer`, found `-F ((() -> Integer) at c)`
    │ ││     │          │
    │ ││     │          the type it is checked against
    │ ││     checked against `-F [std.process.Exit.Eff, c : std.process.Exit.Eff] Integer`; while finishing the type of this
-18 │ ││     force back
+22 │ ││     force back
    ┆ ┆┆
-21 │ ││     | oper exit(code, rest) => pure 0
-22 │ ││   }
+25 │ ││     | oper exit(code, rest) => pure 0
+26 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked against `() -> Integer`; while checking the body of this thunk

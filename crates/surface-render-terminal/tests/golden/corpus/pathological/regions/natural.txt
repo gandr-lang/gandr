@@ -1,19 +1,19 @@
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/regions/natural.gandr:22:62
+   ╭▸ corpus/pathological/regions/natural.gandr:23:62
    │
-16 │ ┌    def backwards() -> Integer =
-17 │ │      var s = 5
+17 │ ┌    def backwards() -> Integer =
+18 │ │      var s = 5
    │ │      ─── checked against `-F Integer`; while checking the scope of this hold
-18 │ │┌     handle outer : std.process.Exit.Eff {
-19 │ ││       let k : (() -> Integer) at outer = access shared s as w { pure pure w };
+19 │ │┌     handle outer : std.process.Exit.Eff {
+20 │ ││       let k : (() -> Integer) at outer = access shared s as w { pure pure w };
    │ ││       ─── checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the body under this binding; binds k : (() -> Integer) at outer
-20 │ ││┌      handle inner : std.process.Exit.Eff {
-21 │ │││        let _ : Path[.A = (() -> Integer) at inner -> (() -> Integer) at outer](
+21 │ ││┌      handle inner : std.process.Exit.Eff {
+22 │ │││        let _ : Path[.A = (() -> Integer) at inner -> (() -> Integer) at outer](
    │ │││        ┬──     │         ──────────────────────── the type it synthesises
    │ │││┌───────│───────┘
    │ ││││       │
    │ ││││       checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking this computation against the type it is ascribed
-22 │ ││││         thunk { fun (x) { let z : (() -> Integer) at outer = x; pass z } },
+23 │ ││││         thunk { fun (x) { let z : (() -> Integer) at outer = x; pass z } },
    │ ││││         ┬───────┬─────────┬───────┬──────────────────────────┯────────────
    │ ││││         │       │         │       │                          │
    │ ││││         │       │         │       │                          its type does not convert: expected `(() -> Integer) at outer`, found `(() -> Integer) at inner`
@@ -21,16 +21,16 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ││││         │       │         checked against `-F ((() -> Integer) at outer)`; while finishing the type of this
    │ ││││         │       checked against `(() -> Integer) at inner -> -F ((() -> Integer) at outer)`; while checking the body of this function; binds x : (() -> Integer) at inner
    │ ││││         checked against `(() -> Integer) at inner -> (() -> Integer) at outer`; while checking the body of this thunk
-23 │ ││││         thunk { fun (x) { let y : (() -> Integer) at inner = pass x; pure y } }
-24 │ ││││       ) = Path.here (thunk { fun (x) { let z : (() -> Integer) at outer = x; pass z } });
+24 │ ││││         thunk { fun (x) { let y : (() -> Integer) at inner = pass x; pure y } }
+25 │ ││││       ) = Path.here (thunk { fun (x) { let z : (() -> Integer) at outer = x; pass z } });
    │ │││└───────┘ formed; while checking the remaining parts of this
    ┆ ┆┆┆
-28 │ │││        | oper exit(code, rest) => pure 0
-29 │ │││      }
+29 │ │││        | oper exit(code, rest) => pure 0
+30 │ │││      }
    │ ││└──────┘ checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
    ┆ ┆┆
-32 │ ││       | oper exit(code, rest) => pure 0
-33 │ ││     }
+33 │ ││       | oper exit(code, rest) => pure 0
+34 │ ││     }
    │ ││     │
    │ └│─────│
    │  └─────checked against `() -> Integer`; while checking the body of this thunk

@@ -1,19 +1,19 @@
 error[MalformedForm]: a keyword or symbol of this def value is out of place
-   ╭▸ corpus/pathological/include/imported-rules.gandr:22:3
+   ╭▸ corpus/pathological/include/imported-rules.gandr:21:3
    │
-22 │   include Unwritten;
+21 │   include Unwritten;
    │   ━━━━━━━━━━━━━━━━━ out of place
    │
    ├ note: `Orphan` is refused with MalformedForm, as its expectation states
    ╰ help: move the keyword or symbol to its place in the def value
 
 error[RulesUncompleted]: this rule and an earlier one rewrite `mul(mul(one, pair(x', y')), z)` to two normal forms, `mul(pair(x', y'), z)` and `mul(pair(y', x'), z)`, and no rule the order can orient joins them, so the block's rules are refused
-   ╭▸ corpus/pathological/include/imported-rules.gandr:17:3
+   ╭▸ corpus/pathological/include/imported-rules.gandr:16:3
    │
-15 │   include Monoid;
+14 │   include Monoid;
    │   ────────────── the rule it overlaps
-16 │   oper pair : (x : M, y : M) --> M;
-17 │   rule swap : mul (one ()) (pair x y) ==> pair y x;
+15 │   oper pair : (x : M, y : M) --> M;
+16 │   rule swap : mul (one ()) (pair x y) ==> pair y x;
    │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
    │
    ├ note: `Swapping` is refused with RulesUncompleted, as its expectation states

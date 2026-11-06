@@ -25,31 +25,31 @@ error[ViewEscaped]: the view is used inside a thunk, which may outlive its `acce
    ╰ help: use the view outside a thunk, or open the `access` inside it
 
 error[ViewEscaped]: the view is used inside a thunk, which may outlive its `access`
-   ╭▸ corpus/pathological/regions/held-within.gandr:32:70
+   ╭▸ corpus/pathological/regions/held-within.gandr:31:70
    │
-28 │ ┌   def keptPastNestedHold() -> Integer =
-29 │ │┌    handle outer : std.process.Exit.Eff {
-30 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
+27 │ ┌   def keptPastNestedHold() -> Integer =
+28 │ │┌    handle outer : std.process.Exit.Eff {
+29 │ ││      let x : Integer = handle inner : std.process.Exit.Eff {
    │ ││┌─────┬─────────────────┘
    │ │││     │
    │ │││     checked against `-F [std.process.Exit.Eff, outer : std.process.Exit.Eff] Integer`; while finishing the type of this
-31 │ │││       var l = 42;
+30 │ │││       var l = 42;
    │ │││       ─── checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while checking the scope of this hold
-32 │ │││       let q : (() -> Integer) at inner = access shared l as w { pure thunk { pure w } };
+31 │ │││       let q : (() -> Integer) at inner = access shared l as w { pure thunk { pure w } };
    │ │││       ┬──                                ┬──────────────────────┬────┯━━━━━━━━━━━━━━━──
    │ │││       │                                  │                      │    │
    │ │││       │                                  │                      │    a view outliving its access
    │ │││       │                                  │                      checked against `-F ((() -> Integer) at inner)`; while judging the value this returns
    │ │││       │                                  checked against `-F ((() -> Integer) at inner)`; while checking the body of this access
    │ │││       checked against `-F [std.process.Exit.Eff, inner : std.process.Exit.Eff] Integer`; while finishing the type of this
-33 │ │││       force q
+32 │ │││       force q
    ┆ ┆┆┆
-36 │ │││       | oper exit(code, k) => pure 0
-37 │ │││     };
+35 │ │││       | oper exit(code, k) => pure 0
+36 │ │││     };
    │ ││└─────┘ checked against `-F Integer`; while checking the subject of this scope under its capability; binds inner : Cap {exit}
    ┆ ┆┆
-41 │ ││      | oper exit(code, k) => pure 0
-42 │ ││    }
+40 │ ││      | oper exit(code, k) => pure 0
+41 │ ││    }
    │ ││    │
    │ └│────│
    │  └────checked against `() -> Integer`; while checking the body of this thunk
