@@ -1294,6 +1294,13 @@ fi
 echo 'workflow hashing check OK: no hashFiles over a tarball'
 """
 
+# A landing with no enforcing shard report writes a skip result (#5496).
+# `.config/spec-cost/landed-cases.bash` invokes its runner.
+# The test checks the result.
+["check:spec-cost-landed"]
+description = "A landed report with no enforcing shard writes a skip result"
+run = ".config/spec-cost/landed-cases.bash"
+
 # CI pulls its image only when `find-image` calls the tag published, and a
 # pull reads the tag's index and then its platform's manifest by digest. So
 # `.github/actions/find-image/lookup.sh` calls a tag published only when the
