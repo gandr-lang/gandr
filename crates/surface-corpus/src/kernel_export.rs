@@ -2588,6 +2588,37 @@ mod kernel_presented_readmission
             .expect("the kernel readmits the composites over the solved carrier");
     }
 
+    /// #5521: a reflexivity whose endpoints call a definition that omits its
+    /// implicits checks in the checker, and the kernel readmits it.
+    #[test]
+    fn a_reflexivity_through_a_call_omitting_its_implicits_readmits_5521()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/identity/reflexivity-through-implicit-call.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("the reflexivity lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let segment = NameSegment::from_text("twoLevels".into()).expect("a name segment");
+        let named = StructuredName::from(vec![segment]);
+        let marked = declarations
+            .iter()
+            .find(|marked| *marked.declaration().name() == named)
+            .expect("`twoLevels` crossed");
+        assert_eq!(
+            marked.mark(),
+            gandr_kernel_term::AdmissionMark::Checked,
+            "the checker checks `twoLevels`"
+        );
+        Environment::replay(decoded.arena().clone(), &declarations)
+            .expect("the kernel readmits the reflexivity through the call");
+    }
+
     /// #5324: a case on `c` whose goal reads a later binder `v`, the type of
     /// `v` reading `c`, checks at the motive generalised over `v`, and the
     /// kernel readmits it.
