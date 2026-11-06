@@ -305,11 +305,12 @@ corpus/ledger/features/cost-effect.gandr STE-6.6 14cdcfb21052ee03
 corpus/ledger/features/coverage-evidence.gandr STE-3.6 767728ef79c61815
 corpus/ledger/features/coverage-evidence.gandr STE-3.6 c870dbc6060935b2
 corpus/ledger/features/coverage-evidence.gandr STE-3.6 f64a3a7af205a563
-corpus/ledger/features/coverage-evidence.gandr STE-3.2 c21cd9526be61e2c
+corpus/ledger/features/coverage-evidence.gandr STE-3.2 325544da32221136
 corpus/ledger/features/coverage-evidence.gandr STE-3.2 f64a3a7af205a563
 corpus/ledger/features/coverage-evidence.gandr STE-3.4 f64a3a7af205a563
 corpus/ledger/features/coverage-evidence.gandr STE-3.5 c870dbc6060935b2
-corpus/ledger/features/coverage-evidence.gandr STE-1.2 c21cd9526be61e2c
+corpus/ledger/features/coverage-evidence.gandr STE-1.2 325544da32221136
+corpus/ledger/features/coverage-evidence.gandr STE-6.3 325544da32221136
 corpus/ledger/features/coverage-evidence.gandr STE-6.3 c870dbc6060935b2
 corpus/ledger/features/coverage-evidence.gandr STE-8.1 f64a3a7af205a563
 corpus/ledger/features/coverage.gandr STE-6.3 dbeede464def69bf
@@ -394,10 +395,13 @@ corpus/ledger/features/equivalence-record.gandr STE-6.3 cddc23563fe4b893
 corpus/ledger/features/equivalence-record.gandr STE-6.3 eaa5b5bf0bf1934e
 corpus/ledger/features/equivalence-record.gandr STE-6.3 f7cfcf79448cf4f4
 corpus/ledger/features/equivalence-record.gandr STE-8.1 95a70f9d4050a08d
-corpus/ledger/features/extension-types.gandr STE-3.2 9a41463cc92f689e
+corpus/ledger/features/extension-types.gandr STE-3.2 2ce7ff1b66976b0d
+corpus/ledger/features/extension-types.gandr STE-3.2 bb07cbfa589cb517
+corpus/ledger/features/extension-types.gandr STE-1.2 2ce7ff1b66976b0d
 corpus/ledger/features/extension-types.gandr STE-6.3 581ab6e1b1d2a477
 corpus/ledger/features/extension-types.gandr STE-6.3 89baa33f715bd679
 corpus/ledger/features/extension-types.gandr STE-6.3 b717721f7c37295b
+corpus/ledger/features/extension-types.gandr STE-6.3 bb07cbfa589cb517
 corpus/ledger/features/extension-types.gandr STE-8.1 581ab6e1b1d2a477
 corpus/ledger/features/filler-generator.gandr STE-3.6 691b2e89706732ca
 corpus/ledger/features/filler-generator.gandr STE-6.3 103fdf45094d6a76
@@ -4321,6 +4325,7 @@ crates/surface-render-terminal/tests/golden/corpus/pathological/desc/bind-port.t
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/bind-term.txt STE-5.3 aef1da9c395fca1d
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/binding-field.txt STE-5.3 3ebbbbdd851df500
 crates/surface-render-terminal/tests/golden/corpus/pathological/desc/freshness.txt STE-5.3 4e66202e37c5fd67
+crates/surface-render-terminal/tests/golden/corpus/pathological/desc/record-faces.txt STE-5.2 02d539a9556166db
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/bridge.txt STE-5.3 4837140b8b4cbaae
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/derived-associator.txt STE-5.3 73c9fbfb11722aa3
 crates/surface-render-terminal/tests/golden/corpus/pathological/identity/univalence.txt STE-5.3 4243b91b89fd9499

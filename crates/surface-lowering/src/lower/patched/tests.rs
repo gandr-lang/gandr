@@ -1,5 +1,6 @@
 use alloc::collections::BTreeSet;
 use alloc::format;
+use alloc::vec::Vec;
 
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
@@ -18,6 +19,9 @@ use crate::lower::native::tests::refusal_of;
 use crate::lower::native::tests::tail_of;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
+
+/// A system's fixed labels, and each meet's label beside its value.
+type System<'arena> = (Vec<&'arena str>, Vec<(&'arena str, Option<&'arena Value>)>);
 
 /// A record type member with two faces that meet at the port.
 const CONFIG: &str = include_str!("tests/unformatted/config.gandr");
@@ -170,6 +174,63 @@ fn a_face_value_that_is_no_record_leaves_the_fragment()
             }
         ),
         "a face's value is a record written in place"
+    );
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
+}
+
+/// A system of faces fixes each label at the value of the first face that
+/// holds it, and keeps each later face's value on the meet the face poset
+/// holds: `secure` and `addr` meet at the port alone. A face written twice is
+/// refused at its second name (#5106).
+#[test]
+fn a_system_of_faces_keeps_each_later_face_s_value_on_its_meet()
+{
+    let source = format!(
+        include_str!(
+            "tests/unformatted/a-system-of-faces-keeps-each-later-face-s-value-on-its-meet.gandr"
+        ),
+        CONFIG = CONFIG
+    );
+    let mut arena = CoreArena::new();
+    let before = arena.watermark();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let systems: Vec<System<'_>> = arena
+        .value_types_since(before)
+        .filter_map(|id| match arena.value_type(id) {
+            Some(&ValueType::Patched {
+                ref fixed,
+                ref meets,
+                ..
+            }) if !meets.is_empty() => Some((
+                fixed.keys().map(AsRef::as_ref).collect(),
+                meets
+                    .iter()
+                    .map(|&(ref label, value)| (label.as_ref(), arena.value(value)))
+                    .collect(),
+            )),
+            _ => None,
+        })
+        .collect();
+    let [(ref fixed, ref meets)] = *systems.as_slice()
+    else {
+        panic!("`both` alone lowers to a system with a meet: {systems:?}");
+    };
+    assert_eq!(
+        *fixed,
+        ["host", "port", "tls"],
+        "the system fixes every label of either face"
+    );
+    assert!(
+        matches!(*meets.as_slice(), [("port", Some(&Value::Literal(_)))]),
+        "`addr` keeps its port, the one label of its meet with `secure`: {meets:?}"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("twice")),
+            LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("secure")
+        ),
+        "a face written twice is refused at its second name"
     );
     let report = judged(&module, &mut arena);
     assert_accepted(&report);

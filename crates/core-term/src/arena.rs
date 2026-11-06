@@ -2629,7 +2629,8 @@ impl CoreArena
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `base` itself when `fixed` is empty, since a patch that fixes
-    ///   nothing is its base; otherwise a fresh patched type of `base`.
+    ///   nothing is its base; otherwise a fresh patched type of `base` with no
+    ///   meets.
     /// - provides: a patched type always fixes at least one field.
     /// - panics: none.
     ///
@@ -2644,10 +2645,37 @@ impl CoreArena
         fixed: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>,
     ) -> ValueTypeId
     {
+        self.value_type_system(base, fixed, alloc::vec::Vec::new())
+    }
+
+    /// Fix the fields `fixed` names of the record type `base` at their values,
+    /// keeping each later face's value on a meet, `meets`, beside its label.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `base` itself when `fixed` is empty, since a patch that fixes
+    ///   nothing is its base; otherwise a fresh patched type of `base` with
+    ///   `meets` in their order.
+    /// - provides: a patched type always fixes at least one field.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty and a one-field patch of one record, and a
+    ///   system whose two faces meet at one field.
+    /// - witness: `arena::tests::a_patch_that_fixes_nothing_is_its_base`
+    #[spec(captures: empty = fixed.is_empty(), ensures: |ret| !empty || ret == base)]
+    #[inline]
+    pub fn value_type_system(
+        &mut self,
+        base: ValueTypeId,
+        fixed: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>,
+        meets: alloc::vec::Vec<(gandr_kernel_term::FieldLabel, ValueId)>,
+    ) -> ValueTypeId
+    {
         if fixed.is_empty() {
             return base;
         }
-        self.alloc_value_type(ValueType::Patched { base, fixed })
+        self.alloc_value_type(ValueType::Patched { base, fixed, meets })
     }
 
     /// The fields an element of the type `ty` holds, when `ty` is a record
@@ -2678,7 +2706,9 @@ impl CoreArena
                 fixed: None,
             });
         }
-        if let ValueType::Patched { base, ref fixed } = *ty
+        if let ValueType::Patched {
+            base, ref fixed, ..
+        } = *ty
             && let Some(&ValueType::Record(ref fields)) = self.value_type(base)
         {
             return Some(ElementFields {

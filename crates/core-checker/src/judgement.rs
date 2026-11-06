@@ -8037,15 +8037,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   [`CheckRefusal::OpenSessionPayload`] for a session type whose payload
     ///   reads a binder outside it, no run frame waiting;
     ///   [`CheckRefusal::PatchOutsideBase`] naming the least fixed label of a
-    ///   patched type that its base does not hold.
+    ///   patched type that its base does not hold, or a meet value at a label
+    ///   the patch does not fix; [`CheckRefusal::FixedFieldDiffers`] naming the
+    ///   first meet value, in written order, that does not convert with the
+    ///   value fixed at its label.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one type of every former, formed or refused, through
-    ///   the public faces.
+    ///   the public faces; a system of two faces that agree on their meet, and
+    ///   its twin that disagrees there.
     /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
     /// - witness: `bridge::tests::a_static_pi_over_a_type_that_classifies_no_codes_is_refused_by_name`
     /// - witness: `judgement::tests::a_session_payload_reads_a_binder_only_in_a_run_protocol_1728`
+    /// - witness: `module::tests::a_system_of_faces_is_formed_where_its_faces_agree_on_their_meet_5106`
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| match ret {
@@ -8084,7 +8089,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     }));
                 Ok(Step::Ascend(Produced::Checked))
             },
-            ValueTypeView::Patched { base, fixed } => {
+            ValueTypeView::Patched { base, fixed, meets } => {
                 let held = match self.context.arena().value_type(base) {
                     Some(&gandr_core_term::ValueType::Record(ref fields)) => Some(fields),
                     _ => None,
@@ -8096,17 +8101,50 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 if held.is_none() {
                     return Err(CheckRefusal::MachineInvariant);
                 }
+                // Each meet value beside the value the first face fixes at its
+                // label. Only a system of faces allocates.
+                let mut compared: Vec<(ValueId, ValueId)> = Vec::new();
+                for &(ref label, value) in meets {
+                    let Some(&glued) = fixed.get(label)
+                    else {
+                        return Err(CheckRefusal::PatchOutsideBase { at, value });
+                    };
+                    compared.push((value, glued));
+                }
                 let owner = self.owner;
-                self.frames
-                    .extend(fixed.iter().rev().filter_map(|(label, &value)| {
-                        field(label).map(|expected| Waiting {
-                            frame: Frame::Next(Goal::Value {
-                                term: value,
-                                direction: Direction::Check(expected),
-                            }),
-                            owner,
-                        })
-                    }));
+                let depth = self.frames.len();
+                self.frames.extend(
+                    fixed
+                        .iter()
+                        .map(|(label, &value)| (label, value))
+                        .chain(meets.iter().map(|&(ref label, value)| (label, value)))
+                        .rev()
+                        .filter_map(|(label, value)| {
+                            field(label).map(|expected| Waiting {
+                                frame: Frame::Next(Goal::Value {
+                                    term: value,
+                                    direction: Direction::Check(expected),
+                                }),
+                                owner,
+                            })
+                        }),
+                );
+                // A later face's value on a meet is the value the first face
+                // fixes there, or the system contradicts itself (#5106). A
+                // refusal takes back the checks queued above.
+                for (value, glued) in compared {
+                    let refusal =
+                        match crate::conversion::fixed_field_agrees(self.context, value, glued) {
+                            Ok(crate::conversion::Agreement::Convertible) => continue,
+                            Ok(_) => CheckRefusal::FixedFieldDiffers {
+                                at: value,
+                                fixed: glued,
+                            },
+                            Err(refusal) => refusal,
+                        };
+                    self.frames.truncate(depth);
+                    return Err(refusal);
+                }
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(base))))
             },
             ValueTypeView::Stack { input, output } => {

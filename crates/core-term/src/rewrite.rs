@@ -2751,7 +2751,17 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                                 .rev()
                                 .map(|&field| open(Node::ValueType(field), depth)),
                         ),
-                        ValueType::Patched { base, ref fixed } => {
+                        ValueType::Patched {
+                            base,
+                            ref fixed,
+                            ref meets,
+                        } => {
+                            self.tasks.extend(
+                                meets
+                                    .iter()
+                                    .rev()
+                                    .map(|&(_, value)| open(Node::Value(value), depth)),
+                            );
                             self.tasks.extend(
                                 fixed
                                     .values()
@@ -4412,7 +4422,21 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     None => id,
                 }
             },
-            ValueType::Patched { base, ref fixed } => {
+            ValueType::Patched {
+                base,
+                ref fixed,
+                ref meets,
+            } => {
+                let mut changed_meets = None;
+                for (at, &(_, original)) in meets.iter().enumerate().rev() {
+                    let rewritten = Self::value(&mut self.results, original);
+                    if rewritten != original {
+                        let changed = changed_meets.get_or_insert_with(|| meets.clone());
+                        if let Some(slot) = changed.get_mut(at) {
+                            slot.1 = rewritten;
+                        }
+                    }
+                }
                 let mut changed = None;
                 for (label, original) in fixed.iter().rev() {
                     let rewritten = Self::value(&mut self.results, *original);
@@ -4424,11 +4448,12 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     }
                 }
                 let rewritten_base = Self::value_type(&mut self.results, base);
-                match (changed, rewritten_base == base) {
-                    (None, true) => id,
-                    (changed, _) => {
+                match (changed, changed_meets, rewritten_base == base) {
+                    (None, None, true) => id,
+                    (changed, changed_meets, _) => {
                         let fixed = changed.unwrap_or_else(|| fixed.clone());
-                        self.arena.value_type_patched(rewritten_base, fixed)
+                        let meets = changed_meets.unwrap_or_else(|| meets.clone());
+                        self.arena.value_type_system(rewritten_base, fixed, meets)
                     },
                 }
             },

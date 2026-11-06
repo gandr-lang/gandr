@@ -1060,9 +1060,14 @@ impl ModuleReport
                     Some(&ValueType::Record(ref fields)) => {
                         pending.extend(fields.values().copied().map(Node::Value));
                     },
-                    Some(&ValueType::Patched { base, ref fixed }) => {
+                    Some(&ValueType::Patched {
+                        base,
+                        ref fixed,
+                        ref meets,
+                    }) => {
                         pending.push(Node::Value(base));
                         pending.extend(fixed.values().copied().map(Node::Code));
+                        pending.extend(meets.iter().map(|met| Node::Code(met.1)));
                     },
                     Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
                         pending.extend(parts.iter().copied().map(Node::Value));

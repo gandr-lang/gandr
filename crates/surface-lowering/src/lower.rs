@@ -3005,15 +3005,19 @@ enum Plan
     /// A data type at a stage its function's telescope binds: the type and
     /// the stage.
     Staged(NodeIndex, gandr_kernel_term::Stage),
-    /// A record type patched by a static bracket, `T[.l = v]`: each field of
-    /// the base `T` at the type `T` writes for it, and each fixed label at the
-    /// value the bracket writes for it.
+    /// A record type patched by a static bracket, `T[.l = v]` or a system of
+    /// faces `T[f ↦ v, g ↦ w]`: each field of the base `T` at the type `T`
+    /// writes for it, each fixed label at the value the bracket first writes
+    /// for it, and each later face's value on a meet.
     Patched
     {
         /// The base's fields, by label.
         fields: BTreeMap<FieldLabel, NodeIndex>,
         /// The fixed values, by label.
         fixed: BTreeMap<FieldLabel, NodeIndex>,
+        /// Each later face's value at a label of its meet with an earlier
+        /// face, as the face poset gives the meet, in written order (#5106).
+        meets: Vec<(FieldLabel, NodeIndex)>,
         /// Where the base is written as the name of a type member, when it
         /// is: the printer writes the name for the base's record.
         member: Option<NodeIndex>,
@@ -20037,8 +20041,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Patched {
                 ref fields,
                 ref fixed,
+                ref meets,
                 member,
-            } => self.mint_patched_type(fields, fixed, member, sink, origin),
+            } => self.mint_patched_type(fields, (fixed, meets), member, sink, origin),
             Plan::Kept(inner, region) => self.value_type_at(inner).map(|inner| {
                 let id = sink.arena.value_type_kept(inner, region);
                 sink.origins.record_value_type(id, origin);

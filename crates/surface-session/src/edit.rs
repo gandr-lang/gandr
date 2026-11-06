@@ -4008,11 +4008,19 @@ where
                 .map(|(label, &field)| (label.clone(), child(Root::ValueType(field))))
                 .collect(),
         ),
-        Some(&ValueType::Patched { base, ref fixed }) => ContentNode::Patched {
+        Some(&ValueType::Patched {
+            base,
+            ref fixed,
+            ref meets,
+        }) => ContentNode::Patched {
             base: child(Root::ValueType(base)),
             fixed: fixed
                 .iter()
                 .map(|(label, &value)| (label.clone(), child(Root::Value(value))))
+                .collect(),
+            meets: meets
+                .iter()
+                .map(|met| (met.0.clone(), child(Root::Value(met.1))))
                 .collect(),
         },
         Some(&ValueType::Stack { input, output }) => ContentNode::Stack {

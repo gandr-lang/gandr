@@ -1089,7 +1089,10 @@ pub enum ValueType
     /// the fields of `base` that `fixed` leaves free, so a fixed field takes
     /// no storage. Formation admits a base whose head is a record type, a
     /// label of `fixed` only where the base holds that field, and each value
-    /// only at the type of its field.
+    /// only at the type of its field. A system of faces, `T[f ↦ v, g ↦ w]`,
+    /// fixes each label at the value of the first face that holds it, and
+    /// keeps each later face's value on a meet in `meets`: formation admits a
+    /// meet value only where it converts with the fixed value at its label.
     Patched
     {
         /// The record type the patch fixes fields of.
@@ -1097,6 +1100,10 @@ pub enum ValueType
         /// Each fixed field's label with its value, in exact UTF-8 label
         /// order.
         fixed: BTreeMap<FieldLabel, ValueId>,
+        /// Each later face's value at a label of its meet with an earlier
+        /// face, beside the label, in the order the faces are written; empty
+        /// for a patch that is no system.
+        meets: Vec<(FieldLabel, ValueId)>,
     },
     /// Certified equivalences between two quoted closed first-order codes.
     PathUniverse(ValueId, ValueId),
@@ -4031,12 +4038,24 @@ fn value_type_formers(
         },
         (
             &ValueType::Patched {
-                fixed: ref left, ..
+                fixed: ref left,
+                meets: ref left_meets,
+                ..
             },
             &ValueType::Patched {
-                fixed: ref right, ..
+                fixed: ref right,
+                meets: ref right_meets,
+                ..
             },
-        ) => left.len() == right.len() && left.keys().eq(right.keys()),
+        ) => {
+            left.len() == right.len()
+                && left.keys().eq(right.keys())
+                && left_meets.len() == right_meets.len()
+                && left_meets
+                    .iter()
+                    .map(|&(ref label, _)| label)
+                    .eq(right_meets.iter().map(|&(ref label, _)| label))
+        },
         (&ValueType::Product(ref left), &ValueType::Product(ref right))
         | (&ValueType::Sum(ref left), &ValueType::Sum(ref right)) => left.len() == right.len(),
         (

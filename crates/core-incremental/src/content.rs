@@ -436,14 +436,17 @@ pub enum ContentNode
     /// A structural record classifier, ordered by field label.
     RecordType(BTreeMap<gandr_core_term::FieldLabel, NodeIndex>),
     /// A record classifier patched by a static bracket: the base record
-    /// type, then each fixed label with its value, ordered by label. It
-    /// fixes at least one label.
+    /// type, then each fixed label with its value, ordered by label, then each
+    /// meet of a system of faces with its value, in written order. It fixes
+    /// at least one label.
     Patched
     {
         /// The base record type.
         base: NodeIndex,
         /// Each fixed label with the value it is fixed at.
         fixed: BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+        /// Each later face's value on a meet, beside its label.
+        meets: Vec<(gandr_core_term::FieldLabel, NodeIndex)>,
     },
     /// A constructor at its classifier, preserving its family's identity.
     Constructor
@@ -1052,6 +1055,8 @@ pub struct Children<'node>
     suffix: &'node [NodeIndex],
     /// Label-ordered fields, when this node is a record.
     fields: Option<&'node BTreeMap<gandr_core_term::FieldLabel, NodeIndex>>,
+    /// A system's meets, after its fields, each with its label.
+    meets: &'node [(gandr_core_term::FieldLabel, NodeIndex)],
     /// The common sort of the suffix or fields.
     tail_sort: Sort,
     /// The binders every suffix child or field stands under.
@@ -1184,6 +1189,7 @@ impl<'node> Children<'node>
         // empty variadic iterators a full chain would step through.
         let variadic = !self.suffix.is_empty()
             || self.fields.is_some()
+            || !self.meets.is_empty()
             || self.effects.is_some()
             || self.signature.is_some()
             || !self.clauses.is_empty()
@@ -1211,6 +1217,7 @@ impl<'node> Children<'node>
                             .flat_map(|fields| fields.values())
                             .map(move |&child| (child, sort, tail)),
                     )
+                    .chain(self.meets.iter().map(move |met| (met.1, sort, tail)))
                     .chain(self.effects.into_iter().flat_map(move |row| {
                         row.types().map(move |ty| (ty, Sort::ValueType, none))
                     }))
@@ -1321,6 +1328,19 @@ impl<'node> Children<'node>
     {
         self.fields = Some(fields);
         self.tail_sort = sort;
+        self
+    }
+
+    /// Append a system's meets after the fields, at the fields' sort.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn with_meets(
+        mut self,
+        meets: &'node [(gandr_core_term::FieldLabel, NodeIndex)],
+    ) -> Self
+    {
+        self.meets = meets;
         self
     }
 }
@@ -1628,7 +1648,7 @@ impl ContentNode
         (matches!(*self, Self::Returner { .. } | Self::Returns { .. } | Self::Capability { .. } | Self::RowValue(_)) || ret.effects.is_none()) && match *self {
             Self::Data { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
             Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
-            Self::Patched { base, ref fixed } => ret.iter().eq(core::iter::once((base,A)).chain(fixed.values().map(|&value| (value,V)))),
+            Self::Patched { base, ref fixed, ref meets } => ret.iter().eq(core::iter::once((base,A)).chain(fixed.values().map(|&value| (value,V))).chain(meets.iter().map(|met| (met.1,V)))),
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
             Self::Record(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,V))),
             Self::DataCase { scrutinee,motive,ref branches,.. } => ret.iter().eq([(scrutinee,V),(motive,C)].into_iter().chain(branches.iter().map(|&branch| (branch,M)))),
@@ -1760,7 +1780,13 @@ impl ContentNode
         match *self {
             Self::Data { ref arguments, .. } => Children::default().followed_by(arguments, V),
             Self::RecordType(ref fields) => Children::fields(fields, A),
-            Self::Patched { base, ref fixed } => Children::of(&[(base, A)]).with_fields(fixed, V),
+            Self::Patched {
+                base,
+                ref fixed,
+                ref meets,
+            } => Children::of(&[(base, A)])
+                .with_fields(fixed, V)
+                .with_meets(meets),
             Self::Constructor {
                 datatype,
                 ref fields,
@@ -5141,11 +5167,19 @@ fn value_type_content(
                 .map(|label| found.value_type().map(|field| (label.clone(), field)))
                 .collect::<Result<_, Short>>()?,
         ),
-        ValueType::Patched { ref fixed, .. } => ContentNode::Patched {
+        ValueType::Patched {
+            ref fixed,
+            ref meets,
+            ..
+        } => ContentNode::Patched {
             base: found.value_type()?,
             fixed: fixed
                 .keys()
                 .map(|label| found.value().map(|value| (label.clone(), value)))
+                .collect::<Result<_, Short>>()?,
+            meets: meets
+                .iter()
+                .map(|met| found.value().map(|value| (met.0.clone(), value)))
                 .collect::<Result<_, Short>>()?,
         },
         ValueType::Stack { .. } => ContentNode::Stack {
@@ -5332,13 +5366,21 @@ where
                 .map(|(label, &field)| (label.clone(), image(field)))
                 .collect(),
         ),
-        ContentNode::Patched { base, ref fixed } => {
+        ContentNode::Patched {
+            base,
+            ref fixed,
+            ref meets,
+        } => {
             let base = image(base);
             ContentNode::Patched {
                 base,
                 fixed: fixed
                     .iter()
                     .map(|(label, &value)| (label.clone(), image(value)))
+                    .collect(),
+                meets: meets
+                    .iter()
+                    .map(|met| (met.0.clone(), image(met.1)))
                     .collect(),
             }
         },

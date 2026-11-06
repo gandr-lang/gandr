@@ -1011,14 +1011,18 @@ pub struct TypeComponent<'source>
     pub held: SlotIndex,
 }
 
-/// The faces a record type member names over its labels, `type T = #{ … }
-/// where { face f = { a, b }; … }`: the labels are its boundary, and each face
-/// a set of them.
+/// The faces a record type member names over its labels.
+///
+/// In `type T = #{ … } where { face f = { a, b }; … }`, the labels are the
+/// boundary, and each face is a set of them. The face poset holds each face
+/// and each meet of two faces, ordered by inclusion.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: a face's subshape stands over the boundary's carrier, a label
-///   inside exactly when the face lists it; no two faces share a name.
+///   inside exactly when the face lists it; no two faces share a name; the
+///   poset's cells are the faces, in written order, then each nonempty meet of
+///   two faces that no earlier cell is.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the collection's reading of the faces block is the
@@ -1026,7 +1030,8 @@ pub struct TypeComponent<'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a record type's faces are read over its labels, and a
-///   face listing a label the record lacks is refused by the label.
+///   face listing a label the record lacks is refused by the label; two faces
+///   that meet at one label give a poset of three cells.
 /// - witness: `tests::modules::a_record_type_names_its_faces_over_its_labels`
 /// - witness: `tests::modules::a_face_past_a_record_s_labels_is_refused_by_the_label`
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1038,6 +1043,9 @@ pub struct RecordFaces<'source>
     pub boundary: gandr_theory_shapes::Boundary<SurfaceName<'source>>,
     /// Each face by its name, with the labels it holds, in written order.
     pub faces: Vec<(SurfaceName<'source>, gandr_theory_shapes::Subshape)>,
+    /// The face poset: the faces and their meets, each below the faces that
+    /// hold it (#5106).
+    pub poset: gandr_theory_graded_posets::GradedPoset<gandr_theory_shapes::Subshape>,
 }
 
 /// The type components a signature type sees: those of `structure` written

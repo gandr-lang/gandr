@@ -540,9 +540,14 @@ pub fn unfolded(
                     ValueType::Record(ref fields) => {
                         pending.extend(fields.values().copied().map(CoreNode::ValueType));
                     },
-                    ValueType::Patched { base, ref fixed } => {
+                    ValueType::Patched {
+                        base,
+                        ref fixed,
+                        ref meets,
+                    } => {
                         pending.push(CoreNode::ValueType(base));
                         pending.extend(fixed.values().copied().map(CoreNode::Value));
+                        pending.extend(meets.iter().map(|met| CoreNode::Value(met.1)));
                     },
                     ValueType::Session(ref session) => {
                         pending.extend(session.payloads().iter().copied().map(CoreNode::ValueType));

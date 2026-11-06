@@ -138,6 +138,12 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::Patched {
             base: c,
             fixed: fields.clone(),
+            meets: Vec::new(),
+        },
+        ContentNode::Patched {
+            base: c,
+            fixed: fields.clone(),
+            meets: vec![(label("y"), a)],
         },
         ContentNode::Constructor {
             family: reference.clone(),
@@ -452,6 +458,7 @@ fn a_patched_frame_that_fixes_no_label_is_refused()
     let empty = ContentNode::Patched {
         base: NodeIndex::from(1_usize),
         fixed: alloc::collections::BTreeMap::new(),
+        meets: Vec::new(),
     };
     let mut bytes = CheckpointBytes::default();
     super::write_node(&mut Writer { sink: &mut bytes }, &empty).expect("the writer frames it");

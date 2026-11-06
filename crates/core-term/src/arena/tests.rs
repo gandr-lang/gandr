@@ -120,6 +120,7 @@ fn a_patch_that_fixes_nothing_is_its_base()
         Some(&ValueType::Patched {
             base: record,
             fixed: [(label, port)].into(),
+            meets: alloc::vec::Vec::new(),
         }),
         "a patch that fixes a field keeps its base and its value"
     );

@@ -1019,11 +1019,16 @@ where
                             .map(|&field| (AnyNode::ValueType(field), reach)),
                     );
                 },
-                Some(&ValueType::Patched { base, ref fixed }) => {
+                Some(&ValueType::Patched {
+                    base,
+                    ref fixed,
+                    ref meets,
+                }) => {
                     pending.push((AnyNode::ValueType(base), reach));
                     pending.extend(
                         fixed
                             .values()
+                            .chain(meets.iter().map(|met| &met.1))
                             .map(|&value| (AnyNode::Value(value), reach.term())),
                     );
                 },

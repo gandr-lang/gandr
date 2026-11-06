@@ -1600,6 +1600,67 @@ fn a_base_value_at_a_patched_type_crosses_as_a_restriction_5578()
     );
 }
 
+/// #5106: a system of faces forms where each later face's value on a meet
+/// converts with the value the first face fixes there, and is refused at that
+/// value where it does not.
+#[test]
+fn a_system_of_faces_is_formed_where_its_faces_agree_on_their_meet_5106()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let integer = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_literal(integer_literal());
+    let also_zero = arena.value_literal(integer_literal());
+    let one = arena.value_literal(gandr_kernel_term::Literal::Integer(
+        gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("1"))
+                .expect("decimal digits"),
+        ),
+    ));
+    // `*{host, port, tls, mode : Integer}[secure ↦ {port, tls}, addr ↦ {host,
+    // port}]`: the glued fixed map, and `addr`'s port on the meet, at a second
+    // zero and at one.
+    let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (label("host"), integer),
+        (label("mode"), integer),
+        (label("port"), integer),
+        (label("tls"), integer),
+    ]));
+    let fixed = alloc::collections::BTreeMap::from([
+        (label("host"), zero),
+        (label("port"), zero),
+        (label("tls"), zero),
+    ]);
+    let agreeing = arena.value_type_system(record_type, fixed.clone(), alloc::vec![(
+        label("port"),
+        also_zero
+    )]);
+    let disagreeing =
+        arena.value_type_system(record_type, fixed, alloc::vec![(label("port"), one)]);
+    let free = arena.value_record(alloc::collections::BTreeMap::from([(label("mode"), zero)]));
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(agreeing), Maybe::Present(free)),
+            declaration(At(1), Maybe::Present(disagreeing), Maybe::Present(free)),
+        ])
+    };
+    assert!(
+        matches!(report.judged()[0].verdict(), Verdict::Checked { .. }),
+        "faces that agree on their meet form a type: {:?}",
+        report.judged()[0].verdict()
+    );
+    assert_eq!(
+        report.judged()[1].verdict(),
+        Verdict::Refused(CheckRefusal::FixedFieldDiffers {
+            at: one,
+            fixed: zero,
+        }),
+        "faces that disagree on their meet are refused at the later face's port"
+    );
+}
+
 /// #5579: an element of a patched type stands at its base by the coercion out,
 /// as the record of its free fields beside the values the type fixes; a
 /// selection of a fixed field reads the fixed value. A nested computation
