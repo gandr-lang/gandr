@@ -14,8 +14,8 @@
 //!
 //! # The fragment's hypotheses are invariants of the type
 //!
-//! [`Wiring::assemble`] is the only constructor of a [`Wiring`], and it refuses
-//! anything outside the fragment the theory quantifies over:
+//! [`Wiring::assemble`] is the only public constructor of a [`Wiring`], and it
+//! refuses anything outside the fragment the theory quantifies over:
 //!
 //! - **monogamy**: in-degree and out-degree at most one on every wire, so a
 //!   wire is never combined (fan-in) or copied (fan-out);
@@ -31,6 +31,10 @@
 //! uniqueness of boundary complements, and the automatic convexity of a
 //! strongly connected match over an acyclic target — properties no caller can
 //! route around.
+//!
+//! Inside the crate, [`assemble_monogamous`] makes the carrier of the spider
+//! normal form. It checks every condition but acyclicity, because fusion can
+//! close a loop through a spider. No such value leaves the crate.
 //!
 //! # The seam is a pair of partial bijections
 //!
@@ -298,6 +302,12 @@ pub enum GeneratorSort
     /// An applied rewrite: a declared circuit rule fired in a body. A rewrite
     /// and an operation of one spelling are two different boxes.
     Rewrite,
+    /// A spider of a special commutative Frobenius algebra on the wire sort
+    /// that its name names. The merge, the split, the unit and the counit are
+    /// spiders. Its sources have no order among themselves, and its targets
+    /// have none. The decision modulo the Frobenius laws reads them so; every
+    /// other procedure reads the order that the presentation writes.
+    Spider,
 }
 
 /// The label a generator carries: a name together with the role it is worn
@@ -359,9 +369,10 @@ impl GeneratorLabel
 ///
 /// Port order is carried rather than quotiented: no symmetry acts within a
 /// generator, so ordering its ports gives nothing up, and an embedding
-/// preserves it. The derived order is lexicographic on
-/// `(label, sources, targets)`, an order on presentations and never a claim
-/// about diagrams.
+/// preserves it. A [`GeneratorSort::Spider`] is the one exception, and only the
+/// decision modulo the Frobenius laws quotients its order. The derived order is
+/// lexicographic on `(label, sources, targets)`, an order on presentations and
+/// never a claim about diagrams.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Generator
 {
@@ -1002,11 +1013,11 @@ quenchant_shape::reason_enum! {
 
 /// One diagram with an interface, inside the monogamous acyclic fragment.
 ///
-/// A value exists only because [`Wiring::assemble`] proved the diagram is in
-/// the fragment. Both halves of that proof are load-bearing for the matcher:
-/// monogamy makes the search choice-free after one seed per component, and
-/// acyclicity is the hypothesis under which a strongly connected pattern's
-/// match is convex without a sweep.
+/// Outside the crate, a value exists only because [`Wiring::assemble`] proved
+/// the diagram is in the fragment. Both halves of that proof are load-bearing
+/// for the matcher: monogamy makes the search choice-free after one seed per
+/// component, and acyclicity is the hypothesis under which a strongly
+/// connected pattern's match is convex without a sweep.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Wiring
 {
@@ -1119,75 +1130,9 @@ impl Wiring
         boundary: Interface,
     ) -> Result<Self, WiringObstruction>
     {
-        let mut producer: BTreeMap<Wire, Edge> = BTreeMap::new();
-        let mut consumer: BTreeMap<Wire, Edge> = BTreeMap::new();
-        for (index, generator) in generators.iter().enumerate() {
-            let edge = Edge(index);
-            for wire in generator.sources.iter().copied() {
-                if wires.declares(wire) == Declaration::Undeclared {
-                    return Err(WiringObstruction::UnknownWire { wire, at: edge });
-                }
-                if let Some(first) = consumer.insert(wire, edge) {
-                    return Err(WiringObstruction::FanOut {
-                        wire,
-                        first,
-                        second: edge,
-                    });
-                }
-            }
-            for wire in generator.targets.iter().copied() {
-                if wires.declares(wire) == Declaration::Undeclared {
-                    return Err(WiringObstruction::UnknownWire { wire, at: edge });
-                }
-                if let Some(first) = producer.insert(wire, edge) {
-                    return Err(WiringObstruction::FanIn {
-                        wire,
-                        first,
-                        second: edge,
-                    });
-                }
-            }
-        }
-        let mut inputs: BTreeSet<Wire> = BTreeSet::new();
-        for wire in boundary.inputs.iter().copied() {
-            if wires.declares(wire) == Declaration::Undeclared {
-                return Err(WiringObstruction::UnknownBoundaryWire { wire });
-            }
-            if !inputs.insert(wire) {
-                return Err(WiringObstruction::RepeatedBoundaryPort { wire });
-            }
-            if let Some(by) = producer.get(&wire).copied() {
-                return Err(WiringObstruction::BoundaryInputIsProduced { wire, by });
-            }
-        }
-        let mut outputs: BTreeSet<Wire> = BTreeSet::new();
-        for wire in boundary.outputs.iter().copied() {
-            if wires.declares(wire) == Declaration::Undeclared {
-                return Err(WiringObstruction::UnknownBoundaryWire { wire });
-            }
-            if !outputs.insert(wire) {
-                return Err(WiringObstruction::RepeatedBoundaryPort { wire });
-            }
-            if let Some(by) = consumer.get(&wire).copied() {
-                return Err(WiringObstruction::BoundaryOutputIsConsumed { wire, by });
-            }
-        }
-        for wire in wires.wires() {
-            if !producer.contains_key(&wire) && !inputs.contains(&wire) {
-                return Err(WiringObstruction::UndeclaredInput { wire });
-            }
-            if !consumer.contains_key(&wire) && !outputs.contains(&wire) {
-                return Err(WiringObstruction::UndeclaredOutput { wire });
-            }
-        }
-        check_acyclic(&generators, &producer, &consumer)?;
-        Ok(Self {
-            generators: generators.into_boxed_slice(),
-            boundary,
-            wires,
-            producer,
-            consumer,
-        })
+        let wiring = assemble_monogamous(wires, generators, boundary)?;
+        check_acyclic(&wiring.generators, &wiring.producer, &wiring.consumer)?;
+        Ok(wiring)
     }
 
     /// The generator occurrences, addressed by [`Edge`] position.
@@ -1542,6 +1487,160 @@ impl Components
             Maybe::Absent(component_lookup::Absent::OutOfRange),
             Maybe::Present,
         )
+    }
+}
+
+/// Assembles a diagram that may hold a directed cycle, or refuses it.
+///
+/// # Specification
+/// - ensures: the wiring holds `generators` in order, `boundary` and `wires`;
+///   it is monogamous and boundary-honest, as [`Wiring::assemble`] states.
+/// - fails: [`WiringObstruction`] naming the first failed local condition, in
+///   the order [`Wiring::assemble`] decides them; never
+///   [`WiringObstruction::DirectedCycle`].
+/// - provides: the carrier of the spider normal form, where fusion can close a
+///   loop through a spider; [`Wiring::assemble`] is this check followed by the
+///   acyclicity check.
+/// - panics: none.
+///
+/// # Errors
+/// Each [`WiringObstruction`] that [`Wiring::assemble`] returns, except
+/// [`WiringObstruction::DirectedCycle`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a loop through one generator is admitted here and refused
+///   by [`Wiring::assemble`], and every local refusal of the assemble fixtures
+///   passes through this function. A check moved out of it, or acyclicity moved
+///   into it, changes one of the two.
+/// - witness: `interface::tests::a_monogamous_wiring_admits_a_directed_cycle`
+/// - witness: `interface::tests::the_wiring_refuses_a_fan_in`
+/// - witness: `interface::tests::the_wiring_refuses_an_undeclared_open_wire`
+#[spec(captures: [generator_count = generators.len()],
+ensures: |ref result| match *result {
+    Ok(ref wiring) => wiring.wires == wires && wiring.generators.len() == generator_count
+        && wiring.producer.len() == wiring.generators.iter().map(|generator| generator.targets.len()).sum::<usize>()
+        && wiring.consumer.len() == wiring.generators.iter().map(|generator| generator.sources.len()).sum::<usize>(),
+    Err(WiringObstruction::DirectedCycle { .. }) => false,
+    Err(_) => true,
+})]
+pub fn assemble_monogamous(
+    wires: WireCount,
+    generators: Vec<Generator>,
+    boundary: Interface,
+) -> Result<Wiring, WiringObstruction>
+{
+    let mut producer: BTreeMap<Wire, Edge> = BTreeMap::new();
+    let mut consumer: BTreeMap<Wire, Edge> = BTreeMap::new();
+    for (index, generator) in generators.iter().enumerate() {
+        let edge = Edge(index);
+        for wire in generator.sources.iter().copied() {
+            if wires.declares(wire) == Declaration::Undeclared {
+                return Err(WiringObstruction::UnknownWire { wire, at: edge });
+            }
+            if let Some(first) = consumer.insert(wire, edge) {
+                return Err(WiringObstruction::FanOut {
+                    wire,
+                    first,
+                    second: edge,
+                });
+            }
+        }
+        for wire in generator.targets.iter().copied() {
+            if wires.declares(wire) == Declaration::Undeclared {
+                return Err(WiringObstruction::UnknownWire { wire, at: edge });
+            }
+            if let Some(first) = producer.insert(wire, edge) {
+                return Err(WiringObstruction::FanIn {
+                    wire,
+                    first,
+                    second: edge,
+                });
+            }
+        }
+    }
+    let mut inputs: BTreeSet<Wire> = BTreeSet::new();
+    for wire in boundary.inputs.iter().copied() {
+        if wires.declares(wire) == Declaration::Undeclared {
+            return Err(WiringObstruction::UnknownBoundaryWire { wire });
+        }
+        if !inputs.insert(wire) {
+            return Err(WiringObstruction::RepeatedBoundaryPort { wire });
+        }
+        if let Some(by) = producer.get(&wire).copied() {
+            return Err(WiringObstruction::BoundaryInputIsProduced { wire, by });
+        }
+    }
+    let mut outputs: BTreeSet<Wire> = BTreeSet::new();
+    for wire in boundary.outputs.iter().copied() {
+        if wires.declares(wire) == Declaration::Undeclared {
+            return Err(WiringObstruction::UnknownBoundaryWire { wire });
+        }
+        if !outputs.insert(wire) {
+            return Err(WiringObstruction::RepeatedBoundaryPort { wire });
+        }
+        if let Some(by) = consumer.get(&wire).copied() {
+            return Err(WiringObstruction::BoundaryOutputIsConsumed { wire, by });
+        }
+    }
+    for wire in wires.wires() {
+        if !producer.contains_key(&wire) && !inputs.contains(&wire) {
+            return Err(WiringObstruction::UndeclaredInput { wire });
+        }
+        if !consumer.contains_key(&wire) && !outputs.contains(&wire) {
+            return Err(WiringObstruction::UndeclaredOutput { wire });
+        }
+    }
+    Ok(Wiring {
+        generators: generators.into_boxed_slice(),
+        boundary,
+        wires,
+        producer,
+        consumer,
+    })
+}
+
+/// Writes new port lists for the generator at `edge`, each a reordering of the
+/// list it replaces.
+///
+/// # Specification
+/// - requires: `edge` is a generator position of `wiring`, and `sources` and
+///   `targets` hold the wires of its sources and of its targets, each in some
+///   order.
+/// - ensures: the generator's ports are `sources` and `targets`; every other
+///   datum is unchanged.
+/// - provides: another presentation of one diagram. The incidence maps stay
+///   valid, because each wire keeps its producer and its consumer.
+/// - panics: none.
+/// - intension: a port past the shorter list keeps its wire, so a list of the
+///   wrong length writes a prefix and never panics; the requirement holds at
+///   every call site.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a spider with tied legs reaches its least form only
+///   through the orders written here, and the decision verifies every winning
+///   presentation against the fused diagram leg by leg.
+/// - witness: `normal_form::spider::tests::tied_legs_have_one_form_in_every_order`
+/// - witness: `normal_form::spider::tests::the_evidence_verifies_against_each_input`
+#[spec(requires: wiring.generators.get(edge.0).is_some_and(|generator|
+    generator.sources.len() == sources.len() && generator.targets.len() == targets.len()
+    && sources.iter().all(|wire| generator.sources.contains(wire))
+    && targets.iter().all(|wire| generator.targets.contains(wire))))]
+pub fn reorder_ports(
+    wiring: &mut Wiring,
+    edge: Edge,
+    sources: &[Wire],
+    targets: &[Wire],
+)
+{
+    let Some(generator) = wiring.generators.get_mut(edge.0)
+    else {
+        return;
+    };
+    for (slot, wire) in generator.sources.iter_mut().zip(sources) {
+        *slot = *wire;
+    }
+    for (slot, wire) in generator.targets.iter_mut().zip(targets) {
+        *slot = *wire;
     }
 }
 
@@ -2057,6 +2156,52 @@ mod tests
             },
             downstream_first,
             "the named generator is on the cycle, not merely below it"
+        );
+    }
+
+    #[test]
+    fn a_monogamous_wiring_admits_a_directed_cycle()
+    {
+        // The loop that `assemble` refuses through `f` is admitted, with its
+        // incidence intact; a local refusal still stands.
+        let looped = || {
+            alloc::vec![
+                Generator::new(value("f"), wires![0], wires![1]),
+                Generator::new(value("g"), wires![1], wires![0]),
+            ]
+        };
+        let wiring = assemble_monogamous(WireCount::from(2), looped(), Interface::default())
+            .expect("a loop is monogamous and boundary-honest");
+        assert_eq!(
+            Maybe::Present(Edge::from(1)),
+            wiring.producer_of(Wire::from(0))
+        );
+        assert_eq!(
+            Maybe::Present(Edge::from(0)),
+            wiring.consumer_of(Wire::from(0))
+        );
+        assert_eq!(
+            Err(WiringObstruction::DirectedCycle {
+                through: Edge::from(0)
+            }),
+            Wiring::assemble(WireCount::from(2), looped(), Interface::default()),
+            "the public constructor still refuses the loop"
+        );
+        assert_eq!(
+            Err(WiringObstruction::FanIn {
+                wire: Wire::from(0),
+                first: Edge::from(0),
+                second: Edge::from(1),
+            }),
+            assemble_monogamous(
+                WireCount::from(1),
+                alloc::vec![
+                    Generator::new(value("f"), Vec::new(), wires![0]),
+                    Generator::new(value("g"), Vec::new(), wires![0]),
+                ],
+                Interface::new(Vec::new(), wires![0]),
+            ),
+            "a fan-in stays refused"
         );
     }
 

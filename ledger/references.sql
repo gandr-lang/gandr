@@ -82,6 +82,7 @@ INSERT INTO reference VALUES('arXiv:1908.05808','storage-artifact','','backgroun
 INSERT INTO reference VALUES('arXiv:1908.05808','storage-records','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2001.11001','theory-levitation','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2005.04453','theory-deep-inference','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('arXiv:2012.01847','theory-circuit-algebras','normal_form::spider','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2102.06275','surface-lowering','model','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2104.14686','theory-cell-complexes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2104.14686','theory-circuit-algebras','','background',NULL,NULL,NULL);
@@ -265,6 +266,7 @@ INSERT INTO reference VALUES('doi:10.1145/3371126','surface-lowering','','backgr
 INSERT INTO reference VALUES('doi:10.1145/3450952','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/3485513','runtime-emitter','','background','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','36029ff370a4f09ce9349dce5f00d2c8f44f78d3');
 INSERT INTO reference VALUES('doi:10.1145/3485513','runtime-stencils','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1145/3502719','theory-circuit-algebras','normal_form::spider','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/351240.351262','core-sequent','','background','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','60aac255e127288c58c270ac17cda0fcceb28445');
 INSERT INTO reference VALUES('doi:10.1145/351240.351262','theory-cell-complexes','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/351240.351262','theory-circuit-algebras','','background',NULL,NULL,NULL);
@@ -384,6 +386,7 @@ INSERT INTO reference VALUES('vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7','surfa
 INSERT INTO reference VALUES('vault:01a178aa-5f59-7323-a77d-6f8114cedbba','core-checker','fill','lineage','f5c6fcb3d6e11921354cb06ce23eed12219e5134','2026-10-30','8fab72057caf7d961aa5f6b3ba9ab565e2f15c97');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178aa-608d-75d0-8f71-e6fe4289f327','runtime-emitter','run','lineage','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','9b28997d81f735c6cf7080802cf6bf58d95c2d97');
+INSERT INTO reference VALUES('vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','kernel-term','decode','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-dispatcher','measure','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-655f-72f2-97ee-298c0647e1e5','surface-driver','','background',NULL,NULL,NULL);
@@ -553,6 +556,7 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surfa
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-dispatcher','evaluate::reals','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-lowering','module::sealing','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-cellular-sheaves','','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);
@@ -694,6 +698,7 @@ INSERT INTO work VALUES('doi:10.1145/3428194',2020,NULL);
 INSERT INTO work VALUES('doi:10.1145/3450952',2021,NULL);
 INSERT INTO work VALUES('doi:10.1145/3474834',2021,NULL);
 INSERT INTO work VALUES('doi:10.1145/3485513',2021,NULL);
+INSERT INTO work VALUES('doi:10.1145/3502719',2022,NULL);
 INSERT INTO work VALUES('doi:10.1145/351240.351262',2000,'doi:10.48550/arxiv.1006.2283');
 INSERT INTO work VALUES('doi:10.1145/3531130.3533365',2022,'doi:10.22331/q-2026-01-19-1972');
 INSERT INTO work VALUES('doi:10.1145/3547641',2022,'doi:10.1145/3674648');

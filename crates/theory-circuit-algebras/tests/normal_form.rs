@@ -1,6 +1,8 @@
 //! Presentation-order invariance over generated diagrams: a random wire
 //! renumbering and generator relisting of a generated diagram canonicalizes to
-//! the form the original does, and both relabellings verify.
+//! the form the original does, and both relabellings verify. A rewrite by the
+//! Frobenius laws of a generated diagram with spiders is one diagram modulo
+//! the laws, and both spider canons verify.
 //!
 //! The generator is biased toward the shapes where the traversal has no
 //! boundary to anchor on — components with no boundary port, port-free
@@ -14,11 +16,15 @@ use gandr_theory_circuit_algebras::Generator;
 use gandr_theory_circuit_algebras::GeneratorLabel;
 use gandr_theory_circuit_algebras::GeneratorSort;
 use gandr_theory_circuit_algebras::Interface;
+use gandr_theory_circuit_algebras::SpiderBudget;
+use gandr_theory_circuit_algebras::SpiderEquality;
+use gandr_theory_circuit_algebras::SpiderObstruction;
 use gandr_theory_circuit_algebras::Wire;
 use gandr_theory_circuit_algebras::WireCount;
 use gandr_theory_circuit_algebras::Wiring;
 use gandr_theory_circuit_algebras::canonicalize;
 use gandr_theory_circuit_algebras::same_diagram;
+use gandr_theory_circuit_algebras::same_modulo_frobenius;
 use proptest::prelude::*;
 use proptest::sample::Index;
 
@@ -324,23 +330,40 @@ fn label() -> impl Strategy<Value = GeneratorLabel>
     ]
 }
 
-/// One construction step, weighted toward port-free generators, isolated
-/// wires and generators that start a component from nothing.
+/// A label from the small alphabet, or a spider of the sort `z`, which is the
+/// commonest.
 ///
 /// # Specification
 /// trivial.
-fn step() -> impl Strategy<Value = Step>
+fn spider_label() -> impl Strategy<Value = GeneratorLabel>
+{
+    prop_oneof![
+        1 => Just(GeneratorLabel::new("a", GeneratorSort::Value)),
+        1 => Just(GeneratorLabel::new("b", GeneratorSort::Operation)),
+        3 => Just(GeneratorLabel::new("z", GeneratorSort::Spider)),
+    ]
+}
+
+/// One construction step over the labels of `labels`, weighted toward
+/// port-free generators, isolated wires and generators that start a component
+/// from nothing.
+///
+/// # Specification
+/// trivial.
+fn step<Labels>(labels: fn() -> Labels) -> impl Strategy<Value = Step>
+where
+    Labels: Strategy<Value = GeneratorLabel> + 'static,
 {
     prop_oneof![
         2 => Just(Step::IsolatedWire),
         1 => Just(Step::Input),
-        2 => label().prop_map(|label| Step::Generator {
+        2 => labels().prop_map(|label| Step::Generator {
             label,
             picks: Vec::new(),
             produces: 0,
         }),
         7 => (
-            label(),
+            labels(),
             proptest::collection::vec(any::<Index>(), 0 ..= 2_usize),
             0 ..= 2_usize,
         )
@@ -362,14 +385,16 @@ fn closing() -> impl Strategy<Value = Closing>
     prop_oneof![3 => Just(Closing::Terminal), 1 => Just(Closing::Output)]
 }
 
-/// A generated construction.
+/// A generated construction over the labels of `labels`.
 ///
 /// # Specification
 /// trivial.
-fn recipe() -> impl Strategy<Value = Recipe>
+fn recipe<Labels>(labels: fn() -> Labels) -> impl Strategy<Value = Recipe>
+where
+    Labels: Strategy<Value = GeneratorLabel> + 'static,
 {
     (
-        proptest::collection::vec(step(), 0 ..= 12_usize),
+        proptest::collection::vec(step(labels), 0 ..= 12_usize),
         proptest::collection::vec(closing(), 1 ..= 4_usize),
     )
         .prop_map(|(steps, closings)| Recipe { steps, closings })
@@ -393,7 +418,7 @@ fn recipe() -> impl Strategy<Value = Recipe>
 /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
 fn presented() -> impl Strategy<Value = (Built, Relisting)>
 {
-    recipe().prop_flat_map(|recipe| {
+    recipe(label).prop_flat_map(|recipe| {
         let built = recipe.build();
         let wires = (0 .. built.wires).collect::<Vec<usize>>();
         let edges = (0 .. built.generators.len()).collect::<Vec<usize>>();
@@ -481,4 +506,278 @@ fn recipe_closes_open_wires_and_preserves_isolated_roles()
         canonical.relabelling().verify(&wiring, canonical.form()),
         Ok(())
     );
+}
+
+/// One rewrite by the Frobenius laws of the sort `z`.
+#[derive(Clone, Debug)]
+enum Rewrite
+{
+    /// Splits a spider into two spiders joined by a fresh wire. The first
+    /// takes the sources and the targets before the cuts, and the second
+    /// takes the rest.
+    Split
+    {
+        /// Which spider.
+        spider: Index,
+        /// Where its sources are cut.
+        sources: Index,
+        /// Where its targets are cut.
+        targets: Index,
+    },
+    /// Puts a bubble, a split and then a merge, on a wire.
+    Bubble
+    {
+        /// Which wire.
+        wire: Index,
+    },
+    /// Puts an identity spider on a wire.
+    Identity
+    {
+        /// Which wire.
+        wire: Index,
+    },
+    /// Reverses the legs of every spider.
+    Commute,
+}
+
+impl Built
+{
+    /// The diagram after `rewrite`, which the laws make one diagram with
+    /// this one.
+    ///
+    /// # Specification
+    /// - requires: the parts are monogamous, acyclic and boundary-honest.
+    /// - ensures: the rewritten parts are too. They hold at least the wires and
+    ///   the generators of these parts, and they are one diagram with them
+    ///   modulo the Frobenius laws.
+    /// - panics: none on the generated domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — generated diagrams rewritten by every move, then
+    ///   renumbered and relisted, are one diagram modulo the laws, and both
+    ///   canons verify. A move that broke the fragment fails assembly, and a
+    ///   move outside the laws fails the decision.
+    /// - witness: `tests::normal_form::every_frobenius_rewrite_is_the_same_diagram`
+    #[spec(ensures: |ref built| built.wires >= self.wires && built.generators.len() >= self.generators.len()
+        && built.inputs.len() == self.inputs.len() && built.outputs.len() == self.outputs.len())]
+    fn rewritten(
+        &self,
+        rewrite: &Rewrite,
+    ) -> Self
+    {
+        let mut built = self.clone();
+        let spider = || GeneratorLabel::new("z", GeneratorSort::Spider);
+        match *rewrite {
+            Rewrite::Split {
+                spider: pick,
+                sources,
+                targets,
+            } => {
+                let spiders: Vec<usize> = built
+                    .generators
+                    .iter()
+                    .enumerate()
+                    .filter(|entry| entry.1.label().sort() == GeneratorSort::Spider)
+                    .map(|entry| entry.0)
+                    .collect();
+                if spiders.is_empty() {
+                    return built;
+                }
+                let position = spiders[pick.index(spiders.len())];
+                let original = built.generators[position].clone();
+                let joint = built.fresh();
+                let (early_sources, late_sources) = original
+                    .sources()
+                    .split_at(sources.index(original.sources().len().saturating_add(1)));
+                let (early_targets, late_targets) = original
+                    .targets()
+                    .split_at(targets.index(original.targets().len().saturating_add(1)));
+                built.generators[position] = Generator::new(
+                    original.label().clone(),
+                    early_sources.to_vec(),
+                    early_targets
+                        .iter()
+                        .copied()
+                        .chain([joint])
+                        .collect::<Vec<Wire>>(),
+                );
+                built.generators.push(Generator::new(
+                    original.label().clone(),
+                    core::iter::once(joint)
+                        .chain(late_sources.iter().copied())
+                        .collect::<Vec<Wire>>(),
+                    late_targets.to_vec(),
+                ));
+            },
+            Rewrite::Bubble { wire } | Rewrite::Identity { wire } => {
+                if built.wires == 0 {
+                    return built;
+                }
+                let wire = Wire::from(wire.index(built.wires));
+                let end = built.fresh();
+                built.reroute(wire, end);
+                if matches!(*rewrite, Rewrite::Bubble { .. }) {
+                    let left = built.fresh();
+                    let right = built.fresh();
+                    built
+                        .generators
+                        .push(Generator::new(spider(), [wire], [left, right]));
+                    built
+                        .generators
+                        .push(Generator::new(spider(), [left, right], [end]));
+                }
+                else {
+                    built
+                        .generators
+                        .push(Generator::new(spider(), [wire], [end]));
+                }
+            },
+            Rewrite::Commute => {
+                for generator in &mut built.generators {
+                    if generator.label().sort() == GeneratorSort::Spider {
+                        *generator = Generator::new(
+                            generator.label().clone(),
+                            generator
+                                .sources()
+                                .iter()
+                                .rev()
+                                .copied()
+                                .collect::<Vec<Wire>>(),
+                            generator
+                                .targets()
+                                .iter()
+                                .rev()
+                                .copied()
+                                .collect::<Vec<Wire>>(),
+                        );
+                    }
+                }
+            },
+        }
+        built
+    }
+
+    /// Moves the consumer of `wire`, a generator's source or an output port,
+    /// to `end`.
+    ///
+    /// # Specification
+    /// - ensures: the parts keep their counts of generators and outputs. No
+    ///   generator reads `wire` and no output is `wire`, and each port that
+    ///   read it reads `end`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — a bubble or an identity on a wire read by a
+    ///   generator, by an output, or by both legs of an isolated wire, keeps
+    ///   the diagram in the fragment.
+    /// - witness: `tests::normal_form::every_frobenius_rewrite_is_the_same_diagram`
+    #[spec(captures: [generators = self.generators.len(), outputs = self.outputs.len()],
+        ensures: |_| self.generators.len() == generators && self.outputs.len() == outputs)]
+    fn reroute(
+        &mut self,
+        wire: Wire,
+        end: Wire,
+    )
+    {
+        for generator in &mut self.generators {
+            if generator.sources().contains(&wire) {
+                let sources = generator
+                    .sources()
+                    .iter()
+                    .map(|port| if *port == wire { end } else { *port })
+                    .collect::<Vec<Wire>>();
+                *generator = Generator::new(
+                    generator.label().clone(),
+                    sources,
+                    generator.targets().to_vec(),
+                );
+            }
+        }
+        for port in &mut self.outputs {
+            if *port == wire {
+                *port = end;
+            }
+        }
+    }
+}
+
+/// One rewrite by the laws, weighted toward splits.
+///
+/// # Specification
+/// trivial.
+fn rewrite() -> impl Strategy<Value = Rewrite>
+{
+    prop_oneof![
+        3 => (any::<Index>(), any::<Index>(), any::<Index>())
+            .prop_map(|(spider, sources, targets)| Rewrite::Split { spider, sources, targets }),
+        2 => any::<Index>().prop_map(|wire| Rewrite::Bubble { wire }),
+        2 => any::<Index>().prop_map(|wire| Rewrite::Identity { wire }),
+        1 => Just(Rewrite::Commute),
+    ]
+}
+
+/// A generated diagram with spiders, and a rewrite of it by the laws,
+/// renumbered and relisted.
+///
+/// # Specification
+/// - ensures: the original parts, and the parts after one to four rewrites and
+///   a full-domain renumbering and relisting.
+/// - panics: none within the recipe strategy bounds.
+/// - executable: none — the return type is an opaque strategy, which the
+///   backend cannot name in its generated closure.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the pairs this strategy draws are one diagram modulo the
+///   laws by construction, so the decision must call each pair `Same`. Sampling
+///   is bounded rather than exhaustive.
+/// - witness: `tests::normal_form::every_frobenius_rewrite_is_the_same_diagram`
+fn rewritten() -> impl Strategy<Value = (Built, Built)>
+{
+    (
+        recipe(spider_label),
+        proptest::collection::vec(rewrite(), 1 ..= 4_usize),
+    )
+        .prop_flat_map(|(recipe, rewrites)| {
+            let original = recipe.build();
+            let rewritten = rewrites
+                .iter()
+                .fold(original.clone(), |built, rewrite| built.rewritten(rewrite));
+            let wires = (0 .. rewritten.wires).collect::<Vec<usize>>();
+            let edges = (0 .. rewritten.generators.len()).collect::<Vec<usize>>();
+            (
+                Just(original),
+                Just(rewritten),
+                Just(wires).prop_shuffle(),
+                Just(edges).prop_shuffle(),
+            )
+                .prop_map(|(original, rewritten, wires, edges)| {
+                    (original, rewritten.relisted(&Relisting { wires, edges }))
+                })
+        })
+}
+
+proptest! {
+    /// A generated diagram with spiders, and a rewrite of it by the laws that
+    /// is renumbered and relisted, are one diagram modulo the laws. Each
+    /// canon verifies against its own presentation.
+    #[test]
+    fn every_frobenius_rewrite_is_the_same_diagram(
+        (original, rewritten) in rewritten(),
+    ) {
+        let left = original.assemble();
+        let right = rewritten.assemble();
+        match same_modulo_frobenius(&left, &right, SpiderBudget::from(100_000)) {
+            Ok(SpiderEquality::Same(shared)) => {
+                prop_assert_eq!(Ok(()), shared.left().verify(&left), "the original's canon is evidence");
+                prop_assert_eq!(Ok(()), shared.right().verify(&right), "and so is the rewrite's");
+            },
+            Ok(SpiderEquality::Distinct(divergence)) => {
+                return Err(TestCaseError::fail(format!("a rewrite by the laws parts at {divergence:?}")));
+            },
+            Err(SpiderObstruction::BudgetExhausted { .. }) => {
+                prop_assume!(false, "a tie past the budget");
+            },
+            Err(refusal) => return Err(TestCaseError::fail(format!("{refusal}"))),
+        }
+    }
 }

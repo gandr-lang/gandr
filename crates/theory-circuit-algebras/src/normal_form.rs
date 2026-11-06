@@ -41,7 +41,9 @@
 //!
 //! A generator whose ports are not totally ordered would move the choice
 //! toward a mixed style, because the edge traversal would then need a
-//! tie-break of its own; every generator here orders its ports.
+//! tie-break of its own. Every generator here orders its ports. The legs of a
+//! spider have no order modulo the Frobenius laws, and [`spider`] gives them
+//! that tie-break outside the traversal.
 //!
 //! # The procedure
 //!
@@ -153,8 +155,8 @@
 //!   [`Ord`] and [`Hash`], and holds no address, stamp or session state — but
 //!   minting identities from it waits until the form is shown to agree with the
 //!   construction-term reading.
-//! - **Decide fan-in.** The spider normal form for diagrams whose wires combine
-//!   is outside the monogamous fragment this view admits.
+//! - **Decide fan-in.** A wire that merges or splits is the leg of a spider,
+//!   and [`spider`] decides equality modulo the Frobenius laws over this canon.
 //!
 //! # The diagram normal form
 //!
@@ -256,8 +258,8 @@
 //! - **Planar equivalence.** Wires here cross freely and the interface is the
 //!   only order; the planar quotient up to exchange moves is a different
 //!   relation.
-//! - **Merging wires.** The spider normal form for diagrams whose wires merge
-//!   lies outside the monogamous fragment.
+//! - **Merging wires.** A wire that merges is the leg of a spider, and
+//!   [`spider`] decides the Frobenius laws over this canon.
 //!
 //! `CanonicalDiagram` is a map key, but interning diagrams by content, minting
 //! identities from the key, is refused: a content key is sound only once the
@@ -429,15 +431,18 @@ impl CanonicalDiagram
     /// - provides: the way back from a form to a diagram, so a caller can match
     ///   against a form or check that canonicalization is idempotent.
     /// - fails: [`WiringObstruction`] when the form is outside the fragment. A
-    ///   form [`canonicalize`] produced renumbers a diagram
+    ///   form [`canonicalize`] produced from a [`Wiring`] renumbers a diagram
     ///   [`Wiring::assemble`] accepted, and renumbering preserves every
-    ///   condition it checks, so no form fails; the signature stays fallible
-    ///   because the reassembly runs those checks rather than assuming them.
+    ///   condition it checks, so no such form fails; the signature stays
+    ///   fallible because the reassembly runs those checks rather than assuming
+    ///   them. The form of a spider canon can hold a loop through a spider, and
+    ///   is refused as [`WiringObstruction::DirectedCycle`].
     /// - panics: none.
     ///
     /// # Errors
     /// - [`WiringObstruction`]: whatever [`Wiring::assemble`] refuses, which no
-    ///   form [`canonicalize`] produced reaches.
+    ///   form [`canonicalize`] produced from a [`Wiring`] reaches;
+    ///   [`WiringObstruction::DirectedCycle`] for a spider form with a loop.
     ///
     /// # Adequacy
     /// - hypothesis: L1 — every fixture's form is read back, reassembled under
@@ -1986,6 +1991,8 @@ impl<'diagram> Linearization<'diagram>
         }
     }
 }
+
+pub mod spider;
 
 #[cfg(test)]
 mod tests;
