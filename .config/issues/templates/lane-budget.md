@@ -40,6 +40,7 @@ Time the parts of `{{job}}` in its last run's log. Split them into shares by cos
 | `sharing` | no |
 | `nominal` | no |
 | `measure` | no |
+| `collapse` | no |
 
 ## Engineering
 

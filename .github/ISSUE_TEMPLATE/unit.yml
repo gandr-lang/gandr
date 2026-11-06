@@ -115,6 +115,7 @@ body:
         | `sharing` | |
         | `nominal` | |
         | `measure` | |
+        | `collapse` | |
     validations:
       required: true
   - type: textarea

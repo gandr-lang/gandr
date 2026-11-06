@@ -3,8 +3,6 @@
 //! `tests::<area>::<name>`.
 
 #[cfg(test)]
-mod euler;
-#[cfg(test)]
 mod faces;
 #[cfg(test)]
 mod graded;

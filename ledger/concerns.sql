@@ -8,6 +8,7 @@ CREATE TABLE concern(
   issue     TEXT NOT NULL CHECK(issue GLOB '#[0-9]*'),
   CHECK(instr(name || line, char(10)) = 0)
 ) WITHOUT ROWID;
+INSERT INTO concern VALUES('collapse','Collapse','A space reduced to its critical cells: an acyclic matching pairs each cell that cancels with a face one dimension down, and the cells that no pair holds stay. A complex states the faces of each cell with their incidence, and a scheme states the class of each cell. The Morse crate checks a scheme on the cells a caller gives and follows the gradient past them up to a budget. A walk past its budget is refused, never cut short. Completion''s critical pairs are the critical cells of Brown''s collapsing scheme on the bar complex of a rule block.','theory-discrete-morse::Complex','#5507');
 INSERT INTO concern VALUES('fork','Fork','Work split across the driver''s one pool: the fork crate states the trait and its serial reference, and every consumer forks through it.','core-fork::Fork','#1250');
 INSERT INTO concern VALUES('measure','Measure','A value that a cell carries in an ordered algebra and that an analysis propagates: a grade, a weight, a cost or a distance. An ordered semiring states the carrier, the operations and the order. The law checker decides the semiring''s laws on every tuple of a finite carrier, or on the elements an infinite one generates, and names a counterexample for each broken law. An operation past the represented elements answers undecided, never a guess.','theory-ordered-algebras::OrderedSemiring','#5308');
 INSERT INTO concern VALUES('nominal','Nominal','Names with identity, order, freshness and support, and the lifecycle a unit runs over them. A register store holds each name at most once, and a transfer retains, allocates or erases one. A lifecycle is a word or a tree over the alphabet of allocations, uses and releases, and a nominal automaton with name allocation and deallocation accepts it or not. Name dropping closes its language under renaming. Literal membership is decided; emptiness, inclusion and determinization belong to the classical back end, deferred until a unit needs one.',NULL,'#4181');
@@ -50,6 +51,10 @@ CREATE TABLE site(
   PRIMARY KEY(concern, crate, module),
   CHECK((concern = 'sharing') = (mechanism IS NOT NULL))
 ) WITHOUT ROWID;
+INSERT INTO site VALUES('collapse','theory-discrete-morse','collapse','defines',NULL,'`Scheme` and `collapse`: the class of each cell, and the check of a scheme as an acyclic matching that keeps the critical cells and counts each fault.');
+INSERT INTO site VALUES('collapse','theory-discrete-morse','complex','defines',NULL,'`Complex` and `Incidence`: the faces of a cell one dimension down, each with its incidence, and whether a cell lies in the complex.');
+INSERT INTO site VALUES('collapse','theory-discrete-morse','greedy','implements',NULL,'`greedy` and `Matched`: a matching built in list order, each pair kept only when no gradient path runs back from the upper cell to the lower one, and read as a scheme.');
+INSERT INTO site VALUES('collapse','theory-discrete-morse','poset','implements',NULL,'A `GradedPoset` as a complex: the faces of a cell are the cells of its boundary one rank down, each with the incidence one.');
 INSERT INTO site VALUES('fork','core-fork','','defines',NULL,'The `Fork` trait and `Serial`, the pool of one that a consumer runs on alone.');
 INSERT INTO site VALUES('fork','runtime-emitter','cut','consumes',NULL,'`evaluate_scheduled_on`: each writer a scheduled program spawns started on the caller''s fork, each read waiting for its writer.');
 INSERT INTO site VALUES('fork','surface-dispatcher','pool','implements',NULL,'`Pool` and `Pooled`, the driver-held pool that every consumer forks on.');

@@ -46,6 +46,7 @@ The closing comment of `stall:watch` names the event that ends the stall: the me
 | `sharing` | no |
 | `nominal` | no |
 | `measure` | no |
+| `collapse` | no |
 
 ## Engineering
 
