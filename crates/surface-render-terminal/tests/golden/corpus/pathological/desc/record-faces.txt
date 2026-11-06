@@ -1,35 +1,51 @@
 error[IllFormedDescription]: the face `bad` holds a name the boundary `Outside` does not list
-   ╭▸ corpus/pathological/desc/record-faces.gandr:24:24
+   ╭▸ corpus/pathological/desc/record-faces.gandr:26:24
    │
-24 │     face bad = { port, cert };
+26 │     face bad = { port, cert };
    │                        ━━━━ what the description check refuses
    │
    ├ note: `Outside` is refused with IllFormedDescription, as its expectation states
    ╰ help: put in the face only names that the boundary lists
 
 error[IllFormedDescription]: the boundary `Twice` names the face `addr` twice
-   ╭▸ corpus/pathological/desc/record-faces.gandr:31:10
+   ╭▸ corpus/pathological/desc/record-faces.gandr:33:10
    │
-31 │     face addr = { port };
+33 │     face addr = { port };
    │          ━━━━ what the description check refuses
    │
    ├ note: `Twice` is refused with IllFormedDescription, as its expectation states
    ╰ help: give each face of the boundary its own name
 
 error[UnresolvedName]: `mode` is not defined
-   ╭▸ corpus/pathological/desc/record-faces.gandr:40:23
+   ╭▸ corpus/pathological/desc/record-faces.gandr:42:23
    │
-40 │ def moded(c : Config[.mode = 1]) -> Integer { 0 }
+42 │ def moded(c : Config[.mode = 1]) -> Integer { 0 }
    │                       ━━━━ not found in this scope
    │
    ├ note: `moded` is refused with UnresolvedName, as its expectation states
    ╰ help: define `mode`, or import the module that exports it
 
 error[UnresolvedName]: `remote` is not defined
-   ╭▸ corpus/pathological/desc/record-faces.gandr:44:23
+   ╭▸ corpus/pathological/desc/record-faces.gandr:46:23
    │
-44 │ def remote(c : Config[remote ↦ *{.host = "localhost"}]) -> Integer { 0 }
+46 │ def remote(c : Config[remote ↦ *{.host = "localhost"}]) -> Integer { 0 }
    │                       ━━━━━━ not found in this scope
    │
    ├ note: `remote` is refused with UnresolvedName, as its expectation states
    ╰ help: define `remote`, or import the module that exports it
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/desc/record-faces.gandr:51:33
+   │
+37 │ type Config = *{host : String, port : Integer, tls : Bool} where
+   │                                       ─────── the type it is checked against
+   ┆
+51 │ def mistyped(c : Config[.port = true]) -> Integer { 0 }
+   │              ┬                  ┯━━━
+   │              │                  │
+   │              │                  its type does not convert: expected `Integer`, found `Bool`
+   │              │                  the type it synthesises
+   │              formed; while forming the parts of this type
+   │
+   ├ note: `mistyped` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

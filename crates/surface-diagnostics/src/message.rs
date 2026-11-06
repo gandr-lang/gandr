@@ -2276,6 +2276,10 @@ pub mod tests
                 at: value,
                 expected: value_type,
             },
+            CheckRefusal::PatchOutsideBase {
+                at: value_type,
+                value,
+            },
             CheckRefusal::UnknownOperation { at: computation },
             CheckRefusal::HandlerCoverage { at: computation },
             CheckRefusal::HandlerUnlawful {

@@ -1270,7 +1270,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 235] = [
+    const WORDED: [&str; 236] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1408,6 +1408,7 @@ mod tests
         "MismatchedPattern",
         "MissingPayload",
         "MissingRecordField",
+        "PatchOutsideBase",
         "NestedOccurrence",
         "NonValuePayload",
         "NotAHandle",
