@@ -622,6 +622,7 @@ use crate::form::applied_word;
 use crate::form::bare_bracket;
 use crate::form::declined_feature;
 use crate::form::misspelt_keyword;
+use crate::form::misspelt_operator;
 use crate::form::opens_expression;
 use crate::form::read_pieces;
 use crate::form::shape_of;
@@ -3548,6 +3549,11 @@ struct Lowerer<'run, 'source>
     /// Each node classified ahead of the sweep, which the sweep then passes
     /// over.
     classified_ahead: BTreeSet<NodeIndex>,
+    /// The node and span of each name the sweep refuses as unresolved, in the
+    /// order the sweep reaches them, whether or not its declaration keeps
+    /// that refusal: the names [`Self::place_misspelt_operator`] may read as
+    /// an operator misspelt.
+    unresolved: Vec<(NodeIndex, ByteSpan)>,
     /// The type each computation position answers, where a function's result
     /// or a match's answer states it, or the block a statement's local ends
     /// continue answers.
@@ -4851,6 +4857,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.refuse_misshapen_entries(sink);
         self.place_by_layout();
         self.place_misspelt();
+        self.place_misspelt_operator();
         self.place_bare_index();
         self.refused_declarations();
 
@@ -4927,7 +4934,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         && self.regions.is_empty()
         && self.static_lambdas.is_empty()
         && self.static_spans.is_empty()
-        && self.static_calls.is_empty())]
+        && self.static_calls.is_empty()
+        && self.unresolved.is_empty())]
     fn end_source(&mut self)
     {
         self.classifiers.clear();
@@ -4980,6 +4988,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.static_lambdas.clear();
         self.static_spans.clear();
         self.static_calls.clear();
+        self.unresolved.clear();
     }
 
     /// The module every source lowered amounts to: its attributes,
@@ -5617,6 +5626,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             fixed_carriers: Vec::new(),
             ahead: Vec::new(),
             classified_ahead: BTreeSet::new(),
+            unresolved: Vec::new(),
             answers: BTreeMap::new(),
             cocased: BTreeSet::new(),
             synthesised: Vec::new(),
@@ -6852,6 +6862,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if refusal.classify() == FailureClass::EngineFault {
                 return Err(refusal);
             }
+            if let LoweringRefusal::UnresolvedName { span, .. } = refusal {
+                self.unresolved.push((position, span));
+            }
             self.collected.offer(position, refusal);
         }
 
@@ -7872,6 +7885,85 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     fault: FormFault::Misspelt(keyword),
                 }));
             }
+        }
+    }
+
+    /// Move a refusal of a declaration of the current source onto a name
+    /// that nearly spells an operator tile ([`misspelt_operator`]): `∷∷`, the
+    /// cons written twice, read as a name and passed as an operand.
+    ///
+    /// # Specification
+    /// - requires: every pass that refuses a declaration of the current source
+    ///   has run.
+    /// - ensures: each refused slot of the current source whose half holds such
+    ///   a name at or before the start of its refusal is refused at the name
+    ///   instead. The refusal keeps its node, names the form of the half that
+    ///   holds the name, and names the operator the name misspells. Every other
+    ///   refusal is unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the slots.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`misspelt_operator`].
+    /// - witness: `lower::tests::an_operator_written_twice_is_refused_at_the_run_5301`
+    fn place_misspelt_operator(&mut self)
+    {
+        let pbg = self.pbg;
+        let tree = self.tree;
+        let unresolved = self.unresolved.as_slice();
+        if unresolved.is_empty() {
+            return;
+        }
+        for slot in self.collected.slots.iter_mut().skip(self.current.slots) {
+            let Maybe::Present((position, ref refusal)) = slot.refusal
+            else {
+                continue;
+            };
+            let Maybe::Present(refused) = refusal.span()
+            else {
+                continue;
+            };
+            // The name stands in the half that holds the refusal, at or
+            // before the refusal's start: the refused name itself, or an
+            // operand before a refusal deeper in the tree.
+            let found = [slot.signature, slot.definition]
+                .into_iter()
+                .find_map(|half| match half {
+                    Maybe::Present(half)
+                        if half.declaration.span.start() <= refused.start()
+                            && refused.end() <= half.declaration.span.end() =>
+                    {
+                        let reach =
+                            ByteSpan::new(half.declaration.span.start(), refused.end()).ok()?;
+                        misspelt_operator(pbg, tree, reach, unresolved).map(|found| (half, found))
+                    },
+                    Maybe::Present(_) | Maybe::Absent(_) => None,
+                });
+            let Some((half, (word, operator))) = found
+            else {
+                continue;
+            };
+            if refused.start() < word.start() {
+                continue;
+            }
+            let form = if half.operand == Operand::Function {
+                FormName::FUNCTION
+            }
+            else {
+                match tree
+                    .node(half.declaration.node)
+                    .map(|node| shape_of(pbg, node))
+                {
+                    Some(Ok(Shape::Form { name, .. })) => name,
+                    Some(Ok(_) | Err(_)) | None => continue,
+                }
+            };
+            slot.refusal = Maybe::Present((position, LoweringRefusal::MalformedForm {
+                span: word,
+                form,
+                fault: FormFault::MisspeltOperator(operator),
+            }));
         }
     }
 
@@ -31323,6 +31415,54 @@ def ended() -> -F [Partial] Unit {
             },
             "a word one edit from a keyword that opens no expression is the call of a name nothing \
              defines"
+        );
+    }
+
+    /// #5301: an operator written twice is a run the operator table does not
+    /// hold, so the labeler reads it as one name, and the name stands as an
+    /// operand of an application. The refusal is at the run, naming the
+    /// operator, and not at a later operand. A word that holds a letter
+    /// keeps its refusal.
+    #[test]
+    fn an_operator_written_twice_is_refused_at_the_run_5301()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        for (written, operator) in [("∷∷", "∷"), (":::", "::")] {
+            let source = alloc::format!(
+                "data Circle : Type where\n  | Base : Circle\n  | loop : Base <-> Base\ndef flipped : \
+                 Path(Base, Base) = back loop {written} Path.here Base ;\n"
+            );
+            let start = source.find(written).unwrap_or_default();
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(source.as_str()), &mut arena);
+            let refused = outcome_named(&module, "flipped");
+            assert!(
+                matches!(
+                    refused,
+                    DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
+                        span: found,
+                        fault: FormFault::MisspeltOperator(misspelt),
+                        ..
+                    }) if found == at(start, start.saturating_add(written.len()))
+                        && misspelt.as_ref() == operator
+                ),
+                "`{written}` is refused at the run as `{operator}` written twice: {refused:?}"
+            );
+        }
+        let source = "data Circle : Type where\n  | Base : Circle\n  | loop : Base <-> Base\ndef ∷∷ : \
+                      Integer = 1 ;\ndef flipped : Path(Base, Base) = back loop ∷∷ Path.here Base ;\n";
+        let path = source.find("Path.here").unwrap_or_default();
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source), &mut arena);
+        let refused = outcome_named(&module, "flipped");
+        assert!(
+            matches!(
+                refused,
+                DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { span: found, .. })
+                    if found == at(path, path.saturating_add("Path.here".len()))
+            ),
+            "a declared `∷∷` keeps its reading as the name, and the refusal stays at the path: \
+             {refused:?}"
         );
     }
 

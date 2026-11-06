@@ -505,6 +505,9 @@ pub enum FormFault
     /// A word one edit from this keyword, standing where the form then holds
     /// an operand it does not take: the keyword misspelt, read as a name.
     Misspelt(crate::form::TileName),
+    /// A run of symbols one edit from this operator, read as a name that
+    /// nothing in scope declares: the operator misspelt, `∷∷` for `∷`.
+    MisspeltOperator(crate::form::TileName),
     /// A retired keyword standing where the form spells this one: the site
     /// names the keyword that replaces it.
     Retired(crate::form::TileName),
@@ -565,6 +568,9 @@ impl fmt::Display for FormFault
                 )
             },
             Self::Misspelt(keyword) => write!(f, "misspells `{}`", keyword.as_ref()),
+            Self::MisspeltOperator(operator) => {
+                write!(f, "misspells the operator `{}`", operator.as_ref())
+            },
             Self::Retired(keyword) => {
                 write!(
                     f,
@@ -3360,6 +3366,7 @@ mod tests
             &FormFault::MissingOpen(ClosingClass::Bracket),
             &FormFault::MissingOpen(ClosingClass::Brace),
             &FormFault::Misspelt(crate::form::TileName::SEMICOLON),
+            &FormFault::MisspeltOperator(crate::form::TileName::SEMICOLON),
             &FormFault::Retired(crate::form::TileName::BOUNDARY),
             &FormFault::NotAName,
         ]));

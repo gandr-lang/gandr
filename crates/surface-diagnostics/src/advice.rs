@@ -546,6 +546,12 @@ fn malformed(
                 keyword.as_ref()
             )
         },
+        FormFault::MisspeltOperator(operator) => {
+            format!(
+                "write the operator `{}` in place of this run",
+                operator.as_ref()
+            )
+        },
         FormFault::Retired(keyword) => {
             format!(
                 "write `{}` in place of the retired keyword",

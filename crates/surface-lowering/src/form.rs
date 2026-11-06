@@ -53,15 +53,18 @@
 //! `tests::every_dispatched_kind_is_pinned`.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::NamedKind;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
+use gandr_surface_grammar::SPELLED;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::Sym;
 use gandr_surface_syntax::ByteOffset;
@@ -3640,6 +3643,108 @@ pub fn misspelt_keyword(
         pbg.tile_label(LabelText(candidate))
             .map(|label| (span, TileName(label.0)))
     })
+}
+
+/// The operator tile a name inside `within` nearly spells, with the name's
+/// bytes. The labeler reads a run its operator table does not hold as one
+/// name, so `∷∷`, the cons written twice, is a name. The name is the first
+/// identifier in source order that the lowering refused as unresolved, that
+/// holds no letter, digit, `_` or `'`, and that one deletion, or one swap of
+/// two neighbours, turns into an operator tile `pbg` spells or the ASCII
+/// token of one. A name a declaration in scope binds is never refused as
+/// unresolved, so it keeps its reading.
+///
+/// # Specification
+/// - requires: `within` is a span of `tree`; `unresolved` holds the node and
+///   span of each name the lowering refused as unresolved.
+/// - ensures: the first such identifier inside `within`, with the operator tile
+///   as the source spells it, `::` for `∷`; `None` when no identifier there is
+///   such a near miss.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `∷∷` and `:::` read as `∷` and `::`; a declared `∷∷`
+///   reads as none.
+/// - witness: `lower::tests::an_operator_written_twice_is_refused_at_the_run_5301`
+pub fn misspelt_operator(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    within: ByteSpan,
+    unresolved: &[(NodeIndex, ByteSpan)],
+) -> Option<(ByteSpan, TileName)>
+{
+    let symbolic = |text: &str| {
+        !text.is_empty()
+            && text
+                .chars()
+                .all(|glyph| !(glyph.is_alphanumeric() || glyph == '_' || glyph == '\''))
+    };
+    // An operator tile `pbg` spells, or the ASCII token that stands for one,
+    // named as written: `::` for `∷`.
+    let spelt = |text: &str| {
+        pbg.tile_label(LabelText(text))
+            .map(|label| TileName(label.0))
+            .or_else(|| {
+                SPELLED.iter().find_map(|entry| match entry.ascii {
+                    Ascii::Token(ascii)
+                        if ascii.0 == text && pbg.tile_label(LabelText(entry.tile.0)).is_some() =>
+                    {
+                        Some(TileName(ascii.0))
+                    },
+                    Ascii::Token(_) | Ascii::Head(_) => None,
+                })
+            })
+    };
+    // Each deletion, then each swap of two unequal neighbours, written into
+    // one buffer. Both keep a run of symbols a run of symbols.
+    let operator = |written: &str| {
+        let mut candidate = String::with_capacity(written.len());
+        for (at, glyph) in written.char_indices() {
+            candidate.clear();
+            candidate.push_str(written.get(.. at)?);
+            candidate.push_str(written.get(at.saturating_add(glyph.len_utf8()) ..)?);
+            if let Some(tile) = spelt(&candidate) {
+                return Some(tile);
+            }
+        }
+        let mut glyphs = written.char_indices().peekable();
+        while let Some((at, first)) = glyphs.next() {
+            let Some(&(next, second)) = glyphs.peek()
+            else {
+                break;
+            };
+            if first == second {
+                continue;
+            }
+            candidate.clear();
+            candidate.push_str(written.get(.. at)?);
+            candidate.push(second);
+            candidate.push(first);
+            candidate.push_str(written.get(next.saturating_add(second.len_utf8()) ..)?);
+            if let Some(tile) = spelt(&candidate) {
+                return Some(tile);
+            }
+        }
+        None
+    };
+    unresolved
+        .iter()
+        .filter(|&&(_, span)| within.start() <= span.start() && span.end() <= within.end())
+        .filter_map(|&(position, span)| {
+            let node = tree.node(position)?;
+            if node.span() != span || tile_label(pbg, node) != Maybe::Present(TileName::IDENTIFIER)
+            {
+                return None;
+            }
+            let written: &str = tree.fragment(position).map_or("", <&str>::from);
+            if written.chars().nth(1).is_none() || !symbolic(written) {
+                return None;
+            }
+            operator(written).map(|tile| (span, tile))
+        })
+        .min_by_key(|&(span, _)| span.start())
 }
 
 /// Whether a keyword opens a form where an expression stands.
