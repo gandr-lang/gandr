@@ -1,0 +1,3 @@
+data Small : Type where { | Mk : Small }
+codata Holder : Type[-] where { held : Small; }
+codata Stream(a : Type) : Type[-] where { head : a; tail : Stream(Small); }

@@ -1,0 +1,36 @@
+//! `observed-families` declares a family of codata with observations at families of data.
+//!
+//! The lowering reads the type of an observation as it reads the type of a constructor field.
+//! Thus an observation can name a family that the source declares or imports.
+//!
+//! `Light` has an observation at the local `Colour` and one at the imported `List(Colour)`.
+//! The test makes a green light and reads its colour.
+//!
+//! - see: #2665
+import std.list (List);
+
+/// A colour is red or green.
+data Colour : Type where
+  /// Red.
+  | Red : Colour
+  /// Green.
+  | Green : Colour
+
+/// A light exposes its colour and the colours it showed before.
+codata Light : Type[-] where
+  /// The colour the light shows.
+  colour : Colour;
+  /// The colours the light showed before, the latest first.
+  before : List(Colour);
+
+/// The function makes a light of one colour that showed no colour before.
+def rec lit(c : Colour) -> Light =
+  &{.colour => c, .before => nil}
+
+/// The function observes the colour of a light thunk.
+def colourOf(l : +U Light) -> Colour =
+  l.colour
+
+/// `shown` observes the colour of a green light.
+@[ runs("Green") ]
+def shown() -> Colour { colourOf (lit Green) }

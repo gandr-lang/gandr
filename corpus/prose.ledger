@@ -177,8 +177,6 @@ corpus/ledger/diagnostics/TelescopeCycle.gandr STE-3.5 bf23b62f5019edb8
 corpus/ledger/diagnostics/TranslatorStuck.gandr STE-3.2 29151adbcb1f5811
 corpus/ledger/diagnostics/TypeMismatch.gandr STE-3.5 5ca1fc9345ef32f2
 corpus/ledger/diagnostics/UndeclaredWorld.gandr STE-9.3 6f91759f9131d8e9
-corpus/ledger/diagnostics/UndescribedMember.NativeDecode.gandr STE-3.5 f9e43e0ccca38ae8
-corpus/ledger/diagnostics/UndescribedMember.NativeDecode.gandr STE-1.2 f9e43e0ccca38ae8
 corpus/ledger/diagnostics/UndescribedMember.ParallelRedexes.gandr STE-3.5 0cc52d66cf7e4304
 corpus/ledger/diagnostics/UndescribedMember.ResultArity.gandr STE-3.5 01a781574c384fb8
 corpus/ledger/diagnostics/UnenclosedRun.gandr STE-3.5 316c9f929ec3005c
