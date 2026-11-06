@@ -6,6 +6,7 @@
 /// - see: #1216
 /// - see: #1498 — `identityAt`
 /// - see: #1188 — `twiceRun`
+/// - see: #5480 — `alongInferred`
 // Implicit parameters: the telescope `[a : Type]` after a function's name
 // binds parameters a use supplies by name, `same[.a = Integer](3)`, or by
 // position, `same[Integer](3)`.
@@ -137,7 +138,7 @@ def applyAt[g : t -> t](t : Type, v : t) -> t { g v }
 /// for `t`, which `g`'s type names, and is a function of a type and a value
 /// of it.
 @[ checks ]
-def identityAt : (t : Type, t) -> t = applyAt[.g = fun (y) { y }] ;
+def identityAt : (t : Type, t) -> t = applyAt[.g = fun (y) { y }];
 
 /// `identityAt` at the integers.
 @[ runs("5") ]
@@ -163,3 +164,24 @@ def twiceRun() -> Integer { twice[.m = Integer, .combine = Adding.plus] 3 }
 /// runs as the same curried function.
 @[ runs("fun (a) { fun (b) { b } }") ]
 def sameExplicit(a : Type, y : a) -> a { y }
+
+/// A function maps a path. Its carriers and its endpoints are implicit.
+@[ checks ]
+def along[s : Type, t : Type, a : s, b : s](f : s -> t, p : Path[.A = s](a, b)) -> Path[.A = t](
+  f a,
+  f b
+) {
+  Path.walk (fun (y) { type(Path[.A = t](f a, f y)) }) p (Path.here (f a))
+}
+
+/// The double of an integer.
+@[ checks ]
+def doubled(x : Integer) -> Integer { x + x }
+
+/// `along` with its implicits omitted: `p` binds `a` and `b`, and the checker
+/// reads the endpoints of the result type through them.
+@[ checks ]
+def alongInferred(a : Integer, b : Integer, p : Path[.A = Integer](a, b)) -> Path[.A = Integer](
+  doubled a,
+  doubled b
+) { along doubled p }
