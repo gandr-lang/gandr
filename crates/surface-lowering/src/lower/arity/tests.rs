@@ -527,6 +527,38 @@ fn a_telescope_type_lowers_by_its_arity()
     );
 }
 
+/// A builtin type's lowercase name, `f32`, keys a field as any lowercase word
+/// does, and stays the builtin type where the field's type is read (#5561).
+#[test]
+fn a_builtin_type_s_lowercase_name_is_a_key_5561()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def numbers : *{u32 : Integer, u64 : Integer, i32 : Integer, i64 : Integer, f32 : \
+         Integer, f64 : Integer} ; def named : *{u32 : u32} ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "numbers"),
+        [
+            "#{f32,f64,i32,i64,u32,u64}",
+            "Integer",
+            "Integer",
+            "Integer",
+            "Integer",
+            "Integer",
+            "Integer"
+        ],
+        "each lowercase builtin name keys its field"
+    );
+    assert_eq!(
+        declared(&arena, &module, "named"),
+        ["#{u32}", "Fixed(U32)"],
+        "the key `u32` labels a field whose type is the builtin `u32`"
+    );
+}
+
 /// A later label naming an earlier one makes the type the right-nested
 /// dependent pairs of its entries, each link a `Σ` when a later entry names
 /// its label and a product of two otherwise, the variable read past the
