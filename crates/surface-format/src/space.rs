@@ -97,6 +97,11 @@ pub enum Context
     /// layout never breaks a type's spine at it, since a signature's broken
     /// spine would stand at the column of the body after it.
     TypeGlue,
+    /// The empty tile of a call in call form that a postfix form takes as its
+    /// target, `f(x).l` (#5665). Its group touches its head, since a space
+    /// there would make the group an argument of its own and give the
+    /// postfix form the group alone. The layout never breaks a spine there.
+    CallGlue,
 }
 
 impl Context
@@ -198,7 +203,8 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Binding
             | Context::Signature
             | Context::Plain
-            | Context::TypeGlue => Padding::Pad,
+            | Context::TypeGlue
+            | Context::CallGlue => Padding::Pad,
         },
         "*{" => match open.context {
             Context::Signature => Padding::Pad,
@@ -208,7 +214,8 @@ pub fn padding(open: Token<'_>) -> Padding
             | Context::Telescope
             | Context::Plain
             | Context::Written
-            | Context::TypeGlue => Padding::Hug,
+            | Context::TypeGlue
+            | Context::CallGlue => Padding::Hug,
         },
         _ => Padding::Hug,
     }
@@ -294,12 +301,13 @@ fn applied(left: Token<'_>) -> Wordlike
 ///   is the bracket of a group the other is the first or last element of.
 /// - ensures: a `,` or `;` touches what stands before it and is followed by one
 ///   space; a comment has one space on either side; an application's empty
-///   juxtaposition tile has one space before it and none after it; a `.` or a
-///   selector `.#[` or `.*{` touches the word or bracket before it, and a `.`
-///   the word after it unless it ends a binder; a prefix operator touches what
-///   follows it; a `(` or `[` touches the word or hugging bracket before it,
-///   unless it opens an operand or the binders of `fun`, `fork`, `bind` or
-///   `pi+`; any other two are one space apart.
+///   juxtaposition tile has one space before it and none after it, and none
+///   before it either where the call is in call form; a `.` or a selector `.#[`
+///   or `.*{` touches the word or bracket before it, and a `.` the word after
+///   it unless it ends a binder; a prefix operator touches what follows it; a
+///   `(` or `[` touches the word or hugging bracket before it, unless it opens
+///   an operand or the binders of `fun`, `fork`, `bind` or `pi+`; any other two
+///   are one space apart.
 /// - provides: the space [`crate::layout`] writes between two elements of a
 ///   line.
 /// - fails: never.
@@ -333,9 +341,14 @@ pub fn join(
     }
     // An application's own tile, its juxtaposition, is empty: one space
     // stands before it and none after it, so its head and its argument stand
-    // one space apart.
+    // one space apart. A call in call form keeps its group against its head.
     if right.kind == Kind::Token && right_text.is_empty() {
-        return Join::Space;
+        return if right.context == Context::CallGlue {
+            Join::Touch
+        }
+        else {
+            Join::Space
+        };
     }
     if left.kind == Kind::Token && left_text.is_empty() {
         return Join::Touch;
@@ -355,7 +368,8 @@ pub fn join(
             | Context::Signature
             | Context::Plain
             | Context::Written
-            | Context::TypeGlue => Join::Touch,
+            | Context::TypeGlue
+            | Context::CallGlue => Join::Touch,
         };
     }
     if left.kind == Kind::Token && left.context == Context::Prefix {
