@@ -3017,6 +3017,119 @@ fn a_returned_leaf_of_a_presented_term_reads_before_the_rules()
 }
 
 #[test]
+fn a_named_loop_arm_answers_its_word_5489()
+{
+    // #5489: `keep` sends the loop to the named `loop`, whose body is the
+    // loop's one-letter word. The engine reads the arm's name through its
+    // body, so the transport of `here(⟨keep(Base)⟩)` along `loop` in `y.
+    // Path[.A = S](Base, ⟨keep(y)⟩)` is that word. Its dialogue unfolds the
+    // point `loop` and closes on the shared word; the replay closes it only
+    // when the image is the word too.
+    let (sort, words, named, keep) = (
+        ConstantIndex::from(0_usize),
+        ConstantIndex::from(1_usize),
+        ConstantIndex::from(2_usize),
+        ConstantIndex::from(3_usize),
+    );
+    let base = ConstructorTag::from(0_usize);
+    let mut environment = Environment::new();
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let staged = staging.data(
+        LevelSignature::monomorphic(),
+        Vec::new(),
+        alloc::vec![alloc::vec![]],
+        kind,
+    );
+    let _sort = environment
+        .add_decl(staged)
+        .expect("the one-point sort admits");
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let own = staging.arena().value_type_data(words, Vec::new());
+    let point = || -> alloc::boxed::Box<[RuleNode]> { [RuleNode::Constructor(base)].into() };
+    let cells =
+        gandr_kernel_term::FreeCells::new(sort, alloc::vec![gandr_kernel_term::FreeCell::new(
+            point(),
+            point()
+        )]);
+    let staged = staging
+        .data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+            kind,
+        )
+        .presented(Presentation::words(cells));
+    let _words = environment
+        .add_decl(staged)
+        .expect("the loop's words admit");
+    let mut arena = environment.arena().clone();
+    let carrier = arena.value_type_data(sort, Vec::new());
+    let at_base = arena.value_constructor(sort, carrier, base, Vec::new());
+    let own = arena.value_type_data(words, Vec::new());
+    let empty = arena.value_constructor(words, own, ConstructorTag::from(0_usize), Vec::new());
+    let letter = arena.value_constructor(words, own, ConstructorTag::from(1_usize), alloc::vec![
+        empty
+    ]);
+    // `keep = thunk(λc. case c { Base ⇒ return Base; loop ⇒ return loop })`.
+    let name = arena.value_constant(named);
+    let branches = alloc::vec![
+        arena.computation_return(at_base),
+        arena.computation_return(name)
+    ];
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let kept = arena.comp_type_returner(carrier);
+    let case = arena.computation_data_case(scrutinee, kept, branches);
+    let lambda = arena.computation_lambda(case);
+    let function = arena.value_thunk(lambda);
+    let call = |arena: &mut TermArena, argument: ValueId| {
+        let head = arena.value_constant(keep);
+        let forced = arena.computation_force(head);
+        let applied = arena.computation_application(forced, argument);
+        arena.value_returned(applied)
+    };
+    let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let image = call(&mut arena, moving);
+    let family = arena.value_type_path(carrier, at_base, image);
+    let started = call(&mut arena, at_base);
+    let start = arena.value_here(started);
+    let transport = arena.computation_path_transport(family, name, start);
+    let endpoint = arena.value_returned(transport);
+    let unfoldings = Unfoldings::new(alloc::vec![
+        Unfoldable::Opaque,
+        Unfoldable::Opaque,
+        Unfoldable::Body(letter),
+        Unfoldable::Body(function),
+    ])
+    .presenting(Presentations::of(environment.entries()));
+    let dialogue = [
+        ConversionDecision::Unfold {
+            constant: ReplayNode::Other,
+        },
+        ConversionDecision::ReduceLeft {
+            redex: ReplayNode::Other,
+        },
+        SHARED,
+    ];
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Values(name, endpoint),
+            EngineClaim::Convertible,
+            &dialogue,
+        ),
+        KernelVerdict::Convertible,
+        "the loop's image under a map that answers its name is the loop's word"
+    );
+}
+
+#[test]
 fn a_compared_pair_reads_presented_points_by_their_rules_1723()
 {
     // #1723: `here(loop(x))` and `here(loop(unloop(loop(x))))` over the
