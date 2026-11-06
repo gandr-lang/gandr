@@ -38,6 +38,7 @@
 //!   distance, and a hole's count as its Lipschitz constant (§ quant-fusion).
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
@@ -407,11 +408,11 @@ pub(super) fn fuse(
                             Maybe::Absent(_) => FusionVerdict::Unreplayed,
                         }
                     },
-                    Ok(_) => fresh(left)
-                        .map(|var| (overlap.left, var))
-                        .or_else(|| fresh(right).map(|var| (overlap.right, var)))
-                        .map_or(FusionVerdict::Unreplayed, |(cell, var)| {
-                            FusionVerdict::Unbound(cell, var)
+                    Ok(_) => [(overlap.left, left), (overlap.right, right)]
+                        .into_iter()
+                        .find_map(|(id, cell)| cell.wires().first().map(|wire| (id, wire.clone())))
+                        .map_or(FusionVerdict::Unreplayed, |(cell, wire)| {
+                            FusionVerdict::Unbound(cell, wire)
                         }),
                     Err(refusal) => FusionVerdict::Refused(refusal),
                 };
@@ -603,7 +604,9 @@ fn compose(
 }
 
 /// The verdict on the composed counts against the reading of the fused cell
-/// `id`, each count scaling one tick in the Lawvere quantale.
+/// `id`, each count scaling one tick in the Lawvere quantale. A wire of the
+/// fused cell ([`Cell::wires`]) matches no subterm of the peak, so it bounds
+/// nothing and the verdict does not read it.
 ///
 /// # Specification
 /// trivial.
@@ -619,7 +622,8 @@ fn judge(
             return FusionVerdict::Unread(id, var.clone());
         }
     }
-    for (var, &reported) in &read {
+    let wires: BTreeSet<&MetaVar> = fused.wires().iter().collect();
+    for (var, &reported) in read.iter().filter(|&(var, _)| !wires.contains(var)) {
         let (bound, report) = match (
             scaled(composed.get(var).copied().unwrap_or_default()),
             scaled(reported),
@@ -637,17 +641,4 @@ fn judge(
         }
     }
     FusionVerdict::Exact
-}
-
-/// A metavariable that the right side of `cell` holds and its left side does
-/// not bind.
-///
-/// # Specification
-/// trivial.
-fn fresh(cell: &Cell) -> Option<MetaVar>
-{
-    let bound = occurrences(cell.lhs());
-    occurrences(cell.rhs())
-        .into_keys()
-        .find(|var| !bound.contains_key(var))
 }

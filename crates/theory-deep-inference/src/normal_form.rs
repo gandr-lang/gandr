@@ -27,10 +27,11 @@
 //! # Why the soundness argument is local
 //!
 //! [`normalize`] does not reason about a recorded path; it runs it, under the
-//! skolemization replay uses ([`CellAlphabet::skolemize`]), and refuses
-//! anything it cannot confirm. A returned [`TraceletNf`] is therefore a replay
-//! receipt: the recorded path fired step by step from the skolemized peak and
-//! landed on the skolemized join, and the normal form records that boundary.
+//! skolemization replay uses ([`CellAlphabet::skolemize_boundary`]), and
+//! refuses anything it cannot confirm. A returned [`TraceletNf`] is therefore a
+//! replay receipt: the recorded path fired step by step from the skolemized
+//! peak and landed on the join, skolemized at the peak's metavariables, and the
+//! normal form records that boundary.
 //! So two equal normal forms give peak equality, join equality and "each
 //! replays", which is exactly replay-equivalence, with no appeal to a chain of
 //! commutations. The factorization and the schedule make the relation finer
@@ -924,7 +925,8 @@ pub fn causal_past_address(
 /// - requires: `path` is the derivation recorded from `peak` to `joins_at`
 ///   against `store`, the triple a certificate replay would be given.
 /// - ensures: a normal form only when the recorded path fires step by step from
-///   the skolemized `peak` and reaches the skolemized `joins_at`, and the
+///   the skolemized `peak` and reaches `joins_at` skolemized at the
+///   metavariables of `peak` ([`CellAlphabet::skolemize_boundary`]), and the
 ///   canonical schedule does the same; it records that boundary verbatim, its
 ///   factorization graded by occurrence count and its schedule the causal
 ///   layering flattened.
@@ -970,9 +972,10 @@ pub fn causal_past_address(
     |refusal| !matches!(*refusal, NormalFormObstruction::InvalidReplayLevel { .. }),
     |normal| normal.peak == *peak && normal.joins_at == *joins_at
         && normal.convexity == A::convexity_discharge(store)
-        && matches!(normal.canonical_path(), Maybe::Present(ref canonical)
-            if run_schedule(store, &A::skolemize(peak), canonical)
-                .is_ok_and(|reached| reached == A::skolemize(joins_at))),
+        && matches!(normal.canonical_path(), Maybe::Present(ref canonical) if {
+            let (start, target) = A::skolemize_boundary(peak, joins_at);
+            run_schedule(store, &start, canonical).is_ok_and(|reached| reached == target)
+        }),
 ))]
 #[inline]
 pub fn normalize<A>(
@@ -1020,8 +1023,7 @@ where
     |refusal| !matches!(*refusal, NormalFormObstruction::InvalidReplayLevel { .. }),
     |witness| {
         let normal = &witness.normal_form;
-        let start = A::skolemize(peak);
-        let target = A::skolemize(joins_at);
+        let (start, target) = A::skolemize_boundary(peak, joins_at);
         normal.peak == *peak && normal.joins_at == *joins_at
             && normal.convexity == A::convexity_discharge(store)
             && run_recording(store, &start, path).is_ok_and(|recorded| {
@@ -1059,8 +1061,7 @@ pub fn normalize_certified<A>(
 where
     A: CellAlphabet,
 {
-    let start = A::skolemize(peak);
-    let target = A::skolemize(joins_at);
+    let (start, target) = A::skolemize_boundary(peak, joins_at);
     let survivors = run_recording(store, &start, path)?;
     if survivors.reached != target {
         return Err(NormalFormObstruction::PathMissesTheJoin {

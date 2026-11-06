@@ -28,6 +28,8 @@
 //! in another order renumbers them, so a persistence or transport format never
 //! serializes one and carries the cell's content instead.
 
+use alloc::boxed::Box;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -39,7 +41,7 @@ use crate::boundary::CellStoreEmptyStatus;
 use crate::sequent::SequentAlphabet;
 
 /// An oriented 2-cell over the alphabet `A`.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Cell<A: CellAlphabet = SequentAlphabet>
 {
     /// The left-hand side, the redex pattern.
@@ -52,6 +54,41 @@ pub struct Cell<A: CellAlphabet = SequentAlphabet>
     provenance: A::Provenance,
     /// The metadata derived from the two faces.
     meta: A::Meta,
+    /// The metavariables that the right-hand side holds and the left-hand
+    /// side does not bind, in first-occurrence order: the wires that each
+    /// firing writes.
+    wires: Box<[A::Var]>,
+}
+
+impl<A: CellAlphabet> core::hash::Hash for Cell<A>
+{
+    /// The cell's content: its faces, its two tags and its metadata, in that
+    /// order. The wires are a function of the faces, so the digest leaves them
+    /// out, and a content address of the cell does not move with them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<H>(
+        &self,
+        state: &mut H,
+    ) where
+        H: core::hash::Hasher,
+    {
+        let Self {
+            ref lhs,
+            ref rhs,
+            ref orient,
+            ref provenance,
+            ref meta,
+            wires: _,
+        } = *self;
+        lhs.hash(state);
+        rhs.hash(state);
+        orient.hash(state);
+        provenance.hash(state);
+        meta.hash(state);
+    }
 }
 
 impl<A: CellAlphabet> Cell<A>
@@ -63,18 +100,29 @@ impl<A: CellAlphabet> Cell<A>
     /// - ensures: the cell's metadata is `A::derive_meta(&lhs, &rhs,
     ///   A::completion_certificate(&provenance))`, and no accessor can change
     ///   it afterwards.
+    /// - ensures: the cell's wires are the metavariables of `rhs` that `lhs`
+    ///   does not hold, each once, in their order in `rhs`.
     /// - panics: none.
+    /// - intension: the faces are read for their wires once, here, so a firing
+    ///   of a cell with no wire reads nothing more.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — sequent cells at every provenance retain both faces
     ///   and tags. Exact metadata observations separate certificate provenance
     ///   from ordinary cells and distinguish lost faces or incorrect counts.
     /// - witness: `sequent::tests::completion_cells_are_invertible_certificates`
+    /// - witness: `sequent::tests::a_cell_s_wires_are_the_metavariables_only_its_right_side_holds`
     #[inline]
     #[must_use]
     #[spec(ensures: |output| output.meta == A::derive_meta(
         &output.lhs, &output.rhs, A::completion_certificate(&output.provenance)
-    ))]
+    ) && {
+        let bound = A::metavariables(&output.lhs);
+        let written = A::metavariables(&output.rhs);
+        output.wires.iter().all(|wire| written.contains(wire) && !bound.contains(wire))
+            && written.iter().all(|var| bound.contains(var) || output.wires.contains(var))
+            && output.wires.iter().enumerate().all(|(at, wire)| output.wires.get(.. at).is_some_and(|before| !before.contains(wire)))
+    })]
     pub fn new(
         lhs: A::Cmd,
         rhs: A::Cmd,
@@ -84,12 +132,23 @@ impl<A: CellAlphabet> Cell<A>
     {
         let invertible = A::completion_certificate(&provenance);
         let meta = A::derive_meta(&lhs, &rhs, invertible);
+        let mut bound = A::metavariables(&lhs);
+        bound.sort_unstable();
+        let written = A::metavariables(&rhs);
+        let mut seen: BTreeSet<&A::Var> = BTreeSet::new();
+        let mut wires: Vec<A::Var> = Vec::new();
+        for var in &written {
+            if bound.binary_search(var).is_err() && seen.insert(var) {
+                wires.push(var.clone());
+            }
+        }
         Self {
             lhs,
             rhs,
             orient,
             provenance,
             meta,
+            wires: wires.into_boxed_slice(),
         }
     }
 
@@ -146,6 +205,19 @@ impl<A: CellAlphabet> Cell<A>
     pub const fn meta(&self) -> &A::Meta
     {
         &self.meta
+    }
+
+    /// The metavariables that the right-hand side holds and the left-hand
+    /// side does not bind, in first-occurrence order: the wires that each
+    /// firing writes under names apart from the term that it fires in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn wires(&self) -> &[A::Var]
+    {
+        &self.wires
     }
 }
 
