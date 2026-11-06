@@ -3349,6 +3349,7 @@ INSERT INTO purpose VALUES('surface-syntax','span::ByteSpan','struct','The half-
 INSERT INTO purpose VALUES('surface-syntax','span::SourceFragment','struct','The bytes one span covers: a slice of some SourceText, carrying no offset frame of its own.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','span::SourceText','struct','The complete source text one syntax tree was parsed from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::BlockOffset','struct','Where a node lies within its layout block.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-syntax','tree::BlockStarts','struct','Where each layout block starts among cells laid out block after block, so a tree and a table kept per node read where a block ends alike.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::ChildCount','struct','A number of immediate children of one node.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::LayoutBlock','struct','One block of a tree''s layout: a root with its children, or the descendants of one top-level form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-syntax','tree::Node','struct','One node: its label, the source it covers, and the arena range its children occupy.',NULL,'fits','sound',NULL);

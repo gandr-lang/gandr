@@ -116,6 +116,7 @@ pub use crate::span::ByteSpan;
 pub use crate::span::SourceFragment;
 pub use crate::span::SourceText;
 pub use crate::tree::BlockOffset;
+pub use crate::tree::BlockStarts;
 pub use crate::tree::ChildCount;
 pub use crate::tree::LayoutBlock;
 pub use crate::tree::Node;
