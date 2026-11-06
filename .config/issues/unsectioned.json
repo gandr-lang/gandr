@@ -1,6 +1,6 @@
 [
   {
-    "name": "#3113: an issue failing the reading is labelled `status:unsectioned` and gets one comment listing the findings under a counted summary",
+    "name": "#3113: an issue failing the reading gets its label and one comment with a finding table",
     "input": {
       "state": "open",
       "labels": ["kind:defect", "area:core"],
@@ -11,7 +11,7 @@
       "label": "add",
       "comment": {
         "act": "create",
-        "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\nThe seat that claims this issue writes them first, and pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten on every edit.\n"
+        "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
       }
     }
   },
@@ -24,7 +24,7 @@
       "comments": [
         {
           "id": 7,
-          "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\nThe seat that claims this issue writes them first, and pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten on every edit."
+          "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit."
         }
       ]
     },
@@ -34,7 +34,7 @@
     }
   },
   {
-    "name": "#3113: new findings rewrite the oldest marked comment in place; no second comment is written",
+    "name": "#3113: new findings rewrite the oldest marked comment in place with a finding table",
     "input": {
       "state": "open",
       "labels": ["kind:defect", "area:core", "status:unsectioned"],
@@ -42,7 +42,7 @@
       "comments": [
         {
           "id": 7,
-          "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\nThe seat that claims this issue writes them first, and pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten on every edit.\n"
+          "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
         },
         {
           "id": 9,
@@ -55,7 +55,7 @@
       "comment": {
         "act": "edit",
         "id": 7,
-        "body": "<!-- unit:check -->\n<details><summary>unit:check: 1 finding; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n\n</details>\n\nThe seat that claims this issue writes them first, and pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten on every edit.\n"
+        "body": "<!-- unit:check -->\n**unit:check:** This issue has 1 missing unit section.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
       }
     }
   },
@@ -68,7 +68,7 @@
       "comments": [
         {
           "id": 7,
-          "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\nThe seat that claims this issue writes them first, and pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten on every edit.\n"
+          "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
         }
       ]
     },
@@ -77,7 +77,7 @@
       "comment": {
         "act": "edit",
         "id": 7,
-        "body": "<!-- unit:check -->\n**unit:check:** sections complete; `status:unsectioned` is off.\n"
+        "body": "<!-- unit:check -->\n**unit:check:** The unit sections are complete.\n"
       }
     }
   },
@@ -103,7 +103,7 @@
       "comments": [
         {
           "id": 7,
-          "body": "<!-- unit:check -->\n<details><summary>unit:check: 2 findings; labelled <code>status:unsectioned</code> until each is written</summary>\n\n- `## Ledger` is missing\n- `## After` is missing\n\n</details>\n\nThe seat that claims this issue writes them first, and pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten on every edit.\n"
+          "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
         }
       ]
     },
@@ -112,7 +112,7 @@
       "comment": {
         "act": "edit",
         "id": 7,
-        "body": "<!-- unit:check -->\n**unit:check:** not read: an epic or a `collector` keeps its own shape (`units.md` § units-issue).\n"
+        "body": "<!-- unit:check -->\n**unit:check:** This issue is not read. An epic or a `collector` keeps its own shape (`units.md` § units-issue).\n"
       }
     }
   },

@@ -2175,7 +2175,7 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # carries a name, a match that compiles, an owner and a reason, and every
 # owner that is a tree path exists.
 ["check:claims"]
-description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings and dependencies, claim:next each board its claim, ledger:patched each landing its refusals, ledger:reserved each lowered reserved rule its refusal, report:deps each board its report, refactor:file each merged verdict its filing and report:obligations each period its report"
+description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings and dependencies, claim:next each board its claim, ledger:patched each landing its refusals, ledger:reserved each lowered reserved rule its refusal, report:deps each board its report, refactor:file each merged verdict its filing and report:obligations each period its report, and pr:hold each held comment its table"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -2382,6 +2382,9 @@ done < <(jq -c '.[]' .config/claims/ceilings.json)
 # `epic:deps` over a stubbed `gh` (#4903): a dependency GitHub refuses is
 # named and the run goes on.
 .config/claims/epic-deps.bash || failed=1
+# `pr:hold` renders each held comment through a stubbed GitHub. The cases hold
+# the lead sentence and the Markdown table.
+.config/claims/hold.bash || failed=1
 (( failed == 0 )) || exit 1
 terms=$(yq -o json '.term' .config/references/terms.toml)
 map=$(jq -r '.[] | (.name // "?") as $name

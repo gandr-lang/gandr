@@ -4332,7 +4332,7 @@ exit 2
 
 # A pull request held on purpose, for a base, a ruling or a sibling, is a
 # draft with its reason (#2972): `pr:hold <n> "<reason>"` converts it and
-# comments the reason under a `<!-- hold -->` marker. A draft is no stall
+# comments a lead sentence above its reason table under a `<!-- hold -->` marker. A draft is no stall
 # (`stall:watch`), and neither `pr:watch` nor the `landing` workflow lands
 # it, nor anything stacked above it (`rests.jq`, #3253). The owner's hold is
 # `--owner`: the draft also carries the `hold:owner` label, which holds it
@@ -4343,7 +4343,7 @@ exit 2
 # draft alone leaves a queued entry to merge. `pr:release <n>` ends either
 # hold, and the next watch lands it once green.
 ["pr:hold"]
-description = "Hold a pull request on purpose: take it out of the merge queue, make it a draft and comment the reason"
+description = "Hold a pull request on purpose: take it out of the merge queue, make it a draft and comment the reason in a table"
 usage = '''
 arg "<number>" help="pull request number"
 arg "<reason>" help="why it is held: the base, ruling or sibling it waits on, or the owner's review"
@@ -4375,7 +4375,11 @@ fi
 if [[ "$draft" != true ]]; then
   gh pr ready "$number" -R "$repo" --undo > /dev/null
 fi
-gh pr comment "$number" -R "$repo" --body "$(printf '<!-- hold -->\n**Held** %s: %s\n\n`mise run pr:release %s` ends the hold; its next `pr:watch` lands it once green, and the stack above it with it.\n' "$who" "$reason" "$number")" > /dev/null
+reason_cell=${reason//\\/\\\\}
+reason_cell=${reason_cell//|/\\|}
+reason_cell=${reason_cell//$'\r'/}
+reason_cell=${reason_cell//$'\n'/<br>}
+gh pr comment "$number" -R "$repo" --body "$(printf '<!-- hold -->\nThis pull request is held %s.\n\n| Field | Value |\n| --- | --- |\n| Reason | %s |\n| Release | `mise run pr:release %s` |\n' "$who" "$reason_cell" "$number")" > /dev/null
 echo "#$number held $who: $reason"
 '''
 
