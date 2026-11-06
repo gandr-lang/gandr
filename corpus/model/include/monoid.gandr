@@ -1,46 +1,40 @@
-// Theory inclusion: `include` extends a presentation by another's
-// members, the included ones first, and keeps the inclusion beside the
-// value. A monoid is a semigroup with a unit; two extensions of the
-// semigroup included together meet along it, so the result has one carrier
-// and one multiplication (the pushout over what they share). The union's
-// rules are completed as the block's own: the included associativity and
-// the unit laws join.
-//
-// - see: #738
-
-/// A semigroup: one carrier and an associative multiplication.
+//! `monoid` extends theories through `include`.
+//!
+//! An include adds its members before the local members. `UnitAndZero` joins
+//! `Monoid` and `LeftZero` at `Semigroup`. The checker completes the joined rules.
+//!
+//! `Endo` models `Monoid` with integer endofunctions. `composed` returns `8`.
+//!
+//! - see: #738
+/// `Semigroup` defines a carrier and an associative multiplication.
 pub theory Semigroup where
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
   rule assoc : mul (mul x y) z ==> mul x (mul y z);
 
-/// A monoid: the semigroup with a two-sided unit. Its rules are the
-/// semigroup's associativity, then the unit laws, and they join.
+/// `Monoid` adds a two-sided unit to `Semigroup`.
 pub theory Monoid where
   include Semigroup;
   oper one : () --> M;
   rule unitL : mul (one ()) x ==> x;
   rule unitR : mul x (one ()) ==> x;
 
-/// The semigroup with a zero that absorbs on the left.
+/// `LeftZero` adds a multiplication that absorbs on the left.
 pub theory LeftZero where
   include Semigroup;
   oper zero : () --> M;
   rule absorb : mul (zero ()) x ==> zero ();
 
-/// Both extensions at once: one carrier, one multiplication, its unit and
-/// its zero.
+/// `UnitAndZero` joins the unit and zero extensions.
 pub theory UnitAndZero where
   include Monoid;
   include LeftZero;
 
-/// The functions on the integers under composition: every law holds by
-/// conversion, and the members it gives for the included semigroup are its
-/// multiplication and associativity.
+/// `Endo` models `Monoid` with integer endofunctions.
 pub module Endo : Model(Monoid) where
   type M = Integer -> Integer;
 
-  /// `f` then `g`, applied.
+  /// `andThen` composes `f` then `g`.
   def andThen(
     f : Integer -> Integer,
     g : Integer -> Integer,
@@ -48,7 +42,7 @@ pub module Endo : Model(Monoid) where
   ) -> Integer =
     g (f x)
 
-  /// The identity function.
+  /// `ident` returns its input.
   def ident(x : Integer) -> Integer { x }
 
   def mul(
@@ -59,7 +53,7 @@ pub module Endo : Model(Monoid) where
 
   def one() -> Integer -> Integer { ident }
 
-  /// Associativity, the included law.
+  /// `assoc` verifies the included associativity law.
   def assoc(
     f : Integer -> Integer,
     g : Integer -> Integer,
@@ -67,21 +61,21 @@ pub module Endo : Model(Monoid) where
   ) -> Path(mul (mul f g) h, mul f (mul g h)) =
     Path.here (thunk { andThen f (thunk { andThen g h }) })
 
-  /// The left unit law.
+  /// `unitL` verifies the left unit law.
   def unitL(f : Integer -> Integer) -> Path(
     mul (one ()) f,
     f
   ) =
     Path.here f
 
-  /// The right unit law.
+  /// `unitR` verifies the right unit law.
   def unitR(f : Integer -> Integer) -> Path(
     mul f (one ()),
     f
   ) =
     Path.here f
 
-/// The included multiplication, run at the model: add one, then double.
+/// `composed` adds one, then doubles `3`.
 @[ runs("8") ]
 def composed() -> Integer =
   let h = Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 })

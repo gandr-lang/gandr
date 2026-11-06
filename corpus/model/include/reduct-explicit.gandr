@@ -1,19 +1,16 @@
-// The reduct the checker applies, written out. In the explicit form,
-// a monoid standing where a semigroup is asked is written as the reduct's
-// call, `Monoid.Semigroup(endoMonoid)`; the sugared form leaves that call to
-// the checker. The formatter writes the call where the checker applies the
-// reduct and keeps it here, and the run reads the same application in both
-// forms.
-//
-// - see: #2030
+//! `reduct-explicit` writes the reduct that the checker otherwise inserts.
+//!
+//! `Monoid.Semigroup endoMonoid` reads a `Monoid` model as `Semigroup`. The
+//! sugared source leaves this application to the checker.
+//!
+//! - see: #2030
 
-// The semigroup, the monoid, and the endomorphism monoid.
+// The source imports the included theories.
 import "./monoid.gandr";
-// The endomorphism monoid and a reader of a semigroup.
+// The source imports the endomorphism model and semigroup reader.
 import "./reduct.gandr";
 
-/// The monoid where a semigroup is asked, with the reduct the checker applies
-/// written out.
+/// `asSemigroupWritten` writes the reduct before it reads the semigroup.
 @[ runs("0"), form(explicit) ]
 def asSemigroupWritten() -> -F Integer =
   become multiplies (Monoid.Semigroup endoMonoid)
