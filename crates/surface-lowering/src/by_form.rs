@@ -406,6 +406,24 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
         At::from(self.entries.len())
     }
 
+    /// The coordinate the next entry pushed takes: the form [`Self::enter`]
+    /// names, at the count of entries that form holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn next_key(&self) -> Key
+    {
+        let place = self
+            .forms
+            .get(usize::from(self.form))
+            .map_or(0, |segment| segment.count);
+        Key::from(FormPlace {
+            form: self.form,
+            place,
+        })
+    }
+
     /// The stretch of every entry pushed since [`Self::mark`] answered
     /// `start`.
     ///
@@ -569,11 +587,13 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
         self.since_until(At(next), At(end))
     }
 
-    /// The stretch from `start` up to `end` in the vector.
+    /// The stretch from `start` up to `end` in the vector: the key a plan
+    /// keeps for a list it read by position.
     ///
     /// # Specification
     /// trivial.
-    fn since_until(
+    #[must_use]
+    pub fn since_until(
         &self,
         start: At,
         end: At,
@@ -659,6 +679,98 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
         &self.entries
     }
 
+    /// Drop every entry from `mark` on, as [`Self::split_off`] takes them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn truncate(
+        &mut self,
+        mark: At,
+    )
+    {
+        while self.mark() > mark && self.pop().is_some() {}
+    }
+
+    /// Take every entry from `mark` on, in push order.
+    ///
+    /// Each form counts its taken entries no more. Thus the next entry a form
+    /// pushes takes the coordinate of the first entry taken from it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entries from `mark` to the end, in push order, and the
+    ///   store holds `mark` entries; nothing is taken from a store that holds
+    ///   `mark` entries or fewer. Every coordinate of an entry kept answers it
+    ///   as before.
+    /// - provides: the scratch reads that push a list and then take it back.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one step per entry taken, and one walk of a form's runs for
+    ///   each run that the take empties.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a form pushes after a take into the places the take
+    ///   freed, and another form's entries keep their coordinates.
+    /// - witness: `by_form::tests::a_take_frees_the_places_of_the_entries_it_takes`
+    #[spec(
+        captures: before = self.entries.len(),
+        ensures: |ret| self.entries.len() == before.min(usize::from(mark)) && ret.len() == before.saturating_sub(usize::from(mark)),
+    )]
+    pub fn split_off(
+        &mut self,
+        mark: At,
+    ) -> Vec<Entry>
+    {
+        let mut taken = Vec::with_capacity(self.entries.len().saturating_sub(usize::from(mark)));
+        while self.mark() > mark
+            && let Some(entry) = self.pop()
+        {
+            taken.push(entry);
+        }
+        taken.reverse();
+        taken
+    }
+
+    /// Take the entry pushed last, and give its place back to its form.
+    ///
+    /// The last entry lies in the last run, as a push extends only the run
+    /// that ends the vector. A run that the take empties leaves its form, and
+    /// the form's run before it becomes the form's last.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pop(&mut self) -> Option<Entry>
+    {
+        let last = self.runs.len().checked_sub(1)?;
+        let run = self.runs.get_mut(last)?;
+        run.length = run.length.saturating_sub(1);
+        let emptied = run.length == 0;
+        let segment = self.forms.get_mut(usize::from(run.form))?;
+        segment.count = segment.count.saturating_sub(1);
+        if emptied {
+            let gone = At::from(last);
+            let _gone = self.runs.pop();
+            segment.runs = match segment.runs {
+                Some((first, _)) if first != gone => {
+                    let mut at = first;
+                    while let Some(&Run {
+                        next: Some(next), ..
+                    }) = self.runs.get(usize::from(at))
+                        && next != gone
+                    {
+                        at = next;
+                    }
+                    if let Some(run) = self.runs.get_mut(usize::from(at)) {
+                        run.next = None;
+                    }
+                    Some((first, at))
+                },
+                Some(_) | None => None,
+            };
+        }
+        self.entries.pop()
+    }
+
     /// The store with each entry read through `read`, every coordinate kept.
     ///
     /// # Specification
@@ -677,6 +789,36 @@ impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> ByForm<Entry, Key>
             form: self.form,
             key: PhantomData,
         }
+    }
+}
+
+impl<Entry, Key: Copy + From<FormPlace> + Into<FormPlace>> Extend<Entry> for ByForm<Entry, Key>
+{
+    /// Push each entry of `entries` in turn, as [`ByForm::push`] does.
+    ///
+    /// # Specification
+    /// trivial.
+    fn extend<Entries>(
+        &mut self,
+        iter: Entries,
+    ) where
+        Entries: IntoIterator<Item = Entry>,
+    {
+        for entry in iter {
+            let _key = self.push(entry);
+        }
+    }
+}
+
+impl<Entry, Key> AsRef<[Entry]> for ByForm<Entry, Key>
+{
+    /// Every entry, in push order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn as_ref(&self) -> &[Entry]
+    {
+        &self.entries
     }
 }
 
@@ -805,6 +947,72 @@ mod tests
             store.read(store.after(joined, at)),
             ['q', 'r'],
             "the entries after one read on"
+        );
+    }
+
+    #[test]
+    fn a_take_frees_the_places_of_the_entries_it_takes()
+    {
+        let mut store = ByForm::<char>::default();
+        for (form, entry) in [(1_usize, 'a'), (2, 'x'), (1, 'b'), (2, 'y'), (1, 'c')] {
+            store.enter(LayoutBlock::from(form));
+            let _id = store.push(entry);
+        }
+        let mark = super::At::from(2_usize);
+        assert_eq!(
+            store.split_off(mark),
+            ['b', 'y', 'c'],
+            "a take answers the entries from the mark on, in push order"
+        );
+        assert_eq!(store.entries(), ['a', 'x']);
+        let x = FormPlace {
+            form: LayoutBlock::from(2_usize),
+            place: 0,
+        };
+        assert_eq!(
+            store.get(x),
+            Some(&'x'),
+            "an entry kept keeps its coordinate"
+        );
+        store.enter(LayoutBlock::from(1_usize));
+        assert_eq!(
+            store.push('d'),
+            FormPlace {
+                form: LayoutBlock::from(1_usize),
+                place: 1
+            },
+            "form 1 pushes into the place its taken `b` held"
+        );
+        store.enter(LayoutBlock::from(2_usize));
+        let y = store.next_key();
+        assert_eq!(
+            store.push('z'),
+            y,
+            "the next coordinate is the one a push takes"
+        );
+        assert_eq!(
+            y.place, 1,
+            "form 2 pushes into the place its taken `y` held"
+        );
+        for (at, &entry) in store.entries().iter().enumerate() {
+            let id = store
+                .locate(super::At::from(at))
+                .expect("each entry has a coordinate");
+            assert_eq!(
+                store.get(id),
+                Some(&entry),
+                "each coordinate finds its entry"
+            );
+        }
+        store.truncate(super::At::default());
+        assert!(
+            store.entries().is_empty(),
+            "a take from the start empties the store"
+        );
+        assert_eq!(
+            store.push('e').place,
+            0,
+            "and every form pushes from its first place again"
         );
     }
 }

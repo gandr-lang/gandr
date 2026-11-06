@@ -202,19 +202,22 @@ impl<'source> Lowerer<'_, 'source>
                     Unbuilt::ForgetModel,
                 ))
             })?;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         self.operands.extend(ordered);
         self.operands.push(model.node);
         let arguments = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         for position in arguments.start .. arguments.end {
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
-        self.plan(site, Plan::Called(Code::Constant(map), arguments));
+        self.plan(
+            site,
+            Plan::Called(Code::Constant(map), self.kept(arguments)),
+        );
 
         Ok(())
     }

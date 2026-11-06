@@ -1,5 +1,6 @@
 data Color : Type where { | Red : Color | Green : Color | Blue : Color }
 data Band : Type where { | Bounds : (low : Integer, high : Integer) --> Band }
-def one(n : Integer, c : Color, band : Band) -> -F String { let high = band.high; let k = match c -> -F Integer { | Red => pure n | _ => pure high }; return "${ "q" }!" }
-def two(c : Color, band : Band) -> -F String { let low = band.low; let m = match c -> -F Integer { | Red => pure low | _ => pure 1 }; return "a${ "b" }c" }
+def first[a : Type, b : Type](x : a, y : b) -> -F a { return x }
+def one(n : Integer, c : Color, band : Band) -> -F String { let high = band.high; let k = match c -> -F Integer { | Red => pure n | _ => pure high }; let r = (n, high, k); let s = first(n, k); return "${ "q" }!" }
+def two(c : Color, band : Band) -> -F String { let low = band.low; let m = match c -> -F Integer { | Red => pure low | _ => pure 1 }; let p = (low, m); let q = first(low, m); return "a${ "b" }c" }
 def three : (a : Type, x : a) -> a;

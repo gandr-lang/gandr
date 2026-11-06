@@ -435,6 +435,7 @@ use super::lowered;
 use super::parse_literal;
 use super::recursion;
 use super::stretch;
+use crate::by_form::At;
 use crate::by_form::FormPlace;
 use crate::by_form::FormStretch;
 use crate::error::FormFault;
@@ -985,7 +986,7 @@ pub(super) struct Descent
     /// The call form.
     pub call: Site,
     /// Every argument the call wrote, in the lowerer's operand store.
-    pub arguments: Stretch,
+    pub arguments: FormStretch,
 }
 
 /// The recursive functions of a mutual block, which recurse through one
@@ -1408,7 +1409,7 @@ pub(super) struct Argued
     /// The argument's place among the family's parameters.
     pub place: usize,
     /// The application's arguments, in the operand store.
-    pub applied: Stretch,
+    pub applied: FormStretch,
 }
 
 /// The parameter a value argument stands at in a call naming a declaration.
@@ -1432,7 +1433,7 @@ pub(super) struct CalledAt
     /// The declaration's slot.
     pub slot: SlotIndex,
     /// The call's arguments, in the operand store.
-    pub applied: Stretch,
+    pub applied: FormStretch,
 }
 
 /// One field of one generator of a written data family.
@@ -1479,7 +1480,7 @@ pub(super) struct Constructed
     /// The constructor's tag.
     pub tag: ConstructorTag,
     /// The fields, in the operand store.
-    pub fields: Stretch,
+    pub fields: FormStretch,
     /// Where its classifier comes from.
     pub classifier: Classifier,
 }
@@ -3564,7 +3565,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
     /// - witness: `lower::tests::a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208`
     /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == self.kept(fields)))]
     pub(super) fn construct(
         &mut self,
         site: Site,
@@ -3643,7 +3644,7 @@ impl<'source> Lowerer<'_, 'source>
             .get(usize::from(constructor.family))
             .map_or_else(|| ConstantIndex::from(0_usize), |slot| slot.constant);
         for (index, position) in (fields.start .. fields.end).enumerate() {
-            if let Some(&field) = self.operands.get(position) {
+            if let Some(&field) = self.operands.entries().get(position) {
                 self.read(field, Reading::Value(frame));
                 let former = self.tree.node(field).and_then(|node| {
                     if let Ok(Shape::Form { former, .. }) = shape_of(self.pbg, node) {
@@ -3699,7 +3700,7 @@ impl<'source> Lowerer<'_, 'source>
             Plan::Constructor(Constructed {
                 family,
                 tag: ConstructorTag::from(constructor.tag),
-                fields,
+                fields: self.kept(fields),
                 classifier,
             }),
         );
@@ -3799,17 +3800,21 @@ impl<'source> Lowerer<'_, 'source>
         // The collection lists the explicit parameters alone: an operand the
         // lowering passes for an omitted entry pairs with none.
         let typed: Vec<(NodeIndex, Placed, bool)> = (applied.start .. applied.end)
-            .filter(|position| {
-                !self.instanced.contains_key(position)
-                    && !self.nominated.contains_key(position)
-                    && !self.components.contains_key(position)
-                    && !self.kept_implicits.contains(position)
+            .filter(|&position| {
+                self.operands.locate(At::from(position)).is_none_or(|key| {
+                    !self.instanced.contains_key(&key)
+                        && !self.nominated.contains_key(&key)
+                        && !self.components.contains_key(&key)
+                        && !self.kept_implicits.contains(&key)
+                })
             })
             .zip(parameters)
             .filter_map(|(position, parameter)| match parameter.declared {
-                Maybe::Present(declared) => {
-                    Some((*self.operands.get(position)?, declared, parameter.dependent))
-                },
+                Maybe::Present(declared) => Some((
+                    *self.operands.entries().get(position)?,
+                    declared,
+                    parameter.dependent,
+                )),
                 Maybe::Absent(_) => None,
             })
             .collect();
@@ -3817,7 +3822,7 @@ impl<'source> Lowerer<'_, 'source>
             let _first = self.parameter_typed.insert(argument, CalledAt {
                 typed: declared,
                 slot,
-                applied,
+                applied: self.kept(applied),
             });
             let opened = self.tree.node(argument).is_some_and(|node| {
                 matches!(
@@ -4601,11 +4606,11 @@ impl<'source> Lowerer<'_, 'source>
                 self.lettered.push((constructor.named.span, words));
             }
         }
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         self.operands.push(rest.node);
         let fields = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         self.construct(site, constructor, fields)
     }
@@ -5074,7 +5079,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
     /// - witness: `lower::tests::a_family_a_body_quotes_reads_its_parameters_at_their_indices_3553`
     /// - witness: `lower::tests::a_call_a_quoted_family_takes_is_the_value_it_returns_3572`
-    #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Data(constant, applied)))]
+    #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Data(constant, self.kept(applied))))]
     pub(super) fn family(
         &mut self,
         site: Site,
@@ -5094,13 +5099,14 @@ impl<'source> Lowerer<'_, 'source>
                 .get(usize::from(form.slot))
                 .is_some_and(|slot| slot.constant == constant)
         });
+        let kept = self.kept(applied);
         for (place, position) in (applied.start .. applied.end).enumerate() {
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 if let Some(form) = form {
                     let _first = self.argued.insert(argument, Argued {
                         form,
                         place,
-                        applied,
+                        applied: kept,
                     });
                 }
                 self.read(argument, Reading::Value(frame));
@@ -5111,10 +5117,10 @@ impl<'source> Lowerer<'_, 'source>
         // body, as a path type's endpoints do. A type reads it wherever the
         // family stands, so a call written there is the value it returns, as
         // in a binder's type, and no run stands under the quote (#3572).
-        let arguments = stretch(&self.operands, applied);
+        let arguments = stretch(self.operands.entries(), applied);
         self.in_type.extend(arguments.iter().copied());
         self.type_read.extend(arguments.iter().copied());
-        self.plan(site, Plan::Data(constant, applied));
+        self.plan(site, Plan::Data(constant, kept));
 
         Ok(())
     }
@@ -5180,8 +5186,8 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unadmitted(feature)));
         };
         let none = Stretch {
-            start: self.operands.len(),
-            end: self.operands.len(),
+            start: self.operands.entries().len(),
+            end: self.operands.entries().len(),
         };
         self.family(site, constant, OperandCount::from(0_usize), none)
     }
@@ -5311,7 +5317,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   reads its argument at its index in the body.
     /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
     /// - witness: `lower::tests::a_family_a_body_quotes_reads_its_parameters_at_their_indices_3553`
-    #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Codata(constant, applied)))]
+    #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Codata(constant, self.kept(applied))))]
     pub(super) fn codata_type(
         &mut self,
         site: Site,
@@ -5326,14 +5332,14 @@ impl<'source> Lowerer<'_, 'source>
         }
         let frame = self.require(site, Produced::CompType)?;
         for position in applied.start .. applied.end {
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
-        let arguments = stretch(&self.operands, applied);
+        let arguments = stretch(self.operands.entries(), applied);
         self.in_type.extend(arguments.iter().copied());
         self.type_read.extend(arguments.iter().copied());
-        self.plan(site, Plan::Codata(constant, applied));
+        self.plan(site, Plan::Codata(constant, self.kept(applied)));
 
         Ok(())
     }
@@ -6154,11 +6160,11 @@ impl<'source> Lowerer<'_, 'source>
         };
         self.constructed_at(head.span, constructor);
         let _head = cursor.operands();
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         arguments(site, &mut cursor, &mut self.operands)?;
         let fields = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         self.construct(site, constructor, fields)?;
 
@@ -6270,7 +6276,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a field typed by the family over its own parameters
     ///   is classified by a port's type, not by the record of the ports.
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
-    #[spec(ensures: |()| (fields.start .. fields.end).all(|position| self.operands.get(position).and_then(|field| self.inherited.get(field)).is_none_or(|inherited| matches!(inherited, &Classifier::Field(of) if of.around == site.at.node))) || !matches!(ported.form, Generators::Written(form) if self.collected.data.get(form).and_then(|data| data.generators.get(ported.first)).is_some_and(|generator| generator.fields.len() >= (fields.start .. fields.end).count())))]
+    #[spec(ensures: |()| (fields.start .. fields.end).all(|position| self.operands.entries().get(position).and_then(|field| self.inherited.get(field)).is_none_or(|inherited| matches!(inherited, &Classifier::Field(of) if of.around == site.at.node))) || !matches!(ported.form, Generators::Written(form) if self.collected.data.get(form).and_then(|data| data.generators.get(ported.first)).is_some_and(|generator| generator.fields.len() >= (fields.start .. fields.end).count())))]
     fn through_first_port(
         &mut self,
         site: Site,
@@ -6294,7 +6300,7 @@ impl<'source> Lowerer<'_, 'source>
         let declared: Vec<NodeIndex> = generator.fields.iter().map(|field| field.ty.node).collect();
         for (index, position) in (fields.start .. fields.end).enumerate() {
             let (Some(&field), Some(&declared)) =
-                (self.operands.get(position), declared.get(index))
+                (self.operands.entries().get(position), declared.get(index))
             else {
                 continue;
             };
@@ -10154,17 +10160,17 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn mint_family(
         &self,
         constant: ConstantIndex,
-        arguments: Stretch,
+        arguments: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let mut passed = Vec::with_capacity(arguments.end.saturating_sub(arguments.start));
-        for position in arguments.start .. arguments.end {
-            let Some(&argument) = self.operands.get(position)
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
-            };
+        let Some(written) = self.operands.whole(arguments)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let mut passed = Vec::with_capacity(written.len());
+        for &argument in written {
             match self.value_at(argument) {
                 Maybe::Present(value) => passed.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -10193,17 +10199,17 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn mint_codata(
         &self,
         constant: ConstantIndex,
-        arguments: Stretch,
+        arguments: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let mut passed = Vec::with_capacity(arguments.end.saturating_sub(arguments.start));
-        for position in arguments.start .. arguments.end {
-            let Some(&argument) = self.operands.get(position)
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
-            };
+        let Some(written) = self.operands.whole(arguments)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let mut passed = Vec::with_capacity(written.len());
+        for &argument in written {
             match self.value_at(argument) {
                 Maybe::Present(value) => passed.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -10249,12 +10255,12 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
+        let Some(written) = self.operands.whole(constructed.fields)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
         let mut fields = Vec::new();
-        for position in constructed.fields.start .. constructed.fields.end {
-            let Some(&field) = self.operands.get(position)
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
-            };
+        for &field in written {
             match self.value_at(field) {
                 Maybe::Present(value) => fields.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -10297,12 +10303,12 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
+        let Some(written) = self.operands.whole(constructed.fields)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
         let mut fields = Vec::new();
-        for position in constructed.fields.start .. constructed.fields.end {
-            let Some(&field) = self.operands.get(position)
-            else {
-                return Maybe::Absent(lowered::Absent::Unminted);
-            };
+        for &field in written {
             match self.value_at(field) {
                 Maybe::Present(value) => fields.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -10595,11 +10601,14 @@ impl<'source> Lowerer<'_, 'source>
         if environment.len() != field.parameters {
             return unminted;
         }
-        for position in outer.fields.start .. outer.fields.start.saturating_add(field.index) {
-            let Some(&written) = self.operands.get(position)
-            else {
-                return unminted;
-            };
+        let Some(before) = self
+            .operands
+            .whole(outer.fields)
+            .and_then(|fields| fields.get(.. field.index))
+        else {
+            return unminted;
+        };
+        for &written in before {
             match self.value_at(written) {
                 Maybe::Present(value) => environment.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -10674,7 +10683,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let bound = argued.place;
         let mut environment = Vec::with_capacity(bound);
-        for &argument in stretch(&self.operands, argued.applied).iter().take(bound) {
+        for &argument in self.operands.read(argued.applied).iter().take(bound) {
             match self.value_at(argument) {
                 Maybe::Present(value) => environment.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -10807,17 +10816,12 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unminted;
         };
-        let mut environment = Vec::with_capacity(
-            constructed
-                .fields
-                .end
-                .saturating_sub(constructed.fields.start),
-        );
-        for position in constructed.fields.start .. constructed.fields.end {
-            let Some(&written) = self.operands.get(position)
-            else {
-                return unminted;
-            };
+        let Some(fields) = self.operands.whole(constructed.fields)
+        else {
+            return unminted;
+        };
+        let mut environment = Vec::with_capacity(fields.len());
+        for &written in fields {
             match self.value_at(written) {
                 Maybe::Present(value) => environment.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -10951,7 +10955,7 @@ impl<'source> Lowerer<'_, 'source>
                     && bool::from(self.scope.binds(binder, Telescope::Signature))
             })
             .collect();
-        let applied = stretch(&self.operands, declared.applied);
+        let applied = self.operands.read(declared.applied);
         // Each parameter's argument, by the bytes its binder is written at.
         let arguments: BTreeMap<ByteSpan, NodeIndex> = parameters
             .iter()
@@ -14865,12 +14869,7 @@ impl<'source> Lowerer<'_, 'source>
                         call: descent.call,
                         caller,
                         called,
-                        arguments: OperandCount::from(
-                            descent
-                                .arguments
-                                .end
-                                .saturating_sub(descent.arguments.start),
-                        ),
+                        arguments: OperandCount::from(self.operands.read(descent.arguments).len()),
                     });
                 }
                 else {
@@ -15020,25 +15019,29 @@ impl<'source> Lowerer<'_, 'source>
     ///   observe each refusal.
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
-    #[spec(ensures: |ret| ret.is_err() || stretch(&self.operands, arguments).len() == self.parameters.read(recursion.parameters).len())]
+    #[spec(ensures: |ret| ret.is_err() || self.operands.read(arguments).len() == self.parameters.read(recursion.parameters).len())]
     fn uniform_descent(
         &mut self,
         frame: Frame,
         recursion: Recursion,
         call: Site,
-        arguments: Stretch,
+        arguments: FormStretch,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let uniform = self.parameters.read(recursion.uniform);
-        let first = arguments.start;
-        let arguments = stretch(&self.operands, arguments);
+        let first = self.operands.first(arguments).map_or(0_usize, usize::from);
+        let arguments = self.operands.read(arguments);
         if arguments.len() != self.parameters.read(recursion.parameters).len() {
             return Err(call.out(FragmentBoundary::Arity(OperandCount::from(arguments.len()))));
         }
         let mut passed_names = Vec::with_capacity(uniform.len());
         for (at, (parameter, &argument)) in uniform.iter().zip(arguments).enumerate() {
             // An implicit the call omits is the function's own.
-            if self.kept_implicits.contains(&first.saturating_add(at)) {
+            if self
+                .operands
+                .locate(At::from(first.saturating_add(at)))
+                .is_some_and(|key| self.kept_implicits.contains(&key))
+            {
                 continue;
             }
             let Some(node) = self.tree.node(argument)
@@ -15681,8 +15684,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_recursion_under_an_instance_row_binds_its_own_name_3699`
     /// - witness: `lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828`
     #[spec(
-        captures: before = self.operands.len(),
-        ensures: |ret| ret.is_err() || self.operands.len() >= before,
+        captures: before = self.operands.entries().len(),
+        ensures: |ret| ret.is_err() || self.operands.entries().len() >= before,
     )]
     pub(super) fn omitted_entries(
         &mut self,
@@ -15727,7 +15730,7 @@ impl<'source> Lowerer<'_, 'source>
         // The parameters before the fixpoint, which the call leaves out of
         // its application.
         let kept = self.parameters.read(recursion.uniform).len();
-        let arguments = self.operands.split_off(written.start);
+        let arguments = self.operands.split_off(At::from(written.start));
         let mut arguments = arguments.into_iter();
         let mut place = 0_usize;
         for entry in entries {
@@ -15735,7 +15738,7 @@ impl<'source> Lowerer<'_, 'source>
                 let width = slot.components().len();
                 if place < kept {
                     for _component in 0 .. width {
-                        let _fresh = self.kept_implicits.insert(self.operands.len());
+                        let _fresh = self.kept_implicits.insert(self.operands.next_key());
                         self.operands.push(site.at.node);
                     }
                 }
@@ -15752,7 +15755,7 @@ impl<'source> Lowerer<'_, 'source>
                     }
                 },
                 crate::module::Plicity::Implicit if place < kept => {
-                    let _fresh = self.kept_implicits.insert(self.operands.len());
+                    let _fresh = self.kept_implicits.insert(self.operands.next_key());
                     self.operands.push(site.at.node);
                 },
                 crate::module::Plicity::Implicit => {
@@ -15760,12 +15763,12 @@ impl<'source> Lowerer<'_, 'source>
                         function,
                         implicit: entry.name,
                     })?;
-                    let _first = self.nominated.insert(self.operands.len(), hole);
+                    let _first = self.nominated.insert(self.operands.next_key(), hole);
                     self.operands.push(site.at.node);
                 },
                 crate::module::Plicity::Instance => {
                     let index = self.resolved_instance(site, frame, function, entry)?;
-                    let _first = self.instanced.insert(self.operands.len(), index);
+                    let _first = self.instanced.insert(self.operands.next_key(), index);
                     self.operands.push(site.at.node);
                 },
             }
@@ -16000,11 +16003,11 @@ impl<'source> Lowerer<'_, 'source>
     {
         closed(site, &mut cursor, TileName::LESS_THAN)?;
         closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         arguments(site, &mut cursor, &mut self.operands)?;
         let written = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         self.staged_descent(site, name, written)
     }
@@ -16048,7 +16051,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
         };
         self.claim(site, bound.binder)?;
-        self.uniform_descent(from, recursion, site, written)?;
+        self.uniform_descent(from, recursion, site, self.kept(written))?;
         if let Some(held) = self.recursions.get_mut(&bound.binder) {
             held.claimed = Claimed(true);
         }
@@ -16069,7 +16072,8 @@ impl<'source> Lowerer<'_, 'source>
             binder: bound.binder,
             telescope,
         };
-        self.plan_applied(site, Plan::Unquote(code, applied, universe), applied, frame);
+        let kept = self.kept(applied);
+        self.plan_applied(site, Plan::Unquote(code, kept, universe), applied, frame);
 
         Ok(())
     }
