@@ -1,5 +1,8 @@
-// `model-resolution` with its modules imported the other way round:
-// the order a source imports its candidates in chooses nothing.
+// This source repeats model resolution with reversed imports.
+//
+// The source imports `Flips` before `Up`.
+//
+// The checker resolves candidates without import-order preference.
 //
 // - see: #739
 import "./model-resolution-flips.gandr";

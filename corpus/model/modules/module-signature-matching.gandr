@@ -1,28 +1,28 @@
-// A module matches its signature by name, not by order: members may come in
-// any order, a type member is given by its definition, and a member the
-// signature leaves out stays inside.
+// This source shows module signature matching.
+//
+// `Metrics` exposes the members that its signature states.
+//
+// The checker matches type and value members by name.
+//
+// - see: #2917
 
-/// Metrics whose signature states a type member and three values.
+/// `Metrics` exposes a type and three values.
 module Metrics : *{ type Ratio = Integer, base : Integer, double : Integer, scale : Ratio } where {
-  /// A member the signature leaves out.
+  /// `scratch` stays outside the signature.
   def scratch = 2;
-  /// The scratch value tripled. The operator's call is pure, so the value
-  /// stands as what the call returns.
+  /// `double` tests an unsynthesised operator result.
   @[ checks ]
   def double = scratch * 3;
-  /// The base.
+  /// `base` gives seven.
   def base = 7;
-  /// The scale, at the signature's type member.
+  /// `scale` gives one.
   def scale = 1;
 }
 
-/// The three exported values summed. An operator is a computation, and a
-/// definition with no stated type reads its value where nothing infers that
-/// computation's type.
+/// `visible` tests an unsynthesised exported sum.
 @[ refuses("NotSynthesisable") ]
 def visible = Metrics.base + Metrics.double + Metrics.scale;
 
-/// The sum in a record; `visible` is refused above, so it names a declaration
-/// whose type is not known.
+/// `wrapped` tests a record that names refused `visible`.
 @[ refuses("UnknownConstant") ]
 def wrapped = *{visible = visible};

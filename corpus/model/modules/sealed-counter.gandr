@@ -1,21 +1,21 @@
-//! A module sealed by a signature, after ML's opaque ascription
-//! [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]:
-//! outside the seal its type is abstract, so a value of it is reached only
-//! through the members the signature exposes. A run answering one is opaque at
-//! the seal, since its type is not marked `mobile`.
+//! This source shows a sealed counter.
+//!
+//! `Seed` exposes an abstract counter type and its operations.
+//!
+//! The checker keeps `Seed.T` separate from `Integer`.
+//! The runtime prints a value of that type as opaque.
 //!
 //! - cites: [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]
 //!
 //! [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]: https://doi.org/10.1145/174675.176927 "Harper and Lillibridge, A Type-Theoretic Approach to Higher-Order Modules with Sharing"
 
-// The sealed counter `Seed`.
+// This import provides `Seed`.
 import "./functor-pair.gandr";
 
-/// One step from the counter's zero: a value of its abstract type, which a
-/// run answers opaque at the seal.
+/// `one` steps `Seed` at its abstract type.
 @[ runs("⟨opaque at Seed⟩ : () -> Seed.T") ]
 def one() -> Seed.T { Seed.next Seed.zero }
 
-/// That value read back through the exposed reader.
+/// `shown` reads the abstract value through `Seed.read`.
 @[ runs("1") ]
 def shown() -> Integer { let n = force one; Seed.read n }

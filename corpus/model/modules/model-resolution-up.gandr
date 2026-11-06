@@ -1,14 +1,18 @@
-// A tally of integers, in a source of its own.
+// This source supplies an integer model of `Count`.
+//
+// `Up` increments and reads an integer carrier.
+//
+// The checker can select this model from an integer argument.
 //
 // - see: #739
 import "./model-resolution-tally.gandr";
 
-/// Counting up by one.
+/// `Up` counts integers by one.
 module Up : Model(Count) where
   type C = Integer;
-  /// Zero.
+  /// `zero` gives zero.
   def zero = 0;
-  /// One count more.
+  /// `incr` adds one.
   def incr(c : Integer) -> Integer { c + 1 }
-  /// The count as it is.
+  /// `read` returns the count.
   def read(c : Integer) -> Integer { c }

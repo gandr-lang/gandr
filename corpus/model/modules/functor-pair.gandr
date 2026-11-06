@@ -1,29 +1,28 @@
-//! Generative functors, after ML's generative module semantics
-//! [Rossberg-2014-fing_modules]: a functor applied twice to one argument mints
-//! a fresh abstract type at each application, and each application's members
-//! run through the argument they were built from.
+//! This source shows generative functors.
+//!
+//! Each application of `MkCounter` gives a fresh abstract type.
+//!
+//! The checker reads each functor member through its argument.
 //!
 //! - cites: [Rossberg-2014-fing_modules]
 //!
 //! [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
-/// A counter sealed by its signature: an abstract type, its zero, a step and
-/// a reader.
+/// `Seed` exposes a sealed counter signature.
 pub module Seed :> *{ type T, zero : T, next : T -> T, read : T -> Integer } where {
   type T = Integer;
-  /// The counter's zero.
+  /// `zero` gives the counter start.
   @[ runs("0") ]
   def zero = 0;
-  /// One step on.
+  /// `next` increments the counter.
   @[ runs("fun (a) { a + 1 }") ]
   def next(n : T) -> T { n + 1 }
-  /// The count read as an integer.
+  /// `read` converts a counter value to an integer.
   @[ runs("fun (a) { a }") ]
   def read(n : T) -> Integer { n }
 }
 
-/// A functor from any counter to a sealed counter of its own: its seed,
-/// step and reader are the argument's.
+/// `MkCounter` creates a sealed counter from a counter argument.
 module MkCounter(S : *{
   type T,
   zero : T,
@@ -35,16 +34,15 @@ module MkCounter(S : *{
   def step = S.next;
   def read = S.read;
 
-/// The functor's first application.
+/// `A` is the first functor application.
 module A = MkCounter(Seed);
-/// Its second, whose type is not the first's.
+/// `B` is the second functor application.
 module B = MkCounter(Seed);
 
-/// One step of the first application, at its own abstract type, which a run
-/// answers opaque at the application's seal.
+/// `a_once` steps the first abstract counter.
 @[ runs("⟨opaque at A⟩ : () -> A.T") ]
 def a_once() -> A.T { A.step A.seed }
 
-/// Two steps of the second application, read back as an integer.
+/// `b_twice` reads two steps of the second counter.
 @[ runs("2") ]
 def b_twice() -> Integer { let one = B.step B.seed; B.read (B.step one) }

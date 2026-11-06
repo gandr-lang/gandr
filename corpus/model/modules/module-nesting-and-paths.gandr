@@ -1,37 +1,41 @@
-// Modules nest to any depth, and a path of names reaches a member at any
-// depth from outside; from inside, a nested module's name reaches its
-// members.
+// This source shows nested modules and their paths.
+//
+// `Config` contains limits at several nested depths.
+//
+// The checker resolves each member through its complete path.
+//
+// - see: #2925
 
-/// A configuration, three modules deep.
+/// `Config` nests modules at three depths.
 module Config where
-  /// The configuration's name.
+  /// `name` gives the configuration name.
   def name = "gandr";
-  /// The limits.
+  /// `limits` holds the limit modules.
   module limits where
-    /// The soft limit.
+    /// `soft` gives the soft limit.
     def soft = 10;
-    /// The hard limit, one level down.
+    /// `hard` holds the hard limit.
     module hard where
-      /// Its value.
+      /// `value` gives the hard limit.
       def value = 100;
-      /// The innermost module.
+      /// `detail` holds the note.
       module detail where
-        /// A note at the bottom.
+        /// `note` gives the innermost note.
         def note = "the innermost component";
-    /// The hard value, through the nested module's name.
+    /// `hard_inside` reads `hard.value`.
     def hard_inside = hard.value;
-  /// The innermost note, through the nested modules' names.
+  /// `note_inside` reads the nested note.
   def note_inside = limits.hard.detail.note;
 
-/// The hard limit, through a path of three names.
+/// `hard_limit` reads the three-part path.
 def hard_limit = Config.limits.hard.value;
 
-/// The note, through a path of four names.
+/// `note` reads the four-part path.
 def note = Config.limits.hard.detail.note;
 
-/// The soft limit, through a path of two names.
+/// `soft_limit` reads the two-part path.
 def soft_limit = Config.limits.soft;
 
-/// The three gathered in a record, spelled by its labels in order.
+/// `limits` gathers every limit value.
 @[ runs("*{.hard = 100, .note = \"the innermost component\", .soft = 10}") ]
 def limits = *{hard = hard_limit, soft = soft_limit, note = note};

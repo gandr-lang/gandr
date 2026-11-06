@@ -1,30 +1,28 @@
-/// A module body holds a recursive definition as the top level does.
+/// This source shows recursive module members.
 ///
-/// A fold over a model's terms is a functor member that calls itself. A
-/// module groups a recursive definition with the definitions beside it.
+/// `Counting` and `Iterating` each contain a recursive definition.
 ///
-/// `def rec` names the definition its body calls one stage below. It stands
-/// plain or under its attributes, in a module and in a functor over a theory's
-/// models. A caller outside the module reads each member by its path.
+/// The checker resolves a recursive member one stage below its definition.
+/// A client resolves every member through its module path.
 ///
-/// - see: #4145 — a `def rec` member was misread as a call missing its `)`
+/// - see: #4145
 
-/// The naturals the members count in.
+/// `Nat` defines natural numbers.
 data Nat : Type where
-  /// No count.
+  /// `Zero` gives no count.
   | Zero : Nat
-  /// One more than `n`.
+  /// `Succ` adds one.
   | Succ : (n : Nat) --> Nat
 
-/// A plain module holding two recursive definitions.
+/// `Counting` holds two recursive functions.
 module Counting where {
-  /// Doubles a count.
+  /// `double` doubles a natural number.
   def rec double(n : Nat) -> Nat =
     match n where
       | Zero => Zero
       | Succ(k) => Succ (Succ (double[<] k))
 
-  /// Halves a count down to the nearest whole. Its attribute stands before it.
+  /// `half` rounds a natural number down.
   @[ checks ]
   def rec half(n : Nat) -> Nat =
     match n where
@@ -34,40 +32,40 @@ module Counting where {
         | Succ(k) => Succ (half[<] k)
 }
 
-/// The double of two.
+/// `twoDoubled` calls `Counting.double`.
 @[ runs("Succ (Succ (Succ (Succ Zero)))") ]
 def twoDoubled : () -> Nat = Counting.double (Succ (Succ Zero));
 
-/// The half of four.
+/// `halved` calls `Counting.half`.
 @[ runs("Succ (Succ Zero)") ]
 def halved : () -> Nat = Counting.half (Succ (Succ (Succ (Succ Zero))));
 
-/// A carrier with a step.
+/// `Stepping` states a carrier and a step.
 theory Stepping where
-  /// The carrier.
+  /// `M` names the carrier.
   sort M : Type;
-  /// One step along the carrier.
+  /// `step` advances the carrier.
   oper step : (x : M) --> M;
 
-/// Steps in any model, once per successor of a count.
+/// `Iterating` steps a model value once per successor.
 module Iterating(S : Model(Stepping)) where
-  /// Steps `x` once per successor of `n`.
+  /// `times` iterates the model step.
   def rec times(n : Nat, x : S.M) -> S.M =
     match n where
       | Zero => x
       | Succ(k) => S.step (times[<] k x)
 
-/// The integers, stepping by one.
+/// `Up` steps integers by one.
 module Up : Model(Stepping) where
-  /// The carrier, the integers.
+  /// `M` names `Integer`.
   type M = Integer;
 
-  /// One more than `x`.
+  /// `step` adds one.
   def step(x : Integer) -> Integer { x + 1 }
 
-/// The iteration over the integers.
+/// `UpIterated` applies `Iterating` to `Up`.
 module UpIterated = Iterating(Up);
 
-/// Three steps up from four.
+/// `threeStepsUp` iterates the step three times.
 @[ runs("7") ]
 def threeStepsUp() -> Integer { UpIterated.times (Succ (Succ (Succ Zero))) 4 }

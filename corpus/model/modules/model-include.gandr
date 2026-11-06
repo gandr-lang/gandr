@@ -1,36 +1,34 @@
-// A model built on another: `include EqInteger` in a model of a theory
-// that includes `Eq` takes `EqInteger`'s members as the model's own, so the
-// model's reduct at `Eq` is `EqInteger` itself. `==` at the integers then has
-// two modules answering its `Eq` slot, and they are one elaboration: their
-// components convert, so the slot resolves (uniqueness, up to conversion).
+// This source shows an included model.
+//
+// `GradeInteger` includes `EqInteger` as its equality reduct.
+//
+// The checker treats equal model components as one elaboration.
 //
 // - see: #2333
-// - see: #739 — a slot's answer unique up to conversion
-
-/// A grade orders verdicts: equality of grades, and one grade below another.
+// - see: #739
+/// `Graded` adds an order operation to `Eq`.
 theory Graded where
   include Eq;
   oper below : (a : Carrier, b : Carrier) --> Bool;
 
-/// Integer grades: the prelude's integer equality, and the integers' order.
+/// `GradeInteger` includes integer equality and order.
 module GradeInteger : Model(Graded) with sort Carrier = Integer where
   include EqInteger;
-  /// One grade below another.
+  /// `below` compares two integer grades.
   def below(a : Integer, b : Integer) -> Bool { a < b }
 
-/// Whether a grade is at most another, through the grading the operands force.
+/// `atMost` compares values through an implicit model.
 def atMost[g : Model(Graded)](a : g.Carrier, b : g.Carrier) -> Bool =
   if g.below a b { true } else { g.eq a b }
 
-/// A grade is at most itself, by the equality `GradeInteger` includes.
+/// `reflexive` compares a grade with itself.
 @[ runs("+{.0 = *{}}") ]
 def reflexive() -> Bool { atMost 3 3 }
 
-/// A higher grade is not at most a lower one.
+/// `descending` rejects a descending order.
 @[ runs("+{.1 = *{}}") ]
 def descending() -> Bool { atMost 4 3 }
 
-/// Equality at the integers: `EqInteger` and `GradeInteger` both answer, as
-/// one elaboration.
+/// `gradesEqual` resolves one integer equality model.
 @[ runs("+{.0 = *{}}") ]
 def gradesEqual() -> Bool { 3 == 3 }

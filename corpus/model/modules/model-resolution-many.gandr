@@ -1,17 +1,17 @@
-// Many models in scope: sixteen models of `Count`, each at a carrier
-// of its own, and one body calling `advanced` once at each carrier. Every call
-// leaves its model implicit out, so the checker tries each of the sixteen
-// candidates at each of the sixteen slots, against one solver store holding
-// all of their holes: the hotpath series' `many candidates` workload.
+// This source measures model resolution with many candidates.
+//
+// Sixteen `Count` models each provide one distinct carrier.
+//
+// The checker resolves `advanced` once for each carrier.
 //
 // - see: #2395
 import "./model-resolution-tally.gandr";
 
-/// The carrier of the tally numbered 0.
+/// `Tag0` is carrier zero.
 data Tag0 : Type where
   | Mark0 : Tag0
 
-/// A tally over `Tag0`, reading 0.
+/// `Tally0` reads zero.
 module Tally0 : Model(Count) where
   type C = Tag0;
   /// The one mark.
@@ -21,11 +21,11 @@ module Tally0 : Model(Count) where
   /// The tally's number.
   def read(c : Tag0) -> Integer { 0 }
 
-/// The carrier of the tally numbered 1.
+/// `Tag1` is carrier one.
 data Tag1 : Type where
   | Mark1 : Tag1
 
-/// A tally over `Tag1`, reading 1.
+/// `Tally1` reads one.
 module Tally1 : Model(Count) where
   type C = Tag1;
   /// The one mark.
@@ -35,11 +35,11 @@ module Tally1 : Model(Count) where
   /// The tally's number.
   def read(c : Tag1) -> Integer { 1 }
 
-/// The carrier of the tally numbered 2.
+/// `Tag2` is carrier two.
 data Tag2 : Type where
   | Mark2 : Tag2
 
-/// A tally over `Tag2`, reading 2.
+/// `Tally2` reads two.
 module Tally2 : Model(Count) where
   type C = Tag2;
   /// The one mark.
@@ -49,11 +49,11 @@ module Tally2 : Model(Count) where
   /// The tally's number.
   def read(c : Tag2) -> Integer { 2 }
 
-/// The carrier of the tally numbered 3.
+/// `Tag3` is carrier three.
 data Tag3 : Type where
   | Mark3 : Tag3
 
-/// A tally over `Tag3`, reading 3.
+/// `Tally3` reads three.
 module Tally3 : Model(Count) where
   type C = Tag3;
   /// The one mark.
@@ -63,11 +63,11 @@ module Tally3 : Model(Count) where
   /// The tally's number.
   def read(c : Tag3) -> Integer { 3 }
 
-/// The carrier of the tally numbered 4.
+/// `Tag4` is carrier four.
 data Tag4 : Type where
   | Mark4 : Tag4
 
-/// A tally over `Tag4`, reading 4.
+/// `Tally4` reads four.
 module Tally4 : Model(Count) where
   type C = Tag4;
   /// The one mark.
@@ -77,11 +77,11 @@ module Tally4 : Model(Count) where
   /// The tally's number.
   def read(c : Tag4) -> Integer { 4 }
 
-/// The carrier of the tally numbered 5.
+/// `Tag5` is carrier five.
 data Tag5 : Type where
   | Mark5 : Tag5
 
-/// A tally over `Tag5`, reading 5.
+/// `Tally5` reads five.
 module Tally5 : Model(Count) where
   type C = Tag5;
   /// The one mark.
@@ -91,11 +91,11 @@ module Tally5 : Model(Count) where
   /// The tally's number.
   def read(c : Tag5) -> Integer { 5 }
 
-/// The carrier of the tally numbered 6.
+/// `Tag6` is carrier six.
 data Tag6 : Type where
   | Mark6 : Tag6
 
-/// A tally over `Tag6`, reading 6.
+/// `Tally6` reads six.
 module Tally6 : Model(Count) where
   type C = Tag6;
   /// The one mark.
@@ -105,11 +105,11 @@ module Tally6 : Model(Count) where
   /// The tally's number.
   def read(c : Tag6) -> Integer { 6 }
 
-/// The carrier of the tally numbered 7.
+/// `Tag7` is carrier seven.
 data Tag7 : Type where
   | Mark7 : Tag7
 
-/// A tally over `Tag7`, reading 7.
+/// `Tally7` reads seven.
 module Tally7 : Model(Count) where
   type C = Tag7;
   /// The one mark.
@@ -119,11 +119,11 @@ module Tally7 : Model(Count) where
   /// The tally's number.
   def read(c : Tag7) -> Integer { 7 }
 
-/// The carrier of the tally numbered 8.
+/// `Tag8` is carrier eight.
 data Tag8 : Type where
   | Mark8 : Tag8
 
-/// A tally over `Tag8`, reading 8.
+/// `Tally8` reads eight.
 module Tally8 : Model(Count) where
   type C = Tag8;
   /// The one mark.
@@ -133,11 +133,11 @@ module Tally8 : Model(Count) where
   /// The tally's number.
   def read(c : Tag8) -> Integer { 8 }
 
-/// The carrier of the tally numbered 9.
+/// `Tag9` is carrier nine.
 data Tag9 : Type where
   | Mark9 : Tag9
 
-/// A tally over `Tag9`, reading 9.
+/// `Tally9` reads nine.
 module Tally9 : Model(Count) where
   type C = Tag9;
   /// The one mark.
@@ -147,11 +147,11 @@ module Tally9 : Model(Count) where
   /// The tally's number.
   def read(c : Tag9) -> Integer { 9 }
 
-/// The carrier of the tally numbered 10.
+/// `Tag10` is carrier ten.
 data Tag10 : Type where
   | Mark10 : Tag10
 
-/// A tally over `Tag10`, reading 10.
+/// `Tally10` reads ten.
 module Tally10 : Model(Count) where
   type C = Tag10;
   /// The one mark.
@@ -161,11 +161,11 @@ module Tally10 : Model(Count) where
   /// The tally's number.
   def read(c : Tag10) -> Integer { 10 }
 
-/// The carrier of the tally numbered 11.
+/// `Tag11` is carrier eleven.
 data Tag11 : Type where
   | Mark11 : Tag11
 
-/// A tally over `Tag11`, reading 11.
+/// `Tally11` reads eleven.
 module Tally11 : Model(Count) where
   type C = Tag11;
   /// The one mark.
@@ -175,11 +175,11 @@ module Tally11 : Model(Count) where
   /// The tally's number.
   def read(c : Tag11) -> Integer { 11 }
 
-/// The carrier of the tally numbered 12.
+/// `Tag12` is carrier twelve.
 data Tag12 : Type where
   | Mark12 : Tag12
 
-/// A tally over `Tag12`, reading 12.
+/// `Tally12` reads twelve.
 module Tally12 : Model(Count) where
   type C = Tag12;
   /// The one mark.
@@ -189,11 +189,11 @@ module Tally12 : Model(Count) where
   /// The tally's number.
   def read(c : Tag12) -> Integer { 12 }
 
-/// The carrier of the tally numbered 13.
+/// `Tag13` is carrier thirteen.
 data Tag13 : Type where
   | Mark13 : Tag13
 
-/// A tally over `Tag13`, reading 13.
+/// `Tally13` reads thirteen.
 module Tally13 : Model(Count) where
   type C = Tag13;
   /// The one mark.
@@ -203,11 +203,11 @@ module Tally13 : Model(Count) where
   /// The tally's number.
   def read(c : Tag13) -> Integer { 13 }
 
-/// The carrier of the tally numbered 14.
+/// `Tag14` is carrier fourteen.
 data Tag14 : Type where
   | Mark14 : Tag14
 
-/// A tally over `Tag14`, reading 14.
+/// `Tally14` reads fourteen.
 module Tally14 : Model(Count) where
   type C = Tag14;
   /// The one mark.
@@ -217,11 +217,11 @@ module Tally14 : Model(Count) where
   /// The tally's number.
   def read(c : Tag14) -> Integer { 14 }
 
-/// The carrier of the tally numbered 15.
+/// `Tag15` is carrier fifteen.
 data Tag15 : Type where
   | Mark15 : Tag15
 
-/// A tally over `Tag15`, reading 15.
+/// `Tally15` reads fifteen.
 module Tally15 : Model(Count) where
   type C = Tag15;
   /// The one mark.
