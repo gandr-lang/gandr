@@ -22,6 +22,13 @@
 //! the declarations settle. The census steps one source at a time; a census
 //! of a tree costs a parse and a lowering per source, and no checking.
 //!
+//! # Fusion rows
+//!
+//! A census built with [`Fusions::Composed`] also fuses each composition
+//! overlap of each block a source writes, and composes the overlap's
+//! distance grade through its two steps in the Lawvere quantale
+//! ([`fusion`]). A source's fusion rows follow its cell rows.
+//!
 //! # References
 //!
 //! - `Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems`
@@ -32,10 +39,18 @@
 //!   counts are reported over the sources as they lower, the kernel unchanged
 //!   (§ quant-try-first).
 
+mod fusion;
+
 use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+pub use fusion::FUSIONS;
+pub use fusion::FusionRow;
+pub use fusion::FusionVerdict;
+pub use fusion::Fusions;
+pub use fusion::HoleCount;
+pub use fusion::OverBudget;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
@@ -44,6 +59,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellProvenance;
+use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::EtaKind;
 use gandr_theory_cell_complexes::HoleName;
 use gandr_theory_cell_complexes::Multiplicity;
@@ -185,13 +201,19 @@ impl core::fmt::Display for CellRow
 #[derive(Debug)]
 pub enum CensusStep<'census>
 {
-    /// A source, and the cells of the declarations it writes.
+    /// A source, the cells of the declarations it writes, and their fusion
+    /// rows.
     Source
     {
         /// The source's path, as the census reached it.
         path: &'census Path,
         /// The cells, as [`Census::step`] orders them.
         cells: Vec<CellRow>,
+        /// The fusion cells of each block, in written order: empty unless the
+        /// census is built with [`Fusions::Composed`].
+        fusions: Vec<FusionRow>,
+        /// Each block whose composition overlaps pass [`FUSIONS`].
+        over: Vec<OverBudget>,
     },
     /// A path the census could not read cells from.
     Fault
@@ -216,23 +238,34 @@ pub struct Census
     /// The last source reached, laid out after the prelude and its imports:
     /// the text a step's fault borrows.
     laid: String,
+    /// Whether each block's composition overlaps are fused.
+    fusions: Fusions,
+    /// The cells of the block being fused, and the cells that its fusions
+    /// derive: refilled for each block.
+    fused: CellStore,
 }
 
 impl Census
 {
-    /// A census of `paths`, in the order given, nothing yet read.
+    /// A census of `paths`, in the order given, nothing yet read, fusing each
+    /// block's composition overlaps when `fusions` asks.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn new(paths: Vec<PathBuf>) -> Self
+    pub fn new(
+        paths: Vec<PathBuf>,
+        fusions: Fusions,
+    ) -> Self
     {
         Self {
             grammar: built_in(),
             traversal: Traversal::new(paths),
             reader: Reader::new(),
             laid: String::new(),
+            fusions,
+            fused: CellStore::new(),
         }
     }
 
@@ -249,14 +282,17 @@ impl Census
     ///   its rule's arrow when it is a written rule's and the declaration's
     ///   rules oriented, its declaration's start otherwise — the cell, its
     ///   provenance, its step growth, and each hole with how many times the
-    ///   cell's right-hand side writes it. A path that cannot be listed or
-    ///   read, names no source, fails to parse or lower, or whose source the
-    ///   lowering refuses whole is a [`CensusStep::Fault`]. Exhaustion is
-    ///   stable.
+    ///   cell's right-hand side writes it. With [`Fusions::Composed`], the step
+    ///   also holds one fusion row for each of a block's first [`FUSIONS`]
+    ///   composition overlaps, and names each block that has more. A path that
+    ///   cannot be listed or read, names no source, fails to parse or lower, or
+    ///   whose source the lowering refuses whole is a [`CensusStep::Fault`].
+    ///   Exhaustion is stable.
     /// - provides: the pass `gandr cells` renders.
     /// - fails: never; every fault is a step, and the census continues past it.
     /// - panics: none.
-    /// - intension: holds one laid-out source at a time.
+    /// - intension: holds one laid-out source at a time, and one block's fused
+    ///   cells.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a tree holding a source whose rules write a hole
@@ -283,8 +319,26 @@ impl Census
         let path = self.traversal.path();
         let fault = match reached {
             Reached::Source => {
-                match read_cells(&self.reader, path, self.grammar.as_ref(), &mut self.laid) {
-                    Ok(cells) => return Maybe::Present(CensusStep::Source { path, cells }),
+                let read = read_cells(
+                    &self.reader,
+                    path,
+                    self.grammar.as_ref(),
+                    &mut self.laid,
+                    (self.fusions, &mut self.fused),
+                );
+                match read {
+                    Ok(Rows {
+                        cells,
+                        fusions,
+                        over,
+                    }) => {
+                        return Maybe::Present(CensusStep::Source {
+                            path,
+                            cells,
+                            fusions,
+                            over,
+                        });
+                    },
                     Err(fault) => fault,
                 }
             },
@@ -295,8 +349,21 @@ impl Census
     }
 }
 
+/// The rows of one source.
+struct Rows
+{
+    /// The cells of the declarations the source writes.
+    cells: Vec<CellRow>,
+    /// The fusion cells of its blocks.
+    fusions: Vec<FusionRow>,
+    /// Its blocks past the fusion budget.
+    over: Vec<OverBudget>,
+}
+
 /// Read the source at `path` through `reader`, lay it out into `laid` under
-/// `grammar`, lower it, and read the cells of the declarations it writes.
+/// `grammar`, lower it, and read the cells of the declarations it writes:
+/// with [`Fusions::Composed`], fuse each block's composition overlaps into
+/// `fused` too.
 ///
 /// # Specification
 /// trivial.
@@ -308,7 +375,8 @@ fn read_cells<'census>(
     path: &Path,
     grammar: Result<&'census Pbg, &'census PbgError>,
     laid: &'census mut String,
-) -> Result<Vec<CellRow>, CensusFault<'census>>
+    (fusions, fused): (Fusions, &mut CellStore),
+) -> Result<Rows, CensusFault<'census>>
 {
     let read = reader.read(path).map_err(CensusFault::Unreadable)?;
     let grammar = grammar.map_err(CensusFault::Grammar)?;
@@ -330,6 +398,8 @@ fn read_cells<'census>(
     let base = usize::from(unit.base);
     let own = SourceText::from(laid.get(base ..).unwrap_or_default());
     let mut rows = Vec::new();
+    let mut fusion_rows = Vec::new();
+    let mut over = Vec::new();
     // Each written rule's arrow, by the cell its face became: one
     // declaration's at a time.
     let mut arrows: Vec<Option<ByteOffset>> = Vec::new();
@@ -372,15 +442,28 @@ fn read_cells<'census>(
                     .collect(),
             });
         }
+        if fusions == Fusions::Composed {
+            let at = ByteOffset::from(usize::from(start).saturating_sub(base));
+            fusion::fuse(
+                &declaration.store,
+                (own, at),
+                fused,
+                &mut fusion_rows,
+                &mut over,
+            );
+        }
     }
-    Ok(rows)
+    Ok(Rows {
+        cells: rows,
+        fusions: fusion_rows,
+        over,
+    })
 }
 
 #[cfg(test)]
 mod tests
 {
     use std::path::Path;
-    use std::path::PathBuf;
 
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
@@ -388,11 +471,41 @@ mod tests
     use super::Census;
     use super::CensusFault;
     use super::CensusStep;
+    use super::Fusions;
     use crate::walk::tests::Scratch;
 
     #[test]
     fn a_census_reads_each_hole_s_count_in_the_source_s_own_declarations()
     {
+        // Each step of a census: a source's rendered rows, cells then fusions
+        // then blocks past the budget, or whether a fault is an unreadable
+        // path.
+        let steps = |census: &mut Census| {
+            let mut steps = Vec::new();
+            while let Maybe::Present(step) = census.step() {
+                steps.push(match step {
+                    CensusStep::Source {
+                        path,
+                        cells,
+                        fusions,
+                        over,
+                    } => (
+                        path.to_path_buf(),
+                        Ok(cells
+                            .iter()
+                            .map(ToString::to_string)
+                            .chain(fusions.iter().map(ToString::to_string))
+                            .chain(over.iter().map(ToString::to_string))
+                            .collect::<Vec<String>>()),
+                    ),
+                    CensusStep::Fault { path, fault } => (
+                        path.to_path_buf(),
+                        Err(matches!(fault, CensusFault::Unreadable(_))),
+                    ),
+                });
+            }
+            steps
+        };
         let scratch = Scratch::new(Path::new("census"));
         // `left` keeps `l` and drops `r`; `twice` and `thrice` write `t` two
         // and three times.
@@ -411,47 +524,77 @@ mod tests
         );
         let root = scratch.root();
         let missing = root.join("missing.gandr");
-        let mut census = Census::new(vec![root.join("tree"), missing.clone()]);
-        let mut steps: Vec<(PathBuf, Result<Vec<String>, bool>)> = Vec::new();
-        while let Maybe::Present(step) = census.step() {
-            steps.push(match step {
-                CensusStep::Source { path, cells } => (
-                    path.to_path_buf(),
-                    Ok(cells.iter().map(ToString::to_string).collect()),
-                ),
-                CensusStep::Fault { path, fault } => (
-                    path.to_path_buf(),
-                    Err(matches!(fault, CensusFault::Unreadable(_))),
-                ),
-            });
-        }
+        let paths = vec![root.join("tree"), missing.clone()];
         let rows = |lines: &[&str]| Ok(lines.iter().map(ToString::to_string).collect());
-        assert_eq!(steps, vec![
-            (
-                root.join("tree/a-tree.gandr"),
-                rows(&[
-                    "1:5: cell 0 frame, strictly linear: v 1, beta 1",
-                    "1:5: cell 1 frame, strictly linear: v 1, beta 1",
-                    "7:21: cell 2 rule, strictly linear: $ret 1",
-                    "8:26: cell 3 rule, erasing: l 1, r 0, $ret 1",
-                    "9:18: cell 4 rule, duplicating 2: t 2, $ret 1",
-                    "10:19: cell 5 rule, duplicating 3: t 3, $ret 1",
-                ])
-            ),
-            (
-                root.join("tree/b-importer.gandr"),
-                rows(&[
-                    "3:5: cell 0 frame, strictly linear: v 1, beta 1",
-                    "3:5: cell 1 frame, strictly linear: v 1, beta 1",
-                    "7:20: cell 2 rule, strictly linear: $ret 1",
-                    "8:19: cell 3 rule, strictly linear: $ret 1",
-                ])
-            ),
-            (missing, Err(true)),
+        let tree = [
+            "1:5: cell 0 frame, strictly linear: v 1, beta 1",
+            "1:5: cell 1 frame, strictly linear: v 1, beta 1",
+            "7:21: cell 2 rule, strictly linear: $ret 1",
+            "8:26: cell 3 rule, erasing: l 1, r 0, $ret 1",
+            "9:18: cell 4 rule, duplicating 2: t 2, $ret 1",
+            "10:19: cell 5 rule, duplicating 3: t 3, $ret 1",
+        ];
+        let importer = [
+            "3:5: cell 0 frame, strictly linear: v 1, beta 1",
+            "3:5: cell 1 frame, strictly linear: v 1, beta 1",
+            "7:20: cell 2 rule, strictly linear: $ret 1",
+            "8:19: cell 3 rule, strictly linear: $ret 1",
+        ];
+        let mut census = Census::new(paths.clone(), Fusions::Omitted);
+        assert_eq!(steps(&mut census), vec![
+            (root.join("tree/a-tree.gandr"), rows(&tree)),
+            (root.join("tree/b-importer.gandr"), rows(&importer)),
+            (missing.clone(), Err(true)),
         ]);
         assert!(
             matches!(census.step(), Maybe::Absent(_)),
             "exhaustion is stable"
         );
+        // Fused, each block's composition overlaps follow its cells. A frame
+        // cell's step is no tick, and a written rule's step is one: `thrice`
+        // fused with itself writes `t` nine times in two ticks, and fused
+        // with `twice` six times. Every fusion of the fixture is exact.
+        let mut census = Census::new(paths, Fusions::Composed);
+        let fused = steps(&mut census);
+        let [
+            (ref tree_path, Ok(ref tree_rows)),
+            (ref importer_path, Ok(ref importer_rows)),
+            (ref missing_path, Err(true)),
+        ] = fused[..]
+        else {
+            panic!("two sources and a fault: {fused:?}");
+        };
+        assert_eq!(
+            (tree_path, importer_path, missing_path),
+            (
+                &root.join("tree/a-tree.gandr"),
+                &root.join("tree/b-importer.gandr"),
+                &missing
+            )
+        );
+        for (written, cells, fusions, start) in [
+            (tree_rows, &tree[..], 29, "1:5: "),
+            (importer_rows, &importer[..], 10, "3:5: "),
+        ] {
+            let (cell_rows, fusion_rows) = written.split_at(cells.len());
+            assert_eq!(cell_rows, cells, "the cell rows come first, unchanged");
+            assert_eq!(fusion_rows.len(), fusions, "{fusion_rows:?}");
+            assert!(
+                fusion_rows
+                    .iter()
+                    .all(|row| row.starts_with(start) && row.contains(", exact:")),
+                "{fusion_rows:?}"
+            );
+        }
+        for row in [
+            "1:5: fusion of cell 0 then cell 4, distance 1, exact: $ret 1, beta 0, t 0, v 2",
+            "1:5: fusion of cell 5 then cell 4, distance 2, exact: $ret 0, $ret' 1, t 6",
+            "1:5: fusion of cell 5 then cell 5, distance 2, exact: $ret 0, $ret' 1, t 9",
+        ] {
+            assert!(
+                tree_rows.iter().any(|written| written == row),
+                "{row}: {tree_rows:?}"
+            );
+        }
     }
 }

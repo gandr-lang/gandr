@@ -1318,6 +1318,26 @@ fn cells_reports_each_hole_s_count()
         )
     );
 
+    // `--fusions` keeps the cell rows first and unchanged, then writes one
+    // row for each fusion cell: `thrice` fused with itself writes `t` nine
+    // times in two ticks.
+    let fused = ran(gandr(&[cells, Path::new("--fusions"), &exemplar]));
+    assert_eq!(code(&fused), Code(0_i32), "{}", stderr(&fused));
+    let fused = stdout(&fused);
+    let rows = fused
+        .strip_prefix(stdout(&read).as_str())
+        .unwrap_or_else(|| panic!("the cell rows come first: {fused}"));
+    let fusion = format!("{shown}:17:1: fusion of cell ");
+    assert!(
+        rows.lines().all(|row| row.starts_with(fusion.as_str())),
+        "{rows}"
+    );
+    assert_eq!(rows.lines().count(), 46, "{rows}");
+    let thrice = format!(
+        "{shown}:17:1: fusion of cell 7 then cell 7, distance 2, exact: $ret 0, $ret' 1, t 9"
+    );
+    assert!(rows.lines().any(|row| row == thrice), "{rows}");
+
     let faulted = ran(gandr(&[cells, &absent, &exemplar]));
     assert_eq!(code(&faulted), Code(2_i32), "{}", stderr(&faulted));
     assert!(

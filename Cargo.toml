@@ -844,7 +844,7 @@ default-features = false
 # - none: alloc-only bounded completion and replay.
 # consumers:
 # - storage-artifact (dev)
-# - surface-dispatcher (dev)
+# - surface-dispatcher
 # - surface-lowering
 # - theory-computads
 # - theory-decomposition-spaces
@@ -900,6 +900,7 @@ default-features = false
 # features:
 # - none: the dyadics on big-integer mantissas, with no feature of their own.
 # consumers:
+# - surface-dispatcher
 # - theory-ordered-algebras
 [workspace.dependencies.gandr-theory-exact-reals]
 path = "crates/theory-exact-reals"
@@ -976,7 +977,7 @@ default-features = false
 # consumers:
 # - core-checker
 # - core-term
-# - surface-dispatcher (dev)
+# - surface-dispatcher
 [workspace.dependencies.gandr-theory-ordered-algebras]
 path = "crates/theory-ordered-algebras"
 default-features = false
