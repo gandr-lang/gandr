@@ -25,11 +25,11 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │ │││││           checked against `-F Nat`; while synthesising the computation this runs where a value is read
 32 │ │││││           plus (each h) (rest t)
 33 │ │││││         }
-   │ ││││└─────────┘ checked against `-F Nat`; while checking the body of this function; binds _ : elL(a), _ : List(elL(a))
+   │ ││││└─────────┘ checked against `-F Nat`; while checking the body of this function; binds _ : elL(a), _ : List elL(a)
 34 │ ││││      } }
-   │ ││└│──────│─┘ checked against `-F (elL(ListL(a)) -> Nat)`; while checking the body of this thunk
+   │ ││└│──────│─┘ checked against `-F (elL(ListL a) -> Nat)`; while checking the body of this thunk
    │ ││ └──────┤
-   │ ││        checked against `elL(ListL(a)) -> -F Nat`; while checking the body of this function; binds _ : elL(ListL(a))
+   │ ││        checked against `elL(ListL a) -> -F Nat`; while checking the body of this function; binds _ : elL(ListL a)
 35 │ ││        | PiL(a, b) => thunk { fun (f) { Zero } }
    │ ││                                                │
    │ └│────────────────────────────────────────────────│

@@ -4,17 +4,17 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 30 │    def first(n : Nat, v : Pred(Succ(n)), h : Packed(Pack(n, v))) -> At(n) =
    │    │         ┬        ┬                  ┬                          ───── the type it is checked against
    │    │         │        │                  │
-   │    │         │        │                  checked against `Packed(Pack(n, v)) -> -F At(n)`; while checking the body of this function; binds h : Packed(Pack(n, v))
-   │    │         │        checked against `(v : Pred(Succ(n))) -> Packed(Pack(n, v)) -> -F At(n)`; while checking the body of this function; binds v : Pred(Succ(n))
-   │ ┌──┘         checked against `(n : Nat) -> (v : Pred(Succ(n))) -> Packed(Pack(n, v)) -> -F At(n)`; while checking the body of this function; binds n : Nat
+   │    │         │        │                  checked against `Packed (Pack n v) -> -F At n`; while checking the body of this function; binds h : Packed (Pack n v)
+   │    │         │        checked against `(v : Pred (Succ n)) -> Packed (Pack n v) -> -F At n`; while checking the body of this function; binds v : Pred (Succ n)
+   │ ┌──┘         checked against `(n : Nat) -> (v : Pred (Succ n)) -> Packed (Pack n v) -> -F At n`; while checking the body of this function; binds n : Nat
    │ │
 31 │ │┌   match h where
 32 │ ││     | Hold(m, w) => A m
    │ ││                     ┯━│
    │ └│─────────────────────│─│
-   │  └─────────────────────│─checked against `(n : Nat, v : Pred(Succ(n)), Packed(Pack(n, v))) -> At(n)`; while checking the body of this thunk
-   │                        │ checked against `-F At(n)`; while checking the body of this function; binds m : Nat, w : Pred(Succ(m)), _ : Path[.A = Sig](Pack m w, Pack n v)
-   │                        its type does not convert: expected `At(n)`, found `At(m)`
+   │  └─────────────────────│─checked against `(n : Nat, v : Pred (Succ n), Packed (Pack n v)) -> At n`; while checking the body of this thunk
+   │                        │ checked against `-F At n`; while checking the body of this function; binds m : Nat, w : Pred (Succ m), _ : Path[.A = Sig](Pack m w, Pack n v)
+   │                        its type does not convert: expected `At n`, found `At m`
    │
    ├ note: `first` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

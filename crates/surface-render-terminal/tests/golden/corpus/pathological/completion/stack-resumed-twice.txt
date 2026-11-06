@@ -15,7 +15,7 @@ error[ContinuationUsedTwice]: the continuation is resumed or abandoned a second 
    │ ││   │
    │ └│───│
    │  └───checked against `() -> Unit`; while checking the body of this thunk
-   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
+   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack (-F Unit) (-F Unit)
    │
    ├ note: `resumedTwice` is refused with ContinuationUsedTwice, as its expectation states
    ╰ help: end the continuation only once

@@ -8,8 +8,8 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 23 │ │   VCons Zero 3 (VNil : Vec(Integer, Zero))
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│──────────────────────────────────────┤
-   │     │                                      checked against `() -> Vec(Integer, Succ(Succ(Zero)))`; while checking the body of this thunk
-   │     its type does not convert: expected `Vec(Integer, Succ(Succ(Zero)))`, found `Vec(Integer, Succ(Zero))`
+   │     │                                      checked against `() -> Vec Integer (Succ (Succ Zero))`; while checking the body of this thunk
+   │     its type does not convert: expected `Vec Integer (Succ (Succ Zero))`, found `Vec Integer (Succ Zero)`
    │
    ├ note: `overstated` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
@@ -18,15 +18,15 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╭▸ corpus/pathological/data/vectors.gandr:29:3
    │
 28 │   def overPadded(m : Nat, v : Vec(Integer, m)) -> Vec(Integer, plus(m, Succ(Zero))) =
-   │   │              ┬        ─ checked against `Vec(Integer, m) -> -F Vec(Integer, plus(m, Succ(Zero)))`; while checking the body of this function; binds v : Vec(Integer, m)
+   │   │              ┬        ─ checked against `Vec Integer m -> -F Vec Integer plus(m, Succ Zero)`; while checking the body of this function; binds v : Vec Integer m
    │   │              │
-   │ ┌─┘              checked against `(m : Nat) -> Vec(Integer, m) -> -F Vec(Integer, plus(m, Succ(Zero)))`; while checking the body of this function; binds m : Nat
+   │ ┌─┘              checked against `(m : Nat) -> Vec Integer m -> -F Vec Integer plus(m, Succ Zero)`; while checking the body of this function; binds m : Nat
    │ │
 29 │ │   v
    │ │   ┯
    │ │   │
-   │ └───its type does not convert: expected `Vec(Integer, plus(m, Succ(Zero)))`, found `Vec(Integer, m)`
-   │     checked against `(m : Nat, Vec(Integer, m)) -> Vec(Integer, plus(m, Succ(Zero)))`; while checking the body of this thunk
+   │ └───its type does not convert: expected `Vec Integer plus(m, Succ Zero)`, found `Vec Integer m`
+   │     checked against `(m : Nat, Vec Integer m) -> Vec Integer plus(m, Succ Zero)`; while checking the body of this thunk
    │
    ├ note: `overPadded` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -4,7 +4,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 33 │ def firstOfPair() -> Integer { head (pair ()) }
    │ ┬──────────────────────────────┬─────┯━━━━━━───
    │ │                              │     │
-   │ │                              │     its type does not convert: expected `Vec(?, Succ(?))`, found `Vec(Integer, Succ(Succ(Zero)))`
+   │ │                              │     its type does not convert: expected `Vec ? (Succ ?)`, found `Vec Integer (Succ (Succ Zero))`
    │ │                              checked against `-F Integer`; while checking the argument of this application
    │ checked against `() -> Integer`; while checking the body of this thunk
    │

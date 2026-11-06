@@ -33,8 +33,8 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ │          ┬────────┬────────────────────────┯━━━━━━━━━───────────────────│
    │ └──────────│────────│────────────────────────│────────────────────────────┤
    │            │        │                        │                            checked against `() -> Integer`; while checking the body of this thunk
-   │            │        │                        its type does not convert: expected `*{incr : Integer -> Integer, read : Integer -> Integer, zero : Integer}`, found `Model(Counter) with sort C = Unit + Bool`
-   │            │        checked against `Model(Counter)`; while checking the argument of this application
+   │            │        │                        its type does not convert: expected `*{incr : Integer -> Integer, read : Integer -> Integer, zero : Integer}`, found `Model Counter with sort C = Unit + Bool`
+   │            │        checked against `Model Counter`; while checking the argument of this application
    │            checked against `-F Integer`; while checking the argument of this application
    │
    ├ note: `otherCarrier` is refused with TypeMismatch, as its expectation states

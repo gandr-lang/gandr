@@ -20,9 +20,9 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │ ││                       ┬─────┬────┬────────────┯━━━━━━━━──────────────────────────────────────────│
    │ └│───────────────────────│─────│────│────────────│──────────────────────────────────────────────────│
    │  └───────────────────────│─────│────│────────────│──────────────────────────────────────────────────checked against `Bush -> Nat`; while checking the body of this function; binds forged : Bush -> Nat
-   │                          │     │    │            │                                                  checked against `-F Nat`; while checking the body of this function; binds kids : List(Bush)
+   │                          │     │    │            │                                                  checked against `-F Nat`; while checking the body of this function; binds kids : List Bush
    │                          │     │    │            not below the stage its recursion wants
-   │                          │     │    checked against `List(Nat)`; while checking the argument of this application
+   │                          │     │    checked against `List Nat`; while checking the argument of this application
    │                          │     checked against `Nat`; while checking the argument of this application
    │                          checked against `-F Nat`; while finishing the type of this
    │

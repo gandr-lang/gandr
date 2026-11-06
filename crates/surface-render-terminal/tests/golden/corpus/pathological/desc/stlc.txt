@@ -29,19 +29,19 @@ error[ShapeMismatch]: expected an eager product `A * B`
    ╭▸ corpus/pathological/desc/stlc.gandr:61:5
    │
 58 │   def extendEnv(g : Ctx, a : ObjTy, d : Ctx, rho : envs(g, d), v : sem(a, d)) -> envs(
-   │   │             ┬        ┬          ┬        ┬──               ─ checked against `sem(a, d) -> -F envs(Extend(g, a), d)`; while checking the body of this function; binds v : sem(a, d)
+   │   │             ┬        ┬          ┬        ┬──               ─ checked against `sem(a, d) -> -F envs(Extend g a, d)`; while checking the body of this function; binds v : sem(a, d)
    │   │             │        │          │        │
-   │   │             │        │          │        checked against `envs(g, d) -> sem(a, d) -> -F envs(Extend(g, a), d)`; while checking the body of this function; binds rho : envs(g, d)
-   │   │             │        │          checked against `(d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend(g, a), d)`; while checking the body of this function; binds d : Ctx
-   │   │             │        checked against `(a : ObjTy) -> (d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend(g, a), d)`; while checking the body of this function; binds a : ObjTy
-   │ ┌─┘             checked against `(g : Ctx) -> (a : ObjTy) -> (d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend(g, a), d)`; while checking the body of this function; binds g : Ctx
+   │   │             │        │          │        checked against `envs(g, d) -> sem(a, d) -> -F envs(Extend g a, d)`; while checking the body of this function; binds rho : envs(g, d)
+   │   │             │        │          checked against `(d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend g a, d)`; while checking the body of this function; binds d : Ctx
+   │   │             │        checked against `(a : ObjTy) -> (d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend g a, d)`; while checking the body of this function; binds a : ObjTy
+   │ ┌─┘             checked against `(g : Ctx) -> (a : ObjTy) -> (d : Ctx) -> envs(g, d) -> sem(a, d) -> -F envs(Extend g a, d)`; while checking the body of this function; binds g : Ctx
    │ │
 59 │ │   Extend(g, a),
 60 │ │   d
 61 │ │ ) { *{rho, v} }
-   │ └─────┯━━━━━━━━─┘ checked against `(g : Ctx, a : ObjTy, d : Ctx, envs(g, d), sem(a, d)) -> envs(Extend(g, a), d)`; while checking the body of this thunk
+   │ └─────┯━━━━━━━━─┘ checked against `(g : Ctx, a : ObjTy, d : Ctx, envs(g, d), sem(a, d)) -> envs(Extend g a, d)`; while checking the body of this thunk
    │       │
-   │       its type is not of the required shape: found `envs(Extend(g, a), d)`, which unfolds to `*{x : envs(g, d), y : sem(a, d)}`
+   │       its type is not of the required shape: found `envs(Extend g a, d)`, which unfolds to `*{x : envs(g, d), y : sem(a, d)}`
    │
    ├ note: `extendEnv` is refused with ShapeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the type has the required shape

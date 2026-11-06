@@ -39,12 +39,12 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
 27 │ ┌   @[ refuses("TypeMismatch") ]
 28 │ │   def mistyped[m : Mode](self : m List(Integer)) -> -F View[m](String) { self.#[0] }
-   │ └──────────────────────────┬─────────────┬───────────────────────┬─────────┯━━━━━━━━─┘ checked against `List(Integer) -> Integer`; while checking the body of this thunk
+   │ └──────────────────────────┬─────────────┬───────────────────────┬─────────┯━━━━━━━━─┘ checked against `List Integer -> Integer`; while checking the body of this thunk
    │                            │             │                       │         │
    │                            │             │                       │         its type does not convert: expected `String`, found `Integer`
    │                            │             │                       the type it is checked against
    │                            │             the type it synthesises
-   │                            checked against `List(Integer) -> -F Integer`; while checking the body of this function; binds self : List(Integer)
+   │                            checked against `List Integer -> -F Integer`; while checking the body of this function; binds self : List Integer
    │
    ├ note: `mistyped` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -104,7 +104,7 @@ error[BufferUnreturned]: the buffer placed live here is not handed back before i
    │ ││   │
    │ └│───│
    │  └───checked against `() -> Unit`; while checking the body of this thunk
-   │      checked against `-F Unit`; while checking the rest of this receive's block; binds r : Integer * Buf, _ : Stack(-F Buf, -F Unit), n : Integer, _ : Buf
+   │      checked against `-F Unit`; while checking the rest of this receive's block; binds r : Integer * Buf, _ : Stack (-F Buf) (-F Unit), n : Integer, _ : Buf
    │
    ├ note: `receivedKept` is refused with BufferUnreturned, as its expectation states
    ╰ help: hand the buffer back with a `send`, an operation or a resumption before the body ends
@@ -135,7 +135,7 @@ error[BufferReturnedTwice]: the buffer is handed back a second time
     │ ││   │
     │ └│───│
     │  └───checked against `() -> Unit`; while checking the body of this thunk
-    │      checked against `-F Unit`; while checking the rest of this receive's block; binds r : Integer * Buf, _ : Stack(-F Buf, -F Unit), n : Integer, _ : Buf
+    │      checked against `-F Unit`; while checking the rest of this receive's block; binds r : Integer * Buf, _ : Stack (-F Buf) (-F Unit), n : Integer, _ : Buf
     │
     ├ note: `receivedReturnedTwice` is refused with BufferReturnedTwice, as its expectation states
     ╰ help: return the buffer only once

@@ -16,7 +16,7 @@ error[ContinuationCaptured]: the continuation is used inside a thunk, which may 
    │ ││   │
    │ └│───│
    │  └───checked against `() -> Unit`; while checking the body of this thunk
-   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
+   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack (-F Unit) (-F Unit)
    │
    ├ note: `leaked` is refused with ContinuationCaptured, as its expectation states
    ╰ help: move the continuation outside the construct that captures it

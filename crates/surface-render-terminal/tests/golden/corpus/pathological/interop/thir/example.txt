@@ -2,7 +2,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╭▸ corpus/pathological/interop/thir/example.gandr:17:20
    │
 11 │   def exampleAtTrueZero(post : Value -> Type) -> (post(Int(0))) -> wpFn(
-   │   │                     ──── checked against `(post : Value -> Type) -> -F (post(Int(0)) -> wpFn(identitySpec, exampleBody, True, post))`; while checking the body of this function; binds post : Value -> Type
+   │   │                     ──── checked against `(post : Value -> Type) -> -F (post(Int 0) -> wpFn(identitySpec, exampleBody, True, post))`; while checking the body of this function; binds post : Value -> Type
    │ ┌─┘
    │ │
 12 │ │   identitySpec,
@@ -13,10 +13,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 17 │ │   return fun (h) { h }
    │ │   ┬──────┬─────────┯─│
    │ └───│──────│─────────│─┤
-   │     │      │         │ checked against `(post : Value -> Type) -> (post(Int(0)) -> wpFn(identitySpec, exampleBody, True, post))`; while checking the body of this thunk
-   │     │      │         its type does not convert: expected `wpFn(identitySpec, exampleBody, True, post)`, found `post(Int(0))`
-   │     │      checked against `post(Int(0)) -> wpFn(identitySpec, exampleBody, True, post)`; while checking the body of this function; binds h : post(Int(0))
-   │     checked against `-F (post(Int(0)) -> wpFn(identitySpec, exampleBody, True, post))`; while judging the value this returns
+   │     │      │         │ checked against `(post : Value -> Type) -> (post(Int 0) -> wpFn(identitySpec, exampleBody, True, post))`; while checking the body of this thunk
+   │     │      │         its type does not convert: expected `wpFn(identitySpec, exampleBody, True, post)`, found `post(Int 0)`
+   │     │      checked against `post(Int 0) -> wpFn(identitySpec, exampleBody, True, post)`; while checking the body of this function; binds h : post(Int 0)
+   │     checked against `-F (post(Int 0) -> wpFn(identitySpec, exampleBody, True, post))`; while judging the value this returns
    │
    ├ note: `exampleAtTrueZero` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

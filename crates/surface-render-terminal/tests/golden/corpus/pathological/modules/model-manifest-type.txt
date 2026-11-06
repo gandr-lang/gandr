@@ -27,7 +27,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │                           ┬──────                          ┬──────────┯━━━━━━━━───────────────────
    │                           │                                │          │
    │                           │                                │          its type does not convert: expected `() -> Integer`, found `() -> Unit`
-   │                           │                                checked against `Model(Counter) with sort C = Integer`; while checking the next premise of this
+   │                           │                                checked against `Model Counter with sort C = Integer`; while checking the next premise of this
    │                           the type it is checked against
    │
    ├ note: `unitCounter` is refused with TypeMismatch, as its expectation states

@@ -19,7 +19,7 @@ error[UnwindEffect]: an `unwind` runs under the empty row and cannot perform an 
    │ ││   │
    │ └│───│
    │  └───checked against `() -> Unit`; while checking the body of this thunk
-   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
+   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack (-F Unit) (-F Unit)
    │
    ├ note: `shielded` is refused with UnwindEffect, as its expectation states
    ╰ help: remove the effect from the `unwind`

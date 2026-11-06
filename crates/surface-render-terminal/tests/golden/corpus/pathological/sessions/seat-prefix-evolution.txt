@@ -5,9 +5,9 @@ error[RunNotAdmitted]: the protocol does not admit this run
 42 │ │   Flow.ride (fun (X) { Prefix X }) Evolution.keep retired
    │ │   ┬───────────────────────────────────────────────┯━━━━━│
    │ └───│───────────────────────────────────────────────│─────┤
-   │     │                                               │     checked against `() -> Prefix(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the body of this thunk
+   │     │                                               │     checked against `() -> Prefix (?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the body of this thunk
    │     │                                               a label the protocol does not admit here
-   │     checked against `-F Prefix(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the value this ride moves against the flow's source
+   │     checked against `-F Prefix (?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the value this ride moves against the flow's source
    │
    ├ note: `dropped` is refused with RunNotAdmitted, as its expectation states
    ╰ help: change the run so that each move is one that the protocol admits at that point
@@ -24,7 +24,7 @@ error[RunNotAdmitted]: the protocol does not admit this run
    │ └───│───────────────────────────────────────────────│──┤
    │     │                                               │  checked; while checking the body of this thunk
    │     │                                               a run that may take an offer the target drops
-   │     checked against `-F Prefix(?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the value this ride moves against the flow's source
+   │     checked against `-F Prefix (?String >> rec t => +{handoff : !String >> end, report : !String >> &{next : t}})`; while checking the value this ride moves against the flow's source
    │
    ├ note: `narrowed` is refused with RunNotAdmitted, as its expectation states
    ╰ help: change the run so that each move is one that the protocol admits at that point

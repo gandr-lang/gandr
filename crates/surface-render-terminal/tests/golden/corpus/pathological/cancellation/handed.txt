@@ -16,7 +16,7 @@ error[ContinuationAsValue]: this continuation holds something that must end, so 
    │ ││   │
    │ └│───│
    │  └───checked against `() -> Unit`; while checking the body of this thunk
-   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack(-F Unit, -F Unit)
+   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack (-F Unit) (-F Unit)
    │
    ├ note: `handed` is refused with ContinuationAsValue, as its expectation states
    ╰ help: use the continuation only with `resume` or `abandon`

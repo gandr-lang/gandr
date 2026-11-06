@@ -4,7 +4,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 28 │ def one : el(Arrow(NatC, NatC)) = Succ Zero;
    │           ┬────────────────────   ┯━━━━━━━━
    │           │                       │
-   │           │                       its type does not convert: expected `el(Arrow(NatC, NatC))`, found `Nat`
+   │           │                       its type does not convert: expected `el(Arrow NatC NatC)`, found `Nat`
    │           │                       the type it synthesises
    │           the type it is checked against
    │
@@ -17,10 +17,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 33 │ def idAt(c : U, v : el(c)) -> el(Arrow(c, c)) { v }
    │ ┬────────┬──────┬───────────────────────────────┯──
    │ │        │      │                               │
-   │ │        │      │                               its type does not convert: expected `el(Arrow(c, c))`, found `el(c)`
-   │ │        │      checked against `el(c) -> -F el(Arrow(c, c))`; while checking the body of this function; binds v : el(c)
-   │ │        checked against `(c : U) -> el(c) -> -F el(Arrow(c, c))`; while checking the body of this function; binds c : U
-   │ checked against `(c : U, el(c)) -> el(Arrow(c, c))`; while checking the body of this thunk
+   │ │        │      │                               its type does not convert: expected `el(Arrow c c)`, found `el(c)`
+   │ │        │      checked against `el(c) -> -F el(Arrow c c)`; while checking the body of this function; binds v : el(c)
+   │ │        checked against `(c : U) -> el(c) -> -F el(Arrow c c)`; while checking the body of this function; binds c : U
+   │ checked against `(c : U, el(c)) -> el(Arrow c c)`; while checking the body of this thunk
    │
    ├ note: `idAt` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

@@ -6,7 +6,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ┌─┘
    │ │
 31 │ │   module m = ints
-   │ │   ────── checked against `-F Integer`; while checking the body under this binding; binds m : Model(Seeded)
+   │ │   ────── checked against `-F Integer`; while checking the body under this binding; binds m : Model Seeded
 32 │ │   m.seed
    │ │   ┯━━━━│
    │ └───│────┤
@@ -21,9 +21,9 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │
 36 │ ┌ def mixed() -> Integer =
 37 │ │   module a = ints
-   │ │   ────── checked against `-F Integer`; while checking the body under this binding; binds a : Model(Seeded)
+   │ │   ────── checked against `-F Integer`; while checking the body under this binding; binds a : Model Seeded
 38 │ │   module b = ints
-   │ │   ────── checked against `-F Integer`; while checking the body under this binding; binds b : Model(Seeded)
+   │ │   ────── checked against `-F Integer`; while checking the body under this binding; binds b : Model Seeded
 39 │ │   a.read b.seed
    │ │   ┬──────┯━━━━│
    │ └───│──────│────┤

@@ -8,7 +8,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ┬───────────────────────────┬──────┬────┯━━━───────
    │ │                           │      │    │
    │ │                           │      │    its type does not convert: expected `Integer`, found `String`
-   │ │                           │      checked against `List(Integer)`; while checking the next premise of this
+   │ │                           │      checked against `List Integer`; while checking the next premise of this
    │ │                           checked against `-F Integer`; while checking the argument of this application
    │ checked against `() -> Integer`; while checking the body of this thunk
    │
@@ -22,7 +22,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ ┬─────────────────────────────┬────┬────────┬────┯━━━───────
    │ │                             │    │        │    │
    │ │                             │    │        │    its type does not convert: expected `Integer`, found `String`
-   │ │                             │    │        checked against `List(Integer)`; while checking the next premise of this
+   │ │                             │    │        checked against `List Integer`; while checking the next premise of this
    │ │                             │    the type it is checked against
    │ │                             checked against `-F Integer`; while checking the argument of this application
    │ checked against `() -> Integer`; while checking the body of this thunk

@@ -14,7 +14,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │                                                            ┬─┯━━──────
    │                                                            │ │
    │                                                            │ its type does not convert: expected `Void`, found `Unit`
-   │                                                            checked against `Bridge[.A = List(Integer)](cons 1 nil, cons 2 nil)`; while checking the next premise of this
+   │                                                            checked against `Bridge[.A = List Integer](cons 1 nil, cons 2 nil)`; while checking the next premise of this
    │
    ├ note: `otherDigits` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree
