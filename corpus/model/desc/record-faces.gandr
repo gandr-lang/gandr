@@ -39,7 +39,10 @@ def secured : Config[.port = 443, .tls = true] = *{.host = "localhost"};
 
 /// The same configuration, whose literal states each fixed field at the value
 /// the bracket fixes.
-def stated : Config[.port = 443, .tls = true] = *{.host = "localhost", .port = 443, .tls = true};
+def secured_stated : Config[
+  .port = 443,
+  .tls = true
+] = *{.host = "localhost", .port = 443, .tls = true};
 
 /// The same configuration by its face.
 def faced : Config[secure ↦ *{.port = 443, .tls = true}] = *{.host = "localhost"};
