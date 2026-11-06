@@ -1,31 +1,45 @@
+//! `lazy-record-projection` is a set of rejected lazy-record projections.
+//!
+//! A projection needs an existing label or position.
+//! A projected entry must have the requested type.
+//!
+//! The source reads labelled and positional entries from records and products.
+//! It rejects absent labels, bad positions, type conflicts, and product sorts.
+//!
+//! - see: typed-parameters.gandr — a lazy-record projection
+
+/// `wrong_side` requests an Integer from the String put entry.
 @[ refuses("TypeMismatch") ]
 def wrong_side(m : +U &{get : -F Integer, put : -F String}) -> Integer =
   m.put
 
+/// `swapped` supplies a String for get and an Integer for put.
 @[ refuses("TypeMismatch") ]
 def swapped(n : Integer) -> &{get : -F Integer, put : -F String} =
   &{.get => "s", .put => n}
 
+/// `missing_label` selects a size label that the record does not have.
 @[ refuses("UnresolvedName") ]
 def missing_label(m : +U &{get : -F Integer, put : -F String}) -> -F Integer =
   m.size
 
-/// A position past the last entry: a lazy record of two has `0` and `1`.
+/// `past_the_end` selects position two from a two-entry record.
 @[ refuses("UnresolvedName") ]
 def past_the_end(m : +U &{get : -F Integer, put : -F String}) -> -F Integer =
   m.2
 
-/// A lazy product chain names no entry; its entries are observed by
-/// position only.
+/// `chain_label` selects a label from a positional product.
+/// The product has positional entries only.
 @[ refuses("UnresolvedName") ]
 def chain_label(m : +U (-F Integer & -F String)) -> -F Integer =
   m.get
 
-/// An entry by position is typed as the entry it places.
+/// `wrong_place` requests an Integer from position one.
 @[ refuses("TypeMismatch") ]
 def wrong_place(m : +U &{get : -F Integer, put : -F String}) -> Integer =
   m.1
 
+/// `not_a_record` selects a record label from a product.
 @[ refuses("OutOfFragment.WrongSort") ]
 def not_a_record(m : +U (-F Integer)) -> -F Integer =
   become m.get
