@@ -2633,10 +2633,17 @@ echo "follow check OK: $(jq length .config/follow/cases.json) cases read as reco
 # upload's outcome does to the job, each case in `.config/hotpath/upload.json`
 # an outcome and that decision; `unsent.jq` writes the one issue that holds
 # main's reports not uploaded, each case in `.config/hotpath/unsent.json` the
-# open issue, a run and the compact JSON it must give.
+# open issue, a run and the compact JSON it must give. A budget its report
+# cannot judge (#5125): hotpath takes the `alloc` of a function budget only in
+# bytes. `budgets.jq` names each `alloc` budget of a policy whose report counts
+# allocations, each case in `.config/hotpath/budgets.json` a policy and the
+# names it must give. The check then reads each `hotpath/*-policy.toml`: a
+# `-bytes-policy.toml` judges a report in bytes, and every other policy a
+# report in the metric of the `hotpath` job in `ci.yml`.
 ["check:hotpath"]
-description = "The hotpath report reading gives each recorded case its deltas, and an upload its outcome and issue"
+description = "The hotpath report reading gives each recorded case its deltas, an upload its outcome and issue, and each policy only the budgets its report can judge"
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -2647,8 +2654,25 @@ cases() {
 cases c report.jq cases.json
 cases r upload.jq upload.json
 cases c unsent.jq unsent.json
+cases c budgets.jq budgets.json
+metric=$(yq '.jobs.hotpath.env.HOTPATH_ALLOC_METRIC // "bytes"' .github/workflows/ci.yml)
+policies=0
+for policy in hotpath/*-policy.toml; do
+  case $policy in
+    *-bytes-policy.toml) reading=bytes ;;
+    *) reading=$metric ;;
+  esac
+  while IFS= read -r match; do
+    echo "hotpath check FAILED: $policy bounds the alloc of $match, and its report counts allocations, so the budget judges nothing; move it to the -bytes-policy.toml of its series (#5125)" >&2
+    failed=1
+  done < <(yq -p toml -o json '.functions.budgets // []' "$policy" \
+    | jq -c --arg policy "$policy" --arg metric "$reading" '{policy: $policy, metric: $metric, budgets: .}' \
+    | jq -c -f .config/hotpath/budgets.jq \
+    | jq -r '.[]')
+  policies=$((policies + 1))
+done
 (( failed == 0 )) || exit 1
-echo "hotpath check OK: $(jq length .config/hotpath/cases.json) reports, $(jq length .config/hotpath/upload.json) upload outcomes and $(jq length .config/hotpath/unsent.json) unsent issues read as recorded"
+echo "hotpath check OK: $(jq length .config/hotpath/cases.json) reports, $(jq length .config/hotpath/upload.json) upload outcomes, $(jq length .config/hotpath/unsent.json) unsent issues and $(jq length .config/hotpath/budgets.json) budget readings read as recorded, and $policies policies hold only the budgets their reports can judge"
 '''
 
 # A clone may wire merge drivers. A driver that merges a rebase "cleanly" into
