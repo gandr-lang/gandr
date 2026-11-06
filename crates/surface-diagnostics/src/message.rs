@@ -518,6 +518,12 @@ fn lowered(
                     "this word reads as a name, and this {form} then holds an operand it does not \
                      take"
                 ),
+                FormFault::MisspeltOperator(operator) => write!(
+                    f,
+                    "this run of symbols reads as a name that nothing declares, one edit from the \
+                     operator `{}`",
+                    operator.as_ref()
+                ),
                 FormFault::Retired(keyword) => write!(
                     f,
                     "this keyword is retired here, and `{}` replaces it",
