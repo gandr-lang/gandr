@@ -1981,7 +1981,8 @@ impl Reader<'_, '_>
     ///   box as [`Self::boxed`] reads it, or the thunked arrow `+U (Ā -> -F B)`
     ///   it abbreviates, is the function former over `Ā` and `B`'s own reading,
     ///   each box or thunked arrow to the right one former more; the written
-    ///   term is the innermost result's, as [`Self::type_reference`] keeps it.
+    ///   term is the innermost result's, as [`Self::type_reference_read`] keeps
+    ///   it.
     /// - fails: unreadable type forms return their located refusal, and a
     ///   symbolic type or domain naming a binder of `bound` refuses as
     ///   dependent.
