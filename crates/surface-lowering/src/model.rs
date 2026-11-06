@@ -103,6 +103,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
+use gandr_theory_circuit_algebras::SpiderCanon;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NominalId;
@@ -118,6 +119,7 @@ use gandr_theory_levitation::presented_names;
 use quenchant_shape::shape::Maybe;
 
 use crate::description::DescriptionGrade;
+use crate::description::written::WrittenCircuit;
 use crate::form::Placed;
 use crate::resolve::SurfaceName;
 use crate::resolve::TypeAtom;
@@ -367,6 +369,30 @@ pub struct PresentedCircuit
     pub named: Placed,
 }
 
+/// A circuit rule a theory reads as a diagram, kept with its spider canon.
+///
+/// Its body merges or splits a wire of a sort that the theory marks
+/// `@[ frobenius ]`. No term reads a spider, so the value does not code it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the rule's name and name tile, and the canon of its wiring modulo
+///   the Frobenius laws.
+/// - executable: none — a presented diagram is data that the checks read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a marked merge is kept with its canon, and the merge in
+///   the other association has the same canon.
+/// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PresentedDiagram
+{
+    /// The rule's name and name tile.
+    pub circuit: PresentedCircuit,
+    /// The canon of its wiring modulo the Frobenius laws of its spiders.
+    pub canon: SpiderCanon,
+}
+
 /// What a `theory` block presents.
 ///
 /// Its `Theory` value, where each member the value codes is written, the
@@ -395,8 +421,11 @@ pub struct Presentation
     pub value: TheoryValue,
     /// Where each member the value codes is written.
     pub placement: Placement,
-    /// The rules wired as circuits, kept beside the value.
+    /// The rules wired as circuits whose boundaries derive, kept beside the
+    /// value.
     pub circuits: Vec<PresentedCircuit>,
+    /// The rules wired as diagrams, an included theory's first.
+    pub diagrams: Vec<PresentedDiagram>,
     /// The theories the block includes, each with its inclusion, in written
     /// order.
     pub inclusions: Vec<Included>,
@@ -407,6 +436,10 @@ pub struct Presentation
     /// among them: fields the manifest step reads and no other declaration
     /// does.
     pub inert: BTreeSet<Name>,
+    /// The sorts the block marks `@[ frobenius ]`, an included theory's among
+    /// them. Each sort carries a special commutative Frobenius algebra. A
+    /// circuit rule may merge and split its wires.
+    pub frobenius: BTreeSet<Name>,
 }
 
 /// A law a theory states as the path type a model proves it at: `law sym :
@@ -560,6 +593,18 @@ pub enum PresentationFault
 
 impl Presentation
 {
+    /// Every circuit rule the block wires: the rules whose boundaries derive,
+    /// then the rules it reads as diagrams.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn wired(&self) -> impl Iterator<Item = &PresentedCircuit>
+    {
+        self.circuits
+            .iter()
+            .chain(self.diagrams.iter().map(|diagram| &diagram.circuit))
+    }
+
     /// The members the value codes, each at its tile; an unnamed port reads
     /// as the placeholder its position names.
     ///
@@ -632,6 +677,122 @@ impl Presentation
             });
         }
         Ok(members)
+    }
+}
+
+impl Members
+{
+    /// The sort of each wire of `circuit` that a reading reaches.
+    ///
+    /// # Specification
+    /// - ensures: a wire's sort is the first one that its ports, its rewrite
+    ///   port or an operation's port give it. That sort is one the theory
+    ///   declares unindexed.
+    /// - fails: never; a wire that no sort reaches has no entry.
+    /// - panics: none.
+    /// - executable: none — each sort is read off the receiver's sorts, which a
+    ///   predicate would walk again for each wire.
+    ///
+    /// # Termination
+    /// Each round over the node lines sorts a wire or stops, and there are
+    /// finitely many wires.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a wire that only a later reading reaches, a rewrite
+    ///   side read off the side it rewrites, and an output read off its
+    ///   operation's result each take their sort.
+    /// - witness: `described::tests::a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it`
+    /// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
+    pub(crate) fn wire_sorts(
+        &self,
+        circuit: &WrittenCircuit,
+    ) -> BTreeMap<Name, Name>
+    {
+        let declared = |sort: &Name| {
+            self.sorts
+                .iter()
+                .any(|held| held.name == *sort && held.indices.is_empty())
+        };
+        let mut wires: BTreeMap<Name, Name> = BTreeMap::new();
+        for port in &circuit.ports {
+            if declared(&port.sort) {
+                let _first = wires.insert(port.name.clone(), port.sort.clone());
+            }
+        }
+        let mut rewrites: BTreeMap<Name, (&Name, &Name)> = BTreeMap::new();
+        for rewrite in &circuit.rewrites {
+            let _first = rewrites.insert(
+                rewrite.named.name.clone(),
+                (&rewrite.left.name, &rewrite.right.name),
+            );
+        }
+        let mut operations = BTreeMap::new();
+        for operation in &self.operations {
+            let _first = operations.entry(&operation.name).or_insert(operation);
+        }
+        for _round in 0 ..= circuit.frames.len().saturating_add(circuit.rewrites.len()) {
+            let before = wires.len();
+            for &(left, right) in rewrites.values() {
+                let shared = wires.get(left).or_else(|| wires.get(right)).cloned();
+                if let Some(sort) = shared {
+                    for side in [left, right] {
+                        if !declared(side) {
+                            let _held = wires.entry(side.clone()).or_insert_with(|| sort.clone());
+                        }
+                    }
+                }
+            }
+            for frame in &circuit.frames {
+                let reads: Vec<Option<Name>> =
+                    if let Some(&(left, right)) = rewrites.get(&frame.head.name) {
+                        let sort = if declared(left) {
+                            Some(left.clone())
+                        }
+                        else {
+                            wires
+                                .get(left)
+                                .or_else(|| wires.get(right))
+                                .cloned()
+                                .or_else(|| {
+                                    frame
+                                        .arguments
+                                        .iter()
+                                        .chain(&frame.outputs)
+                                        .find_map(|wire| wires.get(&wire.name).cloned())
+                                })
+                        };
+                        frame
+                            .arguments
+                            .iter()
+                            .chain(&frame.outputs)
+                            .map(|_| sort.clone())
+                            .collect()
+                    }
+                    else if let Some(operation) = operations.get(&frame.head.name) {
+                        operation
+                            .inputs
+                            .iter()
+                            .chain(&operation.outputs)
+                            .map(|port| {
+                                (port.sort.indices.is_empty() && declared(&port.sort.sort))
+                                    .then(|| port.sort.sort.clone())
+                            })
+                            .collect()
+                    }
+                    else {
+                        Vec::new()
+                    };
+                for (wire, sort) in frame.arguments.iter().chain(&frame.outputs).zip(reads) {
+                    if let Some(sort) = sort {
+                        let _held = wires.entry(wire.name.clone()).or_insert(sort);
+                    }
+                }
+            }
+            if wires.len() == before {
+                break;
+            }
+        }
+        wires
     }
 }
 
@@ -1018,21 +1179,23 @@ pub struct ModelSignature
 pub fn derive(presentation: &Presentation) -> Result<ModelSignature, PresentationFault>
 {
     let members = presentation.members()?;
-    let mut signature = derive_members(&members, &presentation.circuits, &presentation.laws);
+    let mut signature = derive_members(&members, presentation.wired(), &presentation.laws);
     for component in &mut signature.components {
         component.inert = presentation.inert.contains(&component.name);
     }
     Ok(signature)
 }
 
-/// Derive the model signature of a presentation's members, its circuit rules
-/// and the laws it states.
+/// Derive the model signature of a presentation's members, its wired circuit
+/// rules and the laws it states.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one component per presented sort, operation, face, stated law and
-///   circuit rule, in that order and each group in written order; a sort's or
-///   an operation's telescope binds its free sort variables before its ports, a
+///   wired circuit rule, in that order and each group in written order; a
+///   circuit rule's component keeps [`ModelFault::Circuit`], whether its
+///   boundaries derive or the block reads it as a diagram; a sort's or an
+///   operation's telescope binds its free sort variables before its ports, a
 ///   law's binds the variables in another variable's sort first, and every
 ///   application carries every argument its operation binds; a stated law's
 ///   telescope is its written binders and its hypotheses its written ones; a
@@ -1063,9 +1226,9 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 /// - witness: `model::tests::a_constant_derives_its_type_alone`
 /// - witness: `model::tests::a_computation_sort_derives_a_family_into_computation_types`
 #[must_use]
-pub(crate) fn derive_members(
+pub(crate) fn derive_members<'wired>(
     members: &Members,
-    circuits: &[PresentedCircuit],
+    circuits: impl IntoIterator<Item = &'wired PresentedCircuit>,
     stated: &[StatedLaw],
 ) -> ModelSignature
 {

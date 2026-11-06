@@ -82,6 +82,10 @@ pub enum SignatureFault
     Instantiation(PortInstantiationError),
     /// The written wiring cannot derive a finite boundary within its ceiling.
     Derivation(CircuitDerivationError),
+    /// The written wiring over a sort the block marks `@[ frobenius ]` has no
+    /// spider canon. The seam cannot assemble it, or its tied legs need more
+    /// trials than the budget holds.
+    Diagram(embed::CircuitCanonError),
     /// A port name written twice on an operation's boundary: two ports, not
     /// one wire.
     SharedPort(Name),

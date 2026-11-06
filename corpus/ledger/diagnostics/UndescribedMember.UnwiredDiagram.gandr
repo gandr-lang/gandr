@@ -1,0 +1,24 @@
+/// `UndescribedMember.UnwiredDiagram`: a member the description does not read: a circuit rule over a marked sort whose wires form no diagram.
+///
+/// The wire `z` of the marked sort `Q` merges, so the rule reads as a diagram. The wire `w` of the unmarked sort `N` merges too, and a diagram has no node for that merge.
+@[ refuses("UndescribedMember.UnwiredDiagram") ]
+theory Mixed where
+  @[ frobenius ]
+  sort Q : Type;
+  sort N : Type;
+  oper f : (a : Q) --> (b : Q);
+  oper g : (a : Q) --> (b : Q);
+  oper p : (a : N) --> (b : N);
+  oper q : (a : N) --> (b : N);
+
+  rule both : (
+    data x : Q,
+    data y : Q,
+    data u : N,
+    data v : N
+  ) <=> (z : Q, w : N) {
+    node : f(x) --> (z);
+    node : g(y) --> (z);
+    node : p(u) --> (w);
+    node : q(v) --> (w);
+  };

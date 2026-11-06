@@ -1,0 +1,26 @@
+/// `UndescribedMember.SpiderBudget`: a member the description does not read: a circuit rule whose tied spider legs need more trials than the budget holds.
+///
+/// The wire `x` splits into seven equal nodes. Seven tied legs need 5,040 trials, and the budget holds 720.
+@[ refuses("UndescribedMember.SpiderBudget") ]
+theory Fan where
+  @[ frobenius ]
+  sort Q : Type;
+  oper f : (a : Q) --> (b : Q);
+
+  rule fan : (data x : Q) <=> (
+    o1 : Q,
+    o2 : Q,
+    o3 : Q,
+    o4 : Q,
+    o5 : Q,
+    o6 : Q,
+    o7 : Q
+  ) {
+    node : f(x) --> (o1);
+    node : f(x) --> (o2);
+    node : f(x) --> (o3);
+    node : f(x) --> (o4);
+    node : f(x) --> (o5);
+    node : f(x) --> (o6);
+    node : f(x) --> (o7);
+  };

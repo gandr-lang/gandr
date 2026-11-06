@@ -1,0 +1,14 @@
+error[UndescribedMember.UnwiredDiagram]: this member is a circuit rule over a sort marked `@[ frobenius ]` whose wiring is no diagram
+   ╭▸ corpus/ledger/diagnostics/UndescribedMember.UnwiredDiagram.gandr:14:3
+   │
+14 │ ┏   rule both : (
+15 │ ┃     data x : Q,
+16 │ ┃     data y : Q,
+17 │ ┃     data u : N,
+   ┆ ┇
+23 │ ┃     node : q(v) --> (w);
+24 │ ┃   };
+   │ ┗━━━┛ a member the description does not read
+   │
+   ├ note: `Mixed` is refused with UndescribedMember.UnwiredDiagram, as its expectation states
+   ╰ help: give each wire of an unmarked sort one producer and one consumer

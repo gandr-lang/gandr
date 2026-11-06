@@ -719,7 +719,7 @@ impl<'cells> Theory<'cells>
             .map_err(|_unpresented| DeriveFault::Incoherent)?;
         // A stated law is no rule: a derived rule reads the theory's sorts
         // and operations alone.
-        let signature = derive_members(&members, &presentation.circuits, &[]);
+        let signature = derive_members(&members, presentation.wired(), &[]);
         let mut sorts = Sorts::default();
         let mut constants = BTreeMap::new();
         for component in &signature.components {

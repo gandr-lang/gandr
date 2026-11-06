@@ -85,6 +85,29 @@ impl<'body> CircuitReading<'body>
             spiders,
         }
     }
+
+    /// The reading itself when a marked wire of it merges or splits, so that
+    /// the reading gives the wire a spider.
+    ///
+    /// # Specification
+    /// - ensures: the reading exactly when a marked wire has two producers or
+    ///   two consumers, among the declared ports and the nodes; none otherwise.
+    /// - panics: none.
+    /// - executable: none — the count is the claim, and a predicate would walk
+    ///   the declared ports and the nodes again.
+    /// - intension: one pass over the declared ports and the nodes, as
+    ///   [`circuit_wiring`] counts them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marked merge gives a spider; the same merge
+    ///   unmarked, and a marked wire that neither merges nor splits, give none.
+    /// - witness: `description::theory::tests::a_marked_merge_is_a_diagram_of_its_presentation_5763`
+    /// - witness: `description::theory::tests::an_unmarked_merge_keeps_the_boundary_reading_5763`
+    #[must_use]
+    pub(crate) fn spidered(self) -> Option<Self>
+    {
+        (!spider_legs(self).is_empty()).then_some(self)
+    }
 }
 
 /// Why a body has no literal wiring-diagram reading.
