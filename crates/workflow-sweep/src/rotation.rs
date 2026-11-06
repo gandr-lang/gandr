@@ -71,6 +71,12 @@ pub struct Part
     pub end: Offset,
 }
 
+/// The index of a row of an input, for a sweep that checks each input row by
+/// row, each row on its own.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Row(pub usize);
+
 impl Night
 {
     /// The night `now` falls in.
@@ -293,6 +299,58 @@ impl Rotation
         }
     }
 
+    /// Whether a sweep that rotates over the rows of each input, rotating
+    /// over `nights`, checks `row` under this rotation: every row under
+    /// [`Rotation::Whole`], and under [`Rotation::Night`] every `nights`th
+    /// row, the night's slice the first.
+    ///
+    /// A row costs what it costs wherever it is, so the rows a night holds
+    /// cost about a `nights`th of each input. [`Rotation::part`] cuts a text
+    /// for a cost that grows with the offset. A cut for that cost puts the
+    /// costliest part of every input on the first night when a row also
+    /// costs the whole input.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Held::Tonight`] under [`Rotation::Whole`] and when `nights`
+    ///   is zero; otherwise under [`Rotation::Night`], [`Held::Tonight`]
+    ///   exactly when `row` modulo `nights` is the night's day number modulo
+    ///   `nights`, [`Held::Elsewhen`] otherwise.
+    /// - provides: a partition of the rows of every input into `nights` slices
+    ///   over `nights` consecutive nights, each slice every `nights`th row, so
+    ///   each night checks about a `nights`th of each input.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the rows of an input over four and over thirteen
+    ///   consecutive nights and the nights after them, the whole rotation and
+    ///   no night count; a row on no night or on two, a run of consecutive
+    ///   rows, a night that does not wrap or a night count ignored fails the
+    ///   witness.
+    /// - witness: `rotation::tests::the_nights_take_every_row_once`
+    #[spec(ensures: |ret| (self != Self::Whole && nights.0 != 0) || ret == Held::Tonight)]
+    #[inline]
+    #[must_use]
+    pub fn holds_row(
+        self,
+        row: Row,
+        nights: Nights,
+    ) -> Held
+    {
+        match self {
+            Self::Night(night) if nights.0 > 0 => {
+                let index = u64::try_from(row.0).unwrap_or(u64::MAX);
+                if index.checked_rem(nights.0) == Some(night.slice(nights).0) {
+                    Held::Tonight
+                }
+                else {
+                    Held::Elsewhen
+                }
+            },
+            Self::Whole | Self::Night(_) => Held::Tonight,
+        }
+    }
+
     /// The part of `text` a sweep that rotates within each source covers
     /// under this rotation: all of it under [`Rotation::Whole`], and under
     /// [`Rotation::Night`] the night's part of `nights` consecutive parts, cut
@@ -426,6 +484,7 @@ mod tests
     use super::Nights;
     use super::Part;
     use super::Rotation;
+    use super::Row;
     use super::Text;
     use crate::corpus::Class;
     use crate::corpus::CorpusName;
@@ -648,5 +707,54 @@ mod tests
             0 .. text.len(),
             "no night count is one part"
         );
+    }
+
+    #[test]
+    fn the_nights_take_every_row_once()
+    {
+        let taken = |rotation: Rotation, nights: Nights| -> Vec<usize> {
+            (0_usize .. 40_usize)
+                .filter(|&row| rotation.holds_row(Row(row), nights) == Held::Tonight)
+                .collect()
+        };
+        for count in [4, 13] {
+            let nights = Nights(count);
+            let slices: Vec<Vec<usize>> = (0 .. count)
+                .map(|night| taken(Rotation::Night(Night(night)), nights))
+                .collect();
+            for row in 0_usize .. 40_usize {
+                assert_eq!(
+                    slices.iter().filter(|slice| slice.contains(&row)).count(),
+                    1,
+                    "row {row} sits in exactly one of {count} nights' slices"
+                );
+            }
+            for (night, slice) in (0 .. count).zip(&slices) {
+                assert_eq!(
+                    &taken(Rotation::Night(Night(night + count)), nights),
+                    slice,
+                    "night {night} recurs {count} nights on"
+                );
+            }
+        }
+        // Each night takes every fourth row, so a night's rows spread over
+        // the input and cost about a quarter of it, wherever its costly rows
+        // sit.
+        assert_eq!(
+            taken(Rotation::Night(Night(20_761)), Nights(4)),
+            [1, 5, 9, 13, 17, 21, 25, 29, 33, 37],
+            "night 20761 takes the rows its day number leaves modulo four"
+        );
+        for (rotation, nights) in [
+            (Rotation::Whole, Nights(13)),
+            (Rotation::Night(Night(5)), Nights(0)),
+            (Rotation::Night(Night(5)), Nights(1)),
+        ] {
+            assert_eq!(
+                taken(rotation, nights).len(),
+                40,
+                "{rotation} over {nights:?} takes every row"
+            );
+        }
     }
 }

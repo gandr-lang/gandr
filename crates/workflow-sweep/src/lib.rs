@@ -108,7 +108,10 @@
 //! each one's costliest source alone takes longer than its share, so each
 //! visits every source each night, opened whole up to the night's part and
 //! typed or erased through it, each source cut into as many parts as its
-//! nights so each costs about that fraction ([`Rotation::part`], #3850).
+//! nights so each costs about that fraction ([`Rotation::part`], #3850). The
+//! recovery sweep cannot rotate by source either. Its rows stand alone, so it
+//! visits every source each night and checks every `nights`th row of each
+//! ([`Rotation::holds_row`]).
 //! Either way the night is the UTC day, every input is visited within the
 //! sweep's nights, the run prints the night it visited, and
 //! `GANDR_SWEEP_NIGHT` replays it. A sweep cheap enough visits the whole
@@ -163,6 +166,7 @@ pub use crate::rotation::Nights;
 pub use crate::rotation::Offset;
 pub use crate::rotation::Part;
 pub use crate::rotation::Rotation;
+pub use crate::rotation::Row;
 pub use crate::rotation::Slice;
 pub use crate::rotation::Text;
 pub use crate::sample::Sample;
