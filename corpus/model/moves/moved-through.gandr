@@ -1,14 +1,16 @@
-// A handle moved through a writer and back, as Rust writes `fn f(x: T) -> T`:
-// the handle returns under a new name, the same descriptor, and only that
-// name closes it.
-
-// The file's protocols.
+//! `moved-through` sends a file handle through a writer.
+//!
+//! The writer returns the handle. The parent closes the returned handle. The
+//! move twins refuse a repeated move or a post-move close as `UsedAfterClose`.
+//!
+//! The trace tests settle the writer and parent events.
+//! The source imports `File` from `file-base`.
+//!
+//! Rust passes an owned value through `fn f(x: T) -> T`.
+//! - see: file-base.gandr — the file protocol
 import "./file-base.gandr";
 
-/// A handle sent to a writer, which sends it back: the parent closes what it
-/// received, never the name it sent. Its two closes sit side by side, and the
-/// writer's channel plays each move in turn, its close beside the parent's
-/// last two.
+/// `movedThrough` gives a writer a handle that the writer returns.
 @[
   runs("*{}"),
   traces(decomposes owner (parallel (event left 0) (event right 0))),

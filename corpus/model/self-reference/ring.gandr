@@ -1,7 +1,10 @@
-//! A structure that refers to itself names its parts by ids into an arena,
-//! never by address, so it moves and copies as any value and every link reads.
-//! A heap whose locations are never observed hides its symmetries
-//! [Sterling-2023-univalent_reference_types].
+//! `ring` represents a cyclic structure with arena indexes.
+//!
+//! A node does not store its address. The structure can move or copy. A
+//! program hides heap symmetries when it does not observe locations.
+//!
+//! `node` follows indexes. The loop uses `Partial` and reads four links. The
+//! source runs to `1`.
 //!
 //! - see: #1183 — `ring`
 //! - see: #1481 — `ring`
@@ -9,10 +12,10 @@
 //!
 //! [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
 
-// The lists.
+// The source imports definitions for lists.
 import "../data/data-base.gandr";
 
-/// The node an arena holds at `i`.
+/// `node` reads the integer at an arena index.
 def rec node(nodes : List(Integer), i : Integer) -> Integer =
   match nodes where
     | Nil => pure 0
@@ -21,9 +24,7 @@ def rec node(nodes : List(Integer), i : Integer) -> Integer =
       match here { | true => pure n | false => node[<] rest (i - 1) }
     }
 
-/// A ring of three nodes, each naming the next by its index: four links from
-/// the first land on the second. The walk is a loop, so the row
-/// states `Partial`.
+/// `ring` follows a four-link cycle from the first node.
 @[ runs("1") ]
 def ring() -> [Partial] Integer =
   var i = 0

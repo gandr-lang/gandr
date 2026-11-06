@@ -1,12 +1,18 @@
-// The moved-from handle closed: C++ runs a destructor on the object a move
-// leaves "in a valid but unspecified state" ([lib.types.movedfrom], ISO/IEC
-// 14882:2020); here the move left nothing behind to close.
-
-// The file's protocols.
+//! `closed-after-move` closes a handle after it moves to a closer.
+//!
+//! The send consumes the mover's slot. The checker reports `UsedAfterClose`
+//! at the second close.
+//!
+//! The checker marks the spent slot at the final close.
+//! The source imports `File` from `file-base`.
+//!
+//! C++ calls a destructor for an object after a move.
+//! After a C++ move, the object remains valid but unspecified.
+//! - see: `lib.types.movedfrom` in ISO/IEC 14882:2020
+//! - see: file-base.gandr — the file protocol
 import "../../model/moves/file-base.gandr";
 
-/// The handle closed by its mover after it was moved into a closer: the send
-/// spent the mover's end, so the close acts on a spent slot.
+/// `closedAfterMove` closes a handle that its send already consumed.
 @[ refuses("UsedAfterClose") ]
 def closedAfterMove() -> Unit =
   let file = fork (owner : File.Handle) { close owner };

@@ -1,28 +1,28 @@
 error[UsedAfterClose]: the endpoint is used after `close`
-   ╭▸ corpus/pathological/moves/moved-twice.gandr:24:12
+   ╭▸ corpus/pathological/moves/moved-twice.gandr:29:12
    │
-11 │ ┌ def movedTwice() -> Unit =
-12 │ │   let file = fork (owner : File.Handle) { close owner };
+16 │ ┌ def movedTwice() -> Unit =
+17 │ │   let file = fork (owner : File.Handle) { close owner };
    │ │   ┬──
    │ │   │
    │ │   the endpoint was opened by this fork
    │ │   checked against `-F Unit`; while checking the rest of this fork's parent
-13 │ │   let one = fork (first : File.Closer) {
+18 │ │   let one = fork (first : File.Closer) {
    │ │   ─── checked against `-F Unit`; while checking the rest of this fork's parent
-14 │ │     let held = recv first;
+19 │ │     let held = recv first;
    ┆ ┆
-18 │ │   let two = fork (second : File.Closer) {
+23 │ │   let two = fork (second : File.Closer) {
    │ │   ─── checked against `-F Unit`; while checking the rest of this fork's parent
    ┆ ┆
-23 │ │   send one file
+28 │ │   send one file
    │ │   ───────────── checked against `-F Unit`; while checking the body of this split; binds _ : Unit
-24 │ │   send two file
+29 │ │   send two file
    │ │   ┬────────┯━━━
    │ │   │        │
    │ │   │        an endpoint already closed
    │ │   checked against `-F Unit`; while synthesising the computation this binds
-25 │ │   close one
-26 │ │   close two
+30 │ │   close one
+31 │ │   close two
    │ └───────────┘ checked against `() -> Unit`; while checking the body of this thunk
    │
    ├ note: `movedTwice` is refused with UsedAfterClose, as its expectation states
