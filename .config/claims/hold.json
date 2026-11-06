@@ -1,0 +1,16 @@
+[
+  {
+    "name": "#3597: a draft hold opens with a lead sentence and a table",
+    "owner": false,
+    "number": 7,
+    "reason": "the base is red | wait",
+    "body": "<!-- hold -->\nThis pull request is held as a draft.\n\n| Field | Value |\n| --- | --- |\n| Reason | the base is red \\| wait |\n| Release | `mise run pr:release 7` |\n"
+  },
+  {
+    "name": "#3597: an owner hold names the owner in its lead sentence",
+    "owner": true,
+    "number": 7,
+    "reason": "the owner reviews the change",
+    "body": "<!-- hold -->\nThis pull request is held by the owner.\n\n| Field | Value |\n| --- | --- |\n| Reason | the owner reviews the change |\n| Release | `mise run pr:release 7` |\n"
+  }
+]
