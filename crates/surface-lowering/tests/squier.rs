@@ -271,6 +271,7 @@ fn boundary(
 
 /// A unary block's bar complex under Brown's collapsing scheme, as the Morse
 /// crate reads it.
+#[repr(transparent)]
 struct Bar<'strings>
 {
     /// The block's rules as a string rewriting system.
