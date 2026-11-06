@@ -1,7 +1,11 @@
-//! A seat's protocol run between two endpoints
-//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]:
-//! `fork` opens a channel at the seat's session type, the forked side serves
-//! it, and the desk drives its dual through every branch the seat may take.
+//! This source exchanges a seat protocol run between two endpoints.
+//!
+//! `fork` opens a channel at the seat's session type.
+//! The forked side serves that endpoint.
+//! The desk drives the dual protocol.
+//! The desk handles every branch that the seat can take.
+//!
+//! The checker verifies each endpoint against its session type.
 //!
 //! - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
 //!
@@ -10,9 +14,8 @@
 // The seat's protocol and its messages.
 import "./seat-base.gandr";
 
-/// A desk dispatching a task to a forked seat and following its reports to a
-/// retirement or a handoff. Its run plays the handoff, whose last five moves
-/// leave a prime node.
+/// `exchange` runs a desk that sends a task to a forked seat.
+/// Five final moves form a prime node.
 @[
   runs("*{}"),
   traces(decomposes

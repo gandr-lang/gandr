@@ -1,18 +1,24 @@
-//! The sessions subject's shared declarations, written once and imported by
-//! every source that reads them (`import "./seat-base.gandr";`): a seat's
-//! protocol as a recursive session type
-//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
-//! — a dispatch received, then reports and the choice to continue or retire, or
-//! a handoff that ends it — and the messages a seat exchanges.
+//! This source defines common declarations for session sources.
 //!
+//! `Seat` defines a recursive session protocol.
+//! The protocol receives a dispatch.
+//! The seat can report.
+//! The seat can continue.
+//! The seat can retire.
+//!
+//! The seat can send a handoff.
+//! The handoff ends the protocol.
+//! `Seat` defines the messages that its protocol exchanges.
+//! Every session source imports these declarations.
+//! The checker verifies the protocol and its message types.
+//!
+//! - see: `../worlds/seat-and-operator.gandr` — `Report` crosses worlds
 //! - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
 //!
 //! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
 
-/// A seat: its message types sealed behind the interface, the protocol it
-/// serves, and one message of each type. A report is marked `mobile`: its
-/// representation may cross from the seat's world back to the one that
-/// dispatched it (`../worlds/seat-and-operator.gandr`).
+/// `Seat` seals its message types behind an interface.
+/// `Seat` defines its protocol, its messages, and a mobile report.
 pub module Seat :> *{
   type Dispatch,
   mobile type Report,
@@ -32,5 +38,5 @@ pub module Seat :> *{
   def task = "task";
   /// A report it sends.
   def progress = "progress";
-  /// The notes it hands off.
+  /// The seat sends these handoff notes.
   def notes = "notes";

@@ -1,21 +1,22 @@
-// A loop drives an endpoint through a recursive protocol, one pass per turn
-// of the protocol.
+// This source drives an endpoint through a recursive protocol with a loop.
 //
-// A loop's passes are the passes of one fixpoint, and an endpoint bound
-// outside it would be captured by every pass. The loop threads the endpoint
-// instead, as it threads a held slot.
+// Each loop turn completes one protocol pass.
+// One fixpoint supplies the passes.
+// An outer binding would capture the endpoint in every pass.
+// The loop threads the endpoint as it threads a held slot.
+// A pass acts on its endpoint before it continues.
 //
-// The lowering hands the endpoint to the loop's first pass and places it again
-// in each pass. The first pass takes it at the state the loop starts in, the
-// loop head's state, and `continue` hands it on at that state again. A loop
-// whose every pass acts on its endpoint before it runs again follows its
-// protocol, so it owes no `Partial`.
+// The lowering gives the endpoint to the first pass.
+// The loop head holds the starting state.
+// `continue` returns the endpoint at that state.
+// Such a loop follows its protocol.
+// Such a loop owes no `Partial`.
 //
 // - see: #4502
 // - see: #4705
 
-/// A desk following a seat's reports until it retires: each report is one
-/// pass, and the retirement closes the endpoint and leaves the loop.
+/// `follow` receives reports until retirement.
+/// Retirement closes the endpoint and ends the loop.
 def follow(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
@@ -27,8 +28,8 @@ def follow(operator : mu open. &{
     }
   }
 
-/// A desk counting a seat's reports in a held slot until it retires: the loop
-/// threads the count beside the endpoint.
+/// `tally` counts reports in a held slot until retirement.
+/// The loop threads the count beside the endpoint.
 def tally(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
@@ -42,7 +43,7 @@ def tally(operator : mu open. &{
   };
   pure seen
 
-/// A seat that reports twice and retires, followed by a forked desk.
+/// `followed` sends two reports and a retirement to a forked desk.
 @[ runs("*{}") ]
 def followed() -> Unit =
   let seat = fork (operator : mu open. &{

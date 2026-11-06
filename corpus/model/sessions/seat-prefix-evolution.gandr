@@ -1,8 +1,14 @@
-//! A seat's open play carried across its protocol's evolution: the moves a seat
-//! has made so far ride forward along the simulation to the widened protocol,
-//! as a complete run does (`./seat-evolution.gandr`), and stay open there, the
-//! seat's next move still owed [Gay-2005-subtyping_session_types_pi_calculus].
+//! This source transports an open seat play across a protocol evolution.
 //!
+//! The recorded moves ride forward along the simulation.
+//! The target protocol is wider.
+//! A complete run rides forward in the same way.
+//! The transported play stays open.
+//! The seat still owes its next move.
+//!
+//! `Flow.ride` transports the prefix to the wider protocol.
+//!
+//! - see: `./seat-evolution.gandr` — a complete run rides forward
 //! - see: #1318 — `carried`
 //! - cites: [Gay-2005-subtyping_session_types_pi_calculus]
 //!
@@ -14,14 +20,14 @@ import std.session (Prefix);
 // The seat's protocol, its messages and the widening.
 import "./seat-evolution.gandr";
 
-// The open play `reporting`: the seat took its task and reported, its next
-// move the offer to go on or retire.
+// The open play `reporting` has the task and report moves.
+// Its next move offers continuation or retirement.
 import "./seat-prefix.gandr";
 
 /// An open play ridden forward along the simulation.
 def carried(play : Prefix(Seat.SeatEnd)) -> Prefix(Evolution.SeatEnd′) =
   Flow.ride (fun (X) { Prefix X }) Evolution.sub play
 
-/// The open play ridden forward: the record is unchanged, still open.
+/// `upgraded` transports the open record to the wider protocol.
 @[ runs("recorded (received \"task\") (selected report) (sent \"progress\")") ]
 def upgraded() -> Prefix(Evolution.SeatEnd′) { carried reporting }

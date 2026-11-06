@@ -1,7 +1,11 @@
-// A product or a sum written as a chain where an expression stands, quoted as
-// `type(T)`: an expression reads `*` and `+` as operators over the
-// components, so the quote is the chain's one spelling as an argument, as it
-// is spelled bare in a signature.
+// This source quotes product and sum chains for expression arguments.
+//
+// An expression reads `*` as a product operator.
+// An expression reads `+` as a sum operator.
+// The quote gives the chain one argument spelling.
+// A signature writes the chain without the quote.
+//
+// The checker reads the quoted chain as a type argument.
 //
 // - see: #1127
 
