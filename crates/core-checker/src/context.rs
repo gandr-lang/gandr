@@ -352,6 +352,9 @@ pub struct CheckingContext<'arena>
     /// The function extensionalities the judgement decided, by node, with
     /// the evaluations each component replays.
     funexts: BTreeMap<ValueId, crate::funext::Funext>,
+    /// The values the value bridge coerced in to a patched type, by node, each
+    /// with the fixed fields it compared.
+    coercions: BTreeMap<ValueId, crate::conversion::Coercion>,
     /// The universe equivalences the judgement decided, by node, with the
     /// evidence each round trip replays.
     equivalences: BTreeMap<ValueId, crate::equiv::Equivalence>,
@@ -619,6 +622,8 @@ pub struct Checkpoint
     lifts: BTreeMap<ValueId, Lift>,
     /// [`CheckingContext::funexts`].
     funexts: BTreeMap<ValueId, crate::funext::Funext>,
+    /// [`CheckingContext::coercions`].
+    coercions: BTreeMap<ValueId, crate::conversion::Coercion>,
     /// [`CheckingContext::equivalences`].
     equivalences: BTreeMap<ValueId, crate::equiv::Equivalence>,
     /// [`CheckingContext::flows`].
@@ -798,6 +803,7 @@ impl<'arena> CheckingContext<'arena>
             definitions: CodeDefinitions::new(),
             lifts: BTreeMap::new(),
             funexts: BTreeMap::new(),
+            coercions: BTreeMap::new(),
             equivalences: BTreeMap::new(),
             flows: BTreeMap::new(),
             directed: BTreeMap::new(),
@@ -883,6 +889,7 @@ impl<'arena> CheckingContext<'arena>
             ref definitions,
             ref lifts,
             ref funexts,
+            ref coercions,
             ref equivalences,
             ref flows,
             ref directed,
@@ -943,6 +950,7 @@ impl<'arena> CheckingContext<'arena>
             definitions: definitions.clone(),
             lifts: lifts.clone(),
             funexts: funexts.clone(),
+            coercions: coercions.clone(),
             equivalences: equivalences.clone(),
             flows: flows.clone(),
             directed: directed.clone(),
@@ -1024,6 +1032,7 @@ impl<'arena> CheckingContext<'arena>
             definitions,
             lifts,
             funexts,
+            coercions,
             equivalences,
             flows,
             directed,
@@ -1082,6 +1091,7 @@ impl<'arena> CheckingContext<'arena>
             definitions,
             lifts,
             funexts,
+            coercions,
             equivalences,
             flows,
             directed,
@@ -3641,6 +3651,40 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         self.funexts.insert(at, funext);
+    }
+
+    /// The values the value bridge coerced in to a patched type, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn coercions(&self) -> &BTreeMap<ValueId, crate::conversion::Coercion>
+    {
+        &self.coercions
+    }
+
+    /// Record that the value bridge coerced the value `at` in to a patched
+    /// type, whose fixed fields it compared as `fixed` holds them.
+    ///
+    /// # Specification
+    /// - requires: each field of `at` converts with the value `fixed` holds at
+    ///   its label.
+    /// - ensures: `at` has `fixed` as its coercion, replacing an earlier one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a base value at a patched type crosses as the
+    ///   restriction to its free fields.
+    /// - witness: `module::tests::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
+    #[spec(ensures: self.coercions.contains_key(&at))]
+    pub(crate) fn record_coercion(
+        &mut self,
+        at: ValueId,
+        fixed: crate::conversion::Coercion,
+    )
+    {
+        self.coercions.insert(at, fixed);
     }
 
     /// The universe equivalences the judgement decided, by node.

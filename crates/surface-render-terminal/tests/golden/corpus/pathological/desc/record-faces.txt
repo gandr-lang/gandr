@@ -58,3 +58,14 @@ error[FixedFieldDiffers]: the field is not the value its type fixes
    │
    ├ note: `wrong` is refused with FixedFieldDiffers, as its expectation states
    ╰ help: state the value the type fixes, or omit the field
+
+error[FixedFieldDiffers]: the field is not the value its type fixes
+   ╭▸ corpus/pathological/desc/record-faces.gandr:65:35
+   │
+65 │ def plain : Config[.port = 443] = http;
+   │                            ┬──    ━━━━ not the value its type fixes
+   │                            │
+   │                            the value the type fixes
+   │
+   ├ note: `plain` is refused with FixedFieldDiffers, as its expectation states
+   ╰ help: state the value the type fixes, or omit the field

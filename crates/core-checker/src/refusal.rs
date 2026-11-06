@@ -841,12 +841,13 @@ pub enum CheckRefusal
         /// hold; the label is the one the patched type keys it by.
         value: ValueId,
     },
-    /// A record literal at a patched type holds a field at a label the type
-    /// fixes, and the field does not convert with the fixed value.
+    /// A record literal at a patched type, or a value coerced in to one, holds
+    /// a field at a label the type fixes, and the field does not convert with
+    /// the fixed value.
     FixedFieldDiffers
     {
-        /// The field the literal holds; the label is the one the literal
-        /// keys it by.
+        /// The field the literal holds, or the value coerced in; the label is
+        /// the one the patched type keys `fixed` by.
         at: ValueId,
         /// The value the patched type fixes at the label.
         fixed: ValueId,

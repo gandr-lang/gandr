@@ -1,6 +1,6 @@
 /// `extension-types`: Extension types as face-theory signatures.
-/// Implemented: an extension type as a face-theory signature, and a record type under a static bracket, `T[.l = v]` or `T[f ↦ v]`.
-/// Not implemented: the coercions between a patched record type and its base, two faces in one bracket, and every other case.
+/// Implemented: an extension type as a face-theory signature, a static bracket `T[.l = v]` or `T[f ↦ v]`, and the coercion in.
+/// Not implemented: the coercion from a patched record type back to its base, two faces in one bracket, and every other case.
 ///
 /// - owes: #641
 /// - owes: #5536
@@ -49,3 +49,10 @@ type Config = *{host : String, port : Integer, tls : Bool} where
 /// A configuration on the secure face holds its host alone, and reads its
 /// fixed port back.
 def port_of(c : Config[secure ↦ *{.port = 443, .tls = true}]) -> Integer { c.port }
+
+/// A configuration on the secure port.
+def local : Config = *{.host = "localhost", .port = 443, .tls = true};
+
+/// `local` stands at the secure face by the coercion in: its port and its
+/// transport convert with the values the face fixes.
+def local_port : Integer = port_of (local);

@@ -559,6 +559,16 @@ where
         context.record_crossing(at, crossing);
         return Ok(());
     }
+    // A value of a patched type's base stands at the patched type by the
+    // coercion in: each field the type fixes converts with its fixed value.
+    // The bridge crosses the value as its restriction to the free fields, and
+    // the kernel replays each conversion.
+    if agreement == Agreement::Apart
+        && let Maybe::Present(fixed) = coerced_in(context, at, found, wanted)?
+    {
+        context.record_coercion(at, fixed);
+        return Ok(());
+    }
     let forged = agreement == Agreement::Apart
         && matches!(
             value_type_view(context.arena(), wanted)?,
@@ -588,6 +598,75 @@ where
             Err(CheckRefusal::StageNotBelow { at, found, bound })
         },
     }
+}
+
+/// The fixed fields a coercion in compares: each label that a patched type
+/// fixes, with the value it fixes there.
+pub type Coercion = alloc::collections::BTreeMap<gandr_core_term::FieldLabel, ValueId>;
+
+/// The fixed fields of `wanted` that the value `at` of type `found` converts
+/// with, when `wanted` is a patched type and `found` is a record type of its
+/// base's labels that converts with the base.
+///
+/// # Specification
+/// - requires: `found` is the type `at` synthesised, and both types are formed
+///   in the context's arena.
+/// - ensures: [`Maybe::Present`] of the patched type's fixed fields when
+///   `wanted` is a patched type whose base `found` converts with, `found` is a
+///   record type of exactly the base's labels, and each projection of `at` at a
+///   fixed label converts with the fixed value; [`Maybe::Absent`] when `wanted`
+///   is no patched type, or `found` does not convert with its base, or holds
+///   another set of labels.
+/// - fails: [`CheckRefusal::FixedFieldDiffers`] naming `at` and the fixed value
+///   at the least label whose projection does not convert; the refusal of a
+///   comparison that does not finish.
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a configuration at a patched type that fixes its own port
+///   checks, and one whose port is another value is refused by the port.
+/// - witness: `module::tests::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(value_type_view(context.arena(), wanted), Ok(ValueTypeView::Patched { .. })))]
+fn coerced_in(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Maybe<Coercion, ()>, CheckRefusal>
+{
+    let ValueTypeView::Patched { base, fixed } = value_type_view(context.arena(), wanted)?
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let fixed = fixed.clone();
+    if convert(context, Pairing::Assignable(found, Relocated::from(base)))?
+        != Agreement::Convertible
+    {
+        return Ok(Maybe::Absent(()));
+    }
+    // The kernel keeps each field that the restriction does not fix, so the
+    // value of a wider record keeps a field that the patched type lacks.
+    let base = context.whnf_value_type(base)?;
+    if !matches!(
+        (value_type_view(context.arena(), found.node())?, value_type_view(context.arena(), base)?),
+        (ValueTypeView::Record(found_fields), ValueTypeView::Record(base_fields))
+            if found_fields.keys().eq(base_fields.keys())
+    ) {
+        return Ok(Maybe::Absent(()));
+    }
+    for (label, &held) in &fixed {
+        let projection = context
+            .arena_mut()
+            .computation_record_projection(at, label.clone());
+        let field = context.arena_mut().value_returned(projection);
+        if fixed_field_agrees(context, field, held)? != Agreement::Convertible {
+            return Err(CheckRefusal::FixedFieldDiffers { at, fixed: held });
+        }
+    }
+    Ok(Maybe::Present(fixed))
 }
 
 /// The first kept map between models that carries the type `found` to the
