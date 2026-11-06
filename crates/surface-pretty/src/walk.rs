@@ -9161,7 +9161,17 @@ impl Walk<'_, '_>
                         }),
                     );
                 }
-                return writes(production, self.atom(Glyphs(spelled.0.as_str())));
+                let atom = self.atom(Glyphs(spelled.0.as_str()));
+                // A text literal has the same spelling in a term and in a
+                // type, so the one atom writes both rules.
+                return match *value {
+                    Literal::Text(_) => writes(production, writes(Production("string.type"), atom)),
+                    Literal::Integer(_)
+                    | Literal::Numeric(_)
+                    | Literal::Character(_)
+                    | Literal::Float64(_)
+                    | Literal::Fixed(_) => writes(production, atom),
+                };
             },
             Former::Capability {
                 authority,
