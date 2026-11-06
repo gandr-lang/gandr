@@ -1,0 +1,73 @@
+//! A data type at a type argument that a family's body builds.
+//!
+//! A signature can state the same data type. A type argument is a code, and
+//! the two codes quote the same type. One endpoint of its path is a call, and
+//! the two sides keep that call in different forms.
+//!
+//! The checker converts the two codes as the types they quote.
+//! `nestedComputed` builds the pair type in a family's body. `computedPair`
+//! states it in its signature. The path's endpoint `rungId Z` reduces to `Z`,
+//! so the two pair types agree. A closed endpoint and a function type without
+//! the pair around it agree as well.
+//!
+//! - see: #5381
+//! - see: #5161 — the indexed family whose tail arguments hold such a type
+
+/// The naturals.
+data Rung : Type where
+  /// Zero.
+  | Z : Rung
+  /// The successor of `n`.
+  | S : (n : Rung) --> Rung
+
+/// The identity on the naturals.
+def rungId(n : Rung) -> Rung = n
+
+/// A value of the first type with a value of the type it picks.
+data Dyad(a : Type, b : a -> Type) : Type where
+  /// The two values.
+  | MkDyad : (x : a, y : b(x)) --> Dyad(a, b)
+
+/// A path at a computed endpoint, at each unit.
+def computedAt(z : Unit) -> Path[.A = Rung](rungId Z, Z) =
+  Path.here Z
+
+/// A path at a closed endpoint, at each unit.
+def closedAt(z : Unit) -> Path[.A = Rung](Z, Z) =
+  Path.here Z
+
+/// The unit type at each computed path.
+def unitOfComputed(r : Unit -> Path[.A = Rung](rungId Z, Z)) -> Type = return Unit
+
+/// The unit type at each closed path.
+def unitOfClosed(r : Unit -> Path[.A = Rung](Z, Z)) -> Type = return Unit
+
+/// This pair holds the computed paths with the unit, stated as a call.
+def computedPair : Dyad(
+  Unit -> Path[.A = Rung](rungId Z, Z),
+  unitOfComputed
+) = MkDyad computedAt *{};
+
+/// This pair holds the closed paths with the unit, stated as a call.
+def closedPair : Dyad(
+  Unit -> Path[.A = Rung](Z, Z),
+  unitOfClosed
+) = MkDyad closedAt *{};
+
+/// A family returns the computed pair type with spine arguments.
+def nestedComputed : Dyad(
+  Rung,
+  fun (k) { return (Dyad (Unit -> Path[.A = Rung](rungId Z, Z)) unitOfComputed) }
+) = MkDyad Z computedPair;
+
+/// A family returns the closed pair type with spine arguments.
+def nestedClosed : Dyad(
+  Rung,
+  fun (k) { return (Dyad (Unit -> Path[.A = Rung](Z, Z)) unitOfClosed) }
+) = MkDyad Z closedPair;
+
+/// A family returns the computed function type alone.
+def flat : Dyad(
+  Rung,
+  fun (k) { return (Unit -> Path[.A = Rung](rungId Z, Z)) }
+) = MkDyad Z computedAt;
