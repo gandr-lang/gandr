@@ -2107,6 +2107,12 @@ INSERT INTO purpose VALUES('surface-dispatcher','cells::CellRow','struct','One c
 INSERT INTO purpose VALUES('surface-dispatcher','cells::Census','struct','The cells verb over the paths it was given, reading its sources in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','cells::CensusFault','enum','Why a path''s cells could not be read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','cells::CensusStep','enum','One step of a census.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::fusion::FUSIONS','constant','The most composition overlaps that a census fuses in one block.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::fusion::FusionRow','struct','One fusion cell of a block: the two cells that it fuses, the distance of its two steps, each hole''s composed count and its verdict.','measure sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::fusion::FusionVerdict','enum','How the census reads one fusion cell: its composed bound against the fused cell''s own counts, or why the bound has no reading.','measure','fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::fusion::Fusions','enum','Whether a census fuses the composition overlaps of each block.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::fusion::HoleCount','struct','A count of occurrences: a hole''s Lipschitz constant, or how many times a term holds a metavariable.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','cells::fusion::OverBudget','struct','A block whose composition overlaps pass the census''s fusion budget.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Freshness','enum','How a read held of a file is known to be current.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::ImportBase','enum','The directory an import''s file is named relative to: the importer''s, the package''s root for a coordinate, or the package''s root module''s.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::ImportPath','struct','The file a path or module import names, and the directory it is named relative to.',NULL,'fits','sound',NULL);
