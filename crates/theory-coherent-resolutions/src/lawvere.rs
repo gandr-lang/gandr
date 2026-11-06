@@ -31,6 +31,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_theory_discrete_morse::Complex;
 use gandr_theory_discrete_morse::Incidence;
 use gandr_theory_discrete_morse::Standing;
@@ -1324,6 +1325,8 @@ impl Truncation
     /// The faces of `cell`, with their incidences.
     ///
     /// # Specification
+    /// - ensures: the faces are present exactly when the truncation holds the
+    ///   cell.
     /// - provides: [`truncated::Absent::Outside`] when the cell is not in the
     ///   truncation.
     /// - panics: none.
@@ -1332,6 +1335,7 @@ impl Truncation
     /// - hypothesis: L3 — each face of a kept cell has an entry, and a cell
     ///   past the bound has none.
     /// - witness: `tests::lawvere::the_boundary_of_each_boundary_in_a_truncation_is_zero`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == self.faces.contains_key(cell))]
     #[inline]
     pub fn faces(
         &self,
