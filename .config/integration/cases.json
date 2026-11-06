@@ -65,7 +65,65 @@
     }
   },
   {
-    "name": "integration holding the fixer's commits takes landing by a merge",
+    "name": "integration holding the fixer's commits takes landing by a merge once they pass",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "diverged",
+      "runs": [
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "success"
+      },
+      "take": "merge",
+      "dispatch": true,
+      "line": "The tip of landing, 111111111111, merges into integration, and the suite starts."
+    }
+  },
+  {
+    "name": "a failed verdict on the tip holds landing ahead of integration",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "ahead",
+      "runs": [
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "2222222222222222222222222222222222222222",
+        "conclusion": "failure"
+      },
+      "take": "none",
+      "dispatch": false,
+      "line": "Run 2 fails on the tip of integration, 222222222222, so landing, 111111111111, waits for a fix."
+    }
+  },
+  {
+    "name": "a failed verdict on the tip holds landing diverged from integration",
     "program": "cycle.jq",
     "input": {
       "landing": "1111111111111111111111111111111111111111",
@@ -88,9 +146,38 @@
         "sha": "2222222222222222222222222222222222222222",
         "conclusion": "failure"
       },
-      "take": "merge",
+      "take": "none",
+      "dispatch": false,
+      "line": "Run 2 fails on the tip of integration, 222222222222, so landing, 111111111111, waits for a fix."
+    }
+  },
+  {
+    "name": "a fixer's commit past a failed verdict is tested, and landing waits",
+    "program": "cycle.jq",
+    "input": {
+      "landing": "1111111111111111111111111111111111111111",
+      "integration": "2222222222222222222222222222222222222222",
+      "compare": "diverged",
+      "runs": [
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ]
+    },
+    "output": {
+      "verdict": {
+        "id": 2,
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/2",
+        "sha": "3333333333333333333333333333333333333333",
+        "conclusion": "failure"
+      },
+      "take": "none",
       "dispatch": true,
-      "line": "The tip of landing, 111111111111, merges into integration, and the suite starts."
+      "line": "Run 2 fails on 333333333333, so landing, 111111111111, waits for a fix. No verdict names the tip of integration, 222222222222, so the suite starts."
     }
   },
   {
