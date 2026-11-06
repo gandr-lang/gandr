@@ -250,7 +250,7 @@ mod tests
     fn a_clean_source_produces_no_cards()
     {
         let grammar = built_in().expect("the built-in grammar builds");
-        let text = "def answer : Integer ;\ndef answer = 42 ;";
+        let text = include_str!("fixtures/clean-answer.gandr");
         let parsed = parse(&grammar, SourceText::from(text)).expect("the parser commits a tree");
         assert!(
             parsed.obligations().is_empty(),
