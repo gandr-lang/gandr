@@ -51,6 +51,7 @@ Bisect the hotpath reports of the series over `main`, from the last passing repo
 | `sharing` | {{sharing}} |
 | `nominal` | no |
 | `measure` | no |
+| `collapse` | no |
 
 ## Engineering
 
