@@ -821,8 +821,6 @@ jobs:
       contents: read
       packages: read
       actions: read
-      # `check:ledger` reads the state of a row's gap issue (#2526).
-      issues: read
     container: &ci-image ${{ needs.prepare.outputs.image }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     env:
@@ -940,12 +938,6 @@ jobs:
       - name: settle the exemplars
         if: *plain-gate
         run: mise run check:exemplars
-      - name: check the features ledger
-        if: *plain-gate
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: mise run check:ledger
       - *upload-test-report
       - *prune-build-state
       - *archive-build-state
@@ -2259,6 +2251,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: mise run check:tracking
+      # The ledger check judges an owed issue by the commits that name it as
+      # the tracking check does, so it runs here beside it.
+      - name: check the features ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run check:ledger
       # One commitlint run per non-merge commit, so the agent-commit rules see
       # that commit's own author: the config resolves it from
       # COMMITLINT_COMMIT. A root commit has no parent to range from; its

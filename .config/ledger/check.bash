@@ -149,6 +149,16 @@ done < <(sqlite3 -separator '|' "$db" "
   SELECT id, coalesce(issue, '') FROM feature
   WHERE status IN ('implemented', 'partial') AND coalesce(corpus, '') = '' AND exemplar IS NULL
   ORDER BY id;")
+# An owed issue that a commit on another remote branch names, and that no
+# commit in the history of HEAD names, still owes here. The tree does not hold
+# its landing yet, as on `integration` before `landing` merges into it. This
+# is the rule of `check:tracking` (#5778). A commit names an issue by a
+# closing keyword, or by the `(#n)` at the end of a landed title.
+held_elsewhere() {
+  local pattern="(^|[^[:alnum:]_])((close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#$1|[(]#$1[)])([^0-9]|$)"
+  [[ -z $(git log -1 --format=%h --extended-regexp --regexp-ignore-case --grep="$pattern" HEAD 2> /dev/null) ]] &&
+    [[ -n $(git log -1 --format=%h --extended-regexp --regexp-ignore-case --grep="$pattern" --remotes --not HEAD 2> /dev/null) ]]
+}
 while IFS='|' read -r id exemplar; do
   own=corpus/ledger/features/$id.gandr
   if [[ $exemplar != "$own" ]]; then
@@ -168,7 +178,7 @@ while IFS='|' read -r id exemplar; do
     owing=
     for number in $(grep -oE '#[0-9]+' <<< "$owed" | tr -d '#'); do
       read_issue "$number"
-      if [[ ${issue[$number]} == OPEN$'\t'* ]]; then owing=$number; break; fi
+      if [[ ${issue[$number]} == OPEN$'\t'* ]] || { [[ ${issue[$number]} == CLOSED$'\t'* ]] && held_elsewhere "$number"; }; then owing=$number; break; fi
     done
     [[ -n $owing ]] || missing+=('an open issue on a `/// - owes:` line that owes the rest')
   fi
