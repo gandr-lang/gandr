@@ -2940,9 +2940,9 @@ fn list_pat_elems() -> Regex
 /// carries: a string literal lexes as a `"` open quote, interior
 /// `string_fragment` / `escape_sequence` tiles, and a `"` close quote — the
 /// same shape the `string.expression` / `string.pattern` lexical forms declare.
-/// The `extern` header and `literal_pattern` inline this shape directly so a
-/// real string literal parses in those positions rather than an unmatchable
-/// `string` tile.
+/// The `extern` header, `literal_pattern` and the Type-sort `string.type` atom
+/// inline this shape directly so a real string literal parses in those
+/// positions rather than an unmatchable `string` tile.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -2958,7 +2958,7 @@ fn list_pat_elems() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "\"")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(inner) if matches!(inner.shape(), RegexShape::Alt(ref fragments) if fragments.len() == 2 && fragments.iter().zip(["escape_sequence", "string_fragment"]).all(|(fragment,label)| matches!(fragment.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "\""))))]
-fn dq_string() -> Regex
+pub(super) fn dq_string() -> Regex
 {
     seq([
         t(TileLabel("\"")),
