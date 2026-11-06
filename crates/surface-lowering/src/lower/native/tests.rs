@@ -3826,6 +3826,41 @@ fn a_match_without_an_answer_is_unannotated()
 }
 
 #[test]
+fn a_layout_match_writes_where_before_its_arms_5557()
+{
+    let bare = alloc::format!(
+        "{COLOR}def bare(c : Color) -> -F Integer =\n  match c\n    | Red => pure 0\n    | _ => pure 1\n"
+    );
+    let head = bare
+        .find("match c")
+        .map(|at| at.saturating_add("match c".len()));
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(bare.as_str()), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("bare")),
+            LoweringRefusal::OutOfFragment {
+                span,
+                form: FormName::MATCH,
+                boundary: FragmentBoundary::BareArms,
+                ..
+            } if Some(usize::from(span.start())) == head && span.start() == span.end()
+        ),
+        "a layout match with no `where` is refused at the end of its head"
+    );
+    let marked = bare.replace("match c\n", "match c where\n");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(marked.as_str()), &mut arena);
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("bare")),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "the same match with `where` after its scrutinee lowers"
+    );
+}
+
+#[test]
 fn a_nested_match_records_its_cover_5103()
 {
     use gandr_kernel_term::FieldCount;

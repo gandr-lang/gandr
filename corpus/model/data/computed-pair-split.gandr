@@ -22,7 +22,7 @@ data Spool : Type where
 
 /// The unit at the bare spool, and a spool at a wound one.
 def turns(n : Spool) -> Type =
-  match n
+  match n where
     | Bare => return Unit
     | Wound(m) => return Spool
 
@@ -37,13 +37,13 @@ def atTurns(n : Spool, t : turns(n)) -> Spool = n
 
 /// The split binds the spool, then a value of its turns at that spool.
 def splitPair(p : spoolPair(Bare)) -> Spool =
-  match p
+  match p where
     | *{n, t} => atTurns n t
 
 /// The split by position of the record has no order to read.
 @[ refuses("ShapeMismatch") ]
 def splitRecord(p : spoolRecord(Bare)) -> Spool =
-  match p
+  match p where
     | *{n, t} => t
 
 /// The projection by position of the record has no order to read.

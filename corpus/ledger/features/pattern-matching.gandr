@@ -13,7 +13,7 @@ data Outer : Type where
 /// The integer two constructors down, or zero.
 @[ checks ]
 def depth(m : Outer) -> -F Integer =
-  match m
+  match m where
     | Some(Yes(n)) => return n
     | _ => return 0
 

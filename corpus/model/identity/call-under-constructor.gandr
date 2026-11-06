@@ -12,7 +12,7 @@ import "./int-sum.gandr";
 
 /// The integer rules reduce the endpoint at `P(x)` to `plus(Z, x)`.
 def rec underSuccessor(b : Int) -> Path[.A = Int](S (plus Z b), S b) =
-  match b
+  match b where
     | Z => Path.here (S Z)
     | S(x) => Path.ap up (underSuccessor[<] x)
     | P(x) => Path.ap down (underSuccessor[<] x)
@@ -20,7 +20,7 @@ def rec underSuccessor(b : Int) -> Path[.A = Int](S (plus Z b), S b) =
 /// The checker refuses the zero arm because `S(Z)` has no path to `Z`.
 @[ refuses("EndpointMismatch") ]
 def rec offByOne(b : Int) -> Path[.A = Int](S (plus Z b), b) =
-  match b
+  match b where
     | Z => Path.here (S Z)
     | S(x) => Path.ap up (offByOne[<] x)
     | P(x) => Path.ap down (offByOne[<] x)

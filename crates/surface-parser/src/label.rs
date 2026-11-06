@@ -4852,6 +4852,7 @@ mod tests
             "NAME=\"v w\"",
             "def f(x : A) -> A =\n  let y = x\n  y\n",
             "\n  match x\n    | a => b\n",
+            "\n  match x where\n    | a => b\n",
             "theory S where\n  sort A : Type\n",
             "{\n  a\n  b }",
             "\n    ",

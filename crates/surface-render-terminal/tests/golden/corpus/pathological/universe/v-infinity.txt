@@ -11,7 +11,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │    │                ─ checked against `Vinf -> -F Ord`; while checking the body of this function; binds v : Vinf
    │ ┌──┘
    │ │
-21 │ │┌   match v
+21 │ │┌   match v where
 22 │ ││     | Sup(a, f) => Lim a (thunk { fun (x) { f x } })
    │ ││                    ┬──────┬───────┬─────────┯━━────│
    │ └│────────────────────│──────│───────│─────────│──────│
@@ -32,7 +32,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │    │                ─ checked against `Vinf -> -F Ord`; while checking the body of this function; binds v : Vinf
    │ ┌──┘
    │ │
-27 │ │┌   match v
+27 │ │┌   match v where
 28 │ ││     | Sup(a, f) => Lim a (thunk { fun (x) { circular[<] (Sup a f) } })
    │ ││                    ┬──────┬───────┬─────────┬────────────┯━━━━━━─────│
    │ └│────────────────────│──────│───────│─────────│────────────│───────────│

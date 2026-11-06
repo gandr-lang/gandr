@@ -26,7 +26,7 @@ def carry(A : Type, B : Type, f : A -> B, a : A, b : A, p : Path[.A = A](a, b)) 
 
 /// The map that keeps the loop: its loop arm is the loop's name.
 def keepLoop(x : Circle) -> Circle =
-  match x
+  match x where
     | Base => Base
     | loop => loop
 

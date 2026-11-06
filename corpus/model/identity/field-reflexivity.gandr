@@ -22,7 +22,7 @@ data Held(a : Type, b : a -> Type) : Type where
 
 /// The `twofold` function doubles a count by recursion.
 def rec twofold(n : Count) -> Count =
-  match n
+  match n where
     | Z => Z
     | S(m) => S (S (twofold[<] m))
 

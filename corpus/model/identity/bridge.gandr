@@ -37,7 +37,7 @@ data Signal : Type where
 
 /// The `toggle` function exchanges the signal states.
 def toggle(signal : Signal) -> Signal =
-  match signal
+  match signal where
     | Halt => Pass
     | Pass => Halt
 

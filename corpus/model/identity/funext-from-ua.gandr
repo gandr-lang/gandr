@@ -14,12 +14,12 @@ def diag(b : Type, v : b) -> *{x : b, y : b, p : Path[.A = b](x, y)} =
 
 /// The `source` function reads the first endpoint of a path.
 def source(b : Type, w : *{x : b, y : b, p : Path[.A = b](x, y)}) -> b =
-  match w
+  match w where
     | *{.x = u, .y = v, .p = q} => u
 
 /// The `target` function reads the second endpoint of a path.
 def target(b : Type, w : *{x : b, y : b, p : Path[.A = b](x, y)}) -> b =
-  match w
+  match w where
     | *{.x = u, .y = v, .p = q} => v
 
 /// The `diagSource` proof uses `J` to identify a diagonal with its path.
@@ -30,7 +30,7 @@ def diagSource(
   diag b (source b w),
   w
 ) =
-  match w
+  match w where
     | *{.x = u, .y = v, .p = q} => Path.walk
       ((y : b, z : Path[.A = b](u, y)) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)}](
         diag b u,

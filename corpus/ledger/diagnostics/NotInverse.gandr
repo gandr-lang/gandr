@@ -6,7 +6,7 @@ theory Magma where
 
 @[ checks ]
 def exchange(b : Bool) -> -F Bool =
-  match b
+  match b where
     | true => +{.1 = *{}}
     | false => +{.0 = *{}}
 

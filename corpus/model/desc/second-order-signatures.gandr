@@ -39,7 +39,7 @@ theory IdentityReturn where
 /// Structural recursion over a sort chain: one per `Representable` link, none
 /// for an ordinary `Sort`.
 def rec representable(chain : Theory) -> Integer =
-  match chain
+  match chain where
     | Representable(name, indices, rest) => { let r = representable[<] rest; r + 1 }
     | Sort(name, indices, rest) => representable[<] rest
     | _ => 0
@@ -47,7 +47,7 @@ def rec representable(chain : Theory) -> Integer =
 /// Structural recursion over a port chain: one per `Bound` port, none for a
 /// plain `Port`.
 def rec bound(chain : Theory) -> Integer =
-  match chain
+  match chain where
     | Bound(name, sort, indices, binders, rest) => { let r = bound[<] rest; r + 1 }
     | Port(name, sort, indices, rest) => bound[<] rest
     | _ => 0
@@ -62,7 +62,7 @@ def representableSorts() -> Integer { match IdentityReturn {
 /// The λ-calculus's first operation, `lam`, binds over its one input.
 @[ runs("1") ]
 def boundInputs() -> Integer { match Lambda {
-  | Presents(sorts, opers, rules) => match opers
+  | Presents(sorts, opers, rules) => match opers where
     | Oper(name, inputs, outputs, rest) => bound inputs
     | _ => 0
   | _ => 0

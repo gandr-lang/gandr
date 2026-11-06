@@ -20,19 +20,19 @@ pub data Heap : Type where
 
 /// The heap is empty: inhabited at `Emp` alone.
 pub def emp(h : Heap) -> Type =
-  match h
+  match h where
     | Emp => return Unit
     | Cell(_l, _r) => return Void
 
 /// At zero, the heap is empty; at a successor, never.
 pub def viaZero(w : Nat, h : Heap) -> Type =
-  match w
+  match w where
     | Zero => emp h
     | Succ(_n) => return Void
 
 /// One arm more: at zero, `viaZero` at the same natural.
 pub def viaZeroAgain(w : Nat, h : Heap) -> Type =
-  match w
+  match w where
     | Zero => viaZero w h
     | Succ(_n) => return Void
 

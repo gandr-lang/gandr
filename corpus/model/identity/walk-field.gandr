@@ -32,7 +32,7 @@ def walkSecond(
   m : Picked(Unit, fun (u) { return (type(Path[.A = i](j, k))) }),
   v : o(j)
 ) -> o(k) =
-  match m
+  match m where
     | MkPicked(u, q) => Path.walk (fun (n) { o n }) q v
 
 /// The same walk along a path a binder holds at its written type.

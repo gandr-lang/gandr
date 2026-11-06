@@ -11,13 +11,13 @@ import "./flow-data.gandr";
 
 /// The `width` function reads the first shape dimension.
 pub def width(shape : Shape) -> Integer =
-  match shape
+  match shape where
     | Circle(r) => r
     | Rect(w, h) => w
 
 /// The `figureWidth` function reads the figure width.
 def figureWidth(figure : Figure) -> Integer =
-  match figure
+  match figure where
     | Round(r) => r
     | Box(h, w) => w
 
@@ -30,7 +30,7 @@ def widths : Path(width, throughFigure) = Path.funext width throughFigure;
 
 /// The `drawn` function translates a shape into its figure.
 def drawn(shape : Shape) -> Figure =
-  match shape
+  match shape where
     | Circle(r) => Round r
     | Rect(a, b) => Box b a
 
@@ -44,7 +44,7 @@ data Light : Type where
 
 /// The `switch` function changes a light state.
 def switch(light : Light) -> Light =
-  match light
+  match light where
     | Stop => Go
     | Go => Stop
 

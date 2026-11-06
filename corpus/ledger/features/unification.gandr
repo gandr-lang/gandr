@@ -25,7 +25,7 @@ data Code : Type where
 /// The type each code decodes to.
 @[ checks ]
 def decode(c : Code) -> Type =
-  match c
+  match c where
     | CInt => return Integer
     | CUnit => return Unit
 
@@ -41,6 +41,6 @@ data Tagged : Code -> Type where
 /// constructor's code.
 @[ checks ]
 def untag(c : Code, v : Tagged(c)) -> decode(c) =
-  match v
+  match v where
     | AnInt(i) => i
     | AUnit => *{}

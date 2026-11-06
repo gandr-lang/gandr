@@ -24,21 +24,21 @@ import "./vectors.gandr";
 
 /// The length a vector holds, read off the index its `VCons` states.
 def vlength(n : Nat, v : Vec(Integer, n)) -> Nat =
-  match v
+  match v where
     | VNil => Zero
     | VCons(m, h, t) => Succ m
 
 /// The length of a vector one long: the `VNil` arm is written, though `VNil`
 /// stands at no length but zero.
 def oneLength(v : Vec(Integer, Succ(Zero))) -> Nat =
-  match v
+  match v where
     | VNil => Zero
     | VCons(m, h, t) => Succ m
 
 /// The length counted by structural recursion on the tail, which stands at
 /// the length its `VCons` states, one below the vector's.
 def rec vcount(n : Nat, v : Vec(Integer, n)) -> Nat =
-  match v
+  match v where
     | VNil => Zero
     | VCons(m, h, t) => Succ (vcount[<] m t)
 
@@ -56,7 +56,7 @@ def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec(a, n), ys : Vec(a, m)) -> V
   a,
   plus(m, n)
 ) =
-  match xs
+  match xs where
     | VNil => ys
     | VCons(k, x, xt) => VCons (plus m k) x (vappend[<] a k m xt ys)
 

@@ -49,7 +49,7 @@ def shrub : Bush = Sprout (Cons
 /// A list of numbers, summed.
 @[ checks ]
 def rec sum(xs : List(Nat)) -> Nat =
-  match xs
+  match xs where
     | Nil => Zero
     | Cons(x, rest) => plus x (sum[<] rest)
 
@@ -58,14 +58,14 @@ def rec sum(xs : List(Nat)) -> Nat =
 /// so `nodes[<]` takes each child.
 @[ checks ]
 def rec nodes(t : Bush) -> Nat =
-  match t
+  match t where
     | Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
 
 /// A map over the tree: every node gains a childless node beside its
 /// children, each child grown through `map` at its stage.
 @[ checks ]
 def rec grow(t : Bush) -> Bush =
-  match t
+  match t where
     | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List(Bush))
 
 /// The shrub's three nodes, its children counted through `map` at the
@@ -97,14 +97,14 @@ rec {
   /// The nodes of a tree: its own and its children's.
   @[ checks ]
   def rec treeSize(t : Rose) -> Nat {
-    match t
+    match t where
       | Node(kids) => { let s = forestSize[<] kids; Succ s }
   }
 
   /// The nodes of a forest: each tree's, summed.
   @[ checks ]
   def rec forestSize(ts : Forest) -> Nat =
-    match ts
+    match ts where
       | Empty => Zero
       | More(t, rest) => { let a = treeSize[<] t; let b = forestSize[<] rest; plus a b }
 }

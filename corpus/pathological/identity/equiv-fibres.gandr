@@ -24,7 +24,7 @@ pub def pick(u : One) -> Two =
 
 /// Every point of `One` is `Only`, by induction on it.
 pub def single(u : One) -> Path[.A = One](collapse (pick u), u) =
-  match u
+  match u where
     | Only => Path.here Only
 
 /// The collapse ascribed an equivalence, refused at the left inverse's round

@@ -1,7 +1,7 @@
 error[NonExhaustiveMatch]: this match does not cover every value it can be given
    ╭▸ corpus/pathological/builtins/list-patterns.gandr:10:3
    │
-10 │ ┏   match xs
+10 │ ┏   match xs where
 11 │ ┃     | #[a, ..rest] => return a
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ some value matches no arm
    │

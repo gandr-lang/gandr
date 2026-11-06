@@ -34,7 +34,7 @@ rec {
   /// recurses below the code.
   @[ checks ]
   def rec elPi(u : UPi) -> -F Type =
-    match u
+    match u where
       | NatC => return Nat
       | PiC(a, b) => return (+U ((x : elPi[<](a)) -> -F elPi[<](b(x))))
 }
@@ -75,7 +75,7 @@ rec {
   /// The decoder at each level. It recurses below the code.
   @[ checks ]
   def rec elM(n : Nat, u : UM(n)) -> -F Type =
-    match u
+    match u where
       | NatM(m) => return Nat
       | PiM(m, a, b) => return (+U ((x : elM[<](m, a)) -> -F elM[<](m, b(x))))
 }

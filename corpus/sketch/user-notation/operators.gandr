@@ -41,7 +41,7 @@ pub def _≤_(a : Nat, b : Nat) -> Bool =
 /// The factorial, written after its argument.
 @[postfix(Multiplicative)]
 pub def _!(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => 1
     | Succ(m) => n * m !
 

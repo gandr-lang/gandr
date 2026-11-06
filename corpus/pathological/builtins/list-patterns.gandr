@@ -7,13 +7,13 @@ import std.list (List);
 /// No arm matches the empty list.
 @[ refuses("NonExhaustiveMatch") ]
 def unmatched(xs : List(Integer)) -> -F Integer =
-  match xs
+  match xs where
     | #[a, ..rest] => return a
 
 /// A list pattern and a number in one column match no one type.
 @[ refuses("MismatchedPattern") ]
 def mixed(xs : List(Integer)) -> -F Integer =
-  match xs
+  match xs where
     | #[] => return 0
     | 3 => return 1
     | _ => return 2

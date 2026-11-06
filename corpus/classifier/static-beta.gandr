@@ -17,7 +17,7 @@ def twice : Type -> Type = fun (Y) { type(Y * Y) };
 /// binders are used: an unused one has no type entry under a static
 /// application.
 def sum(p : apply(twice, Integer)) -> Integer =
-  match p
+  match p where
     | *{a, b} => a + b
 
 /// `sum` at a pair of integers runs as at `Integer * Integer`.

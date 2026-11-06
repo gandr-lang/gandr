@@ -19,12 +19,12 @@ data Nat : Type where
 
 @[ refuses("UnmarkedSelfReference") ]
 def rec bare(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => return n
     | Succ(p) => bare p
 
 def rec marked(n : Nat) -> Nat =
-  match n
+  match n where
     | Zero => n
     | Succ(p) => marked[<] p
 
@@ -33,7 +33,7 @@ def rec idle(n : Nat) -> Nat { n }
 /// A parameter written before the staged one may vary across the call: it is
 /// passed to the fixpoint as a leading argument.
 def rec varied(n : Nat, m : Nat) -> Nat =
-  match m
+  match m where
     | Zero => n
     | Succ(p) => varied[<] p p
 
@@ -41,7 +41,7 @@ def rec varied(n : Nat, m : Nat) -> Nat =
 /// the function runs again.
 @[ refuses("UnguardedCorecursion") ]
 def rec ahead(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => return n
     | Succ(p) => ahead[>] p
 

@@ -5,7 +5,7 @@ data Nat : Type where
   | Succ : (n : Nat) --> Nat
 /// Addition.
 def rec plus(n : Nat, m : Nat) -> -F Nat =
-  match m
+  match m where
     | Zero => n
     | Succ(p) => Succ (plus[<] n p)
 /// The answer.

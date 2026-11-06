@@ -40,7 +40,7 @@ theory Alpha where
 /// Structural recursion over a rule chain: one per `Derived` link, the
 /// rules completion added to join a critical pair.
 def rec derived(chain : Theory) -> Integer =
-  match chain
+  match chain where
     | Rule(name, lhs, rhs, rest) => derived[<] rest
     | Turned(name, lhs, rhs, rest) => derived[<] rest
     | Derived(outer, position, inner, lhs, rhs, rest) => {

@@ -8,7 +8,7 @@
 /// one, in millionths; `false` stands as the answer of an arm.
 def banded(low : Integer, high : Integer) -> Bool =
   let below = low < high
-  match below
+  match below where
     | true => high <= 1000000
     | false => false
 

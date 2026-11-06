@@ -6,7 +6,7 @@ import std.list (List);
 /// The negation of a flag.
 @[ checks ]
 def not(b : Unit + Unit) -> -F (Unit + Unit) =
-  match b
+  match b where
     | +{.0 = u} => +{.1 = u}
     | +{.1 = u} => +{.0 = u}
 
@@ -34,7 +34,7 @@ def keep(xs : List(Bool)) -> -F List(Bool) =
 
 @[ checks ]
 def flip_flag(entry : Bool * List(Bool)) -> -F (Bool * List(Bool)) =
-  match entry
+  match entry where
     | *{b, xs} => { let c = not b; *{c, xs} }
 
 @[ checks ]

@@ -10,7 +10,7 @@ data Int : Type where {
 
 @[ refuses("RuleNotRespected") ]
 def rec tell(n : Int) -> -F Int =
-  match n
+  match n where
     | Z => Z
     | S(x) => S (tell[<] x)
     | P(x) => S (tell[<] x)

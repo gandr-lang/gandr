@@ -1,0 +1,8 @@
+error[OutOfFragment.BareArms]: a match in layout form writes `where` after its scrutinee, `match e where`, and its arms on the lines after it
+  ╭▸ corpus/ledger/diagnostics/OutOfFragment.BareArms.gandr:4:10
+  │
+4 │   match b
+  │          ━ arms with no `where` before them
+  │
+  ├ note: `bare` is refused with OutOfFragment.BareArms, as its expectation states
+  ╰ help: write `where` after the match's scrutinee

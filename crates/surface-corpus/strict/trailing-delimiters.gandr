@@ -9,12 +9,12 @@ data Color : Type where
   | Blue : Color
 
 def from_left() -> Integer =
-  match (Left 5 : Either(Integer, String,))
+  match (Left 5 : Either(Integer, String,)) where
     | Left(x,) => x
     | Right(y) => 0
 
 def warm(c : Color) -> Integer =
-  match c
+  match c where
     | Red | Green => 1
     | Blue => 0
 

@@ -18,13 +18,13 @@ data Ord : Type[+, 1] where
 /// ordinals, and `f(x)` is a set.
 @[ refuses("TypeMismatch") ]
 def rec unranked(v : Vinf) -> -F Ord =
-  match v
+  match v where
     | Sup(a, f) => Lim a (thunk { fun (x) { f x } })
 
 /// The set itself where a member is expected: it is not below its own stage.
 @[ refuses("StageNotBelow") ]
 def rec circular(v : Vinf) -> -F Ord =
-  match v
+  match v where
     | Sup(a, f) => Lim a (thunk { fun (x) { circular[<] (Sup a f) } })
 
 /// Sets over the types of a universe, placed in that same universe.

@@ -13,7 +13,7 @@ module Schema where {
   type New = Integer * String;
   /// The translator: the age moved, the name replaced by a literal.
   def anonymise(old : Old) -> New =
-    match old
+    match old where
       | *{name, age} => *{age, "anonymous"}
   /// A literal is no image of a source leaf, so no flow forwards by it.
   @[ refuses("ForwardUnsupported") ]

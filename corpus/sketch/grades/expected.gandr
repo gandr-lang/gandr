@@ -41,7 +41,7 @@ module Retrying where {
   /// client uses the connection at most twice.
   pub def onceMore(fetch : +U[2] (Request -> Response), r : Request) : Response = {
     let first = fetch r;
-    match first.status
+    match first.status where
       | ServerError => fetch r
       | Served => first
   }
@@ -49,7 +49,7 @@ module Retrying where {
   /// Fetches `r` up to three times, until an answer is not a server error.
   pub def thrice(fetch : +U[3] (Request -> Response), r : Request) : Response = {
     let first = fetch r;
-    match first.status
+    match first.status where
       | ServerError => onceMore(fetch, r)
       | Served => first
   }

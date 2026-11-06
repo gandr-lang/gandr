@@ -39,7 +39,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │      │              ─ checked against `Odd -> -F Type`; while checking the body of this function; binds u : Odd
    │ ┌────┘
    │ │
-57 │ │┌     match u
+57 │ │┌     match u where
 58 │ ││       | TwoC => return Two
 59 │ ││       | Over(a, b) => decode[<] a
    │ │└─────────────────────────────────┘ checked against `-F Type`; while checking the next premise of this
@@ -63,7 +63,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │      │              ─ checked against `Odd -> -F Type`; while checking the body of this function; binds u : Odd
    │ ┌────┘
    │ │
-57 │ │┌     match u
+57 │ │┌     match u where
 58 │ ││       | TwoC => return Two
 59 │ ││       | Over(a, b) => decode[<] a
    │ │└─────────────────────────────────┘ checked against `-F Type`; while checking the next premise of this
@@ -87,7 +87,7 @@ error[StageNotBelow]: the recursion is not structural: nothing places it below t
    │      │              ─ checked against `Odd -> -F Type`; while checking the body of this function; binds u : Odd
    │ ┌────┘
    │ │
-57 │ │┌     match u
+57 │ │┌     match u where
 58 │ ││       | TwoC => return Two
 59 │ ││       | Over(a, b) => decode[<] a
    │ │└─────────────────────────────────┘ checked against `-F Type`; while checking the next premise of this
@@ -108,7 +108,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │      │              ─ checked against `Loop -> -F Type`; while checking the body of this function; binds u : Loop
    │ ┌────┘
    │ │
-81 │ │┌     match u
+81 │ │┌     match u where
 82 │ ││       | Base => return Two
 83 │ ││       | PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Two))
    │ ││                      ┬───────┬───┬────┬─────────┬───┯─────────────────│
@@ -132,7 +132,7 @@ error[StageNotBelow]: the recursion is not structural: it stands at a stage not 
    │      │              ─ checked against `Loop -> -F Type`; while checking the body of this function; binds u : Loop
    │ ┌────┘
    │ │
-81 │ │┌     match u
+81 │ │┌     match u where
 82 │ ││       | Base => return Two
 83 │ ││       | PiL(a, b) => return (+U ((x : unloop[<](PiL(a, b))) -> -F Two))
    │ ││                      ┬───────┬───┬────┬─────────┬───┯─────────────────│
@@ -181,7 +181,7 @@ error[NegativeOccurrence]: the datatype occurs to the left of an arrow in its fi
     ╭▸ corpus/pathological/universe/inductive-recursive.gandr:109:3
     │
 109 │ ┏   def rec elLevel(n : Nat, u : ULevel(n)) -> -F Type =
-110 │ ┃     match u
+110 │ ┃     match u where
 111 │ ┃       | NatV(m) => return Nat
 112 │ ┃       | TypeV(m) => return (ULevel m)
 113 │ ┃       | PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F elLevel[<](m, b(x))))

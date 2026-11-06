@@ -1,5 +1,5 @@
 /// `identifier.pattern`: a name bound by a pattern.
 @[ checks ]
 def same(n : Integer) -> -F Integer =
-  match n
+  match n where
     | m => return m

@@ -6,6 +6,6 @@ data Nat : Type where
 
 @[ refuses("UnmarkedSelfReference") ]
 def rec bare(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => return n
     | Succ(p) => bare p

@@ -435,6 +435,10 @@ fn lowered(
                     "arrows do not chain: write `(A, B) -> C` for one function of two inputs, or \
                      `A -> (B -> C)` for a function whose output is a function",
                 ),
+                FragmentBoundary::BareArms => f.write_str(
+                    "a match in layout form writes `where` after its scrutinee, `match e \
+                     where`, and its arms on the lines after it",
+                ),
             }
         },
         LoweringRefusal::BareFeedback { .. } => f.write_str(

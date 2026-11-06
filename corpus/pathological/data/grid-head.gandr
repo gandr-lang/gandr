@@ -17,6 +17,6 @@ import "../../model/data/grid-head.gandr";
 /// can be zero, so `GNil` can stand there and the case cannot omit its arm.
 @[ refuses("NotApart") ]
 def anyCell(n : Nat, m : Nat, g : Grid(n, m)) -> Integer =
-  match g
+  match g where
     | GRow(r, c, cell, rest) => cell
     | GCol(r, c, cell, rest) => cell

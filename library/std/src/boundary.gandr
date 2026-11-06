@@ -43,18 +43,18 @@ def strideOf(size : Integer, align : Integer) -> Integer =
 /// The record a code's layout gives. Every code here is a scalar, a reference
 /// or an enum of them, so every value travels bitwise.
 pub def summary(c : Code) -> Witness =
-  match c
-    | Plain(s) => match structLayout (Field "0" s Done)
+  match c where
+    | Plain(s) => match structLayout (Field "0" s Done) where
       | Layout(size, align, _p) => Witness size (strideOf size align) align Bitwise
-    | Sum(vs) => match enumLayout vs
+    | Sum(vs) => match enumLayout vs where
       | EnumLayout(size, align, _d, _a) => Witness size (strideOf size align) align Bitwise
 
 /// Whether a code's layout keeps its discriminant in a niche.
 pub def niched(c : Code) -> Bool =
-  match c
+  match c where
     | Plain(_s) => false
-    | Sum(vs) => match enumLayout vs
-      | EnumLayout(_size, _align, d, _a) => match d
+    | Sum(vs) => match enumLayout vs where
+      | EnumLayout(_size, _align, d, _a) => match d where
         | InNiche(_o) => true
         | _ => false
 
@@ -120,45 +120,45 @@ pub data Admission : Type where
 
 /// Whether two booleans are equal.
 def agree(a : Bool, b : Bool) -> Bool =
-  match a
+  match a where
     | true => b
-    | false => match b
+    | false => match b where
       | true => false
       | false => true
 
 /// One position of the row: the printed layout against the code's record,
 /// size, then alignment, then the niche, then the handling.
 pub def check(p : Printed, c : Code, place : Position) -> Admission =
-  match p
-    | Printed(size, align, inNiche, drops) => match summary c
-      | Witness(s, _stride, a, h) => match size == s
+  match p where
+    | Printed(size, align, inNiche, drops) => match summary c where
+      | Witness(s, _stride, a, h) => match size == s where
         | false => Unrealised (Size place)
-        | true => match align == a
+        | true => match align == a where
           | false => Unrealised (Align place)
-          | true => match agree inNiche (niched c)
+          | true => match agree inNiche (niched c) where
             | false => Unrealised (Niche place)
-            | true => match h
-              | Bitwise => match drops
+            | true => match h where
+              | Bitwise => match drops where
                 | true => Unrealised (Destroy place)
                 | false => Admitted
 
 /// The arguments from an index, in order, as many on each side.
 def rec admitArgs(ps : Params, cs : Codes, i : Integer) -> Admission =
-  match ps
-    | NoParam => match cs
+  match ps where
+    | NoParam => match cs where
       | NoCode => Admitted
       | Arg(_c, _rest) => Unrealised Arity
-    | Param(_n, p, rest) => match cs
+    | Param(_n, p, rest) => match cs where
       | NoCode => Unrealised Arity
-      | Arg(c, more) => match check p c (Argument i)
+      | Arg(c, more) => match check p c (Argument i) where
         | Admitted => admitArgs[<] rest more (i + 1)
         | Unrealised(cl) => Unrealised cl
 
 /// A declared signature against a row: the arguments, then the result.
 pub def admit(d : Declared, r : Row) -> Admission =
-  match d
-    | Declared(ps, res) => match r
-      | Row(cs, rc) => match admitArgs ps cs 0
+  match d where
+    | Declared(ps, res) => match r where
+      | Row(cs, rc) => match admitArgs ps cs 0 where
         | Admitted => check res rc Result
         | Unrealised(cl) => Unrealised cl
 
@@ -179,19 +179,19 @@ pub data Signature : Type where
 /// A code's layout as rustc prints it, from Rust's default layout. Every code
 /// here travels bitwise, so none needs drop.
 pub def printed(c : Code) -> Printed =
-  match summary c
+  match summary c where
     | Witness(size, _stride, align, _h) => Printed size align (niched c) false
 
 /// The printed layout of each parameter's code, in order.
 def rec printedParams(cs : Coded) -> Params =
-  match cs
+  match cs where
     | NoCoded => NoParam
     | Coded(n, c, rest) => Param n (printed c) (printedParams[<] rest)
 
 /// A signature against a row: Rust's default layout prints the type of each
 /// declaration, and admission compares it with the row.
 pub def admitSignature(s : Signature, r : Row) -> Admission =
-  match s
+  match s where
     | Signature(ps, res) => admit (Declared (printedParams ps) (printed res)) r
 
 /// An `extern "rust"` block's members' signatures, in written order.
@@ -213,12 +213,12 @@ pub data Rows : Type where
 /// answers `Unrealised` at `Members`. The check of a block carrying
 /// `@[ boundary(…) ]` runs it.
 pub def rec admitBlock(ss : Signatures, rs : Rows) -> Admission =
-  match ss
-    | NoSignature => match rs
+  match ss where
+    | NoSignature => match rs where
       | NoRow => Admitted
       | Named(_r, _rest) => Unrealised Members
-    | Member(s, more) => match rs
+    | Member(s, more) => match rs where
       | NoRow => Unrealised Members
-      | Named(r, rest) => match admitSignature s r
+      | Named(r, rest) => match admitSignature s r where
         | Admitted => admitBlock[<] more rest
         | Unrealised(cl) => Unrealised cl

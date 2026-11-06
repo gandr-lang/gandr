@@ -19,7 +19,7 @@ import "./layouts.gandr";
 /// A wire format's checksum, over a list in the packed layout whatever the
 /// list's default: two elements per step, as the frame holds them.
 def rec checksum(frame : Repr(Ints, packed)) -> i64 =
-  match frame with packed
+  match frame with packed where
     | Empty => 0i64
     | One(x) => widen x
     | Many(x, y, rest) => widen x * 31i64 + widen y + checksum[<] rest
@@ -33,7 +33,7 @@ def framed(xs : Ints) -> i64 =
 /// A hot loop over the tagged layout, one load per element, chosen for this
 /// loop alone.
 def rec scan(xs : Repr(Ints, tagged), acc : i64) -> i64 =
-  match xs with tagged
+  match xs with tagged where
     | TagNil => acc
     | TagCons(x, rest) => scan[<] rest (acc + widen x)
 

@@ -41,7 +41,7 @@ def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List(Bush)) : List(Bush
 
 /// A list of numbers, summed.
 def rec sum(xs : List(Nat)) -> Nat =
-  match xs
+  match xs where
     | Nil => Zero
     | Cons(x, rest) => plus x (sum[<] rest)
 
@@ -49,13 +49,13 @@ def rec sum(xs : List(Nat)) -> Nat =
 /// instantiates `map`'s element at the children's stage, below the node's,
 /// so `nodes[<]` takes each child.
 def rec nodes(t : Bush) -> Nat =
-  match t
+  match t where
     | Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
 
 /// A map over the tree: every node gains a childless node beside its
 /// children, each child grown through `map` at its stage.
 def rec grow(t : Bush) -> Bush =
-  match t
+  match t where
     | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List(Bush))
 
 /// The shrub's three nodes, its children counted through `map` at the
@@ -87,14 +87,14 @@ rec {
   /// The nodes of a tree: its own and its children's.
   @[ checks ]
   def rec treeSize(t : Rose) -> Nat {
-    match t
+    match t where
       | Node(kids) => { let s = forestSize[<] kids; Succ s }
   }
 
   /// The nodes of a forest: each tree's, summed.
   @[ checks ]
   def rec forestSize(ts : Forest) -> Nat =
-    match ts
+    match ts where
       | Empty => Zero
       | More(t, rest) => { let a = treeSize[<] t; let b = forestSize[<] rest; plus a b }
 }
@@ -119,14 +119,14 @@ rec {
   /// The nodes of a tree, each weighing `k`.
   @[ checks ]
   def rec treeWeight(t : Rose, k : Nat) -> Nat {
-    match t
+    match t where
       | Node(kids) => plus k (forestWeight[<] kids k)
   }
 
   /// The nodes of a forest, each weighing `k`.
   @[ checks ]
   def rec forestWeight(ts : Forest, k : Nat) -> Nat =
-    match ts
+    match ts where
       | Empty => Zero
       | More(t, rest) => plus (treeWeight[<] t k) (forestWeight[<] rest k)
 }
@@ -144,14 +144,14 @@ rec {
   /// A copy of the tree, one node at a time.
   @[ checks ]
   def rec bumpTree(t : Rose) -> Rose {
-    match t
+    match t where
       | Node(kids) => Node (bumpForest[<] kids)
   }
 
   /// A copy of the forest, one tree at a time.
   @[ checks ]
   def rec bumpForest(ts : Forest) -> Forest =
-    match ts
+    match ts where
       | Empty => Empty
       | More(t, rest) => More (bumpTree[<] t) (bumpForest[<] rest)
 }

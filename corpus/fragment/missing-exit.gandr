@@ -5,7 +5,7 @@ data Nat : Type where
 
 @[ checks ]
 def rec down(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => return n
     | Succ(p) => become down[<] p
 
@@ -17,7 +17,7 @@ def called(n : Nat) -> -F Nat { down n }
 
 @[ checks ]
 def one_arm(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => return n
     | Succ(p) => pure p
 
@@ -28,10 +28,10 @@ def sequenced(n : Nat) -> -F Nat =
 
 @[ checks ]
 def nested(n : Nat) -> -F Nat =
-  match n
+  match n where
     | Zero => return n
     | Succ(p) => {
-      let q = match p
+      let q = match p where
         | Zero => return p
         | Succ(r) => pure r
       pure q
