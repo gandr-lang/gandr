@@ -43,7 +43,7 @@ def coveredModelled() -> String =
     | oper step(machine, k) => k "holds" machine
     | oper checkpoint(machine, k) => k ""
     | oper restore(text, k) => k 0
-    | oper report(machine, k) => k #[0, 0, 0]
+    | oper report(machine, k) => k #[0, 0, 0, 0, 0, 0, 0, 0, 0]
   }
 
 /// The entry: decide the universal within 16 quanta, print the verdict,

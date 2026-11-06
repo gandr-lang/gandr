@@ -73,7 +73,7 @@ def boundsModelled() -> String =
     | oper step(machine, k) => k "holds" machine
     | oper checkpoint(machine, k) => k ""
     | oper restore(text, k) => k 0
-    | oper report(machine, k) => k #[15, 2, 8]
+    | oper report(machine, k) => k #[15, 2, 8, 0, 0, 0, 8, 0, 0]
   }
 
 /// `enclosed` under a handler of this source, a second model of
@@ -90,7 +90,7 @@ def angleModelled() -> String =
     | oper step(machine, k) => k "holds" machine
     | oper checkpoint(machine, k) => k ""
     | oper restore(text, k) => k 0
-    | oper report(machine, k) => k #[0, 0, 0]
+    | oper report(machine, k) => k #[0, 0, 0, 0, 0, 0, 0, 0, 0]
   }
 
 /// The entry: decide the four bounds within 16 quanta each, and print the

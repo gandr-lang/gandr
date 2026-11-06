@@ -1,5 +1,6 @@
-//! The harness that the crate's measurements share: a timed batch of one
-//! operation, its percentiles and its allocations, and one table row.
+//! The harness that the measurements of the crate and of the adapter of
+//! `std.reals.Eff` share: a timed batch of one operation, its percentiles and
+//! its allocations, and one table row.
 
 use std::time::Instant;
 
@@ -49,7 +50,9 @@ impl Output
     }
 }
 
-/// Time `operation` and count its allocations.
+/// Time `operation` and count its allocations. One untimed pass of every
+/// sample comes first, so a row that follows a short one does not run on a
+/// cold core.
 ///
 /// # Specification
 /// trivial.
@@ -61,7 +64,7 @@ pub fn measure<Operation>(
 where
     Operation: FnMut(),
 {
-    for _ in 0 .. batch.0 {
+    for _ in 0 .. batch.0.saturating_mul(samples.0) {
         operation();
     }
     let mut means = Vec::with_capacity(samples.0);

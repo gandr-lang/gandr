@@ -380,6 +380,7 @@ use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::Reached;
+use gandr_surface_dispatcher::RealsProfile;
 use gandr_surface_dispatcher::Reconciled;
 use gandr_surface_dispatcher::Repairs;
 use gandr_surface_dispatcher::Revisions;
@@ -1065,7 +1066,8 @@ impl From<NetFlags> for Binding
 }
 
 /// What `gandr run` and `gandr host` give the script they run: its network,
-/// its world bindings, and how many migrations it hosts instead of running.
+/// its world bindings, how many migrations it hosts instead of running, and
+/// the quotas of its exact reals.
 #[derive(Debug, Default)]
 struct Hosting
 {
@@ -1075,6 +1077,8 @@ struct Hosting
     bindings: Option<WorldBindings>,
     /// How many migrations `host` answers.
     migrations: Option<MigrationCount>,
+    /// The quotas of the `Reals` operations of the run.
+    reals: RealsProfile,
 }
 
 /// A binding given twice, once by a flag and once by the file it desugars
@@ -1902,6 +1906,14 @@ fn main() -> ExitCode
             if manifold.is_some() && !worlds.is_empty() {
                 return doubled(Doubled::Worlds);
             }
+            hosting.reals = match configuration.reals() {
+                Ok(profile) => profile,
+                Err(fault) => {
+                    return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                    };
+                },
+            };
             let mut binding = Binding::from(*net);
             hosting.bindings = match manifold {
                 Some(file) => match manifolded(&file, &path) {
@@ -3417,6 +3429,7 @@ fn render(
             if let Some(migrations) = hosting.migrations {
                 runnable.hosting(migrations);
             }
+            runnable.reals(hosting.reals);
             script(&mut runnable, printing.spelling, stdout, stderr)
         },
         Outcome::Stage(staging) => {

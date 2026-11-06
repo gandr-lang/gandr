@@ -15,6 +15,9 @@
 //! [kernel]
 //! policy = "recheck" # or "trusted", the default
 //! trusted = ["<64 hexadecimal digits>"] # beside this installation's key
+//!
+//! [reals]
+//! profile = "bounded" # or "default", the default
 //! ```
 //!
 //! The key path is the editor's `gandr.presentation.spelling` setting, and a
@@ -64,6 +67,16 @@
 //! a stratum it believes against its catalogue, and certifies afresh one that
 //! does not replay. `--recheck` reads and keeps no stratum.
 //!
+//! # The quotas of the exact reals
+//!
+//! `gandr run` serves the `Reals` operations of its program under one profile
+//! of quotas, which `reals.profile` names. `default` takes the quotas of the
+//! crate, and `bounded` takes smaller ones for plans that the user does not
+//! trust. A file with no `[reals]` table takes `default`. A name that is no
+//! profile is a fault, as a bad spelling is, and the run does not start. The
+//! table is the user's file's alone: the quotas of a host are a decision of an
+//! installation, never of a project.
+//!
 //! # Saves under the XDG cache directory
 //!
 //! The language server keeps the checkpoints an editor's save persists in
@@ -96,6 +109,7 @@ use anodized::spec;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_surface_dispatcher::Presentation;
 use gandr_surface_dispatcher::PresentationFault;
+use gandr_surface_dispatcher::RealsProfile;
 use gandr_surface_dispatcher::presented;
 
 /// Whose recorded kernel verdicts a `check` believes.
@@ -122,9 +136,10 @@ impl Default for Kernel
     }
 }
 
-/// Why the configuration file's `[kernel]` table could not be read.
+/// Why a table of the configuration file could not be read: its `[kernel]`
+/// or its `[reals]`.
 #[derive(Debug)]
-pub struct KernelFault
+pub struct TableFault
 {
     /// The file.
     path: PathBuf,
@@ -132,7 +147,7 @@ pub struct KernelFault
     why: String,
 }
 
-impl fmt::Display for KernelFault
+impl fmt::Display for TableFault
 {
     /// Writes `<path>: <why>`.
     ///
@@ -424,7 +439,8 @@ pub fn checkouts() -> Option<PathBuf>
 }
 
 /// The user's configuration file, read and parsed at most once a process: its
-/// `[presentation]` and its `[kernel]` are two tables of the one file.
+/// `[presentation]`, its `[kernel]` and its `[reals]` are tables of the one
+/// file.
 ///
 /// # Specification
 /// trivial.
@@ -556,13 +572,13 @@ impl Configuration
     ///   system.
     ///
     /// # Errors
-    /// [`KernelFault`], naming the file.
+    /// [`TableFault`], naming the file.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a key `kernel.trusted` lists is believed through the
     ///   binary.
     /// - witness: `tests::cli::a_second_check_recalls_what_the_first_recorded_2799`
-    pub fn kernel(&self) -> Result<Kernel, KernelFault>
+    pub fn kernel(&self) -> Result<Kernel, TableFault>
     {
         match *self.read() {
             Read::Absent => Ok(Kernel::default()),
@@ -573,7 +589,45 @@ impl Configuration
             Read::Unreadable {
                 ref path,
                 ref error,
-            } => Err(KernelFault {
+            } => Err(TableFault {
+                path: path.clone(),
+                why: format!("cannot be read: {error}"),
+            }),
+        }
+    }
+
+    /// The quotas of the exact reals that the user's configuration file names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`reals_parsed`] reads the file's document; the default
+    ///   profile when no directory is named or no file is there.
+    /// - provides: the quotas of the `Reals` operations of a `run`.
+    /// - fails: a file that exists and cannot be read, and the faults of
+    ///   [`reals_parsed`].
+    /// - panics: none.
+    /// - executable: none — the result depends on the environment and the file
+    ///   system.
+    ///
+    /// # Errors
+    /// [`TableFault`], naming the file.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a configured profile bounds a run, and an unknown one
+    ///   stops it before it starts, each through the binary.
+    /// - witness: `tests::reals::a_configured_profile_bounds_the_run_5704`
+    pub fn reals(&self) -> Result<RealsProfile, TableFault>
+    {
+        match *self.read() {
+            Read::Absent => Ok(RealsProfile::default()),
+            Read::Parsed {
+                ref path,
+                ref document,
+            } => reals_parsed(path, document.as_ref()),
+            Read::Unreadable {
+                ref path,
+                ref error,
+            } => Err(TableFault {
                 path: path.clone(),
                 why: format!("cannot be read: {error}"),
             }),
@@ -590,7 +644,7 @@ impl Configuration
 ///   [`Kernel::Rechecking`]; a document without a `kernel` table is the
 ///   default. Text that is not TOML, a `kernel` that is not a table, a policy
 ///   that is neither name, and a trusted key that is not 64 hexadecimal digits
-///   are each a [`KernelFault`].
+///   are each a [`TableFault`].
 /// - provides: the reading of the table, apart from reading the file.
 /// - fails: the faults the ensures clause names.
 /// - panics: none.
@@ -598,7 +652,7 @@ impl Configuration
 ///   names, which the result alone does not carry.
 ///
 /// # Errors
-/// [`KernelFault`], as above.
+/// [`TableFault`], as above.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each policy, a trusted key, a short key, a key with a
@@ -608,9 +662,9 @@ impl Configuration
 fn kernel_parsed(
     path: &Path,
     read: Result<&toml::Table, &toml::de::Error>,
-) -> Result<Kernel, KernelFault>
+) -> Result<Kernel, TableFault>
 {
-    let fault = |why: String| KernelFault {
+    let fault = |why: String| TableFault {
         path: path.to_path_buf(),
         why,
     };
@@ -627,6 +681,73 @@ fn kernel_parsed(
         )),
     };
     read.map_err(fault)
+}
+
+/// The profile that `read`, the contents of `path` parsed as TOML, names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `reals.profile` reads the name of a [`RealsProfile`] as that
+///   profile; a document without a `reals` table, or a table that names no
+///   profile, is the default. Text that is not TOML, a `reals` that is not a
+///   table, and a profile that is no name of [`RealsProfile::ALL`] are each a
+///   [`TableFault`].
+/// - provides: the reading of the table, apart from reading the file.
+/// - fails: the faults the ensures clause names.
+/// - panics: none.
+/// - executable: none — the clauses relate the document's text to the profile
+///   it names, which the result alone does not carry.
+///
+/// # Errors
+/// [`TableFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each profile, no profile, an unknown name, a profile of
+///   another type and a `reals` that is no table are each read.
+/// - witness: `config::tests::a_reals_profile_is_read_and_an_unknown_one_refused_5704`
+fn reals_parsed(
+    path: &Path,
+    read: Result<&toml::Table, &toml::de::Error>,
+) -> Result<RealsProfile, TableFault>
+{
+    let fault = |why: String| TableFault {
+        path: path.to_path_buf(),
+        why,
+    };
+    let table = match read {
+        Ok(table) => table,
+        Err(error) => return Err(fault(format!("not TOML: {}", error.message()))),
+    };
+    let profile = match table.get("reals") {
+        None => return Ok(RealsProfile::default()),
+        Some(&toml::Value::Table(ref reals)) => reals.get("profile"),
+        Some(other) => {
+            return Err(fault(format!(
+                "`reals` is of type {}, not a table",
+                other.type_str()
+            )));
+        },
+    };
+    let Some(value) = profile
+    else {
+        return Ok(RealsProfile::default());
+    };
+    let named = value.as_str().and_then(|name| {
+        RealsProfile::ALL
+            .into_iter()
+            .find(|profile| profile.to_string() == name)
+    });
+    named.ok_or_else(|| {
+        let names: Vec<String> = RealsProfile::ALL
+            .iter()
+            .map(|profile| format!("`{profile}`"))
+            .collect();
+        fault(format!(
+            "`reals.profile` is {}; it names {}",
+            described(value),
+            names.join(" or ")
+        ))
+    })
 }
 
 /// What a setting holds, in words: a string as itself, quoted; any other
@@ -711,11 +832,13 @@ mod tests
     use std::path::PathBuf;
 
     use gandr_kernel_core::verdict::KernelIdentity;
+    use gandr_surface_dispatcher::RealsProfile;
 
     use super::Kernel;
     use super::checkpointed;
     use super::kernel_parsed;
     use super::located;
+    use super::reals_parsed;
     use super::stored;
 
     #[test]
@@ -826,6 +949,55 @@ mod tests
         assert_eq!(
             refused("kernel = 1\n"),
             "/c/gandr/config.toml: `kernel` is of type integer, not a table"
+        );
+    }
+
+    /// #5704: the quotas of the exact reals are a profile that the file names,
+    /// and a profile that names nothing is refused with the names there are.
+    #[test]
+    fn a_reals_profile_is_read_and_an_unknown_one_refused_5704()
+    {
+        let read = |text: &str| {
+            reals_parsed(
+                Path::new("/c/gandr/config.toml"),
+                toml::from_str(text).as_ref(),
+            )
+        };
+        let profile = |text: &str| match read(text) {
+            Ok(profile) => profile,
+            Err(fault) => panic!("{text:?} is read: {fault}"),
+        };
+        assert_eq!(profile(""), RealsProfile::Default);
+        assert_eq!(
+            profile("[kernel]\npolicy = \"recheck\"\n"),
+            RealsProfile::Default,
+            "a file without a `[reals]` table takes the default profile"
+        );
+        assert_eq!(profile("[reals]\n"), RealsProfile::Default);
+        assert_eq!(
+            profile("[reals]\nprofile = \"default\"\n"),
+            RealsProfile::Default
+        );
+        assert_eq!(
+            profile("[reals]\nprofile = \"bounded\"\n"),
+            RealsProfile::Bounded
+        );
+        let refused = |text: &str| match read(text) {
+            Err(fault) => fault.to_string(),
+            Ok(profile) => panic!("{text:?} is refused: {profile:?}"),
+        };
+        assert_eq!(
+            refused("[reals]\nprofile = \"fast\"\n"),
+            "/c/gandr/config.toml: `reals.profile` is `fast`; it names `default` or `bounded`"
+        );
+        assert_eq!(
+            refused("[reals]\nprofile = 1\n"),
+            "/c/gandr/config.toml: `reals.profile` is of type integer; it names `default` or \
+             `bounded`"
+        );
+        assert_eq!(
+            refused("reals = 1\n"),
+            "/c/gandr/config.toml: `reals` is of type integer, not a table"
         );
     }
 

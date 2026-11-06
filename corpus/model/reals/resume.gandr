@@ -7,8 +7,8 @@
 // in lowercase hexadecimal. That text is the one form that leaves a run.
 //
 // `restore` validates the text again and mints a third machine. The program
-// steps it until it decides, and it holds. Its counters agree with those of
-// the first machine: 7 quanta, 2 obligations, and a certificate of 4 steps.
+// steps it until it decides, and it holds. Its work agrees with that of the
+// first machine: 7 quanta, 2 obligations, and a certificate of 4 steps.
 // So the certificate replays to the same steps. `gandr run resume.gandr`
 // prints `exhausted`, then `holds`, then `the same work`.
 //
@@ -39,11 +39,12 @@ pub def rec settle(machine : Integer, fuel : List(Integer)) -> [std.reals.Eff] S
 /// Sixteen quanta of fuel.
 pub def sixteen : List(Integer) = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-/// Whether two lists of three counters agree, place by place.
+/// Whether two reports agree on their first three counters, place by place:
+/// the quanta, the obligations and the steps of the certificate.
 pub def agree(first : List(Integer), second : List(Integer)) -> Bool =
   match first where
-    | #[a, b, c] => match second where
-      | #[x, y, z] => a == x && b == y && c == z
+    | #[a, b, c, .._] => match second where
+      | #[x, y, z, .._] => a == x && b == y && c == z
       | _ => false
     | _ => false
 
@@ -79,7 +80,7 @@ def restoredModelled() -> String =
     | oper step(machine, k) => k "holds" machine
     | oper checkpoint(machine, k) => k "00"
     | oper restore(text, k) => k 1
-    | oper report(machine, k) => k #[7, 2, 4]
+    | oper report(machine, k) => k #[7, 2, 4, 0, 0, 0, 4, 0, 0]
   }
 
 /// The entry: interrupt a machine after one quantum, restore it from its

@@ -136,6 +136,43 @@ struct Enclosed
     interval: NumericInterval,
 }
 
+/// A count of the pieces of a domain that a search holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PieceCount(usize);
+
+impl PieceCount
+{
+    /// No piece.
+    pub const ZERO: Self = Self(0);
+}
+
+impl From<usize> for PieceCount
+{
+    /// The count `count`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        return Self(count);
+    }
+}
+
+impl From<PieceCount> for usize
+{
+    /// The count as a number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: PieceCount) -> Self
+    {
+        return count.0;
+    }
+}
+
 /// The search for the evidence of one quantified formula.
 ///
 /// # Specification
@@ -254,6 +291,20 @@ impl Search
             queue: Vec::new(),
             ending: Ending::Open,
         });
+    }
+
+    /// The pieces that the search holds: the piece whose steps it writes, and
+    /// the pieces that it has yet to visit.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn held(&self) -> PieceCount
+    {
+        return PieceCount(
+            self.pieces
+                .len()
+                .saturating_add(usize::from(!self.queue.is_empty())),
+        );
     }
 
     /// One unit of work: write the next step of the current piece, after the

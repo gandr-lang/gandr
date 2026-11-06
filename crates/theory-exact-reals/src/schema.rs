@@ -537,7 +537,8 @@ pub(crate) fn midpoint(
 /// - panics: none.
 /// - executable: none — the checker's replay is the clause.
 /// - intension: one step for each halving, so a hull of width one takes one
-///   step for each bit of the requested width.
+///   step for each bit of the requested width. The square root of two at a
+///   width of `2^-256` takes 257 steps: the hull, then 256 halvings.
 ///
 /// # Errors
 /// - [`CertificateCheck::UnknownNode`], [`CertificateCheck::WrongNode`],

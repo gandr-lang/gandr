@@ -34,6 +34,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use num_bigint::BigInt;
 
+use crate::bisection::PieceCount;
 use crate::bisection::Search;
 use crate::bisection::Turn;
 use crate::certificate::Certificate;
@@ -441,6 +442,9 @@ pub(crate) struct Progress
     steps: Vec<Step>,
     /// Where the work is.
     state: State,
+    /// The most pieces that a search of the work holds at once, or zero for
+    /// work that searches no domain.
+    regions: PieceCount,
 }
 
 impl Progress
@@ -455,6 +459,7 @@ impl Progress
             obligation,
             steps: Vec::new(),
             state: State::Fresh,
+            regions: PieceCount::ZERO,
         };
     }
 
@@ -503,6 +508,7 @@ impl Progress
             obligation,
             steps,
             state,
+            regions: PieceCount::ZERO,
         });
     }
 
@@ -562,6 +568,16 @@ impl Progress
     pub(crate) fn steps(&self) -> &[Step]
     {
         return &self.steps;
+    }
+
+    /// The most pieces that a search of the work holds at once, or zero for
+    /// work that searches no domain.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn regions(&self) -> PieceCount
+    {
+        return self.regions;
     }
 
     /// The outcome of a settled obligation, or `None` while it is live.
@@ -687,6 +703,9 @@ impl Progress
             State::Composing(compound) => self.compose(plan, compound, quotas),
             settled @ (State::Certified(_) | State::Suspended(_)) => (settled, Unit::Stopped),
         };
+        if let State::Searching(ref search) = state {
+            self.regions = self.regions.max(search.held());
+        }
         self.state = state;
         return unit;
     }

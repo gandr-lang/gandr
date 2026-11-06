@@ -24,12 +24,8 @@
 import std.io;
 // The exact reals' host interface.
 import std.reals;
-// The subject's shared declarations: `decided`.
+// The subject's shared declarations: `witnessed` and `decided`.
 import "./reals-base.gandr";
-
-/// The canonical bytes of the plan of `∃ x ∈ [1, 2] (3 < x · x)` in
-/// lowercase hexadecimal: 6 nodes in 111 bytes, the magic `GXRP` first.
-pub def witnessed : String = "475852500100060000000000000020000100000000010000000000000001000101000000010000000000000001000101000000010200000002000000000100000000000000030100000000050200000002000000120100000003000000150000000004000000010000000102000000";
 
 /// `decided` under a handler of this source, a second model of
 /// `std.reals.Eff` that decides each root true.
@@ -45,7 +41,7 @@ def witnessedModelled() -> String =
     | oper step(machine, k) => k "holds" machine
     | oper checkpoint(machine, k) => k ""
     | oper restore(text, k) => k 0
-    | oper report(machine, k) => k #[0, 0, 0]
+    | oper report(machine, k) => k #[0, 0, 0, 0, 0, 0, 0, 0, 0]
   }
 
 /// The entry: decide the existential within 32 quanta, print the verdict,

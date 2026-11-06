@@ -29,11 +29,13 @@ use core::ops::Deref;
 
 use anodized::spec;
 
+use crate::bisection::PieceCount;
 use crate::cache::Cache;
 use crate::cache::CacheRefusal;
 use crate::cache::Lookup;
 use crate::certificate::CertificateRefusal;
 use crate::certificate::CheckerQuotas;
+use crate::certificate::StepCount;
 use crate::codec::CheckpointBytes;
 use crate::codec::DecodeError;
 use crate::codec::EncodedCheckpoint;
@@ -443,6 +445,44 @@ where
     ) -> Option<Steps>
     {
         return self.entries.get(position.0).map(|entry| Steps(entry.spent));
+    }
+
+    /// The certificate steps written so far for the obligation at `position`,
+    /// or `None` past the obligations. A resumed scheduler replays these
+    /// steps in [`Self::resume`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn written(
+        &self,
+        position: Position,
+    ) -> Option<StepCount>
+    {
+        return self
+            .entries
+            .get(position.0)
+            .map(|entry| StepCount::from(entry.progress.steps().len()));
+    }
+
+    /// The most pieces that the search of the obligation at `position` holds
+    /// at once, or `None` past the obligations. The count is zero for an
+    /// obligation that searches no domain.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn regions(
+        &self,
+        position: Position,
+    ) -> Option<PieceCount>
+    {
+        return self
+            .entries
+            .get(position.0)
+            .map(|entry| entry.progress.regions());
     }
 
     /// The obligation at `position`, or `None` past the obligations. A resumed

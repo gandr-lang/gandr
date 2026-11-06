@@ -97,7 +97,7 @@ cargo bench -p gandr-theory-exact-reals
 
 A result keeps at most `p` significant bits. Let `2^(k - 1) <= |r| < 2^k` for the exact result `r`. The floor is `floor(r / 2^(k - p)) · 2^(k - p)`, and the ceiling is the next point of that grid at or above `r`. A result that already fits is exact.
 
-A sum aligns its operands on the lower exponent. When one operand lies far below the other, that alignment would cost the whole exponent gap. Let `big` be the operand with the higher top bit, and let `g` be the lower of its exponent and `top(big) - 1 - p`. The sum replaces an operand below `2^(g - 1)` by its sign times `2^(g - 2)`. Both sums then lie in one open cell of the result's grid, so the rounded result is the same. The aligned width stays below the operand widths plus `p + 3` bits.
+A sum aligns its operands on the lower exponent. When one operand lies far below the other, the sum replaces it by its sign at a place below the last bit of the result, and the rounded result is the same. The aligned width stays below the operand widths plus `p + 3` bits. The intension of `rounded_sum` in the `dyadic` module states the place and the proof.
 
 A product forms the exact product of the two mantissas and rounds it once. Its work is one multiplication of the operand widths.
 
@@ -105,7 +105,7 @@ A product forms the exact product of the two mantissas and rounds it once. Its w
 
 A proper interval has its lower endpoint at or below its upper endpoint. A dual interval, the improper interval of Kaucher arithmetic, has them in the other order, and the orientation is a tag that nothing reorders. An infinite endpoint is open. Two equal endpoints make a point, and a point has two closed bounds. `NumericInterval::new` refuses every other form by name: `ClosedInfinity`, then `Reversed`, then `Empty`.
 
-The arithmetic takes proper operands and refuses a dual one as `DualOperand`. A sum adds the lower bounds and the upper bounds, and a difference crosses them. A product chooses its endpoint products by the signs of its operands: two products, or four when both operands straddle zero. The result closes an endpoint exactly when some pair of elements attains it and the rounding loses no bits. The product attains zero exactly when an operand contains zero, and zero times an infinity is zero at an endpoint, because every element of an interval is finite.
+The arithmetic takes proper operands and refuses a dual one as `DualOperand`. A sum adds the lower bounds and the upper bounds, and a difference crosses them. A product chooses two or four endpoint products by the signs of its operands. The `interval` module documentation states when a product closes an endpoint and how zero meets an infinity.
 
 ## Plans and their bytes
 
@@ -121,11 +121,13 @@ A plan is untrusted input, so only a `ValidatedPlan` reaches the later stages. `
 
 ## Certificates
 
-A `Certificate` is a list of steps, each a primitive rule over the nodes of a plan and over earlier steps. The checker reads a certificate against a validated plan. It uses exact dyadic arithmetic and comparisons alone, and it never calls the interval code. It returns the last step's conclusion, or it refuses the first step that fails and names the check. The checker knows one cut schema, the square root of a positive dyadic, and it refuses a cut of any other shape as forged. `refine` narrows such a cut from its hull to a requested power of two with one step for each halving. The square root of two at a width of `2^-256` takes 257 steps. The `certificate` module documentation tables the rules, and the `schema` module documentation states the schema. A `Cache` keeps each certificate under the canonical bytes of the plan that its node roots. The checker replays each hit before the machine uses it.
+A `Certificate` is a list of steps, each a primitive rule over the nodes of a plan and over earlier steps. The checker reads a certificate against a validated plan. It uses exact dyadic arithmetic and comparisons alone, and it never calls the interval code. It returns the last step's conclusion, or it refuses the first step that fails and names the check. The checker knows one cut schema, the square root of a positive dyadic, and it refuses a cut of any other shape as forged. `refine` narrows such a cut from its hull to a requested power of two with one step for each halving. The `certificate` module documentation tables the rules, and the `schema` module documentation states the schema. A `Cache` keeps each certificate under the canonical bytes of the plan that its node roots. The checker replays each hit before the machine uses it.
 
 ## Measurement
 
 `cargo bench -p gandr-theory-exact-reals` runs one bench for each stage of the crate: the arithmetic, the plan, the certificate, the scheduler, the quantifiers and the cache. Each bench prints the median, the 99th percentile and the allocations per operation, and its module documentation lists its rows.
+
+Stage C is the first release: a gandr program reaches the crate through `std.reals.Eff`. `cargo bench -p gandr-surface-dispatcher --bench reals` times that host against the bare crate. At the median, the host adds under 0.8 µs to `enclose` and under 0.2 µs to `decide`. To `admit` it adds 0.4 µs to 2.2 µs over the crate's own decode of the bytes.
 
 ## License
 
