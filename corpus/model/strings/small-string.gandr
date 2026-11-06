@@ -8,6 +8,8 @@
 // zero.
 //
 // - see: #1481 — `repeatOnto`
+// - see: libc++ `std::string` — small-string representation
+// - see: Rust `compact_str` — inline 24-byte representation
 
 // This source imports declarations for lists, bytes and ownership.
 import "../data/data-base.gandr";
@@ -28,7 +30,7 @@ pub def store(bs : List(Integer)) -> Repr =
     | true => Inline bs
     | false => Shared 1 bs
 
-/// The string of the code points `cs`: their bytes and the zero, stored.
+/// This function stores code points as UTF-8 bytes with a final zero.
 pub def own(cs : List(Integer)) -> Repr =
   store (terminated cs)
 
@@ -38,9 +40,13 @@ pub def place(s : Repr) -> Place =
     | Inline(bs) => Inside
     | Shared(n, bs) => OnHeap
 
-/// `n` copies of the code point `c` before `onto`, built by a loop that
-/// carries the list and the count left. The loop may run forever, so the row
-/// states `Partial`.
+/// This function adds `n` copies of `c` before `onto`.
+
+// A loop carries the list and the count.
+
+// The loop can run forever.
+
+// The row states `Partial`.
 pub def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> [Partial] List(Integer) =
   var acc = onto
   var left = n
@@ -50,27 +56,27 @@ pub def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> [Partial] 
   };
   pure acc
 
-/// `hi`, two bytes and the zero: inline.
+/// This test keeps `hi` inline.
 @[ runs("Inside") ]
 def hiPlace() -> Place { place (own (Cons 104 (Cons 105 Nil) : List(Integer))) }
 
-/// Twenty-three bytes and the zero fill the inline capacity exactly: inline.
+/// This test keeps a twenty-three-byte string inline.
 @[ runs("Inside") ]
 def fullPlace() -> [Partial] Place =
   let cs = repeatOnto 97 23 (Nil : List(Integer))
   place (own cs)
 
-/// One byte more and the string's bytes go to the heap.
+/// This test stores a twenty-four-byte string on the heap.
 @[ runs("OnHeap") ]
 def spilledPlace() -> [Partial] Place =
   let cs = repeatOnto 97 24 (Nil : List(Integer))
   place (own cs)
 
-/// Inline or on the heap, a string reads as its owned bytes.
+/// This test reads a string as its owned bytes.
 @[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def hiBytes() -> List(Integer) { bytes (own (Cons 104 (Cons 105 Nil) : List(Integer))) }
 
-/// The spilled string's twenty-four bytes and the zero.
+/// This test counts a spilled string and its final zero.
 @[ runs("25") ]
 def spilledCount() -> [Partial] Integer =
   let cs = repeatOnto 97 24 (Nil : List(Integer))

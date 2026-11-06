@@ -7,8 +7,7 @@
 // the join operation.
 //
 // - see: `library/std/src/string.gandr` — the functions and the laws
-// - see: `pathological/strings/joining.gandr` — a law over the definition,
-//   refused
+// - see: `pathological/strings/joining.gandr` — a law over the definition, refused
 // - see: #525 — admits a law over a definition
 
 // This source imports the join operation, its unit and its emptiness test.

@@ -22,11 +22,12 @@ import "./string-base.gandr";
 import "./nul-terminated.gandr";
 import "./small-string.gandr";
 import "./copy-on-write.gandr";
-// Early exit's host interface.
+// This import provides the host interface for early exit.
 import std.process;
 
-/// The length of `hi` read through a view, which writes it back unchanged:
-/// its two bytes and the zero.
+/// This test reads `hi` through a view.
+
+// The access restores the unchanged string.
 @[ runs("3") ]
 def readThrough() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
@@ -41,8 +42,9 @@ def writeThrough() -> List(Integer) =
   access s as v { let w = push v 33; let t = written w; resume v t };
   bytes s
 
-/// An access that aborts writes nothing back: the held string's bytes are as
-/// they were.
+/// This test aborts an access.
+
+// The held string remains unchanged.
 @[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
 def abandoned() -> List(Integer) =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
