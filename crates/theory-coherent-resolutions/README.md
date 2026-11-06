@@ -1,9 +1,10 @@
 # gandr-theory-coherent-resolutions
 
-Coherent resolution of a cell rewriting system: firing a cell under the alphabet's discipline, budgeted normalization, the multi-sum overlap enumerator and its support relation, replayable coherence certificates, and budgeted Knuth–Bendix and Squier completion that declines with a report.
+Coherent resolution of a cell rewriting system. A cell fires under the alphabet's discipline, and normalization runs within a budget. The multi-sum overlap enumerator lists the critical pairs with their support relation. The crate can replay each coherence certificate. Knuth–Bendix and Squier completion runs within a budget and declines with a report. The crate also holds the bar complex of the Lawvere theory that a first-order block presents.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -19,6 +20,11 @@ Coherent resolution of a cell rewriting system: firing a cell under the alphabet
 
 **How.** Overlaps are single unifications at a seam, so enumeration is one pair query per ordered pair of cells. Certificates record which cell fired where, never a substitution, and replay re-matches every step against skolemized terms. Completion is one worklist loop shared by a fresh run, a supplied run and a resumed one, bounded by a step ceiling and a cell ceiling; a ceiling returns a decline carrying the pending batches. Absence and refusal are values: a step that does not happen returns `Maybe` with its reason, a refused operation returns `Result` with a typed refusal.
 
+## References
+
+- `Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras` — exemplar: Yves Guiraud, Eric Hoffbeck and Philippe Malbos, "Convergent Presentations and Polygraphic Resolutions of Associative Algebras", _Mathematische Zeitschrift_ 293, 2019, `doi:10.1007/s00209-018-2185-z` — the standard resolution of a convergent presentation, which the bar complex of a first-order block builds.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the Squier frame of the presented-spaces page, which reads completion as a Morse collapse of the bar complex.
+
 ## Provided features
 
 - `rewrite_at`, `apply_once`, `normalize`, `CellApp`, `Rewrite`, `Normalization`, `firing`, `redex_search`: one firing under the alphabet's discipline, and budgeted normalization that tells a normal form from a spent budget.
@@ -31,8 +37,10 @@ Coherent resolution of a cell rewriting system: firing a cell under the alphabet
 - `complete`, `CompletionBudget`, `CompletionOutcome`, `DeclineReason`, `scheduled_confluence_batches`: budgeted completion, its decline and its resume.
 - `complete_with_overlap_source`, `Overlap::from_supplied_confluence`, `SuppliedOverlapError`: the supplied-overlap seam and its typed declines.
 - `join_critical_pairs`, `Joinability`, `PairJoining`: the joinability check with no derivation, and its resumption over a store grown by appended cells, which decides no joined pair again.
+- `LawvereTheory`, `TermTable`, `TermNode`, `TermHead`, `root_rewrite`: the Lawvere theory of a first-order block that the caller states, with its terms interned once and its normal forms innermost first within a `NormalizationBudget`.
+- `BarCell`, `Arrow`, `Degeneracy`, `BarBound`, `Truncation`, `truncated`, `LawvereError`: the bar complex of that theory as a `Complex` of `gandr-theory-discrete-morse`, which states the faces of a cell when a caller asks, and the largest subcomplex inside a bound.
 - The engine trusts the splice law rather than checking it, and an alphabet that breaks it shows through the step.
-- The boundary wrappers (`NormalizationBudget`, `CompletionStepBudget`, `CompletionCellBudget`, `CertificateIndex`, `BatchIndex`, `OverlapIndex`, `PairDecisions`, `BudgetExhaustion`, `TraceletReplay`, `TraceletEquivalence`, `StepIndependence`, `CompletionStatus`): every budget, index and verdict a signature here crosses.
+- The boundary wrappers (`NormalizationBudget`, `CompletionStepBudget`, `CompletionCellBudget`, `CertificateIndex`, `BatchIndex`, `OverlapIndex`, `PairDecisions`, `BudgetExhaustion`, `TraceletReplay`, `TraceletEquivalence`, `StepIndependence`, `CompletionStatus`, `Operation`, `Variable`, `TermPlace`, `Arity`, `TermSize`, `Occurrences`, `BarDegree`): every budget, index and verdict a signature here crosses.
 
 ## Expected features
 
@@ -130,6 +138,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Overlap enumeration and support | [`overlap`](src/overlap.rs) |
 | Certificates, their identity, peak-rooted replay and replay reuse | [`tracelet`](src/tracelet.rs) |
 | Completion and supplied overlaps | [`completion`](src/completion.rs) |
+| The bar complex of a block's Lawvere theory | [`lawvere`](src/lawvere.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 | Executable specifications, references | [`src/lib.rs`](src/lib.rs) |
 

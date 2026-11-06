@@ -5,6 +5,8 @@
 //! and adversary suites read the toy alphabet from the test-only tools crate;
 //! the differential suite needs `std` for the property runner.
 
+extern crate alloc;
+
 #[cfg(test)]
 mod adversarial_alphabet;
 #[cfg(test)]
@@ -15,6 +17,8 @@ mod completion;
 mod differential;
 #[cfg(test)]
 mod fixture;
+#[cfg(test)]
+mod lawvere;
 #[cfg(test)]
 mod overlap;
 #[cfg(test)]
