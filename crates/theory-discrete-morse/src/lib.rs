@@ -12,8 +12,8 @@
 //! The crate reads the caller's complex through [`Complex`], so a complex is
 //! any set of cells that can give the faces of a cell. A [`Scheme`] gives the
 //! class of each cell itself, as Brown's collapsing scheme does on a bar
-//! complex. [`collapse`] checks such a scheme on a set of cells and keeps
-//! their critical cells. [`greedy`] builds an acyclic matching on a finite
+//! complex. [`collapse()`] checks such a scheme on a set of cells and keeps
+//! their critical cells. [`greedy()`] builds an acyclic matching on a finite
 //! complex.
 //!
 //! # Items
@@ -22,8 +22,8 @@
 //! | ---- | ------------- |
 //! | [`Complex`], [`Incidence`], [`Standing`], [`Invertibility`] | the caller's complex, the incidence of a face, and whether a cell lies in the complex |
 //! | [`Scheme`], [`Class`] | a matching that gives the class of each cell, and the class: critical, or paired up or down |
-//! | [`collapse`], [`Collapse`], [`Faults`], [`Budget`], [`Count`] | the check of a scheme on a set of cells, its critical cells and its faults |
-//! | [`greedy`], [`Matching`], [`Matched`] | the greedy acyclic matching on a finite complex, and the matching read as a scheme |
+//! | [`collapse()`], [`Collapse`], [`Faults`], [`Budget`], [`Count`] | the check of a scheme on a set of cells, its critical cells and its faults |
+//! | [`greedy()`], [`Matching`], [`Matched`] | the greedy acyclic matching on a finite complex, and the matching read as a scheme |
 //! | [`MorseError`] | every refusal: the caller's own fault, or a walk past its budget |
 //!
 //! A [`GradedPoset`] is a [`Complex`]: the faces of a cell are the cells of

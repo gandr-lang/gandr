@@ -103,7 +103,7 @@ where
     }
 
     /// The matching read as a scheme over `complex`, so that
-    /// [`collapse`](crate::collapse) checks it.
+    /// [`collapse()`](crate::collapse()) checks it.
     ///
     /// # Specification
     /// trivial.
