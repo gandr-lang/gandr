@@ -12,6 +12,7 @@
 // - see: `../../ledger/features/cost-effect.gandr` — the lawful models
 // - see: `../../../library/std/src/cost.gandr` — `Cost.Eff` and `Counting`
 
+// The cost effect.
 import std.cost (Cost);
 
 /// A model whose charge doubles its cost.
