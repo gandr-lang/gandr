@@ -10,5 +10,3 @@ mod faces;
 mod graded;
 #[cfg(test)]
 mod subcomplexes;
-#[cfg(test)]
-mod towers;

@@ -44,6 +44,7 @@ members = [
   "crates/surface-tui",
   "crates/theory-cell-complexes",
   "crates/theory-cell-complexes-tools",
+  "crates/theory-cellular-sheaves",
   "crates/theory-circuit-algebras",
   "crates/theory-coherent-resolutions",
   "crates/theory-computads",
@@ -166,6 +167,7 @@ default-features = false
 # - surface-tui
 # - theory-cell-complexes
 # - theory-cell-complexes-tools
+# - theory-cellular-sheaves
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
 # - theory-computads
@@ -813,6 +815,16 @@ default-features = false
 [workspace.dependencies.gandr-theory-cell-complexes-tools]
 path = "crates/theory-cell-complexes-tools"
 
+# Cellular sheaves over finite graded posets: gluing over a cover, and
+# cohomology through a tower of levels.
+# features:
+# - none: alloc-only stalks, entry maps and exact rational matrices.
+# consumers:
+# - theory-shapes (dev)
+[workspace.dependencies.gandr-theory-cellular-sheaves]
+path = "crates/theory-cellular-sheaves"
+default-features = false
+
 # The diagram view of circuit algebras: monogamous acyclic wirings with
 # interfaces, their canonical form and the relabelling that checks it, and
 # the overlaps of two diagrams.
@@ -896,6 +908,7 @@ path = "crates/theory-exact-reals"
 # features:
 # - none: alloc-only posets over finite Stone duality's bit rows.
 # consumers:
+# - theory-cellular-sheaves
 # - theory-shapes (dev)
 [workspace.dependencies.gandr-theory-graded-posets]
 path = "crates/theory-graded-posets"
@@ -1024,6 +1037,7 @@ path = "crates/theory-spec-combinators"
 # features:
 # - none: alloc-only lattices, posets and maps.
 # consumers:
+# - theory-cellular-sheaves
 # - theory-graded-posets
 # - theory-shapes
 [workspace.dependencies.gandr-theory-stone-duality]

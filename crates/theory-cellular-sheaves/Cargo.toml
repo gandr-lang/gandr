@@ -1,0 +1,31 @@
+[package]
+name = "gandr-theory-cellular-sheaves"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Cellular sheaves for gandr: stalks and restriction maps over a finite graded poset, gluing over a cover, and cohomology through a tower of levels"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["cellular-sheaf", "cohomology", "gandr", "no-std"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. The graded poset holds the cells and their
+# order, and finite Stone duality names the cells and holds the sets of them
+# as bit rows.
+[dependencies]
+anodized.workspace = true
+gandr-theory-graded-posets.workspace = true
+gandr-theory-stone-duality.workspace = true
+
+[lints]
+workspace = true

@@ -20,9 +20,7 @@ workflow  repository tooling and gates
 
 ## Map
 
-The category map is [`ledger/README.md` § Map](../ledger/README.md#map), and the per-crate map is [`ledger/crates.dot`](../ledger/crates.dot).
-
-[`ledger/README.md` § Files](../ledger/README.md#files) states how both maps are generated and checked, and what the concern, purpose and reference ledgers hold.
+The category map is [`ledger/README.md` § Map](../ledger/README.md#map), and the per-crate map is [`ledger/crates.dot`](../ledger/crates.dot). [§ Files](../ledger/README.md#files) states how both are generated and checked.
 
 ## Members
 
@@ -74,6 +72,7 @@ crates/
 ├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
 ├── theory-cell-complexes/         command patterns, matching, the reduction order, the cell alphabet and store
 ├── theory-cell-complexes-tools/   the toy alphabet and the adversary frame engine suites test against (dev only)
+├── theory-cellular-sheaves/       cellular sheaves: gluing and cohomology
 ├── theory-circuit-algebras/       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
 ├── theory-coherent-resolutions/   firing, critical pairs, replayable coherence certificates, budgeted completion
 ├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
