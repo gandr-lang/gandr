@@ -505,7 +505,12 @@ jobs:
     name: prepare the run
     needs: depth
     if: ${{ !cancelled() && github.actor != 'renovate[bot]' }}
-    runs-on: *linux
+    # A hosted runner prepares each run, the integration cycle's too. The
+    # self-hosted runner keeps its workspace between jobs. Its container jobs
+    # run as root, so they leave files that its user cannot remove. A job on
+    # its host then fails at its checkout. This job is the one job of a cycle
+    # that checks out on the host, and it runs no lane of the suite.
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: read
