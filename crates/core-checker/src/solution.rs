@@ -11,7 +11,9 @@
 //! elimination. The arm's body moves into a thunk over the binders after the
 //! variable that it reads. The thunk stands at the solved side. One transport
 //! along the equation carries it to the variable. A case on a variable
-//! generalises its later binders the same way, through its motive.
+//! generalises its later binders the same way, through its motive. A motive
+//! that keeps its scrutinee, over a family with parameters, reads the
+//! scrutinee as its own binder, and each arm reads it as its constructor.
 //!
 //! The injectivity step reads an equation between two applications of one
 //! constructor ([`split_step`]). It binds one path for each field that the two
@@ -671,7 +673,7 @@ pub fn refined_arm(
 
 /// The case `case` on a variable, its motive generalised over the binders
 /// after the variable that its arms or its motive read and whose types read
-/// the variable.
+/// the variable, and over the variable itself when the motive keeps it.
 ///
 /// # Specification
 /// - requires: `case` is read under the binders open now.
@@ -680,11 +682,13 @@ pub fn refined_arm(
 ///   (d′ : D[x := s]). M(s)`, each arm abstracting `d′` past its fields and
 ///   equations and reading it for `D`, applied to `D`. The refined case carries
 ///   each arm's written lambda to its copy, and names each lambda that binds
-///   `d′` beside the binder it stands for. [`unrefined::Absent::Unsolved`] when
-///   neither an arm nor the motive reads such a binder or one such binder is
-///   staged, and [`unrefined::Absent::Unshaped`] for any other term, a
-///   scrutinee that is no variable an open binder holds, or an arm of another
-///   form.
+///   `d′` beside the binder it stands for. When the motive keeps the variable,
+///   as [`kept`] reads it, the motive reads it as `s`, and each arm reads it as
+///   its constructor over its fields. [`unrefined::Absent::Unsolved`] when
+///   neither an arm nor the motive reads such a binder and the motive keeps no
+///   variable, or one such binder is staged, and
+///   [`unrefined::Absent::Unshaped`] for any other term, a scrutinee that is no
+///   variable an open binder holds, or an arm of another form.
 /// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not hold,
 ///   and [`CheckRefusal::MachineInvariant`] for a binder count past any index.
 /// - panics: none.
@@ -700,6 +704,7 @@ pub fn refined_arm(
 ///   checkers.
 /// - witness: `tests::native_formers::a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483`
 /// - witness: `tests::native_formers::a_binder_that_the_motive_alone_reads_is_generalised_in_both_checkers_5324`
+/// - witness: `kernel_export::kernel_presented_readmission::a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
     | Maybe::Present(ref refined) => refined.term != case,
     | Maybe::Absent(_) => true,
@@ -738,9 +743,10 @@ pub fn refined_case(
         return Ok(Maybe::Absent(unrefined::Absent::Unshaped));
     }
     let variable = place_of(depth, index)?;
-    let arena = context.arena_mut();
     // The motive stands under one binder more, the scrutinee's.
     let under = depth_past(depth, 1)?;
+    let classifier = kept(context, &binders, (variable, depth), (motive, equations))?;
+    let arena = context.arena_mut();
     let mut seeds = Vec::with_capacity(binders.len());
     for place in 0 .. binders.len() {
         let mut read = Reading::Ignores;
@@ -761,7 +767,9 @@ pub fn refined_case(
         seeds.push(read);
     }
     let generalised = generalised(arena, &binders, variable, seeds)?;
-    if generalised.is_empty() || staging(arena, &binders, &generalised)? == Staging::Staged {
+    if (generalised.is_empty() && matches!(classifier, Maybe::Absent(_)))
+        || staging(arena, &binders, &generalised)? == Staging::Staged
+    {
         return Ok(Maybe::Absent(unrefined::Absent::Unsolved));
     }
     let count = generalised.len();
@@ -775,6 +783,13 @@ pub fn refined_case(
         place: scrutinised,
         by: variable_at(arena, inner, scrutinised)?,
     });
+    // A motive that keeps the scrutinee reads it as its own binder.
+    if let Maybe::Present(_) = classifier {
+        replaced.push(Replaced {
+            place: variable,
+            by: variable_at(arena, inner, scrutinised)?,
+        });
+    }
     for (position, &place) in generalised.iter().enumerate() {
         let at = depth_past(beneath, position)?;
         replaced.push(Replaced {
@@ -797,7 +812,7 @@ pub fn refined_case(
     let (mut arms, mut carried) = (Vec::with_capacity(branches.len()), Vec::new());
     let mut generalising = Vec::with_capacity(count.saturating_mul(branches.len()));
     let (mut written, mut renamed) = (Vec::new(), Vec::with_capacity(count));
-    for (&branch, &arity) in branches.iter().zip(&arities) {
+    for (tag, (&branch, &arity)) in branches.iter().zip(&arities).enumerate() {
         let bound = usize::from(arity)
             .checked_add(usize::from(equations))
             .ok_or(CheckRefusal::MachineInvariant)?;
@@ -818,6 +833,23 @@ pub fn refined_case(
             renamed.push(Replaced {
                 place,
                 by: variable_at(arena, past, depth_past(under, position)?)?,
+            });
+        }
+        // The arm reads a kept scrutinee as its constructor over the fields.
+        if let Maybe::Present((family, ty)) = classifier {
+            let classified = carried_value_type(arena, ty, (depth, past), &[])?;
+            let mut fields = Vec::with_capacity(usize::from(arity));
+            for field in 0 .. usize::from(arity) {
+                fields.push(variable_at(arena, past, depth_past(depth, field)?)?);
+            }
+            renamed.push(Replaced {
+                place: variable,
+                by: arena.value_constructor(
+                    family,
+                    classified,
+                    gandr_core_term::ConstructorTag::from(tag),
+                    fields,
+                ),
             });
         }
         let mut arm = carried_computation(arena, body, (under, past), &renamed, &mut carried)?;
@@ -853,6 +885,80 @@ pub fn refined_case(
         generalising,
         minted,
     }))
+}
+
+/// The family and the datatype that a case's scrutinee is read at its arms by,
+/// when the case's motive keeps the scrutinee.
+///
+/// The lowering abstracts the scrutinee out of the motive over a family with
+/// no parameter. Over a family with parameters it names no classifier for the
+/// constructors, so the motive keeps the scrutinee variable as written. The
+/// checker holds the variable's type, so it reads the variable at each arm's
+/// constructor in its place.
+///
+/// # Specification
+/// - requires: `binders` are the binders open at the case, at the depth
+///   `depth`, and `variable` is the place of its scrutinee; `motive` stands
+///   under the scrutinee's binder.
+/// - ensures: the scrutinee's family and its datatype, read at `depth` to its
+///   head form, past its stage when it is a recursion's stage, exactly when the
+///   case binds no equation, the motive reads the scrutinee variable and does
+///   not read its own binder, and the type's head form is a datatype of that
+///   family; the unsolved absence otherwise.
+/// - fails: as [`reads`] and the head-form reading, and
+///   [`CheckRefusal::MachineInvariant`] for a place past `binders`.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case on a code of a family with a parameter, its goal
+///   reading the code, meets the goal at each constructor, and a case over a
+///   family with no parameter is refined as before.
+/// - witness: `kernel_export::kernel_presented_readmission::a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
+    | Maybe::Present((family, ty)) => matches!(context.arena().value_type(ty), Some(&ValueType::Data { declaration, .. }) if declaration == family),
+    | Maybe::Absent(reason) => reason == unrefined::Absent::Unsolved,
+}))]
+fn kept(
+    context: &mut CheckingContext<'_>,
+    binders: &[ValueTypeId],
+    (variable, depth): (BinderDepth, BinderDepth),
+    (motive, equations): (CompTypeId, gandr_kernel_term::EquationCount),
+) -> Result<Maybe<(gandr_kernel_term::ConstantIndex, ValueTypeId), unrefined::Absent>, CheckRefusal>
+{
+    let unsolved = Maybe::Absent(unrefined::Absent::Unsolved);
+    if equations != gandr_kernel_term::EquationCount::NONE {
+        return Ok(unsolved);
+    }
+    // The motive stands under one binder more, the scrutinee's.
+    let under = depth_past(depth, 1)?;
+    let goal = CoreNode::Type(TypeNode::Computation(motive));
+    if reads(context.arena(), goal, DeBruijnIndex::from(0_u32))? == Reading::Reads
+        || reads(context.arena(), goal, index_at(under, variable)?)? == Reading::Ignores
+    {
+        return Ok(unsolved);
+    }
+    let &written = binders
+        .get(usize::from(variable))
+        .ok_or(CheckRefusal::MachineInvariant)?;
+    let base = match context.arena().value_type(written) {
+        Some(&ValueType::Staged { base, .. }) => base,
+        Some(_) | None => written,
+    };
+    // The type is scoped where the scrutinee is bound, and its head form is
+    // read where the case stands. A head form the checker does not reach
+    // leaves the case as written, for the case rule to read.
+    let here = carried_value_type(context.arena_mut(), base, (variable, depth), &[])?;
+    let Ok(ty) = context.whnf_value_type(here)
+    else {
+        return Ok(unsolved);
+    };
+    Ok(match context.arena().value_type(ty) {
+        Some(&ValueType::Data { declaration, .. }) => Maybe::Present((declaration, ty)),
+        Some(_) | None => unsolved,
+    })
 }
 
 /// The goal of the arm `summand` of a case on `scrutinee`, a sum: `outside`
