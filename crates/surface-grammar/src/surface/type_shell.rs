@@ -621,9 +621,10 @@ fn add_type_rules(
     // the source leaves open, read as a fixed value. The recovery then marks
     // the open bracket at the declaration's end and not where it was left
     // open. A face's value follows `↦`, which no declaration writes, so it is
-    // an expression: the record of the face's fields. The face form holds one
-    // face. A `,` after its expression hole makes the recovery of a dropped
-    // token owe more in sources that write no face.
+    // an expression: the record of the face's fields. A system writes more
+    // faces after the first, each after a `,`: `Config[secure ↦ a, addr ↦
+    // b]`. The `,` after a face's expression hole lets the recovery of a
+    // dropped token read a system in sources that write no face (#5106).
     rules.push(rule(
         RuleName("staged_type"),
         ty,
@@ -647,6 +648,12 @@ fn add_type_rules(
                         Regex::seq([
                             tile(TileLabel("↦")),
                             Regex::sort(Sort::Expression),
+                            Regex::repeat(Regex::seq([
+                                tile(TileLabel(",")),
+                                tile(TileLabel("identifier")),
+                                tile(TileLabel("↦")),
+                                Regex::sort(Sort::Expression),
+                            ])),
                             tile(TileLabel("]")),
                         ]),
                     ]),

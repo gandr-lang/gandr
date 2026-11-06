@@ -807,8 +807,9 @@ enum Task
     CodataType(CompTypeId),
     /// Assemble a record type with the source's exact labels.
     RecordType(ValueTypeId),
-    /// Assemble a patched type with the source's exact fixed labels over the
-    /// base on the stack and as many values as the source fixes.
+    /// Assemble a patched type with the source's exact fixed labels and meet
+    /// labels over the base on the stack and as many values as the source
+    /// fixes and meets.
     PatchedType(ValueTypeId),
     /// Assemble a session type with the source's protocol and state over as
     /// many types on the stack as the source has payloads.
@@ -2412,10 +2413,11 @@ fn run(
         | Task::RecordType(source) => matches!(core.value_type(source), Some(ValueType::Record(fields))
             if entry_value_types.checked_sub(fields.len()).and_then(|n| n.checked_add(1)) == Some(machine.value_types.len())
             && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Record(result)) if fields.keys().eq(result.keys())))),
-        | Task::PatchedType(source) => matches!(core.value_type(source), Some(ValueType::Patched { fixed, .. })
-            if entry_values.checked_sub(fixed.len()) == Some(machine.values.len())
+        | Task::PatchedType(source) => matches!(core.value_type(source), Some(ValueType::Patched { fixed, meets, .. })
+            if entry_values.checked_sub(fixed.len().saturating_add(meets.len())) == Some(machine.values.len())
             && machine.value_types.len() == entry_value_types
-            && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Patched { fixed: result, .. }) if fixed.keys().eq(result.keys())))),
+            && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Patched { fixed: result, meets: kept, .. })
+                if fixed.keys().eq(result.keys()) && meets.iter().map(|met| &met.0).eq(kept.iter().map(|met| &met.0))))),
         | Task::SessionType(source) => matches!(core.value_type(source), Some(ValueType::Session(session))
             if entry_value_types.checked_sub(session.payloads().len()).and_then(|n| n.checked_add(1)) == Some(machine.value_types.len())
             && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Session(result))
@@ -2661,27 +2663,29 @@ fn step(
             Ok(())
         },
         Task::PatchedType(source) => {
-            let Some(&ValueType::Patched { ref fixed, .. }) = core.value_type(source)
+            let Some(&ValueType::Patched {
+                ref fixed,
+                ref meets,
+                ..
+            }) = core.value_type(source)
             else {
                 return Err(ReadbackFault::MachineInvariant);
             };
             let start = machine
                 .values
                 .len()
-                .checked_sub(fixed.len())
+                .checked_sub(fixed.len().saturating_add(meets.len()))
                 .ok_or(ReadbackFault::MachineInvariant)?;
-            let fixed = fixed
-                .keys()
-                .cloned()
-                .zip(machine.values.drain(start ..))
-                .collect();
+            let mut quoted = machine.values.drain(start ..);
+            let fixed = fixed.keys().cloned().zip(quoted.by_ref()).collect();
+            let meets = meets.iter().map(|met| met.0.clone()).zip(quoted).collect();
             let base = machine
                 .value_types
                 .pop()
                 .ok_or(ReadbackFault::MachineInvariant)?;
             machine
                 .value_types
-                .push(core.value_type_patched(base, fixed));
+                .push(core.value_type_system(base, fixed, meets));
             Ok(())
         },
         Task::SessionType(source) => {
@@ -3494,11 +3498,11 @@ ValueType::Record(ref fields) => machine.value_types.len() == entry_results
             && new_tasks.first() == Some(&Task::RecordType(quoted))
             && new_tasks.len() == fields.len().saturating_add(1)
             && new_tasks.iter().skip(1).zip(fields.values().rev()).all(|(task, field)| *task == Task::QuotedValueType { quoted: *field, frame, binders }),
-ValueType::Patched { base, ref fixed } => machine.value_types.len() == entry_results
+ValueType::Patched { base, ref fixed, ref meets } => machine.value_types.len() == entry_results
             && new_tasks.first() == Some(&Task::PatchedType(quoted))
-            && new_tasks.len() == fixed.len().saturating_add(2)
+            && new_tasks.len() == fixed.len().saturating_add(meets.len()).saturating_add(2)
             && new_tasks.last() == Some(&Task::QuotedValueType { quoted: base, frame, binders })
-            && new_tasks.iter().skip(1).zip(fixed.values().rev()).all(|(task, value)| *task == Task::QuotedCode { code: *value, frame, binders }),
+            && new_tasks.iter().skip(1).zip(meets.iter().rev().map(|met| &met.1).chain(fixed.values().rev())).all(|(task, value)| *task == Task::QuotedCode { code: *value, frame, binders }),
 ValueType::Session(ref session) => machine.value_types.len() == entry_results
             && new_tasks.first() == Some(&Task::SessionType(quoted))
             && new_tasks.len() == session.payloads().len().saturating_add(1)
@@ -3694,9 +3698,18 @@ fn step_quoted_value_type(
                 .tasks
                 .extend(fields.values().rev().map(|&field| at(field)));
         },
-        ValueType::Patched { base, ref fixed } => {
+        ValueType::Patched {
+            base,
+            ref fixed,
+            ref meets,
+        } => {
             machine.tasks.push(Task::PatchedType(quoted));
-            for &code in fixed.values().rev() {
+            for &code in meets
+                .iter()
+                .rev()
+                .map(|met| &met.1)
+                .chain(fixed.values().rev())
+            {
                 machine.tasks.push(Task::QuotedCode {
                     code,
                     frame,

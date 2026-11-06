@@ -1791,7 +1791,7 @@ impl<'arena> CoreSource<'arena>
             | (Some(&ValueType::Web), Former::WebType) => true,
         | (Some(&ValueType::Record(ref fields)), Former::Product(arity)) => fields.is_empty() && usize::from(arity) == 0_usize,
         | (Some(&ValueType::Record(ref fields)), Former::RecordType(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
-        | (Some(&ValueType::Patched { base, ref fixed }), Former::Patched(actual, arity)) =>
+        | (Some(&ValueType::Patched { base, ref fixed, .. }), Former::Patched(actual, arity)) =>
             actual == CoreNode::ValueType(base) && usize::from(arity) == fixed.len(),
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
         | (Some(&ValueType::Product(ref parts)), Former::Product(arity))
@@ -1902,9 +1902,11 @@ impl<'arena> CoreSource<'arena>
                 Former::Product(Arity::from(0_usize))
             },
             ValueType::Record(ref fields) => Former::RecordType(Arity::from(fields.len())),
-            ValueType::Patched { base, ref fixed } => {
-                Former::Patched(CoreNode::ValueType(base), Arity::from(fixed.len()))
-            },
+            // A system of faces prints as the glued type, its fixed fields:
+            // the meets are evidence its formation checks.
+            ValueType::Patched {
+                base, ref fixed, ..
+            } => Former::Patched(CoreNode::ValueType(base), Arity::from(fixed.len())),
             ValueType::Product(ref parts) => Former::Product(Arity::from(parts.len())),
             ValueType::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
             ValueType::Stack { input, output } => {

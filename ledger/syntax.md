@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x0977fc3e58291d65`
+- Grammar fingerprint: `0x5ebf6302b24fa4b5`
 - Rules: 172 — 171 committed, 1 internal
-- Molds: 3014
+- Molds: 3017
 - Attributes: 18
 
 ## Reading a form
@@ -184,7 +184,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`type_application`](../corpus/ledger/syntax/type-application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
 | [`type_application.juxtaposed`](../corpus/ledger/syntax/type-application.juxtaposed.gandr) | `TYPE   TYPE` | `type.juxtaposition` | `type_application` | admitted | Other |
 | [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ⦅ ‹type_identifier› ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ‹type_variable› ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
-| [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ↦ EXPRESSION ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` or `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ \|-> EXPRESSION ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
+| [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ↦ EXPRESSION ⦅ , ‹identifier› ↦ EXPRESSION ⦆* ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` or `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ \|-> EXPRESSION ⦅ , ‹identifier› \|-> EXPRESSION ⦆* ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized-type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope-type.gandr) | `*{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |
 | [`send_session_type`](../corpus/ledger/syntax/send-session-type.gandr) | `! TYPE ⦅ >> ‖ . ⦆ TYPE` | `type.arrow` | `send_session_type` | admitted | Operator, Other |
@@ -405,7 +405,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `type_application` | type | 13 | `type_identifier` `type_variable` | `moded_type`, `type_identifier`, `type_variable` | 4 |
 | `type_application.juxtaposed` | type | 1 | ` ` | — | 0 |
 | `type_path` | type | 17 | `.` | — | 9 |
-| `staged_type` | type | 19 | `[` | — | 4 |
+| `staged_type` | type | 22 | `[` | — | 4 |
 | `parenthesized_type` | type | 6 | `(` | — | 4 |
 | `telescope_type` | type | 6 | `*{` | — | 4 |
 | `send_session_type` | type | 3 | `!` | — | 0 |
@@ -449,8 +449,8 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 406 | 57 | 3 |
-| `,` | 272 | 46 | 0 |
+| `identifier` | 407 | 57 | 3 |
+| `,` | 273 | 46 | 0 |
 | `:` | 248 | 32 | 0 |
 | `type_identifier` | 203 | 33 | 2 |
 | `=` | 143 | 37 | 0 |
@@ -540,6 +540,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `hole_name` | 2 | 2 | 0 |
 | `include` | 2 | 2 | 1 |
 | `typed_number` | 2 | 2 | 2 |
+| `↦` | 2 | 1 | 0 |
 | `⇝` | 2 | 2 | 1 |
 | `∷` | 2 | 2 | 1 |
 | `!=` | 1 | 1 | 1 |
@@ -648,6 +649,5 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `\|>` | 1 | 1 | 1 |
 | `\|\|` | 1 | 1 | 1 |
 | `~` | 1 | 1 | 1 |
-| `↦` | 1 | 1 | 0 |
 | `≃` | 1 | 1 | 1 |
 | `≅` | 1 | 1 | 1 |

@@ -2545,6 +2545,22 @@ fn a_record_type_names_its_faces_over_its_labels()
         ],
         "each face holds the labels it lists, in written order, whatever order it lists them in"
     );
+    let cells: Vec<_> = record
+        .poset
+        .cells()
+        .iter()
+        .map(|cell| cell.decisions().to_vec())
+        .collect();
+    assert_eq!(
+        cells,
+        [
+            vec![Outside, Inside, Inside],
+            vec![Inside, Inside, Outside],
+            vec![Outside, Outside, Outside],
+            vec![Outside, Inside, Outside],
+        ],
+        "the face poset holds the faces, then their one nonempty meet, the port"
+    );
 
     let bare =
         "type Config = *{host : String}; def local : Config; def local = *{ .host = \"h\" };";

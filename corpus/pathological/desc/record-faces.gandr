@@ -2,7 +2,9 @@
 // one face is named twice. A static bracket refused: it names a field or a face
 // that the record type lacks. Another bracket fixes a field at a value of
 // another type. A record literal at a patched type states a fixed field at
-// another value, and so does a configuration coerced in to a patched type.
+// another value, and so does a configuration coerced in to a patched type. A
+// system of faces names one face twice, and another system's faces disagree
+// where they meet.
 //
 // A face lists only labels its record holds, and each face has its own name. A
 // static bracket fixes only the fields its record type writes, and a face only
@@ -12,7 +14,8 @@
 // bracket fixes, and the refusal stands at the field or the configuration.
 //
 // The types stand in a module, whose members carry the verdict each refusal
-// states. Each refusal names the face and the record type.
+// states. Each refusal names the face and the record type. Two faces of a
+// system agree on their meet, and the refusal stands at the later face's value.
 //
 // - see: `model/desc/record-faces.gandr` — the faces read, and the bracket read
 // - see: `pathological/desc/shaped-signature.gandr` — a theory's faces refused
@@ -34,9 +37,10 @@ module Faces where {
     face addr = { port };
 }
 
-/// A server's configuration, with the face `secure`.
+/// A server's configuration: the faces `secure` and `addr` meet at the port.
 type Config = *{host : String, port : Integer, tls : Bool} where
   face secure = { port, tls };
+  face addr = { host, port };
 
 /// `mode` is no field of `Config`: the bracket is refused at the label.
 @[ refuses("UnresolvedName") ]
@@ -63,3 +67,18 @@ def http : Config = *{.host = "localhost", .port = 80, .tls = false};
 /// is refused at the configuration.
 @[ refuses("FixedFieldDiffers") ]
 def plain : Config[.port = 443] = http;
+
+/// The system names `secure` twice: the second is refused at its name.
+@[ refuses("DuplicateDefinition") ]
+def again(c : Config[
+  secure ↦ *{.port = 443, .tls = true},
+  secure ↦ *{.port = 443, .tls = true}
+]) -> Integer { 0 }
+
+/// The faces meet at the port, but `secure` fixes it at 443 and `addr` at 80:
+/// the system is refused at the port of `addr`.
+@[ refuses("FixedFieldDiffers") ]
+def split_port(c : Config[
+  secure ↦ *{.port = 443, .tls = true},
+  addr ↦ *{.host = "localhost", .port = 80}
+]) -> Integer { c.port }

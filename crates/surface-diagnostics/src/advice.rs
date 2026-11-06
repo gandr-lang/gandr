@@ -698,6 +698,9 @@ fn ill_formed(kind: WfKind) -> String
         WfKind::SplitCircuitOutputs => "read all the outputs of the many-out node together",
         WfKind::DuplicateFaceName => "give each face of the boundary its own name",
         WfKind::FaceOutsideShape => "put in the face only names that the boundary lists",
+        WfKind::FacePosetPastBudget => {
+            "name fewer faces, so that the faces and their meets number at most 64"
+        },
         WfKind::UnsortedBinding => {
             "use the variable where a port binds it over the same sorts, with one argument for \
              each variable it binds"

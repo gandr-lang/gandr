@@ -599,9 +599,10 @@ impl Source for ContentSource<'_>
             },
             ContentNode::Record(ref fields) if fields.is_empty() => Former::Unit,
             ContentNode::RecordType(ref fields) => Former::RecordType(Arity::from(fields.len())),
-            ContentNode::Patched { base, ref fixed } => {
-                Former::Patched(base, Arity::from(fixed.len()))
-            },
+            // A system of faces prints as the glued type, its fixed fields.
+            ContentNode::Patched {
+                base, ref fixed, ..
+            } => Former::Patched(base, Arity::from(fixed.len())),
             ContentNode::Record(ref fields) => Former::Record(Arity::from(fields.len())),
             ContentNode::RecordUpdate(base, overlay) => {
                 let written = if let Some(&ContentNode::Record(ref fields)) =

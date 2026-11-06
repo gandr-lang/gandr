@@ -827,6 +827,12 @@ enum ExtraChildren<'arena>
     RecordTypes(
         alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ValueTypeId>,
     ),
+    /// A patched type's fixed values in label order, then its meet values in
+    /// written order.
+    Patched(
+        alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ValueId>,
+        core::slice::Iter<'arena, (gandr_core_term::FieldLabel, ValueId)>,
+    ),
     /// Product components or sum summands, in order.
     Types(core::slice::Iter<'arena, ValueTypeId>),
     /// Lazy product components, in order.
@@ -866,6 +872,10 @@ impl Iterator for ExtraChildren<'_>
             Self::RecordTypes(ref mut values) => values
                 .next()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+            Self::Patched(ref mut fixed, ref mut meets) => fixed
+                .next()
+                .or_else(|| meets.next().map(|met| &met.1))
+                .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
             Self::Types(ref mut types) => types
                 .next()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
@@ -913,6 +923,11 @@ impl DoubleEndedIterator for ExtraChildren<'_>
             Self::RecordTypes(ref mut values) => values
                 .next_back()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+            Self::Patched(ref mut fixed, ref mut meets) => meets
+                .next_back()
+                .map(|met| &met.1)
+                .or_else(|| fixed.next_back())
+                .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
             Self::Types(ref mut types) => types
                 .next_back()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
@@ -1472,8 +1487,12 @@ Err(_) => false,
                         extra = ExtraChildren::RecordTypes(fields.values());
                         [None, None, None, None, None]
                     },
-                    ValueType::Patched { base, ref fixed } => {
-                        extra = ExtraChildren::RecordValues(fixed.values());
+                    ValueType::Patched {
+                        base,
+                        ref fixed,
+                        ref meets,
+                    } => {
+                        extra = ExtraChildren::Patched(fixed.values(), meets.iter());
                         one(Reached::ValueType(base), Lowering::NONE)
                     },
                     ValueType::Stack { input, output } => two(

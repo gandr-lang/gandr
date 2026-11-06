@@ -646,7 +646,7 @@ fn coerced_in(
     wanted: ValueTypeId,
 ) -> Result<Maybe<Coercion, ()>, CheckRefusal>
 {
-    let ValueTypeView::Patched { base, fixed } = value_type_view(context.arena(), wanted)?
+    let ValueTypeView::Patched { base, fixed, .. } = value_type_view(context.arena(), wanted)?
     else {
         return Ok(Maybe::Absent(()));
     };
@@ -714,7 +714,7 @@ fn coerced_out(
     }
     // The fixed values are read where the element stands.
     let settled = found.settle(context.arena_mut());
-    let ValueTypeView::Patched { base, fixed } = value_type_view(context.arena(), settled)?
+    let ValueTypeView::Patched { base, fixed, .. } = value_type_view(context.arena(), settled)?
     else {
         return Ok(Maybe::Absent(()));
     };
@@ -2191,15 +2191,19 @@ fn convert(
                         true
                     },
                     // Two patched types convert when their bases convert and
-                    // they fix the same labels at values that convert.
+                    // they fix the same labels at values that convert. A
+                    // system's meets are evidence its formation checks, and
+                    // the glued type does not hold them.
                     (
                         ValueTypeView::Patched {
                             base: left_base,
                             fixed: left_fixed,
+                            ..
                         },
                         ValueTypeView::Patched {
                             base: right_base,
                             fixed: right_fixed,
+                            ..
                         },
                     ) => {
                         if left_fixed.len() != right_fixed.len()

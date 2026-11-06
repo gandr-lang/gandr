@@ -1568,10 +1568,19 @@ where
             writer.tag(Tag(0x51));
             write_fields(writer, fields)?;
         },
-        ContentNode::Patched { base, ref fixed } => {
-            writer.tag(Tag(0x8F));
+        // A patch with no meets keeps the tag it had before systems of faces,
+        // so its bytes and its content key do not change (#5106).
+        ContentNode::Patched {
+            base,
+            ref fixed,
+            ref meets,
+        } => {
+            writer.tag(Tag(if meets.is_empty() { 0x8F } else { 0x90 }));
             write_index(writer, base)?;
             write_fields(writer, fixed)?;
+            if !meets.is_empty() {
+                write_meets(writer, meets)?;
+            }
         },
         ContentNode::Constructor {
             ref family,
@@ -2513,6 +2522,56 @@ fn read_fields(
         let _previous = fields.insert(label, field);
     }
     Ok(fields)
+}
+
+/// Write a system's meets: the count, then each label and its value, in
+/// written order.
+///
+/// # Specification
+/// - ensures: every label and value follows the count, in written order.
+/// - fails: an unrepresentable count, string length or index.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a system of two faces keeps its meet across persistence.
+/// - witness: `codec::tests::every_node_former_round_trips_under_its_own_frame`
+fn write_meets<Out>(
+    writer: &mut Writer<'_, Out>,
+    meets: &[(gandr_core_term::FieldLabel, NodeIndex)],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(meets.len()))?;
+    for &(ref label, value) in meets {
+        writer.bytes(Bytes(label.as_ref().as_bytes()))?;
+        write_index(writer, value)?;
+    }
+    Ok(())
+}
+
+/// Read a system's meets in written order.
+///
+/// # Specification
+/// - ensures: one label and value for each counted meet, in written order.
+/// - fails: a malformed label or index.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a system of two faces keeps its meet across persistence.
+/// - witness: `codec::tests::every_node_former_round_trips_under_its_own_frame`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(8))]
+fn read_meets(
+    reader: &mut Reader<'_>
+) -> Result<Vec<(gandr_core_term::FieldLabel, NodeIndex)>, CodecError>
+{
+    let count = reader.count()?;
+    let mut meets = Vec::new();
+    for _ in 0 .. count.0 {
+        let label = read_field_label(reader)?;
+        meets.push((label, read_index(reader)?));
+    }
+    Ok(meets)
 }
 
 /// Write a protocol's labelled branches: the count, then each label and the
@@ -4095,7 +4154,7 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
                 && reader.bytes.get(before).is_some_and(|&tag| match *node {
                     ContentNode::Data { .. } => tag == 0x50,
                     ContentNode::RecordType(_) => tag == 0x51,
-                    ContentNode::Patched { .. } => tag == 0x8F,
+                    ContentNode::Patched { ref meets, .. } => tag == if meets.is_empty() { 0x8F } else { 0x90 },
                     ContentNode::Constructor { .. } => tag == 0x52,
                     ContentNode::Record(_) => tag == 0x53,
                     ContentNode::DataCase { equations, .. } => tag == if usize::from(equations) == 0 { 0x54 } else { 0x5E },
@@ -4241,14 +4300,28 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         },
         0x51 => ContentNode::RecordType(read_fields(reader)?),
         // A patch that fixes no label is its base, which the arena mints in
-        // its place: no canonical frame holds one.
+        // its place: no canonical frame holds one. A system of faces holds at
+        // least one meet under its own tag.
         0x8F => {
             let base = read_index(reader)?;
             let fixed = read_fields(reader)?;
             if fixed.is_empty() {
                 return Err(CodecError::NonCanonical);
             }
-            ContentNode::Patched { base, fixed }
+            ContentNode::Patched {
+                base,
+                fixed,
+                meets: Vec::new(),
+            }
+        },
+        0x90 => {
+            let base = read_index(reader)?;
+            let fixed = read_fields(reader)?;
+            let meets = read_meets(reader)?;
+            if fixed.is_empty() || meets.is_empty() {
+                return Err(CodecError::NonCanonical);
+            }
+            ContentNode::Patched { base, fixed, meets }
         },
         0x52 => ContentNode::Constructor {
             family: read_reference(reader)?,
