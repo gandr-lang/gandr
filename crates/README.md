@@ -74,7 +74,7 @@ crates/
 ├── theory-cell-complexes-tools/   the toy alphabet and the adversary frame engine suites test against (dev only)
 ├── theory-cellular-sheaves/       cellular sheaves: gluing and cohomology
 ├── theory-circuit-algebras/       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
-├── theory-coherent-resolutions/   firing, critical pairs, replayable coherence certificates, budgeted completion
+├── theory-coherent-resolutions/   firing, critical pairs, replayable coherence certificates, budgeted completion, the bar complex of a first-order block and Brown's collapsing scheme on it
 ├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
 ├── theory-decomposition-spaces/   two-mode certificate composition, bounded backward pathway queries and borrowed canonical step fields
 ├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web and its linearizations, the flow projection, guarded-family prices
