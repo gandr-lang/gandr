@@ -773,6 +773,8 @@ pub enum RefusalName
     MissingRecordField,
     /// The checker reports `PatchOutsideBase`.
     PatchOutsideBase,
+    /// The checker reports `FixedFieldDiffers`.
+    FixedFieldDiffers,
     /// A data declaration's own family occurs under a function's domain where
     /// no stage reaches it.
     NegativeOccurrence,
@@ -1311,7 +1313,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 242_usize] = [
+    pub const VOCABULARY: [Self; 243_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1338,6 +1340,7 @@ impl RefusalName
         Self::AbsentTupleComponent,
         Self::MissingRecordField,
         Self::PatchOutsideBase,
+        Self::FixedFieldDiffers,
         Self::NegativeOccurrence,
         Self::NestedOccurrence,
         Self::IndexOccurrence,
@@ -1735,6 +1738,7 @@ impl RefusalName
         | (Self::AbsentTupleComponent, b"AbsentTupleComponent")
         | (Self::MissingRecordField, b"MissingRecordField")
         | (Self::PatchOutsideBase, b"PatchOutsideBase")
+        | (Self::FixedFieldDiffers, b"FixedFieldDiffers")
         | (Self::NegativeOccurrence, b"NegativeOccurrence")
         | (Self::NestedOccurrence, b"NestedOccurrence")
         | (Self::IndexOccurrence, b"IndexOccurrence")
@@ -1882,6 +1886,7 @@ impl RefusalName
             Self::AbsentTupleComponent => "AbsentTupleComponent",
             Self::MissingRecordField => "MissingRecordField",
             Self::PatchOutsideBase => "PatchOutsideBase",
+            Self::FixedFieldDiffers => "FixedFieldDiffers",
             Self::NegativeOccurrence => "NegativeOccurrence",
             Self::NestedOccurrence => "NestedOccurrence",
             Self::IndexOccurrence => "IndexOccurrence",
@@ -3021,6 +3026,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::AbsentTupleComponent(_), RefusalName::AbsentTupleComponent)
         | (CheckRefusal::MissingRecordField { .. }, RefusalName::MissingRecordField)
         | (CheckRefusal::PatchOutsideBase { .. }, RefusalName::PatchOutsideBase)
+        | (CheckRefusal::FixedFieldDiffers { .. }, RefusalName::FixedFieldDiffers)
         | (CheckRefusal::NegativeOccurrence(_), RefusalName::NegativeOccurrence)
         | (CheckRefusal::NestedOccurrence(_), RefusalName::NestedOccurrence)
         | (CheckRefusal::IndexOccurrence(_), RefusalName::IndexOccurrence)
@@ -3178,6 +3184,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::AbsentTupleComponent(_) => RefusalName::AbsentTupleComponent,
         CheckRefusal::MissingRecordField { .. } => RefusalName::MissingRecordField,
         CheckRefusal::PatchOutsideBase { .. } => RefusalName::PatchOutsideBase,
+        CheckRefusal::FixedFieldDiffers { .. } => RefusalName::FixedFieldDiffers,
         CheckRefusal::UnknownOperation { .. } => RefusalName::UnknownOperation,
         CheckRefusal::HandlerCoverage { .. } => RefusalName::HandlerCoverage,
         CheckRefusal::HandlerUnlawful { .. } => RefusalName::HandlerUnlawful,

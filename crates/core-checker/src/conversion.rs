@@ -1598,6 +1598,35 @@ pub fn indices_agree(
     })
 }
 
+/// Whether a field that a record literal holds is the value that a patched
+/// type fixes at its label. The two terms compare as two patched types compare
+/// their fixed values.
+///
+/// # Specification
+/// - requires: both terms stand under the binders open now.
+/// - ensures: the verdict of the term pairing that converts two patched types:
+///   the solver's where a side is a hole or a mark, and otherwise equality as
+///   syntax, or the reading of a side written as a call.
+/// - fails: as the solver and the reading of a call.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a literal stating the fixed value checks, and one stating
+///   another literal is refused by the field.
+/// - witness: `tests::native_formers::a_literal_s_fixed_field_converts_with_the_fixed_value_5612`
+#[spec(ensures: |ret| field != fixed || ret.is_err() || ret == Ok(Agreement::Convertible))]
+pub fn fixed_field_agrees(
+    context: &mut CheckingContext<'_>,
+    field: ValueId,
+    fixed: ValueId,
+) -> Result<Agreement, CheckRefusal>
+{
+    convert(context, Pairing::Terms(field, fixed))
+}
+
 /// Whether two terms that a type conversion met are the same term. The terms
 /// are path endpoints, or family arguments with a call on one side. The
 /// derivation is kept where the machine's traced reading relates them.

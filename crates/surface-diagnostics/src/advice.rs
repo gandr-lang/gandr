@@ -1133,6 +1133,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         CheckRefusal::PatchOutsideBase { .. } => {
             String::from("fix only the fields that the base record holds")
         },
+        CheckRefusal::FixedFieldDiffers { .. } => {
+            String::from("state the value the type fixes, or omit the field")
+        },
         CheckRefusal::LevelMismatch { .. } => {
             String::from("lower the code to the expected universe")
         },
@@ -1317,7 +1320,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 235] = [
+    const WORDED: [&str; 236] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1553,6 +1556,7 @@ mod tests
         "BuiltinRepeated",
         "BuiltinMisplaced",
         "BuiltinNotCanonical",
+        "FixedFieldDiffers",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

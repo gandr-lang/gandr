@@ -64,6 +64,7 @@ AbsentRecordField = { tag = 26 }
 AbsentTupleComponent = { tag = 39 }
 MissingRecordField = { tag = 27 }
 PatchOutsideBase = { tag = 110 }
+FixedFieldDiffers = { tag = 111 }
 UnknownOperation = { tag = 35 }
 HandlerCoverage = { tag = 36 }
 HandlerUnlawful = { tag = 91, elide = ["left", "right"] }

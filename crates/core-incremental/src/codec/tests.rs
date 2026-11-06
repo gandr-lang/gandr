@@ -2876,6 +2876,7 @@ fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
         Refusal::AbsentRecordField(at),
         Refusal::AbsentTupleComponent(at),
         Refusal::MissingRecordField { at, expected: ty() },
+        Refusal::FixedFieldDiffers { at, fixed: at },
         Refusal::AbstractKindNotUniverse(at),
         Refusal::RepresentationAboveKind {
             representation: at,

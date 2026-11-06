@@ -410,6 +410,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::AbsentTupleComponent(_)) => "absent-tuple-component",
         Typing::Refused(Refusal::MissingRecordField { .. }) => "missing-record-field",
         Typing::Refused(Refusal::PatchOutsideBase { .. }) => "patch-outside-base",
+        Typing::Refused(Refusal::FixedFieldDiffers { .. }) => "fixed-field-differs",
         Typing::Checked { .. } => "checked",
         Typing::Synthesised { .. } => "synthesised",
         Typing::Owed => "owed",
