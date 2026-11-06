@@ -1,6 +1,12 @@
-// A region named as a value: a region is erased and never computed, so a body
-// reads its region binder only in a kept type, `A at r`.
+//! `named` uses a region parameter as a value.
+//!
+//! Regions erase at run time. The checker refuses the returned region as
+//! `RegionAsValue`.
+//!
+//! The parameter appears only in the kept type of `k`.
+//!
+//! - see: corpus/model/regions/lent.gandr — a region parameter in a kept type
 
-/// Answers its region binder as though it were a value.
+/// `named` returns its region parameter as though it were a value.
 @[ refuses("RegionAsValue") ]
 def named[r : Region](k : (() -> Integer) at r) -> -F Integer { pure r }

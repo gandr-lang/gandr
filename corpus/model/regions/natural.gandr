@@ -1,26 +1,25 @@
-// The region free theorem as naturality, as Rust lets a `&'long T` stand where
-// a `&'short T` is asked and a function generic in its lifetime cannot tell
-// which it was given. A view kept at an outer region stands at an inner one,
-// and a function polymorphic in its region commutes with that widening:
-// running it at the outer region and widening its answer is one function with
-// widening its argument and running it at the inner region. The path between
-// the two is checked by conversion. Stating it for every region-polymorphic
-// function, held abstractly, needs a value type quantifying a region.
-//
-// - owes: #2139 — a value type quantifying a region
+//! `natural` compares a region-polymorphic function across a widening.
+//!
+//! A view at an outer region stands at an inner region. The pathological twin
+//! refuses a reversed widening as `TypeMismatch`. It refuses unequal functions as
+//! `EndpointMismatch`.
+//!
+//! The checker verifies each square by conversion. Both examples run to `5`.
+//!
+//! - owes: #2139 — a value type that quantifies a region
+//! - see: corpus/pathological/regions/natural.gandr — invalid squares
 
-// `pass`, which hands back the thunk it is lent.
+// `pass` returns a thunk in its input region.
 import "./passed.gandr";
-// Early exit's host interface.
+// The source imports the early exit host interface.
 import std.process;
 
-/// Forces the thunk it is lent, then hands it back in the same region.
+/// `touch` forces its thunk, then returns it at the same region.
 pub def touch[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) =
   let _ = force k
   pure k
 
-/// `pass` at the outer region with its answer widened to the inner one is
-/// `pass` at the inner region after its argument is widened.
+/// `passNatural` compares `pass` across an outer-to-inner widening.
 @[ runs("5") ]
 def passNatural() -> Integer =
   var s = 5
@@ -41,8 +40,8 @@ def passNatural() -> Integer =
     | oper exit(code, rest) => pure 0
   }
 
-/// The same square for `touch`, whose two sides nest its binds apart: the
-/// conversion reassociates them.
+/// `touchNatural` compares `touch` across the widening. Conversion reassociates
+/// the binds.
 @[ runs("5") ]
 def touchNatural() -> Integer =
   var s = 5

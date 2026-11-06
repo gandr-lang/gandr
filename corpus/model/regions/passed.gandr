@@ -1,14 +1,18 @@
-// A function handing back what it was lent, as Rust writes `fn pass<'a>(k: &'a
-// T) -> &'a T`: the answer is kept where the argument was, so the caller
-// reads it inside the same scope.
-
-// Early exit's host interface.
+//! `passed` returns a thunk at its input region.
+//!
+//! The caller reads the returned thunk before that region ends. The pathological
+//! twin refuses a result held in no region as `TypeMismatch`.
+//!
+//! `pass` returns its argument unchanged. The `passed` run returns `4`. Rust
+//! writes the same lifetime in `fn pass<'a>(k: &'a T) -> &'a T`.
+//!
+//! - see: corpus/pathological/regions/outlived.gandr — a result past its region
 import std.process;
 
-/// Hands back the thunk it is lent, kept in the same region.
+/// `pass` returns its thunk at the same region.
 pub def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) { pure k }
 
-/// Reads what `pass` hands back inside the handler whose region keeps it.
+/// `passed` forces the thunk that `pass` returns.
 @[ runs("4") ]
 def passed() -> Integer =
   var s = 4
