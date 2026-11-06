@@ -2180,14 +2180,7 @@ corpus/model/effects/tree.gandr STE-6.3 2e9bbe54fb2a9dee
 corpus/model/effects/tree.gandr STE-6.3 61ac953e8f7460c4
 corpus/model/effects/tree.gandr STE-6.3 b4162d247d7b5e9e
 corpus/model/effects/tree.gandr STE-6.4 7ffeb0f63edb2700
-corpus/model/ffi/effect-and-capability.gandr STE-6.3 c6344bc57e23a480
-corpus/model/ffi/effect-and-capability.gandr STE-8.1 25bb275e1fe4607b
-corpus/model/ffi/effect-and-capability.gandr STE-6.4 7ffeb0f63edb2700
-corpus/model/ffi/effect-and-capability.gandr STE-6.5 c6344bc57e23a480
-corpus/model/ffi/native-call.gandr STE-6.3 db5116b374c51cd5
-corpus/model/ffi/native-call.gandr STE-8.1 3ef73a1773c5a44c
-corpus/model/ffi/native-call.gandr STE-6.4 7ffeb0f63edb2700
-corpus/model/ffi/native-call.gandr STE-6.5 db5116b374c51cd5
+
 corpus/model/holes/pattern-hole-arms.gandr STE-3.6 767728ef79c61815
 corpus/model/holes/pattern-hole-arms.gandr STE-3.6 c870dbc6060935b2
 corpus/model/holes/pattern-hole-arms.gandr STE-3.5 c870dbc6060935b2
@@ -2667,11 +2660,6 @@ corpus/model/package/nix-derivation.gandr STE-3.5 c84240329d3834d1
 corpus/model/package/nix-derivation.gandr STE-9.3 2f3a9b429ed57c1c
 corpus/model/package/nix-derivation.gandr STE-6.3 00c69ea120c89079
 corpus/model/package/nix-derivation.gandr STE-4.3 c220e0dfb016f2aa
-corpus/model/packages/packages.gandr STE-3.2 63c9da1eb8ea94c4
-corpus/model/packages/packages.gandr STE-3.2 9743b5dd9dc3e7a8
-corpus/model/packages/packages.gandr STE-3.5 f7c465c5f047b53f
-corpus/model/packages/packages.gandr STE-9.3 ec458556a0e0b775
-corpus/model/packages/packages.gandr STE-6.4 7ffeb0f63edb2700
 corpus/model/programs/draft.gandr STE-6.3 9876ce4e6be68783
 corpus/model/programs/draft.gandr STE-8.1 9876ce4e6be68783
 corpus/model/programs/draft.gandr STE-6.4 7ffeb0f63edb2700

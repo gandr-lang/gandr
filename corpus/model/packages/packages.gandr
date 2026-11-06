@@ -1,18 +1,22 @@
-/// An existential package is a model whose sort its type leaves abstract.
-///
-/// Two counters at different types share one model type. A consumer opens
-/// either with `module m = p ;` and reads it without knowing which.
-
-/// A counter: a seed and a reading of it.
+//! `packages` models an existential package through the `Model(Seeded)` type.
+//!
+//! Integer and string counters share that model type.
+//! The pathological twins refuse carrier escapes and sealed model packages.
+//!
+//! The checker assigns a fresh abstract sort when it opens a module.
+//!
+//! - see: #1108 — `hidden`
+//!
+/// `Seeded` declares a counter seed and reader.
 theory Seeded where
-  /// What the counter counts in.
+  /// `T` gives the counter value type.
   sort T : Type;
   /// The reading of a count.
   oper read : (t : T) --> Integer;
   /// The first count.
   oper seed : T;
 
-/// A counter over integers, its seed read as itself.
+/// `Ints` reads its integer seed as itself.
 module Ints : Model(Seeded) where
   /// Counts are integers.
   type T = Integer;
@@ -21,7 +25,7 @@ module Ints : Model(Seeded) where
   /// Seven.
   def seed = 7;
 
-/// A counter over strings, its seed read as a constant.
+/// `Texts` reads its string seed as a constant.
 module Texts : Model(Seeded) where
   /// Counts are strings.
   type T = String;
@@ -30,11 +34,11 @@ module Texts : Model(Seeded) where
   /// The word seven.
   def seed = "seven";
 
-/// Opens a counter and reads its seed through its own reader.
+/// `consume` opens a counter and reads its seed with its reader.
 def consume(p : Model(Seeded)) -> Integer =
   module m = p
   m.read m.seed
 
-/// Both counters read and summed.
+/// `total` sums both counter readings.
 @[ runs("49") ]
 def total() -> Integer { consume Ints + consume Texts }

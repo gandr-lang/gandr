@@ -1,14 +1,18 @@
-// A foreign function read as an effect: the call to the sensor library is a
-// computation at the host seam, which the capability to reach the library
-// authorises. The lowering does not reach the extern block yet.
-
+//! `effect-and-capability` models a foreign sensor call as a host-seam effect.
+//!
+//! The sensor capability authorises that call.
+//! The pathological FFI sources refuse an interior NUL and a wrong arity.
+//!
+//! The current lowering refuses the `extern` block.
+//!
+//! - see: #327 — `gandr_test_strlen`, `measured`
+//! - see: #1106 — `measured`
 /// The sensor library's reading of one channel.
 @[ refuses("OutOfFragment.extern_block") ]
 extern "c" from "sensor" {
   def read(channel : i32) -> i64;
 }
 
-/// Channel zero, read; the lowering reads no projection yet, and
-/// `sensor` is the extern block's.
+/// `reading` names channel zero through the `sensor` extern block before the current lowering reaches its projection.
 @[ refuses("OutOfFragment.projection_expression") ]
 def reading = sensor.read 0i32;
