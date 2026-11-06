@@ -5,3 +5,5 @@
 mod cli;
 #[cfg(test)]
 mod net;
+#[cfg(test)]
+mod reals;

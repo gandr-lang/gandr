@@ -149,6 +149,7 @@ pub use crate::schema::radicand;
 pub use crate::schema::refine;
 pub use crate::schema::square_root;
 pub use crate::schema::square_root_of_two;
+pub use crate::semidecision::Answer;
 pub use crate::semidecision::Demand;
 pub use crate::semidecision::Obligation;
 pub use crate::semidecision::Outcome;

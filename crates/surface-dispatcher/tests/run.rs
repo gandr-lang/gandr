@@ -527,6 +527,107 @@ fn a_script_pings_over_its_network_3186()
     );
 }
 
+/// The canonical bytes of the plan of the square root of two, which the
+/// exact reals exemplar admits: its cut names the laws at the reference zero.
+const ROOT_TWO: &str = "4758525001000b0000000000000001000000000200000000000000000000000012000000000100000005000000000000000002010000000100000000000000011203000000040000001402000000050000001201000000000000001204000000030000001307000000080000000800010000000001000000000000000100010100000001000000000000000100060000000900000000000000";
+
+/// #5700: the exact reals exemplar run as a script prints the two ends of
+/// an enclosure of the square root of two no wider than `2^-64`, and writes
+/// nothing to standard error. The host declines four `Reals` operations and
+/// names each cause on standard error first: text that is not hexadecimal, a
+/// forged plan whose cut names laws the host does not register, a handle
+/// that names no plan, and a precision past the quota. Each such run is stuck
+/// at the operation, and it prints nothing.
+#[test]
+fn a_script_encloses_the_square_root_of_two_5700()
+{
+    let exemplar =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals/sqrt-two.gandr");
+    let mut console = Captured::default();
+    let mut script = Script::new(exemplar);
+    let run = script.run(&mut console);
+    assert!(
+        matches!(
+            run,
+            ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Exited(status),
+                    ..
+                },
+                ..
+            } if status == ExitStatus::from(0_u8)
+        ),
+        "the exemplar exits 0: {run:?}"
+    );
+    assert_eq!(
+        (console.lines(), console.errors()),
+        (
+            &["3260954456333195553p-61 26087635650665564425p-64".to_owned()][..],
+            &[][..]
+        ),
+        "the enclosure is printed, and no refusal"
+    );
+
+    // A program that admits `plan`, encloses the plan at `handle` no wider
+    // than `2^-precision`, and prints the lower end.
+    let enclosing = |plan: &str, handle: &str, precision: u16| {
+        format!(
+            "import std.io;\nimport std.reals;\n\ndef main() -> [std.reals.Eff, std.io.Console.Eff] Integer =\n  let held = std.reals.admit \"{plan}\"\n  let *{{lower, upper}} = std.reals.enclose {handle} {precision}\n  std.io.Console.print lower\n  0\n"
+        )
+    };
+    let forged = format!(
+        "{}01000000",
+        ROOT_TWO
+            .strip_suffix("00000000")
+            .expect("the last reference of the plan is zero")
+    );
+    for (name, source, cause) in [
+        (
+            "not-hex",
+            enclosing("zz", "held", 64),
+            "std.reals.Eff.admit: the text is not the lowercase hexadecimal of a byte string",
+        ),
+        (
+            "forged",
+            enclosing(&forged, "held", 64),
+            "std.reals.Eff.admit: the plan is refused at node 10: the evidence table does not register a reference",
+        ),
+        (
+            "unknown",
+            enclosing(ROOT_TWO, "7", 64),
+            "std.reals.Eff.enclose: the run holds no plan at the handle",
+        ),
+        (
+            "precision",
+            enclosing(ROOT_TWO, "held", 4097),
+            "std.reals.Eff.enclose: the precision is not from 0 to 4096",
+        ),
+    ] {
+        let scratch = Scratch::write(
+            Path::new(&format!("reals-{name}-5700")),
+            SourceText::from(source.as_str()),
+        );
+        let mut console = Captured::default();
+        let mut script = Script::new(scratch.0.clone());
+        let run = script.run(&mut console);
+        assert!(
+            matches!(run, ScriptRun::Source {
+                ran: Ran::Entered {
+                    entered: Entered::Ended(Evaluation::Stuck(_)),
+                    ..
+                },
+                ..
+            }),
+            "{name}: the run is stuck at the declined operation: {run:?}"
+        );
+        assert_eq!(
+            (console.lines(), console.errors()),
+            (&[][..], &[cause.to_owned()][..]),
+            "{name}: standard error names the cause, and nothing is printed"
+        );
+    }
+}
+
 /// The migration model: two migrations to the seat, answering 42.
 ///
 /// # Specification

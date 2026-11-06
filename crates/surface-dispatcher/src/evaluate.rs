@@ -230,6 +230,7 @@ mod console;
 mod entry;
 mod hole;
 mod net;
+mod reals;
 mod worlds;
 
 pub use console::Captured;
