@@ -2264,9 +2264,9 @@ fn record_width_depth_and_projection()
 
 /// A patched type forms over a record holding every label it fixes, each
 /// fixed value at its field's type. Its values are the records of its free
-/// fields, a free field projects at its type, a fixed one projects nothing,
-/// and the kernel admits each checked declaration at the record of the free
-/// fields.
+/// fields, a free field projects at its type, a fixed one reads the value the
+/// type fixes, and the kernel admits each checked declaration at the record
+/// of the free fields.
 #[test]
 fn a_patched_type_forms_over_its_base_and_types_its_free_fields()
 {
@@ -2306,7 +2306,7 @@ fn a_patched_type_forms_over_its_base_and_types_its_free_fields()
         definition(ConstantIndex::from(4_usize), outside, record),
     ];
     let (report, crossed) = run(&mut arena, &declarations);
-    for position in 0 .. 2_usize {
+    for position in 0 .. 3_usize {
         assert!(
             matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
             "{position}: {:?}",
@@ -2321,14 +2321,6 @@ fn a_patched_type_forms_over_its_base_and_types_its_free_fields()
             crossed.readmitted()[position].outcome()
         );
     }
-    assert!(
-        matches!(
-            report.judged()[2].verdict(),
-            Verdict::Refused(CheckRefusal::AbsentRecordField(_))
-        ),
-        "a fixed field projects nothing: {:?}",
-        report.judged()[2].verdict()
-    );
     assert!(
         matches!(
             report.judged()[3].verdict(),
