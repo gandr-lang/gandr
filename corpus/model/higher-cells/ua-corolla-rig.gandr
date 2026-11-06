@@ -1,8 +1,11 @@
-//! Univalence at the corollas of a signature, checked for naturality and
-//! shape [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]
-//! [Petrakis-2022-univalent_typoids]: a translator must be natural along every
-//! automorphism of its corolla, its tables must cover exactly the corollas both
-//! models inhabit, and two corollas it relates must have as many elements.
+//! This source tests univalence at signature corollas.
+//!
+//! A translator must be natural along each corolla automorphism. Its tables
+//! must cover exactly the shared corollas. Related corollas must have equal
+//! element counts.
+//!
+//! The examples accept a natural relabelling. They refuse an unnatural
+//! relabelling, mismatched tables and unmatched cardinalities.
 //!
 //! - cites: [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]
 //! - cites: [Petrakis-2022-univalent_typoids]
@@ -10,18 +13,18 @@
 //! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
 //! [Petrakis-2022-univalent_typoids]: https://arxiv.org/abs/2205.06651 "Petrakis, Univalent Typoids"
 
-/// A rig's binary operations, two corollas of one shape.
+/// `Rig` defines two binary operations with one corolla shape.
 theory Rig where
   sort R : Type;
   oper plus : (x : R, y : R) --> (z : R);
   oper times : (x : R, y : R) --> (z : R);
 
-/// A semigroup: one binary operation.
+/// `Semi` defines one binary operation.
 theory Semi where
   sort S : Type;
   oper mul : (x : S, y : S) --> (z : S);
 
-/// A relabelling of the corolla's four elements, natural along its
+/// `rename` relabels four corolla elements. It is natural along their
 /// automorphisms.
 def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
   match e
@@ -30,8 +33,7 @@ def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
     | +{.2 = u} => +{.0 = u}
     | +{.3 = u} => +{.1 = u}
 
-/// A relabelling of the corolla's four elements that is not natural along
-/// its automorphisms.
+/// `cross` relabels four corolla elements without naturality.
 def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
   match e
     | +{.0 = u} => +{.2 = u}
@@ -39,30 +41,30 @@ def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
     | +{.2 = u} => +{.0 = u}
     | +{.3 = u} => +{.3 = u}
 
-/// The rig to itself by the natural relabelling at `plus`.
+/// `dual` applies the natural relabelling to `plus`.
 def dual = ua[1, 4] Rig Rig (*{.plus = rename}) (*{.plus = rename});
 
-/// Transport along it relabels the corolla's element.
+/// `swaps` transports one corolla element along `dual`.
 def swaps : Path(
   Path.walk (fun (X) { X }) dual (*{*{}, +{.1 = *{}}}),
   *{*{}, +{.3 = *{}}}
 ) = Path.here (*{*{}, +{.3 = *{}}});
 
-/// A relabelling that does not commute with the corolla's symmetry.
+/// `crossed` refuses a relabelling that does not commute with corolla symmetry.
 @[ refuses("NotNatural") ]
 def crossed = ua[1, 4] Rig Rig (*{.plus = cross}) (*{.plus = cross});
 
-/// Tables that name a corolla on one side and not on the other.
+/// `twice` refuses tables with a corolla on only one side.
 @[ refuses("CorollaTables") ]
 def twice = ua[1, 4] Rig Rig (*{.plus = rename, .times = rename}) (*{.plus = rename});
 
-/// The booleans into the corolla's four elements.
+/// `widen` maps booleans into four corolla elements.
 def widen(b : Bool) -> Unit + Unit + Unit + Unit =
   match b
     | true => +{.0 = *{}}
     | false => +{.1 = *{}}
 
-/// The corolla's four elements onto the booleans.
+/// `narrow` maps four corolla elements onto booleans.
 def narrow(e : Unit + Unit + Unit + Unit) -> Bool =
   match e
     | +{.0 = u} => +{.0 = u}
@@ -70,6 +72,6 @@ def narrow(e : Unit + Unit + Unit + Unit) -> Bool =
     | +{.2 = u} => +{.0 = u}
     | +{.3 = u} => +{.1 = u}
 
-/// Two corollas of different element counts.
+/// `uneven` refuses two corollas with different element counts.
 @[ refuses("CorollaCardinality") ]
 def uneven = ua[1, 4] Semi Rig (*{.mul = widen}) (*{.plus = narrow});

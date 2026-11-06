@@ -1,29 +1,28 @@
-// The globular theory at dimension one, its associator a stated law, modelled
-// by the circle's paths.
+// This source models globular cells at dimension one.
 //
-// A stated law is the theory's generator cell: no rule orients it, and no
-// default fills its component. The Path reading is a model of the cells
-// reading, so `std.math.path`'s associator writes the cell.
+// `Glob` has an associator cell. A stated law does not orient. A stated law
+// has no default component. The Path reading supplies the associator from
+// `std.math.path`.
 //
-// The model writes the right unit law by conversion and the associator by the
-// theorem. A model leaving the associator out has it discharged by `Path.here`: the
-// two nestings of a chain of paths convert.
+// `PathCells` proves the right unit by conversion. It proves the associator
+// with the path theorem. `Discharged` omits the associator because `Path.here`
+// fills the converting path nestings.
 //
 // - see: `pathological/higher-cells/path-cells.gandr` — a model of the naturals
 //   leaving the cell out, and a scope breaking a stated law
 // - see: `cat-shape.gandr` — the same theory with its associator a rule
 
-// `assoc`, the associator of path composition.
+// `assoc` is the associator of path composition.
 import std.math.path (assoc);
 
-/// The circle: one point and a loop at it.
+/// `Circle` has one point and one loop.
 data Circle : Type where
-  /// The point.
+  /// `Base` is the circle's point.
   | Base : Circle
-  /// The loop at the point.
+  /// `loop` is the loop at `Base`.
   | loop : Base <-> Base
 
-/// `std.math.path`'s associator over the circle.
+/// `associator` applies the path associator over `Circle`.
 def associator(
   a : Circle,
   b : Circle,
@@ -38,22 +37,22 @@ def associator(
 ) =
   assoc Circle a b c d f g h
 
-/// The globular theory at dimension one. The right unit law is a rule, and the
-/// associator a cell between two composites.
+/// `Glob` is a globular theory at dimension one. It has a right-unit rule and
+/// an associator cell between two composites.
 theory Glob where
-  /// The objects.
+  /// `Ob` sorts the objects.
   sort Ob : Type;
-  /// The cells from one object to another.
+  /// `Hom` sorts cells between two objects.
   sort Hom(dom : Ob, cod : Ob) : Type;
 
-  /// The identity cell at an object.
+  /// `id` is the identity cell at one object.
   oper id : (a : Ob) --> Hom(a, a);
-  /// The composite of two cells end to end.
+  /// `comp` joins two cells end to end.
   oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
 
-  /// The identity is a right unit.
+  /// `unitR` states that `id` is a right unit.
   rule unitR : comp f (id b) <=> f;
-  /// The associator, a cell between the two composites of three cells.
+  /// `assoc` is a cell between two composites of three cells.
   law assoc : (
     a : Ob,
     b : Ob,
@@ -64,17 +63,17 @@ theory Glob where
     h : Hom(c, d)
   ) -> Path[.A = Hom(a, d)](comp (comp f g) h, comp f (comp g h));
 
-/// The circle's points, and the paths between them as the cells.
+/// `PathCells` models `Glob` with circle points and paths.
 module PathCells : Model(Glob) where
-  /// The circle's points.
+  /// `Ob` is `Circle`.
   type Ob = Circle;
-  /// The paths between two points.
+  /// `Hom` is the path type between two circle points.
   type Hom(a : Ob, b : Ob) = Path[.A = Circle](a, b);
 
-  /// The reflexivity.
+  /// `id` returns path reflexivity.
   def id(a : Circle) -> Path(a, a) { Path.here a }
 
-  /// The composite.
+  /// `comp` joins paths.
   def comp(
     a : Circle,
     b : Circle,
@@ -87,14 +86,14 @@ module PathCells : Model(Glob) where
   ) =
     Path.step f g
 
-  /// The right unit law, by conversion.
+  /// `unitR` proves the right unit law by conversion.
   def unitR(a : Circle, b : Circle, f : Path(a, b)) -> Path[.A = Path[.A = Circle](a, b)](
     comp a b b f (id b),
     f
   ) =
     Path.here f
 
-  /// The associator cell, by `std.math.path`'s theorem.
+  /// `assoc` proves the associator cell with the path theorem.
   def assoc(
     a : Circle,
     b : Circle,
@@ -109,17 +108,17 @@ module PathCells : Model(Glob) where
   ) =
     associator a b c d f g h
 
-/// The circle's paths with the associator left out, which `Path.here` discharges.
+/// `Discharged` omits the associator because `Path.here` fills it.
 module Discharged : Model(Glob) where
-  /// The circle's points.
+  /// `Ob` is `Circle`.
   type Ob = Circle;
-  /// The paths between two points.
+  /// `Hom` is the path type between two circle points.
   type Hom(a : Ob, b : Ob) = Path(a, b);
 
-  /// The reflexivity.
+  /// `id` returns path reflexivity.
   def id(a : Circle) -> Path(a, a) { Path.here a }
 
-  /// The composite.
+  /// `comp` joins paths.
   def comp(
     a : Circle,
     b : Circle,
@@ -132,7 +131,7 @@ module Discharged : Model(Glob) where
   ) =
     Path.step f g
 
-  /// The right unit law, by conversion.
+  /// `unitR` proves the right unit law by conversion.
   def unitR(a : Circle, b : Circle, f : Path(a, b)) -> Path[.A = Path[.A = Circle](a, b)](
     comp a b b f (id b),
     f

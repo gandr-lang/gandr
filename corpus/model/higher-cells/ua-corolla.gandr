@@ -1,10 +1,10 @@
-//! Univalence at the corollas of a signature: `ua[1, 4](Magma, Magma, f, g)`
-//! is a path between the two models' degree telescopes, derived corolla by
-//! corolla from the translator tables `f` and `g`
-//! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]. A
-//! univalence map acts as a typoid function [Petrakis-2022-univalent_typoids].
-//! Transport along it applies each corolla's translator, and two tables that
-//! agree at every element give the same path.
+//! This source derives univalence paths at signature corollas.
+//!
+//! `ua[1, 4]` derives a path between the degree telescopes of two `Magma`
+//! models. It reads their translator tables one corolla at a time.
+//!
+//! Transport applies each corolla translator. Tables that agree at every
+//! element produce the same path. A univalence map acts as a typoid function.
 //!
 //! - cites: [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]
 //! - cites: [Petrakis-2022-univalent_typoids]
@@ -15,36 +15,36 @@
 // The magma, the swap, the identity on the booleans and the unit's identity.
 import "./magma-base.gandr";
 
-/// The swap three times, which is the swap.
+/// `flip` applies `exchange` three times.
 def flip(b : Bool) -> Bool =
   let c = exchange b
   exchange (exchange c)
 
-/// The magma to itself by the swap at the binary corolla.
+/// `opposite` applies `exchange` at the binary corolla.
 def opposite = ua[
   1,
   4
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
-/// Transport along it swaps the binary corolla's boolean.
+/// `moves` transports a binary corolla boolean along `opposite`.
 def moves : Path[.A = Unit * (+{Unit} * Bool)](
   Path.walk (fun (X) { X }) opposite (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
   *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}
 ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
-/// It does not leave the boolean where it was.
+/// `stays` refuses the unchanged boolean as the transport result.
 @[ refuses("EndpointMismatch") ]
 def stays : Path[.A = Unit * (+{Unit} * Bool)](
   Path.walk (fun (X) { X }) opposite (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
   *{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}
 ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}});
 
-/// The magma to itself by the swap written three times.
+/// `reopposite` applies `flip` at the binary corolla.
 def reopposite = ua[1, 4] Magma Magma (*{.mul = flip, .one = keep}) (*{.mul = flip, .one = keep});
 
-/// The swap and the swap three times agree at every boolean.
+/// `agree` proves that `exchange` and `flip` agree at every boolean.
 def agree : Path[.A = Bool -> Bool](exchange, flip) = Path.funext exchange flip;
 
-/// The swap and the identity do not.
+/// `disagree` refuses `exchange` and `boolId` as pointwise equal.
 @[ refuses("PointwiseDistinct") ]
 def disagree : Path[.A = Bool -> Bool](exchange, boolId) = Path.funext exchange boolId;
