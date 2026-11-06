@@ -25,9 +25,11 @@
 //! Built with `--features hotpath`, which turns on the profiler in every
 //! measured crate, counts allocations through the profiler's global
 //! allocator, and links the upload client. The run prints the report on exit;
-//! `mise run ci:hotpath` runs it twice in GitHub Actions and uploads it as
-//! `gandr` and as `gandr-timing`, and hotpath Cloud compares a pull request's
-//! reports with its base's and comments when one changed.
+//! `mise run ci:hotpath` runs it three times in GitHub Actions and uploads it
+//! as `gandr`, as `gandr-timing` and as `gandr-bytes`, and hotpath Cloud
+//! compares a pull request's reports with its base's and comments when one
+//! changed. The `gandr-bytes` run measures allocations in bytes, and Cloud
+//! checks the budgets of `hotpath/gandr-bytes-policy.toml` on each report.
 //!
 //! # Decision
 //!
