@@ -275,15 +275,12 @@ where
         }
         faces.clear();
         scheme.faces(partner, &mut faces)?;
-        let incidence = faces
-            .iter()
-            .find(|&&(ref face, _)| face == cell)
-            .map_or_else(Incidence::default, |&(_, incidence)| incidence);
-        if incidence.invertibility() == Invertibility::NotInvertible {
-            faults.uninvertible = faults.uninvertible.one_more();
-        }
-        while let Some((face, _)) = faces.pop() {
+        // The cell's own incidence is read in the same pass, so the faces
+        // are read once. A cell that is no face keeps the incidence zero.
+        let mut incidence = Incidence::default();
+        while let Some((face, at)) = faces.pop() {
             if face == *cell {
+                incidence = at;
                 continue;
             }
             let class = scheme.class(&face)?;
@@ -294,6 +291,9 @@ where
                 },
                 Class::Critical | Class::Collapsible(_) => {},
             }
+        }
+        if incidence.invertibility() == Invertibility::NotInvertible {
+            faults.uninvertible = faults.uninvertible.one_more();
         }
         while let Some((face, beyond)) = fresh.pop() {
             if let Some(&held) = places.get(&face) {
