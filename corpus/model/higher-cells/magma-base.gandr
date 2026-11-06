@@ -1,33 +1,31 @@
-//! The higher-cells subject's shared declarations, written once and imported by
-//! every source that reads them (`import "./magma-base.gandr";`): the magma
-//! signature whose two corollas `ua` reads, and the translators its models'
-//! tables are given by — the swap of the booleans, the identity on them, and
-//! the identity on the unit's one injection. A `ua[n, k]` path is derived
-//! degree by degree over the signature's matching objects
-//! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity].
+//! This source defines common declarations for higher cells.
+//!
+//! `Magma` has one sort, a binary operation and a constant. `ua[n, k]` reads
+//! its binary and constant corollas one degree at a time.
+//!
+//! Other sources import `Magma` and its translators. `exchange` swaps
+//! booleans, `boolId` preserves them and `keep` preserves the unit injection.
 //!
 //! - cites: [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]
 //!
 //! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
 
-/// A magma: one sort, a binary operation and a constant.
+/// `Magma` defines one sort, one binary operation and one constant.
 pub theory Magma where
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
 
-/// The swap of the booleans, its own inverse: the binary corolla's
-/// translator.
+/// `exchange` swaps booleans. It translates the binary corolla.
 pub def exchange(b : Bool) -> Bool =
   match b
     | true => +{.1 = *{}}
     | false => +{.0 = *{}}
 
-/// The identity on the booleans, which is no inverse of the swap; named
-/// apart from the flow former `Flow.stay`.
+/// `boolId` preserves booleans. It differs from `exchange` and `Flow.stay`.
 pub def boolId(b : Bool) -> Bool =
   b
 
-/// The identity on the constant corolla's one element.
+/// `keep` preserves the constant corolla's only element.
 pub def keep(e : +{Unit}) -> +{Unit} =
   e
