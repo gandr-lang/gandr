@@ -4633,6 +4633,25 @@ impl TermArena
         })
     }
 
+    /// Mint the constructor `tag` of `family` over `fields`, at the data
+    /// classifier `family` applied to `arguments`, minted beside it: the
+    /// constructor's family and its classifier's declaration are one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constructor_of(
+        &mut self,
+        family: crate::ConstantIndex,
+        arguments: Vec<ValueId>,
+        tag: crate::ConstructorTag,
+        fields: Vec<ValueId>,
+    ) -> ValueId
+    {
+        let datatype = self.value_type_data(family, arguments);
+        self.value_constructor(family, datatype, tag, fields)
+    }
+
     /// Mint a record value in canonical label order.
     ///
     /// # Specification

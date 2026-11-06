@@ -297,9 +297,8 @@ impl Written
     ) -> ValueId
     {
         let constant = self.constant(family.into());
-        let datatype = self.core.value_type_data(constant, Vec::new());
         self.core
-            .value_constructor(constant, datatype, tag.into(), fields)
+            .value_constructor_of(constant, Vec::new(), tag.into(), fields)
     }
 
     /// The nonnegative integer literal spelled `digits`.

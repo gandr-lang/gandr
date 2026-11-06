@@ -9866,10 +9866,9 @@ mod tests
             let branches = arms.map(|summand| {
                 let own = mint.value_variable(DeBruijnIndex::from(0_u32));
                 let injected = mint.value_injection(summand, own);
-                let tag = mint.value_type_data(tags, vec![injected]);
-                let made = mint.value_constructor(
+                let made = mint.value_constructor_of(
                     tags,
-                    tag,
+                    vec![injected],
                     gandr_kernel_term::ConstructorTag::from(0_usize),
                     vec![],
                 );
