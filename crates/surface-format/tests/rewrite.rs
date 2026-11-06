@@ -2181,6 +2181,29 @@ fn a_type_application_is_written_juxtaposed_5708()
     }
 }
 
+/// A constructor's result whose first argument takes parentheses keeps its
+/// call form in either form, as the source writes it: the type grammar reads
+/// neither `--> Var (Extend gamma a) a` nor `--> (Var (Extend gamma a) a)`.
+/// A field's type is juxtaposed, `v : Var gamma a` (#5708).
+#[test]
+fn a_constructor_result_keeps_a_parenthesised_first_argument_called_5708()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "rewrite/unformatted/a-constructor-result-keeps-a-parenthesised-first-argument-called-5708.gandr"
+    );
+    let formatted = include_str!(
+        "rewrite/unformatted/a-constructor-result-keeps-a-parenthesised-first-argument-called-5708-formatted.gandr"
+    );
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, source, form, Selection::Every),
+            formatted,
+            "{form}"
+        );
+    }
+}
+
 /// The rewrites' sweep: every corpus source formats into either form, the
 /// formatter checking its meaning, and formats once in it.
 mod sweeps

@@ -1493,6 +1493,24 @@ impl<'source> Respelling<'_, 'source>
             .collect()
     }
 
+    /// The form's leaves inside `span`, as the source writes them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn within(
+        &self,
+        span: ByteSpan,
+    ) -> &[Leaf<'source>]
+    {
+        let from = self
+            .leaves
+            .partition_point(|leaf| leaf.span.start() < span.start());
+        let to = self
+            .leaves
+            .partition_point(|leaf| leaf.span.end() <= span.end());
+        self.leaves.get(from .. to).unwrap_or_default()
+    }
+
     /// The node at `at` as one of its parent's parts, and its extent.
     ///
     /// # Specification
@@ -1776,6 +1794,24 @@ impl<'source> Respelling<'_, 'source>
                 None => {},
             }
             match part.role {
+                // A constructor's result whose first argument takes
+                // parentheses keeps its call form as the source writes it:
+                // the grammar reads neither `--> Var (Extend g a) a` nor
+                // `--> (Var (Extend g a) a)` there.
+                Role::Operand(Child::Node(at))
+                    if matches!(tiles, [_, _, "-->"])
+                        && self.spelled.get(&at).is_some_and(|spelled| {
+                            spelled.rewritten == Changed::Yes && spelled.band == Band::Bridge
+                        })
+                        && let Some(&extent) = self.extents.get(&at) =>
+                {
+                    out.leaves.extend(
+                        self.within(extent)
+                            .iter()
+                            .filter(|leaf| !<&str>::from(leaf.text).is_empty())
+                            .copied(),
+                    );
+                },
                 Role::Operand(child @ Child::Node(at))
                     if self
                         .spelled
