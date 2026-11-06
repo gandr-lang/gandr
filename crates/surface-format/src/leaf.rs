@@ -24,6 +24,19 @@ use crate::space::Context;
 /// block's line breaks separate its commands, and a hole is left as written.
 const VERBATIM_RULES: [&str; 3] = ["string", "shell_block", "hole"];
 
+/// The postfix forms of an expression: each takes the operand before it as
+/// its target.
+const POSTFIX_RULES: [&str; 5] = [
+    "instantiation_expression",
+    "projection_expression",
+    "record_selection_expression",
+    "view_expression",
+    "index_expression",
+];
+
+/// The rule of an expression's application by juxtaposition, `f x`.
+const APPLICATION_RULE: &str = "application_expression";
+
 /// What a leaf of the flattened source is.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Material
@@ -181,10 +194,11 @@ impl Leaves<'_>
 ///   span and the layout inside that span is dropped; leaves are in ascending,
 ///   disjoint offset order, and empty leaves at one offset in the tree's
 ///   preorder, so a layout block's close stands before the separator of the
-///   block around it. A leaf under the root's child at `c` belongs to the form
-///   `c` unless it is layout directly under the root. A top-level form holding
-///   grout or a minted close, or whose leaves' extent meets an obligation's
-///   span, is listed as repaired.
+///   block around it. The empty tile of a call in call form that a postfix form
+///   takes as its target plays [`Context::CallGlue`]. A leaf under the root's
+///   child at `c` belongs to the form `c` unless it is layout directly under
+///   the root. A top-level form holding grout or a minted close, or whose
+///   leaves' extent meets an obligation's span, is listed as repaired.
 /// - provides: the formatter's only reading of the tree.
 /// - fails: never.
 /// - panics: none.
@@ -209,6 +223,10 @@ pub fn flatten<'source>(
     let mut leaves: Vec<Leaf<'source>> = Vec::new();
     let mut repaired: Vec<NodeIndex> = Vec::new();
     let mut pending: Vec<(NodeIndex, Owner, Documentation, Option<Branch>)> = Vec::new();
+    // The empty tiles of the calls in call form that a postfix form takes,
+    // ascending. A form is reached before its target, so each is listed
+    // before the walk reaches it.
+    let mut glued: Vec<NodeIndex> = Vec::new();
     in_order(
         &mut pending,
         tree.children(tree.root())
@@ -227,6 +245,11 @@ pub fn flatten<'source>(
             NodeLabel::Meld(mold) => match copied(grammar, mold) {
                 Copied::Verbatim => Material::Verbatim,
                 Copied::LaidOut => {
+                    if let Some(tile) = called_tile(grammar, tree, at)
+                        && let Err(slot) = glued.binary_search(&tile)
+                    {
+                        glued.insert(slot, tile);
+                    }
                     // The children between a `{` of the form and its `}`
                     // stand in the form's block, each its own branch; the
                     // others stand in the block around the form.
@@ -292,13 +315,18 @@ pub fn flatten<'source>(
         };
         let (context, offside) = match node.label() {
             NodeLabel::Tile(mold) => {
-                let context = grammar.rule_of(mold).map_or(Context::Plain, |rule| {
-                    let before = grammar
-                        .mold(mold)
-                        .and_then(|def| grammar.step(def.rctx, Dir::Left))
-                        .unwrap_or_default();
-                    Context::of(rule.name(), text, before)
-                });
+                let context = if glued.binary_search(&at).is_ok() {
+                    Context::CallGlue
+                }
+                else {
+                    grammar.rule_of(mold).map_or(Context::Plain, |rule| {
+                        let before = grammar
+                            .mold(mold)
+                            .and_then(|def| grammar.step(def.rctx, Dir::Left))
+                            .unwrap_or_default();
+                        Context::of(rule.name(), text, before)
+                    })
+                };
                 (context, offside_of(grammar, mold, text))
             },
             NodeLabel::Wald
@@ -393,6 +421,45 @@ fn tile_label(
         | NodeLabel::Space
         | NodeLabel::Doc => None,
     }
+}
+
+/// The empty tile of the call in call form that the postfix form at `form`
+/// takes as its target, `f(x).l` (#5665): the tile of the application that
+/// is the form's first child. The parser gives a postfix form an application
+/// as its target only where the call's group touches its head. None when
+/// `form` is no postfix form or its target is no application.
+///
+/// # Specification
+/// trivial.
+fn called_tile(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+) -> Option<NodeIndex>
+{
+    let rule = |at: NodeIndex| match tree.node(at)?.label() {
+        NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+            grammar.rule_of(mold).ok().map(|rule| rule.name().0)
+        },
+        NodeLabel::Wald
+        | NodeLabel::Grout { .. }
+        | NodeLabel::GhostClose { .. }
+        | NodeLabel::Space
+        | NodeLabel::Doc => None,
+    };
+    let melded = |at: NodeIndex| {
+        tree.node(at)
+            .is_some_and(|node| matches!(node.label(), NodeLabel::Meld(_)))
+    };
+    if !melded(form) || !POSTFIX_RULES.contains(&rule(form)?) {
+        return None;
+    }
+    let target = tree.children(form).next()?;
+    if !melded(target) || rule(target)? != APPLICATION_RULE {
+        return None;
+    }
+    tree.children(target)
+        .find(|&child| !melded(child) && rule(child) == Some(APPLICATION_RULE))
 }
 
 /// The branch a child `child` of a node that opens a block begins.

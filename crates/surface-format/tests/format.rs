@@ -366,6 +366,53 @@ fn a_type_s_spine_keeps_its_line_in_a_signature_5326()
     );
 }
 
+/// #5665: a postfix form after a call in call form takes the whole call, so
+/// the formatter keeps the call's group against its head there. A space
+/// would give the postfix form the group alone. A call that no postfix form
+/// takes is spaced as a juxtaposition is, and a group after a space stays an
+/// argument of its own. A broken spine keeps the call's group on the line of
+/// its operand.
+#[test]
+fn a_call_in_call_form_keeps_its_group_before_a_postfix_form_5665()
+{
+    let grammar = grammar();
+    for (source, expected, why) in [
+        (
+            "def a = mk(x).l;\n",
+            "def a = mk(x).l;\n",
+            "the projection's call keeps its group against its head",
+        ),
+        (
+            "def a = mk (x).l;\n",
+            "def a = mk (x).l;\n",
+            "a group after a space stays an argument of its own",
+        ),
+        (
+            "def a = mk(x);\n",
+            "def a = mk (x);\n",
+            "a call that no postfix form takes is spaced",
+        ),
+        (
+            "def a = g  mk(x).#[i];\n",
+            "def a = g mk(x).#[i];\n",
+            "in a spine only the call form's tile touches",
+        ),
+        (
+            "def spine = compose alpha beta gamma(delta).l;\n",
+            "def spine = compose\n  alpha\n  beta\n  gamma(delta).l;\n",
+            "a broken spine keeps the group on its operand's line",
+        ),
+    ] {
+        let laid = text(&grammar, source, NARROW);
+        assert_eq!(laid, expected, "{why}");
+        assert_eq!(
+            text(&grammar, laid.as_str(), NARROW),
+            laid,
+            "{why}, and formats once"
+        );
+    }
+}
+
 /// #5528: before the fix, a spine broke before its operands, but its head
 /// kept a bracket whole on one line past the page. A second pass read the
 /// operand's line as a continuation, and broke the bracket. Now the broken

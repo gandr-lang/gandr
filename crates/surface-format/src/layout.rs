@@ -1258,14 +1258,19 @@ enum Tile
 /// between its head and an operand. A type's juxtaposition, `Maybe A`, is no
 /// such tile: its spine keeps its line, since a signature's spine broken
 /// before its operands would stand at the column of the body after it
-/// (#5326).
+/// (#5326). Nor is a call's in call form that a postfix form takes as its
+/// target, `f(x).l`: a break there would give the postfix form the group
+/// alone (#5665).
 ///
 /// # Specification
 /// trivial.
 fn tile(placed: &Placed<'_>) -> Tile
 {
     if matches!(placed.element, Element::Text(text) if <&str>::from(text).is_empty())
-        && placed.context != space::Context::TypeGlue
+        && !matches!(
+            placed.context,
+            space::Context::TypeGlue | space::Context::CallGlue
+        )
     {
         Tile::Juxtaposition
     }
