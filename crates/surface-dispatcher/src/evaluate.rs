@@ -5234,6 +5234,7 @@ mod tests
             source.as_str().into(),
             &mut LoweringCount::default(),
             scheduling,
+            gandr_kernel_check_memo::MemoActivity::Active,
         ) {
             Ok(Composed::Settled { program, .. }) => program,
             Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),

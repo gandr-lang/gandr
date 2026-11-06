@@ -538,6 +538,8 @@ mod access;
 
 mod elaboration;
 
+mod memo;
+
 mod native;
 
 mod session;
@@ -556,6 +558,18 @@ mod discarded
         /// The type the bind is checked against is no returner at its weak
         /// head.
         NoReturner,
+    }
+}
+
+/// Why an ascent hands its result to no frame.
+mod handed
+{
+    /// The reason no frame takes the result.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub(super) enum Absent
+    {
+        /// No frame waits: the run is done.
+        Done,
     }
 }
 
@@ -3083,6 +3097,9 @@ struct Machine<'context, 'arena>
     staged_motives: Vec<(ComputationId, CompTypeId)>,
     /// The images of the thunks a migration's body forms.
     images: worlds::Images,
+    /// The answers the run's value judgements and value type formations gave,
+    /// and the goals under way whose answers it may record.
+    memo: memo::GoalMemo,
 }
 
 impl<'context, 'arena> Machine<'context, 'arena>
@@ -4237,6 +4254,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let remaining = usize::from(context.budget());
         let base = context.depth(Zone::Linear);
         let abstracted = abstracted_by(context.arena(), goal);
+        let memo = memo::GoalMemo::new(context.goal_memo());
         let mut machine = Machine {
             context,
             frames: Vec::new(),
@@ -4251,6 +4269,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
             staged_motives: Vec::new(),
             images: worlds::Images::default(),
+            memo,
         };
         let register = machine.context.binders().world();
         let scope = machine.session_scope();
@@ -4419,7 +4438,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
         Failure::new(refusal, obligations, pursuit, hypotheses, endpoints)
     }
 
-    /// Step from `goal` until no frame waits.
+    /// Step from `goal` until no frame waits. A goal the run's memo answers
+    /// starts and finishes on one step: its recorded answer is handed on at
+    /// once.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -4437,6 +4458,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::an_exhausted_allowance_is_refused_with_the_budget`
     /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
     /// - witness: `judgement::tests::a_refusal_keeps_the_rules_it_stood_inside`
+    /// - witness: `judgement::memo::tests::a_shared_pair_spends_a_step_for_each_distinct_goal`
     #[spec(
         captures: before = self.remaining,
         ensures: |ret| self.remaining <= before && (ret.is_err() || self.frames.is_empty()),
@@ -4456,23 +4478,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 return Err(Halt { refusal, control });
             }
             let (control, next) = match step {
-                Step::Descend(goal) => {
-                    self.owner = goal;
-                    self.anchor(goal);
-                    (Control::Starting(goal), self.descend(goal))
+                Step::Descend(goal) => match self.consulted(goal) {
+                    Maybe::Present(produced) => match self.handed(produced) {
+                        Maybe::Present(handed) => handed,
+                        Maybe::Absent(handed::Absent::Done) => return Ok(produced),
+                    },
+                    Maybe::Absent(_) => {
+                        self.owner = goal;
+                        self.anchor(goal);
+                        (Control::Starting(goal), self.descend(goal))
+                    },
                 },
-                Step::Ascend(produced) => {
-                    self.settle(produced);
-                    match self.frames.pop() {
-                        Some(waiting) => {
-                            self.owner = waiting.owner;
-                            (
-                                Control::Resuming(waiting),
-                                self.resume(waiting.frame, produced),
-                            )
-                        },
-                        None => return Ok(produced),
-                    }
+                Step::Ascend(produced) => match self.handed(produced) {
+                    Maybe::Present(handed) => handed,
+                    Maybe::Absent(handed::Absent::Done) => return Ok(produced),
                 },
             };
             step = match next {
@@ -4487,6 +4506,30 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
             };
         }
+    }
+
+    /// Hand `produced` to the frame that waits for it: retire the goals the
+    /// ascent finishes and record their answers, then resume the innermost
+    /// frame.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handed(
+        &mut self,
+        produced: Produced,
+    ) -> Maybe<(Control, Result<Step, CheckRefusal>), handed::Absent>
+    {
+        self.settle(produced);
+        self.remembered(produced);
+        let Some(waiting) = self.frames.pop()
+        else {
+            return Maybe::Absent(handed::Absent::Done);
+        };
+        self.owner = waiting.owner;
+        Maybe::Present((
+            Control::Resuming(waiting),
+            self.resume(waiting.frame, produced),
+        ))
     }
 
     /// Push `frame`, owned by the goal whose rule is running.

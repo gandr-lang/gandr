@@ -114,6 +114,25 @@ pub(super) struct Images
     formed: BTreeMap<ValueId, Image>,
 }
 
+impl Images
+{
+    /// Whether a thunk's image forms: [`Migrating::Judged`] while the body of
+    /// a thunk that a migration's body holds is judged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) const fn forming(&self) -> Migrating
+    {
+        if self.forming.is_empty() {
+            Migrating::Not
+        }
+        else {
+            Migrating::Judged
+        }
+    }
+}
+
 /// What a migration's body returns, as the crossing of its result reads it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Witness

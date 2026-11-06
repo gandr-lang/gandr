@@ -94,6 +94,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
+use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -202,8 +203,10 @@ quenchant_shape::reason_enum! {
 
 /// The work one judgement may spend before it refuses.
 ///
-/// One step is charged per machine transition, so the allowance bounds a run
-/// whatever sharing its term has.
+/// One step is charged per machine transition. A goal the run's memo answers
+/// is one transition, so a subterm met again at a goal already judged costs one
+/// step. The allowance therefore bounds the shared work of a run, and not the
+/// size of the tree a shared term unfolds to.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckBudget(usize);
@@ -516,6 +519,9 @@ pub struct CheckingContext<'arena>
     /// store it recalls them from and keeps them to. A checkpoint does not
     /// keep them: a resumed context takes the store it is handed.
     strata: crate::ua::Strata,
+    /// Whether each run of the machine keeps a goal memo. A checkpoint does
+    /// not keep it: a resumed context keeps one.
+    memo: MemoActivity,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -855,6 +861,7 @@ impl<'arena> CheckingContext<'arena>
             tier: None,
             admitting: gandr_kernel_core::AdmissionPolicy::Derive,
             strata: crate::ua::Strata::default(),
+            memo: MemoActivity::Active,
         }
     }
 
@@ -938,6 +945,7 @@ impl<'arena> CheckingContext<'arena>
             tier: _,
             admitting: _,
             strata: _,
+            memo: _,
         } = *self;
         Checkpoint {
             binders: binders.clone(),
@@ -1144,6 +1152,7 @@ impl<'arena> CheckingContext<'arena>
             tier: None,
             admitting: gandr_kernel_core::AdmissionPolicy::Derive,
             strata: crate::ua::Strata::default(),
+            memo: MemoActivity::Active,
         }
     }
 
@@ -1187,6 +1196,41 @@ impl<'arena> CheckingContext<'arena>
     pub const fn admitting(&self) -> gandr_kernel_core::AdmissionPolicy
     {
         self.admitting
+    }
+
+    /// Keep a goal memo in each later run of the machine as `activity` says:
+    /// [`MemoActivity::Active`] unless a caller asks for runs without one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each run of the machine started later answers its repeated
+    ///   goals from a memo exactly when `activity` is [`MemoActivity::Active`].
+    /// - panics: none.
+    /// - executable: none — the activity is read where each run starts, which
+    ///   no predicate over this call observes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run without the memo spends the unshared work of a
+    ///   shared pair, and the same run with it spends the shared work.
+    /// - witness: `judgement::memo::tests::a_shared_pair_spends_a_step_for_each_distinct_goal`
+    #[inline]
+    pub const fn memoise_goals(
+        &mut self,
+        activity: MemoActivity,
+    )
+    {
+        self.memo = activity;
+    }
+
+    /// Whether each run of the machine keeps a goal memo.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn goal_memo(&self) -> MemoActivity
+    {
+        self.memo
     }
 
     /// Recall the strata `ua` statements name from `store`, and keep there

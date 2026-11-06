@@ -206,6 +206,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_core_term::ValueId;
 use gandr_core_term::hole::HoleId;
+use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::tallied;
 use gandr_kernel_term::ConstantIndex;
@@ -2639,7 +2640,12 @@ where
         arena,
         (grant, checking),
         base,
-        (retirement, recording, Scheduling::Sequential),
+        (
+            retirement,
+            recording,
+            Scheduling::Sequential,
+            MemoActivity::Active,
+        ),
     )
 }
 
@@ -2654,7 +2660,7 @@ fn judge_member_on<'source, Poll>(
     arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     base: ByteOffset,
-    (retirement, recording, scheduling): (&Poll, Recording<'_>, Scheduling<'_>),
+    (retirement, recording, scheduling, memo): (&Poll, Recording<'_>, Scheduling<'_>, MemoActivity),
 ) -> Polled<Judged<'source>, Poll::Retired, ()>
 where
     Poll: Retirement,
@@ -2674,6 +2680,7 @@ where
             Tabling::Untabled,
             recording,
             scheduling,
+            memo,
         ),
         retirement,
     ) {
@@ -2774,6 +2781,7 @@ where
             Tabling::Tabled(unit),
             Recording::Unrecorded,
             Scheduling::Sequential,
+            MemoActivity::Active,
         ),
         retirement,
     ) {
@@ -2927,11 +2935,12 @@ fn judge_members<'source, Poll>(
     mut arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     (earlier, last): (&[Member], Member),
-    (spelled, tabling, recording, scheduling): (
+    (spelled, tabling, recording, scheduling, memo): (
         &mut SpellingCount,
         Tabling<'_>,
         Recording<'_>,
         Scheduling<'_>,
+        MemoActivity,
     ),
     retirement: &Poll,
 ) -> Polled<JudgedUnit<'source>, Poll::Retired, ()>
@@ -3004,6 +3013,7 @@ where
             },
         );
         let mut context = checking_context(&mut arena, opening, &module, &holes);
+        context.memoise_goals(memo);
         if let Some(ref written) = written {
             run.keep_typings();
             context.keep_formations(Formations::Firsts(wanted_types(written)));
@@ -3665,6 +3675,7 @@ pub fn judge_component<'source>(
                     Tabling::Untabled,
                     Recording::Unrecorded,
                     Scheduling::Sequential,
+                    MemoActivity::Active,
                 ),
                 &Unretired,
             )
@@ -3987,11 +3998,18 @@ pub fn compose<'source>(
     lowerings: &mut LoweringCount,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
-    compose_on(grammar, root, source, lowerings, Scheduling::Sequential)
+    compose_on(
+        grammar,
+        root,
+        source,
+        lowerings,
+        Scheduling::Sequential,
+        MemoActivity::Active,
+    )
 }
 
 /// [`compose()`], the runs of its settlement on the schedule `scheduling`
-/// names.
+/// names, each run of the core checker keeping a goal memo as `memo` says.
 ///
 /// Under [`Scheduling::Concurrent`], the judgement keeps its typings, and
 /// each later accepted body focuses each writer [`independent`] names apart.
@@ -4001,12 +4019,14 @@ pub fn compose<'source>(
 /// # Specification
 /// - requires: as [`compose()`].
 /// - ensures: as [`compose()`]. A writer performs nothing, so each `runs` item
-///   settles under either schedule as it settles under the other.
+///   settles under either schedule as it settles under the other. A memo answer
+///   is the answer a fresh judgement gives, so each declaration settles with
+///   the memo as it settles without it.
 /// - fails: as [`compose()`].
 /// - panics: a writer's panic, where its read or its scope ends.
-/// - executable: none — the agreement of the two schedules is a claim about a
-///   second composition the call never makes; the witness makes it over the
-///   corpus.
+/// - executable: none — the agreement of the two schedules, and of the runs
+///   with and without the memo, is a claim about a second composition the call
+///   never makes; the witnesses make it over the corpus.
 ///
 /// # Errors
 /// As [`compose()`].
@@ -4016,8 +4036,11 @@ pub fn compose<'source>(
 ///   at four threads, settles each declaration as the sequential composition
 ///   settles it. A writer named that performs, a capture read off the wrong
 ///   level, or a read that copies the wrong answer changes a `runs` item's
-///   outcome.
+///   outcome. Every corpus source composed without the goal memo settles each
+///   declaration as its composition with the memo settles it; a memo answer for
+///   a key that misses a binder read changes a settlement.
 /// - witness: `tests::corpus::sweeps::the_concurrent_schedule_settles_the_corpus_alike_2954`
+/// - witness: `tests::corpus::sweeps::the_goal_memo_settles_the_corpus_alike_5719`
 #[inline]
 pub fn compose_on<'source>(
     grammar: &Pbg,
@@ -4025,6 +4048,7 @@ pub fn compose_on<'source>(
     source: SourceText<'source>,
     lowerings: &mut LoweringCount,
     scheduling: Scheduling<'_>,
+    memo: MemoActivity,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
     match lower_source(grammar, source, lowerings)?.into_lowered() {
@@ -4034,7 +4058,7 @@ pub fn compose_on<'source>(
             arena,
             (&HostGrant::UNBOUNDED, Checking::Whole),
             ByteOffset::from(0_usize),
-            (&Unretired, Recording::Unrecorded, scheduling),
+            (&Unretired, Recording::Unrecorded, scheduling, memo),
         )
         .whole()
         .admit(),
