@@ -1,93 +1,93 @@
-6:1-6:3 pub ⇒ not : Bool -> Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:1-6:5
-6:5-6:7 def ⇒ not : Bool -> Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:5-6:45
-6:9-6:12 not( ⇒ not : Bool -> Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:9-6:12
-6:13-6:13 b ⇒ b : Bool @6:13-6:14
-6:15-6:15 : ⇒ not : Bool -> Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:5-6:45
-6:17-6:20 Unit ⇒ Unit : Type @6:17-6:21
-6:22-6:22 + ⇒ Unit + Unit : Type @6:17-6:28
-6:24-6:27 Unit ⇒ Unit : Type @6:24-6:28
-6:28-6:31 ) -> ⇒ not : Bool -> Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:5-6:45
-6:33-6:36 Unit ⇒ Unit : Type @6:33-6:37
-6:38-6:38 + ⇒ Unit + Unit : Type @6:33-6:44
-6:40-6:43 Unit ⇒ Unit : Type @6:40-6:44
-6:45-6:45 = ⇒ not : Bool -> Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:5-9:29
-7:3-7:7 match ⇒ -F Bool @7:3-9:29
-7:9-7:9 b ⇒ b : Bool @7:9-7:10
-8:5-8:5 | ⇒ -F Bool @7:3-9:29
-8:7-8:9 +{. ⇒ +{.0 = u} : Bool @8:7-8:16
-8:10-8:10 0 ⇒ 0 : Unit @8:10-8:11
-8:12-8:12 = ⇒ +{.0 = u} : Bool @8:7-8:16
-8:14-8:14 u ⇒ u : Unit @8:14-8:15
-8:15-8:15 } ⇒ +{.0 = u} : Bool @8:7-8:16
-8:17-8:18 => ⇒ -F Bool @7:3-9:29
-8:20-8:25 +{.1 = ⇒ Bool @8:20-8:29
-8:27-8:27 u ⇒ u : Unit @8:27-8:28
-8:28-8:28 } ⇒ Bool @8:20-8:29
-9:5-9:5 | ⇒ -F Bool @7:3-9:29
-9:7-9:9 +{. ⇒ +{.1 = u} : Bool @9:7-9:16
-9:10-9:10 1 ⇒ 1 : Unit @9:10-9:11
-9:12-9:12 = ⇒ +{.1 = u} : Bool @9:7-9:16
-9:14-9:14 u ⇒ u : Unit @9:14-9:15
-9:15-9:15 } ⇒ +{.1 = u} : Bool @9:7-9:16
-9:17-9:18 => ⇒ -F Bool @7:3-9:29
-9:20-9:25 +{.0 = ⇒ Bool @9:20-9:29
-9:27-9:27 u ⇒ u : Unit @9:27-9:28
-9:28-9:28 } ⇒ Bool @9:20-9:29
-12:1-12:3 def ⇒ not_not : Bool -> Bool⏎⏎Negation twice. @12:1-12:45
-12:5-12:12 not_not( ⇒ not_not : Bool -> Bool⏎⏎Negation twice. @12:5-12:12
-12:13-12:13 b ⇒ b : Bool @12:13-12:14
-12:15-12:15 : ⇒ not_not : Bool -> Bool⏎⏎Negation twice. @12:1-12:45
-12:17-12:20 Unit ⇒ Unit : Type @12:17-12:21
-12:22-12:22 + ⇒ Unit + Unit : Type @12:17-12:28
-12:24-12:27 Unit ⇒ Unit : Type @12:24-12:28
-12:28-12:31 ) -> ⇒ not_not : Bool -> Bool⏎⏎Negation twice. @12:1-12:45
-12:33-12:36 Unit ⇒ Unit : Type @12:33-12:37
-12:38-12:38 + ⇒ Unit + Unit : Type @12:33-12:44
-12:40-12:43 Unit ⇒ Unit : Type @12:40-12:44
-12:45-12:45 = ⇒ not_not : Bool -> Bool⏎⏎Negation twice. @12:1-13:14
-13:3-13:5 not ⇒ not : Bool -> Bool @13:3-13:6
-13:7-13:7 ( ⇒ -F Bool @13:3-13:14
-13:8-13:10 not ⇒ not : Bool -> Bool @13:8-13:11
-13:12-13:12 b ⇒ b : Bool @13:12-13:13
-13:13-13:13 ) ⇒ -F Bool @13:3-13:14
-16:1-16:3 pub ⇒ same : Bool -> Bool⏎⏎The identity on the booleans. @16:1-16:5
-16:5-16:7 def ⇒ same : Bool -> Bool⏎⏎The identity on the booleans. @16:5-16:46
-16:9-16:13 same( ⇒ same : Bool -> Bool⏎⏎The identity on the booleans. @16:9-16:13
-16:14-16:14 b ⇒ b : Bool @16:14-16:15
-16:16-16:16 : ⇒ same : Bool -> Bool⏎⏎The identity on the booleans. @16:5-16:46
-16:18-16:21 Unit ⇒ Unit : Type @16:18-16:22
-16:23-16:23 + ⇒ Unit + Unit : Type @16:18-16:29
-16:25-16:28 Unit ⇒ Unit : Type @16:25-16:29
-16:29-16:32 ) -> ⇒ same : Bool -> Bool⏎⏎The identity on the booleans. @16:5-16:46
-16:34-16:37 Unit ⇒ Unit : Type @16:34-16:38
-16:39-16:39 + ⇒ Unit + Unit : Type @16:34-16:45
-16:41-16:44 Unit ⇒ Unit : Type @16:41-16:45
-16:46-16:46 = ⇒ same : Bool -> Bool⏎⏎The identity on the booleans. @16:5-17:4
-17:3-17:3 b ⇒ b : Bool @17:3-17:4
-20:1-20:3 def ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @20:1-20:65
-20:5-20:14 involution ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @20:5-20:15
-20:16-20:16 : ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @20:1-20:65
-20:18-20:22 Path( ⇒ Path(not_not, same) : Type @20:18-20:37
-20:23-20:29 not_not ⇒ not_not : Bool -> Bool @20:23-20:30
-20:30-20:30 , ⇒ Path(not_not, same) : Type @20:18-20:37
-20:32-20:35 same ⇒ same : Bool -> Bool @20:32-20:36
-20:36-20:36 ) ⇒ Path(not_not, same) : Type @20:18-20:37
-20:38-20:38 = ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @20:1-20:65
-20:40-20:50 Path.funext ⇒ Path.funext not_not same : Path[.A = Bool -> Bool](not_not, same) @20:40-20:64
-20:52-20:58 not_not ⇒ not_not : Bool -> Bool @20:52-20:59
-20:60-20:63 same ⇒ same : Bool -> Bool @20:60-20:64
-20:64-20:64 ; ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @20:1-20:65
-23:1-23:33 @[ refuses("PointwiseDis… ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎Negation once is not the identity: they differ at a boolean. @23:1-24:1
-24:1-24:3 def ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎Negation once is not the identity: they differ at a boolean. @24:1-24:59
-24:5-24:16 not_identity ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎Negation once is not the identity: they differ at a boolean. @24:5-24:17
-24:18-24:18 : ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎Negation once is not the identity: they differ at a boolean. @24:1-24:59
-24:20-24:24 Path( ⇒ Path(not, same) : Type @24:20-24:35
-24:25-24:27 not ⇒ not : Bool -> Bool⏎⏎checked against⏎⏎? @24:25-24:28
-24:28-24:28 , ⇒ Path(not, same) : Type @24:20-24:35
-24:30-24:33 same ⇒ same : Bool -> Bool⏎⏎checked against⏎⏎? @24:30-24:34
-24:34-24:34 ) ⇒ Path(not, same) : Type @24:20-24:35
-24:36-24:36 = ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎Negation once is not the identity: they differ at a boolean. @24:1-24:59
-24:38-24:48 Path.funext ⇒ Path.funext not same : ?⏎⏎checked against⏎⏎Path[.A = Bool -> Bool](not, same) @24:38-24:58
-24:50-24:52 not ⇒ not : Bool -> Bool @24:50-24:53
-24:54-24:57 same ⇒ same : Bool -> Bool @24:54-24:58
-24:58-24:58 ; ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎Negation once is not the identity: they differ at a boolean. @24:1-24:59
+11:1-11:3 pub ⇒ not : Bool -> Bool⏎⏎This source states function extensionality.⏎⏎Functions form one path when they agree at every argument.⏎⏎Double negation returns each Boolean value.⏎Single negation differs from the identity function.⏎⏎- see: corpus/model/identity/funext-higher.gandr⏎The `not` function exchanges the two Boolean values. @11:1-11:5
+11:5-11:7 def ⇒ not : Bool -> Bool⏎⏎This source states function extensionality.⏎⏎Functions form one path when they agree at every argument.⏎⏎Double negation returns each Boolean value.⏎Single negation differs from the identity function.⏎⏎- see: corpus/model/identity/funext-higher.gandr⏎The `not` function exchanges the two Boolean values. @11:5-11:45
+11:9-11:12 not( ⇒ not : Bool -> Bool⏎⏎This source states function extensionality.⏎⏎Functions form one path when they agree at every argument.⏎⏎Double negation returns each Boolean value.⏎Single negation differs from the identity function.⏎⏎- see: corpus/model/identity/funext-higher.gandr⏎The `not` function exchanges the two Boolean values. @11:9-11:12
+11:13-11:13 b ⇒ b : Bool @11:13-11:14
+11:15-11:15 : ⇒ not : Bool -> Bool⏎⏎This source states function extensionality.⏎⏎Functions form one path when they agree at every argument.⏎⏎Double negation returns each Boolean value.⏎Single negation differs from the identity function.⏎⏎- see: corpus/model/identity/funext-higher.gandr⏎The `not` function exchanges the two Boolean values. @11:5-11:45
+11:17-11:20 Unit ⇒ Unit : Type @11:17-11:21
+11:22-11:22 + ⇒ Unit + Unit : Type @11:17-11:28
+11:24-11:27 Unit ⇒ Unit : Type @11:24-11:28
+11:28-11:31 ) -> ⇒ not : Bool -> Bool⏎⏎This source states function extensionality.⏎⏎Functions form one path when they agree at every argument.⏎⏎Double negation returns each Boolean value.⏎Single negation differs from the identity function.⏎⏎- see: corpus/model/identity/funext-higher.gandr⏎The `not` function exchanges the two Boolean values. @11:5-11:45
+11:33-11:36 Unit ⇒ Unit : Type @11:33-11:37
+11:38-11:38 + ⇒ Unit + Unit : Type @11:33-11:44
+11:40-11:43 Unit ⇒ Unit : Type @11:40-11:44
+11:45-11:45 = ⇒ not : Bool -> Bool⏎⏎This source states function extensionality.⏎⏎Functions form one path when they agree at every argument.⏎⏎Double negation returns each Boolean value.⏎Single negation differs from the identity function.⏎⏎- see: corpus/model/identity/funext-higher.gandr⏎The `not` function exchanges the two Boolean values. @11:5-14:29
+12:3-12:7 match ⇒ -F Bool @12:3-14:29
+12:9-12:9 b ⇒ b : Bool @12:9-12:10
+13:5-13:5 | ⇒ -F Bool @12:3-14:29
+13:7-13:9 +{. ⇒ +{.0 = u} : Bool @13:7-13:16
+13:10-13:10 0 ⇒ 0 : Unit @13:10-13:11
+13:12-13:12 = ⇒ +{.0 = u} : Bool @13:7-13:16
+13:14-13:14 u ⇒ u : Unit @13:14-13:15
+13:15-13:15 } ⇒ +{.0 = u} : Bool @13:7-13:16
+13:17-13:18 => ⇒ -F Bool @12:3-14:29
+13:20-13:25 +{.1 = ⇒ Bool @13:20-13:29
+13:27-13:27 u ⇒ u : Unit @13:27-13:28
+13:28-13:28 } ⇒ Bool @13:20-13:29
+14:5-14:5 | ⇒ -F Bool @12:3-14:29
+14:7-14:9 +{. ⇒ +{.1 = u} : Bool @14:7-14:16
+14:10-14:10 1 ⇒ 1 : Unit @14:10-14:11
+14:12-14:12 = ⇒ +{.1 = u} : Bool @14:7-14:16
+14:14-14:14 u ⇒ u : Unit @14:14-14:15
+14:15-14:15 } ⇒ +{.1 = u} : Bool @14:7-14:16
+14:17-14:18 => ⇒ -F Bool @12:3-14:29
+14:20-14:25 +{.0 = ⇒ Bool @14:20-14:29
+14:27-14:27 u ⇒ u : Unit @14:27-14:28
+14:28-14:28 } ⇒ Bool @14:20-14:29
+17:1-17:3 def ⇒ not_not : Bool -> Bool⏎⏎The `not_not` function applies `not` two times. @17:1-17:45
+17:5-17:12 not_not( ⇒ not_not : Bool -> Bool⏎⏎The `not_not` function applies `not` two times. @17:5-17:12
+17:13-17:13 b ⇒ b : Bool @17:13-17:14
+17:15-17:15 : ⇒ not_not : Bool -> Bool⏎⏎The `not_not` function applies `not` two times. @17:1-17:45
+17:17-17:20 Unit ⇒ Unit : Type @17:17-17:21
+17:22-17:22 + ⇒ Unit + Unit : Type @17:17-17:28
+17:24-17:27 Unit ⇒ Unit : Type @17:24-17:28
+17:28-17:31 ) -> ⇒ not_not : Bool -> Bool⏎⏎The `not_not` function applies `not` two times. @17:1-17:45
+17:33-17:36 Unit ⇒ Unit : Type @17:33-17:37
+17:38-17:38 + ⇒ Unit + Unit : Type @17:33-17:44
+17:40-17:43 Unit ⇒ Unit : Type @17:40-17:44
+17:45-17:45 = ⇒ not_not : Bool -> Bool⏎⏎The `not_not` function applies `not` two times. @17:1-18:14
+18:3-18:5 not ⇒ not : Bool -> Bool @18:3-18:6
+18:7-18:7 ( ⇒ -F Bool @18:3-18:14
+18:8-18:10 not ⇒ not : Bool -> Bool @18:8-18:11
+18:12-18:12 b ⇒ b : Bool @18:12-18:13
+18:13-18:13 ) ⇒ -F Bool @18:3-18:14
+21:1-21:3 pub ⇒ same : Bool -> Bool⏎⏎The `same` function returns its Boolean argument. @21:1-21:5
+21:5-21:7 def ⇒ same : Bool -> Bool⏎⏎The `same` function returns its Boolean argument. @21:5-21:46
+21:9-21:13 same( ⇒ same : Bool -> Bool⏎⏎The `same` function returns its Boolean argument. @21:9-21:13
+21:14-21:14 b ⇒ b : Bool @21:14-21:15
+21:16-21:16 : ⇒ same : Bool -> Bool⏎⏎The `same` function returns its Boolean argument. @21:5-21:46
+21:18-21:21 Unit ⇒ Unit : Type @21:18-21:22
+21:23-21:23 + ⇒ Unit + Unit : Type @21:18-21:29
+21:25-21:28 Unit ⇒ Unit : Type @21:25-21:29
+21:29-21:32 ) -> ⇒ same : Bool -> Bool⏎⏎The `same` function returns its Boolean argument. @21:5-21:46
+21:34-21:37 Unit ⇒ Unit : Type @21:34-21:38
+21:39-21:39 + ⇒ Unit + Unit : Type @21:34-21:45
+21:41-21:44 Unit ⇒ Unit : Type @21:41-21:45
+21:46-21:46 = ⇒ same : Bool -> Bool⏎⏎The `same` function returns its Boolean argument. @21:5-22:4
+22:3-22:3 b ⇒ b : Bool @22:3-22:4
+25:1-25:3 def ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎The `involution` path proves that double negation is the identity. @25:1-25:65
+25:5-25:14 involution ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎The `involution` path proves that double negation is the identity. @25:5-25:15
+25:16-25:16 : ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎The `involution` path proves that double negation is the identity. @25:1-25:65
+25:18-25:22 Path( ⇒ Path(not_not, same) : Type @25:18-25:37
+25:23-25:29 not_not ⇒ not_not : Bool -> Bool @25:23-25:30
+25:30-25:30 , ⇒ Path(not_not, same) : Type @25:18-25:37
+25:32-25:35 same ⇒ same : Bool -> Bool @25:32-25:36
+25:36-25:36 ) ⇒ Path(not_not, same) : Type @25:18-25:37
+25:38-25:38 = ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎The `involution` path proves that double negation is the identity. @25:1-25:65
+25:40-25:50 Path.funext ⇒ Path.funext not_not same : Path[.A = Bool -> Bool](not_not, same) @25:40-25:64
+25:52-25:58 not_not ⇒ not_not : Bool -> Bool @25:52-25:59
+25:60-25:63 same ⇒ same : Bool -> Bool @25:60-25:64
+25:64-25:64 ; ⇒ involution : Path[.A = Bool -> Bool](not_not, same)⏎⏎The `involution` path proves that double negation is the identity. @25:1-25:65
+28:1-28:33 @[ refuses("PointwiseDis… ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The `not_identity` declaration refuses unequal functions. @28:1-29:1
+29:1-29:3 def ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The `not_identity` declaration refuses unequal functions. @29:1-29:59
+29:5-29:16 not_identity ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The `not_identity` declaration refuses unequal functions. @29:5-29:17
+29:18-29:18 : ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The `not_identity` declaration refuses unequal functions. @29:1-29:59
+29:20-29:24 Path( ⇒ Path(not, same) : Type @29:20-29:35
+29:25-29:27 not ⇒ not : Bool -> Bool⏎⏎checked against⏎⏎? @29:25-29:28
+29:28-29:28 , ⇒ Path(not, same) : Type @29:20-29:35
+29:30-29:33 same ⇒ same : Bool -> Bool⏎⏎checked against⏎⏎? @29:30-29:34
+29:34-29:34 ) ⇒ Path(not, same) : Type @29:20-29:35
+29:36-29:36 = ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The `not_identity` declaration refuses unequal functions. @29:1-29:59
+29:38-29:48 Path.funext ⇒ Path.funext not same : ?⏎⏎checked against⏎⏎Path[.A = Bool -> Bool](not, same) @29:38-29:58
+29:50-29:52 not ⇒ not : Bool -> Bool @29:50-29:53
+29:54-29:57 same ⇒ same : Bool -> Bool @29:54-29:58
+29:58-29:58 ; ⇒ not_identity : Path[.A = Bool -> Bool](not, same)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The `not_identity` declaration refuses unequal functions. @29:1-29:59

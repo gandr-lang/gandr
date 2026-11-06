@@ -1,17 +1,35 @@
 error[IllFormedDescription]: the face `bad` holds a name the boundary `Outside` does not list
-   ╭▸ corpus/pathological/desc/record-faces.gandr:20:24
+   ╭▸ corpus/pathological/desc/record-faces.gandr:24:24
    │
-20 │     face bad = { port, cert };
+24 │     face bad = { port, cert };
    │                        ━━━━ what the description check refuses
    │
    ├ note: `Outside` is refused with IllFormedDescription, as its expectation states
    ╰ help: put in the face only names that the boundary lists
 
 error[IllFormedDescription]: the boundary `Twice` names the face `addr` twice
-   ╭▸ corpus/pathological/desc/record-faces.gandr:27:10
+   ╭▸ corpus/pathological/desc/record-faces.gandr:31:10
    │
-27 │     face addr = { port };
+31 │     face addr = { port };
    │          ━━━━ what the description check refuses
    │
    ├ note: `Twice` is refused with IllFormedDescription, as its expectation states
    ╰ help: give each face of the boundary its own name
+
+error[UnresolvedName]: `mode` is not defined
+   ╭▸ corpus/pathological/desc/record-faces.gandr:40:23
+   │
+40 │ def moded(c : Config[.mode = 1]) -> Integer { 0 }
+   │                       ━━━━ not found in this scope
+   │
+   ├ note: `moded` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `mode`, or import the module that exports it
+
+error[UnresolvedName]: `remote` is not defined
+   ╭▸ corpus/pathological/desc/record-faces.gandr:44:23
+   │
+44 │ def remote(c : Config[remote ↦ *{.host = "localhost"}]) -> Integer { 0 }
+   │                       ━━━━━━ not found in this scope
+   │
+   ├ note: `remote` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `remote`, or import the module that exports it

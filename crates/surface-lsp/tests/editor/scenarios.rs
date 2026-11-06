@@ -1081,7 +1081,7 @@ fn an_importer_erased_cold_and_warm_answers_alike_776()
             Typing::Assisted,
             Oracle::Keystroke,
         );
-        session.erase_lines(Stride(6), Offset(0));
+        session.erase_lines(Stride(5), Offset(0));
         let answers = session.answers().to_vec();
         session.closes_over_streams();
         answers

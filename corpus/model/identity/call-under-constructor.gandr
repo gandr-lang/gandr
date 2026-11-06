@@ -7,6 +7,8 @@
 /// The checker rejects a zero arm that gives the wrong endpoint.
 ///
 /// - see: #424 — `underSuccessor`
+import "./circle-base.gandr";
+import "./int-sum.gandr";
 
 /// The integer rules reduce the endpoint at `P(x)` to `plus(Z, x)`.
 def rec underSuccessor(b : Int) -> Path[.A = Int](S (plus Z b), S b) =

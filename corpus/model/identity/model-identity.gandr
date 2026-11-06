@@ -11,6 +11,11 @@
 //! - see: corpus/model/identity/transport-list.gandr
 //! - see: corpus/model/identity/funext.gandr
 
+/// The imports give negation, the path along negation and the two toggles.
+import "./funext.gandr";
+import "./transport-list.gandr";
+import "./structure-operations.gandr";
+
 /// The `Toggle` theory has a carrier, a start, a step and a reading.
 theory Toggle where
   sort T : Type;

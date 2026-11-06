@@ -3301,7 +3301,7 @@ mod tests
         let base =
             gandr_surface_dispatcher::named_path(&corpus.join("model/identity/circle-base.gandr"));
         assert_eq!(
-            at(&importer, &written, "circle-base"),
+            at(&importer, &written, "./circle-base"),
             format!(
                 "{}\n\nReads `{}`.\n\n{CIRCLE_BASE}",
                 fenced(SourceText::from(line)),
@@ -3309,12 +3309,12 @@ mod tests
             ),
             "a path the closure reads answers its file and the file's own documentation"
         );
-        let missing = written.replacen("circle-base", "circle-nowhere", 1);
+        let missing = written.replacen("./circle-base", "./circle-nowhere", 1);
         let nowhere = gandr_surface_dispatcher::named_path(
             &corpus.join("model/identity/circle-nowhere.gandr"),
         );
         assert!(
-            at(&importer, &missing, "import")
+            at(&importer, &missing, "import \"./")
                 .ends_with(&format!("No file at `{}`.", nowhere.display())),
             "a path naming no file says so"
         );
@@ -3331,16 +3331,12 @@ mod tests
     }
 
     /// What `circle-base.gandr` writes of itself, as its `//!` lines read.
-    const CIRCLE_BASE: &str = "The identity subject's shared declarations, written once and \
-                               imported by\nevery source that reads them (`import \
-                               \"./circle-base.gandr\";`): the empty\ntype, the circle, the \
-                               presented integers and the free naturals, the\nwinding number \
-                               and spinning with their round trips (the book's § 8.1), and\nthe \
-                               maps out of the circle the circle sources state their laws over, \
-                               after\ncubical Agda's `Cubical/HITs/S1/Base.agda`. \
-                               `circle.gandr` states the\nequivalence `winding` the round trips \
-                               make and what it computes; this\nsource states only what the \
-                               others read.";
+    const CIRCLE_BASE: &str = "This source supplies the identity subject's shared circle \
+                               declarations.\n\nThe declarations provide the circle, its loop \
+                               words, and their integer model.\n\nEach subject source imports \
+                               these declarations to state its own law.\nThe checker evaluates \
+                               their rules and path operations.\n\n- see: \
+                               corpus/model/identity/circle.gandr";
 
     /// #1365: a position in a source's own `//!` run answers the file and what
     /// it writes of itself, about the run; a word in an ordinary comment still
