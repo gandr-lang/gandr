@@ -118,6 +118,8 @@ use super::arity;
 use super::model;
 use super::named;
 use super::stated;
+use crate::by_form::At;
+use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -722,13 +724,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
     /// - witness: `lower::implicit::tests::an_omitted_instance_is_refused_when_none_or_several_stand_2271`
     #[spec(
-        captures: start = self.operands.len(),
+        captures: start = self.operands.mark(),
         ensures: |ret| match ret {
             Ok(arity::Planned(true)) => matches!(
                 self.plans.get(site.at.node),
-                Some(&Plan::Application(_, arguments)) if arguments.start == start && arguments.end == self.operands.len()
+                Some(&Plan::Application(_, arguments)) if arguments == self.operands.since(start)
             ),
-            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Ok(arity::Planned(false)) => self.operands.mark() == start,
             Err(_) => true,
         },
     )]
@@ -784,13 +786,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_standing_supply_opens_a_lambda_per_explicit_before_it_1498`
     /// - witness: `lower::implicit::tests::a_standing_stage_supply_stands_as_its_call_1498`
     #[spec(
-        captures: start = self.operands.len(),
+        captures: start = self.operands.mark(),
         ensures: |ret| match ret {
             Ok(arity::Planned(true)) => matches!(
                 self.plans.get(site.at.node),
-                Some(&Plan::Application(_, arguments)) if arguments.start == start && arguments.end == self.operands.len()
+                Some(&Plan::Application(_, arguments)) if arguments == self.operands.since(start)
             ),
-            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Ok(arity::Planned(false)) => self.operands.mark() == start,
             Err(_) => true,
         },
     )]
@@ -828,9 +830,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_wildcard_skips_a_position_and_names_follow_positions_4945`
     /// - witness: `lower::implicit::tests::a_misplaced_positional_supply_is_refused_at_its_entry_4945`
     #[spec(
-        captures: start = self.operands.len(),
+        captures: start = self.operands.mark(),
         ensures: |ret| match ret {
-            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Ok(arity::Planned(false)) => self.operands.mark() == start,
             Ok(arity::Planned(true)) | Err(_) => true,
         },
     )]
@@ -1144,13 +1146,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
     /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
     #[spec(
-        captures: start = self.operands.len(),
+        captures: start = self.operands.mark(),
         ensures: |ret| match ret {
             Ok(arity::Planned(true)) => matches!(
                 self.plans.get(site.at.node),
-                Some(&Plan::Application(head, arguments)) if head == tile.node && arguments.start == start
+                Some(&Plan::Application(head, arguments)) if head == tile.node && (arguments == FormStretch::default() || self.operands.first(arguments) == Some(start))
             ),
-            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Ok(arity::Planned(false)) => self.operands.mark() == start,
             Err(_) => true,
         },
     )]
@@ -1230,9 +1232,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_supplied_function_stands_as_a_value`
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
     #[spec(
-        captures: start = self.operands.len(),
+        captures: start = self.operands.mark(),
         ensures: |ret| match ret {
-            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Ok(arity::Planned(false)) => self.operands.mark() == start,
             Ok(arity::Planned(true)) | Err(_) => true,
         },
     )]
@@ -1352,7 +1354,7 @@ impl<'source> Lowerer<'_, 'source>
         // explicit parameters are known here only by their count.
         let unlisted = if entries.is_empty() { opened } else { 0 };
         let mut bound = 0_usize;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         let mut positional = written.iter();
         for entry in entries
             .iter()
@@ -1377,7 +1379,7 @@ impl<'source> Lowerer<'_, 'source>
                             function,
                             implicit: entry.name,
                         })?;
-                        let _first = self.nominated.insert(self.operands.len(), hole);
+                        let _first = self.nominated.insert(self.operands.next_key(), hole);
                         Some(site.at.node)
                     }
                 },
@@ -1387,7 +1389,7 @@ impl<'source> Lowerer<'_, 'source>
                     }
                     else {
                         let index = self.resolved_instance(site, frame, function, *entry)?;
-                        let _first = self.instanced.insert(self.operands.len(), index);
+                        let _first = self.instanced.insert(self.operands.next_key(), index);
                         Some(site.at.node)
                     }
                 },
@@ -1397,7 +1399,7 @@ impl<'source> Lowerer<'_, 'source>
                     let index = opened.saturating_sub(bound).saturating_sub(1);
                     bound = bound.saturating_add(1);
                     let _first = self.abstracted.insert(
-                        self.operands.len(),
+                        self.operands.next_key(),
                         DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
                     );
                     Some(site.at.node)
@@ -1413,7 +1415,7 @@ impl<'source> Lowerer<'_, 'source>
         self.operands.extend(positional.copied());
         let applied = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         let _fresh = self.supplied.insert(inner.node);
         if applied.start == applied.end {
@@ -1421,18 +1423,19 @@ impl<'source> Lowerer<'_, 'source>
         }
         self.read(inner.node, Reading::Head(frame));
         for position in applied.start .. applied.end {
-            if self.nominated.contains_key(&position)
-                || self.abstracted.contains_key(&position)
-                || self.instanced.contains_key(&position)
-                || self.components.contains_key(&position)
-            {
+            if self.operands.locate(At::from(position)).is_some_and(|key| {
+                self.nominated.contains_key(&key)
+                    || self.abstracted.contains_key(&key)
+                    || self.instanced.contains_key(&key)
+                    || self.components.contains_key(&key)
+            }) {
                 continue;
             }
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
-        self.plan(site, Plan::Application(inner.node, applied));
+        self.plan(site, Plan::Application(inner.node, self.kept(applied)));
 
         Ok(arity::Planned(true))
     }
@@ -1467,8 +1470,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_nominates_a_hole_per_component_739`
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     #[spec(
-        captures: before = self.operands.len(),
-        ensures: |ret| ret.is_err() || self.operands.len() == before.saturating_add(slot.components().len()),
+        captures: before = self.operands.entries().len(),
+        ensures: |ret| ret.is_err() || self.operands.entries().len() == before.saturating_add(slot.components().len()),
     )]
     pub(super) fn pass_model(
         &mut self,
@@ -1492,13 +1495,13 @@ impl<'source> Lowerer<'_, 'source>
         for place in 0 .. slot.components().len() {
             if let Some(ref supplied) = supplied {
                 let _first = self.components.insert(
-                    self.operands.len(),
+                    self.operands.next_key(),
                     (Arc::clone(supplied), model::ComponentPlace::from(place)),
                 );
             }
             else {
                 let hole = self.nominate(Nomination::Omitted { function, implicit })?;
-                let _first = self.nominated.insert(self.operands.len(), hole);
+                let _first = self.nominated.insert(self.operands.next_key(), hole);
                 holes.push(hole);
             }
             self.operands.push(site.at.node);

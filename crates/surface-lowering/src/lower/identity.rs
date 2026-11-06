@@ -336,6 +336,7 @@ use super::lowered;
 use super::native::Answer;
 use super::native::record_since;
 use super::native::rooted;
+use crate::by_form::At;
 use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -686,7 +687,7 @@ pub(super) enum Derivation
         /// The stratum and the chain.
         composite: Composite,
         /// The cells in vertex order, in the lowerer's operand store.
-        cells: Stretch,
+        cells: FormStretch,
     },
 }
 
@@ -978,7 +979,7 @@ struct Callee
     returned: bool,
     /// The arguments the call applies, in the lowerer's operand store: every
     /// one, or a descent's from the staged parameter's on.
-    arguments: Stretch,
+    arguments: FormStretch,
     /// Whether the head is a recursive call's descent claim, which passes
     /// the parameters before the staged one as themselves.
     descends: bool,
@@ -2069,11 +2070,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     /// - witness: `lower::identity::tests::a_written_transport_read_as_a_value_is_the_value_it_returns_985`
     #[spec(
-        captures: start = self.operands.len(),
+        captures: start = self.operands.entries().len(),
         ensures: |ret| {
-            (self.operands.len() == start
+            (self.operands.entries().len() == start
                 || (matches!(operation, Operation::Step | Operation::Then)
-                    && self.operands.len() == start.saturating_add(2_usize)))
+                    && self.operands.entries().len() == start.saturating_add(2_usize)))
                 && (ret.is_err()
                     || match (operation, self.plans.get(site.at.node)) {
                         | (Operation::Here, Some(&Plan::Here(point)))
@@ -2131,20 +2132,31 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Decompose => Produced::Computation,
         };
         let frame = self.require(site, produced)?;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         let read = arguments(site, &mut cursor, &mut self.operands);
-        let count = self.operands.len().saturating_sub(start);
-        let first = self.operands.get(start).copied();
-        let second = self.operands.get(start.saturating_add(1_usize)).copied();
-        let third = self.operands.get(start.saturating_add(2_usize)).copied();
+        let count = self.operands.entries().len().saturating_sub(start);
+        let first = self.operands.entries().get(start).copied();
+        let second = self
+            .operands
+            .entries()
+            .get(start.saturating_add(1_usize))
+            .copied();
+        let third = self
+            .operands
+            .entries()
+            .get(start.saturating_add(2_usize))
+            .copied();
         let written = self
             .operands
+            .entries()
             .get(start ..)
             .and_then(|written| <[NodeIndex; 5]>::try_from(written).ok());
         let moves = match operation {
-            Operation::Recorded | Operation::Dialogue => {
-                self.operands.get(start ..).map(<[NodeIndex]>::to_vec)
-            },
+            Operation::Recorded | Operation::Dialogue => self
+                .operands
+                .entries()
+                .get(start ..)
+                .map(<[NodeIndex]>::to_vec),
             Operation::Here
             | Operation::Funext
             | Operation::Equiv
@@ -2165,7 +2177,7 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Ride
             | Operation::Decompose => None,
         };
-        self.operands.truncate(start);
+        self.operands.truncate(At::from(start));
         read?;
         match (operation, count, first, second, third) {
             (Operation::Here | Operation::Stay, 1_usize, Some(point), ..) => {
@@ -2174,8 +2186,8 @@ impl<'source> Lowerer<'_, 'source>
                     && let Maybe::Present(empty) = self.looped_point(Placed::of(point, node))?
                 {
                     let none = Stretch {
-                        start: self.operands.len(),
-                        end: self.operands.len(),
+                        start: self.operands.entries().len(),
+                        end: self.operands.entries().len(),
                     };
                     return self.construct(site, empty, none);
                 }
@@ -2501,8 +2513,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_run_rides_a_flow_between_sessions`
     /// - witness: `lower::identity::tests::a_move_out_of_shape_is_refused`
     #[spec(
-        captures: start = self.operands.len(),
-        ensures: |ret| self.operands.len() == start && match ret {
+        captures: start = self.operands.entries().len(),
+        ensures: |ret| self.operands.entries().len() == start && match ret {
             | Ok(RecordedMove::Sent(payload) | RecordedMove::Received(payload)) => {
                 self.reading(payload) == Reading::Value(frame)
             },
@@ -2598,14 +2610,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   send of two refused by its arity.
     /// - witness: `lower::identity::tests::a_move_out_of_shape_is_refused`
     /// - witness: `lower::identity::tests::a_dialogue_lowers_its_moves_beside_their_endpoints`
-    #[spec(captures: start = self.operands.len(), ensures: |_| self.operands.len() == start)]
+    #[spec(captures: start = self.operands.entries().len(), ensures: |_| self.operands.entries().len() == start)]
     fn unary_call(
         &mut self,
         at: Site,
         written: Placed,
     ) -> Result<(Placed, NodeIndex), LoweringRefusal<'source>>
     {
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         let mut scratch = core::mem::take(&mut self.scratch);
         let read = read_pieces(self.pbg, self.tree, written.node, &mut scratch).and_then(|()| {
             let mut cursor = Cursor::new(&scratch.pieces, written.span);
@@ -2614,12 +2626,12 @@ impl<'source> Lowerer<'_, 'source>
             Ok(head)
         });
         self.scratch = scratch;
-        let count = self.operands.len().saturating_sub(start);
-        let argument = match self.operands.get(start ..) {
+        let count = self.operands.entries().len().saturating_sub(start);
+        let argument = match self.operands.entries().get(start ..) {
             Some(&[argument]) => Some(argument),
             Some(_) | None => None,
         };
-        self.operands.truncate(start);
+        self.operands.truncate(At::from(start));
         let head = read?;
         let Some(argument) = argument
         else {
@@ -2650,8 +2662,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   refused by their boundary.
     /// - witness: `lower::identity::tests::a_dialogue_lowers_its_moves_beside_their_endpoints`
     #[spec(
-        captures: start = self.operands.len(),
-        ensures: |ret| self.operands.len() == start && match ret {
+        captures: start = self.operands.entries().len(),
+        ensures: |ret| self.operands.entries().len() == start && match ret {
             | Ok(DialogueMove { movement: RecordedMove::Sent(payload) | RecordedMove::Received(payload), .. }) => {
                 self.reading(payload) == Reading::Value(frame)
             },
@@ -2733,6 +2745,7 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::Computation)?;
         let [shape, diagram] = exactly(site, &mut cursor, &mut self.operands)?;
         let (composite, cells) = self.written_composite(site, stratum, shape, diagram)?;
+        let cells = self.kept(cells);
         self.derive(site, frame, Derivation::Compose { composite, cells })
     }
 
@@ -2772,14 +2785,14 @@ impl<'source> Lowerer<'_, 'source>
         let (composite, cells) = self.written_composite(site, stratum, shape, diagram)?;
         self.read(generator, Reading::Computation(frame));
         for position in cells.start .. cells.end {
-            if let Some(&cell) = self.operands.get(position) {
+            if let Some(&cell) = self.operands.entries().get(position) {
                 self.read(cell, Reading::Value(frame));
             }
         }
         self.plan(site, Plan::Fill {
             composite,
             generator,
-            cells,
+            cells: self.kept(cells),
         });
         Ok(())
     }
@@ -2850,8 +2863,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
     /// - witness: `lower::identity::tests::a_level_two_pasting_reads_its_columns`
     #[spec(
-        captures: start = self.operands.len(),
-        ensures: |ret| self.operands.len() == start && (ret.is_err() || self.tree.node(shape).is_some()),
+        captures: start = self.operands.entries().len(),
+        ensures: |ret| self.operands.entries().len() == start && (ret.is_err() || self.tree.node(shape).is_some()),
     )]
     fn pasting(
         &mut self,
@@ -2876,7 +2889,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(unadmitted);
         };
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         let mut scratch = core::mem::take(&mut self.scratch);
         let read = read_pieces(self.pbg, self.tree, written.node, &mut scratch).and_then(|()| {
             let mut cursor = Cursor::new(&scratch.pieces, written.span);
@@ -2885,7 +2898,7 @@ impl<'source> Lowerer<'_, 'source>
             Ok(head)
         });
         self.scratch = scratch;
-        let written_arguments: Vec<NodeIndex> = self.operands.drain(start ..).collect();
+        let written_arguments = self.operands.split_off(At::from(start));
         let head = read?;
         if self.name_at(head).as_ref() != CHAIN {
             return Err(unadmitted);
@@ -2902,7 +2915,7 @@ impl<'source> Lowerer<'_, 'source>
             [count, columns] => {
                 let count = resident(self, count)?;
                 let stretch = self.diagram(at, columns)?;
-                let members: Vec<NodeIndex> = self.operands.drain(stretch.start ..).collect();
+                let members = self.operands.split_off(At::from(stretch.start));
                 let mut heights = Vec::with_capacity(members.len());
                 for mut member in members {
                     // One column's height stands in its tuple's parentheses.
@@ -2967,10 +2980,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   order.
     /// - witness: `lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
     #[spec(
-        captures: start = self.operands.len(),
+        captures: start = self.operands.entries().len(),
         ensures: |ret| match ret {
-            | Ok(cells) => cells.start == start && cells.end == self.operands.len() && cells.end > cells.start,
-            | Err(_) => self.operands.len() == start,
+            | Ok(cells) => cells.start == start && cells.end == self.operands.entries().len() && cells.end > cells.start,
+            | Err(_) => self.operands.entries().len() == start,
         },
     )]
     fn diagram(
@@ -2979,7 +2992,7 @@ impl<'source> Lowerer<'_, 'source>
         diagram: NodeIndex,
     ) -> Result<Stretch, LoweringRefusal<'source>>
     {
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         let tupled = match self.tree.node(diagram) {
             Some(node)
                 if matches!(
@@ -3013,15 +3026,17 @@ impl<'source> Lowerer<'_, 'source>
         };
         match tupled {
             Ok(true) => {},
-            Ok(false) => self.operands.push(diagram),
+            Ok(false) => {
+                let _key = self.operands.push(diagram);
+            },
             Err(refusal) => {
-                self.operands.truncate(start);
+                self.operands.truncate(At::from(start));
                 return Err(refusal);
             },
         }
         Ok(Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         })
     }
 
@@ -3072,12 +3087,9 @@ impl<'source> Lowerer<'_, 'source>
             self.plan(site, Plan::FlowThen(first, second));
             return Ok(());
         }
-        let start = self.operands.len();
+        let start = self.operands.mark();
         self.operands.extend([first, second]);
-        let cells = Stretch {
-            start,
-            end: self.operands.len(),
-        };
+        let cells = self.operands.since(start);
         self.derived(
             site,
             frame,
@@ -3239,8 +3251,9 @@ impl<'source> Lowerer<'_, 'source>
                 self.read(path, Reading::Value(frame));
             },
             Derivation::Compose { cells, .. } => {
+                let cells = self.spread(cells);
                 for position in cells.start .. cells.end {
-                    if let Some(&cell) = self.operands.get(position) {
+                    if let Some(&cell) = self.operands.entries().get(position) {
                         self.read(cell, Reading::Value(frame));
                     }
                 }
@@ -3587,7 +3600,7 @@ impl<'source> Lowerer<'_, 'source>
                     return Some(Codomain::Returner(codomain));
                 },
                 Some(&Plan::ValueFunction(domains, codomain))
-                    if !thunked && domains.end.checked_sub(domains.start) == Some(1_usize) =>
+                    if !thunked && self.operands.read(domains).len() == 1_usize =>
                 {
                     // An output read as a result, a group or a row, mints
                     // its own computation type, as a returner does.
@@ -3633,7 +3646,7 @@ impl<'source> Lowerer<'_, 'source>
             match self.plans.get(at) {
                 Some(&Plan::Transparent(inner)) => at = inner,
                 Some(&Plan::StaticApplication(Code::Bound { from, .. }, arguments))
-                    if arguments.start == arguments.end =>
+                    if arguments == FormStretch::default() =>
                 {
                     return Some(from);
                 },
@@ -3713,16 +3726,14 @@ impl<'source> Lowerer<'_, 'source>
                 Derivation::Cong { path, function } => (path, None, Some(function)),
                 // A composite stands from its first cell's start to its last
                 // cell's end.
-                Derivation::Compose { cells, .. } => {
-                    match self.operands.get(cells.start .. cells.end) {
-                        Some(&[only]) => (only, None, None),
-                        Some(&[first, .., last]) => (first, Some(last), None),
-                        Some(&[]) | None => {
-                            self.collected
-                                .offer(at, site.out(FragmentBoundary::Unannotated));
-                            continue;
-                        },
-                    }
+                Derivation::Compose { cells, .. } => match self.operands.whole(cells) {
+                    Some(&[only]) => (only, None, None),
+                    Some(&[first, .., last]) => (first, Some(last), None),
+                    Some(&[]) | None => {
+                        self.collected
+                            .offer(at, site.out(FragmentBoundary::Unannotated));
+                        continue;
+                    },
                 },
             };
             let synthesis = match (synthesis, function) {
@@ -3792,8 +3803,9 @@ impl<'source> Lowerer<'_, 'source>
             if let Derivation::Compose { composite, cells } = derivation
                 && composite.pasting.level() != gandr_core_term::compose::Level::ONE
             {
+                let cells = self.spread(cells);
                 for position in cells.start .. cells.end {
-                    let Some(&cell) = self.operands.get(position)
+                    let Some(&cell) = self.operands.entries().get(position)
                     else {
                         break;
                     };
@@ -3865,11 +3877,7 @@ impl<'source> Lowerer<'_, 'source>
             if let Derivation::Compose { composite, cells } = derivation
                 && composite.pasting.level() != gandr_core_term::compose::Level::ONE
             {
-                for &cell in self
-                    .operands
-                    .get(cells.start .. cells.end)
-                    .unwrap_or_default()
-                {
+                for &cell in self.operands.read(cells) {
                     if let Maybe::Present(typed) = self.operand_typed(cell) {
                         types.push(typed.node());
                     }
@@ -4075,7 +4083,7 @@ impl<'source> Lowerer<'_, 'source>
         let (binder, in_type) = match self.plans.get(at) {
             Some(&Plan::Variable(_, binder)) => (binder, None),
             Some(&Plan::StaticApplication(Code::Bound { from, binder, .. }, arguments))
-                if arguments.start == arguments.end =>
+                if arguments == FormStretch::default() =>
             {
                 (binder, Some(from))
             },
@@ -4117,7 +4125,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   stands for read the same dependent result.
     /// - witness: `lower::identity::tests::a_derived_operation_reads_a_parameter_or_a_call`
     /// - witness: `lower::identity::tests::a_call_reads_a_dependent_result_through_either_spelling_812`
-    #[spec(ensures: |ret| ret.is_none_or(|callee| callee.arguments.start == callee.arguments.end))]
+    #[spec(ensures: |ret| ret.is_none_or(|callee| callee.arguments == FormStretch::default()))]
     fn callee_of(
         &self,
         constant: ConstantIndex,
@@ -4142,7 +4150,6 @@ impl<'source> Lowerer<'_, 'source>
             }
             at
         };
-        let none = Stretch { start: 0, end: 0 };
         let (parameters, arity, result, returned) = match self.plans.get(through(written.node)) {
             Some(&Plan::Telescope(entries, codomain)) => (
                 entries,
@@ -4152,7 +4159,7 @@ impl<'source> Lowerer<'_, 'source>
             ),
             Some(&Plan::ValueFunction(domains, codomain)) => (
                 FormStretch::default(),
-                domains.end.saturating_sub(domains.start),
+                self.operands.read(domains).len(),
                 codomain,
                 matches!(self.reading(codomain), Reading::Result(_)),
             ),
@@ -4193,7 +4200,7 @@ impl<'source> Lowerer<'_, 'source>
             recursive: None,
             result,
             returned,
-            arguments: none,
+            arguments: FormStretch::default(),
             descends: false,
         })
     }
@@ -4262,7 +4269,6 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return None;
         };
-        let none = Stretch { start: 0, end: 0 };
 
         Some(Callee {
             parameters: FormStretch::default(),
@@ -4270,7 +4276,7 @@ impl<'source> Lowerer<'_, 'source>
             recursive: None,
             result: at,
             returned: false,
-            arguments: none,
+            arguments: FormStretch::default(),
             descends: false,
         })
     }
@@ -4297,7 +4303,6 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return None;
         };
-        let none = Stretch { start: 0, end: 0 };
         Some(Callee {
             parameters: function.parameters,
             arity: self.parameters.read(function.parameters).len(),
@@ -4311,7 +4316,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             result,
             returned: true,
-            arguments: none,
+            arguments: FormStretch::default(),
             descends: false,
         })
     }
@@ -4687,11 +4692,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
             },
             Derivation::Compose { cells, .. } => {
-                for &cell in self
-                    .operands
-                    .get(cells.start .. cells.end)
-                    .unwrap_or_default()
-                {
+                for &cell in self.operands.read(cells) {
                     match self.value_at(cell) {
                         Maybe::Present(value) => composed.push(value),
                         Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -4871,15 +4872,12 @@ impl<'source> Lowerer<'_, 'source>
     fn columns_composite(
         &self,
         composite: Composite,
-        (cells, values): (Stretch, &[ValueId]),
+        (cells, values): (FormStretch, &[ValueId]),
         frame: Frame,
         sink: &mut Sink<'_>,
     ) -> Maybe<(ComputationId, Ends), lowered::Absent>
     {
-        let written = self
-            .operands
-            .get(cells.start .. cells.end)
-            .unwrap_or_default();
+        let written = self.operands.read(cells);
         let mut read = Vec::with_capacity(values.len());
         for (&cell, &value) in written.iter().zip(values) {
             let typed = match self.operand_typed(cell) {
@@ -5156,7 +5154,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Stood, lowered::Absent>
     {
         let cells = match derivation {
-            Derivation::Compose { cells, .. } => self.operands.get(cells.start .. cells.end),
+            Derivation::Compose { cells, .. } => self.operands.whole(cells),
             Derivation::Back { .. } | Derivation::Cong { .. } => None,
         };
         let transported = match (derivation, cells) {
@@ -5734,7 +5732,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let from = self.reading(callee.result).frame();
         let parameters = self.parameters.read(callee.parameters);
-        let applied = super::stretch(&self.operands, callee.arguments);
+        let applied = self.operands.read(callee.arguments);
         let mut arguments = Vec::with_capacity(callee.arity);
         if callee.descends {
             let staged = callee.recursive.unwrap_or(0);
@@ -5759,13 +5757,19 @@ impl<'source> Lowerer<'_, 'source>
         else if applied.len() != callee.arity {
             return unread;
         }
-        for position in callee.arguments.start .. callee.arguments.end {
-            let value = if let Some(&hole) = self.nominated.get(&position) {
+        let positions = self.spread(callee.arguments);
+        for position in positions.start .. positions.end {
+            let value = if let Some(&hole) = self
+                .operands
+                .locate(At::from(position))
+                .and_then(|key| self.nominated.get(&key))
+            {
                 sink.arena.value_hole(hole)
             }
             else {
                 let Some(Maybe::Present(value)) = self
                     .operands
+                    .entries()
                     .get(position)
                     .map(|&argument| self.value_at(argument))
                 else {
@@ -6158,7 +6162,7 @@ impl<'source> Lowerer<'_, 'source>
     )]
     pub(super) fn mint_fill(
         &self,
-        (composite, generator, cells): (Composite, NodeIndex, Stretch),
+        (composite, generator, cells): (Composite, NodeIndex, FormStretch),
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -6167,10 +6171,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(generator) => generator,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let written = self
-            .operands
-            .get(cells.start .. cells.end)
-            .unwrap_or_default();
+        let written = self.operands.read(cells);
         let mut minted = Vec::with_capacity(written.len());
         for &cell in written {
             match self.value_at(cell) {
