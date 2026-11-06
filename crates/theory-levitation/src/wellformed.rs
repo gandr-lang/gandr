@@ -124,6 +124,9 @@ pub enum WfKind
     /// A circuit rule's wiring reads one output of a many-out node on its
     /// own, which no term carries.
     SplitCircuitOutputs,
+    /// A circuit rule's wiring binds one port twice, so no term gives the port
+    /// its one producer.
+    SharedCircuitPort,
     /// Two faces of the signature's shape share one name.
     DuplicateFaceName,
     /// A face of the signature's shape holds a point the shape lacks.
@@ -330,7 +333,7 @@ fn located(
 #[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
     WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch | WfKind::UnknownPortSort
     | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget
-    | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs | WfKind::UnsortedBinding
+    | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs | WfKind::SharedCircuitPort | WfKind::UnsortedBinding
     | WfKind::MisplacedAbstraction | WfKind::UnknownFreshness
     | WfKind::Capture | WfKind::MisplacedAtom
     | WfKind::UndecidedCondition => matches!(diagnostic.span, Maybe::Present(_)),
@@ -661,7 +664,8 @@ fn check_sorts<G>(
 /// which reads a rule's variables off its left-hand side: a circuit rule's
 /// variables are bound by its port telescope, so a congruence rule's target
 /// names the rewrite-sorted ports' endpoints and its source cannot bind them.
-/// Port linearity and disjointness are the surface's.
+/// Port linearity is the surface's. A port that two bindings name is the
+/// derivation's refusal, reported as [`WfKind::SharedCircuitPort`].
 ///
 /// # Specification
 /// - ensures: out-of-signature diagnostics for the sphere's terms and the frame
@@ -687,7 +691,7 @@ fn check_sorts<G>(
         diagnostic.span == Maybe::Present(rule.sphere.provenance)
         && matches!(diagnostic.kind, WfKind::OutOfSignatureRule | WfKind::UnknownRewritePort
             | WfKind::CyclicCircuitWiring | WfKind::CircuitDerivationBudget | WfKind::DerivedBoundaryMismatch
-            | WfKind::SplitCircuitOutputs))),
+            | WfKind::SplitCircuitOutputs | WfKind::SharedCircuitPort))),
 )]
 fn check_circuit_rule(
     rule: &CircuitRule,
@@ -777,6 +781,19 @@ fn check_circuit_rule(
                      node, on its own: a term holds a many-out application only whole, as the \
                      results it returns, so the node's outputs must leave the body together as \
                      its declared results, in order",
+                    rule.name
+                ),
+                span,
+            ));
+            return;
+        },
+        Err(CircuitDerivationError::SharedPort(port)) => {
+            diagnostics.push(located(
+                WfKind::SharedCircuitPort,
+                named(&[&rule.name, &port]),
+                format!(
+                    "circuit rule `{}`'s wiring binds port `{port}` twice: a term gives each \
+                     port one producer, so the body derives no boundary",
                     rule.name
                 ),
                 span,

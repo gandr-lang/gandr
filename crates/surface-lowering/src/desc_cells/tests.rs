@@ -359,7 +359,7 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
         ),
         (
             include_str!("tests/fixtures/each-cell-fault-is-refused-by-its-own-member-fault.gandr"),
-            "rule twice",
+            "rule stray",
             MemberFault::LhsNotOperation,
         ),
         (

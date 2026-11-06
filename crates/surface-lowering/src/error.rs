@@ -2014,6 +2014,11 @@ fn ill_formed(
             "the wiring of the rule {one} reads the port {other}, one output of a many-out \
              node, on its own"
         ),
+        WfKind::SharedCircuitPort => write!(
+            f,
+            "the wiring of the rule {one} binds the port {other} twice, and a term gives each \
+             port one producer"
+        ),
         WfKind::DuplicateFaceName => {
             write!(f, "the boundary {one} names the face {other} twice")
         },
@@ -3365,6 +3370,7 @@ mod tests
             WfKind::MisplacedResults,
             WfKind::NonRepresentableBinder,
             WfKind::SplitCircuitOutputs,
+            WfKind::SharedCircuitPort,
             WfKind::DuplicateFaceName,
             WfKind::FaceOutsideShape,
             WfKind::FacePosetPastBudget,
@@ -3482,6 +3488,7 @@ mod tests
                 crate::WfKind::MisplacedResults,
                 crate::WfKind::NonRepresentableBinder,
                 crate::WfKind::SplitCircuitOutputs,
+                crate::WfKind::SharedCircuitPort,
                 crate::WfKind::DuplicateFaceName,
                 crate::WfKind::FaceOutsideShape,
                 crate::WfKind::FacePosetPastBudget,
