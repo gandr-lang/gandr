@@ -1,12 +1,16 @@
 /// `exact-reals`: exact real arithmetic beside the kernel, which a program reaches through `std.reals.Eff`.
 /// Implemented: the host interface holds seven operations. `admit` and `enclose` read a plan, and `decide`, `step`, `checkpoint`, `restore` and `report` decide its open root by a machine. The checker replays each certificate before a reply, and only such a certificate makes a machine hold or fail.
-/// Not implemented: no source runs the overt existential or the compact universal through the driver, and the corpus holds no pathological case of stage C.
+/// Not implemented: no bench measures the host path against the crate, and a source spells each plan only as its bytes.
 ///
-/// - owes: #5705
+/// - owes: #5704 — the cost of the host path, and the quota profiles and the release metrics of stage C
+/// - owes: #5801 — plan terms in a source
 /// - see: `corpus/model/reals/sqrt-two.gandr` — the square root of two through `gandr run`
 /// - see: `corpus/model/reals/comparison.gandr` — a comparison that holds
 /// - see: `corpus/model/reals/resume.gandr` — a machine restored from its checkpoint
 /// - see: `corpus/model/reals/trigonometry.gandr` — π, the cosine and the angle of a point
+/// - see: `corpus/model/reals/exists.gandr` — an overt existential that holds by a witness
+/// - see: `corpus/model/reals/forall.gandr` — a compact universal that holds by a cover
+/// - see: `corpus/pathological/reals/false-checkpoint.gandr` — a checkpoint whose evidence does not replay
 
 // The exact reals' host interface.
 import std.reals;

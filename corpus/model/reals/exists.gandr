@@ -1,0 +1,56 @@
+// A program decides an overt bounded existential through `std.reals.Eff`,
+// the host interface of exact reals. The existential is
+// `∃ x ∈ [1, 2] (3 < x · x)`. `gandr run exists.gandr` prints `holds`. The
+// same `decided` runs under a handler of this source, a second model of the
+// interface.
+//
+// The domain of the plan is the closed interval `[1, 2]`. The domain states
+// its overtness at the reference 1 and its compactness at the reference 2.
+// The existential names the overtness as its evidence, and the compactness as
+// the evidence of its dual. The host registers both references.
+//
+// `decide` mints a machine on the two poles of the root. The pole that holds
+// searches the domain breadth first for a subinterval where the body holds.
+// It certifies in 13 steps, and the checker replays its certificate before
+// the host replies `holds`. The pole that fails suspends after 10 steps, when
+// a step of its search concludes the other pole. So the machine spends 23
+// quanta of its budget of 32.
+//
+// - see: `corpus/model/reals/forall.gandr` — the compact universal
+// - see: `crates/theory-exact-reals/src/bisection.rs` — the search of a
+//   quantifier
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+// The subject's shared declarations: `decided`.
+import "./reals-base.gandr";
+
+/// The canonical bytes of the plan of `∃ x ∈ [1, 2] (3 < x · x)` in
+/// lowercase hexadecimal: 6 nodes in 111 bytes, the magic `GXRP` first.
+pub def witnessed : String = "475852500100060000000000000020000100000000010000000000000001000101000000010000000000000001000101000000010200000002000000000100000000000000030100000000050200000002000000120100000003000000150000000004000000010000000102000000";
+
+/// `decided` under a handler of this source, a second model of
+/// `std.reals.Eff` that decides each root true.
+@[ runs("\"holds\"") ]
+def witnessedModelled() -> String =
+  handle r : std.reals.Eff {
+    decided witnessed 32
+  } with {
+    | pure(x) => pure x
+    | oper admit(plan, k) => k 0
+    | oper enclose(asked, k) => k "0p0" "1p0"
+    | oper decide(asked, k) => k "holds" 0
+    | oper step(machine, k) => k "holds" machine
+    | oper checkpoint(machine, k) => k ""
+    | oper restore(text, k) => k 0
+    | oper report(machine, k) => k #[0, 0, 0]
+  }
+
+/// The entry: decide the existential within 32 quanta, print the verdict,
+/// and exit with 0.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let verdict = decided witnessed 32
+  std.io.Console.print verdict
+  0

@@ -4,8 +4,8 @@
 //! `theory-exact-reals` that the validation pass admits, and the machines that
 //! decide their open roots. `admit` reads its string as the canonical bytes of
 //! a plan in lowercase hexadecimal. It validates them under the default
-//! quotas, against the registered cut of stage A, and replies the place of the
-//! plan in the table. So a plan is an integer that names a plan this host
+//! quotas, against the evidence of stages A and C, and replies the place of
+//! the plan in the table. So a plan is an integer that names a plan this host
 //! holds, and it never crosses. `enclose` takes a plan and a precision `k`. It
 //! runs the refinement machine on the root of the plan until the machine
 //! certifies an enclosure no wider than `2^-k`. The checker replays the
@@ -563,19 +563,27 @@ impl Reals
     }
 }
 
-/// The evidence that a plan may reference: the registered cut of stage A,
-/// whose laws stand at the reference zero.
+/// The evidence that a plan may reference: the laws of the registered cut of
+/// stage A at the reference zero, and the overtness and the compactness of an
+/// interval domain at one and two. The bounded quantifiers of stage C name
+/// the last two.
 ///
 /// # Specification
 /// trivial.
 fn evidence() -> EvidenceTable
 {
     let mut table = EvidenceTable::new();
-    // A fresh table holds no judgement that the registration conflicts with,
-    // and a table without it refuses every cut, so neither answer admits more.
-    match table.register(Evidence::from(0_u32), Judgement::CutLaws) {
-        Ok(()) | Err(_) => table,
+    for (reference, judgement) in [
+        (0_u32, Judgement::CutLaws),
+        (1, Judgement::Overt),
+        (2, Judgement::Compact),
+    ] {
+        // A fresh table holds no judgement that a registration conflicts
+        // with, and a table without one refuses each plan that names it, so
+        // neither answer admits more.
+        let _conflict = table.register(Evidence::from(reference), judgement);
     }
+    table
 }
 
 /// `value` spelled `<mantissa>p<exponent>`, for `mantissa · 2^exponent`.

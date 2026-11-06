@@ -1,0 +1,36 @@
+// A program hands the host a checkpoint whose certificate evidence is false,
+// and `restore` refuses it. `gandr run false-checkpoint.gandr` writes the
+// refusal as one line on standard error. The run stops at `restore`, and it
+// prints nothing.
+//
+// The text is the checkpoint of a machine on `sqrt 2 < 3/2` after two quanta,
+// one for each pole, except for one byte. The first step of each pole
+// witnesses the cut of `sqrt 2`: `1` lies in its lower cut, and `2` lies in
+// its upper cut. The text moves the lower point of the pole that holds to
+// `3`, which does not lie in the lower cut. The bytes stay canonical, and the
+// checker finds the false point only when it replays the steps.
+//
+// `restore` validates the plan again and replays the steps again. It refuses
+// the checkpoint at step 0 by the check `NotLower`.
+//
+// - see: `corpus/model/reals/resume.gandr` — a checkpoint that resumes
+// - see: `crates/theory-exact-reals/src/dovetail.rs` — the checkpoint of the
+//   scheduler
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+
+/// The text of the checkpoint with its lower point at `3`. It holds the
+/// length of the plan and the plan in 180 bytes, then the checkpoint of the
+/// scheduler in 146 bytes.
+pub def falseCheckpoint : String = "b00000004758525001000d000000000000000100000000020000000000000000000000001200000000010000000500000000000000000201000000010000000000000001120300000004000000140200000005000000120100000000000000120400000003000000130700000008000000080001000000000100000000000000010001010000000100000000000000010006000000090000000000000002ffffffff010000000000000003120a0000000b0000004758524b01000100000000000100000000000000010000000000000000000000000002000000000000000c0000004001000000000000000100000000000000300a00000000000000010000000000000003010000000100000000000000010c0000004101000000000000000100000000000000300a0000000000000001000000000000000101000000010000000000000001";
+
+/// The entry: restore the machine of the text and step it once. The host
+/// declines `restore`, so the run stops there and prints nothing.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let machine = std.reals.restore falseCheckpoint
+  let *{verdict, same} = std.reals.step machine
+  std.io.Console.print verdict
+  0

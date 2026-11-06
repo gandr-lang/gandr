@@ -21,20 +21,13 @@
 import std.io;
 // The exact reals' host interface.
 import std.reals;
-// The join of two strings.
-import std.string (concat);
+// The subject's shared declarations: `enclosed`.
+import "./reals-base.gandr";
 
 /// The canonical bytes of the plan that `square_root_of_two` of
 /// `theory-exact-reals` builds, in lowercase hexadecimal: 11 nodes in 153
 /// bytes, the magic `GXRP` first.
 pub def rootTwo : String = "4758525001000b0000000000000001000000000200000000000000000000000012000000000100000005000000000000000002010000000100000000000000011203000000040000001402000000050000001201000000000000001204000000030000001307000000080000000800010000000001000000000000000100010100000001000000000000000100060000000900000000000000";
-
-/// The ends of an enclosure of the root of `plan` no wider than `2^-k`, the
-/// lower end first and a space between them.
-pub def enclosed(plan : String, k : Integer) -> [std.reals.Eff] String =
-  let held = std.reals.admit plan
-  let *{lower, upper} = std.reals.enclose held k
-  concat lower (concat " " upper)
 
 /// `enclosed` under a handler of this source, a second model of
 /// `std.reals.Eff` that holds one plan and answers each enclosure with `1`
