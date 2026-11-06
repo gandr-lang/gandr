@@ -184,6 +184,7 @@ use super::closed;
 use super::exhausted;
 use super::lowered;
 use super::native::Answer;
+use super::native::Holds;
 use super::native::answered;
 use super::stretch;
 use crate::error::FormFault;
@@ -1703,9 +1704,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   binding a frame extending the one before it, each entry's type read as
     ///   a value type under the frames of the labels before it and its label
     ///   kept by [`Self::label_entry`] at that frame. Positional entries read
-    ///   where a value is read, in a constructor's field that holds no code
-    ///   ([`Self::valued_telescopes`]), plan the tuple of their values instead,
-    ///   each read as a value under the form's frame.
+    ///   where a value is read, in a constructor's field, a call's parameter or
+    ///   a tuple's component that holds no code ([`Self::valued_telescopes`]),
+    ///   plan the tuple of their values instead, each read as a value under the
+    ///   form's frame, and each entry that is itself a telescope type at a
+    ///   component that holds no code reads so too ([`Self::valued_entries`]).
     /// - fails: the wrong-sort refusal where no value type is read; the
     ///   entries' and the labels' own refusals.
     /// - panics: none.
@@ -1717,11 +1720,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the unit, one component, three, a record in two
     ///   orders, and a type over labels whose later entry names an earlier one,
     ///   each asserted as the exact core type; the unit and a pair in a
-    ///   constructor's field inside a type, asserted as the exact core value.
+    ///   constructor's field inside a type, asserted as the exact core value; a
+    ///   unit telescope inside one, at a component of type `Unit` and of type
+    ///   `Type`.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
     /// - witness: `lower::arity::tests::each_label_names_what_it_labels`
     /// - witness: `lower::tests::a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208`
+    /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Product(_) | Plan::RecordType(..) | Plan::Tuple(_)))))]
     pub(super) fn telescope_type(
         &mut self,
@@ -1730,7 +1736,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let valued = matches!(site.reading, Reading::Value(_))
-            && self.valued_telescopes.contains(&site.at.node);
+            && self.valued_telescopes.contains_key(&site.at.node);
         // A valued telescope reads a value or a type by its entries, so its
         // sort waits for them.
         let typed = if valued {
@@ -1751,6 +1757,8 @@ impl<'source> Lowerer<'_, 'source>
             Arranged::Positional(entries) if valued => {
                 let members = self.stored(&entries);
                 self.classify_members(site, members, frame)?;
+                let stated = self.valued_telescopes.get(&site.at.node).copied().flatten();
+                self.valued_entries(site, stated, &entries)?;
                 for entry in &entries {
                     self.read(entry.held.at().node, Reading::Value(frame));
                 }
@@ -1822,6 +1830,84 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         self.plan(site, plan);
+
+        Ok(())
+    }
+
+    /// Mark each entry of the telescope at `site`, which reads as a tuple of
+    /// type `stated`, that is itself a telescope type at a component that
+    /// holds no code: it reads as the tuple of its entries too (#5500).
+    ///
+    /// # Specification
+    /// - requires: `site` is a telescope type that reads as a tuple; `entries`
+    ///   are its positional entries in written order; `stated` is the type its
+    ///   value has, when written.
+    /// - ensures: an entry written as a telescope type, bare or inside
+    ///   parentheses as [`Self::written_telescope`] reads it, joins
+    ///   [`Self::valued_telescopes`] with the component at its place when
+    ///   `stated` states a product of as many positional components as
+    ///   `entries`, as [`Self::stated_entries`] reads it, and that component
+    ///   holds a value, as [`Self::held_at`] reads it. Any other entry stays as
+    ///   it is. No type is read when no entry is a telescope type.
+    /// - fails: as [`Self::stated_entries`] and [`Self::unwrapped`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Termination
+    /// The loop runs once per entry of the finite slice `entries`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a unit telescope at a component of type `Unit` and at
+    ///   one of type `Type` of a product field, bare and inside parentheses,
+    ///   each asserted as the exact core value.
+    /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
+    #[spec(
+        captures: before = self.valued_telescopes.len(),
+        ensures: |ret| ret.is_err() || self.valued_telescopes.len() >= before,
+    )]
+    fn valued_entries(
+        &mut self,
+        site: Site,
+        stated: Option<NodeIndex>,
+        entries: &[Entry<'source>],
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(stated) = stated
+        else {
+            return Ok(());
+        };
+        // The stated components are read once, at the first entry that is a
+        // telescope type.
+        let mut components: Option<Vec<Entry<'source>>> = None;
+        for (place, entry) in entries.iter().enumerate() {
+            let Some(telescope) = self.written_telescope(entry.held.at().node)?
+            else {
+                continue;
+            };
+            if components.is_none() {
+                match self.stated_entries(site, stated, Former::TelescopeType, Thunked(false))? {
+                    Maybe::Present(found)
+                        if found.len() == entries.len()
+                            && found
+                                .iter()
+                                .all(|component| matches!(component.key, Key::Positional)) =>
+                    {
+                        components = Some(found);
+                    },
+                    Maybe::Present(_) | Maybe::Absent(_) => return Ok(()),
+                }
+            }
+            if let Some(component) = components
+                .as_ref()
+                .and_then(|found| found.get(place))
+                .map(|component| component.held.at().node)
+                && let Holds::Value(held) = self.held_at(component)?
+            {
+                let _first = self.valued_telescopes.insert(telescope, held);
+            }
+        }
 
         Ok(())
     }
