@@ -22,6 +22,7 @@ use gandr_theory_discrete_morse::collapse;
 use gandr_theory_discrete_morse::greedy;
 use gandr_theory_graded_posets::GradedPoset;
 use gandr_theory_stone_duality::Element;
+use gandr_theory_stone_duality::ElementSet;
 
 use super::faces::Carrier;
 use super::faces::Points;
@@ -84,7 +85,8 @@ fn cells(poset: &GradedPoset<Points>) -> Cells<'_>
             u64::from(
                 poset
                     .boundary(Element::from(cell))
-                    .expect("a cell of the poset"),
+                    .expect("a cell of the poset")
+                    .meet(ElementSet::from(u64::MAX)),
             )
         })
         .collect();

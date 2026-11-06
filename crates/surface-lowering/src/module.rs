@@ -425,6 +425,7 @@ pub use self::reduct::ForgetSlot;
 pub use self::reduct::ReductSlot;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
+pub use self::sealing::FACE_CELLS;
 use self::sealing::KindForm;
 pub use self::sealing::Mark;
 pub use self::sealing::Sealed;

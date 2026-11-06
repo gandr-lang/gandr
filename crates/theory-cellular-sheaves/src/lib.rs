@@ -15,8 +15,8 @@
 //! level to the one before it. The crate gives each level's cohomology and the
 //! rank of the map that each bonding map induces on it.
 //!
-//! The cells and their order are a [`GradedPoset`], so a sheaf holds at most
-//! 64 cells, and each set of cells is one bit row.
+//! The cells and their order are a [`GradedPoset`]. A sheaf holds each set of
+//! cells as one bit row, so it refuses a poset of more than 64 cells.
 //!
 //! # Items
 //!

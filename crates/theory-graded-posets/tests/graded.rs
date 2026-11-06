@@ -8,6 +8,7 @@ use gandr_theory_stone_duality::DualityError;
 use gandr_theory_stone_duality::Element;
 use gandr_theory_stone_duality::ElementCount;
 use gandr_theory_stone_duality::ElementSet;
+use gandr_theory_stone_duality::Membership;
 
 use crate::faces::Points;
 use crate::faces::face_poset;
@@ -30,7 +31,10 @@ fn a_square_ranks_its_cells_by_their_longest_chain()
         .collect();
     assert_eq!(ranks, [0_usize, 0, 1, 0, 1, 2].map(Rank::from));
     let boundaries: Vec<u64> = (0 .. 6_usize)
-        .map(|cell| u64::from(poset.boundary(Element::from(cell)).expect("a cell")))
+        .map(|cell| {
+            let boundary = poset.boundary(Element::from(cell)).expect("a cell");
+            u64::from(boundary.meet(ElementSet::from(u64::MAX)))
+        })
         .collect();
     assert_eq!(
         boundaries,
@@ -47,17 +51,40 @@ fn a_square_ranks_its_cells_by_their_longest_chain()
 fn a_poset_past_the_cell_budget_is_refused_uncomputed()
 {
     let mut calls = 0_usize;
-    let refused = GradedPoset::new(vec![(); 65], |&(), &()| {
-        calls = calls.saturating_add(1);
-        Comparison::NotBelow
-    });
+    let refused = GradedPoset::new(
+        vec![(); 65],
+        |&(), &()| {
+            calls = calls.saturating_add(1);
+            Comparison::NotBelow
+        },
+        ElementCount::from(64_usize),
+    );
     assert_eq!(
         refused,
         Err(DualityError::TooManyElements(ElementCount::from(65_usize)))
     );
     assert_eq!(calls, 0, "no order is computed past the budget");
-    let widest =
-        GradedPoset::new(vec![(); 64], |&(), &()| Comparison::NotBelow).expect("64 cells fit");
+    let mut asked = 0_usize;
+    let unread = GradedPoset::by_inclusion(
+        vec![(); 65],
+        ElementCount::from(1_usize),
+        |&(), _| {
+            asked = asked.saturating_add(1);
+            Membership::Inside
+        },
+        ElementCount::from(64_usize),
+    );
+    assert_eq!(
+        unread,
+        Err(DualityError::TooManyElements(ElementCount::from(65_usize)))
+    );
+    assert_eq!(asked, 0, "no point is read past the budget");
+    let widest = GradedPoset::new(
+        vec![(); 64],
+        |&(), &()| Comparison::NotBelow,
+        ElementCount::from(64_usize),
+    )
+    .expect("64 cells fit a budget of 64");
     assert_eq!(widest.count(), ElementCount::from(64_usize));
 }
 
@@ -66,8 +93,11 @@ fn two_cells_each_below_the_other_are_refused()
 {
     let face = Points(0b01);
     assert_eq!(
-        GradedPoset::new(vec![face, Points(0b10), face], |lower, upper| lower
-            .within(*upper)),
+        GradedPoset::new(
+            vec![face, Points(0b10), face],
+            |lower, upper| lower.within(*upper),
+            ElementCount::from(3_usize)
+        ),
         Err(DualityError::Cycle(
             Element::from(0_usize),
             Element::from(2_usize)

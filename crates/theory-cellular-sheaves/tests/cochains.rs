@@ -10,6 +10,7 @@ use gandr_theory_cellular_sheaves::Width;
 use gandr_theory_graded_posets::GradedPoset;
 use gandr_theory_graded_posets::Rank;
 use gandr_theory_stone_duality::Comparison;
+use gandr_theory_stone_duality::ElementCount;
 
 /// A cell of the filled square: a corner, a side from its tail to its head,
 /// or the square itself.
@@ -37,16 +38,20 @@ fn square() -> Sheaf<Cell>
         Cell::Side(tail, head)
     }));
     cells.push(Cell::Square);
-    let poset = GradedPoset::new(cells, |lower, upper| match (*lower, *upper) {
-        (Cell::Corner(corner), Cell::Side(tail, head)) if corner == tail || corner == head => {
-            Comparison::Below
+    let poset = GradedPoset::new(
+        cells,
+        |lower, upper| match (*lower, *upper) {
+            (Cell::Corner(corner), Cell::Side(tail, head)) if corner == tail || corner == head => {
+                Comparison::Below
+            },
+            (Cell::Corner(_) | Cell::Side(..), Cell::Square) => Comparison::Below,
+            (
+                Cell::Corner(_) | Cell::Side(..) | Cell::Square,
+                Cell::Corner(_) | Cell::Side(..) | Cell::Square,
+            ) => Comparison::NotBelow,
         },
-        (Cell::Corner(_) | Cell::Side(..), Cell::Square) => Comparison::Below,
-        (
-            Cell::Corner(_) | Cell::Side(..) | Cell::Square,
-            Cell::Corner(_) | Cell::Side(..) | Cell::Square,
-        ) => Comparison::NotBelow,
-    })
+        ElementCount::from(9_usize),
+    )
     .expect("nine cells");
     Sheaf::new(
         poset,

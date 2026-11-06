@@ -35,6 +35,7 @@ use gandr_theory_shapes::Subshape;
 use gandr_theory_shapes::UnionSquare;
 use gandr_theory_stone_duality::Comparison;
 use gandr_theory_stone_duality::Element;
+use gandr_theory_stone_duality::ElementCount;
 
 use crate::carriers::Mask;
 use crate::carriers::points;
@@ -118,14 +119,18 @@ fn site(
         )
     };
     let face_cells = faces.iter().map(|&face| cell_of(face)).collect();
-    let poset = GradedPoset::new(cells, |lower, upper| {
-        if upper.0 & !lower.0 == 0 {
-            Comparison::Below
-        }
-        else {
-            Comparison::NotBelow
-        }
-    })
+    let poset = GradedPoset::new(
+        cells,
+        |lower, upper| {
+            if upper.0 & !lower.0 == 0 {
+                Comparison::Below
+            }
+            else {
+                Comparison::NotBelow
+            }
+        },
+        ElementCount::from(64_usize),
+    )
     .expect("distinct cells of one carrier");
     let sheaf = Sheaf::new(
         poset,

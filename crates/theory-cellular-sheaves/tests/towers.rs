@@ -112,14 +112,18 @@ fn poset(
     level: Level,
 ) -> Result<GradedPoset<Cell>, DualityError>
 {
-    GradedPoset::new(cells(space, level), |lower, upper| match (*lower, *upper) {
-        (Cell::Vertex(point), Cell::Edge(tail, head)) if point == tail || point == head => {
-            Comparison::Below
+    GradedPoset::new(
+        cells(space, level),
+        |lower, upper| match (*lower, *upper) {
+            (Cell::Vertex(point), Cell::Edge(tail, head)) if point == tail || point == head => {
+                Comparison::Below
+            },
+            (Cell::Vertex(_) | Cell::Edge(..), Cell::Vertex(_) | Cell::Edge(..)) => {
+                Comparison::NotBelow
+            },
         },
-        (Cell::Vertex(_) | Cell::Edge(..), Cell::Vertex(_) | Cell::Edge(..)) => {
-            Comparison::NotBelow
-        },
-    })
+        ElementCount::from(128_usize),
+    )
 }
 
 /// The constant sheaf on `level` of the tower of `space`: one entry on each
@@ -322,16 +326,25 @@ fn each_bonding_map_induces_an_isomorphism_on_cohomology()
 fn the_level_past_the_cell_budget_is_refused_by_its_count()
 {
     // Level 6 has 64 points: 127 cells for the interval and 128 for the
-    // circle, past the poset's 64.
+    // circle. The graded poset holds them, but a sheaf holds each set of cells
+    // as one bit row, so it refuses either level by its count.
     let past = Level::from(LAST_LEVEL.saturating_add(1));
-    assert_eq!(
-        poset(Space::Interval, past).map(|poset| poset.count()),
-        Err(DualityError::TooManyElements(ElementCount::from(127_usize)))
-    );
-    assert_eq!(
-        poset(Space::Circle, past).map(|poset| poset.count()),
-        Err(DualityError::TooManyElements(ElementCount::from(128_usize)))
-    );
+    for (space, count) in [(Space::Interval, 127_usize), (Space::Circle, 128_usize)] {
+        let poset = poset(space, past).expect("the graded poset holds the level");
+        assert_eq!(poset.count(), ElementCount::from(count));
+        assert_eq!(
+            Sheaf::new(
+                poset,
+                |_| Width::from(1_usize),
+                |_, _| [Entry::from(0_usize)]
+            )
+            .map(|_| ()),
+            Err(SheafError::Poset(DualityError::TooManyElements(
+                ElementCount::from(count)
+            ))),
+            "{space:?}"
+        );
+    }
 }
 
 #[test]
