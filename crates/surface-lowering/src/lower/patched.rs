@@ -56,7 +56,6 @@ use super::Lowerer;
 use super::Plan;
 use super::Produced;
 use super::Reading;
-use super::Resolved;
 use super::Sink;
 use super::Site;
 use super::arity::Arranged;
@@ -75,7 +74,6 @@ use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
-use crate::form::FormName;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
@@ -741,22 +739,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let Some((_, Former::Name)) = self.form_at(target)?
-        else {
-            return Ok(Planned(false));
-        };
-        let frame = site.reading.frame();
-        let named = Site {
-            at: target,
-            name: FormName::IDENTIFIER,
-            reading: Reading::Value(frame),
-        };
-        let declared = match self.resolve_name(named, frame, self.name_at(target))? {
-            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-            Maybe::Absent(_) => return Ok(Planned(false)),
-        };
-        let Maybe::Present(declared) = declared
+        let Maybe::Present(declared) = self.name_type(site.reading.frame(), target)?
         else {
             return Ok(Planned(false));
         };
