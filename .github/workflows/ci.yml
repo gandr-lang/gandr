@@ -229,6 +229,7 @@ jobs:
       # revision fresh, and no key or restore prefix ever omits it.
       - &identify-policy
         name: identify the policy revision
+        if: ${{ !cancelled() }}
         run: printf 'CI_POLICY_REVISION=%s\n' "$(mise run --quiet workflow:revision)" >> "$GITHUB_ENV"
       - &restore-dylint-drivers
         name: restore Dylint drivers
@@ -881,8 +882,10 @@ jobs:
       # documentation lanes test nothing apart from their build: rustdoc's
       # check is the documentation lane's, and Cargo builds and runs the
       # examples in one command, which cannot build without running.
+      # Each check after the build runs whatever an earlier check gives, so
+      # one run names every red and the fixer repairs them together (#5440).
       - name: test workspace targets
-        if: ${{ env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' }}
+        if: ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' }}
         env:
           CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'ci:plain-baseline' || 'check:tests-plain-only' }}
           NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
@@ -905,7 +908,7 @@ jobs:
       # The gate binary comes from the revision's cache when present.
       - *identify-policy
       - name: restore the gate binary
-        if: ${{ env.CI_WITNESSES == 'true' }}
+        if: ${{ !cancelled() && env.CI_WITNESSES == 'true' }}
         uses: *cache-restore
         with:
           path: *gate-binary
@@ -914,7 +917,7 @@ jobs:
         if: ${{ !cancelled() && env.CI_WITNESSES == 'true' && steps.witness-listing.outcome == 'success' }}
         run: mise run check:witnesses
       - name: run the corpus roots
-        if: &plain-gate ${{ env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' }}
+        if: &plain-gate ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' }}
         run: mise run check:corpus
       # The corpus roots built the driver the formatter check runs, and the
       # plain state holds the comments suite: the format gate would build both
@@ -2216,37 +2219,50 @@ jobs:
       - *install-policy-tools
       - *setup-rust
       # The corpus layout and comment checks run in the plain lane, whose
-      # state holds what they build.
+      # state holds what they build. Each check runs whatever an earlier
+      # check gives, so one run names every red (#5440).
       - name: treefmt --ci
+        if: &keep-going ${{ !cancelled() }}
         run: mise run treefmt:check-ci
       - name: markdown allowlist and budgets
+        if: *keep-going
         run: mise run check:markdown
       - name: the root README matches the owner's pin
+        if: *keep-going
         run: mise run check:readme-pin
       - name: merge residue check
+        if: *keep-going
         run: mise run check:merge-residue
       - name: workflow hashing check
+        if: *keep-going
         run: mise run check:workflow-hashing
       - name: validate npm lock sidecars
+        if: *keep-going
         run: mise run check:lockfile
       - name: keep workflow tools outside the package graph
+        if: *keep-going
         run: mise run check:publish
       - name: check the crate map
+        if: *keep-going
         run: mise run check:crate-map
       - name: check the crate leads
+        if: *keep-going
         run: mise run check:crate-lead
       # The purposes ledger documents only the crates it rows, so its rustdoc
       # build grows with the ledger rather than with the workspace.
       - name: check the purposes ledger
+        if: *keep-going
         run: mise run check:purposes
       # No library or vault is configured here, so keys are read for their
       # shape; a seat's local run resolves them.
       - name: check the references ledger
+        if: *keep-going
         run: mise run check:references
       # The tracking check judges a completed issue by the commits that close
       # it, so it runs here, where the checkout holds the whole history
       # (#5778).
       - name: check the tracking issues
+        if: *keep-going
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -2254,6 +2270,7 @@ jobs:
       # The ledger check judges an owed issue by the commits that name it as
       # the tracking check does, so it runs here beside it.
       - name: check the features ledger
+        if: *keep-going
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -2264,6 +2281,7 @@ jobs:
       # message is linted alone. Bash, for pipefail: a failed rev-list must
       # fail the step rather than lint nothing.
       - name: lint authored commits
+        if: *keep-going
         shell: bash
         run: |
           base=${COMMIT_BASE:-}
