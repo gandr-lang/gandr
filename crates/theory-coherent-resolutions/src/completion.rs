@@ -1268,12 +1268,19 @@ where
     /// in [`join_critical_pairs`]'s order, each joined.
     ///
     /// # Specification
-    /// - ensures: as [`Self::resume_with`] under [`NoScheme`].
+    /// - ensures: as [`Self::resume_with`] under [`NoScheme`], which classes no
+    ///   pair composite, so the joining keeps no composite pair.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::resume_with`].
+    /// - hypothesis: L3 — as [`Self::resume_with`]; under [`NoScheme`], the
+    ///   joining joins the pair that a composite scheme skips.
     /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
+    /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
+    #[spec(
+        captures: before = self.composites.len(),
+        ensures: |_output| self.composites.len() == before,
+    )]
     #[inline]
     pub fn resume(
         &mut self,
@@ -1289,7 +1296,9 @@ where
     ///
     /// # Specification
     /// - requires: as [`PairJoining`]: `store` is the store of the last resume,
-    ///   grown only by cells appended after its others.
+    ///   grown only by cells appended after its others. The witness of each
+    ///   pair that `scheme` classes [`PairClass::Composite`] replays over
+    ///   `store`, which the joining checks as it keeps the pair.
     /// - ensures: [`Joinability::Joined`] with the certificate of every pair
     ///   decided joined since the joining began or last answered `Joined`, when
     ///   every pair from the stopping one on joins or is skipped; otherwise the
@@ -1321,8 +1330,7 @@ where
     /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
     #[spec(
         captures: before = (self.decided, self.composites.len()),
-        ensures: |output| self.decided >= before.0 && self.composites.len() >= before.1
-            && self.composites.iter().skip(before.1).all(|pair| pair.replay(store).is_ok()) && match output {
+        ensures: |output| self.decided >= before.0 && self.composites.len() >= before.1 && match output {
             Joinability::Joined(ref certificates) => certificates.iter().all(|certificate|
                 certificate.overlap.kind == OverlapKind::Confluence && bool::from(certificate.replay(store))),
             Joinability::Diverges { ref overlap, ref left, ref left_steps, ref right, ref right_steps } => overlap.kind == OverlapKind::Confluence && left != right
@@ -1365,7 +1373,7 @@ where
                 for overlap in pairs {
                     self.decided = self.decided.saturating_add(1);
                     if let PairClass::Composite(below) = scheme.class(store, &overlap) {
-                        self.composites.push(CompositePair { overlap, below });
+                        self.keep_composite(store, CompositePair { overlap, below });
                         self.within = self.within.saturating_add(1);
                         continue;
                     }
@@ -1401,6 +1409,32 @@ where
             self.earlier = 0;
         }
         Joinability::Joined(core::mem::take(&mut self.certificates))
+    }
+
+    /// Keep `pair` as a composite pair that the joining skips.
+    ///
+    /// # Specification
+    /// - requires: the witness of `pair` replays over `store`.
+    /// - ensures: the joining keeps one more composite pair.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the toy alphabet, the reference scheme gives a
+    ///   witness that replays, and the joining keeps that pair; each forged
+    ///   witness does not replay.
+    /// - witness: `completion::tests::a_composite_pair_is_skipped_and_its_witness_is_checked`
+    #[spec(
+        requires: pair.replay(store).is_ok(),
+        captures: before = self.composites.len(),
+        ensures: |_output| self.composites.len() == before.saturating_add(1),
+    )]
+    fn keep_composite(
+        &mut self,
+        store: &CellStore<A>,
+        pair: CompositePair<A>,
+    )
+    {
+        self.composites.push(pair);
     }
 }
 
