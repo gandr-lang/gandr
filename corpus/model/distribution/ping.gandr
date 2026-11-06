@@ -23,7 +23,7 @@ import std.net;
 /// Accept one stream, read its ping, answer `pong`, disconnect, and return
 /// the ping.
 pub def serve() -> [std.net.Eff] String =
-  let *{peer, stream} = std.net.accept ()
+  let (peer, stream) = std.net.accept ()
   let ping = std.net.receive stream
   std.net.transmit stream "pong"
   std.net.disconnect stream

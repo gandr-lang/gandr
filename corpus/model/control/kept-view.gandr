@@ -1,12 +1,10 @@
-//! A shared view kept in a region: it lives as long as the capability scope or
-//! the hold that opened the region rather than the access that lent it, and the
-//! held value stays frozen until the region ends. A region is a static extent,
-//! ordered by outlives and erased before anything runs: a value enters a region
-//! at any time and never leaves it. Lifetimes stated by control rather than by
-//! a reference type follow boats, "References are like jumps"
-//! [boats-2024-references_are_jumps]; regions as ordered extents follow
-//! Koronkevich and Bowman, _Type Universes as Kripke Worlds_
-//! [Koronkevich-2025-type_universes_kripke_worlds].
+//! This source shows shared views kept in regions.
+//!
+//! A kept shared view can outlive the access that lent it.
+//! Its held value stays frozen until the region ends.
+//!
+//! The checker orders regions by outlives.
+//! It releases the held value when the region ends.
 //!
 //! - cites: [Koronkevich-2025-type_universes_kripke_worlds]
 //! - cites: [boats-2024-references_are_jumps]
@@ -17,8 +15,8 @@
 // Early exit's host interface.
 import std.process;
 
-/// A thunk kept in the scope's region reads the held value through a shared
-/// view after the access that lent the view has ended.
+/// `keptView` keeps a thunk in scope `c`.
+/// The thunk reads its shared view after the access ends.
 @[ runs("3") ]
 def keptView() -> Integer =
   var s = 3
@@ -30,8 +28,8 @@ def keptView() -> Integer =
     | oper exit(code, k) => pure 0
   }
 
-/// A value kept in the region stays kept when it is bound again at the type
-/// that keeps it, and forces as the thunk it keeps.
+/// `keptAgain` binds the kept thunk at its region type.
+/// It then forces that thunk.
 @[ runs("3") ]
 def keptAgain() -> Integer =
   var s = 3
@@ -44,8 +42,8 @@ def keptAgain() -> Integer =
     | oper exit(code, k) => pure 0
   }
 
-/// Once the scope ends, its region releases the held value, and an exclusive
-/// access writes it back.
+/// The region releases the held value when its scope ends.
+/// `released` then writes the value back.
 @[ runs("4") ]
 def released() -> Integer =
   var s = 3
@@ -73,16 +71,16 @@ def keptRead() -> Integer =
     | oper exit(code, k) => pure 0
   }
 
-/// A hold opens a region too: a view of its own value kept there lives until
-/// the hold ends.
+/// A hold opens a region for its own value.
+/// `keptInHold` keeps a shared view in that region.
 @[ runs("3") ]
 def keptInHold() -> Integer =
   var s = 3
   let k : (() -> Integer) at s = access shared s as w { pure pure w };
   force k
 
-/// A view of an outer hold kept in an inner hold's region frees the outer
-/// value when the inner hold ends, so an exclusive access writes it back.
+/// An inner region can keep an outer shared view.
+/// `keptInInner` writes the outer value back after the inner scope ends.
 @[ runs("4") ]
 def keptInInner() -> Integer =
   var s = 3

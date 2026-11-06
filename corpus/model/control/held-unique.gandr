@@ -1,10 +1,10 @@
-//! A hold at grade one. `var[1] c = e;` holds a value no one else holds: the
-//! value is made where the hold stands, and it is never copied while held. An
-//! exclusive access moves the value out to its view, the view is read once, and
-//! `resume` writes the new value back, so the write-back needs no count of the
-//! value's other holders. `var c = e;` holds at the default grade ω, and each
-//! read of it copies. The grades are those of graded modal types
-//! [Orchard-2019-quantitative_program_reasoning_graded_modal_types].
+//! This source shows grade-one holds.
+//!
+//! A grade-one hold has one owner.
+//! Its value does not copy while the hold lives.
+//!
+//! An exclusive view transfers the value once.
+//! `resume` writes the new value back.
 //!
 //! - cites: [Orchard-2019-quantitative_program_reasoning_graded_modal_types]
 //!
@@ -13,16 +13,15 @@
 // The successor, a call whose type synthesises where a statement binds it.
 import "./accessor-counter.gandr";
 
-/// A count made in place, bumped through its exclusive view: the read moves the
-/// count out, `resume` writes its successor back, and the access answers what
-/// it wrote.
+/// `counted` creates a grade-one count.
+/// Its exclusive view moves the count and writes its successor back.
 @[ runs("1") ]
 def counted() -> Integer =
   var[1] c = 0
   access c as v { let n = succ v; resume v n; pure n }
 
-/// A tuple made in place and an abort before any read: nothing was moved out,
-/// so the held tuple stands as it was.
+/// `untouched` aborts before its grade-one view reads.
+/// The tuple stays in the hold.
 def untouched() -> Unit =
   var[1] p = *{1, 2};
   access p as v { abort v } unwind { pure *{} }

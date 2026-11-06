@@ -1,7 +1,10 @@
-//! A statement inside a block a binder reads. The statement is a split of its
-//! unit result, and a split whose components its body's type does not read
-//! synthesises that type, as a bind does: an elimination whose principal
-//! premise synthesises synthesises [Dunfield-2019-bidirectional_typing].
+//! This source shows statement blocks under binders.
+//!
+//! A statement splits its unit result.
+//! A block can synthesise its final computation type.
+//!
+//! The checker reads a statement as an elimination.
+//! A binder can infer the block result.
 //!
 //! - see: #1374 — `statement`
 //! - cites: [Dunfield-2019-bidirectional_typing]
@@ -11,9 +14,8 @@
 // Early exit's host interface.
 import std.process;
 
-/// An exit performed as a statement in a block a binder reads, the binder
-/// stating no type: the block synthesises its last computation's type, and
-/// the clause resumes the rest once.
+/// `statement` performs an exit in a bound block.
+/// The checker synthesises the final computation type and resumes the rest once.
 @[ runs("0") ]
 def statement() -> Integer =
   handle c : std.process.Exit.Eff {

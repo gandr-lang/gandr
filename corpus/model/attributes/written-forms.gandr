@@ -1,13 +1,12 @@
-//! The asks for a written form: `explicit_exits` and `explicit_runs` ask the
-//! lowering to report each exit or run it inferred under the declaration they
-//! decorate, and `form` names the spelling the formatter lays the source out in
-//! (opt-in lints after Rust's lint attributes, [Rust-reference], § Diagnostics
-//! attributes). None changes what checks: each declaration below writes what
-//! its ask asks for, and checks.
+//! This source asks for inferred forms and a selected formatter spelling.
 //!
-//! - cites: [Rust-reference]
+//! `explicit_exits` and `explicit_runs` report each inferred form. `form`
+//! selects the sugared spelling.
 //!
-//! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
+//! The checker writes each requested form under its declaration. The formatter
+//! renders the selected source spelling.
+//!
+//! - see: https://doc.rust-lang.org/reference/
 
 /// An answer whose exit is written, as `explicit_exits` asks.
 @[ checks, explicit_exits ]

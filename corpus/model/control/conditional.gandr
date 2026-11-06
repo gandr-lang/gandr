@@ -1,10 +1,10 @@
-//! A conditional, `if c { t } else { e }`: the case of its condition over the
-//! two booleans, the true branch first. The condition is a computation the case
-//! binds, as `while` binds its own, and each branch is a block whose last
-//! computation is the conditional's answer. The derived form is the usual one:
-//! `if` as the eliminator of the booleans
-//! [Levy-2003-callbypushvalue_functional_imperative_synthesis], § 2.3, where
-//! the case of a sum is a computation.
+//! This source shows Boolean conditionals.
+//!
+//! A conditional cases on its Boolean condition.
+//! Each branch returns the conditional result.
+//!
+//! The checker binds a computed condition.
+//! It checks each branch at a stated answer when present.
 //!
 //! - cites: [Levy-2003-callbypushvalue_functional_imperative_synthesis]
 //!
@@ -21,8 +21,8 @@ def pick() -> Integer =
 def above() -> Integer =
   if 3 < 2 { 10 } else { 20 }
 
-/// A conditional that states its answer: each branch's last computation is
-/// read at it.
+/// `statedAnswer` writes the conditional answer type.
+/// The checker reads each branch at that type.
 @[ runs("7") ]
 def statedAnswer() -> Integer =
   if false -> -F Integer { 5 } else { 7 }
@@ -36,8 +36,8 @@ def sign(n : Integer) -> Integer =
 def zero() -> Integer =
   sign 0
 
-/// A conditional whose true branch returns from the function, written as a
-/// statement: the false branch passes on to the rest of the block.
+/// `early` returns from the true branch.
+/// The false branch continues the block.
 @[ runs("9") ]
 def early() -> Integer =
   if 1 < 0 { return 4 } else { pure *{} };

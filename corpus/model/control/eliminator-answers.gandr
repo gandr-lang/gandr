@@ -1,9 +1,10 @@
-//! An eliminator that writes its answer, `if c -> C { … }` or `case e -> C { …
-//! }`, answers it wherever it stands: the case is ascribed the answer, so a
-//! computation a `run` binds, which states no type, synthesises it, and each
-//! arm is checked against it. The rule is the annotation rule of bidirectional
-//! typing [Dunfield-2019-bidirectional_typing], § 3: an annotated term
-//! synthesises its annotation.
+//! This source shows eliminators with written answers.
+//!
+//! An `if` or `case` can write its answer type.
+//! Each arm then checks against that type.
+//!
+//! A `run` binding synthesises the written answer.
+//! The checker treats the answer as an annotation.
 //!
 //! - see: #2089
 //! - cites: [Dunfield-2019-bidirectional_typing]

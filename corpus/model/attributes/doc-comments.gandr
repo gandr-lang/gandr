@@ -1,11 +1,12 @@
-//! Doc comments and the `doc` attribute, after the intra-doc links of rustdoc.
-//! A `[name]` in either resolves to a declaration of the source. A `[label]`
-//! resolves to a footer line `[label]: target` at the end of its run. A link
-//! that resolves to neither is refused.
+//! `doc-comments` resolves links in doc comments and `doc` attributes.
 //!
-//! - cites: [Rust-rustdoc_book], § Linking to items by name
+//! A link names a declaration or a footer target. The source refuses a link
+//! that resolves to neither.
 //!
-//! [Rust-rustdoc_book]: https://doc.rust-lang.org/rustdoc/ "The Rust Project, The rustdoc book"
+//! The checker resolves each link in its source. It reads footer targets at
+//! the end of their comment run.
+//!
+//! - see: https://doc.rust-lang.org/rustdoc/
 
 /// Returns its argument; [echo] does the same.
 def identity(x : Integer) -> Integer =

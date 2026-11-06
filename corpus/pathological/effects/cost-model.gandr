@@ -1,0 +1,42 @@
+// This fixture states a cost model that breaks `Cost.Eff`'s second law.
+//
+// Two nested charges apply `a` twice.
+// They then apply `b` twice.
+// One charge of `plus a b` alternates the costs.
+// The endpoints do not convert.
+//
+// `Doubled` applies every charged cost twice.
+// The checker refuses its second law at the declaration.
+//
+// References:
+// - see: `../../ledger/features/cost-effect.gandr` — the lawful models
+// - see: `../../../library/std/src/cost.gandr` — `Cost.Eff` and `Counting`
+
+import std.cost (Cost);
+
+/// A model whose charge doubles its cost.
+module Doubled : Model(Cost.Eff) with sort N = Nat -> Nat where
+  /// A run's count from the cost that came before it.
+  type C = (Nat -> Nat) -> Nat;
+  /// Apply each charged cost twice.
+  def charge(c : Nat -> Nat, k : (Nat -> Nat) -> Nat) -> (Nat -> Nat) -> Nat =
+    thunk { fun (before) { k (thunk { fun (n) { before (c (c n)) } }) } }
+  /// No cost is the identity.
+  def zero : Nat -> Nat = thunk { fun (n) { pure n } };
+  /// Two costs compose with the second cost first.
+  def plus(a : Nat -> Nat, b : Nat -> Nat) -> Nat -> Nat =
+    thunk { fun (n) { a (b n) } }
+  /// A charge of zero is the identity.
+  def chargeZero(k : (Nat -> Nat) -> Nat) -> Path[.A = (Nat -> Nat) -> Nat](charge zero k, k) =
+    Path.here k
+  /// The two sides apply the costs in different orders.
+  @[ refuses("EndpointMismatch") ]
+  def chargeTwice(
+    a : Nat -> Nat,
+    b : Nat -> Nat,
+    k : (Nat -> Nat) -> Nat
+  ) -> Path[.A = (Nat -> Nat) -> Nat](
+    charge a (charge b k),
+    charge (plus a b) k
+  ) =
+    Path.here (charge (plus a b) k)

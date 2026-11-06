@@ -1,24 +1,26 @@
-//! A returner's row is a row of interfaces: each interface's name holds its
-//! signature, no name twice, the names in no order of their own. Two rows that
-//! list the same interfaces in different orders are one row, sequencing joins
-//! the rows of the computations it runs, and a computation is read where a row
-//! holding more is asked: the set operations of a row
-//! [Hillerström-2016-liberating_effects_rows_handlers], § 2. What refuses is in
-//! `../../pathological/control/effect-rows.gandr`.
+//! This source shows returner rows.
+//!
+//! A row holds each interface once.
+//! Interface order does not change row equality.
+//!
+//! A sequence joins computation rows.
+//! The checker reads a computation at a row with more interfaces.
 //!
 //! - see: #2269
+//! - see: ../../pathological/control/effect-rows.gandr
 //! - cites: [Hillerström-2016-liberating_effects_rows_handlers]
 //!
 //! [Hillerström-2016-liberating_effects_rows_handlers]: https://doi.org/10.1145/2976022.2976033 "Hillerström and Lindley, Liberating Effects with Rows and Handlers"
 
-// `peek` reads through `std.fs.Eff`; `once` states `Partial`.
+// `peek` reads through `std.fs.Eff`.
+// `once` states `Partial`.
 import "./capability-attenuate.gandr";
 import "./divergence.gandr";
 // The filesystem's host interface.
 import std.fs;
 
-/// Reading a file, then a loop: the row joins `peek`'s `std.fs.Eff` and `once`'s
-/// `Partial`.
+/// `performsBoth` reads a file and then runs a loop.
+/// Its row joins the filesystem interface and `Partial`.
 def performsBoth(c : Cap { read }) -> [std.fs.Eff, Partial] Integer =
   let _ = peek c
   once 1
@@ -27,10 +29,10 @@ def performsBoth(c : Cap { read }) -> [std.fs.Eff, Partial] Integer =
 /// `performsBoth`'s call stands at it unchanged.
 def listedSwapped(c : Cap { read }) -> [Partial, std.fs.Eff] Integer { performsBoth c }
 
-/// A suspended computation at one order is forced at the other.
+/// `forcedAcross` forces a computation at an equivalent row order.
 def forcedAcross(t : +U (-F [Partial, std.fs.Eff] Integer)) -> [std.fs.Eff, Partial] Integer =
   force t
 
-/// A computation at `[Partial]` is read where `[std.fs.Eff, Partial]` is asked, and runs.
+/// `widenedRow` runs `Partial` where its row also holds `std.fs.Eff`.
 @[ runs("3") ]
 def widenedRow() -> [std.fs.Eff, Partial] Integer { once 3 }
