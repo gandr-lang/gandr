@@ -5699,10 +5699,12 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: the one [`FormFault::Repaired`] refusal the description route
     ///   raised inside `child`'s span when it raised one; otherwise the
     ///   description diagnostics whose span lies inside `child`'s, then the
-    ///   cell diagnostics, each with its own span.
+    ///   cell diagnostics, each with its own span. A field that is no type is
+    ///   left out: the lowering refuses the same bytes where it reads the
+    ///   field's type.
     /// - provides: the cascade cut for described declarations: what a reading
     ///   of a repaired form refuses follows from the repair and is not reported
-    ///   beside it.
+    ///   beside it, and a field the lowering refuses is refused once.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -5711,6 +5713,7 @@ impl<'source> Collector<'_, 'source>
     ///   member the cell gate refuses is refused once, at its missing close.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
     /// - witness: `description::tests::an_unended_family_is_refused_once_at_its_close`
+    /// - witness: `description::tests::a_field_that_is_no_type_is_refused_once_by_the_lowering_2664`
     #[spec(ensures: |ret| ret.iter().all(|&(span, _)| span.start() >= child.span.start() && span.end() <= child.span.end()))]
     fn described_refusals(
         &self,
@@ -5727,7 +5730,9 @@ impl<'source> Collector<'_, 'source>
             .collected
             .description_diagnostics
             .iter()
-            .filter(|diagnostic| inside(diagnostic.span));
+            .filter(|diagnostic| {
+                inside(diagnostic.span) && diagnostic.fault != DescriptionFault::NoType
+            });
         if let Some(repaired) = described
             .clone()
             .find(|diagnostic| matches!(diagnostic.fault, DescriptionFault::Repaired { .. }))

@@ -1690,6 +1690,31 @@ const fn family_of(former: Former) -> Family
     }
 }
 
+/// Whether a form stands as a type where a type is read.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AsType(pub bool);
+
+/// Whether a form of `former` stands as a type where a type is read: a former
+/// of the type family, a name or a constructor, which stands there as a type
+/// head, or a call the expression grammar molds, which stands there as the
+/// type application it spells. Where a type is read, the lowering refuses
+/// every other form as of the wrong sort.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub const fn read_as_type(former: Former) -> AsType
+{
+    AsType(
+        matches!(family_of(former), Family::Type)
+            || matches!(former, Former::Name | Former::Constructor | Former::Call),
+    )
+}
+
 /// The sort a former produces before positional bridges.
 ///
 /// # Specification
@@ -7652,10 +7677,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let quoted = family == Family::Type && matches!(site.reading, Reading::Value(_));
         let headed = matches!(former, Former::Name | Former::Constructor)
             && site.reading.family() == Family::Type;
-        // A call the expression grammar molds inside a quoted type, at a
-        // type's own position, is the type application it spells.
-        let applied = former == Former::Call && site.reading.family() == Family::Type;
-        if family != site.reading.family() && !quoted && !headed && !applied {
+        if family != site.reading.family()
+            && !quoted
+            && !(site.reading.family() == Family::Type && read_as_type(former).0)
+        {
             return Err(self.standing(site).out(FragmentBoundary::WrongSort));
         }
         // A block's last statement that is not an exit runs, its result
