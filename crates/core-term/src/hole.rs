@@ -108,12 +108,18 @@ use crate::syntax::ValueType;
 /// splice `~t` writes in the eighth above, its tactic in its name
 /// ([`HoleId::spliced`]). No two of the four share a name, and a hole's name
 /// says which it is.
+///
+/// An elaborator that numbers its forms names a hole by its form and its
+/// place among its form's holes of its origin ([`HoleId::written`],
+/// [`HoleId::nominated_in`], [`HoleId::wildcard_in`] and
+/// [`HoleId::spliced_in`]). Each part of the names then gives each of 65,536
+/// forms an equal share, so an edit to one form renames no hole of another.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HoleId(u32);
 
 /// Where a hole comes from, read off the part of the names its own is in.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HoleOrigin
 {
     /// A hole the text writes, which its author fills.
@@ -148,6 +154,49 @@ impl From<u32> for NominationIndex
     }
 }
 
+/// The top-level form a hole stands in, as the elaborator numbers its forms:
+/// a hole's name holds it in 16 bits above the hole's place.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HoleForm(u32);
+
+impl From<u32> for HoleForm
+{
+    /// Read a `u32` as a form's number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(form: u32) -> Self
+    {
+        Self(form)
+    }
+}
+
+/// The place of a hole among the holes of its origin that its form holds,
+/// counted from zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HolePlace(u32);
+
+impl From<u32> for HolePlace
+{
+    /// Read a `u32` as a hole's place in its form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(place: u32) -> Self
+    {
+        Self(place)
+    }
+}
+
+/// How many names the part of one origin holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Names(u32);
+
 impl HoleId
 {
     /// The first name of the upper half, the nominated holes'.
@@ -172,6 +221,12 @@ impl HoleId
 
     /// The bits of a splice's name its tactic's introductions take.
     const TACTIC_BITS: u32 = Self::EIGHTH - Self::SPLICES;
+
+    /// How many bits of a name its form takes, above the bits of its place.
+    const FORM_BITS: u32 = 16;
+
+    /// How many forms the names of one origin tell apart.
+    const FORMS: u32 = 1 << Self::FORM_BITS;
 
     /// The name of the `index`th hole an elaborator nominates for an implicit
     /// the text omits: the last name less `index`, which is `index`'s
@@ -289,7 +344,8 @@ impl HoleId
     /// The name of the `index`th hole a checker nominates for a carrier a
     /// crossing solves: the omitted implicits' quarter's first name plus
     /// `index`. [`Self::nominated`] counts down from the quarter's last name,
-    /// so the two meet only past a quarter's worth of names between them; a
+    /// and [`Self::nominated_in`] fills the quarter from the top a form at a
+    /// time, so the two meet only at the names of the last forms; a
     /// crossing's hole is declared to a solver of its own and never stands in
     /// a body.
     ///
@@ -317,6 +373,157 @@ impl HoleId
             return None;
         }
         Some(Self(Self::OMITTED | index.0))
+    }
+
+    /// The index `place` in `form` takes among the `names` of one origin: the
+    /// form's number above the place, each form holding an equal share of
+    /// the names.
+    ///
+    /// # Specification
+    /// - requires: `names` is a power of two of at least [`Self::FORMS`].
+    /// - ensures: `form` times the form's share plus `place`, below `names`,
+    ///   distinct pairs giving distinct indices; `None` for a form past
+    ///   [`Self::FORMS`] or a place past the form's share.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first and the last place of the first and the
+    ///   last form, and the form and the place past them, separate the names
+    ///   from the refusal.
+    /// - witness: `hole::tests::a_form_s_hole_names_are_apart_from_every_other_form_s_5598`
+    #[spec(ensures: |ret| match ret {
+        Some(index) => index.0 < names.0,
+        None => form.0 >= Self::FORMS || place.0 >= (names.0 >> Self::FORM_BITS),
+    })]
+    const fn in_form(
+        form: HoleForm,
+        place: HolePlace,
+        names: Names,
+    ) -> Option<NominationIndex>
+    {
+        let share = names.0 >> Self::FORM_BITS;
+        if form.0 >= Self::FORMS || place.0 >= share {
+            return None;
+        }
+        match form.0.checked_mul(share) {
+            Some(first) => match first.checked_add(place.0) {
+                Some(index) => Some(NominationIndex(index)),
+                None => None,
+            },
+            None => None,
+        }
+    }
+
+    /// The name of the hole the text writes at `place` among the written
+    /// holes of `form`: below the nominated half, the form above the place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a written name for each form below [`Self::FORMS`] and each
+    ///   place below the form's share of the lower half, distinct pairs naming
+    ///   distinct holes; `None` past them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::in_form`], each name written.
+    /// - witness: `hole::tests::a_form_s_hole_names_are_apart_from_every_other_form_s_5598`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match ret {
+        Some(hole) => matches!(hole.origin(), HoleOrigin::Written),
+        None => true,
+    })]
+    pub const fn written(
+        form: HoleForm,
+        place: HolePlace,
+    ) -> Option<Self>
+    {
+        match Self::in_form(form, place, Names(Self::NOMINATED)) {
+            Some(index) => Some(Self(index.0)),
+            None => None,
+        }
+    }
+
+    /// [`Self::nominated`] at `place` among the omitted implicits `form`
+    /// nominates.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::nominated`] at the index [`Self::in_form`] gives over
+    ///   the upper quarter; `None` past it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::in_form`], each name nominated.
+    /// - witness: `hole::tests::a_form_s_hole_names_are_apart_from_every_other_form_s_5598`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match ret {
+        Some(hole) => matches!(hole.origin(), HoleOrigin::Nominated),
+        None => true,
+    })]
+    pub const fn nominated_in(
+        form: HoleForm,
+        place: HolePlace,
+    ) -> Option<Self>
+    {
+        match Self::in_form(form, place, Names(Self::QUARTER)) {
+            Some(index) => Self::nominated(index),
+            None => None,
+        }
+    }
+
+    /// [`Self::wildcard`] at `place` among the wildcards `form` writes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::wildcard`] at the index [`Self::in_form`] gives over
+    ///   the wildcards' eighth; `None` past it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::in_form`], each name a wildcard's.
+    /// - witness: `hole::tests::a_form_s_hole_names_are_apart_from_every_other_form_s_5598`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match ret {
+        Some(hole) => matches!(hole.origin(), HoleOrigin::Wildcard),
+        None => true,
+    })]
+    pub const fn wildcard_in(
+        form: HoleForm,
+        place: HolePlace,
+    ) -> Option<Self>
+    {
+        match Self::in_form(form, place, Names(Self::EIGHTH)) {
+            Some(index) => Self::wildcard(index),
+            None => None,
+        }
+    }
+
+    /// [`Self::spliced`] at `place` among the splices `form` writes, running
+    /// `tactic`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::spliced`] at the index [`Self::in_form`] gives over
+    ///   the places a splice's name counts; `None` past it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::in_form`], each name a splice's carrying
+    ///   its tactic.
+    /// - witness: `hole::tests::a_form_s_hole_names_are_apart_from_every_other_form_s_5598`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_none_or(|hole| hole.tactic() == Some(tactic)))]
+    pub fn spliced_in(
+        form: HoleForm,
+        place: HolePlace,
+        tactic: crate::tactic::Tactic,
+    ) -> Option<Self>
+    {
+        Self::spliced(Self::in_form(form, place, Names(Self::SPLICES))?, tactic)
     }
 
     /// Where this hole comes from: nominated for an omitted implicit in the

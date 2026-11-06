@@ -21,7 +21,7 @@ use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
-use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::pattern::Pattern;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -4649,9 +4649,9 @@ fn a_match_keeps_its_patterns_beside_its_tree()
         panic!("the second arm is a pattern hole");
     };
     assert_eq!(
-        identity,
-        HoleId::from(0_u32),
-        "a pattern hole is named by its place among the holes the text writes"
+        identity.origin(),
+        HoleOrigin::Written,
+        "a pattern hole is a hole the text writes"
     );
     assert!(
         reachable(&arena, root)

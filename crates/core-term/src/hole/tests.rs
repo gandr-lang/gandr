@@ -6,8 +6,10 @@ use quenchant_shape::shape::Maybe;
 
 use super::CodomainScope;
 use super::Components;
+use super::HoleForm;
 use super::HoleId;
 use super::HoleOrigin;
+use super::HolePlace;
 use super::Knowledge;
 use super::MarkIndex;
 use super::NominationIndex;
@@ -126,6 +128,87 @@ fn a_crossing_hole_counts_up_from_the_quarter_nominated_counts_down()
         "the two meet only at the quarter's far end"
     );
     assert_eq!(crossing(1 << 30_u32), None, "the quarter has no more names");
+}
+
+#[test]
+fn a_form_s_hole_names_are_apart_from_every_other_form_s_5598()
+{
+    /// A name of one origin at a form and a place.
+    type Named = fn((HoleForm, HolePlace)) -> Option<HoleId>;
+    let at = |form: u32, place: u32| (HoleForm::from(form), HolePlace::from(place));
+    let splice = |(form, place)| HoleId::spliced_in(form, place, crate::tactic::Tactic::ASSUMPTION);
+    let kinds: [(Named, u32, HoleOrigin); 4] = [
+        (
+            |(form, place)| HoleId::written(form, place),
+            1 << 15_u32,
+            HoleOrigin::Written,
+        ),
+        (
+            |(form, place)| HoleId::nominated_in(form, place),
+            1 << 14_u32,
+            HoleOrigin::Nominated,
+        ),
+        (
+            |(form, place)| HoleId::wildcard_in(form, place),
+            1 << 13_u32,
+            HoleOrigin::Wildcard,
+        ),
+        (splice, 1 << 8_u32, HoleOrigin::Spliced),
+    ];
+    let mut names = alloc::collections::BTreeSet::new();
+    for (name, share, origin) in kinds {
+        for (form, place) in [
+            (0, 0),
+            (0, share - 1),
+            (1, 0),
+            (1, share - 1),
+            (u32::from(u16::MAX), share - 1),
+        ] {
+            let hole = name(at(form, place))
+                .expect("a form below the last and a place in its share are named");
+            assert_eq!(
+                hole.origin(),
+                origin,
+                "a hole's name keeps its origin's part"
+            );
+            assert!(
+                names.insert(hole),
+                "no two forms, places or origins share a name"
+            );
+        }
+        assert_eq!(
+            name(at(0, share)),
+            None,
+            "a place past the form's share is refused"
+        );
+        assert_eq!(
+            name(at(1 << 16_u32, 0)),
+            None,
+            "a form past the last is refused"
+        );
+    }
+    assert_eq!(
+        HoleId::written(HoleForm::from(1), HolePlace::from(0)).map(u32::from),
+        Some(1 << 15_u32),
+        "a form's first written name follows the form before's share"
+    );
+    assert_eq!(
+        HoleId::nominated_in(HoleForm::from(1), HolePlace::from(0)),
+        HoleId::nominated(NominationIndex::from(1 << 14_u32)),
+        "a form's first nomination counts down past the form before's share"
+    );
+    assert_eq!(
+        HoleId::spliced_in(
+            HoleForm::from(1),
+            HolePlace::from(0),
+            crate::tactic::Tactic::ASSUMPTION
+        ),
+        HoleId::spliced(
+            NominationIndex::from(1 << 8_u32),
+            crate::tactic::Tactic::ASSUMPTION
+        ),
+        "a splice's form stands below its tactic's bits"
+    );
 }
 
 #[test]
