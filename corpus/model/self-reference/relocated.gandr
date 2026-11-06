@@ -1,15 +1,17 @@
-// A resumed stack's frames are laid out where the resumption stands, each
-// window copied with them: the captured locals move, and every read follows
-// them. The move a polled Rust future may not make is the ordinary case.
-//
-// - see: #1183 — `relocated`
-
-// Early exit's host interface.
+//! `relocated` resumes a stack that captured access to a variable.
+//!
+//! The continuation resumes under its own frame. Its frames contain copied
+//! windows. The view still reads its cell. The checker reports `ViewEscaped`
+//! for the `dangling` source.
+//!
+//! The source imports the host early exit interface.
+//! The handler resumes the continuation. The source runs to `112`.
+//!
+//! A polled Rust future cannot make this move.
+//! - see: #1183 — `relocated`
 import std.process;
 
-/// The stack resumed under a frame of the clause's own, so its frames lie
-/// higher than where they were captured; the view still reads its cell, and
-/// the clause adds its hundred to the handled answer.
+/// `relocated` resumes a captured access from a higher stack frame.
 @[ runs("112") ]
 def relocated() -> Integer =
   var x = 5

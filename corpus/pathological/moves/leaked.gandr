@@ -1,16 +1,19 @@
-//! A handle leaked: Rust's `mem::forget` is safe and never runs the value's
-//! destructor [Rust-std], `std::mem::forget`, so a descriptor can outlive every
-//! holder; here the holder must close it.
+//! `leaked` leaves a file handle open.
 //!
+//! The source ends with its linear end open. The checker refuses it as
+//! `LinearResidue`.
+//!
+//! The checker settles `File.Handle` against the final residue.
+//! The source imports `File` from `file-base`.
+//!
+//! Rust `std::mem::forget` is safe. It does not run a destructor.
 //! - cites: [Rust-std]
+//! - see: file-base.gandr — the file protocol
 //!
 //! [Rust-std]: https://doc.rust-lang.org/std/ "The Rust Project, The Rust Standard Library"
-
-// The file's protocols.
 import "../../model/moves/file-base.gandr";
 
-/// A handle opened and neither closed nor moved: the program ends with its end
-/// still open.
+/// `leaked` returns with a handle in its linear slot.
 @[ refuses("LinearResidue") ]
 def leaked() -> Unit =
   let file = fork (owner : File.Handle) { close owner };
