@@ -958,9 +958,12 @@ run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-ho
 # and is never read. A number that names no pull request is skipped with a
 # note. Each red check and each report that improves past its policy's
 # band is a row of the open `Hotpath: the landed deltas` tracking issue, whose
-# body the task rewrites in place: its prose kept, its rows collapsed under a
-# summary counting the landings, the regressed and the improved. A red row
-# links the issues of the functions the pull request regressed, each holding
+# body the task rewrites in place through `.config/hotpath/landed.jq` (#3596,
+# its cases held by `check:hotpath`): its prose kept, its rows collapsed under
+# a summary counting the landings, the regressed and the improved. A new
+# ledger opens with the sentence that says what it is and a lead for its
+# table. A red row links the issues of the functions the pull request
+# regressed, each holding
 # the pull request's row (the hotpath guard's index). A commit without a pull
 # request number reads nothing. GH_REPO names the repository.
 ["ci:hotpath-landed"]
@@ -1027,37 +1030,14 @@ if [[ ! -s $scratch/rows ]]; then
 fi
 ledger=$(gh issue list --repo "$repo" --state open --label collector --search "\"$ledger_title\" in:title" --json number,title \
   | jq -r --arg title "$ledger_title" '[.[] | select(.title == $title)] | first | .number // empty')
-header='| Commit | PR | Benchmark | Verdict | Issue |'
-: > "$scratch/kept"
 if [[ -z $ledger ]]; then
-  printf 'Every landing whose `hotpath / <benchmark>` check is red, or whose report improves past its policy'"'"'s band, is one row here. `mise run ci:hotpath-landed` adds the row on main'"'"'s push; a red row links the issues of the functions it regressed, where the pull request'"'"'s row is settled by a fix or a stated acceptance.\n' > "$scratch/prose"
+  echo null > "$scratch/body.json"
 else
-  gh issue view "$ledger" --repo "$repo" --json body --jq .body | tr -d '\r' > "$scratch/ledger.md"
-  # The prose before the table, less the collapsed block's opening and the
-  # blank lines that end it; then the table's rows.
-  awk -v header="$header" '$0 == header {exit} /^<details><summary>/ {next} {line[++n] = $0}
-    END {while (n > 0 && line[n] ~ /^[[:space:]]*$/) n--; for (i = 1; i <= n; i++) print line[i]}' \
-    "$scratch/ledger.md" > "$scratch/prose"
-  awk -v header="$header" '$0 == header {table = 1; getline; next} table && /^\|/ {print} table && /^<\/details>/ {exit}' \
-    "$scratch/ledger.md" > "$scratch/kept"
+  gh issue view "$ledger" --repo "$repo" --json body --jq '.body | tojson' > "$scratch/body.json"
 fi
-while IFS= read -r row; do
-  key=$(cut -d'|' -f3-4 <<< "$row")
-  if grep -qF -- "$key" "$scratch/kept"; then continue; fi
-  printf '%s\n' "$row" >> "$scratch/kept"
-done < "$scratch/rows"
-count=$(wc -l < "$scratch/kept" | tr -d ' ')
-rows=rows
-(( count != 1 )) || rows=row
-regressed=$(cut -d'|' -f5 "$scratch/kept" | grep -cF '⚠️' || true)
-improved=$(cut -d'|' -f5 "$scratch/kept" | grep -ci improv || true)
-{
-  cat "$scratch/prose"
-  printf '\n<details><summary>%s %s — %s regressed, %s improved</summary>\n\n%s\n| --- | --- | --- | --- | --- |\n' \
-    "$count" "$rows" "$regressed" "$improved" "$header"
-  cat "$scratch/kept"
-  printf '\n</details>\n'
-} > "$scratch/ledger.md"
+jq -n --slurpfile body "$scratch/body.json" --rawfile rows "$scratch/rows" \
+  '{body: $body[0], rows: ($rows | split("\n") | map(select(length > 0)))}' \
+  | jq -r -f .config/hotpath/landed.jq > "$scratch/ledger.md"
 if [[ -z $ledger ]]; then
   ledger=$(gh issue create --repo "$repo" --title "$ledger_title" --label collector --label area:workflow \
     --label kind:performance --label priority:medium --label effort:unknown \
@@ -1113,9 +1093,10 @@ fi
 # mutant(s) alive`. A later landing of the same number updates it in place.
 # Its labels are kind:gap, `collector` (#2537), the pull request's `area:`
 # labels and the tier of each crate a survivor lives in, so the lane that
-# owns the crate picks it up. Its body is the report. A commit without a pull
-# request number, or a pull request without a report, files nothing. GH_REPO
-# names the repository.
+# owns the crate picks it up. `.config/mutants/landed.jq` writes its body
+# (#3596, its cases held by `check:mutants`): the sentence that says what it
+# is, then the report. A commit without a pull request number, or a pull
+# request without a report, files nothing. GH_REPO names the repository.
 ["ci:mutants-landed"]
 description = "File each landed pull request's surviving mutants on one issue"
 tools.jq = "1.8.1"
@@ -1159,10 +1140,8 @@ while IFS= read -r subject; do
     sed -n 's/^| `crates\/\([a-z]*\)-[^`]*` | .*/\1/p' "$scratch/report.md" \
       | grep -Fx -e kernel -e theory -e core -e storage -e runtime -e surface -e workflow | sed 's/^/area:/' || true
   } | sort -u)
-  {
-    printf 'Landed with #%s: the mutants of its own lines that no witness caught, as its last mutants report read them. Each survivor is a witness to write, or a `- witness:` bullet its function lacks.\n\n' "$pr"
-    sed '1{/^<!-- gandr-mutants -->$/d;}' "$scratch/report.md"
-  } > "$scratch/body.md"
+  jq -n --argjson pr "$pr" --rawfile report "$scratch/report.md" '{pr: $pr, report: $report}' \
+    | jq -r -f .config/mutants/landed.jq > "$scratch/body.md"
   title="test: #$pr leaves $count mutant(s) alive"
   key="test: #$pr leaves "
   issue=$(gh issue list --repo "$repo" --state open --search "\"${key% }\" in:title" --json number,title \
@@ -1181,9 +1160,10 @@ done <<< "$landings"
 # issue per first error and mutation kind, never one per mutant or exemplar.
 # The report's `cause:` lines name each cause with its count and families. A
 # cause is filed as `recovery: <name> marks other bytes than a <kind> tile`,
-# kind:defect, area:surface and `collector` (#2537), its body the cause's
-# first findings and its families as a checklist collapsed under their
-# count. A cause already filed
+# kind:defect, area:surface and `collector` (#2537), its body written by
+# `.config/claims/recovery.jq` (#3596, its cases held by `check:claims`): the
+# sentence that says what it is, the cause's first findings, and its families
+# as a checklist collapsed under their count. A cause already filed
 # is skipped: an issue in any state whose title opens with `recovery: <name> `
 # and names the kind's tile, or names neither kind's and so covers both
 # (#1829). A night opens at most
@@ -1226,8 +1206,6 @@ pattern='^cause: `([^`]+)` (deleted|missed): ([0-9]+) mutants in ([0-9]+) famili
 while IFS= read -r line; do
   [[ $line =~ $pattern ]] || continue
   name=${BASH_REMATCH[1]} kind=${BASH_REMATCH[2]} count=${BASH_REMATCH[3]} family_count=${BASH_REMATCH[4]} families=${BASH_REMATCH[5]}
-  family_noun=families
-  (( family_count != 1 )) || family_noun=family
   title="recovery: $name marks other bytes than a $kind tile"
   if [[ $name == unnamed ]]; then
     first=': first error "'
@@ -1236,20 +1214,14 @@ while IFS= read -r line; do
   fi
   if [[ $kind == deleted ]]; then
     how='` deleted: first error'
-    wrong='deleted'
   else
     how='` written as `'
-    wrong='written as its near miss'
   fi
   grep -F -e "$first" "$report" | grep -F -e "$how" | head -n 5 > "$scratch/findings" || true
-  {
-    printf 'The recovery sweep (`gandr ledger recovery corpus/ledger`, #1782) writes each literal tile of each syntax exemplar wrong and reads the first error. %s mutants whose tile was %s are first refused `%s` at other bytes than the mutation.\n\n' "$count" "$wrong" "$name"
-    printf '## Findings\n\nThe first of them; the nightly run lists every one%s.\n\n```text\n' "${GITHUB_RUN_URL:+ ($GITHUB_RUN_URL)}"
-    cat "$scratch/findings"
-    printf '```\n\n## Families\n\nA box is ticked once the sweep marks the family'"'"'s mutants where they were made.\n\n<details><summary>%s %s — open</summary>\n\n' "$family_count" "$family_noun"
-    tr ',' '\n' <<< "$families" | sed 's/^ *//; s/^\(.*\)$/- [ ] `\1`/'
-    printf '\n</details>\n'
-  } > "$scratch/body.md"
+  jq -n --arg name "$name" --arg kind "$kind" --argjson count "$count" --argjson family_count "$family_count" \
+    --arg families "$families" --rawfile findings "$scratch/findings" --arg run "${GITHUB_RUN_URL:-}" \
+    '{$name, $kind, $count, $family_count, $families, $findings, run: (if $run == "" then null else $run end)}' \
+    | jq -r -f .config/claims/recovery.jq > "$scratch/body.md"
   if [[ -n $repo ]]; then
     filed=$(jq -r --arg key "recovery: $name " --arg tile " $kind tile" \
       '[.[] | select((.title | startswith($key)) and ((.title | contains($tile)) or ((.title | contains(" deleted tile") | not) and (.title | contains(" missed tile") | not))))] | first | .number // empty' \
@@ -4853,8 +4825,9 @@ exit 2
 # conflicts or merged under it (`.config/stall/detect.jq`, its cases held by
 # `check:stall`). It queues and revises nothing: a stall is its seat's to
 # answer and the coordinator's to decide, and one no seat holds is filed as
-# a unit, its `## Observation` the finding's line and its other sections the
-# `stall` template's (`issue:file --template stall`, #3112). Each reading
+# a unit: the observation `.config/stall/observation.jq` writes, the
+# finding's line in a text block, then the `stall` template's sections
+# (`issue:file --template stall`, #3112, #3596). Each reading
 # closes every open stall report whose stall no finding carries any more,
 # its comment naming what cleared it (`.config/stall/reports.jq`).
 #
@@ -5096,13 +5069,13 @@ while :; do
     echo "$line"
     sent=true
     page_seat "$(jq -r .lane <<< "$finding")" "$line" "$(jq -r -f "$stall_dir/decide.jq" <<< "$finding")" || sent=false
-    # A finding no lane places is filed once its pages are sent, its line
-    # the observation and its sections the `stall` template's (#3112), so a
-    # page sent again never files it twice.
+    # A finding no lane places is filed once its pages are sent, under the
+    # observation `observation.jq` writes and the `stall` template's sections
+    # (#3112, #3596), so a page sent again never files it twice.
     if [[ "$sent" == true && $(jq .placed <<< "$finding") == false ]]; then
       title=$(jq -r '"stall: \(.kind) on #\(.number), whose lane `\(.lane)` no seat holds"' <<< "$finding")
       observation=$(mktemp)
-      printf '## Observation\n\n%s\n' "$line" > "$observation"
+      jq -r -f "$stall_dir/observation.jq" <<< "$finding" > "$observation"
       mise run --quiet issue:file "$title" "$observation" kind:defect area:workflow priority:high effort:easy \
         --template stall --fields "$(jq -c '{pr: "\(.number)", kind, lane}' <<< "$finding")" || sent=false
       rm -f "$observation"

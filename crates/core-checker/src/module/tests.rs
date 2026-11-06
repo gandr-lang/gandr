@@ -1600,6 +1600,132 @@ fn a_base_value_at_a_patched_type_crosses_as_a_restriction_5578()
     );
 }
 
+/// #5579: an element of a patched type stands at its base by the coercion out,
+/// as the record of its free fields beside the values the type fixes; a
+/// selection of a fixed field reads the fixed value. A nested computation
+/// whose result stands at the base runs before the record is built. The
+/// kernel admits each body as it admits any record.
+#[test]
+fn an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let integer = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_literal(integer_literal());
+    // `secured : *{host, port, tls : Integer}[.port = 0, .tls = 0] = *{.host = 0}`.
+    let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (label("host"), integer),
+        (label("port"), integer),
+        (label("tls"), integer),
+    ]));
+    let fixed = alloc::collections::BTreeMap::from([(label("port"), zero), (label("tls"), zero)]);
+    let patched = arena.value_type_patched(record_type, fixed);
+    let free = arena.value_record(alloc::collections::BTreeMap::from([(label("host"), zero)]));
+    // `whole : *{…} = secured`, `port : Integer = ⟨secured.port⟩` and
+    // `ran : *{…} = ⟨return secured⟩`.
+    let whole = arena.value_constant(ConstantIndex::from(0_usize));
+    let selected = arena.value_constant(ConstantIndex::from(0_usize));
+    let projection = arena.computation_record_projection(selected, label("port"));
+    let port = arena.value_returned(projection);
+    let returned = arena.value_constant(ConstantIndex::from(0_usize));
+    let returning = arena.computation_return(returned);
+    let ran = arena.value_nested(returning);
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(patched), Maybe::Present(free)),
+            declaration(At(1), Maybe::Present(record_type), Maybe::Present(whole)),
+            declaration(At(2), Maybe::Present(integer), Maybe::Present(port)),
+            declaration(At(3), Maybe::Present(record_type), Maybe::Present(ran)),
+        ])
+    };
+    let body = |at: usize| {
+        let Verdict::Checked { body, .. } = report.judged()[at].verdict()
+        else {
+            panic!(
+                "declaration {at} checks: {:?}",
+                report.judged()[at].verdict()
+            );
+        };
+        body
+    };
+    assert_eq!(
+        body(0),
+        free,
+        "the element keeps the record of its free fields"
+    );
+    let Some(gandr_core_term::Value::Record(fields)) = arena.value(body(1)).cloned()
+    else {
+        panic!("the element stands as a record: {:?}", arena.value(body(1)));
+    };
+    assert_eq!(
+        (fields.get(&label("port")), fields.get(&label("tls"))),
+        (Some(&zero), Some(&zero)),
+        "the record holds the values the type fixes"
+    );
+    assert!(
+        matches!(
+            fields.get(&label("host")).and_then(|&host| arena.value(host)),
+            Some(&gandr_core_term::Value::Returned(read))
+                if arena.computation(read) == Some(&gandr_core_term::Computation::RecordProjection(whole, label("host")))
+        ),
+        "the record reads its free field off the element: {fields:?}"
+    );
+    let Some(&gandr_core_term::Value::Returned(read)) = arena.value(body(2))
+    else {
+        panic!(
+            "the selection stands as what it returns: {:?}",
+            arena.value(body(2))
+        );
+    };
+    let Some(&gandr_core_term::Computation::RecordProjection(record, ref projected)) =
+        arena.computation(read)
+    else {
+        panic!("the selection projects: {:?}", arena.computation(read));
+    };
+    assert_eq!(projected, &label("port"));
+    assert_eq!(
+        arena.value(record),
+        Some(&gandr_core_term::Value::Record(
+            alloc::collections::BTreeMap::from([(label("port"), zero)])
+        )),
+        "a fixed field is read off the record of the value the type fixes"
+    );
+    // `ran` binds the run once, and its record reads the free field off what
+    // the run bound: `⟨x ← return secured; return *{.host = ⟨x.host⟩, …}⟩`.
+    let expected_ran = {
+        let bound = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        );
+        let host = arena.computation_record_projection(bound, label("host"));
+        let host = arena.value_returned(host);
+        let record = arena.value_record(alloc::collections::BTreeMap::from([
+            (label("host"), host),
+            (label("port"), zero),
+            (label("tls"), zero),
+        ]));
+        let built = arena.computation_return(record);
+        let secured = arena.value_constant(ConstantIndex::from(0_usize));
+        let first = arena.computation_return(secured);
+        let bind = arena.computation_bind(first, built);
+        arena.value_returned(bind)
+    };
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, body(3), expected_ran),
+        gandr_core_term::CertificateEquality::Equal,
+        "the run is bound once, before the record of what it returns"
+    );
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. }
+        )),
+        "the kernel admits each record at the base: {readmission:?}"
+    );
+}
+
 /// #2159: a record update written in a signature reads the record it builds,
 /// so a path between two updates at distinct labels, or between an update
 /// writing a field's own value and its base, holds at one point. The kernel

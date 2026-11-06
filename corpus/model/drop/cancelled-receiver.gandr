@@ -1,13 +1,12 @@
-//! A peer still waiting when its counterpart abandons the rest is cancelled,
-//! and the run answers its clause's value.
+//! `cancelled-receiver` models a peer that waits after a handler abandons its
+//! continuation.
 //!
-//! The abandoned rest held an end whose protocol had not ended, so it owed
-//! its peer a cancellation. The peer's next action on its own end observes it
-//! and abandons the peer's continuation in turn.
+//! It proves that a waiting peer observes cancellation at its next action.
+//! An abandoned end also cancels each queued end.
 //!
-//! Each program below abandons its root's rest through an exit clause that
-//! answers `7`. A peer parked at a receive is readied and abandoned, and an
-//! end queued at an abandoned end is cancelled with it.
+//! Each program exits from its root continuation.
+//! The handler abandons that continuation.
+//! It returns `7`.
 //!
 //! - see: #3305 — the cancellation hop
 //! - cites: [Fowler-2019-exceptional_asynchronous_session_types] — cancellation
@@ -15,11 +14,10 @@
 //!
 //! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
 
-// Early exit's host interface.
+// The import provides the early-exit host interface.
 import std.process;
 
-/// The peer sends, then waits on a payload the abandoned rest would have
-/// sent.
+/// The peer waits for a payload after it sends its first payload.
 @[ runs("7") ]
 def parked() -> Integer =
   handle c : std.process.Exit.Eff {
@@ -38,8 +36,7 @@ def parked() -> Integer =
     | oper exit(code, k) => { abandon k; pure 7 }
   }
 
-/// The peer's first action is the receive, and the root abandons the rest
-/// before the peer ever waits.
+/// The root abandons its continuation before the peer receives a payload.
 @[ runs("7") ]
 def late() -> Integer =
   handle c : std.process.Exit.Eff {
@@ -56,9 +53,7 @@ def late() -> Integer =
     | oper exit(code, k) => { abandon k; pure 7 }
   }
 
-/// A relay sends the root the worker's peer, and the clause abandons the
-/// root's rest before it takes that end. The root's cancelled end cancels the
-/// end queued at it, and the worker's waiting receive then abandons the worker.
+/// The root abandons its continuation before it receives the worker's queued end.
 @[ runs("7") ]
 def forwarded() -> Integer =
   handle c : std.process.Exit.Eff {

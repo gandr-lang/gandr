@@ -3131,6 +3131,74 @@ fn an_unmapped_crossing_stands_the_value_as_its_operand_4807()
     );
 }
 
+/// An element of a patched type stands at its base as its update by the
+/// values that the type fixes: the update's base is the element rebuilt, with
+/// the crossing inside it applied, and no run is minted. The element is
+/// carried to the update, where the build of the update reads it (#5579).
+#[test]
+fn an_overlaid_crossing_updates_the_rebuilt_value_5579()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| crate::FieldLabel::from(String::from(name));
+    let inner = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let standing = variable(&mut arena, DeBruijnIndex::from(1_u32));
+    let kept = variable(&mut arena, DeBruijnIndex::from(2_u32));
+    let element = arena.value_tuple(&[inner, kept]);
+    let port = arena.value_constant(ConstantIndex::from(0_usize));
+    let overlay = arena.value_record(BTreeMap::from([(label("port"), port)]));
+    let returned = arena.computation_return(element);
+    let subject = arena.value_thunk(returned);
+    let crossings = BTreeMap::from([
+        (inner, Crossing {
+            by: Maybe::Absent(()),
+            carriers: Vec::new(),
+            operand: crate::CrossedOperand::Standing(standing),
+        }),
+        (element, Crossing {
+            by: Maybe::Absent(()),
+            carriers: Vec::new(),
+            operand: crate::CrossedOperand::Overlaid(overlay),
+        }),
+    ]);
+    let (mut carried, mut runs) = (Vec::new(), Vec::new());
+    let rebuilt = cross_reducts(&mut arena, subject, &crossings, &mut carried, &mut runs);
+    assert!(runs.is_empty(), "no run is minted: {runs:?}");
+    let Some(&Value::Thunk(body)) = arena.value(rebuilt)
+    else {
+        panic!("the thunk is rebuilt");
+    };
+    let Some(&Computation::Return(updated)) = arena.computation(body)
+    else {
+        panic!(
+            "the thunk returns the update: {:?}",
+            arena.computation(body)
+        );
+    };
+    let Some(&Value::RecordUpdate {
+        base,
+        overlay: written,
+    }) = arena.value(updated)
+    else {
+        panic!(
+            "the element stands as an update: {:?}",
+            arena.value(updated)
+        );
+    };
+    assert_eq!(
+        written, overlay,
+        "the update writes the record the crossing names"
+    );
+    assert!(
+        matches!(arena.value(base), Some(Value::Tuple(components)) if components[..] == [standing, kept]),
+        "the update's base is the element rebuilt: {:?}",
+        arena.value(base)
+    );
+    assert!(
+        carried.contains(&Carried::Value(element, updated)),
+        "the element is carried to its update: {carried:?}"
+    );
+}
+
 /// Apply the constant `callee`, forced, to `argument`.
 ///
 /// # Specification

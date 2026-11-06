@@ -13728,20 +13728,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   written, as [`Self::positional`] reads it; a selection read as a
     ///   computation off a name whose written type is a thunked lazy record
     ///   over labels observes the entry its label names; a selection off a name
-    ///   written at a record type a static bracket patches reads a fixed
-    ///   field's literal or projects a free field, as [`Self::patched_field`]
-    ///   reads it; a selection off a name whose written type is a type over
-    ///   labels projects the entry its label names, as [`Self::selection`]
-    ///   reads it; a selection off a name whose written type is a data family
-    ///   without indices reads the field its label names off every constructor,
-    ///   as [`Self::data_field`] reads it; a selection off a flattened model
-    ///   implicit is the parameter of the component it names, as
-    ///   [`Self::flattened_member`] reads it; a selection off a value no
-    ///   written type states, a chain of selections ending at a binder's or a
-    ///   declaration's name not capitalised, projects the field its label names
-    ///   of the record the value is, as [`Self::field`] reads it. A chain of
-    ///   selections whose head is a capitalised name is a path: inside a
-    ///   functor whose parameter the head names, a one-link path is that
+    ///   whose written type is a type over labels projects the entry its label
+    ///   names, as [`Self::selection`] reads it; a selection off a name whose
+    ///   written type is a data family without indices reads the field its
+    ///   label names off every constructor, as [`Self::data_field`] reads it; a
+    ///   selection off a flattened model implicit is the parameter of the
+    ///   component it names, as [`Self::flattened_member`] reads it; a
+    ///   selection off a value no written type states, a chain of selections
+    ///   ending at a binder's or a declaration's name not capitalised, or one
+    ///   link off a name written at a patched type, projects the field its
+    ///   label names of the record the value is, as [`Self::field`] reads it. A
+    ///   chain of selections whose head is a capitalised name is a path: inside
+    ///   a functor whose parameter the head names, a one-link path is that
     ///   parameter's value component, as [`Self::parameter_value`] reads it; a
     ///   path whose head, capitalised or not, names a module an enclosing
     ///   module declares reaches the member that module exports, as
@@ -13795,13 +13793,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
-    /// - witness: `lower::patched::tests::a_fixed_field_reads_its_value_back`
+    /// - witness: `lower::patched::tests::a_selection_off_a_patched_name_projects_its_field_5579`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Literal(_) | Plan::Boolean(_) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::SubRecord(..) | Plan::Projected(_) | Plan::SelectedOutput { .. } | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -13840,9 +13838,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         if self.positional(site, pieces)? == arity::Planned(true) {
-            return Ok(());
-        }
-        if self.patched_field(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         if self.selection(site, pieces)? == arity::Planned(true) {

@@ -59,6 +59,10 @@ const DETAILS_OPEN: &str = "<details><summary>";
 /// The closing of the collapsed block the index table stands in.
 const DETAILS_CLOSE: &str = "</details>";
 
+/// The one-sentence lead the index table stands under.
+const LEAD: &str = "The table gives one row for each pull request and series that a `hotpath / \
+                    <series>` check measures.";
+
 /// The opening of a report cell's comment link.
 const COMMENT: &str = "[comment](";
 
@@ -370,9 +374,10 @@ impl Index
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a paragraph naming the function and its crate, an empty `##
-    ///   Index` table, the `## Lint` obligation once for the function, and the
-    ///   `## Close` rule.
+    /// - ensures: the sentence that says what the issue is, naming the function
+    ///   and its crate; an empty `## Index` table under its lead; the `## Lint`
+    ///   obligation once for the function; and the `## Close` rule, its acts in
+    ///   a table.
     /// - provides: the body a new issue is opened with.
     /// - fails: never.
     /// - panics: none.
@@ -396,22 +401,21 @@ impl Index
         let lines = |text: &str| text.split('\n').map(str::to_owned).collect::<Vec<_>>();
         Self {
             head: lines(&format!(
-                "The hotpath guard's regressions of `{function}`{place}, as the `hotpath / \
-                 <series>` checks measure it: this body is the index, one row per pull request \
-                 and series; each pull request's report is one comment below, edited by its \
-                 later runs. The guard rewrites the rows and keeps the rest of this body as \
-                 written.\n\n## \
-                 Index\n\n{HEADER}\n{SEPARATOR}"
+                "This issue indexes the hotpath regressions of `{function}`{place}.\n\n## \
+                 Index\n\n{LEAD}\n\n{HEADER}\n{SEPARATOR}"
             )),
             rows: Vec::new(),
             tail: lines(
-                "\n## Lint\n\nOwed once for the function, by the first fix that lands under this \
-                 issue: whether a quenchant dylint could have refused the pattern that \
-                 regressed, as the rule it would check.\n\n## Close\n\nThe guard closes this \
-                 issue when every row is `fixed`, `accepted` or `runner shift`, and reopens it \
-                 on the next `open` row. A `runner shift` row states the run's global shift: \
-                 the median move of every function both timing reports measure, and how many \
-                 they are.\n",
+                "\nEach pull request has one report comment below. Its later runs edit that \
+                 comment. The guard rewrites the rows and keeps the rest of this body.\n\n## \
+                 Lint\n\nThe first fix under this issue owes one reading for the function. The \
+                 reading names the quenchant dylint that can refuse the regressed pattern, as \
+                 the rule that it checks.\n\n## Close\n\nThe table gives the act of the guard \
+                 for each standing of the rows.\n\n| Rows | Act |\n| --- | --- |\n| each row \
+                 `fixed`, `accepted` or `runner shift` | the guard closes this issue |\n| a new \
+                 `open` row | the guard reopens this issue |\n\nA `runner shift` row states the \
+                 global shift of the run. The shift is the median move of each function that \
+                 both timing reports measure, with their count.\n",
             ),
         }
     }
@@ -428,7 +432,7 @@ impl Index
     ///   and the blank line and `</details>` just after the rows, which the
     ///   rendering writes afresh. A body without a heading row keeps all of
     ///   itself, its trailing blank lines dropped, and gains an `## Index`
-    ///   table after it.
+    ///   table under its lead after it.
     /// - provides: the rows the run reads and rewrites; a hand-written row of
     ///   the same columns is a row like any other.
     /// - fails: never.
@@ -459,7 +463,7 @@ impl Index
             while head.last().is_some_and(|line| line.trim().is_empty()) {
                 head.pop();
             }
-            head.extend(["", "## Index", "", HEADER, SEPARATOR].map(str::to_owned));
+            head.extend(["", "## Index", "", LEAD, "", HEADER, SEPARATOR].map(str::to_owned));
             return Self {
                 head,
                 rows: Vec::new(),
@@ -904,9 +908,10 @@ Owed once for the function.
         let bare = Index::read(&IssueBody("A note.\n\n".to_owned())).to_string();
         assert_eq!(
             bare,
-            "A note.\n\n## Index\n\n<details><summary>0 regressions — settled</summary>\n\n\
-             | pull request | commit | series | metric | delta | status | report |\n| --- | --- | \
-             --- | --- | --- | --- | --- |\n\n</details>\n"
+            "A note.\n\n## Index\n\nThe table gives one row for each pull request and series \
+             that a `hotpath / <series>` check measures.\n\n<details><summary>0 regressions — \
+             settled</summary>\n\n| pull request | commit | series | metric | delta | status | \
+             report |\n| --- | --- | --- | --- | --- | --- | --- |\n\n</details>\n"
         );
     }
 

@@ -99,5 +99,14 @@
       ]
     },
     "output": "[{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:10\",\"names\":[\"crates/a/src/lib.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default()\",\"crates/a/src/lib.rs:14:9: replace + with * in from\"],\"re\":\"^(crates/a/src/lib\\\\.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default\\\\(\\\\)|crates/a/src/lib\\\\.rs:14:9: replace \\\\+ with \\\\* in from)$\",\"filter\":\"package(=gandr-a) & (test(=tests::w))\"},{\"file\":\"crates/a/src/other.rs\",\"item\":null,\"names\":[\"crates/a/src/other.rs:3:5: replace f -> [u8; 2] with [0; 2]\"],\"re\":\"^(crates/a/src/other\\\\.rs:3:5: replace f -> \\\\[u8; 2\\\\] with \\\\[0; 2\\\\])$\",\"filter\":null}]"
+  },
+  {
+    "name": "#3596: a survivors issue opens with the sentence that says what it is and a lead, then the report less its marker line",
+    "program": "landed.jq",
+    "input": {
+      "pr": 5100,
+      "report": "<!-- gandr-mutants -->\n| Crate | Mutant |\n| --- | --- |\n| `crates/core-term` | replace len -> usize with 0 |\n\n1 survivor(s).\n"
+    },
+    "output": "This issue lists the mutants of the lines of #5100 that no witness catches.\n\nEach survivor needs a witness, or a `- witness:` bullet that its function lacks. The last mutants report of #5100 follows.\n\n| Crate | Mutant |\n| --- | --- |\n| `crates/core-term` | replace len -> usize with 0 |\n\n1 survivor(s)."
   }
 ]

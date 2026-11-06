@@ -67,5 +67,27 @@
     ],
     "flag": "",
     "exit": 0
+  },
+  {
+    "name": "a pushed branch's trailer-less commit is refused by the push tier",
+    "push": "refs/heads/topic",
+    "commits": [
+      {
+        "message": "docs(kernel): a change without its trailers",
+        "trailers": false,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 1
+  },
+  {
+    "name": "#5651: a pushed notes ref, which shares no history with the trunk, passes the push tier",
+    "push": "refs/notes/rebased",
+    "commits": [
+      { "message": "docs(kernel): a change with its trailers", "trailers": true, "change": true }
+    ],
+    "flag": "",
+    "exit": 0
   }
 ]

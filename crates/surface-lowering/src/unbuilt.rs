@@ -316,8 +316,7 @@ unbuilt! {
     /// decorates has no key of its own yet.
     SourceAttribute => "inner_attribute_block",
     /// A value a static bracket fixes that the lowering does not read: a
-    /// face's value that is no record written in place, or a fixed field read
-    /// back where its value is no literal.
+    /// face's value that is no record written in place.
     FixedValue => "staged_type.fixed_value",
     /// A static bracket over a record type a field of which names an earlier
     /// field.

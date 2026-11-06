@@ -29,10 +29,20 @@ use std::process::Command;
 const HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 /// The report of the drop.
-const DROP: &str = r"Main's coverage moved from 94.50 % at [aaaaaaa](https://app.codecov.io/github/gandr-lang/gandr/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) to 87.90 % at [bbbbbbb](https://app.codecov.io/github/gandr-lang/gandr/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb): -6.60 points, against a threshold of 0.50.
-The upload covers 3 files; the one before covered 3.
+const DROP: &str = r"This report compares the coverage of two uploads of `main`.
 
-**Dropped**: a fall over the threshold or fewer files. A second drop updates this issue.
+The table gives each upload, its coverage and its files.
+
+| Upload | Commit | Coverage | Files |
+| --- | --- | ---: | ---: |
+| before | [aaaaaaa](https://app.codecov.io/github/gandr-lang/gandr/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) | 94.50 % | 3 |
+| after | [bbbbbbb](https://app.codecov.io/github/gandr-lang/gandr/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) | 87.90 % | 3 |
+
+The change is -6.60 points, against a threshold of 0.50.
+
+The verdict is **dropped**: a fall past the threshold, or fewer files. A second drop updates this issue.
+
+The table gives each crate whose coverage moves.
 
 <details><summary>4 crates moved — dropped</summary>
 
@@ -47,10 +57,20 @@ The upload covers 3 files; the one before covered 3.
 ";
 
 /// The report of the steady upload.
-const STEADY: &str = r"Main's coverage moved from 94.50 % at [aaaaaaa](https://app.codecov.io/github/gandr-lang/gandr/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) to 94.60 % at [bbbbbbb](https://app.codecov.io/github/gandr-lang/gandr/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb): +0.10 points, against a threshold of 0.50.
-The upload covers 3 files; the one before covered 3.
+const STEADY: &str = r"This report compares the coverage of two uploads of `main`.
 
-Steady: within the threshold, no file lost.
+The table gives each upload, its coverage and its files.
+
+| Upload | Commit | Coverage | Files |
+| --- | --- | ---: | ---: |
+| before | [aaaaaaa](https://app.codecov.io/github/gandr-lang/gandr/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) | 94.50 % | 3 |
+| after | [bbbbbbb](https://app.codecov.io/github/gandr-lang/gandr/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) | 94.60 % | 3 |
+
+The change is +0.10 points, against a threshold of 0.50.
+
+The verdict is steady: a change within the threshold, with no file lost.
+
+The table gives each crate whose coverage moves.
 
 <details><summary>1 crate moved — steady</summary>
 
@@ -215,10 +235,20 @@ fn a_failing_gh_is_reported_with_its_message()
 
 /// The comparison of `aaaa…` with `dddd…`, which stands in for a head
 /// Codecov has not processed.
-const STOOD_IN: &str = r"Main's coverage moved from 94.40 % at [ddddddd](https://app.codecov.io/github/gandr-lang/gandr/commit/dddddddddddddddddddddddddddddddddddddddd) to 94.50 % at [aaaaaaa](https://app.codecov.io/github/gandr-lang/gandr/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa): +0.10 points, against a threshold of 0.50.
-The upload covers 3 files; the one before covered 3.
+const STOOD_IN: &str = r"This report compares the coverage of two uploads of `main`.
 
-Steady: within the threshold, no file lost.
+The table gives each upload, its coverage and its files.
+
+| Upload | Commit | Coverage | Files |
+| --- | --- | ---: | ---: |
+| before | [ddddddd](https://app.codecov.io/github/gandr-lang/gandr/commit/dddddddddddddddddddddddddddddddddddddddd) | 94.40 % | 3 |
+| after | [aaaaaaa](https://app.codecov.io/github/gandr-lang/gandr/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) | 94.50 % | 3 |
+
+The change is +0.10 points, against a threshold of 0.50.
+
+The verdict is steady: a change within the threshold, with no file lost.
+
+The table gives each crate whose coverage moves.
 
 <details><summary>1 crate moved — steady</summary>
 
@@ -296,10 +326,12 @@ fn two_unprocessed_uploads_in_a_row_open_their_issue()
     );
     assert_eq!(
         std::fs::read_to_string(scratch.join("body")).unwrap(),
-        format!(
-            "- {HEAD_SKIPPED}\n- {ERROR_SKIPPED}\n\nThe guard compares main's newest processed upload, \
-             aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, in their place, until Codecov processes a newer one.\n"
-        )
+        "This issue lists the uploads of `main` that Codecov leaves unprocessed.\n\nThe table \
+         gives each upload, newest first, and its state at Codecov.\n\n| Upload | State |\n| --- \
+         | --- |\n| bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb | `pending` |\n| \
+         cccccccccccccccccccccccccccccccccccccccc | `error` |\n\nThe guard compares the newest \
+         processed upload of `main`, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, in their place. It \
+         does so until Codecov processes a newer upload.\n"
     );
     let log = log!(scratch);
     assert!(
