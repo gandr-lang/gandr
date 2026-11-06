@@ -2493,7 +2493,9 @@ fi
 # issues it is blocked by, its sub-issues and the decision it must give;
 # `link.jq` decides each open epic's members by body
 # reference for `epics:link`, each case in `.config/epics/link.json` the
-# issues and the members. An issue is filed with a `kind:`
+# issues and the members; `.config/epics/link-cases.bash` runs `epics:link`
+# over a stubbed `gh` (#5688), which plans from its two GraphQL reads and
+# makes no REST read. An issue is filed with a `kind:`
 # and an `area:` label (#2538): `.config/triage/triage.jq` decides whether
 # `needs:triage` is added, removed or kept, each case in
 # `.config/triage/cases.json` an issue's labels and that decision. An issue
@@ -2526,6 +2528,7 @@ cases() {
 }
 cases epics .config/epics/close.jq .config/epics/cases.json
 .config/cases/run.bash links .config/epics/link.json --program .config/epics/link.jq --mode c || failed=1
+.config/epics/link-cases.bash || failed=1
 cases triage .config/triage/triage.jq .config/triage/cases.json
 labelled=$(mktemp)
 trap 'rm -f "$labelled"' EXIT
