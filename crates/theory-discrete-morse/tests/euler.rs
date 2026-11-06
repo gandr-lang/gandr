@@ -1,8 +1,8 @@
 //! Probe 12 of the presented-spaces frame: the Euler characteristic of a face
 //! poset, read from a Morse matching and from the Möbius function.
 //!
-//! A greedy Morse matching pairs a cell with a cell that covers it one rank
-//! up, and it keeps the reversed cover graph acyclic. The cells it leaves
+//! The crate's greedy matching pairs a cell with a cell one rank up whose
+//! boundary holds it, and it keeps the gradient acyclic. The cells it leaves
 //! unpaired are critical. The first count is the sum of the critical cells,
 //! each signed by the parity of its rank. The second count adjoins a bottom
 //! `0̂` below every cell and reads the Möbius function: it is minus the sum of
@@ -15,6 +15,11 @@
 //! cone and the Möbius count is one. The Morse count is the alternating count
 //! of the cells by rank, and it parts from one where a boundary is no sphere.
 
+use gandr_theory_discrete_morse::Budget;
+use gandr_theory_discrete_morse::Class;
+use gandr_theory_discrete_morse::Faults;
+use gandr_theory_discrete_morse::collapse;
+use gandr_theory_discrete_morse::greedy;
 use gandr_theory_graded_posets::GradedPoset;
 use gandr_theory_stone_duality::Element;
 
@@ -29,11 +34,13 @@ use super::faces::whole;
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 struct Euler(i64);
 
-/// The cells of a poset as the counts read them: each cell's boundary as a
-/// bit row, and its rank.
+/// The cells of a poset as the counts read them: the poset, each cell's
+/// boundary as a bit row, and its rank.
 #[derive(Debug)]
-struct Cells
+struct Cells<'poset>
 {
+    /// The poset the greedy matching reads.
+    poset: &'poset GradedPoset<Points>,
     /// Each cell's boundary, one bit for each cell strictly below it.
     boundary: Vec<u64>,
     /// Each cell's rank.
@@ -69,7 +76,7 @@ enum Boundaries
 ///
 /// # Specification
 /// trivial.
-fn cells(poset: &GradedPoset<Points>) -> Cells
+fn cells(poset: &GradedPoset<Points>) -> Cells<'_>
 {
     let count = usize::from(poset.count());
     let boundary = (0 .. count)
@@ -90,169 +97,24 @@ fn cells(poset: &GradedPoset<Points>) -> Cells
             )
         })
         .collect();
-    Cells { boundary, rank }
+    Cells {
+        poset,
+        boundary,
+        rank,
+    }
 }
 
-/// A cell, by its place in the poset.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct CellIndex(usize);
-
-impl Cells
+impl Cells<'_>
 {
     /// The cells in order of rank: a linear extension of the order.
     ///
     /// # Specification
     /// trivial.
-    fn by_rank(&self) -> Vec<CellIndex>
+    fn by_rank(&self) -> Vec<Element>
     {
-        let mut order: Vec<CellIndex> = (0 .. self.rank.len()).map(CellIndex).collect();
-        order.sort_by_key(|&cell| self.rank.get(cell.0).copied().unwrap_or_default());
-        order
-    }
-
-    /// Whether `upper` covers `lower` one rank up: `lower` lies in its
-    /// boundary, nothing lies between them, and the ranks differ by one.
-    ///
-    /// # Specification
-    /// trivial.
-    fn covers(
-        &self,
-        lower: CellIndex,
-        upper: CellIndex,
-    ) -> Cover
-    {
-        let below = |cell: usize, set: u64| (set >> cell) & 1 == 1;
-        let upper_boundary = self.boundary.get(upper.0).copied().unwrap_or_default();
-        let between = (0 .. self.rank.len()).any(|middle| {
-            below(middle, upper_boundary)
-                && below(
-                    lower.0,
-                    self.boundary.get(middle).copied().unwrap_or_default(),
-                )
-        });
-        let step = self
-            .rank
-            .get(lower.0)
-            .copied()
-            .unwrap_or_default()
-            .saturating_add(1)
-            == self.rank.get(upper.0).copied().unwrap_or_default();
-        if below(lower.0, upper_boundary) && !between && step {
-            Cover::OneUp
-        }
-        else {
-            Cover::Not
-        }
-    }
-
-    /// The modified cover graph of `matching` has a directed cycle: each
-    /// cover points down, except a matched cover, which points up.
-    ///
-    /// # Specification
-    /// trivial.
-    fn cyclic(
-        &self,
-        matching: &[Option<CellIndex>],
-    ) -> Cycle
-    {
-        let count = self.rank.len();
-        let mut edges: Vec<Vec<usize>> = vec![Vec::new(); count];
-        for upper in (0 .. count).map(CellIndex) {
-            for lower in (0 .. count).map(CellIndex) {
-                if self.covers(lower, upper) == Cover::Not {
-                    continue;
-                }
-                let matched = matching.get(lower.0).copied().flatten() == Some(upper);
-                let (from, to) = if matched {
-                    (lower, upper)
-                }
-                else {
-                    (upper, lower)
-                };
-                if let Some(row) = edges.get_mut(from.0) {
-                    row.push(to.0);
-                }
-            }
-        }
-        // Each cell is white, grey while on the search path, or black once
-        // left; a grey cell met again closes a cycle.
-        let mut colour = vec![0_u8; count];
-        let mut stack: Vec<(usize, usize)> = Vec::with_capacity(count);
-        for start in 0 .. count {
-            if colour.get(start).copied() != Some(0) {
-                continue;
-            }
-            stack.push((start, 0));
-            if let Some(slot) = colour.get_mut(start) {
-                *slot = 1;
-            }
-            while let Some(&mut (node, ref mut next)) = stack.last_mut() {
-                let row = edges.get(node).map_or(&[][..], Vec::as_slice);
-                if let Some(&target) = row.get(*next) {
-                    *next = next.saturating_add(1);
-                    match colour.get(target).copied() {
-                        Some(1) => return Cycle::Found,
-                        Some(0) => {
-                            if let Some(slot) = colour.get_mut(target) {
-                                *slot = 1;
-                            }
-                            stack.push((target, 0));
-                        },
-                        _ => {},
-                    }
-                }
-                else {
-                    if let Some(slot) = colour.get_mut(node) {
-                        *slot = 2;
-                    }
-                    let _ = stack.pop();
-                }
-            }
-        }
-        Cycle::None
-    }
-
-    /// A greedy acyclic matching: each cell in order of rank pairs with the
-    /// first unmatched cell that covers it one rank up, when the pair keeps
-    /// the modified cover graph acyclic.
-    ///
-    /// # Specification
-    /// trivial.
-    fn matching(&self) -> Vec<Option<CellIndex>>
-    {
-        let count = self.rank.len();
-        let mut matching: Vec<Option<CellIndex>> = vec![None; count];
-        let order = self.by_rank();
-        for &lower in &order {
-            if matching.get(lower.0).copied().flatten().is_some() {
-                continue;
-            }
-            for &upper in &order {
-                let free = matching.get(upper.0).copied().flatten().is_none();
-                if !free || self.covers(lower, upper) == Cover::Not {
-                    continue;
-                }
-                if let Some(slot) = matching.get_mut(lower.0) {
-                    *slot = Some(upper);
-                }
-                if let Some(slot) = matching.get_mut(upper.0) {
-                    *slot = Some(lower);
-                }
-                if self.cyclic(&matching) == Cycle::Found {
-                    if let Some(slot) = matching.get_mut(lower.0) {
-                        *slot = None;
-                    }
-                    if let Some(slot) = matching.get_mut(upper.0) {
-                        *slot = None;
-                    }
-                }
-                else {
-                    break;
-                }
-            }
-        }
-        matching
+        let mut order: Vec<usize> = (0 .. self.rank.len()).collect();
+        order.sort_by_key(|&cell| self.rank.get(cell).copied().unwrap_or_default());
+        order.into_iter().map(Element::from).collect()
     }
 
     /// Both counts.
@@ -269,26 +131,41 @@ impl Cells
                 -1_i64
             }
         };
-        let matching = self.matching();
+        let order = self.by_rank();
+        let mut complex = self.poset;
+        let matching = greedy(&mut complex, &order).expect("the poset reads its faces");
+        // The crate's check finds the greedy matching acyclic, with each
+        // partner naming its cell back.
+        let checked = collapse(
+            &mut matching.on(&mut complex),
+            &order,
+            Budget::from(order.len()),
+        )
+        .expect("the check reads the poset");
+        assert_eq!(checked.faults(), Faults::default(), "{self:?}");
         let mut morse = 0_i64;
         let mut critical = 0_i64;
-        for (cell, partner) in matching.iter().enumerate() {
-            if partner.is_none() {
-                morse =
-                    morse.saturating_add(sign(self.rank.get(cell).copied().unwrap_or_default()));
+        for (cell, class) in matching.cells().iter().zip(matching.classes()) {
+            if *class == Class::Critical {
+                let rank = self
+                    .rank
+                    .get(usize::from(*cell))
+                    .copied()
+                    .unwrap_or_default();
+                morse = morse.saturating_add(sign(rank));
                 critical = critical.saturating_add(1);
             }
         }
         // μ(0̂, x) = −(μ(0̂, 0̂) + the sum of μ(0̂, y) over the cells y below x),
         // read in order of rank so each term below is final.
         let mut mu = vec![0_i64; self.rank.len()];
-        for cell in self.by_rank() {
-            let boundary = self.boundary.get(cell.0).copied().unwrap_or_default();
+        for cell in order.into_iter().map(usize::from) {
+            let boundary = self.boundary.get(cell).copied().unwrap_or_default();
             let below: i64 = (0 .. self.rank.len())
                 .filter(|&lower| (boundary >> lower) & 1 == 1)
                 .map(|lower| mu.get(lower).copied().unwrap_or_default())
                 .fold(0_i64, i64::saturating_add);
-            if let Some(slot) = mu.get_mut(cell.0) {
+            if let Some(slot) = mu.get_mut(cell) {
                 *slot = 0_i64.saturating_sub(1_i64.saturating_add(below));
             }
         }
@@ -311,26 +188,6 @@ impl Cells
             },
         }
     }
-}
-
-/// Whether one cell covers another one rank up.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Cover
-{
-    /// It does.
-    OneUp,
-    /// It does not.
-    Not,
-}
-
-/// Whether a directed graph holds a cycle.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Cycle
-{
-    /// It does.
-    Found,
-    /// It does not.
-    None,
 }
 
 /// Every face family over a carrier of one to three points: each set of the
@@ -362,18 +219,20 @@ fn the_two_counts_agree_where_every_boundary_is_a_sphere()
 {
     let generated = families();
     let shapes = corpus();
-    let posets = generated
+    let posets: Vec<GradedPoset<Points>> = generated
         .iter()
         .map(|&(carrier, ref faces)| face_poset(carrier, faces))
         .chain(
             shapes
                 .iter()
                 .map(|shape| face_poset(shape.carrier, &shape.faces)),
-        );
-    let mut differ = 0_usize;
-    for poset in posets {
-        let read = cells(&poset);
+        )
+        .collect();
+    let (mut spherical, mut agree, mut differ) = (0_usize, 0_usize, 0_usize);
+    for (index, poset) in posets.iter().enumerate() {
+        let read = cells(poset);
         let counts = read.counts();
+        let family = index < generated.len();
         // The whole carrier is a top cell, so the order complex is a cone,
         // and the Möbius count reads its Euler characteristic, one.
         assert_eq!(counts.mobius, Euler(1), "{read:?}");
@@ -392,24 +251,39 @@ fn the_two_counts_agree_where_every_boundary_is_a_sphere()
             })
             .fold(0_i64, i64::saturating_add);
         assert_eq!(counts.morse, Euler(alternating), "{read:?}");
+        // The weak Morse inequality: at least as many critical cells as the
+        // size of the Euler characteristic.
+        assert!(
+            counts.critical >= Euler(counts.morse.0.saturating_abs()),
+            "{read:?}"
+        );
         if counts.boundaries == Boundaries::Spherical {
             assert_eq!(counts.morse, counts.mobius, "{read:?}");
         }
-        else if counts.morse != counts.mobius {
+        if !family {
+            continue;
+        }
+        if counts.boundaries == Boundaries::Spherical {
+            spherical = spherical.saturating_add(1);
+        }
+        else if counts.morse == counts.mobius {
+            agree = agree.saturating_add(1);
+        }
+        else {
             differ = differ.saturating_add(1);
         }
     }
-    assert!(
-        differ > 0,
-        "some boundary is no sphere, and the counts part"
-    );
+    // Over the 69 face families, the counts agree on the 14 whose boundaries
+    // are spheres and on 18 of the 55 others. They part on 37.
+    assert_eq!((spherical, agree, differ), (14, 18, 37));
     // The corpus shapes by hand: `Square` has the corner `tl`, the two sides
     // through it one rank up, the two other sides at rank zero, and the
     // whole square at rank two.
     let read: Vec<(Euler, Euler)> = shapes
         .iter()
         .map(|shape| {
-            let counts = cells(&face_poset(shape.carrier, &shape.faces)).counts();
+            let poset = face_poset(shape.carrier, &shape.faces);
+            let counts = cells(&poset).counts();
             (counts.morse, counts.mobius)
         })
         .collect();

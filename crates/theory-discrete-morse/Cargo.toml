@@ -1,0 +1,30 @@
+[package]
+name = "gandr-theory-discrete-morse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Discrete Morse theory for gandr: acyclic matchings on finite cell complexes, their check, the greedy matching, and Brown's collapsing scheme"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["cell-complex", "discrete-morse", "gandr", "no-std"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. A graded poset is a complex, and finite Stone
+# duality names its cells and holds their sets as bit rows.
+[dependencies]
+anodized.workspace = true
+gandr-theory-graded-posets.workspace = true
+gandr-theory-stone-duality.workspace = true
+
+[lints]
+workspace = true

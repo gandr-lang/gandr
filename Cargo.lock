@@ -1629,6 +1629,7 @@ dependencies = [
  "gandr-theory-circuit-algebras",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-computads",
+ "gandr-theory-discrete-morse",
  "gandr-theory-levitation",
  "gandr-theory-shapes",
  "gandr-theory-sites",
@@ -1926,6 +1927,15 @@ dependencies = [
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
+]
+
+[[package]]
+name = "gandr-theory-discrete-morse"
+version = "0.0.0"
+dependencies = [
+ "gandr-theory-graded-posets",
+ "gandr-theory-stone-duality",
+ "quenchant-anodized",
 ]
 
 [[package]]

@@ -35,13 +35,18 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::ops::Range;
-use std::collections::HashMap;
 use std::path::Path;
 
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::coincide::Certificates;
 use gandr_surface_lowering::desc_cells::DeclarationCells;
 use gandr_surface_syntax::SourceText;
+use gandr_theory_discrete_morse::Budget;
+use gandr_theory_discrete_morse::Class;
+use gandr_theory_discrete_morse::Complex;
+use gandr_theory_discrete_morse::Faults;
+use gandr_theory_discrete_morse::Incidence;
+use gandr_theory_discrete_morse::Standing;
 
 use crate::lawvere::Arrow;
 use crate::lawvere::Bound;
@@ -251,18 +256,6 @@ impl Composite
     }
 }
 
-/// The class of a cell under the scheme, with its partner.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum Class
-{
-    /// The cell stays unmatched.
-    Essential,
-    /// The cell is a face of its partner, one degree above it.
-    Redundant(Cell),
-    /// The cell's partner is a face of it, one degree below it.
-    Collapsible(Cell),
-}
-
 /// Whether an arrow is an identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Fill
@@ -271,16 +264,6 @@ enum Fill
     Identity,
     /// The arrow is another tuple.
     Proper,
-}
-
-/// Whether a cell lies in the bar complex.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Standing
-{
-    /// The cell is not degenerate, and each of its terms is a normal form.
-    Proper,
-    /// The cell is degenerate, or a term of it is not a normal form.
-    Improper,
 }
 
 /// The scheme's working memory, kept from one cell to the next.
@@ -382,7 +365,7 @@ impl Scheme
         &mut self,
         theory: &mut Theory,
         cell: &Cell,
-    ) -> Option<Class>
+    ) -> Option<Class<Cell>>
     {
         let arrows = &cell.0;
         let first = arrows.first()?;
@@ -443,7 +426,7 @@ impl Scheme
             parted.extend(arrows.iter().skip(at.saturating_add(1)).cloned());
             return Some(Class::Redundant(Cell(parted)));
         }
-        Some(Class::Essential)
+        Some(Class::Critical)
     }
 
     /// The rule of the first redex of the whole composite of `cell` that reads
@@ -586,54 +569,97 @@ fn standing(
 ) -> Option<Standing>
 {
     if cell.degeneracy(&theory.table) == Degeneracy::Degenerate {
-        return Some(Standing::Improper);
+        return Some(Standing::Outside);
     }
     for arrow in &cell.0 {
         for &term in &arrow.terms {
             if theory.normal_form(term)? != term {
-                return Some(Standing::Improper);
+                return Some(Standing::Outside);
             }
         }
     }
-    Some(Standing::Proper)
+    Some(Standing::Inside)
 }
 
 /// The most redundant cells the cycle check visits before the probe gives up.
 const CLOSURE: usize = 100_000;
 
-/// What the matching shows on the cells of one truncation.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct Faults
+/// Why the bar complex gives no answer: a normal form takes more than the
+/// fuel, or a cell has an arrow with no term.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Unread;
+
+/// The bar complex of a theory, with the scheme's working memory, as the
+/// Morse crate reads it.
+struct Bar<'theory>
 {
-    /// The cells whose partner does not name them back.
-    unpaired: Count,
-    /// The partners that are not cells of the complex.
-    improper: Count,
-    /// The redundant cells whose coefficient in their partner's boundary is
-    /// not one or minus one.
-    coefficients: Count,
-    /// The edges of the matching's graph that close a cycle.
-    cycles: Count,
-    /// The redundant cells the cycle check visits.
-    visited: Count,
+    /// The theory whose bar complex this is.
+    theory: &'theory mut Theory,
+    /// The scheme's working memory.
+    scheme: Scheme,
 }
 
-/// A node's state in the depth-first walk that finds cycles.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Mark
+impl Complex for Bar<'_>
 {
-    /// The walk has not reached the node.
-    Unseen,
-    /// The walk is below the node.
-    Open,
-    /// The walk has left the node.
-    Done,
+    type Cell = Cell;
+    type Fault = Unread;
+
+    /// Whether `cell` lies in the bar complex.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(
+        &mut self,
+        cell: &Cell,
+    ) -> Result<Standing, Unread>
+    {
+        standing(self.theory, cell).ok_or(Unread)
+    }
+
+    /// The faces of `cell` in its boundary, each with its coefficient.
+    ///
+    /// # Specification
+    /// trivial.
+    fn faces(
+        &mut self,
+        cell: &Cell,
+        faces: &mut Vec<(Cell, Incidence)>,
+    ) -> Result<(), Unread>
+    {
+        let chain = boundary(self.theory, cell).ok_or(Unread)?;
+        faces.extend(
+            chain
+                .into_iter()
+                .map(|(face, coefficient)| (face, Incidence::from(coefficient.0))),
+        );
+        Ok(())
+    }
+}
+
+impl gandr_theory_discrete_morse::Scheme for Bar<'_>
+{
+    /// The class of `cell` under the scheme. The empty cell is the one cell of
+    /// degree zero, which no pair holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn class(
+        &mut self,
+        cell: &Cell,
+    ) -> Result<Class<Cell>, Unread>
+    {
+        if cell.0.is_empty() {
+            return Ok(Class::Critical);
+        }
+        self.scheme.classify(self.theory, cell).ok_or(Unread)
+    }
 }
 
 /// The faults of the matching on the cells of degrees one and up of
-/// `truncation`. The cycle check starts at each redundant cell and follows
-/// each redundant face of its partner, inside the bound or outside it. None
-/// past the fuel or past [`CLOSURE`] redundant cells.
+/// `truncation`, through the Morse crate's check. Its walk starts at each
+/// redundant cell and follows each redundant face of its partner, inside the
+/// bound or outside it. None past the fuel or past [`CLOSURE`] redundant
+/// cells.
 ///
 /// # Specification
 /// trivial.
@@ -642,124 +668,17 @@ fn faults(
     truncation: &Truncation,
 ) -> Option<Faults>
 {
-    let mut scheme = Scheme::default();
-    let mut out = Faults::default();
-    let mut places: HashMap<Cell, Place> = HashMap::new();
-    let mut redundant: Vec<(Cell, Cell)> = Vec::new();
-    for cell in truncation.cells.iter().skip(1).flatten() {
-        match scheme.classify(theory, cell)? {
-            Class::Essential => {},
-            Class::Redundant(partner) => {
-                if !places.contains_key(cell) {
-                    let _new = places.insert(cell.clone(), Place(redundant.len()));
-                    redundant.push((cell.clone(), partner));
-                }
-            },
-            Class::Collapsible(partner) => {
-                if standing(theory, &partner)? == Standing::Improper {
-                    out.improper.0 = out.improper.0.saturating_add(1);
-                }
-                match scheme.classify(theory, &partner)? {
-                    Class::Redundant(ref back) if back == cell => {},
-                    Class::Essential | Class::Redundant(_) | Class::Collapsible(_) => {
-                        out.unpaired.0 = out.unpaired.0.saturating_add(1);
-                    },
-                }
-            },
-        }
-    }
-    let mut edges: Vec<Vec<Place>> = Vec::new();
-    let mut fresh: Vec<(Cell, Cell)> = Vec::new();
-    while edges.len() < redundant.len() {
-        if redundant.len() > CLOSURE {
-            return None;
-        }
-        let mut targets = Vec::new();
-        let &(ref cell, ref partner) = redundant.get(edges.len())?;
-        if standing(theory, partner)? == Standing::Improper {
-            out.improper.0 = out.improper.0.saturating_add(1);
-        }
-        match scheme.classify(theory, partner)? {
-            Class::Collapsible(ref back) if back == cell => {},
-            Class::Essential | Class::Redundant(_) | Class::Collapsible(_) => {
-                out.unpaired.0 = out.unpaired.0.saturating_add(1);
-            },
-        }
-        let chain = boundary(theory, partner)?;
-        if !matches!(chain.get(cell), Some(coefficient) if coefficient.0.abs() == 1) {
-            out.coefficients.0 = out.coefficients.0.saturating_add(1);
-        }
-        for face in chain.into_keys() {
-            if face == *cell || face.0.is_empty() {
-                continue;
-            }
-            let Class::Redundant(beyond) = scheme.classify(theory, &face)?
-            else {
-                continue;
-            };
-            match places.get(&face) {
-                Some(&place) => targets.push(place),
-                None => fresh.push((face, beyond)),
-            }
-        }
-        while let Some((face, beyond)) = fresh.pop() {
-            let place = Place(redundant.len());
-            if let Some(&held) = places.get(&face) {
-                targets.push(held);
-                continue;
-            }
-            let _new = places.insert(face.clone(), place);
-            redundant.push((face, beyond));
-            targets.push(place);
-        }
-        edges.push(targets);
-    }
-    out.visited = Count(redundant.len());
-    out.cycles = cycles(&edges);
-    Some(out)
-}
-
-/// The edges of the graph `edges` that close a cycle, by a depth-first walk
-/// from each node.
-///
-/// # Specification
-/// trivial.
-fn cycles(edges: &[Vec<Place>]) -> Count
-{
-    let mut marks = vec![Mark::Unseen; edges.len()];
-    let mut found = 0_usize;
-    let mut stack: Vec<(Place, Count)> = Vec::new();
-    for start in 0 .. edges.len() {
-        if marks.get(start) != Some(&Mark::Unseen) {
-            continue;
-        }
-        if let Some(mark) = marks.get_mut(start) {
-            *mark = Mark::Open;
-        }
-        stack.push((Place(start), Count(0)));
-        while let Some(&mut (node, ref mut child)) = stack.last_mut() {
-            let Some(&target) = edges.get(node.0).and_then(|targets| targets.get(child.0))
-            else {
-                if let Some(mark) = marks.get_mut(node.0) {
-                    *mark = Mark::Done;
-                }
-                let _left = stack.pop();
-                continue;
-            };
-            child.0 = child.0.saturating_add(1);
-            match marks.get(target.0).copied() {
-                Some(Mark::Open) => found = found.saturating_add(1),
-                Some(Mark::Unseen) => {
-                    if let Some(mark) = marks.get_mut(target.0) {
-                        *mark = Mark::Open;
-                    }
-                    stack.push((target, Count(0)));
-                },
-                Some(Mark::Done) | None => {},
-            }
-        }
-    }
-    Count(found)
+    let mut bar = Bar {
+        theory,
+        scheme: Scheme::default(),
+    };
+    let done = gandr_theory_discrete_morse::collapse(
+        &mut bar,
+        truncation.cells.iter().skip(1).flatten(),
+        Budget::from(CLOSURE),
+    )
+    .ok()?;
+    Some(done.faults())
 }
 
 /// The degrees the probe classifies: one to three, the rules' overlaps in the
@@ -924,7 +843,7 @@ fn essential(theory: &mut Theory) -> Option<Vec<Vec<Cell>>>
                 let mut arrows = cell.0.clone();
                 arrows.push(arrow);
                 let candidate = Cell(arrows);
-                if scheme.classify(theory, &candidate)? == Class::Essential {
+                if scheme.classify(theory, &candidate)? == Class::Critical {
                     found.push(candidate);
                 }
             }
@@ -1011,14 +930,10 @@ impl Collapse
     fn verdict(&self) -> Verdict
     {
         let none = Count(0);
-        let clean = Faults {
-            visited: self.faults.visited,
-            ..Faults::default()
-        };
         if self.rules == (none, none)
             && self.pairs == (none, none)
             && self.frames == none
-            && self.faults == clean
+            && self.faults == Faults::default()
         {
             Verdict::Holds
         }
@@ -1322,7 +1237,7 @@ fn the_cells_of_nat_units_collapse_by_hand_onto_its_operations_rules_and_pairs()
     };
     let cell = |arrows: &[Arrow]| Cell(arrows.to_vec());
     let classes = [
-        (cell(&[arrow(0, &[nought])]), Class::Essential),
+        (cell(&[arrow(0, &[nought])]), Class::Critical),
         (
             cell(&[arrow(1, &[nought])]),
             Class::Redundant(cell(&[arrow(0, &[nought]), arrow(1, &[])])),

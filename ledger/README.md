@@ -61,7 +61,7 @@ gandr reads every object it checks as a presented space: a finite set of cells, 
 | --------- | ------------ | ------------------------- |
 | present | writes the cells and their faces | `theory-computads`, `theory-circuit-algebras`, `theory-sites`, `theory-shapes` |
 | glue | checks each piece alone, checks agreement where pieces overlap, and assembles the pieces once | `kernel-core`, `core-incremental`, `storage-store`, `theory-cellular-sheaves` |
-| collapse | keeps the critical cells and the pairing of the cells that cancel | none by name: `theory-coherent-resolutions` keeps critical pairs, and `core-nbe` keeps normal forms |
+| collapse | keeps the critical cells and the pairing of the cells that cancel | `theory-discrete-morse`, `theory-coherent-resolutions`, `core-nbe` |
 | measure | gives each cell a value in an algebra and propagates the value | `theory-ordered-algebras`, `theory-dynamic-graphs`, `core-term` |
 | replay | checks the evidence that the other four operations emit | `kernel-core` |
 
@@ -71,7 +71,7 @@ Two crate families present a space. The cell family presents a space by its cell
 
 | Family | Presents a space by | Crates |
 | ------ | ------------------- | ------ |
-| cell | its cells and their faces | `theory-graded-posets`, `theory-cellular-sheaves` |
+| cell | its cells and their faces | `theory-graded-posets`, `theory-cellular-sheaves`, `theory-discrete-morse` |
 | algebra | its algebra of observations | `theory-stone-duality`, `theory-ordered-algebras`, `theory-exact-reals` |
 
 Each crate above has one place in the frame.
@@ -87,6 +87,7 @@ Each crate above has one place in the frame.
 | `theory-circuit-algebras` | present: circuit wirings |
 | `theory-coherent-resolutions` | collapse: critical pairs |
 | `theory-computads` | present: descriptions elaborated into cells |
+| `theory-discrete-morse` | the cell family's collapse: acyclic matchings, their check and their critical cells |
 | `theory-dynamic-graphs` | measure: the tropical potentials of universe levels |
 | `theory-exact-reals` | the algebra family's exact reals |
 | `theory-graded-posets` | the cell family's present: a finite poset with its cells as data, and its lattice of subcomplexes |
