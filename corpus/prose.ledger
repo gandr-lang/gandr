@@ -394,7 +394,8 @@ corpus/ledger/features/equivalence-record.gandr STE-6.3 cddc23563fe4b893
 corpus/ledger/features/equivalence-record.gandr STE-6.3 eaa5b5bf0bf1934e
 corpus/ledger/features/equivalence-record.gandr STE-6.3 f7cfcf79448cf4f4
 corpus/ledger/features/equivalence-record.gandr STE-8.1 95a70f9d4050a08d
-corpus/ledger/features/extension-types.gandr STE-3.2 043c5c7621adf166
+corpus/ledger/features/extension-types.gandr STE-3.2 99ba3d315e3a6d38
+corpus/ledger/features/extension-types.gandr STE-3.2 fe95274ea2f7a77a
 corpus/ledger/features/extension-types.gandr STE-6.3 581ab6e1b1d2a477
 corpus/ledger/features/extension-types.gandr STE-6.3 89baa33f715bd679
 corpus/ledger/features/extension-types.gandr STE-6.3 b717721f7c37295b
@@ -2119,7 +2120,6 @@ corpus/model/effects/tree.gandr STE-6.3 2e9bbe54fb2a9dee
 corpus/model/effects/tree.gandr STE-6.3 61ac953e8f7460c4
 corpus/model/effects/tree.gandr STE-6.3 b4162d247d7b5e9e
 corpus/model/effects/tree.gandr STE-6.4 7ffeb0f63edb2700
-
 corpus/model/holes/pattern-hole-arms.gandr STE-3.6 767728ef79c61815
 corpus/model/holes/pattern-hole-arms.gandr STE-3.6 c870dbc6060935b2
 corpus/model/holes/pattern-hole-arms.gandr STE-3.5 c870dbc6060935b2

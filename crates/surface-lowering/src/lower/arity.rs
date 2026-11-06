@@ -187,6 +187,7 @@ use super::native::Answer;
 use super::native::Holds;
 use super::native::answered;
 use super::stretch;
+use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -219,10 +220,10 @@ mod tests;
 ///
 /// # Specification
 /// trivial.
-pub(super) const fn clause_body(clause: NodeIndex) -> Block
+pub(super) fn clause_body(clause: NodeIndex) -> Block
 {
     Block {
-        statements: Stretch { start: 0, end: 0 },
+        statements: FormStretch::default(),
         last: clause,
     }
 }
@@ -767,7 +768,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Read the entries of a type list up to `closer`: each a bare type, or
-    /// `k : T` whose key is a bare word, lowercase or named as a type is.
+    /// `k : T` whose key is a bare word, lowercase or named as a type is. A
+    /// builtin type's lowercase name, `f32`, is such a word.
     /// Several words before one `:` share its type, `m n : T`, and give one
     /// entry each, in written order.
     ///
@@ -788,10 +790,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — empty, positional and labelled lists, with and
     ///   without a trailing comma, a dependent arrow whose binder is named as a
-    ///   type is, and words that share one type, the type an earlier entry
-    ///   binds included.
+    ///   type is, keys that are builtin types' lowercase names, and words that
+    ///   share one type, the type an earlier entry binds included.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_dependent_arrow_binds_a_type_named_binder_2179`
+    /// - witness: `lower::arity::tests::a_builtin_type_s_lowercase_name_is_a_key_5561`
     /// - witness: `lower::arity::tests::names_that_share_a_type_are_their_entries_written_apart_4853`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
     pub(super) fn type_entries(
@@ -847,9 +850,17 @@ impl<'source> Lowerer<'_, 'source>
                 let mut key = first;
                 loop {
                     match self.form_at(key)? {
+                        // A builtin type's lowercase name, `f32`, is a word
+                        // here, as it is where a parameter or a value's label
+                        // is read.
                         Some((name, _))
                             if name == FormName::TYPE_VARIABLE
-                                || name == FormName::TYPE_IDENTIFIER =>
+                                || name == FormName::TYPE_IDENTIFIER
+                                || (name == FormName::PRIMITIVE_TYPE
+                                    && self
+                                        .text_at(key)
+                                        .as_ref()
+                                        .starts_with(|first: char| first.is_ascii_lowercase())) =>
                         {
                             entries.push(Entry {
                                 key: Key::Label(self.name_at(key), key),
@@ -1340,10 +1351,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(untyped);
         };
-        let parameters = function
-            .parameters
-            .end
-            .saturating_sub(function.parameters.start);
+        let parameters = self.parameters.read(function.parameters).len();
         let (Maybe::Present(result), true) = (function.result, parameters == arguments.len())
         else {
             return Ok(untyped);
@@ -1778,7 +1786,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 let links = self.named_later(&entries)?;
                 let mut fields = BTreeMap::new();
-                let start = self.parameters.len();
+                let start = self.parameters.mark();
                 let mut inner = frame;
                 for (entry, &Dependent(linked)) in binding.iter().zip(&links) {
                     let Key::Label(name, key) = entry.key
@@ -1820,10 +1828,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 Plan::RecordType(
                     fields,
-                    Stretch {
-                        start,
-                        end: self.parameters.len(),
-                    },
+                    self.parameters.since(start),
                     declared.node,
                     labelled,
                 )
@@ -3852,13 +3857,13 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Planned(false));
         }
         let mut seen: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
-        let start = self.parameters.len();
+        let start = self.parameters.mark();
         let mut inner = frame;
         for entry in &entries {
             let declared = entry.held.at();
             // Names that share a type, `x y : a`, read it once, under the
             // first name's frame; the mint lifts it past the names between.
-            let shared = self.parameters.len() > start
+            let shared = self.parameters.mark() > start
                 && self
                     .parameters
                     .last()
@@ -3901,13 +3906,7 @@ impl<'source> Lowerer<'_, 'source>
         self.read(codomain.node, output);
         self.plan(
             site,
-            Plan::Telescope(
-                Stretch {
-                    start,
-                    end: self.parameters.len(),
-                },
-                codomain.node,
-            ),
+            Plan::Telescope(self.parameters.since(start), codomain.node),
         );
 
         Ok(Planned(true))
@@ -3980,7 +3979,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let _frame = self.require(site, Produced::CompType)?;
         let mut seen: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
-        let start = self.parameters.len();
+        let start = self.parameters.mark();
         let mut inner = frame;
         for entry in &entries {
             let declared = entry.held.at();
@@ -4016,13 +4015,7 @@ impl<'source> Lowerer<'_, 'source>
             });
             inner = Frame::Inner(extended);
         }
-        self.plan(
-            site,
-            Plan::Returns(Stretch {
-                start,
-                end: self.parameters.len(),
-            }),
-        );
+        self.plan(site, Plan::Returns(self.parameters.since(start)));
 
         Ok(Planned(true))
     }
@@ -5003,7 +4996,7 @@ impl<'source> Lowerer<'_, 'source>
         let extended =
             self.scope
                 .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
-        let start = self.parameters.len();
+        let start = self.parameters.mark();
         self.parameters.push(Parameter {
             binder: key.node,
             frame: extended,
@@ -5013,13 +5006,7 @@ impl<'source> Lowerer<'_, 'source>
         self.read(codomain.node, Reading::CompType(Frame::Inner(extended)));
         self.plan(
             site,
-            Plan::DependentArrow(
-                Stretch {
-                    start,
-                    end: self.parameters.len(),
-                },
-                codomain.node,
-            ),
+            Plan::DependentArrow(self.parameters.since(start), codomain.node),
         );
 
         Ok(Planned(true))
@@ -5054,7 +5041,7 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn mint_labelled_type(
         &self,
         fields: &BTreeMap<FieldLabel, NodeIndex>,
-        binders: Stretch,
+        binders: FormStretch,
         (last, labelled): (NodeIndex, Option<NodeIndex>),
         sink: &mut Sink<'_>,
         origin: Origin,
@@ -5063,7 +5050,7 @@ impl<'source> Lowerer<'_, 'source>
         if !bool::from(self.binds_any(binders, last)) {
             return self.mint_record_type(fields, sink, origin);
         }
-        let written = stretch(&self.parameters, binders);
+        let written = self.parameters.read(binders);
         let mut nested = match self.value_type_at(last) {
             Maybe::Present(nested) => nested,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -5671,14 +5658,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_labelled_type`].
     /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
-    #[spec(ensures: |ret| bool::from(ret) == stretch(&self.parameters, binders).iter().any(|parameter| bool::from(self.names_own_binder(last, parameter.frame))))]
+    #[spec(ensures: |ret| !bool::from(ret) || !self.parameters.read(binders).is_empty())]
     fn binds_any(
         &self,
-        binders: Stretch,
+        binders: FormStretch,
         last: NodeIndex,
     ) -> Mentioned
     {
-        stretch(&self.parameters, binders)
+        self.parameters
+            .read(binders)
             .iter()
             .map(|parameter| self.names_own_binder(last, parameter.frame))
             .find(|&mentioned| bool::from(mentioned))
@@ -5704,13 +5692,13 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     pub(super) fn mint_telescope(
         &self,
-        entries: Stretch,
+        entries: FormStretch,
         codomain: NodeIndex,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.parameters, entries);
+        let written = self.parameters.read(entries);
         let mut domains: Vec<ValueTypeId> = Vec::with_capacity(written.len());
         for (index, parameter) in written.iter().enumerate() {
             let Maybe::Present(declared) = parameter.declared
@@ -5771,7 +5759,7 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
     pub(super) fn mint_dependent_arrow(
         &self,
-        entries: Stretch,
+        entries: FormStretch,
         codomain: NodeIndex,
         sink: &mut Sink<'_>,
         origin: Origin,
@@ -5782,7 +5770,7 @@ impl<'source> Lowerer<'_, 'source>
             frame,
             binder,
             ..
-        }) = stretch(&self.parameters, entries).first()
+        }) = self.parameters.read(entries).first()
         else {
             return Maybe::Absent(lowered::Absent::Unstated);
         };
@@ -5826,13 +5814,13 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
     pub(super) fn mint_returns(
         &self,
-        entries: Stretch,
+        entries: FormStretch,
         effects: gandr_core_term::effect::EffectRow,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.parameters, entries);
+        let written = self.parameters.read(entries);
         let mut results: Vec<ValueTypeId> = Vec::with_capacity(written.len());
         for parameter in written {
             let Maybe::Present(declared) = parameter.declared

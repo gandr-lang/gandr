@@ -1036,8 +1036,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(
-        captures: before = self.parameters.len(),
-        ensures: |ret| ret.is_err() || self.parameters.len() == before.saturating_add(1),
+        captures: before = self.parameters.mark(),
+        ensures: |ret| ret.is_err() || self.parameters.mark() == before.next(),
     )]
     pub(super) fn instance_parameter(
         &mut self,

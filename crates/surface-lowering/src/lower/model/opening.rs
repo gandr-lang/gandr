@@ -71,8 +71,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::model::opening::tests::a_model_opens_as_a_bind_over_the_rest_of_its_block_4788`
     /// - witness: `lower::model::opening::tests::a_value_at_no_model_type_is_refused_4788`
     #[spec(
-        captures: before = self.statements.len(),
-        ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1_usize)
+        captures: before = self.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
             && self.statements.last().is_some_and(|last| last.origin == lead.node && matches!(last.binding, StatementBinding::Opening { .. }))),
     )]
     pub(in crate::lower) fn module_statement(

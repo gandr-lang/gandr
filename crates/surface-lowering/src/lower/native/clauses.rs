@@ -32,7 +32,6 @@ use super::Roots;
 use super::Row;
 use super::Scrutiny;
 use super::Site;
-use super::Stretch;
 use super::Test;
 use super::Written;
 use super::answered;
@@ -41,6 +40,7 @@ use super::exhausted;
 use super::passed;
 use super::recursion;
 use super::stuck;
+use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -86,7 +86,7 @@ pub(in crate::lower) struct Columns
     /// The result, `C`.
     pub result: NodeIndex,
     /// The parameters the columns bind, in the lowerer's parameter store.
-    pub parameters: Stretch,
+    pub parameters: FormStretch,
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -117,10 +117,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
     /// - witness: `lower::tests::a_box_passes_a_lambda_applies_states_a_motive_and_matches_its_columns_4853`
     #[spec(
-        captures: before = self.parameters.len(),
-        ensures: |ret| ret.as_ref().map_or(true, |columns| columns.parameters.start == before
-            && columns.parameters.end == self.parameters.len()
-            && columns.domains.len() == self.parameters.len().saturating_sub(before)),
+        captures: before = self.parameters.mark(),
+        ensures: |ret| ret.as_ref().map_or(true, |columns| columns.parameters == self.parameters.since(before)
+            && columns.domains.len() == self.parameters.read(columns.parameters).len()),
     )]
     pub(in crate::lower) fn columns(
         &mut self,
@@ -151,7 +150,7 @@ impl<'source> Lowerer<'_, 'source>
             listed?;
             result = codomain.node;
         }
-        let start = self.parameters.len();
+        let start = self.parameters.mark();
         let mut chained = frame;
         for &domain in &domains {
             self.read(domain, Reading::ValueType(frame));
@@ -175,10 +174,7 @@ impl<'source> Lowerer<'_, 'source>
             stated: stated.node,
             domains,
             result,
-            parameters: Stretch {
-                start,
-                end: self.parameters.len(),
-            },
+            parameters: self.parameters.since(start),
         })
     }
 
@@ -208,8 +204,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
     /// - witness: `lower::native::tests::a_clause_of_too_many_patterns_is_refused`
     #[spec(
-        captures: before = self.cases.len(),
-        ensures: |ret| ret.as_ref().map_or(true, |&index| index == CaseIndex(before) && self.cases.len() == before.saturating_add(1)),
+        captures: before = self.cases.mark(),
+        ensures: |ret| ret.as_ref().map_or(true, |&index| self.cases.position(index) == Some(before) && self.cases.mark() == before.next()),
     )]
     pub(in crate::lower) fn clauses(
         &mut self,
@@ -226,10 +222,15 @@ impl<'source> Lowerer<'_, 'source>
                 self.recursions
                     .get(&own)
                     .map_or(Maybe::Absent(recursion::Absent::Plain), |held| {
-                        let first = columns
-                            .parameters
-                            .start
-                            .saturating_sub(held.parameters.start);
+                        let first = match (
+                            self.parameters.first(columns.parameters),
+                            self.parameters.first(held.parameters),
+                        ) {
+                            (Some(columns), Some(all)) => {
+                                usize::from(columns).saturating_sub(usize::from(all))
+                            },
+                            _ => self.parameters.read(held.parameters).len(),
+                        };
                         Maybe::Present((own, ParameterAt(first)))
                     })
             },
@@ -410,8 +411,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::clauses_match_one_column_per_arrow`
     /// - witness: `lower::native::tests::a_guard_reads_its_clause_s_variables`
     #[spec(
-        captures: before = self.cases.len(),
-        ensures: |ret| ret.as_ref().map_or(true, |&index| index == CaseIndex(before) && self.cases.len() == before.saturating_add(1)),
+        captures: before = self.cases.mark(),
+        ensures: |ret| ret.as_ref().map_or(true, |&index| self.cases.position(index) == Some(before) && self.cases.mark() == before.next()),
     )]
     fn clause_tree(
         &mut self,
@@ -576,17 +577,13 @@ impl<'source> Lowerer<'_, 'source>
                 let _first = self.scrutinised.insert(body, scrutiny);
             }
             let end = super::super::Block {
-                statements: Stretch {
-                    start: self.statements.len(),
-                    end: self.statements.len(),
-                },
+                statements: FormStretch::default(),
                 last: body,
             };
             self.open_body(site, end, shape.answer)?;
             bodies.push(body);
         }
-        let index = CaseIndex(self.cases.len());
-        self.cases.push(CaseForm {
+        let index = self.cases.push(CaseForm {
             scrutinee: shape.scrutinee,
             roots: shape.roots,
             frame,

@@ -435,6 +435,8 @@ use super::lowered;
 use super::parse_literal;
 use super::recursion;
 use super::stretch;
+use crate::by_form::FormPlace;
+use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -742,22 +744,56 @@ struct ArmAt(usize);
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct VariableAt(usize);
 
-/// A match, by its position in the lowering's match store.
+/// A match, by its form and its place among the form's matches in the
+/// lowering's match store.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct CaseIndex(usize);
+pub(super) struct CaseIndex(FormPlace);
 
-/// A match's constructor arm, by its position in the lowering's store of the
-/// arms an answer is passed into.
+/// A match's constructor arm, by its form and its place among the form's
+/// arms in the lowering's store of the arms an answer is passed into.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct ArmIndex(usize);
+pub(super) struct ArmIndex(FormPlace);
 
-/// A field read off a data value by name, by its position in the lowering's
-/// store of them.
+/// A field read off a data value by name, by its form and its place among
+/// the form's fields in the lowering's store of them.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct ProjectedIndex(usize);
+pub(super) struct ProjectedIndex(FormPlace);
+
+/// Read a store coordinate as each index of a flat store, and back.
+macro_rules! form_keyed {
+    ($($index:ident),* $(,)?) => {$(
+        impl From<FormPlace> for $index
+        {
+            /// Read a store coordinate as the index.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(at: FormPlace) -> Self
+            {
+                Self(at)
+            }
+        }
+
+        impl From<$index> for FormPlace
+        {
+            /// Read the index as its store coordinate.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(index: $index) -> Self
+            {
+                index.0
+            }
+        }
+    )*};
+}
+
+form_keyed!(CaseIndex, ArmIndex, ProjectedIndex);
 
 /// Whether a written type spells one of the names a constructor binds before
 /// the field it types.
@@ -885,10 +921,10 @@ pub(super) struct Staging
 pub(super) struct Recursion
 {
     /// Every parameter, in the lowerer's parameter store.
-    pub parameters: Stretch,
+    pub parameters: FormStretch,
     /// The parameters before the fixpoint, in the lowerer's parameter store:
     /// the ones every recursive call passes unchanged.
-    pub uniform: Stretch,
+    pub uniform: FormStretch,
     /// The parameter the fixpoint stages, counted from the function's first:
     /// at or past the uniform ones.
     pub staged: ParameterAt,
@@ -5565,8 +5601,7 @@ impl<'source> Lowerer<'_, 'source>
                     },
                     Maybe::Absent(reason) => Maybe::Absent(reason),
                 };
-                let at = ArmIndex(self.arms.len());
-                self.arms.push(ArmReading {
+                let at = self.arms.push(ArmReading {
                     settled,
                     outer: stated.arm,
                 });
@@ -5594,8 +5629,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             self.pass_paths(site.at.node, arm.body);
         }
-        let index = CaseIndex(self.cases.len());
-        self.cases.push(CaseForm {
+        let index = self.cases.push(CaseForm {
             scrutinee: scrutinee.node,
             roots: Roots::Scrutinee,
             frame,
@@ -5691,7 +5725,6 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(node) = written {
             self.read(node.node, Reading::Result(frame));
         }
-        let index = CaseIndex(self.cases.len());
         let empty = Test::Data {
             level: TreeLevel::default(),
             depth: Depth::default(),
@@ -5704,7 +5737,7 @@ impl<'source> Lowerer<'_, 'source>
             branches: Vec::new(),
         };
         let cover = covered(core::slice::from_ref(&empty), &[]);
-        self.cases.push(CaseForm {
+        let index = self.cases.push(CaseForm {
             scrutinee: scrutinee.node,
             roots: Roots::Scrutinee,
             frame,
@@ -6022,8 +6055,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let frame = self.require(site, Produced::Computation)?;
         self.read(target.node, Reading::Value(frame));
-        let index = ProjectedIndex(self.projected.len());
-        self.projected.push(Projected {
+        let index = self.projected.push(Projected {
             subject: target.node,
             frame,
             family: constant,
@@ -6377,7 +6409,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a match two arms deep reads the answer at both arms'
     ///   constructors.
     /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
-    #[spec(ensures: |ret| ret.len() <= self.arms.len())]
+    #[spec(ensures: |ret| ret.len() <= self.arms.entries().len())]
     fn arms_outward(
         &self,
         arm: Maybe<ArmIndex, passed::Absent>,
@@ -6385,13 +6417,14 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut chain = Vec::new();
         let mut next = arm;
-        let mut bound = self.arms.len();
-        while let Maybe::Present(ArmIndex(at)) = next
-            && at < bound
+        let mut bound = self.arms.mark();
+        while let Maybe::Present(at) = next
+            && let Some(position) = self.arms.position(at)
+            && position < bound
             && let Some(reading) = self.arms.get(at)
         {
             chain.push(reading);
-            bound = at;
+            bound = position;
             next = reading.outer;
         }
         chain
@@ -11538,7 +11571,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let Some(form) = self.projected.get(projected.0)
+        let Some(form) = self.projected.get(projected)
         else {
             return unminted;
         };
@@ -11855,7 +11888,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let Some(form) = self.cases.get(case.0)
+        let Some(form) = self.cases.get(case)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
@@ -14792,7 +14825,7 @@ impl<'source> Lowerer<'_, 'source>
                 // first, then the parameters after it: a member that passes a
                 // leading parameter, or stages a later one, needs a joint over
                 // a telescope (#5065).
-                if !stretch(&self.parameters, recursion.uniform).is_empty()
+                if !self.parameters.read(recursion.uniform).is_empty()
                     || recursion.staged != ParameterAt(0)
                 {
                     return Err(descent
@@ -14966,7 +14999,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   observe each refusal.
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
-    #[spec(ensures: |ret| ret.is_err() || stretch(&self.operands, arguments).len() == stretch(&self.parameters, recursion.parameters).len())]
+    #[spec(ensures: |ret| ret.is_err() || stretch(&self.operands, arguments).len() == self.parameters.read(recursion.parameters).len())]
     fn uniform_descent(
         &mut self,
         frame: Frame,
@@ -14975,10 +15008,10 @@ impl<'source> Lowerer<'_, 'source>
         arguments: Stretch,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let uniform = stretch(&self.parameters, recursion.uniform);
+        let uniform = self.parameters.read(recursion.uniform);
         let first = arguments.start;
         let arguments = stretch(&self.operands, arguments);
-        if arguments.len() != stretch(&self.parameters, recursion.parameters).len() {
+        if arguments.len() != self.parameters.read(recursion.parameters).len() {
             return Err(call.out(FragmentBoundary::Arity(OperandCount::from(arguments.len()))));
         }
         let mut passed_names = Vec::with_capacity(uniform.len());
@@ -15578,7 +15611,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a call over a uniform leading parameter applies its
     ///   later arguments alone.
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |leading| leading.0 <= self.parameters.len()))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |leading| leading.0 <= self.parameters.entries().len()))]
     pub(super) fn leading_parameters(
         &mut self,
         frame: Frame,
@@ -15588,9 +15621,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok(ParameterAt(
             self.instantiated_recursion(frame, head)?
                 .and_then(|binder| self.recursions.get(&binder))
-                .map_or(0, |recursion| {
-                    stretch(&self.parameters, recursion.uniform).len()
-                }),
+                .map_or(0, |recursion| self.parameters.read(recursion.uniform).len()),
         ))
     }
 
@@ -15674,7 +15705,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         // The parameters before the fixpoint, which the call leaves out of
         // its application.
-        let kept = stretch(&self.parameters, recursion.uniform).len();
+        let kept = self.parameters.read(recursion.uniform).len();
         let arguments = self.operands.split_off(written.start);
         let mut arguments = arguments.into_iter();
         let mut place = 0_usize;
@@ -15808,7 +15839,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(());
         };
-        let parameters = stretch(&self.parameters, held.parameters);
+        let parameters = self.parameters.read(held.parameters);
         let staged = held.staged;
         let claimed = match self.scrutinised.get(&site.at.node) {
             Some(scrutiny) if scrutiny.recursion == recursion => scrutiny.position,
@@ -16000,7 +16031,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Some(held) = self.recursions.get_mut(&bound.binder) {
             held.claimed = Claimed(true);
         }
-        let leading = stretch(&self.parameters, recursion.uniform).len();
+        let leading = self.parameters.read(recursion.uniform).len();
         let applied = Stretch {
             start: written.start.saturating_add(leading).min(written.end),
             end: written.end,
@@ -16044,7 +16075,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
     #[spec(ensures: |ret| match function.recursion {
         | Maybe::Present(frame) => ret == Maybe::Present(match self.recursions.get(&frame) {
-            Some(held) if held.claimed.0 => match held.staged.0.saturating_sub(stretch(&self.parameters, held.uniform).len()) {
+            Some(held) if held.claimed.0 => match held.staged.0.saturating_sub(self.parameters.read(held.uniform).len()) {
                 0 => FixpointEvidence::StructuralDescent,
                 position => FixpointEvidence::Staged { position: StagedPosition::from(position) },
             },
@@ -16060,7 +16091,7 @@ impl<'source> Lowerer<'_, 'source>
         match function.recursion {
             Maybe::Present(frame) => Maybe::Present(match self.recursions.get(&frame) {
                 Some(held) if held.claimed.0 => {
-                    let kept = stretch(&self.parameters, held.uniform).len();
+                    let kept = self.parameters.read(held.uniform).len();
                     match held.staged.0.saturating_sub(kept) {
                         0 => FixpointEvidence::StructuralDescent,
                         position => FixpointEvidence::Staged {
@@ -16184,7 +16215,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let parameters = self.recursions.iter().find_map(|(&binder, recursion)| {
                 (self.scope.declared(binder) == Maybe::Present(declaration.node))
-                    .then(|| stretch(&self.parameters, recursion.parameters).len())
+                    .then(|| self.parameters.read(recursion.parameters).len())
             });
             if parameters.is_some_and(|count| OperandCount::from(count) != held.arguments) {
                 let _held = self
@@ -16318,7 +16349,7 @@ impl<'source> Lowerer<'_, 'source>
         // the frame the declaration form types, says which it stages.
         let staged_first = self.recursions.iter().any(|(&binder, recursion)| {
             self.scope.declared(binder) == Maybe::Present(declaration.node)
-                && !stretch(&self.parameters, recursion.parameters).is_empty()
+                && !self.parameters.read(recursion.parameters).is_empty()
                 && recursion.staged == ParameterAt(0)
         });
         if !staged_first {

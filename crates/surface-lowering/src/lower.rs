@@ -595,6 +595,9 @@ use crate::attribute::names;
 use crate::attribute::payload;
 use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
+use crate::by_form::At;
+use crate::by_form::ByForm;
+use crate::by_form::FormStretch;
 use crate::classify::FailureClass;
 use crate::coincide::Decisions;
 use crate::doc::Documentation;
@@ -2023,7 +2026,7 @@ struct Statement
 struct Block
 {
     /// The block's statements, in the lowerer's statement store.
-    statements: Stretch,
+    statements: FormStretch,
     /// The computation the block ends with.
     last: NodeIndex,
 }
@@ -2521,7 +2524,7 @@ impl Resolved
 struct Function
 {
     /// The parameters, in the lowerer's parameter store.
-    parameters: Stretch,
+    parameters: FormStretch,
     /// The result type, when the source wrote one.
     result: Maybe<NodeIndex, stated::Absent>,
     /// The body.
@@ -2533,7 +2536,7 @@ struct Function
     receiver: Maybe<method::HeldReceiver, method::unheld::Absent>,
     /// The parameters at a session type its body places, in the lowerer's
     /// endpoint store.
-    endpoints: Stretch,
+    endpoints: FormStretch,
 }
 
 /// A function tail's body: a block, or the decision tree its clauses compile
@@ -2572,9 +2575,9 @@ enum Body
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct OwnName
 {
-    /// The name's tile, the tail's staging and the parameter store's length
+    /// The name's tile, the tail's staging and the parameter store's mark
     /// before the tail's first parameter, until the name binds.
-    pending: Option<(Placed, native::Staging, usize)>,
+    pending: Option<(Placed, native::Staging, At)>,
     /// The frame binding the name, once it binds.
     bound: Maybe<ScopeId, recursion::Absent>,
 }
@@ -2638,7 +2641,7 @@ enum Plan
     /// An interpolated string: the segments in the lowerer's segment store,
     /// each appended after the ones before it by the prelude's
     /// `string.append`.
-    Interpolated(gandr_core_term::primitive::Primitive, Stretch),
+    Interpolated(gandr_core_term::primitive::Primitive, FormStretch),
     /// A boolean literal: the unit injected into the side of `Bool` it names,
     /// `true` the left.
     Boolean(gandr_kernel_term::Side),
@@ -2707,7 +2710,7 @@ enum Plan
     /// earlier label, the dependent pairs nested to the right otherwise.
     RecordType(
         BTreeMap<FieldLabel, NodeIndex>,
-        Stretch,
+        FormStretch,
         NodeIndex,
         Option<NodeIndex>,
     ),
@@ -2763,14 +2766,14 @@ enum Plan
     /// The thunked telescope from the entries in the lowerer's parameter
     /// store, each binding the ones after it, to the returner of the
     /// codomain.
-    Telescope(Stretch, NodeIndex),
+    Telescope(FormStretch, NodeIndex),
     /// A dependent arrow `(x : A) -> C`: its one binder, in the parameter
     /// store, and its codomain.
-    DependentArrow(Stretch, NodeIndex),
+    DependentArrow(FormStretch, NodeIndex),
     /// A function's group of outputs read as its result, `(q : A, r : B)`:
     /// the returner of the entries in the lowerer's parameter store, each
     /// standing under the ones before it.
-    Returns(Stretch),
+    Returns(FormStretch),
     /// A tuple ending a body whose result is a group of outputs: the return
     /// of the members in the lowerer's operand store, one per output.
     ReturnAll(Stretch),
@@ -3479,11 +3482,11 @@ struct Lowerer<'run, 'source>
     operands: Vec<NodeIndex>,
     /// The segments every planned interpolated string reads, stretch by
     /// stretch.
-    segments: Vec<TextSegment>,
+    segments: ByForm<TextSegment>,
     /// The statements every planned block reads, stretch by stretch.
-    statements: Vec<Statement>,
+    statements: ByForm<Statement>,
     /// The parameters every planned function reads, stretch by stretch.
-    parameters: Vec<Parameter>,
+    parameters: ByForm<Parameter>,
     /// The binder frames the lambdas, the parameters and the statements
     /// extended.
     scope: Scope<'source>,
@@ -3691,7 +3694,7 @@ struct Lowerer<'run, 'source>
     held: BTreeSet<ScopeId>,
     /// The parameters at a session type each function body places, stretch
     /// by stretch.
-    endpoints: Vec<session::PlacedEndpoint>,
+    endpoints: ByForm<session::PlacedEndpoint>,
     /// The loops that thread held slots or endpoints, by the loop's node: each
     /// slot's linear index where the loop stands, its name and what it is,
     /// outermost first.
@@ -3761,12 +3764,12 @@ struct Lowerer<'run, 'source>
     /// returns the unit.
     trailing: BTreeSet<NodeIndex>,
     /// The matches, each compiled to its decision tree.
-    cases: Vec<native::CaseForm>,
+    cases: ByForm<native::CaseForm, native::CaseIndex>,
     /// Each constructor arm a match passed its answer into, with what the arm
     /// reads the match's scrutinee as.
-    arms: Vec<native::ArmReading>,
+    arms: ByForm<native::ArmReading, native::ArmIndex>,
     /// The fields read off data values by name, each the case returning it.
-    projected: Vec<native::Projected>,
+    projected: ByForm<native::Projected, native::ProjectedIndex>,
     /// The position each lowered data declaration's signature takes, by its
     /// position in the collection's data list.
     signatures: BTreeMap<usize, DataIndex>,
@@ -5587,16 +5590,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && ret.exported.is_empty()
                 && ret.witnessed.is_empty()
                 && ret.operands.is_empty()
-                && ret.statements.is_empty()
-                && ret.parameters.is_empty()
+                && ret.statements.entries().is_empty()
+                && ret.parameters.entries().is_empty()
                 && ret.classifiers.is_empty()
                 && ret.thunked.is_empty()
                 && ret.inherited.is_empty()
                 && ret.answers.is_empty()
                 && ret.in_type.is_empty()
                 && ret.at_endpoint.is_empty()
-                && ret.cases.is_empty()
-                && ret.arms.is_empty()
+                && ret.cases.entries().is_empty()
+                && ret.arms.entries().is_empty()
                 && ret.signatures.is_empty()
                 && ret.data.is_empty()
                 && ret.fuel == fuel
@@ -5644,9 +5647,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             faults: BTreeMap::new(),
             untranslated: BTreeSet::new(),
             operands: Vec::new(),
-            segments: Vec::new(),
-            statements: Vec::new(),
-            parameters: Vec::new(),
+            segments: ByForm::default(),
+            statements: ByForm::default(),
+            parameters: ByForm::default(),
             scope: Scope::new(),
             recognition,
             fuel,
@@ -5701,7 +5704,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             reentered: BTreeMap::new(),
             tested: BTreeSet::new(),
             held: BTreeSet::new(),
-            endpoints: Vec::new(),
+            endpoints: ByForm::default(),
             threading: BTreeMap::new(),
             reheld: BTreeMap::new(),
             carries: BTreeMap::new(),
@@ -5722,9 +5725,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             opened: BTreeMap::new(),
             stated_tails: BTreeSet::new(),
             trailing: BTreeSet::new(),
-            cases: Vec::new(),
-            arms: Vec::new(),
-            projected: Vec::new(),
+            cases: ByForm::default(),
+            arms: ByForm::default(),
+            projected: ByForm::default(),
             signatures: BTreeMap::new(),
             worded: BTreeMap::new(),
             termed: BTreeMap::new(),
@@ -6874,6 +6877,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
+    /// Push the binder frames and the flat stores' entries after this into
+    /// `form`, the layout block of the form whose node the lowering reads
+    /// now.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn enter(
+        &mut self,
+        form: LayoutBlock,
+    )
+    {
+        self.scope.enter(form);
+        self.segments.enter(form);
+        self.statements.enter(form);
+        self.parameters.enter(form);
+        self.endpoints.enter(form);
+        self.cases.enter(form);
+        self.arms.enter(form);
+        self.projected.enter(form);
+    }
+
     /// Hand `position`'s records to its children and classify it, offering a
     /// refusal to its declaration, its frames pushed into its form.
     ///
@@ -6905,7 +6929,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         position: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        self.scope.enter(self.form_of(position));
+        self.enter(self.form_of(position));
         self.inherit_owner(position);
         self.inherit_payload(position);
         self.inherit_scope(position);
@@ -10051,7 +10075,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Interpolation)));
         };
-        let start = self.segments.len();
+        let start = self.segments.mark();
         let mut run = String::new();
         for &piece in &pieces.pieces {
             match piece {
@@ -10074,10 +10098,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
             }
         }
-        let segments = Stretch {
-            start,
-            end: self.segments.len(),
-        };
+        let segments = self.segments.since(start);
 
         self.plan(site, Plan::Interpolated(append, segments));
 
@@ -10748,7 +10769,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(site.at.node), Some(&Plan::Thunk(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Thunk(Block { statements, .. })) if self.statements.whole(statements).is_some())
         },
     )]
     fn thunk(
@@ -10824,7 +10845,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(site.at.node), Some(&Plan::Lambda(Block { statements, .. }, _)) if statements.start <= statements.end && statements.end <= self.statements.len())
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Lambda(Block { statements, .. }, _)) if self.statements.whole(statements).is_some())
                 || matches!(self.plans.get(site.at.node), Some(&(Plan::Case(_) | Plan::StaticLambda(_))))
         },
     )]
@@ -11112,7 +11133,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             ret.is_err()
-                || matches!(self.plans.get(site.at.node), Some(&Plan::Block(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Block(Block { statements, .. })) if self.statements.whole(statements).is_some())
         },
     )]
     fn sequenced(
@@ -11190,7 +11211,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
     /// - witness: `lower::native::tests::a_parameterless_recursive_tail_binds_its_own_name_1499`
     #[spec(
-        captures: parameters = self.parameters.len(),
+        captures: parameters = self.parameters.mark(),
         ensures: |ret| {
             ret.is_err()
                 || self
@@ -11198,13 +11219,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .get(site.at.node)
                     .is_some_and(|plan| match *plan {
                         | Plan::Function(ref function) => {
-                            function.parameters.start == parameters
-                                && function.parameters.end == self.parameters.len()
+                            function.parameters == self.parameters.since(parameters)
                                 && match function.body {
-                                    | Body::Block(block) => {
-                                        block.statements.start <= block.statements.end
-                                            && block.statements.end <= self.statements.len()
-                                    },
+                                    | Body::Block(block) => self.statements.whole(block.statements).is_some(),
                                     | Body::Clauses(_) => true,
                                 }
                         },
@@ -11243,7 +11260,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let receiver = self.receiver_mode(site);
         self.stray_modes(&cursor, receiver)?;
-        let start = self.parameters.len();
+        let start = self.parameters.mark();
         // The mode variable a deduced receiver is written at, `self : m T`.
         let mut deduced: Option<SurfaceName<'source>> = None;
         // A recursive tail stages the parameter its body's matches take
@@ -11416,15 +11433,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(_) => None,
         };
         let recursion = own.bound;
-        let parameters = Stretch {
-            start,
-            end: self.parameters.len(),
-        };
+        let parameters = self.parameters.since(start);
         if let Maybe::Present(own) = recursion
             && let Some(held) = self.recursions.get_mut(&own)
         {
             held.parameters = parameters;
-            for (position, parameter) in stretch(&self.parameters, parameters).iter().enumerate() {
+            for (position, parameter) in self.parameters.read(parameters).iter().enumerate() {
                 let scrutiny = native::Scrutiny {
                     recursion: own,
                     position: native::ParameterAt(position),
@@ -11450,10 +11464,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     body: Body::Clauses(case),
                     recursion,
                     receiver: Maybe::Absent(method::unheld::Absent::NotWrittenThrough),
-                    endpoints: Stretch {
-                        start: self.endpoints.len(),
-                        end: self.endpoints.len(),
-                    },
+                    endpoints: FormStretch::default(),
                 }),
             );
             return Ok(());
@@ -11549,15 +11560,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| self.recursions.get(&ret).is_some_and(|held| held.uniform == uniform
             && held.staged == staged
-            && held.parameters.start == uniform.start
-            && held.parameters.end == uniform.start),
+            && held.parameters == FormStretch::default()),
     )]
     fn bind_own(
         &mut self,
         site: Site,
         own: Placed,
         frame: Frame,
-        uniform: Stretch,
+        uniform: FormStretch,
         staged: native::ParameterAt,
     ) -> ScopeId
     {
@@ -11567,10 +11577,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .scope
             .extend_typed(frame, name, site.at.node, Maybe::Present(own.span));
         let _first = self.recursions.insert(bound, native::Recursion {
-            parameters: Stretch {
-                start: uniform.start,
-                end: uniform.start,
-            },
+            parameters: FormStretch::default(),
             uniform,
             staged,
             claimed: native::Claimed(false),
@@ -11613,13 +11620,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return frame;
         };
-        if self.parameters.len().saturating_sub(start) != staging.kept.0 {
+        if usize::from(self.parameters.mark()).saturating_sub(usize::from(start)) != staging.kept.0
+        {
             return frame;
         }
-        let uniform = Stretch {
-            start,
-            end: self.parameters.len(),
-        };
+        let uniform = self.parameters.since(start);
         let bound = self.bind_own(site, named, frame, uniform, staging.staged);
         own.pending = None;
         own.bound = Maybe::Present(bound);
@@ -11668,13 +11673,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
     /// - witness: `lower::tests::a_block_like_statement_needs_no_semicolon`
     #[spec(
-        captures: before = (self.statements.len(), frame),
+        captures: before = (self.statements.mark(), frame),
         ensures: |ret| {
             ret.as_ref().map_or(true, |block| {
-                block.statements.start == before.0
-                    && block.statements.end == self.statements.len()
+                block.statements == self.statements.since(before.0)
                     && matches!(self.reading(block.last), Reading::Computation(_))
-                    && (block.statements.start != block.statements.end
+                    && (!self.statements.read(block.statements).is_empty()
                         || self.reading(block.last) == Reading::Computation(before.1))
                     && matches!(cursor.peek(), Maybe::Absent(_))
             })
@@ -11691,7 +11695,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
-        let start = self.statements.len();
+        let start = self.statements.mark();
         let mut frame = frame;
         loop {
             match cursor.peek() {
@@ -11725,10 +11729,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             let _rest = self.threads(site, written.node, (frame, frame))?;
                             self.read(written.node, Reading::Computation(frame));
                             return Ok(Block {
-                                statements: Stretch {
-                                    start,
-                                    end: self.statements.len(),
-                                },
+                                statements: self.statements.since(start),
                                 last: written.node,
                             });
                         }
@@ -11743,10 +11744,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let _rest = self.threads(site, last.node, (frame, frame))?;
                     self.read(last.node, Reading::Computation(frame));
                     return Ok(Block {
-                        statements: Stretch {
-                            start,
-                            end: self.statements.len(),
-                        },
+                        statements: self.statements.since(start),
                         last: last.node,
                     });
                 },
@@ -11818,12 +11816,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   one expression does.
     /// - witness: `lower::arity::tests::a_body_after_equals_is_its_block_4853`
     #[spec(
-        captures: before = (self.statements.len(), frame),
+        captures: before = frame,
         ensures: |ret| {
             ret.as_ref().map_or(true, |block| {
-                block.statements.start == before.0
-                    && block.statements.end == before.0
-                    && self.reading(block.last) == Reading::Computation(before.1)
+                block.statements == FormStretch::default()
+                    && self.reading(block.last) == Reading::Computation(before)
                     && matches!(cursor.peek(), Maybe::Absent(_))
             })
         },
@@ -11844,10 +11841,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         exhausted(site, cursor)?;
         let _rest = self.threads(site, last.node, (frame, frame))?;
         self.read(last.node, Reading::Computation(frame));
-        let start = self.statements.len();
 
         Ok(Block {
-            statements: Stretch { start, end: start },
+            statements: FormStretch::default(),
             last: last.node,
         })
     }
@@ -11874,8 +11870,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_discarded_statement_splits_its_unit`
     /// - witness: `lower::tests::a_block_like_statement_needs_no_semicolon`
     #[spec(
-        captures: before = self.statements.len(),
-        ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
+        captures: before = self.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
             && self.statements.last().is_some_and(|last| last.bound == discarded.node && last.binding == StatementBinding::Discarded)),
     )]
     fn discard(
@@ -12003,10 +11999,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
     /// - witness: `lower::tests::a_typed_tuple_binder_ascribes_and_splits_1543`
     #[spec(
-        captures: before = self.statements.len(),
+        captures: before = self.statements.mark(),
         ensures: |ret| match ret {
             | Ok(Frame::Inner(_)) => {
-                self.statements.len() == before.saturating_add(1_usize)
+                self.statements.mark() == before.next()
                     && self.statements.last().is_some_and(|last| {
                         last.origin == statement.at.node
                             && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Placed(_) | StatementBinding::Split { .. } | StatementBinding::Outputs { .. } | StatementBinding::Typed { .. } | StatementBinding::TypedSplit { .. })
@@ -12014,7 +12010,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     })
             },
             | Ok(Frame::Outermost) => false,
-            | Err(_) => self.statements.len() == before,
+            | Err(_) => self.statements.mark() == before,
         },
     )]
     fn bound_statement(
@@ -12269,8 +12265,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_let_binds_a_value_once_and_a_computation_nested`
     /// - witness: `tests::modules::models::a_member_reads_off_a_let_binder_at_a_model_type_4827`
     #[spec(
-        captures: before = self.statements.len(),
-        ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1_usize)
+        captures: before = self.statements.mark(),
+        ensures: |ret| ret.is_err() || (self.statements.mark() == before.next()
             && self.statements.last().is_some_and(|last| last.origin == lead.node)),
     )]
     pub(super) fn let_statement(
@@ -18714,6 +18710,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // field's declaration.
         manifests.extend(
             self.projected
+                .entries()
                 .iter()
                 .filter_map(native::Projected::typed_by)
                 .filter(|&(subject, ..)| owns(&subject))
@@ -21382,7 +21379,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match self.computation_at(block.last) {
             | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
             | Maybe::Present(last) => {
-                let statements = stretch(&self.statements, block.statements);
+                let statements = self.statements.read(block.statements);
                 let missing = statements.iter().find_map(|statement| {
                     match (self.statement_parts(statement), self.origin_at(statement.origin)) {
                         | (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => Some(reason),
@@ -21407,7 +21404,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         sink: &mut Sink<'_>,
     ) -> Maybe<ComputationId, lowered::Absent>
     {
-        let statements = stretch(&self.statements, block.statements);
+        let statements = self.statements.read(block.statements);
         let mut chain = match self.computation_at(block.last) {
             Maybe::Present(last) => last,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -22178,7 +22175,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let parameters = stretch(&self.parameters, function.parameters);
+        let parameters = self.parameters.read(function.parameters);
         for parameter in parameters {
             if let Maybe::Absent(reason) = self.origin_at(parameter.binder) {
                 return Maybe::Absent(reason);
@@ -22208,9 +22205,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(_) => None,
         };
         let staged = match function.recursion {
-            Maybe::Present(scope) => self.recursions.get(&scope).map_or(0, |recursion| {
-                stretch(&self.parameters, recursion.uniform).len()
-            }),
+            Maybe::Present(scope) => self
+                .recursions
+                .get(&scope)
+                .map_or(0, |recursion| self.parameters.read(recursion.uniform).len()),
             Maybe::Absent(_) => 0,
         };
         for (position, parameter) in parameters.iter().enumerate().rev() {
@@ -22548,7 +22546,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn mint_interpolated(
         &self,
         append: gandr_core_term::primitive::Primitive,
-        segments: Stretch,
+        segments: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -22556,7 +22554,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         use gandr_core_term::primitive::Arguments;
         let mut first = None;
         let mut called = None;
-        for segment in stretch(&self.segments, segments) {
+        for segment in self.segments.read(segments) {
             let value = match *segment {
                 TextSegment::Text(ref text) => {
                     let id = sink.arena.value_literal(Literal::Text(text.clone()));
@@ -29237,6 +29235,112 @@ mod tests
             "the refusal names `f`: {refusal:?}"
         );
         assert_eq!(refusal.classify(), FailureClass::EngineFault);
+    }
+
+    #[test]
+    fn a_form_s_store_keys_stay_when_another_form_changes_5604()
+    {
+        // Each key the plans and the answers of `source` hold into a flat
+        // store keyed by form, from `def two` on: the offset of the node
+        // holding it from `def two`, the store, and the key. The count of
+        // parameters the whole module pushes follows.
+        let later_store_keys = |source: &str| {
+            let pbg = grammar();
+            let tree = parsed(&pbg, SourceText::from(source));
+            let start = source.find("def two").expect("the source writes `def two`");
+            let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
+            let collected = crate::module::collect(&pbg, &tree, &Unit::single(), &mut fuel)
+                .expect("the module collects");
+            let mut lowerer =
+                super::Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
+            lowerer.declare();
+            lowerer.seed().expect("the seed stays within the allowance");
+            lowerer
+                .survey()
+                .expect("the survey stays within the allowance");
+            lowerer
+                .classify()
+                .expect("the classification stays within the allowance");
+            let after = |node: gandr_surface_syntax::NodeIndex| -> Option<usize> {
+                let node = tree.node(node)?;
+                usize::from(node.span().start()).checked_sub(start)
+            };
+            let mut keys = Vec::new();
+            for (node, plan) in lowerer.plans.iter() {
+                let Some(offset) = after(node)
+                else {
+                    continue;
+                };
+                let mut key = |store: &'static str, held: &dyn core::fmt::Debug| {
+                    keys.push((offset, store, alloc::format!("{held:?}")));
+                };
+                if let super::Plan::Function(ref function) = *plan {
+                    key("parameters", &function.parameters);
+                    key("endpoints", &function.endpoints);
+                    match function.body {
+                        super::Body::Block(block) => key("statements", &block.statements),
+                        super::Body::Clauses(case) => key("cases", &case),
+                    }
+                }
+                if let super::Plan::Block(block)
+                | super::Plan::Thunk(block)
+                | super::Plan::Lambda(block, _) = *plan
+                {
+                    key("statements", &block.statements);
+                }
+                if let super::Plan::Interpolated(_, segments) = *plan {
+                    key("segments", &segments);
+                }
+                if let super::Plan::Telescope(entries, _)
+                | super::Plan::DependentArrow(entries, _)
+                | super::Plan::Returns(entries)
+                | super::Plan::RecordType(_, entries, ..) = *plan
+                {
+                    key("parameters", &entries);
+                }
+                if let super::Plan::Case(case) = *plan {
+                    key("cases", &case);
+                }
+                if let super::Plan::Projected(projected) = *plan {
+                    key("projected", &projected);
+                }
+            }
+            for (&node, answer) in &lowerer.answers {
+                if let (Some(offset), Maybe::Present(arm)) = (after(node), answer.arm) {
+                    keys.push((offset, "arms", alloc::format!("{arm:?}")));
+                }
+            }
+            keys.sort();
+
+            (keys, usize::from(lowerer.parameters.mark()))
+        };
+        let (narrow, narrow_pushed) = later_store_keys(include_str!(
+            "lower/unformatted/a-form-s-store-keys-stay-when-another-form-changes-5604-narrow.gandr"
+        ));
+        let (wide, wide_pushed) = later_store_keys(include_str!(
+            "lower/unformatted/a-form-s-store-keys-stay-when-another-form-changes-5604-wide.gandr"
+        ));
+        assert!(
+            wide_pushed > narrow_pushed,
+            "the wide `one` pushes more parameters before `two`'s"
+        );
+        for store in [
+            "parameters",
+            "statements",
+            "segments",
+            "cases",
+            "arms",
+            "projected",
+        ] {
+            assert!(
+                narrow.iter().any(|&(_, held, _)| held == store),
+                "`two` and `three` hold a key into `{store}`: {narrow:?}"
+            );
+        }
+        assert_eq!(
+            wide, narrow,
+            "more entries in the first form leave every later form's keys where they were"
+        );
     }
 
     #[test]

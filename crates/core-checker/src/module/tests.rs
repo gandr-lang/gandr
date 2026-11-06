@@ -1487,6 +1487,119 @@ fn a_record_update_builds_its_base_s_kept_fields_beside_its_overlay()
     );
 }
 
+/// #5578: a value of a record type stands at a patched type of it by the
+/// coercion in. The judgement records the fixed fields it compared at the
+/// value, and the value crosses as its restriction to the free fields, whose
+/// conversions the kernel replays. A value whose field is another value is
+/// refused at the value, least label first. A crossing with one comparison
+/// removed keeps that field, and the kernel refuses it by the field's label.
+#[test]
+fn a_base_value_at_a_patched_type_crosses_as_a_restriction_5578()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let integer = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_literal(integer_literal());
+    let one = arena.value_literal(gandr_kernel_term::Literal::Integer(
+        gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("1"))
+                .expect("decimal digits"),
+        ),
+    ));
+    // `base : *{host, port, tls : Integer} = *{.host = 0, .port = 0, .tls = 0}`
+    // and `other` the same record with its port at 1.
+    let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (label("host"), integer),
+        (label("port"), integer),
+        (label("tls"), integer),
+    ]));
+    let base = arena.value_record(alloc::collections::BTreeMap::from([
+        (label("host"), zero),
+        (label("port"), zero),
+        (label("tls"), zero),
+    ]));
+    let other = arena.value_record(alloc::collections::BTreeMap::from([
+        (label("host"), zero),
+        (label("port"), one),
+        (label("tls"), zero),
+    ]));
+    // `secured : *{…}[.port = 0, .tls = 0] = base` and the same of `other`.
+    let fixed = alloc::collections::BTreeMap::from([(label("port"), zero), (label("tls"), zero)]);
+    let patched = arena.value_type_patched(record_type, fixed.clone());
+    let named = arena.value_constant(ConstantIndex::from(0_usize));
+    let named_other = arena.value_constant(ConstantIndex::from(2_usize));
+    let mut report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(record_type), Maybe::Present(base)),
+            declaration(At(1), Maybe::Present(patched), Maybe::Present(named)),
+            declaration(At(2), Maybe::Present(record_type), Maybe::Present(other)),
+            declaration(At(3), Maybe::Present(patched), Maybe::Present(named_other)),
+        ])
+    };
+    let Verdict::Checked { body, .. } = report.judged()[1].verdict()
+    else {
+        panic!(
+            "a value whose fixed fields convert checks: {:?}",
+            report.judged()[1].verdict()
+        );
+    };
+    assert_eq!(
+        body, named,
+        "the body runs as written: the coercion copies no record at run time"
+    );
+    assert_eq!(
+        report.coercions().get(&named),
+        Some(&fixed),
+        "the judgement records both fixed fields at the value it coerced in"
+    );
+    assert_eq!(
+        report.judged()[3].verdict(),
+        Verdict::Refused(CheckRefusal::FixedFieldDiffers {
+            at: named_other,
+            fixed: zero,
+        }),
+        "a value whose port is another value is refused at the value, by the port"
+    );
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    let crate::bridge::Outcome::Defined { admitted, .. } = *readmission.readmitted()[1].outcome()
+    else {
+        panic!(
+            "the kernel admits the restriction: {:?}",
+            readmission.readmitted()[1].outcome()
+        );
+    };
+    let environment = readmission.environment();
+    let entry = environment
+        .entries()
+        .get(usize::from(admitted.position()))
+        .expect("the admitted position holds an entry");
+    let gandr_kernel_term::DeclarationContent::Def { body, .. } = *entry.declaration().content()
+    else {
+        panic!("the coerced value is admitted as a definition");
+    };
+    assert!(
+        matches!(environment.arena().value(body), Some(gandr_kernel_term::Value::Restrict { fixed, .. })
+            if fixed.keys().eq([&label("port"), &label("tls")])),
+        "the value crosses as its restriction at both fixed fields: {:?}",
+        environment.arena().value(body)
+    );
+    report
+        .coercions
+        .get_mut(&named)
+        .expect("the coercion is recorded")
+        .remove(&label("tls"));
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert_eq!(
+        readmission.readmitted()[1].outcome(),
+        &crate::bridge::Outcome::Rejected(gandr_kernel_core::KernelError::KeptRecordField {
+            label: label("tls"),
+        }),
+        "a crossing that drops the comparison of `tls` keeps it, and the kernel refuses it by `tls`"
+    );
+}
+
 /// #2159: a record update written in a signature reads the record it builds,
 /// so a path between two updates at distinct labels, or between an update
 /// writing a field's own value and its base, holds at one point. The kernel
