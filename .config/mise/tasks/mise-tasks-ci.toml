@@ -1093,9 +1093,10 @@ fi
 # mutant(s) alive`. A later landing of the same number updates it in place.
 # Its labels are kind:gap, `collector` (#2537), the pull request's `area:`
 # labels and the tier of each crate a survivor lives in, so the lane that
-# owns the crate picks it up. Its body is the report. A commit without a pull
-# request number, or a pull request without a report, files nothing. GH_REPO
-# names the repository.
+# owns the crate picks it up. `.config/mutants/landed.jq` writes its body
+# (#3596, its cases held by `check:mutants`): the sentence that says what it
+# is, then the report. A commit without a pull request number, or a pull
+# request without a report, files nothing. GH_REPO names the repository.
 ["ci:mutants-landed"]
 description = "File each landed pull request's surviving mutants on one issue"
 tools.jq = "1.8.1"
@@ -1139,10 +1140,8 @@ while IFS= read -r subject; do
     sed -n 's/^| `crates\/\([a-z]*\)-[^`]*` | .*/\1/p' "$scratch/report.md" \
       | grep -Fx -e kernel -e theory -e core -e storage -e runtime -e surface -e workflow | sed 's/^/area:/' || true
   } | sort -u)
-  {
-    printf 'Landed with #%s: the mutants of its own lines that no witness caught, as its last mutants report read them. Each survivor is a witness to write, or a `- witness:` bullet its function lacks.\n\n' "$pr"
-    sed '1{/^<!-- gandr-mutants -->$/d;}' "$scratch/report.md"
-  } > "$scratch/body.md"
+  jq -n --argjson pr "$pr" --rawfile report "$scratch/report.md" '{pr: $pr, report: $report}' \
+    | jq -r -f .config/mutants/landed.jq > "$scratch/body.md"
   title="test: #$pr leaves $count mutant(s) alive"
   key="test: #$pr leaves "
   issue=$(gh issue list --repo "$repo" --state open --search "\"${key% }\" in:title" --json number,title \
@@ -1161,9 +1160,10 @@ done <<< "$landings"
 # issue per first error and mutation kind, never one per mutant or exemplar.
 # The report's `cause:` lines name each cause with its count and families. A
 # cause is filed as `recovery: <name> marks other bytes than a <kind> tile`,
-# kind:defect, area:surface and `collector` (#2537), its body the cause's
-# first findings and its families as a checklist collapsed under their
-# count. A cause already filed
+# kind:defect, area:surface and `collector` (#2537), its body written by
+# `.config/claims/recovery.jq` (#3596, its cases held by `check:claims`): the
+# sentence that says what it is, the cause's first findings, and its families
+# as a checklist collapsed under their count. A cause already filed
 # is skipped: an issue in any state whose title opens with `recovery: <name> `
 # and names the kind's tile, or names neither kind's and so covers both
 # (#1829). A night opens at most
@@ -1206,8 +1206,6 @@ pattern='^cause: `([^`]+)` (deleted|missed): ([0-9]+) mutants in ([0-9]+) famili
 while IFS= read -r line; do
   [[ $line =~ $pattern ]] || continue
   name=${BASH_REMATCH[1]} kind=${BASH_REMATCH[2]} count=${BASH_REMATCH[3]} family_count=${BASH_REMATCH[4]} families=${BASH_REMATCH[5]}
-  family_noun=families
-  (( family_count != 1 )) || family_noun=family
   title="recovery: $name marks other bytes than a $kind tile"
   if [[ $name == unnamed ]]; then
     first=': first error "'
@@ -1216,20 +1214,14 @@ while IFS= read -r line; do
   fi
   if [[ $kind == deleted ]]; then
     how='` deleted: first error'
-    wrong='deleted'
   else
     how='` written as `'
-    wrong='written as its near miss'
   fi
   grep -F -e "$first" "$report" | grep -F -e "$how" | head -n 5 > "$scratch/findings" || true
-  {
-    printf 'The recovery sweep (`gandr ledger recovery corpus/ledger`, #1782) writes each literal tile of each syntax exemplar wrong and reads the first error. %s mutants whose tile was %s are first refused `%s` at other bytes than the mutation.\n\n' "$count" "$wrong" "$name"
-    printf '## Findings\n\nThe first of them; the nightly run lists every one%s.\n\n```text\n' "${GITHUB_RUN_URL:+ ($GITHUB_RUN_URL)}"
-    cat "$scratch/findings"
-    printf '```\n\n## Families\n\nA box is ticked once the sweep marks the family'"'"'s mutants where they were made.\n\n<details><summary>%s %s — open</summary>\n\n' "$family_count" "$family_noun"
-    tr ',' '\n' <<< "$families" | sed 's/^ *//; s/^\(.*\)$/- [ ] `\1`/'
-    printf '\n</details>\n'
-  } > "$scratch/body.md"
+  jq -n --arg name "$name" --arg kind "$kind" --argjson count "$count" --argjson family_count "$family_count" \
+    --arg families "$families" --rawfile findings "$scratch/findings" --arg run "${GITHUB_RUN_URL:-}" \
+    '{$name, $kind, $count, $family_count, $families, $findings, run: (if $run == "" then null else $run end)}' \
+    | jq -r -f .config/claims/recovery.jq > "$scratch/body.md"
   if [[ -n $repo ]]; then
     filed=$(jq -r --arg key "recovery: $name " --arg tile " $kind tile" \
       '[.[] | select((.title | startswith($key)) and ((.title | contains($tile)) or ((.title | contains(" deleted tile") | not) and (.title | contains(" missed tile") | not))))] | first | .number // empty' \

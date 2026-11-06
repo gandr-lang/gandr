@@ -1,0 +1,28 @@
+[
+  {
+    "name": "#3596: a recovery collector opens with the sentence that says what it is, its findings in a text block and its families as checkbox rows under a lead",
+    "input": {
+      "name": "expected-term",
+      "kind": "deleted",
+      "count": 7,
+      "family_count": 2,
+      "families": "let, match",
+      "findings": "corpus/ledger/a.gandr:3: `let` deleted: first error `expected-term` at 12\ncorpus/ledger/b.gandr:5: `match` deleted: first error `expected-term` at 40\n",
+      "run": "https://github.com/gandr-lang/gandr/actions/runs/1"
+    },
+    "output": "This issue collects the mutants of the recovery sweep whose first error, `expected-term`, falls at other bytes than the mutation.\n\nThe recovery sweep (`gandr ledger recovery corpus/ledger`, #1782) writes each literal tile of each syntax exemplar wrong and reads the first error. It finds 7 such mutants with a deleted tile.\n\n## Findings\n\nThe first findings follow. The nightly run lists each one (https://github.com/gandr-lang/gandr/actions/runs/1).\n\n```text\ncorpus/ledger/a.gandr:3: `let` deleted: first error `expected-term` at 12\ncorpus/ledger/b.gandr:5: `match` deleted: first error `expected-term` at 40\n```\n\n## Families\n\nThe list gives each family. `ci:recovery-file` ticks its box once the sweep marks the mutants of the family at the mutation.\n\n<details><summary>2 families — open</summary>\n\n- [ ] `let`\n- [ ] `match`\n\n</details>"
+  },
+  {
+    "name": "a near-miss cause of one mutant and one family, with no run, names its tile and its family in the singular",
+    "input": {
+      "name": "unnamed",
+      "kind": "missed",
+      "count": 1,
+      "family_count": 1,
+      "families": "arrow",
+      "findings": "corpus/ledger/c.gandr:9: `=>` written as `->`: first error \"…\" at 3\n",
+      "run": null
+    },
+    "output": "This issue collects the mutants of the recovery sweep whose first error, `unnamed`, falls at other bytes than the mutation.\n\nThe recovery sweep (`gandr ledger recovery corpus/ledger`, #1782) writes each literal tile of each syntax exemplar wrong and reads the first error. It finds 1 such mutant with a tile written as its near miss.\n\n## Findings\n\nThe first findings follow. The nightly run lists each one.\n\n```text\ncorpus/ledger/c.gandr:9: `=>` written as `->`: first error \"…\" at 3\n```\n\n## Families\n\nThe list gives each family. `ci:recovery-file` ticks its box once the sweep marks the mutants of the family at the mutation.\n\n<details><summary>1 family — open</summary>\n\n- [ ] `arrow`\n\n</details>"
+  }
+]
