@@ -9489,7 +9489,7 @@ impl<'source> Lowerer<'_, 'source>
                     Maybe::Present(origin) => {
                         let id = sink.arena.value_type_universe(
                             Sort::Ground(GroundSort::Value),
-                            Level::constant(super::Universe::FUSS_FREE.level),
+                            Level::constant(crate::form::Universe::FUSS_FREE.level),
                         );
                         sink.origins.record_value_type(id, origin);
                         Maybe::Present(id)
@@ -10019,7 +10019,7 @@ impl<'source> Lowerer<'_, 'source>
             sink.origins.record_value_type(term, origin);
             let kind = sink.arena.value_type_universe(
                 Sort::Ground(GroundSort::Value),
-                Level::constant(super::Universe::FUSS_FREE.level),
+                Level::constant(crate::form::Universe::FUSS_FREE.level),
             );
             sink.origins.record_value_type(kind, origin);
             let constructors = terms
