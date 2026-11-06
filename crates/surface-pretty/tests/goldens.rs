@@ -96,6 +96,7 @@ use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Unreadable;
 use gandr_surface_pretty::Unspelled;
+use gandr_surface_pretty::WrittenForms;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_definition;
@@ -1777,7 +1778,11 @@ fn every_type_former_spells_as_the_grammar_writes_it()
             "a context binder named {unprintable:?} spells `?`"
         );
     }
-    let related = CoreSource::new(&core, &names).relating(&relations);
+    let forms = WrittenForms {
+        relations: Vec::from(relations),
+        ..WrittenForms::new()
+    };
+    let related = CoreSource::new(&core, &names).writing(&forms);
     for (root, spelling) in [
         (CoreNode::ValueType(record), "Integer ≅ String"),
         (CoreNode::ValueType(equivalence), "Integer ≃ String"),
@@ -1837,7 +1842,11 @@ fn a_model_type_spells_as_written_2246()
         }),
     ];
     models.sort_unstable_by_key(|&(id, _)| id);
-    let modelled = CoreSource::new(&core, &names).modeling(&models);
+    let forms = WrittenForms {
+        models,
+        ..WrittenForms::new()
+    };
+    let modelled = CoreSource::new(&core, &names).writing(&forms);
     for (root, sugared, explicit) in [
         (plain, "Model(Counter)", "Model(Counter)"),
         (
@@ -1969,9 +1978,13 @@ fn each_glyph_former_is_written_in_the_spelling_asked_782()
         ],
         Name::from("base"),
     );
+    let written = WrittenForms {
+        relations: Vec::from(relations),
+        ..WrittenForms::new()
+    };
     let source = CoreSource::new(&core, &names)
         .naming(&constructors)
-        .relating(&relations);
+        .writing(&written);
     for (root, unicode, ascii) in [
         (
             Root::Type(CoreNode::ValueType(record)),
@@ -2021,10 +2034,13 @@ fn a_primed_name_has_no_ascii_spelling_782()
     let returns_between = core.comp_type_returner(between);
     let over_context = core.comp_type_pi(integer, returns_between);
     let context = [Some(Name::from("y′"))];
-    let arrows = [(over_context, Name::from("n′"))];
+    let written = WrittenForms {
+        arrows: Vec::from([(over_context, Name::from("n′"))]),
+        ..WrittenForms::new()
+    };
     let source = CoreSource::new(&core, &names)
         .within(&context)
-        .naming_arrows(&arrows);
+        .writing(&written);
     for (root, unicode, ascii) in [
         (
             Root::Value(CoreNode::Value(constant)),
@@ -2472,7 +2488,10 @@ fn an_arrow_binder_spells_as_the_source_names_it()
         arrows.sort_by_key(|&(arrow, _)| arrow);
         assert_eq!(
             spelled(
-                &CoreSource::new(&core, &names).naming_arrows(&arrows),
+                &CoreSource::new(&core, &names).writing(&WrittenForms {
+                    arrows,
+                    ..WrittenForms::new()
+                }),
                 Root::Type(CoreNode::CompType(pi_outer))
             ),
             faithful(Written(expected)),
@@ -2518,7 +2537,11 @@ fn a_dependent_record_spells_its_written_labels_1613()
             .collect();
         assert_eq!(
             spelled(
-                &CoreSource::new(&core, &names).naming_pairs(&pairs, &seconds),
+                &CoreSource::new(&core, &names).writing(&WrittenForms {
+                    pairs,
+                    seconds,
+                    ..WrittenForms::new()
+                }),
                 Root::Type(CoreNode::ValueType(pair))
             ),
             faithful(Written(expected)),
@@ -2558,7 +2581,12 @@ fn a_sum_and_a_lazy_record_spell_their_written_labels_4395()
         labelled_with,
         Vec::from([Name::from("get"), Name::from("put")]),
     )];
-    let source = CoreSource::new(&core, &[]).naming_entries(&sum_labels, &with_labels);
+    let written = WrittenForms {
+        sum_labels: Vec::from(sum_labels),
+        with_labels: Vec::from(with_labels),
+        ..WrittenForms::new()
+    };
+    let source = CoreSource::new(&core, &[]).writing(&written);
     for (root, sugared, explicit) in [
         (
             CoreNode::ValueType(labelled_sum),
@@ -2642,13 +2670,15 @@ fn a_selection_off_a_dependent_record_spells_its_label_3971()
     let arrow = core.comp_type_pi(record, returns_around);
     let mut pairs = [(record, Name::from("x")), (inner, Name::from("y"))];
     pairs.sort_by_key(|&(pair, _)| pair);
-    let seconds = [(inner, Name::from("z"))];
-    let arrows = [(arrow, Name::from("r"))];
+    let written = WrittenForms {
+        arrows: Vec::from([(arrow, Name::from("r"))]),
+        pairs: Vec::from(pairs),
+        seconds: Vec::from([(inner, Name::from("z"))]),
+        ..WrittenForms::new()
+    };
     assert_eq!(
         spelled(
-            &CoreSource::new(&core, &names)
-                .naming_pairs(&pairs, &seconds)
-                .naming_arrows(&arrows),
+            &CoreSource::new(&core, &names).writing(&written),
             Root::Type(CoreNode::CompType(arrow))
         ),
         faithful(Written(
@@ -2691,10 +2721,14 @@ fn a_selection_off_a_context_binder_s_record_spells_its_label_4139()
     let along = core.value_type_path(integer, first, middle);
     let mut pairs = [(record, Name::from("x")), (inner, Name::from("y"))];
     pairs.sort_by_key(|&(pair, _)| pair);
-    let seconds = [(inner, Name::from("z"))];
+    let written = WrittenForms {
+        pairs: Vec::from(pairs),
+        seconds: Vec::from([(inner, Name::from("z"))]),
+        ..WrittenForms::new()
+    };
     let context = [Some(Name::from("r"))];
     let source = CoreSource::new(&core, &names)
-        .naming_pairs(&pairs, &seconds)
+        .writing(&written)
         .within(&context);
     let typed = [Some(CoreNode::ValueType(record))];
     for (source, expected) in [
@@ -5682,8 +5716,11 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
         ),
         "the parameter passes over a constant the body mentions"
     );
-    let arrows = [(pi, Name::from("n"))];
-    let named = source.naming_arrows(&arrows);
+    let arrows = WrittenForms {
+        arrows: Vec::from([(pi, Name::from("n"))]),
+        ..WrittenForms::new()
+    };
+    let named = source.writing(&arrows);
     assert_eq!(
         declared_whole(&named, (dependent, quiet), wide),
         written(
@@ -5691,8 +5728,11 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
         ),
         "the parameter takes the name its arrow writes"
     );
-    let mentioned_arrows = [(pi, Name::from("a"))];
-    let shadowing = source.naming_arrows(&mentioned_arrows);
+    let mentioned_arrows = WrittenForms {
+        arrows: Vec::from([(pi, Name::from("a"))]),
+        ..WrittenForms::new()
+    };
+    let shadowing = source.writing(&mentioned_arrows);
     assert_eq!(
         declared_whole(&shadowing, (dependent, mentioning), wide),
         written(

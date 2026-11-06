@@ -160,6 +160,9 @@ pub enum Label
     /// A use of a declaration a `deprecated` attribute marks: the primary
     /// locus of a `deprecated` finding.
     Deprecated,
+    /// The value a patched type fixes at a label, which a record literal's
+    /// field at that label does not convert with.
+    Fixed,
 }
 
 impl fmt::Display for Label
@@ -222,6 +225,7 @@ impl fmt::Display for Label
             Self::Copied => f.write_str("the variable matched again"),
             Self::Derivation => f.write_str("the derivation that fills it"),
             Self::Deprecated => f.write_str("names a deprecated declaration"),
+            Self::Fixed => f.write_str("the value the type fixes"),
         }
     }
 }
@@ -857,6 +861,8 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
             | CheckRefusal::Linearity { defect: LinearityDefect::Residue { .. } | LinearityDefect::Closed { .. }
                 | LinearityDefect::UsedTwice { .. } | LinearityDefect::Captured { .. } | LinearityDefect::AsValue { .. }, .. }) {
         opened(&ret.context[0_usize]) && second_unnamed
+    } else if matches!(refusal, CheckRefusal::FixedFieldDiffers { .. }) {
+        role(&ret.context[0_usize], Label::Fixed) && second_unnamed
     } else if matches!(refusal, CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. }) {
         opened(&ret.context[0_usize]) && role(&ret.context[1_usize], Label::FirstArm)
     } else if matches!(refusal, CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
@@ -903,6 +909,10 @@ fn checked(
             (spanned(origins.value(at)), UNNAMED)
         },
         CheckRefusal::PatchOutsideBase { value, .. } => (spanned(origins.value(value)), UNNAMED),
+        CheckRefusal::FixedFieldDiffers { at, fixed } => (spanned(origins.value(at)), [
+            annotated(spanned(origins.value(fixed)), Label::Fixed),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]),
         CheckRefusal::MissingRecordField { at, expected }
         | CheckRefusal::CapabilityForged { at, expected }
         | CheckRefusal::LiteralAmbiguous { at, expected } => (spanned(origins.value(at)), [
@@ -1435,6 +1445,7 @@ impl fmt::Display for Checked
             CheckRefusal::AbsentTupleComponent(_) => f.write_str("the product type has no such component"),
             CheckRefusal::MissingRecordField {..} => f.write_str("the record omits a required field"),
             CheckRefusal::PatchOutsideBase {..} => f.write_str("the patched type fixes a field its base record does not hold"),
+            CheckRefusal::FixedFieldDiffers {..} => f.write_str("a record literal states a fixed field at another value"),
             | CheckRefusal::UnknownOperation { .. } => f.write_str("the operation is absent from its inline interface"),
             | CheckRefusal::HandlerCoverage { .. } => f.write_str("handler clauses must cover their interface exactly once"),
             | CheckRefusal::HandlerUnlawful { rule, .. } => write!(f, "the handler is not shown to satisfy law {} of its theory", usize::from(rule)),
@@ -2994,6 +3005,10 @@ mod tests
                 at: value_type,
                 value,
             },
+            CheckRefusal::FixedFieldDiffers {
+                at: value,
+                fixed: value,
+            },
             CheckRefusal::CapabilityForged {
                 at: value,
                 expected: value_type,
@@ -3751,6 +3766,7 @@ mod tests
                         | CheckRefusal::AtomTransport { .. }
                         | CheckRefusal::MissingRecordField { .. }
                         | CheckRefusal::PatchOutsideBase { .. }
+                        | CheckRefusal::FixedFieldDiffers { .. }
                         | CheckRefusal::CapabilityForged { .. }
                         | CheckRefusal::LiteralAmbiguous { .. }
                         | CheckRefusal::DependentStack { .. }
@@ -3931,6 +3947,19 @@ mod tests
         ] {
             assert_eq!(context(refusal), expected(spans[2_usize]));
         }
+        assert_eq!(
+            context(CheckRefusal::FixedFieldDiffers {
+                at: value,
+                fixed: value,
+            }),
+            [
+                Maybe::Present(Annotation {
+                    span: spans[0_usize],
+                    label: Label::Fixed,
+                }),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ]
+        );
         for refusal in [
             CheckRefusal::DependentStack {
                 at: value,
@@ -4893,6 +4922,7 @@ mod tests
             Label::Unfilled.to_string(),
             Label::Unlifted.to_string(),
             Label::Placed.to_string(),
+            Label::Fixed.to_string(),
         ];
         for (index, label) in labels.iter().enumerate() {
             for earlier in &labels[.. index] {

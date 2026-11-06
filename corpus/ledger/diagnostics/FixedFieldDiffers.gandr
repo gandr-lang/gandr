@@ -1,0 +1,5 @@
+/// `FixedFieldDiffers`: a record literal at a patched type states a fixed field
+/// at another value.
+type Config = *{host : String, port : Integer};
+@[ refuses("FixedFieldDiffers") ]
+def wrong : Config[.port = 443] = *{.host = "localhost", .port = 80};
