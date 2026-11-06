@@ -21,6 +21,8 @@
 import std.io;
 // The exact reals' host interface.
 import std.reals;
+// The native list type.
+import std.list (List);
 
 /// The canonical bytes of the plan of `sqrt 2 < 3/2` in lowercase
 /// hexadecimal: 13 nodes in 176 bytes, the magic `GXRP` first.

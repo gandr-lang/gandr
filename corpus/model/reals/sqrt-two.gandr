@@ -23,6 +23,8 @@ import std.io;
 import std.reals;
 // The join of two strings.
 import std.string (concat);
+// The native list type.
+import std.list (List);
 
 /// The canonical bytes of the plan that `square_root_of_two` of
 /// `theory-exact-reals` builds, in lowercase hexadecimal: 11 nodes in 153

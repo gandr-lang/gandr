@@ -21,6 +21,8 @@ import std.io;
 import std.reals;
 // The join of two strings.
 import std.string (concat);
+// The native list type.
+import std.list (List);
 
 /// The canonical bytes of the plan of `sqrt 2 < sqrt 2` in lowercase
 /// hexadecimal: 12 nodes in 162 bytes.
