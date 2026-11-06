@@ -5052,14 +5052,7 @@ impl<'source> Collector<'_, 'source>
             torn,
         } = stray;
         let mut attributes = Vec::new();
-        let mut attributed = Ok(());
-        for &block in &decorations {
-            if attributed.is_ok() {
-                attributed = self
-                    .decoration(block, child.node, &mut attributes)
-                    .map_err(|unread| (block.node, unread));
-            }
-        }
+        let attributed = self.decorations(&decorations, child.node, &mut attributes);
         let name = first_token(self.tree, child.node);
         let top = self.collected.top(child.span.start());
         let held = self.refuse_held(top, name, child, child, refusal);
@@ -5339,9 +5332,8 @@ impl<'source> Collector<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let mut attributes = Vec::new();
-        for &written in decorations {
-            self.decoration(written, module.node, &mut attributes)?;
-        }
+        self.decorations(decorations, module.node, &mut attributes)
+            .map_err(|(_block, refusal)| refusal)?;
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, module.node, &mut pieces)?;
         if Self::opens_type_member(&pieces).0 {
@@ -5470,14 +5462,13 @@ impl<'source> Collector<'_, 'source>
         let name = self.name_of(named);
         let position = self.admit(self.collected.top(child.span.start()), name, child, named);
         self.collected.own(child.node, position);
-        let mut attributes = Vec::new();
-        let mut attributed = Ok(());
         for &block in decorations {
             self.collected.own(block.node, position);
-            if attributed.is_ok() {
-                attributed = self.decoration(block, child.node, &mut attributes);
-            }
         }
+        let mut attributes = Vec::new();
+        let attributed = self
+            .decorations(decorations, child.node, &mut attributes)
+            .map_err(|(_block, refusal)| refusal);
         for &block in decorations {
             self.document(position, block.node, block.span.end(), child.node);
         }
@@ -5678,12 +5669,10 @@ impl<'source> Collector<'_, 'source>
             else {
                 continue;
             };
-            let mut attributed = Ok(());
-            for block in core::mem::take(&mut member.blocks) {
-                if attributed.is_ok() {
-                    attributed = self.decoration(block, introduced.node, &mut attributes);
-                }
-            }
+            let blocks = core::mem::take(&mut member.blocks);
+            let attributed = self
+                .decorations(&blocks, introduced.node, &mut attributes)
+                .map_err(|(_block, refusal)| refusal);
             if let Some(slot) = self.collected.slots.get_mut(held.0) {
                 slot.attributes.append(&mut attributes);
                 if let Err(unread) = attributed {
@@ -5852,13 +5841,10 @@ impl<'source> Collector<'_, 'source>
         let named = entry.named;
         let name = self.name_of(named);
         let mut attributes = Vec::new();
-        let mut attributed = Ok(());
-        for &block in decorations {
-            if attributed.is_ok() {
-                attributed = self.decoration(block, child.node, &mut attributes);
-            }
-        }
-        let mut unreadable = attributed.err();
+        let mut unreadable = self
+            .decorations(decorations, child.node, &mut attributes)
+            .err()
+            .map(|(_block, refusal)| refusal);
         let mut first = Maybe::Absent(slot_owner::Absent::Unowned);
         for (span, refusal) in self.described_refusals(child) {
             let introduced = Placed {
@@ -5968,14 +5954,13 @@ impl<'source> Collector<'_, 'source>
         };
         let position = self.admit(container, name, child, named);
         self.collected.own(child.node, position);
-        let mut attributes = Vec::new();
-        let mut attributed = Ok(());
         for &block in decorations {
             self.collected.own(block.node, position);
-            if attributed.is_ok() {
-                attributed = self.decoration(block, child.node, &mut attributes);
-            }
         }
+        let mut attributes = Vec::new();
+        let mut attributed = self
+            .decorations(decorations, child.node, &mut attributes)
+            .map_err(|(_block, refusal)| refusal);
         // The inner blocks leading the body decorate the theory after its
         // outer blocks, as one list, so an attribute both write is refused as
         // doubled.
@@ -6473,12 +6458,9 @@ impl<'source> Collector<'_, 'source>
             return Err(self.unnamed(pieces, declaration, &header));
         };
         let mut attributes = Vec::new();
-        let mut attributed = Ok(());
-        for &block in decorations {
-            if attributed.is_ok() {
-                attributed = self.decoration(block, declaration.node, &mut attributes);
-            }
-        }
+        let mut attributed = self
+            .decorations(decorations, declaration.node, &mut attributes)
+            .map_err(|(_block, refusal)| refusal);
         if attributed.is_ok() {
             attributed = self.read_attributes(
                 Cursor::new(before, declaration.span),

@@ -637,14 +637,13 @@ impl<'source> Collector<'_, 'source>
             self.document(slot, block.node, block.span.end(), declaration.node);
         }
         self.document(slot, declaration.node, named.span.start(), declaration.node);
-        let mut attributes = Vec::new();
-        let mut attributed = Ok(());
         for &block in decorations {
             self.collected.own(block.node, slot);
-            if attributed.is_ok() {
-                attributed = self.decoration(block, declaration.node, &mut attributes);
-            }
         }
+        let mut attributes = Vec::new();
+        let attributed = self
+            .decorations(decorations, declaration.node, &mut attributes)
+            .map_err(|(_block, refusal)| refusal);
         let mut cells = Ok(());
         let mut members = Vec::new();
         let tail = if let Maybe::Present(repaired) = pieces.repair {
@@ -759,7 +758,7 @@ impl<'source> Collector<'_, 'source>
             appended.iter().all(|entry| entry.decorates == declaration)
         }),
     )]
-    pub(super) fn decoration(
+    fn decoration(
         &self,
         block: Placed,
         declaration: NodeIndex,
@@ -776,6 +775,51 @@ impl<'source> Collector<'_, 'source>
             declaration,
             attributes,
         )
+    }
+
+    /// Read the attribute blocks `blocks` in order, each decorating the
+    /// declaration at `declaration`, and push their attributes onto
+    /// `attributes`. The first block refused ends the reading.
+    ///
+    /// Each declaration that attribute blocks decorate reads them here, and
+    /// files the refusal as its own form orders it.
+    ///
+    /// # Specification
+    /// - requires: each of `blocks` is an attribute block standing on its own.
+    /// - ensures: the attributes of each block up to the first refused one,
+    ///   pushed in order, each decorating `declaration`; no block after it is
+    ///   read.
+    /// - fails: the first block that [`Self::decoration`] refuses.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The node of the first block refused, with [`Self::decoration`]'s
+    /// refusal of it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block of two attributes decorates the family after
+    ///   it, and a stray's unreadable block is refused where it was written.
+    ///   The predicate reads only the attributes this call appended.
+    /// - witness: `lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
+    /// - witness: `module::tests::a_fault_before_a_declaration_is_refused_where_it_was_written_2082`
+    #[spec(
+        captures: before = attributes.len(),
+        ensures: |ret| ret.is_err() || attributes.get(before ..).is_some_and(|appended| {
+            appended.iter().all(|entry| entry.decorates == declaration)
+        }),
+    )]
+    pub(super) fn decorations(
+        &self,
+        blocks: &[Placed],
+        declaration: NodeIndex,
+        attributes: &mut Vec<WrittenAttribute<'source>>,
+    ) -> Result<(), (NodeIndex, LoweringRefusal<'source>)>
+    {
+        for &block in blocks {
+            self.decoration(block, declaration, attributes)
+                .map_err(|refusal| (block.node, refusal))?;
+        }
+        Ok(())
     }
 
     /// Push `form` onto the data list and enter its constructors by name.

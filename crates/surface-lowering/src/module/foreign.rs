@@ -818,12 +818,9 @@ impl<'source> Collector<'_, 'source>
     ) -> Bounded
     {
         let mut attributes = Vec::new();
-        let mut attributed = Ok(());
-        for &decoration in decorations {
-            if attributed.is_ok() {
-                attributed = self.decoration(decoration, block.node, &mut attributes);
-            }
-        }
+        let attributed = self
+            .decorations(decorations, block.node, &mut attributes)
+            .map_err(|(_decoration, refusal)| refusal);
         let Some(rows) = attributes
             .iter()
             .find(|written| written.name.as_ref() == RegisteredAttribute::BOUNDARY.as_ref())
