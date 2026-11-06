@@ -1,28 +1,30 @@
-// A field is read by its label off the record a value is, whether a type is
-// written for the record or not: a definition's record, a field's record and
-// the record a run binds. A projection is a computation, so it stands where
-// one is read: a body, a bind, a path's endpoint.
+// This source tests native record field selection.
+//
+// Field selection reads fields from inferred and stated records. The
+// pathological twin refuses an absent field and a nonrecord base.
+//
+// The evaluator selects fields in a body, binding and path endpoint.
+//
+// - see: `pathological/records/record-field-absent.gandr` — `lacking`, `unfielded`
 
-/// A record holding a record, no type written for either.
+/// `nest` holds a tag and an inner record.
 def nest = *{tag = "t", inner = *{x = 1, y = 2}};
 
-/// The field `inner` of `nest`, a record.
+/// `innerOf` returns `nest`'s inner record.
 @[ runs("*{.x = 1, .y = 2}") ]
 def innerOf() -> *{x : Integer, y : Integer} { nest.inner }
 
-/// A field of a field: the inner projection runs, and the outer one reads
-/// the record it returns.
+/// `deepField` returns `y` from `nest`'s inner record.
 @[ runs("2") ]
 def deepField() -> Integer { nest.inner.y }
 
-/// A field of the record a run binds, its type written nowhere.
+/// `boundField` reads `x` from the bound inner record.
 @[ runs("1") ]
 def boundField() -> Integer =
   let held = nest.inner
   held.x
 
-/// The record rebuilt from its fields is the record: η, a path whose
-/// endpoints read the fields off `nest`.
+/// `rebuilt` equates `nest` with its fields rebuilt as a record.
 def rebuilt() -> Path[.A = *{tag : String, inner : *{x : Integer, y : Integer}}](
   *{.tag = nest.tag, .inner = nest.inner},
   nest

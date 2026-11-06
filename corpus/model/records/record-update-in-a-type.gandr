@@ -1,17 +1,22 @@
-// A record update written in a type stands for the record it builds, so a
-// path between two updates, or between an update and its base, relates the
-// records they are.
+// This source tests record updates inside path types.
+//
+// Updates at distinct labels commute. An update with the existing value
+// equals its base record.
+//
+// The checker typechecks each path between record forms.
+//
+// - see: `pathological/records/deep-record-update-cost.gandr` — `deep`
 
-/// A corner of two fields.
+/// `corner` holds fields `x` and `y`.
 def corner = *{x = 1, y = 2};
 
-/// Updates at distinct labels commute: both orders are one record.
+/// `commute` equates updates at `x` and `y` in either order.
 def commute : Path[.A = *{x : Integer, y : Integer}](
   *{*{corner | x = 9} | y = 3},
   *{*{corner | y = 3} | x = 9}
 ) = Path.here (*{x = 9, y = 3});
 
-/// Updating a field with its own value is the record itself.
+/// `unchanged` equates an update with its base record.
 def unchanged : Path[.A = *{x : Integer, y : Integer}](
   *{corner | x = 1},
   corner
