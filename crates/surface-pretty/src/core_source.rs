@@ -512,6 +512,9 @@ pub struct CoreSource<'arena>
     /// The model type each type the source writes as `Model(T)`, or `Model(T)
     /// with sort C = A …`, lowers from, ascending by the type.
     models: &'arena [(ValueTypeId, Modelled<'arena>)],
+    /// The name of the type member each record type the source writes by
+    /// that name defines, ascending by the type: the base of a patched type.
+    members: &'arena [(ValueTypeId, Name<'arena>)],
     /// The theory each capability scope the source writes as `handle c : T
     /// with sort C = A … { … }` handles, with the sorts its manifest fixes,
     /// ascending by the scope.
@@ -578,6 +581,7 @@ impl<'arena> CoreSource<'arena>
             with_labels: &[],
             relations: &[],
             models: &[],
+            members: &[],
             scopes: &[],
             answers: &[],
             rows: &[],
@@ -818,6 +822,21 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { models, ..self }
+    }
+
+    /// This source, writing each record type `members` records by the name
+    /// of the type member that defines it, ascending by the type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming_members(
+        self,
+        members: &'arena [(ValueTypeId, Name<'arena>)],
+    ) -> Self
+    {
+        Self { members, ..self }
     }
 
     /// This source, writing each capability scope `scopes` records over the
@@ -1685,6 +1704,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&(ValueType::Sigma { .. } | ValueType::Flow { .. })), Former::Relation { .. }) =>
             self.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
         | (_, Former::Model { .. }) => self.models.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
+        | (Some(&ValueType::Record(_)), Former::Member(name)) => written(self.members, id) == Some(name),
         | _ => false,
     })]
     fn value_type(
@@ -1758,6 +1778,9 @@ impl<'arena> CoreSource<'arena>
                 )
             )]
             ValueType::Unknown => Former::Unreadable(Unreadable::UnknownType),
+            ValueType::Record(_) if let Some(member) = written(self.members, id) => {
+                Former::Member(member)
+            },
             ValueType::Record(ref fields) if fields.is_empty() => {
                 Former::Product(Arity::from(0_usize))
             },
@@ -3545,7 +3568,8 @@ mod tests
     }
 
     /// A patched type reads as its base, then each value it fixes in label
-    /// order, under its label.
+    /// order, under its label. A base a type member names reads as the
+    /// member's name, and the type is written over the name.
     #[test]
     fn a_patched_type_reads_as_its_base_and_its_fixed_values()
     {
@@ -3582,6 +3606,24 @@ mod tests
             Some(String::from("tls"))
         );
         assert_eq!(source.component(node, Component::from(2_usize)), None);
+        let members = [(record, Name::from("Config"))];
+        let named = CoreSource::new(&arena, &[]).naming_members(&members);
+        assert!(matches!(
+            named.read(CoreNode::ValueType(record)),
+            Former::Member(name) if name.as_ref() == "Config"
+        ));
+        let printed = crate::present_type(
+            &named,
+            node,
+            crate::PageWidth::from(100_u32),
+            crate::Form::Explicit.into(),
+        )
+        .map(|printed| String::from(printed.as_ref()));
+        assert_eq!(
+            printed.ok().as_deref(),
+            Some("Config[.port = *{}, .tls = *{*{}}]"),
+            "the base is written by the member's name"
+        );
     }
 
     /// A product's, a sum's and a record's components read in order, a
