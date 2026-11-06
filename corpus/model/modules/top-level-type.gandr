@@ -1,55 +1,56 @@
-// A type member at a source's top level: `type T = τ;` names `τ` for the
-// declarations written after it, as a module's member names it for the
-// module's.
+// This source shows top-level type members.
 //
-// - see: #1834 — `Band`
+// This source declares `Band`, `Twice` and returner types.
+//
+// The checker resolves each type member after its declaration.
+//
+// - see: #1834
 
-/// A rubric's band, in millionths.
+/// `Band` names a rubric range.
 pub type Band = *{low : Integer, high : Integer};
 
-/// The band every rubric of the set grades against.
+/// `setBand` gives the rubric range.
 def setBand : Band = *{low = 200000, high = 800000};
 
-/// The width of a band, its fields read through the synonym.
+/// `width` subtracts the band bounds.
 pub def width(band : Band) -> Integer =
   match band where
     | *{.low = low, .high = high} => high - low
 
-/// The set's band is six tenths wide.
+/// `setWidth` reads the set band width.
 @[ runs("600000") ]
 def setWidth() -> Integer { width setBand }
 
-/// A pair of one type, a synonym with a parameter.
+/// `Twice` names a pair family.
 pub type Twice(a : Type) = a * a;
 
-/// The set's bounds as a pair.
+/// `bounds` gives the set bounds.
 def bounds : Twice(Integer) = *{200000, 800000};
 
-/// A computation type, named as a member: a run returning an integer.
+/// `Reading` names an integer returner.
 pub type Reading = -F Integer;
 
-/// The set's width, read by a run of the member's type.
+/// `readWidth` returns the set width.
 @[ runs("600000") ]
 def readWidth() -> Reading { width setBand }
 
-/// A computation type that names another computation member.
+/// `RepeatedReading` aliases `Reading`.
 pub type RepeatedReading = Reading;
 
-/// The set's width at the repeated computation type.
+/// `readAgain` returns the repeated type.
 @[ runs("600000") ]
 def readAgain() -> RepeatedReading { width setBand }
 
-/// A run returning a value of the parameter's type, a family of computation
-/// types.
+/// `Returning` names a parameterized returner family.
 pub type Returning(a : Type) = -F a;
 
-/// The set's low bound, at the family's integer instance.
+/// `low` returns the low bound.
 @[ runs("200000") ]
 def low() -> Returning(Integer) { 200000 }
 
-/// A computation type from a computation family's application.
+/// `IntegerReturning` applies `Returning`.
 pub type IntegerReturning = Returning(Integer);
 
-/// The set's low bound at the named computation type.
+/// `returnedLow` returns the low bound.
 @[ runs("200000") ]
 def returnedLow() -> IntegerReturning { 200000 }

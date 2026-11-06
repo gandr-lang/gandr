@@ -1,5 +1,8 @@
-// The tallies an omitted model implicit is resolved among: the theory,
-// one that includes it, and a step over any model of it.
+// This source defines candidates for model resolution.
+//
+// `Count` has one carrier, a zero, a step and a reading.
+//
+// The checker can resolve any `Model(Count)` implicit.
 //
 // - see: #739
 

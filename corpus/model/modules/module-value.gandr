@@ -1,53 +1,50 @@
-/// A module's name is a value of its model type.
+/// This source shows a module as a model value.
 ///
-/// A module is a value of a model type, so a name needs no `pack` to stand
-/// as one.
+/// `Up` has the model type that `Ticker` defines.
 ///
-/// The name `Up` reads as `pack Up at Model(Ticker)`, the record of its
-/// members, at the model type its own header ascribes.
+/// The checker reads a module name as a packed model value.
 ///
-/// - see: #4485 — a module's name read as its model, `pack` elided
-/// - see: `pathological/modules/module-value.gandr` — a module no model type
-///   ascribes
-/// - cites: [Rossberg-2014-fing_modules] — a module as a first-class value
+/// - see: #4485
+/// - see: pathological/modules/module-value.gandr
+/// - cites: [Rossberg-2014-fing_modules]
 ///
 /// [Rossberg-2014-fing_modules]: https://doi.org/10.1017/S0956796814000264 "Rossberg, Russo and Dreyer, F-ing Modules"
 
-/// A ticker: a carrier, a start and a step.
+/// `Ticker` states a carrier, a start and a step.
 theory Ticker where
-  /// The carrier.
+  /// `C` names the carrier.
   sort C : Type;
 
-  /// The start.
+  /// `start` gives the initial value.
   oper start : () --> C;
-  /// One step.
+  /// `step` advances the carrier.
   oper step : (c : C) --> C;
 
-/// A ticker on the integers, ascribed transparently.
+/// `Up` models an integer ticker.
 module Up : Model(Ticker) where
-  /// The carrier.
+  /// `C` names `Integer`.
   type C = Integer;
 
-  /// Zero.
+  /// `start` gives zero.
   def start() -> Integer { 0 }
 
-  /// One more.
+  /// `step` adds one.
   def step(n : Integer) -> Integer { n + 1 }
 
-/// The ticker as a value, written with `pack`.
+/// `packed` writes `Up` with `pack`.
 def packed : Model(Ticker) = pack Up at Model(Ticker);
 
-/// The same value, written as the module's name.
+/// `named` writes `Up` as a module name.
 def named : Model(Ticker) = Up;
 
-/// The two spellings are one value.
+/// `namedIsPacked` equates both spellings.
 def namedIsPacked() -> Path(named, packed) { Path.here named }
 
-/// One step of any ticker, through its model.
+/// `ticked` steps any ticker value.
 def ticked(c : Model(Ticker), n : c.C) -> c.C =
   let step = c.step
   step n
 
-/// The module, passed by its name to a function taking a ticker.
+/// `upTicked` passes `Up` as a ticker value.
 @[ runs("2") ]
 def upTicked() -> Integer { ticked Up 1 }

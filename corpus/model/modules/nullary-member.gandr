@@ -1,22 +1,22 @@
-//! Calls of no arguments: a module member called through its module's name, and
-//! a suspension called by its own. Such a call is its head's force, and it
-//! answers at the call, as a call that applies arguments does: forcing a thunk,
-//! after Levy's call-by-push-value
-//! [Levy-2003-callbypushvalue_functional_imperative_synthesis].
+//! This source shows calls with no arguments.
+//!
+//! A module member and a suspension can receive an empty call.
+//!
+//! The checker treats each empty call as a force of its head.
 //!
 //! - cites: [Levy-2003-callbypushvalue_functional_imperative_synthesis]
 //!
 //! [Levy-2003-callbypushvalue_functional_imperative_synthesis]: https://doi.org/10.1007/978-94-007-0954-6 "Levy, Call-By-Push-Value"
 
-/// A module whose one member takes no arguments.
+/// `Origin` has an empty-argument member.
 module Origin where
-  /// The starting point.
+  /// `zero` gives the starting point.
   def zero() -> Integer { 0 }
 
-/// The member called through its module's name.
+/// `started` calls `Origin.zero`.
 @[ runs("0") ]
 def started() -> Integer { Origin.zero () }
 
-/// A top-level suspension called with no arguments by its own name.
+/// `restarted` calls `started`.
 @[ runs("0") ]
 def restarted() -> Integer { started () }

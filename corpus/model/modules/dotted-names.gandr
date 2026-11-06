@@ -1,26 +1,29 @@
-// A dotted declaration name declares in the modules its prefix names, each
-// opened where the source declares none: a theory and a module written
-// through one prefix stand in one module, a path reaches the module's
-// member, and a model reads the theory by its path.
+// This source shows a dotted declaration name.
+//
+// `Kit` contains a theory and a module through the same prefix.
+//
+// A path resolves the theory, the module and their members.
+//
+// - see: #2687
 
-/// A shape with a label, declared in `Kit`.
+/// `Kit.Labelled` declares a label.
 theory Kit.Labelled where
   /// The label.
   oper label : String;
 
-/// Tools beside the shape, in the same `Kit`.
+/// `Kit.Tools` defines breadth.
 module Kit.Tools where
   /// A breadth.
   def breadth = 4;
 
-/// A model of the shape, read by its path.
+/// `Tag` models `Kit.Labelled`.
 module Tag : Model(Kit.Labelled) where
   /// Its label.
   def label : String = "tag";
 
-/// The breadth, through the opened module's path.
+/// `breadth` reads `Kit.Tools.breadth`.
 def breadth = Kit.Tools.breadth;
 
-/// The label and the breadth, gathered.
+/// `labelled_breadth` gathers the label and breadth.
 @[ runs("*{.breadth = 4, .label = \"tag\"}") ]
 def labelled_breadth = *{label = Tag.label, breadth = breadth};

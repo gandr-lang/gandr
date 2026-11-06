@@ -1,21 +1,24 @@
-// A signature whose fields come in another order than the module's members:
-// matching is by name, so the order is no refusal, and a member the
-// signature leaves out stays inside.
+// This source shows a module with a reordered signature.
+//
+// `Ordered` declares its members in a different order from its signature.
+//
+// The checker matches each member by name.
+//
+// - see: #2917
 
-/// A module whose signature lists its members last first.
+/// `Ordered` uses a signature with reordered members.
 module Ordered : *{ third : Integer, first : Integer, second : Integer } where {
-  /// The first value.
+  /// `first` gives one.
   def first = 1;
-  /// A member the signature leaves out.
+  /// `hidden` stays outside the signature.
   def hidden = 99;
-  /// One more than the first. The operator's call is pure, so the value
-  /// stands as what the call returns.
+  /// `second` adds one to `first`.
   @[ checks ]
   def second = first + 1;
-  /// One more than the second, for the same reason.
+  /// `third` adds one to `second`.
   @[ checks ]
   def third = second + 1;
 }
 
-/// The three gathered in a record, each member typed by the signature.
+/// `together` gathers every exported member.
 def together = *{a = Ordered.first, b = Ordered.second, c = Ordered.third};

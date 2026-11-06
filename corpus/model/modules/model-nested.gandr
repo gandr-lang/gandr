@@ -1,10 +1,9 @@
-// A nested model: `oper inner : Model(Answering)` states that a model of the
-// theory holds a model of `Answering` under the name `inner`, as
-// `module-members.gandr`'s record signature nests `inner : #{ answer: Integer }`.
-// A model answers it with a nested module ascribed `Model(Answering)`, and a
-// reader reaches the nested model's members through the outer one. A model
-// sealed at the outer theory seals the nested one too, and its sort is written
-// as a path through the nested model's name, `Sealed.inner.T`.
+// This source shows a nested model.
+//
+// An outer model holds an inner model as one operation.
+//
+// The checker resolves inner members through the outer model path.
+// A seal also hides the inner model carrier.
 //
 // - see: #1311
 

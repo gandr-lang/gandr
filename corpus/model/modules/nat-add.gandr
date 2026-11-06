@@ -1,19 +1,19 @@
-//! A module ascribed a transparent signature, after ML's translucent sums
-//! [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]:
-//! the signature states its type's definition, so the members are read at the
-//! integers outside the module.
+//! This source shows a transparent module signature.
+//!
+//! `NatAdd` exposes its carrier as `Integer`.
+//!
+//! The checker reads each module member at that exposed carrier.
 //!
 //! - cites: [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]
 //!
 //! [Harper-1994-a_type_theoretic_approach_to_higher_order_modules_with_sharing]: https://doi.org/10.1145/174675.176927 "Harper and Lillibridge, A Type-Theoretic Approach to Higher-Order Modules with Sharing"
 
-/// The integers under addition, the signature exposing its type as
-/// `Integer`.
+/// `NatAdd` exposes integer addition through its signature.
 module NatAdd : *{ type M = Integer, zero : M, add : (M, M) -> M } where {
-  /// The unit of the sum.
+  /// `zero` gives the additive unit.
   @[ runs("0") ]
   def zero = 0;
-  /// The sum.
+  /// `add` adds two integers.
   @[ checks ]
   def add(x : Integer, y : Integer) -> Integer { x + y }
 }

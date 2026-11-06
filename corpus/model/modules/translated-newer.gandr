@@ -1,14 +1,12 @@
-// The newer version of a small package, which `translated.gandr` imports
-// through a flow.
+// This source shows a newer package version.
 //
-// Its answer is now called `reply`, and it keeps a count the older version did
-// not. An importer written against the older signature reads it unchanged.
+// `Newer` renames the old answer as `reply` and adds `count`.
 //
-// The source publishes the flow that reads it at the older signature. An
-// importer names that flow after `via`, and the flow's body reads `reply`.
+// A flow presents the newer package at the older signature.
+// The checker resolves an importer through that flow.
 //
-// - see: #3378 — flows and `via`
-// - see: `model/modules/translated.gandr` — the importer
+// - see: #3378
+// - see: model/modules/translated.gandr
 
 /// The older version's signature, which importers still read.
 pub theory Older where

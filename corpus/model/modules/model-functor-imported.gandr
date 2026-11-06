@@ -1,15 +1,15 @@
-// A functor's argument names a module another source declares at its top
-// level, read through an unqualified import as any module path is.
+// This source shows a functor argument from an imported module.
 //
-// - see: #1993 — `ImportedSquared`
-
-// The magma, its integer models and the squaring functor.
+// `model-functor.gandr` provides `Squaring` and `Times`.
+//
+// The checker resolves the imported module through an unqualified import.
+//
+// - see: #1993
 import "./model-functor.gandr";
 
-/// Squaring the imported integers under multiplication: the argument is
-/// the imported model.
+/// `ImportedSquared` applies `Squaring` to `Times`.
 module ImportedSquared = Squaring(Times);
 
-/// Four squared, through the instance of the imported model.
+/// `sixteen` squares four through `ImportedSquared`.
 @[ runs("16") ]
 def sixteen() -> Integer { ImportedSquared.square 4 }
