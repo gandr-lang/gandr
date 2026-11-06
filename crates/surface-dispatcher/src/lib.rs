@@ -206,6 +206,12 @@ pub use crate::cells::CellRow;
 pub use crate::cells::Census;
 pub use crate::cells::CensusFault;
 pub use crate::cells::CensusStep;
+pub use crate::cells::FUSIONS;
+pub use crate::cells::FusionRow;
+pub use crate::cells::FusionVerdict;
+pub use crate::cells::Fusions;
+pub use crate::cells::HoleCount;
+pub use crate::cells::OverBudget;
 pub use crate::component::Freshness;
 pub use crate::component::ImportBase;
 pub use crate::component::ImportPath;
@@ -545,11 +551,15 @@ pub enum Invocation
     /// verify its exemplars.
     Ledger(LedgerTask),
     /// `cells`: report the rewriting cells of the sources under `paths`, each
-    /// hole with how many times its cell's right-hand side writes it.
+    /// hole with how many times its cell's right-hand side writes it, and,
+    /// when `fusions` asks, each block's fusion cells with their composed
+    /// bounds.
     Cells
     {
         /// The sources and directories of sources to read, in order.
         paths: Vec<PathBuf>,
+        /// Whether each block's composition overlaps are fused.
+        fusions: Fusions,
     },
 }
 
@@ -737,7 +747,7 @@ pub fn dispatch(invocation: Invocation) -> Outcome
             width,
         } => Outcome::Format(Formatting::new(paths, options, rewrite, width)),
         Invocation::Ledger(task) => Outcome::Ledger(task),
-        Invocation::Cells { paths } => Outcome::Cells(Census::new(paths)),
+        Invocation::Cells { paths, fusions } => Outcome::Cells(Census::new(paths, fusions)),
     }
 }
 
@@ -1115,6 +1125,7 @@ mod tests
                 PathBuf::from("no/such/first.gandr"),
                 PathBuf::from("no/such/second.gandr"),
             ],
+            fusions: super::Fusions::Omitted,
         });
         let Outcome::Cells(mut census) = outcome
         else {
