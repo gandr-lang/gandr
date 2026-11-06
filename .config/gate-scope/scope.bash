@@ -6,15 +6,17 @@
 # each package that depends on one. An exclusion, not a `--package` list,
 # because `cargo test --doc` refuses a named package without a library and
 # passes over one under `--workspace`. The packages it runs over are named on
-# stderr. The change is read as `select.bash` reads it. Without `origin/main`
-# the change is unknown, and the scope is the whole workspace. A change with
-# no Rust path selects no Rust check, and its scope is the whole workspace
-# too, so a Rust check run by hand never excludes every package.
+# stderr. The change is read as `select.bash` reads it. Without the trunk
+# (`.config/pr-stack/trunk.bash`) the change is unknown, and the scope is the
+# whole workspace. A change with no Rust path selects no Rust check, and its
+# scope is the whole workspace too, so a Rust check run by hand never excludes
+# every package.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)
-if ! base=$(git merge-base origin/main HEAD 2> /dev/null); then
-  echo "scope: no fork from origin/main to read the change against; the whole workspace" >&2
+source "$here/../pr-stack/trunk.bash"
+if ! base=$(git merge-base "origin/$trunk" HEAD 2> /dev/null); then
+  echo "scope: no fork from origin/$trunk to read the change against; the whole workspace" >&2
   echo --workspace
   exit 0
 fi

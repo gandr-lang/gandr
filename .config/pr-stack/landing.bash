@@ -18,7 +18,6 @@
 # The next run reads the server again.
 set -euo pipefail
 repo=${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}
-trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 token=${LANDING_TOKEN_HELD:-false}
 required=$(required_contexts)

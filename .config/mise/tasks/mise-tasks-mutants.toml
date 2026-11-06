@@ -401,7 +401,7 @@ description = "Mutation-test the lines a change adds, each mutant under the witn
 tools."cargo:cargo-mutants" = "27.1.0"
 tools.jq = "1.8.1"
 usage = '''
-flag "--base <ref>" default="origin/main" help="the branch the change is read against"
+flag "--base <ref>" help="the branch the change is read against; the trunk of .config/pr-stack/trunk.bash when absent"
 flag "--lanes <count>" default="4" help="workspace copies whose groups build and test at once"
 flag "--timeout <seconds>" default="300" help="the longest a mutant's witnesses may run"
 flag "--until <seconds>" help="the run's wall-time budget, from the task's start"
@@ -415,7 +415,8 @@ until=${usage_until:-}
 [[ -z "$until" || "$until" =~ ^[1-9][0-9]*$ ]] || { echo '--until takes a positive count of seconds' >&2; exit 2; }
 seed=()
 [[ -z "${usage_seed_target:-}" ]] || seed=(--seed-target "$usage_seed_target")
-base=${usage_base:-origin/main}
+source .config/pr-stack/trunk.bash
+base=${usage_base:-origin/$trunk}
 output=${MUTANTS_OUTPUT:-mutants.out/changed}
 source .config/mise/mutants.bash
 fork=$(git merge-base "$base" HEAD) || { printf 'HEAD shares no history with %s\n' "$base" >&2; exit 2; }

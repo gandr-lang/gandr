@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Prints the `check:*` tasks a gate runs for the change in this worktree, one
 # per line (#4911, `select.jq`). The change is every path the working tree
-# changes against its fork from `origin/main`, committed or not, and every
+# changes against its fork from `origin/$trunk`, the trunk
+# (`.config/pr-stack/trunk.bash`, #5443), committed or not, and every
 # untracked path git does not ignore. With a commit as its argument, the
 # change is every path that commit changes against its fork, as `passed.bash`
-# reads a head (#5076). Without `origin/main` the change is unknown, and it
+# reads a head (#5076). Without the trunk the change is unknown, and it
 # selects every group. With `--landing`, the script prints only the checks
 # the landing's gate runs (#5458): `mise run check` and `passed.bash require`
 # read those.
@@ -16,6 +17,7 @@
 # Usage: select.bash [--landing] [<commit>]
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../pr-stack/trunk.bash"
 landing=false
 if [[ ${1:-} == --landing ]]; then
   landing=true
@@ -23,8 +25,8 @@ if [[ ${1:-} == --landing ]]; then
 fi
 head=${1:-}
 tasks=${GATE_TASKS:-$(mise tasks ls --json | jq -c '[.[] | .name | select(startswith("check:"))]')}
-if ! base=$(git merge-base origin/main "${head:-HEAD}" 2> /dev/null); then
-  echo "check: no fork from origin/main to read the change against; the change selects every group" >&2
+if ! base=$(git merge-base "origin/$trunk" "${head:-HEAD}" 2> /dev/null); then
+  echo "check: no fork from origin/$trunk to read the change against; the change selects every group" >&2
   jq -n -r --argjson tasks "$tasks" --argjson landing "$landing" '{tasks: $tasks, changed: ["."], landing: $landing}' \
     | jq -r -L "$here" -f "$here/select.jq" \
     | jq -r '.[]'

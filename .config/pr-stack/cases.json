@@ -3122,14 +3122,16 @@
     "output": "[{\"number\":81,\"act\":\"dequeued\"}]"
   },
   {
-    "name": "#2539: a throwaway branch with no pull request is listed, remote and local; the trunk, an open pull request's head and the queue's branches are not",
+    "name": "#2539: a throwaway branch with no pull request is listed, remote and local; the kept branches (#5443), an open pull request's head and the queue's branches are not",
     "program": "branches.jq",
     "input": {
-      "trunk": "main",
+      "kept": ["main", "landing", "integration"],
       "heads": ["workflow-2539-branches-sweep"],
       "issues": ["surface: the run target\nWork continues on `wip/core-1630-static-lambda`."],
       "remote": [
         "main",
+        "landing",
+        "integration",
         "probe-throwaway",
         "workflow-2539-branches-sweep",
         "gh-readonly-queue/main/pr-2702-abc"
@@ -3155,7 +3157,7 @@
     "name": "#2539: a wip/ branch an open issue names is not listed; one no issue names is, once, whether local or remote",
     "program": "branches.jq",
     "input": {
-      "trunk": "main",
+      "kept": ["main", "landing", "integration"],
       "heads": ["workflow-2539-branches-sweep"],
       "issues": ["surface: the run target\nWork continues on `wip/core-1630-static-lambda`."],
       "remote": ["wip/core-1630-static-lambda", "wip/surface-1105-run-target"],
@@ -3172,7 +3174,7 @@
     "name": "a wip/ branch is named only whole: an issue naming a longer branch it prefixes does not name it",
     "program": "branches.jq",
     "input": {
-      "trunk": "main",
+      "kept": ["main", "landing", "integration"],
       "heads": ["workflow-2539-branches-sweep"],
       "issues": ["see wip/core-1630-static-lambda-2"],
       "remote": ["wip/core-1630-static-lambda"],
@@ -3184,7 +3186,7 @@
     "name": "a local branch is listed with the worktree holding it",
     "program": "branches.jq",
     "input": {
-      "trunk": "main",
+      "kept": ["main", "landing", "integration"],
       "heads": ["workflow-2539-branches-sweep"],
       "issues": ["surface: the run target\nWork continues on `wip/core-1630-static-lambda`."],
       "remote": [],

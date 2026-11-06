@@ -8,7 +8,7 @@
 #
 # Input: an object with
 #   open   the open pull requests (`open.jq`);
-#   trunk  the default branch;
+#   trunk  the trunk of `trunk.bash`;
 #   held   the numbers of the pull requests outside the stack, queued, whose
 #          branch the stack's top holds.
 # Output: `{wait, off}`: `wait` the numbers the stack waits on, ascending;

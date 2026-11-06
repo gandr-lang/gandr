@@ -30,7 +30,8 @@
 #
 # It runs those checks that the change selects
 # (`.config/gate-scope/select.jq`, #4911): the paths the branch changes against
-# its fork from `origin/main`, mapped by `.config/gate-scope/table.json`. A
+# its fork from `origin/$trunk` (`.config/pr-stack/trunk.bash`), mapped by
+# `.config/gate-scope/table.json`. A
 # workflow-only change runs no Rust check. The Rust checks it selects run over
 # the packages the change touches and every package that depends on one
 # (`.config/gate-scope/packages.jq`, #5014), passed as `GATE_SCOPE`; a change
@@ -625,7 +626,8 @@ env.CARGO_TARGET_DIR = "{{ config_root }}/target/evidence"
 run = ".config/mise/scope cargo doc --workspace --locked --no-deps --document-private-items"
 
 # The revision a change starts from, which every measurement of it reads
-# (#2067): where HEAD left origin/main, or, past it, the newest head of
+# (#2067): where HEAD left the trunk, `origin/$trunk`
+# (`.config/pr-stack/trunk.bash`, #5443), or, past it, the newest head of
 # another open pull request HEAD carries. A pull request retargeted onto the
 # trunk while the ones below it are still queued carries their commits, and
 # the merge base with the trunk reads them as its own change until they merge;
@@ -638,11 +640,12 @@ description = "Print the revision the checked-out change is measured against"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-base=$(git merge-base origin/main HEAD)
+source .config/pr-stack/trunk.bash
+base=$(git merge-base "origin/$trunk" HEAD)
 own=${GITHUB_HEAD_REF:-$(git branch --show-current)}
 head=$(git rev-parse HEAD)
 heads=$(gh api --paginate "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, .head.ref, .head.sha] | @tsv' 2> /dev/null) \
-  || { echo "the open pull requests are unreadable; measuring from the merge base with origin/main" >&2; heads=; }
+  || { echo "the open pull requests are unreadable; measuring from the merge base with origin/$trunk" >&2; heads=; }
 carried=
 while IFS=$'\t' read -r number ref sha; do
   [[ -n $sha && $ref != "$own" && $sha != "$head" ]] || continue
@@ -651,7 +654,7 @@ while IFS=$'\t' read -r number ref sha; do
     carried=$number
   fi
 done <<< "$heads"
-if [[ -n $carried ]]; then echo "measuring from #$carried's head, which HEAD carries past origin/main" >&2; fi
+if [[ -n $carried ]]; then echo "measuring from #$carried's head, which HEAD carries past origin/$trunk" >&2; fi
 printf '%s\n' "$base"
 '''
 
