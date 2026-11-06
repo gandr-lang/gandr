@@ -64,6 +64,7 @@ use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Notation;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::PresentationError;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Unreadable;
@@ -638,6 +639,10 @@ enum Held
     /// A printing that writes a constructor bare where more than one family
     /// or import answers its name, so the lowering refuses it (#5779).
     BareName,
+    /// A printing past the printer's budget: the layout engine refuses the
+    /// document at a ceiling, or the walk stops at its visit budget. The
+    /// printer spells a shared type as its unshared tree (#5826).
+    PastTheBudget,
 }
 
 impl fmt::Display for Held
@@ -658,6 +663,7 @@ impl fmt::Display for Held
             Self::Withdrawn => "#5207, a product of thunk types the formatter withdraws in a quote",
             Self::SeveralResults => "#5173, a bind of a call's outputs",
             Self::BareName => "#5779, a constructor written bare where its name is ambiguous",
+            Self::PastTheBudget => "#5826, a shared type spelled past the printer's budget",
         })
     }
 }
@@ -787,9 +793,15 @@ fn spelt(
     let typed = present_type(typed, CoreNode::ValueType(ty), page, style);
     let bodied = present_definition(bodied, CoreNode::Value(body), page, style)
         .map(|printed| (String::from(printed.as_ref()), printed));
-    let (Ok(typed), Ok((text, bodied))) = (typed, bodied)
-    else {
-        return Spelt::Unfaithful(String::from("the printer refused it"));
+    let (typed, (text, bodied)) = match (typed, bodied) {
+        (Ok(typed), Ok(bodied)) => (typed, bodied),
+        (Err(PresentationError::Build(_) | PresentationError::Render(_)), _)
+        | (_, Err(PresentationError::Build(_) | PresentationError::Render(_))) => {
+            return Spelt::Held(Held::PastTheBudget);
+        },
+        (Err(PresentationError::Unbalanced), _) | (_, Err(PresentationError::Unbalanced)) => {
+            return Spelt::Unfaithful(String::from("the printer refused it"));
+        },
     };
     if faithful(&typed) && faithful(&bodied) {
         return Spelt::Whole(String::from(typed.as_ref()), text);
@@ -823,6 +835,13 @@ fn unfaithful(
         .all(|&reason| reason == Unspelled::Unreadable(Unreadable::SeveralResults))
     {
         Spelt::Held(Held::SeveralResults)
+    }
+    // A walk that stops at its visit budget spells a shared type no further.
+    else if unspelled
+        .iter()
+        .all(|&reason| reason == Unspelled::OverBudget)
+    {
+        Spelt::Held(Held::PastTheBudget)
     }
     // A handler written as `reset` and `shift` leaves the scope of each
     // capability it delimits unnamed, so its region is elided with it.
