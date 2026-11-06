@@ -165,15 +165,41 @@ fi
 # A merge that advances a `collector` ticks the rows its body's `## Rows`
 # names, and a collector it leaves with no open row closes, its comment naming
 # the landing (#3732, `landed.jq`). The landing is $CLAIMS_MERGED_NUMBER.
+# Two landings that advance one collector and merge at once read the same
+# body, so each merge also ticks the rows of the merged landings on the
+# collector's timeline, and the later write keeps the earlier's ticks (#5583).
 advanced=$(jq -rn -L "$here" 'include "targets"; env.CLAIMS_MERGED_BODY // "" | targets("advances") | unique[]')
 [[ -n $advanced ]] || exit 0
-issues=$(for number in $advanced; do
-  gh api "repos/$repo/issues/$number" --jq 'select(.state == "open" and .pull_request == null) | {number, labels: [.labels[].name], body: (.body // "")}'
-done | jq -s .)
 landing=${CLAIMS_MERGED_NUMBER:-}
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-jq -n --argjson issues "$issues" '{body: (env.CLAIMS_MERGED_BODY // ""), issues: $issues}' \
+
+# landings <number>: the bodies of the merged pull requests of this repository
+# on the timeline of the issue <number>, as one JSON array. A failed read
+# gives none, so the merged body's own rows still tick, and the next merge or
+# a tick by hand takes the rest.
+landings() {
+  local read
+  if read=$(gh api --paginate "repos/$repo/issues/$1/timeline?per_page=100" \
+    --jq ".[] | select(.event == \"cross-referenced\" and .source.issue.pull_request.merged_at != null and (.source.issue.repository_url | endswith(\"/repos/$repo\"))) | .source.issue.body // \"\" | tojson"); then
+    jq -cs . <<< "$read"
+  else
+    echo "could not read the timeline of #$1: only the merged body's rows tick" >&2
+    echo '[]'
+  fi
+}
+
+issues=$(for number in $advanced; do
+  issue=$(gh api "repos/$repo/issues/$number" --jq 'select(.state == "open" and .pull_request == null) | {number, labels: [.labels[].name], body: (.body // "")}')
+  [[ -n $issue ]] || continue
+  if [[ $(jq '.labels | index("collector") != null' <<< "$issue") == true ]]; then
+    landings "$number" > "$scratch/landings.json"
+    jq -c --slurpfile landings "$scratch/landings.json" '. + {landings: $landings[0]}' <<< "$issue"
+  else
+    printf '%s\n' "$issue"
+  fi
+done | jq -s .)
+jq -c '{body: (env.CLAIMS_MERGED_BODY // ""), issues: .}' <<< "$issues" \
   | jq -c -L "$here" -f "$here/landed.jq" \
   | while IFS= read -r landed; do
       number=$(jq -r .number <<< "$landed")

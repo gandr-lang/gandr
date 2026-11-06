@@ -54,5 +54,28 @@
       "body": "- [x] `a`\n\n| pull request | status |\n| --- | --- |\n| #9 | open |\n",
       "close": false
     }
+  },
+  {
+    "name": "#5583: two landings that advance one collector and merge at once, read from the same body, tick the rows of both, and a landing that only names the collector ticks none",
+    "input": {
+      "body": "Advances #5239\n\n## Rows\n\n- `surface-format`\n",
+      "issues": [
+        {
+          "number": 5239,
+          "labels": ["kind:refactor", "area:surface", "collector"],
+          "body": "## Rows\n\n- [ ] `surface-format`\n- [ ] `surface-parser`\n- [ ] `surface-lowering`\n",
+          "landings": [
+            "Advances #5239\n\n## Rows\n\n- `surface-format`\n",
+            "Advances #5239\n\n## Rows\n\n- `surface-parser`\n",
+            "Closes #5541\n\nSee #5239.\n\n## Rows\n\n- `surface-lowering`\n"
+          ]
+        }
+      ]
+    },
+    "output": {
+      "number": 5239,
+      "body": "## Rows\n\n- [x] `surface-format`\n- [x] `surface-parser`\n- [ ] `surface-lowering`\n",
+      "close": false
+    }
   }
 ]
