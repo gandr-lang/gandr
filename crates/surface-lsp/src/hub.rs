@@ -1490,14 +1490,17 @@ mod tests
                 ),
             ),
             Some(serde_json::json!(format!(
-                "<pre><code>{} : {}[.{} = {} {} {}]({}, {})</code></pre>\n\nThe swap and the swap \
-                 three times agree at every boolean.",
+                "<pre><code>{} : {}[.{} = {} {} {}]({}, {})</code></pre>\n\n<code>{}</code> proves \
+                 that <code>{}</code> and <code>{}</code> agree at every boolean.",
                 coloured("functionDef", "agree"),
                 coloured("typeBuiltin", "Path"),
                 coloured("type", "A"),
                 coloured("type", "Bool"),
                 coloured("operator", "-&gt;"),
                 coloured("type", "Bool"),
+                coloured("variable", "exchange"),
+                coloured("variable", "flip"),
+                coloured("variable", "agree"),
                 coloured("variable", "exchange"),
                 coloured("variable", "flip"),
             ))),
