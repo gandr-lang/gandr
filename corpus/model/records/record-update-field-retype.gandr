@@ -1,13 +1,18 @@
-// A record update may give a field a value of another type: the new record's
-// type states the new one.
+// This source tests record updates that change a field type.
+//
+// The update gives `count` a string value. The pathological twin refuses the
+// stale integer record type.
+//
+// The stated result types check the new record type.
+//
+// - see: `pathological/records/record-update-stale-type.gandr` — `stale`
 
-/// A cell with an integer count.
+/// `cell` holds an integer count and a label.
 def cell = *{count = 3, label = "start"};
 
-/// `cell` with a string count, the retyped record stated.
+/// `named` changes `cell.count` to a string.
 def named : *{count : String, label : String} = *{cell | count = "three"};
 
-/// `count` given a string and returned: the record's `count` is the string
-/// now.
+/// `recounted` returns `cell` with a string count.
 @[ runs("*{.count = \"three\", .label = \"start\"}") ]
 def recounted() -> *{count : String, label : String} { *{cell | count = "three"} }

@@ -1,11 +1,17 @@
-// A record update at a field the record lacks extends it with that field.
+// This source tests record updates that add a field.
+//
+// An update at `b` gives `single` two fields.
+//
+// The stated types check the extended records.
+//
+// - see: `pathological/records/record-update-stale-type.gandr` — `stale`
 
-/// A record of one field.
+/// `single` has field `a`.
 def single = *{a = 1};
 
-/// `single` extended at `b`, the record type it gains stated.
+/// `pair` adds `b` with its stated result type.
 def pair : *{a : Integer, b : Integer} = *{single | b = 2};
 
-/// `single` extended at `b` and returned: the record gains the field.
+/// `grown` returns a record that adds `b`.
 @[ runs("*{.a = 1, .b = 2}") ]
 def grown() -> *{a : Integer, b : Integer} { *{single | b = 2} }

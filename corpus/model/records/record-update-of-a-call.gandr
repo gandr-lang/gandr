@@ -1,9 +1,14 @@
-// A record update whose base is a call: the call runs before the update, and
-// the fields the update keeps are read off the record it returns.
+// This source tests a record update whose base is a call.
+//
+// The call returns a record before the update changes its field.
+//
+// The evaluator keeps the call result fields that the update does not change.
+//
+// - see: `pathological/records/record-update-non-record.gandr` — `updated`
 
-/// A point placed at `n` across, two up.
+/// `placed` returns a point at `n` across and two up.
 def placed(n : Integer) -> *{x : Integer, y : Integer} { *{x = n, y = 2} }
 
-/// The point a call returns, updated at `x`: `y` is the one the call returned.
+/// `moved_call` changes `x` in the record that `placed` returns.
 @[ runs("*{.x = 9, .y = 2}") ]
 def moved_call() -> *{x : Integer, y : Integer} { *{placed 1 | x = 9} }

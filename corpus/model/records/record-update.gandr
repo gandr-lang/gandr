@@ -1,8 +1,14 @@
-// A record updated at one field: a new record, the other fields kept.
+// This source tests a record update at one field.
+//
+// The update creates a new record and keeps its other fields.
+//
+// The run expectation checks the updated point.
+//
+// - see: `pathological/records/wide-record-update.gandr` — `updated`
 
-/// A point of two fields.
+/// `point` holds fields `x` and `y`.
 def point = *{x = 1, y = 2};
 
-/// `point` updated at `x`: a new record, `y` kept.
+/// `moved` changes `point.x` and keeps `point.y`.
 @[ runs("*{.x = 9, .y = 2}") ]
 def moved() -> *{x : Integer, y : Integer} { *{point | x = 9} }
