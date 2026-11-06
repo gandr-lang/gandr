@@ -969,11 +969,14 @@ path = "crates/theory-order-maintenance"
 default-features = false
 
 # One law checker for ordered semirings, with the max-plus semiring and the
-# Lawvere quantale over exact dyadics.
+# Lawvere quantale over exact dyadics, and the usage semiring of the core
+# language's grades.
 # features:
 # - none: alloc-only laws and instances.
 # consumers:
-# - core-term (dev)
+# - core-checker
+# - core-term
+# - surface-dispatcher (dev)
 [workspace.dependencies.gandr-theory-ordered-algebras]
 path = "crates/theory-ordered-algebras"
 default-features = false

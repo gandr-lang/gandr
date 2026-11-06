@@ -967,7 +967,6 @@ INSERT INTO purpose VALUES('core-term','ua::Generator','struct','One generator o
 INSERT INTO purpose VALUES('core-term','ua::Sides','struct','The two descriptions a univalence statement relates, the source first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','ua::Stratum','struct','The stratum a univalence statement is made at: its degree and the largest shape its catalogue enumerates.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','ua::Unread','enum','Why a description is not a graphical species: no sort or more than one, an indexed sort, parameters, constructors, rules, or a leg at another sort.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','usage::Usage','enum','The number of uses of a hypothesis in the usage semiring {0, 1, omega}: zero, one or many, with an addition, a multiplication and an order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','world::Unmigrated','enum','Names why a migration answered nothing: no binding names a host for its world, that host was not reached, holds no code it names or does not stand at its world, a capture did not reach it, or its run answered nothing that crosses.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','world::World','enum','A world: a declared one, by the admission position of its declaration, or the host''s unnamed one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','world::WorldForm','enum','A world form: one computation former whose cases hold a value at the current world, open a handle, or migrate to another world.',NULL,'fits','sound',NULL);
@@ -4083,6 +4082,8 @@ INSERT INTO purpose VALUES('theory-ordered-algebras','signature::Comparison','en
 INSERT INTO purpose VALUES('theory-ordered-algebras','signature::InstanceName','struct','Names an instance, so each failure says which instance broke.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-ordered-algebras','signature::OrderedSemiring','trait','States an ordered semiring''s carrier, order, zero, one, addition and multiplication, so one checker reads every instance.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-ordered-algebras','signature::Outside','struct','Names an operation whose exact result lies past the represented elements, so the law that reads it stays undecided.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-ordered-algebras','usage::Usage','enum','The number of uses of a hypothesis in the usage semiring {0, 1, omega}: zero, one or many, with an addition, a multiplication and an order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-ordered-algebras','usage::Usages','struct','Names the usage semiring on its whole carrier, so its laws are checked.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','evidence::Argument','struct','An argument''s index among its node''s arguments, left to right.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','evidence::Clause','enum','The clause of the order a step applies.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','evidence::Cover','enum','How a covering step covers one argument of its right subterm.',NULL,'fits','sound',NULL);
