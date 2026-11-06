@@ -1118,7 +1118,7 @@ mod tests
             &opened(
                 &uri,
                 &json!(2_i32),
-                &json!("def f : Integer ;\ndef f = missing ;\n"),
+                &json!(include_str!("connection/fixtures/missing-body.gandr")),
             ),
         );
         let hole = json!({ "start": { "line": 1_u32, "character": 8_u32 },
@@ -1186,7 +1186,7 @@ mod tests
             &opened(
                 &uri,
                 &json!(1_i32),
-                &json!("def f : Integer ;\ndef f = missing ;\n"),
+                &json!(include_str!("connection/fixtures/missing-body.gandr")),
             ),
         );
         let hole = json!({ "start": { "line": 1_u32, "character": 8_u32 },
