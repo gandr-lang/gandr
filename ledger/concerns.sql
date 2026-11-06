@@ -52,6 +52,7 @@ CREATE TABLE site(
   CHECK((concern = 'sharing') = (mechanism IS NOT NULL))
 ) WITHOUT ROWID;
 INSERT INTO site VALUES('collapse','theory-coherent-resolutions','lawvere','implements',NULL,'The bar complex of a first-order block''s Lawvere theory as a complex: the first, inner and last faces of a cell, equal faces summed, and a cell inside when it is proper, composable and in normal form.');
+INSERT INTO site VALUES('collapse','theory-coherent-resolutions','lawvere::brown','implements',NULL,'Brown''s collapsing scheme on that bar complex as a `Scheme`: each cell read from the left along the leftmost innermost redex, and classed redundant, collapsible or essential with its partner.');
 INSERT INTO site VALUES('collapse','theory-discrete-morse','collapse','defines',NULL,'`Scheme` and `collapse`: the class of each cell, and the check of a scheme as an acyclic matching that keeps the critical cells and counts each fault.');
 INSERT INTO site VALUES('collapse','theory-discrete-morse','complex','defines',NULL,'`Complex` and `Incidence`: the faces of a cell one dimension down, each with its incidence, and whether a cell lies in the complex.');
 INSERT INTO site VALUES('collapse','theory-discrete-morse','greedy','implements',NULL,'`greedy` and `Matched`: a matching built in list order, each pair kept only when no gradient path runs back from the upper cell to the lower one, and read as a scheme.');
