@@ -1,20 +1,9 @@
-//! A Tarski universe closed under pairs, dependent pairs and paths.
+//! This fixture defines a Tarski universe.
 //!
-//! Martin-Löf's universe is closed under dependent functions, dependent pairs
-//! and identity types. Each such code decodes to a family at the decodes of
-//! its fields. A decode thus stands as a family's argument, a call in place.
-//! The call is the type it returns.
+//! The universe contains pair, dependent-pair, and path codes.
 //!
-//! Each code is its own block. The pair code decodes to the pairs of its two
-//! decodes. The dependent pair code decodes to the pairs over its first
-//! decode. Its second field is a family of codes over that decode. The
-//! decoder's binder takes the same decode, so the two convert. The path code
-//! decodes to the paths between two values of its carrier's decode.
+//! Each decoder returns the type named by its code.
 //!
-//! - see: `pathological/universe/pair-and-path-codes.gandr` — a run for the
-//!   first decode, refused
-//! - see: `model/universe/inductive-recursive.gandr` — the dependent
-//!   functions, admitted
 //! - cites: [MartinLof-1984-intuitionistic_type_theory]
 //!
 //! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
