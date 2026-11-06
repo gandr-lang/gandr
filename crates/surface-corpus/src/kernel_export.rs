@@ -1094,6 +1094,21 @@ mod kernel_corpus_partition
                 },
                 _ => None,
             };
+            // A patched type's formation crosses as witness definitions the
+            // readmission admits ahead of the first declaration whose type
+            // holds it, named `formation.<n>.record.<k>` and
+            // `formation.<n>.meets.<k>`, with `n` the type's admission ordinal
+            // and `k` the round of its meets.
+            let formation = |name: &StructuredName| match *name.segments() {
+                [ref formation, ref ordinal, ref part, ref round]
+                    if formation.as_ref() == "formation"
+                        && matches!(part.as_ref(), "record" | "meets")
+                        && round.as_ref().parse::<usize>().is_ok() =>
+                {
+                    ordinal.as_ref().parse::<usize>().ok()
+                },
+                _ => None,
+            };
             let (assumed, held): (Vec<&StructuredName>, Vec<&StructuredName>) = read
                 .declarations()
                 .iter()
@@ -1102,6 +1117,9 @@ mod kernel_corpus_partition
             let (models, held): (Vec<&StructuredName>, Vec<&StructuredName>) = held
                 .into_iter()
                 .partition(|&name| free_model(name).is_some());
+            let (formations, held): (Vec<&StructuredName>, Vec<&StructuredName>) = held
+                .into_iter()
+                .partition(|&name| formation(name).is_some());
             for (ordinal, &name) in assumed.iter().enumerate() {
                 assert_eq!(
                     session_assumption(name),
@@ -1115,6 +1133,17 @@ mod kernel_corpus_partition
                     Some(ordinal),
                     "{path}: the free models are numbered in admission order: {models:?}"
                 );
+            }
+            let mut formed = 0_usize;
+            for &name in &formations {
+                let ordinal = formation(name);
+                assert!(
+                    ordinal == Some(formed) || ordinal == formed.checked_sub(1),
+                    "{path}: the formations are numbered in admission order: {formations:?}"
+                );
+                if ordinal == Some(formed) {
+                    formed = formed.saturating_add(1);
+                }
             }
             // Every other record is a declaration that crossed, in admission
             // order, or the signature of a native the source uses, seeded
@@ -1148,14 +1177,16 @@ mod kernel_corpus_partition
                 .count()
                 .saturating_add(seeded.len())
                 .saturating_add(assumed.len())
-                .saturating_add(models.len());
+                .saturating_add(models.len())
+                .saturating_add(formations.len());
             assert_eq!(
                 RecordCount(
                     u64::try_from(crossed.saturating_add(1)).expect("a count fits sixty-four bits")
                 ),
                 manifest.record_count(),
                 "{path}: the manifest counts the header, every native signature, every session \
-                 assumption, every free model and every declaration that crossed"
+                 assumption, every free model, every formation witness and every declaration \
+                 that crossed"
             );
         }
     }

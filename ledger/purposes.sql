@@ -1077,6 +1077,7 @@ INSERT INTO purpose VALUES('kernel-core','error::CompTypeMismatch','struct','A m
 INSERT INTO purpose VALUES('kernel-core','error::CompTypeWitness','struct','A self-contained reference to a computation type that a refusal is about.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::ExpectedComputationShape','enum','The computation-type shape a rule required at the position it refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::ExpectedValueShape','enum','The value-type shape a rule required at the position it refused.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','error::FieldCause','enum','Why the kernel refuses the value of a record''s field or a restriction''s fixed value, beside the field''s label.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::KernelError','enum','Every way the kernel refuses a declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::LevelOrderRefutation','enum','Why a strict universe order lower < upper did not hold, in the oracle''s own evidence vocabulary.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','error::NonInferableForm','enum','A checking-only form that appeared where a type had to be synthesized.',NULL,'fits','sound',NULL);
