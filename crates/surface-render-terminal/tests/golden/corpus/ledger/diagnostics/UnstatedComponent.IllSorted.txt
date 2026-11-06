@@ -4,4 +4,5 @@ error[UnstatedComponent.IllSorted]: the model signature cannot state `crossed`, 
 13 │ def model : Model(T) ;
    │                   ━ the signature this model derives
    │
-   ╰ note: `model` is refused with UnstatedComponent.IllSorted, as its expectation states
+   ├ note: `model` is refused with UnstatedComponent.IllSorted, as its expectation states
+   ╰ help: write each term at the sort its position reads

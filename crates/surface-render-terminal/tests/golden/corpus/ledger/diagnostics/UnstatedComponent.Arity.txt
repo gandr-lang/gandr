@@ -4,4 +4,5 @@ error[UnstatedComponent.Arity]: the model signature cannot state `half`, which a
 11 │ def model : Model(T) ;
    │                   ━ the signature this model derives
    │
-   ╰ note: `model` is refused with UnstatedComponent.Arity, as its expectation states
+   ├ note: `model` is refused with UnstatedComponent.Arity, as its expectation states
+   ╰ help: give each sort and operation its declared number of arguments

@@ -13,4 +13,5 @@ error[UnstatedComponent.UnknownHead]: the model signature cannot state `stray`, 
 11 │ def model : Model(T) ;
    │                   ━ the signature this model derives
    │
-   ╰ note: `model` is refused with UnstatedComponent.UnknownHead, as its expectation states
+   ├ note: `model` is refused with UnstatedComponent.UnknownHead, as its expectation states
+   ╰ help: declare each sort and operation the component uses
