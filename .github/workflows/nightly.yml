@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: ${{ env.CI_FETCH_DEPTH || '1' }}
       - &trust-workspace
         name: trust the workspace for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -303,6 +303,12 @@ jobs:
   # tracker alone, so they build nothing. The obligations report's search
   # leaves out every pull request the token cannot read, and writes zeros
   # rather than failing, so the job grants `pull-requests: read` (#3576).
+  # Then the dead-weight report (`mise run report:dead-weight`, #2891): each
+  # crate's items with no caller outside tests and its exported items with no
+  # use in another crate, on one `refactor(<crate>): dead weight` issue a
+  # crate. It reads the newest landed merge group's `evidence-records`
+  # artifact, so it builds nothing. It blames each item's lines, so the job
+  # checks out the whole history (`CI_FETCH_DEPTH`).
   # Then the prose report (`mise run report:prose`, #3591): each open issue
   # body and each open pull request body that breaks a body rule, on one
   # `report: prose` issue. It builds the `prose` binary and parses under the
@@ -374,6 +380,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      CI_FETCH_DEPTH: "0"
       GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       RECOVERY_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
       RECOVERY_REPORT: recovery.out/report.txt
@@ -428,6 +435,9 @@ jobs:
       - name: report the obligations answered
         if: *not-cancelled
         run: mise run report:obligations
+      - name: report the dead weight
+        if: *not-cancelled
+        run: mise run report:dead-weight
       - name: locate the prose tools
         id: prose-tools
         if: *not-cancelled

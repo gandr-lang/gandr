@@ -1,0 +1,796 @@
+[
+  {
+    "name": "#2891: a name counts at each level below the path that it shares with its item, so an item's own body and its type's implementation do not count for the type",
+    "program": "facts.jq",
+    "args": {
+      "unit": "crates_a_src_lib_rs.lib"
+    },
+    "input": [
+      {
+        "record": "item",
+        "path": "a::T",
+        "kind": "struct",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 1,
+        "start": 1,
+        "end": 2,
+        "column": 1,
+        "docs": null,
+        "revision": "00000000000000000000000000000000"
+      },
+      {
+        "record": "item",
+        "path": "a::T::f",
+        "kind": "field",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 2,
+        "start": 2,
+        "end": 3,
+        "column": 1,
+        "docs": null,
+        "revision": "00000000000000000000000000000000"
+      },
+      {
+        "record": "item",
+        "path": "a::T::g",
+        "kind": "assoc-fn",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 4,
+        "start": 4,
+        "end": 5,
+        "column": 1,
+        "docs": null,
+        "revision": "00000000000000000000000000000000"
+      },
+      {
+        "record": "item",
+        "path": "a::h",
+        "kind": "fn",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 8,
+        "start": 8,
+        "end": 9,
+        "column": 1,
+        "docs": null,
+        "revision": "00000000000000000000000000000000"
+      },
+      {
+        "record": "item",
+        "path": "<a::T as core::clone::Clone>::clone",
+        "kind": "assoc-fn",
+        "exported": false,
+        "file": "crates/a/src/lib.rs",
+        "line": 10,
+        "start": 10,
+        "end": 11,
+        "column": 1,
+        "docs": null,
+        "revision": "00000000000000000000000000000000"
+      },
+      {
+        "record": "use",
+        "item": "a::T::g",
+        "names": ["a::T::f"]
+      },
+      {
+        "record": "use",
+        "item": "a::h",
+        "names": ["a::T::g", "a::h"]
+      },
+      {
+        "record": "use",
+        "item": "<a::T<X> as core::clone::Clone>::clone",
+        "names": ["a::T::f"]
+      }
+    ],
+    "output": {
+      "root": "crates_a_src_lib_rs",
+      "kind": "lib",
+      "items": {
+        "a::T": {
+          "kind": "struct",
+          "exported": true,
+          "file": "crates/a/src/lib.rs",
+          "line": 1,
+          "start": 1,
+          "end": 2
+        },
+        "a::T::f": {
+          "kind": "field",
+          "exported": true,
+          "file": "crates/a/src/lib.rs",
+          "line": 2,
+          "start": 2,
+          "end": 3
+        },
+        "a::T::g": {
+          "kind": "assoc-fn",
+          "exported": true,
+          "file": "crates/a/src/lib.rs",
+          "line": 4,
+          "start": 4,
+          "end": 5
+        },
+        "a::h": {
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/a/src/lib.rs",
+          "line": 8,
+          "start": 8,
+          "end": 9
+        }
+      },
+      "named": {
+        "a::T::f": 2,
+        "a::T": 1,
+        "a::T::g": 1
+      }
+    }
+  },
+  {
+    "name": "#2891: an example's paths carry its package, so its trait implementation's item gives no item, and the implementation's names do not count for its type",
+    "program": "facts.jq",
+    "args": {
+      "unit": "crates_a_examples_e_rs.bin"
+    },
+    "input": [
+      {
+        "record": "item",
+        "path": "gandr-a/e::T",
+        "kind": "enum",
+        "exported": false,
+        "file": "crates/a/examples/e.rs",
+        "line": 1,
+        "start": 1,
+        "end": 3,
+        "column": 1,
+        "docs": null,
+        "revision": "00000000000000000000000000000000"
+      },
+      {
+        "record": "item",
+        "path": "gandr-a/e::T::V",
+        "kind": "variant",
+        "exported": false,
+        "file": "crates/a/examples/e.rs",
+        "line": 2,
+        "start": 2,
+        "end": 2,
+        "column": 5,
+        "docs": null,
+        "revision": "00000000000000000000000000000000"
+      },
+      {
+        "record": "item",
+        "path": "gandr-a/<e::T as core::fmt::Display>::fmt",
+        "kind": "assoc-fn",
+        "exported": false,
+        "file": "crates/a/examples/e.rs",
+        "line": 5,
+        "start": 5,
+        "end": 7,
+        "column": 5,
+        "docs": null,
+        "revision": "00000000000000000000000000000000"
+      },
+      {
+        "record": "use",
+        "item": "gandr-a/<e::T as core::fmt::Display>::fmt",
+        "names": ["gandr-a/e::T::V"]
+      }
+    ],
+    "output": {
+      "root": "crates_a_examples_e_rs",
+      "kind": "bin",
+      "items": {
+        "gandr-a/e::T": {
+          "kind": "enum",
+          "exported": false,
+          "file": "crates/a/examples/e.rs",
+          "line": 1,
+          "start": 1,
+          "end": 3
+        },
+        "gandr-a/e::T::V": {
+          "kind": "variant",
+          "exported": false,
+          "file": "crates/a/examples/e.rs",
+          "line": 2,
+          "start": 2,
+          "end": 2
+        }
+      },
+      "named": {
+        "gandr-a/e::T::V": 1
+      }
+    }
+  },
+  {
+    "name": "#2891: a test harness gives no items, and the names in it still count",
+    "program": "facts.jq",
+    "args": {
+      "unit": "crates_a_src_lib_rs.test"
+    },
+    "input": [
+      {
+        "record": "item",
+        "path": "a::t",
+        "kind": "fn",
+        "exported": false,
+        "file": "crates/a/src/lib.rs",
+        "line": 3,
+        "start": 3,
+        "end": 4,
+        "column": 1,
+        "docs": null,
+        "revision": "00000000000000000000000000000000"
+      },
+      {
+        "record": "use",
+        "item": "a::t",
+        "names": ["a::T::g"]
+      }
+    ],
+    "output": {
+      "root": "crates_a_src_lib_rs",
+      "kind": "test",
+      "items": {},
+      "named": {
+        "a::T": 1,
+        "a::T::g": 1
+      }
+    }
+  },
+  {
+    "name": "#2891: a record file whose name is not `<root>.<kind>` is refused",
+    "program": "facts.jq",
+    "args": {
+      "unit": "crates_a_src_lib_rs.rlib"
+    },
+    "input": [],
+    "fails": true
+  },
+  {
+    "name": "#2891: an item that only tests name is unused with their count, an exported item that only its crate names is local, and a trait's item and a variant get no local verdict",
+    "program": "verdicts.jq",
+    "input": {
+      "units": [
+        {
+          "root": "crates_a_src_lib_rs",
+          "kind": "lib",
+          "items": {
+            "a::T": {
+              "kind": "struct",
+              "exported": true,
+              "file": "crates/a/src/lib.rs",
+              "line": 1,
+              "start": 1,
+              "end": 3
+            },
+            "a::T::f": {
+              "kind": "field",
+              "exported": true,
+              "file": "crates/a/src/lib.rs",
+              "line": 2,
+              "start": 2,
+              "end": 4
+            },
+            "a::T::new": {
+              "kind": "assoc-fn",
+              "exported": true,
+              "file": "crates/a/src/lib.rs",
+              "line": 5,
+              "start": 5,
+              "end": 7
+            },
+            "a::helper": {
+              "kind": "fn",
+              "exported": false,
+              "file": "crates/a/src/lib.rs",
+              "line": 10,
+              "start": 10,
+              "end": 12
+            },
+            "a::Used": {
+              "kind": "struct",
+              "exported": true,
+              "file": "crates/a/src/lib.rs",
+              "line": 14,
+              "start": 14,
+              "end": 16
+            },
+            "a::Tr": {
+              "kind": "trait",
+              "exported": true,
+              "file": "crates/a/src/lib.rs",
+              "line": 20,
+              "start": 20,
+              "end": 22
+            },
+            "a::Tr::m": {
+              "kind": "assoc-fn",
+              "exported": true,
+              "file": "crates/a/src/lib.rs",
+              "line": 21,
+              "start": 21,
+              "end": 23
+            },
+            "a::E": {
+              "kind": "enum",
+              "exported": true,
+              "file": "crates/a/src/lib.rs",
+              "line": 30,
+              "start": 30,
+              "end": 32
+            },
+            "a::E::V": {
+              "kind": "variant",
+              "exported": true,
+              "file": "crates/a/src/lib.rs",
+              "line": 31,
+              "start": 31,
+              "end": 33
+            },
+            "a::lone": {
+              "kind": "fn",
+              "exported": true,
+              "file": "crates/a/src/lib.rs",
+              "line": 40,
+              "start": 40,
+              "end": 42
+            }
+          },
+          "named": {
+            "a::T": 1,
+            "a::T::f": 1,
+            "a::Tr": 1,
+            "a::E": 1,
+            "a::E::V": 1
+          }
+        },
+        {
+          "root": "crates_a_src_lib_rs",
+          "kind": "test",
+          "items": {},
+          "named": {
+            "a::T::new": 3,
+            "a::helper": 1,
+            "a::T": 2
+          }
+        },
+        {
+          "root": "crates_a_tests_lib_rs",
+          "kind": "test",
+          "items": {},
+          "named": {
+            "a::Used": 1
+          }
+        },
+        {
+          "root": "crates_b_src_lib_rs",
+          "kind": "lib",
+          "items": {
+            "b::run": {
+              "kind": "fn",
+              "exported": true,
+              "file": "crates/b/src/lib.rs",
+              "line": 3,
+              "start": 3,
+              "end": 5
+            }
+          },
+          "named": {
+            "a::Used": 1,
+            "b::run": 1
+          }
+        }
+      ],
+      "kept": ""
+    },
+    "output": [
+      {
+        "crate": "a",
+        "path": "a::T",
+        "kind": "struct",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 1,
+        "start": 1,
+        "end": 3,
+        "verdict": "local",
+        "callers": "its crate only"
+      },
+      {
+        "crate": "a",
+        "path": "a::T::f",
+        "kind": "field",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 2,
+        "start": 2,
+        "end": 4,
+        "verdict": "local",
+        "callers": "its crate only"
+      },
+      {
+        "crate": "a",
+        "path": "a::T::new",
+        "kind": "assoc-fn",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 5,
+        "start": 5,
+        "end": 7,
+        "verdict": "unused",
+        "callers": "tests only (3)"
+      },
+      {
+        "crate": "a",
+        "path": "a::helper",
+        "kind": "fn",
+        "exported": false,
+        "file": "crates/a/src/lib.rs",
+        "line": 10,
+        "start": 10,
+        "end": 12,
+        "verdict": "unused",
+        "callers": "tests only (1)"
+      },
+      {
+        "crate": "a",
+        "path": "a::Tr",
+        "kind": "trait",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 20,
+        "start": 20,
+        "end": 22,
+        "verdict": "local",
+        "callers": "its crate only"
+      },
+      {
+        "crate": "a",
+        "path": "a::E",
+        "kind": "enum",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 30,
+        "start": 30,
+        "end": 32,
+        "verdict": "local",
+        "callers": "its crate only"
+      },
+      {
+        "crate": "a",
+        "path": "a::lone",
+        "kind": "fn",
+        "exported": true,
+        "file": "crates/a/src/lib.rs",
+        "line": 40,
+        "start": 40,
+        "end": 42,
+        "verdict": "unused",
+        "callers": "none"
+      },
+      {
+        "crate": "b",
+        "path": "b::run",
+        "kind": "fn",
+        "exported": true,
+        "file": "crates/b/src/lib.rs",
+        "line": 3,
+        "start": 3,
+        "end": 5,
+        "verdict": "local",
+        "callers": "its crate only"
+      }
+    ]
+  },
+  {
+    "name": "#2891: a kept item, a binary's `main` and a procedural macro crate's export get no verdict",
+    "program": "verdicts.jq",
+    "input": {
+      "units": [
+        {
+          "root": "crates_a_src_lib_rs",
+          "kind": "lib",
+          "items": {
+            "a::kept": {
+              "kind": "fn",
+              "exported": false,
+              "file": "crates/a/src/lib.rs",
+              "line": 1,
+              "start": 1,
+              "end": 3
+            },
+            "a::gone": {
+              "kind": "fn",
+              "exported": false,
+              "file": "crates/a/src/lib.rs",
+              "line": 4,
+              "start": 4,
+              "end": 6
+            }
+          },
+          "named": {}
+        },
+        {
+          "root": "crates_a_src_main_rs",
+          "kind": "bin",
+          "items": {
+            "a-cli/main::main": {
+              "kind": "fn",
+              "exported": false,
+              "file": "crates/a/src/main.rs",
+              "line": 1,
+              "start": 1,
+              "end": 3
+            },
+            "a-cli/main::run": {
+              "kind": "fn",
+              "exported": false,
+              "file": "crates/a/src/main.rs",
+              "line": 5,
+              "start": 5,
+              "end": 7
+            }
+          },
+          "named": {}
+        },
+        {
+          "root": "crates_a-macros_src_lib_rs",
+          "kind": "proc-macro",
+          "items": {
+            "a_macros::derive_it": {
+              "kind": "fn",
+              "exported": true,
+              "file": "crates/a-macros/src/lib.rs",
+              "line": 1,
+              "start": 1,
+              "end": 3
+            },
+            "a_macros::expand": {
+              "kind": "fn",
+              "exported": false,
+              "file": "crates/a-macros/src/lib.rs",
+              "line": 9,
+              "start": 9,
+              "end": 11
+            }
+          },
+          "named": {}
+        }
+      ],
+      "kept": "# The items the report keeps.\n\na::kept\ta public API by design\n"
+    },
+    "output": [
+      {
+        "crate": "a",
+        "path": "a::gone",
+        "kind": "fn",
+        "exported": false,
+        "file": "crates/a/src/lib.rs",
+        "line": 4,
+        "start": 4,
+        "end": 6,
+        "verdict": "unused",
+        "callers": "none"
+      },
+      {
+        "crate": "a",
+        "path": "a-cli/main::run",
+        "kind": "fn",
+        "exported": false,
+        "file": "crates/a/src/main.rs",
+        "line": 5,
+        "start": 5,
+        "end": 7,
+        "verdict": "unused",
+        "callers": "none"
+      },
+      {
+        "crate": "a-macros",
+        "path": "a_macros::expand",
+        "kind": "fn",
+        "exported": false,
+        "file": "crates/a-macros/src/lib.rs",
+        "line": 9,
+        "start": 9,
+        "end": 11,
+        "verdict": "unused",
+        "callers": "none"
+      }
+    ]
+  },
+  {
+    "name": "#2891: each range gets the date of the newest commit over its lines, and a range the blame does not give is left out",
+    "program": "blame.jq",
+    "input": {
+      "porcelain": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1 1 2\nauthor first\nauthor-mail <first@example.invalid>\nauthor-time 1760000000\nauthor-tz +0000\ncommitter first\ncommitter-mail <first@example.invalid>\ncommitter-time 1760000000\ncommitter-tz +0000\nsummary first\nfilename src/lib.rs\n\tfn one() {}\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2 2\n\tfn two() {}\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 3 3 1\nauthor second\nauthor-mail <second@example.invalid>\nauthor-time 1762000000\nauthor-tz +0000\ncommitter second\ncommitter-mail <second@example.invalid>\ncommitter-time 1762000000\ncommitter-tz +0000\nsummary second\nfilename src/lib.rs\n\tfn three() {}\n",
+      "ranges": [
+        [1, 2],
+        [2, 3],
+        [5, 6]
+      ]
+    },
+    "output": {
+      "1-2": "2025-10-09",
+      "2-3": "2025-11-01"
+    }
+  },
+  {
+    "name": "#2891: each crate's body gives its two tables, and an item with a date in the grace or no date is left out",
+    "program": "render.jq",
+    "input": {
+      "items": [
+        {
+          "crate": "kernel-y",
+          "path": "gandr_kernel_y::Shape",
+          "kind": "struct",
+          "exported": true,
+          "file": "crates/kernel-y/src/lib.rs",
+          "line": 7,
+          "start": 7,
+          "end": 9,
+          "verdict": "local",
+          "callers": "its crate only"
+        },
+        {
+          "crate": "theory-x",
+          "path": "gandr_theory_x::old",
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/theory-x/src/lib.rs",
+          "line": 3,
+          "start": 3,
+          "end": 5,
+          "verdict": "unused",
+          "callers": "tests only (2)"
+        },
+        {
+          "crate": "theory-x",
+          "path": "gandr_theory_x::fresh",
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/theory-x/src/lib.rs",
+          "line": 9,
+          "start": 9,
+          "end": 11,
+          "verdict": "unused",
+          "callers": "none"
+        },
+        {
+          "crate": "theory-x",
+          "path": "gandr_theory_x::undated",
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/theory-x/src/lib.rs",
+          "line": 20,
+          "start": 20,
+          "end": 22,
+          "verdict": "unused",
+          "callers": "none"
+        },
+        {
+          "crate": "theory-x",
+          "path": "gandr_theory_x::Wide::narrow",
+          "kind": "assoc-fn",
+          "exported": true,
+          "file": "crates/theory-x/src/lib.rs",
+          "line": 30,
+          "start": 30,
+          "end": 32,
+          "verdict": "local",
+          "callers": "its crate only"
+        },
+        {
+          "crate": "theory-x",
+          "path": "gandr_theory_x::private",
+          "kind": "fn",
+          "exported": false,
+          "file": "crates/theory-x/src/lib.rs",
+          "line": 40,
+          "start": 40,
+          "end": 42,
+          "verdict": "unused",
+          "callers": "none"
+        }
+      ],
+      "dates": {
+        "crates/kernel-y/src/lib.rs:7-9": "2026-09-01",
+        "crates/theory-x/src/lib.rs:3-5": "2026-10-01",
+        "crates/theory-x/src/lib.rs:9-11": "2026-11-01",
+        "crates/theory-x/src/lib.rs:30-32": "2026-10-23",
+        "crates/theory-x/src/lib.rs:40-42": "2026-10-02"
+      },
+      "today": "2026-11-06",
+      "grace": 14,
+      "repository": "gandr-lang/gandr",
+      "commit": "cccccccccccccccccccccccccccccccccccccccc",
+      "budget": null
+    },
+    "output": [
+      {
+        "crate": "kernel-y",
+        "area": "kernel",
+        "title": "refactor(kernel-y): dead weight",
+        "count": 1,
+        "body": "This issue lists the items of `kernel-y` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that deletes or narrows an item cites this issue. An item that a decision keeps goes into the kept list with its decision.\n\n## Exported with no use in another crate\n\nThe table gives each exported item that only its own crate names. The refactoring is `consolidate`: narrow the item's visibility.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_kernel_y::Shape`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/kernel-y/src/lib.rs#L7) | `pub` | its crate only | 2026-09-01 |"
+      },
+      {
+        "crate": "theory-x",
+        "area": "theory",
+        "title": "refactor(theory-x): dead weight",
+        "count": 3,
+        "body": "This issue lists the items of `theory-x` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that deletes or narrows an item cites this issue. An item that a decision keeps goes into the kept list with its decision.\n\n## No caller outside tests\n\nThe table gives each item that only tests name, or that nothing names. The refactoring is `delete`.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_theory_x::old`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L3) | `pub` | tests only (2) | 2026-10-01 |\n| [`gandr_theory_x::private`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L40) | not exported | none | 2026-10-02 |\n\n## Exported with no use in another crate\n\nThe table gives each exported item that only its own crate names. The refactoring is `consolidate`: narrow the item's visibility.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_theory_x::Wide::narrow`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L30) | `pub` | its crate only | 2026-10-23 |"
+      }
+    ]
+  },
+  {
+    "name": "#2891: a table past its budget of characters gives the number of rows that it leaves out",
+    "program": "render.jq",
+    "input": {
+      "items": [
+        {
+          "crate": "theory-x",
+          "path": "gandr_theory_x::f0",
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/theory-x/src/lib.rs",
+          "line": 3,
+          "start": 3,
+          "end": 5,
+          "verdict": "unused",
+          "callers": "none"
+        },
+        {
+          "crate": "theory-x",
+          "path": "gandr_theory_x::f1",
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/theory-x/src/lib.rs",
+          "line": 13,
+          "start": 13,
+          "end": 15,
+          "verdict": "unused",
+          "callers": "none"
+        },
+        {
+          "crate": "theory-x",
+          "path": "gandr_theory_x::f2",
+          "kind": "fn",
+          "exported": true,
+          "file": "crates/theory-x/src/lib.rs",
+          "line": 23,
+          "start": 23,
+          "end": 25,
+          "verdict": "unused",
+          "callers": "none"
+        }
+      ],
+      "dates": {
+        "crates/theory-x/src/lib.rs:3-5": "2026-10-01",
+        "crates/theory-x/src/lib.rs:13-15": "2026-10-01",
+        "crates/theory-x/src/lib.rs:23-25": "2026-10-01"
+      },
+      "today": "2026-11-06",
+      "grace": 14,
+      "repository": "gandr-lang/gandr",
+      "commit": "cccccccccccccccccccccccccccccccccccccccc",
+      "budget": 337
+    },
+    "output": [
+      {
+        "crate": "theory-x",
+        "area": "theory",
+        "title": "refactor(theory-x): dead weight",
+        "count": 3,
+        "body": "This issue lists the items of `theory-x` that no code outside tests names, and its exported items that no other crate names (#2891).\n\n`mise run report:dead-weight` writes the tables each night from the compiler's records of `ccccccccc`. It leaves out an item that a commit touched in the last 14 days, and each item in `.config/dead-weight/kept.txt`. A unit that deletes or narrows an item cites this issue. An item that a decision keeps goes into the kept list with its decision.\n\n## No caller outside tests\n\nThe table gives each item that only tests name, or that nothing names. The refactoring is `delete`.\n\n| Item | Visibility | Callers | Since |\n| --- | --- | --- | --- |\n| [`gandr_theory_x::f0`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L3) | `pub` | none | 2026-10-01 |\n| [`gandr_theory_x::f1`](https://github.com/gandr-lang/gandr/blob/cccccccccccccccccccccccccccccccccccccccc/crates/theory-x/src/lib.rs#L13) | `pub` | none | 2026-10-01 |\n\nThe table leaves out 1 more row. `mise run report:dead-weight --crate theory-x` prints them all."
+      }
+    ]
+  }
+]
