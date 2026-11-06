@@ -1,12 +1,18 @@
-// A list literal at a stated element type, and a list extended at its front.
+// This source creates native finite lists.
+//
+// `xs` has three integers at its stated element type.
+//
+// `prefixed` adds zero at the front. The lowering does not yet admit `++`.
+//
+// - see: #1544 — `xs`
+// - see: #1997 — `prefixed`
 
-// The native finite lists.
+// This import provides native finite lists.
 import std.list (List);
 
-/// Three integers, annotated as a list of them: the cons cells over `1`, `2`
-/// and `3`, ending in the empty list (#1544).
+/// `xs` is a three-element `List(Integer)`.
 def xs = (#[1, 2, 3] : List(Integer));
 
-/// A zero prepended; the lowering admits no `++` yet (#1997).
+/// `prefixed` adds zero at the front. The lowering does not yet admit `++`.
 @[ refuses("OutOfFragment.binary_expression") ]
 def prefixed = #[0] ++ xs;

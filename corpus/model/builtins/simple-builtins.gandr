@@ -1,65 +1,64 @@
-// One builtin of each namespace over its simplest values: negation, division
-// and remainder, a list's length and element, and string append, equality and
-// length. Each is reached by projection from its namespace, which the lowering
-// admits for the native primitives alone and for no other builtin yet
-// , but where the definition's value is first a computation with no
-// stated type. Division, append and equality with their types stated check
-// and run.
+// This source tests basic builtin namespaces.
+//
+// It tests boolean negation, integer division and remainder, list access and
+// string operations. An unstated computation type blocks a definition.
+//
+// The lowering admits native primitives only. Stated division, append and
+// equality check and run. Other builtin namespace projections are refused.
 //
 // - see: #1170 — `quotientOf`
 // - see: #1106 — `letters`
 
-/// Negation of a comparison. A comparison is a computation, and a definition
-/// with no stated type reads its value where nothing infers that type.
+/// `not_small` negates a comparison. An unstated computation has no inferred
+/// type.
 @[ refuses("NotSynthesisable") ]
 def not_small = bool.not (1 < 2);
 
-/// Integer division, its argument a computation as above.
+/// `quotient` divides integers through an unstated computation.
 @[ refuses("NotSynthesisable") ]
 def quotient = int.div 7 2;
 
-/// The remainder of a negative number, its argument a computation as above.
+/// `remainder` takes the remainder of a negative integer.
 @[ refuses("NotSynthesisable") ]
 def remainder = int.mod (- 7) 2;
 
-/// Integer division with its type stated, which checks; the namespace `int`
-/// qualifies the path, and the path answers for it.
+/// `quotientOf` divides an integer at a stated type. `int` qualifies its
+/// native path.
 def quotientOf(c : Integer) -> Integer =
   let lead = int.div c 64
   lead
 
-/// A list's length.
+/// `size` reads a list length.
 @[ refuses("OutOfFragment.projection_expression") ]
 def size = list.length (#[1, 2, 3]);
 
-/// A list's element at position one.
+/// `second` reads a list element at position one.
 @[ refuses("OutOfFragment.projection_expression") ]
 def second = list.get (#[10, 20, 30]) 1;
 
-/// Two strings, appended, the value a computation as above.
+/// `phrase` appends two strings through an unstated computation.
 @[ refuses("NotSynthesisable") ]
 def phrase = string.append "types are " "machines";
 
-/// Two strings appended with the type stated, which checks and runs: the
-/// first string's characters, then the second's.
+/// `stated` appends two strings at a stated type. It keeps their characters
+/// in order.
 @[ runs("\"types are machines\"") ]
 def stated() -> String =
   let joined = string.append "types are " "machines"
   joined
 
-/// Two strings compared with the type stated, which checks and runs: equal
-/// exactly when their bytes are, which these are not.
+/// `compared` compares two strings at a stated type. Their bytes differ.
 @[ runs("+{.1 = *{}}") ]
 def compared() -> Bool =
   let equal = string.eq "types are " "machines"
   equal
 
-/// The appended string's length. The native `string` namespace holds
-/// `append` and `eq`, so `length` is no member of it.
+/// `letters` asks for a string length. The native namespace has no `length`
+/// member.
 @[ refuses("UnknownMember") ]
 def letters = string.length stated;
 
-/// The phrase with an exclamation appended, refused above, so it names a
-/// declaration whose type is not known.
+/// `exclaimed` appends an exclamation to a rejected phrase. Its type is
+/// unknown.
 @[ refuses("UnknownConstant") ]
 def exclaimed() -> String { string.append phrase "!" }
