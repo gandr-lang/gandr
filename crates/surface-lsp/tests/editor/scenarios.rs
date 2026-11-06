@@ -217,6 +217,7 @@ const COUNTED: &[&str] = &[
     "pattern wildcard",
     "type at_type",
     "type at_type name",
+    "type boolean",
     "type bridge_type",
     "type capability_type",
     "type capability_type name",

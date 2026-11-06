@@ -132,7 +132,7 @@ fn shape_of(owner: &Owner) -> Shape
         "expression number" | "type number" => Shape::Native("Integer"),
         "expression string" => Shape::Native("String"),
         "expression unit" => Shape::Native("Unit"),
-        "expression boolean" => Shape::Native("Bool"),
+        "expression boolean" | "type boolean" => Shape::Native("Bool"),
         "expression identifier"
         | "expression constructor"
         | "pattern identifier"
