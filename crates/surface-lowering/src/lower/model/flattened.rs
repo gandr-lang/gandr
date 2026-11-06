@@ -79,6 +79,7 @@ use super::Fields;
 use super::Members;
 use super::Minting;
 use super::Packed;
+use crate::by_form::FormStretch;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
@@ -96,7 +97,6 @@ use crate::lower::Reading;
 use crate::lower::Resolved;
 use crate::lower::Sink;
 use crate::lower::Site;
-use crate::lower::Stretch;
 use crate::lower::Universe;
 use crate::lower::arity;
 use crate::lower::closed;
@@ -908,10 +908,6 @@ impl<'source> Lowerer<'_, 'source>
         }
         let _frame = self.require(site, Produced::ValueType)?;
         let telescope = self.name_in_type(site.at.node, component.frame);
-        let none = Stretch {
-            start: self.operands.len(),
-            end: self.operands.len(),
-        };
         self.plan(
             site,
             Plan::Decode(
@@ -920,7 +916,7 @@ impl<'source> Lowerer<'_, 'source>
                     binder: component.frame,
                     telescope,
                 },
-                none,
+                FormStretch::default(),
                 Universe::FUSS_FREE,
             ),
         );
@@ -987,17 +983,13 @@ impl<'source> Lowerer<'_, 'source>
         self.resolved(target.span, Resolved::Binder(bound));
         let plan = if self.in_type.contains(&site.at.node) {
             let telescope = self.name_in_type(site.at.node, component.frame);
-            let none = Stretch {
-                start: self.operands.len(),
-                end: self.operands.len(),
-            };
             Plan::StaticApplication(
                 Code::Bound {
                     from: frame,
                     binder: component.frame,
                     telescope,
                 },
-                none,
+                FormStretch::default(),
             )
         }
         else {

@@ -93,7 +93,6 @@ use super::arguments;
 use super::arity::Planned;
 use super::closed;
 use super::lowered;
-use super::stretch;
 use crate::CandidateCount;
 use crate::SurfaceName;
 use crate::by_form::FormStretch;
@@ -251,7 +250,7 @@ pub(super) struct Called
     /// What the call does with its receiver.
     receiving: Receiving,
     /// The arguments after the receiver, in the lowerer's operand store.
-    arguments: Stretch,
+    arguments: FormStretch,
     /// The call's head, `s.f`, which answers with the method.
     head: NodeIndex,
     /// The receiver `s`, which answers with the value the method receives.
@@ -836,14 +835,14 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(receiver.out(FragmentBoundary::Held));
             },
         };
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         arguments(site, &mut ahead, &mut self.operands)?;
         let written = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         for position in written.start .. written.end {
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 self.read(argument, Reading::Value(inner));
             }
         }
@@ -853,7 +852,7 @@ impl<'source> Lowerer<'_, 'source>
             Plan::Method(Called {
                 method: constant,
                 receiving,
-                arguments: written,
+                arguments: self.kept(written),
                 head: head.node,
                 receiver: target.node,
             }),
@@ -1500,7 +1499,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let written = stretch(&self.operands, called.arguments);
+        let written = self.operands.read(called.arguments);
         let mut passed = Vec::with_capacity(written.len());
         for &argument in written {
             match self.value_at(argument) {

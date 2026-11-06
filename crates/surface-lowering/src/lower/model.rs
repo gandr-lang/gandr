@@ -106,7 +106,7 @@ use super::exhausted;
 use super::exits;
 use super::identity::related;
 use super::lowered;
-use super::stretch;
+use crate::by_form::FormStretch;
 use crate::error::AscriptionForm;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -711,7 +711,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_family_applied_to_too_few_indices_is_refused`
     /// - witness: `tests::modules::a_type_member_names_a_computation_type_3080`
-    #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Expansion(family, applied)))]
+    #[spec(ensures: |ret| ret.is_err() || self.plans.get(site.at.node) == Some(&Plan::Expansion(family, self.kept(applied))))]
     pub(super) fn expansion(
         &mut self,
         site: Site,
@@ -731,12 +731,12 @@ impl<'source> Lowerer<'_, 'source>
         }
         let frame = self.require(site, self.family_produced(family))?;
         for position in applied.start .. applied.end {
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
         self.manifests.push((held, site.at.node));
-        self.plan(site, Plan::Expansion(family, applied));
+        self.plan(site, Plan::Expansion(family, self.kept(applied)));
 
         Ok(())
     }
@@ -763,13 +763,13 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn mint_expansion(
         &self,
         family: FamilyIndex,
-        arguments: Stretch,
+        arguments: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let mut values = Vec::new();
-        for &argument in stretch(&self.operands, arguments) {
+        for &argument in self.operands.read(arguments) {
             match self.value_at(argument) {
                 Maybe::Present(value) => values.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -2429,8 +2429,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let none = Stretch { start: 0, end: 0 };
-        let held = match self.mint_code(code, none, sink, origin) {
+        let held = match self.mint_code(code, FormStretch::default(), sink, origin) {
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };

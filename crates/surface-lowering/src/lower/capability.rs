@@ -218,6 +218,8 @@ use super::exhausted;
 use super::exits;
 use super::lowered;
 use super::native;
+use crate::by_form::At;
+use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -448,7 +450,7 @@ pub(super) struct Exercised
     /// The frame the exercise is read under.
     frame: Frame,
     /// The payload's values, in the lowerer's operand store.
-    payload: Stretch,
+    payload: FormStretch,
 }
 
 quenchant_shape::reason_enum! {
@@ -1701,17 +1703,17 @@ impl<'source> Lowerer<'_, 'source>
             Interface::Host(interface)
         };
         let frame = self.require(site, Produced::Computation)?;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         arguments(site, &mut ahead, &mut self.operands)?;
         let payload = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         if let Performer::Capability(capability, _) = performer {
             self.read(capability, Reading::Value(frame));
         }
         for position in payload.start .. payload.end {
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
@@ -1724,7 +1726,7 @@ impl<'source> Lowerer<'_, 'source>
                 operation,
                 frame,
                 head: head.span,
-                payload,
+                payload: self.kept(payload),
             }),
         );
 
@@ -1993,20 +1995,20 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Planned(false));
         }
         let frame = self.require(site, Produced::Computation)?;
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         arguments(site, &mut ahead, &mut self.operands)?;
         let reply = Stretch {
             start,
-            end: self.operands.len(),
+            end: self.operands.entries().len(),
         };
         self.read(head.node, Reading::Value(frame));
         for position in reply.start .. reply.end {
-            if let Some(&argument) = self.operands.get(position) {
+            if let Some(&argument) = self.operands.entries().get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
 
-        self.plan(site, super::Plan::Resume(head.node, reply));
+        self.plan(site, super::Plan::Resume(head.node, self.kept(reply)));
 
         Ok(Planned(true))
     }
@@ -2058,15 +2060,15 @@ impl<'source> Lowerer<'_, 'source>
         {
             return Ok(Planned(false));
         }
-        let start = self.operands.len();
+        let start = self.operands.entries().len();
         arguments(site, &mut ahead, &mut self.operands)?;
-        let argument = if let Some(&[argument]) = self.operands.get(start ..) {
+        let argument = if let Some(&[argument]) = self.operands.entries().get(start ..) {
             Some(argument)
         }
         else {
             None
         };
-        self.operands.truncate(start);
+        self.operands.truncate(At::from(start));
         let Some(argument) = argument
         else {
             return Ok(Planned(false));
@@ -2919,13 +2921,14 @@ impl<'source> Lowerer<'_, 'source>
     })]
     fn mint_payload(
         &self,
-        written: Stretch,
+        written: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<ValueId, lowered::Absent>
     {
-        let mut values = Vec::with_capacity(written.end.saturating_sub(written.start));
-        for &position in super::stretch(&self.operands, written) {
+        let written = self.operands.read(written);
+        let mut values = Vec::with_capacity(written.len());
+        for &position in written {
             match self.value_at(position) {
                 Maybe::Present(value) => values.push(value),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -3195,7 +3198,7 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn mint_resume(
         &self,
         continuation: NodeIndex,
-        reply: Stretch,
+        reply: FormStretch,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>

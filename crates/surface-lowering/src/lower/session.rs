@@ -134,7 +134,6 @@ use super::Sink;
 use super::Site;
 use super::Statement;
 use super::StatementBinding;
-use super::Stretch;
 use super::access::slot;
 use super::arity::Arranged;
 use super::arity::Key;
@@ -143,7 +142,7 @@ use super::closed;
 use super::exhausted;
 use super::exits;
 use super::lowered;
-use super::stretch;
+use crate::by_form::At;
 use crate::by_form::FormStretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -452,7 +451,7 @@ impl<'source> Lowerer<'_, 'source>
             written: Vec::new(),
             sites: Vec::new(),
             work: Vec::new(),
-            base: self.operands.len(),
+            base: self.operands.entries().len(),
         };
         let root = draft.queue(site.at);
         let mut binders: Vec<SurfaceName<'source>> = Vec::new();
@@ -742,11 +741,8 @@ impl<'source> Lowerer<'_, 'source>
             };
             draft.fill(state, node);
         }
-        let payloads = Stretch {
-            start: draft.base,
-            end: self.operands.len(),
-        };
-        let count = PayloadCount::from(payloads.end.saturating_sub(payloads.start));
+        let payloads = self.operands.since(At::from(draft.base));
+        let count = PayloadCount::from(self.operands.read(payloads).len());
         let Draft {
             syntax,
             written,
@@ -799,9 +795,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the seat's protocol reads every one of the four.
     /// - witness: `lower::session::tests::a_session_type_lowers_to_its_protocol`
     #[spec(
-        captures: before = (draft.syntax.len(), self.operands.len()),
+        captures: before = (draft.syntax.len(), self.operands.entries().len()),
         ensures: |ret| ret.as_ref().map_or(true, |node| match *node {
-            | ProtocolSyntax::Send { payload, next } | ProtocolSyntax::Receive { payload, next } => self.operands.len() == before.1.saturating_add(1) && usize::from(payload) == before.1.saturating_sub(draft.base) && usize::from(next) == before.0,
+            | ProtocolSyntax::Send { payload, next } | ProtocolSyntax::Receive { payload, next } => self.operands.entries().len() == before.1.saturating_add(1) && usize::from(payload) == before.1.saturating_sub(draft.base) && usize::from(next) == before.0,
             | ProtocolSyntax::Mu(body) => usize::from(body) == before.0,
             | ProtocolSyntax::End => draft.syntax.len() == before.0,
             | ProtocolSyntax::Select(_) | ProtocolSyntax::Offer(_) | ProtocolSyntax::Recur(_) => false,
@@ -862,7 +858,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(here.out(FragmentBoundary::WrongSort));
         };
-        let payload = PayloadSlot::from(self.operands.len().saturating_sub(draft.base));
+        let payload = PayloadSlot::from(self.operands.entries().len().saturating_sub(draft.base));
         self.operands.push(carried.node);
         self.read(carried.node, Reading::ValueType(frame));
         let next = draft.queue(continued);
@@ -1804,13 +1800,13 @@ impl<'source> Lowerer<'_, 'source>
     pub(super) fn mint_session(
         &self,
         protocol: &Arc<Protocol>,
-        payloads: Stretch,
+        payloads: FormStretch,
         written: &Written,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let operands = stretch(&self.operands, payloads);
+        let operands = self.operands.read(payloads);
         let mut carried: Vec<ValueTypeId> = Vec::with_capacity(operands.len());
         for &payload in operands {
             match self.value_type_at(payload) {
