@@ -607,23 +607,29 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
     }
 }
 
-/// Whether the multiplicity `multiplicity` of a linear arrow reads as the
-/// literal `1`, which the surface leaves implicit.
+/// What printing the multiplicity `multiplicity` of a linear arrow leaves
+/// out: nothing for the literal `1`, which the surface leaves implicit, and
+/// [`Elided::Multiplicity`] for any other, which the surface cannot write.
 ///
 /// # Specification
 /// trivial.
-fn implicit_multiplicity<S>(
+pub fn elided_multiplicity<S>(
     source: &S,
     multiplicity: S::Node,
-) -> bool
+) -> Option<Elided>
 where
     S: Source + ?Sized,
 {
-    matches!(
+    if matches!(
         source.read(multiplicity),
         Former::Literal(&Literal::Integer(ref integer))
             if integer.sign() == Sign::NonNegative && integer.magnitude().as_ref() == "1"
-    )
+    ) {
+        None
+    }
+    else {
+        Some(Elided::Multiplicity)
+    }
 }
 
 /// The node sorts a position admits.
@@ -10089,9 +10095,17 @@ impl Walk<'_, '_>
             // A linear arrow names its binder in a parenthesized domain,
             // `(x : A) ⊸ C`. The surface writes no multiplicity, so one other
             // than `1` is left out and the printing is approximate.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a multiplicity other than one has no surface spelling: the arrow \
+                              is written `⊸`, its multiplicity left out"
+                )
+            )]
             Former::LinearArrow { multiplicity, .. } => {
-                if !implicit_multiplicity(source, multiplicity) {
-                    self.note(Unspelled::Elided(Elided::Multiplicity));
+                if let Some(elided) = elided_multiplicity(source, multiplicity) {
+                    self.note(Unspelled::Elided(elided));
                 }
                 Some(writes(
                     Production("linear_function_type"),
@@ -10390,10 +10404,11 @@ impl Walk<'_, '_>
                 tasks.push(Task::Bind(Zone::Intuitionistic, Some(node)));
                 return writes(Production("lambda_expression"), Ok(()));
             },
-            Former::Lambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
             // A linear lambda is written as a lambda: the linear arrow it
             // checks against tells the two apart.
-            Former::LinearLambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
+            Former::Lambda(_) | Former::LinearLambda(_) => {
+                Some(writes(Production("lambda_expression"), Join::Lambda))
+            },
             // A composite read where a value is read is the return of its
             // node, the shape `compose[n, k](…)` lowers to there: it is
             // written as the form, under no `pure`.
