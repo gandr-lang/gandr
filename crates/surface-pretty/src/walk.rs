@@ -3443,6 +3443,12 @@ enum Join
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Production(&'static str);
 
+/// The spelling of an infix operator, `==` for an equality: the text written
+/// between its two operands.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct InfixSpelling(&'static str);
+
 /// The name `source` writes for the head of the homed type former `former`
 /// where it does not write it bare, `std.list.List` for a list type; none
 /// for a source that writes it bare and for every other former.
@@ -3701,6 +3707,101 @@ where
         head = inner;
     }
     matches!(source.read(head), Former::Force(_)).then_some(node)
+}
+
+/// The comparison that `node` writes when it is a saturated call of a
+/// constant that a comparison calls: the infix operator, and the two operands
+/// first to last.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the infix operator [`Source::operator`] answers for the head of
+///   `node`'s spine, with the spine's last two arguments, exactly when `node`
+///   reads as an application whose spine ends at a force of such a head and
+///   holds one argument for each component of the head's model slots before the
+///   two; absent otherwise.
+/// - provides: the comparison [`Walk::comparison`] writes for the call.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn reads one application nearer the spine's head, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call of the prelude's `eq` with its model supplied by
+///   one path, a call of its `lt` with its model supplied by components of two
+///   modules, and a call with its model left out each read as the comparison; a
+///   call short of an operand and a call of a constant with no spelling read as
+///   none.
+/// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Application(..)))]
+fn compared<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<(InfixSpelling, [S::Node; 2])>
+where
+    S: Source + ?Sized,
+{
+    let Former::Application(function, second) = source.read(node)
+    else {
+        return None;
+    };
+    let Former::Application(mut head, first) = source.read(function)
+    else {
+        return None;
+    };
+    let mut leading = 0_usize;
+    while let Former::Application(inner, _) = source.read(head) {
+        head = inner;
+        leading = leading.saturating_add(1_usize);
+    }
+    let Former::Force(forced) = source.read(head)
+    else {
+        return None;
+    };
+    let gandr_core_term::primitive::Operator::Infix(spelling) = source.operator(forced)?
+    else {
+        return None;
+    };
+    let components = source
+        .model_slots(forced)
+        .iter()
+        .map(|slot| slot.components.len())
+        .fold(0_usize, usize::saturating_add);
+    (leading == components).then_some((InfixSpelling(spelling), [first, second]))
+}
+
+/// Writes the binary operator `spelling` between its two operands into
+/// `parts`, `a == b`, and answers how the form binds: as the cons of its
+/// operands, by the rule that writes the spelling.
+///
+/// # Specification
+/// trivial.
+fn infix(
+    parts: &mut Parts,
+    InfixSpelling(spelling): InfixSpelling,
+) -> Binding
+{
+    let _ = parts
+        .piece(Binding::Atom)
+        .text(format!(" {spelling} "))
+        .piece(Binding::Atom);
+    match spelling {
+        "+" => writes(Production("binary_expression.add.plus"), Binding::Cons),
+        "-" => writes(Production("binary_expression.add.minus"), Binding::Cons),
+        "*" => writes(Production("binary_expression.mul.times"), Binding::Cons),
+        "==" => writes(Production("binary_expression.cmp.eq"), Binding::Cons),
+        "!=" => writes(Production("binary_expression.cmp.ne"), Binding::Cons),
+        "<" => writes(Production("binary_expression.cmp.lt"), Binding::Cons),
+        "<=" => writes(Production("binary_expression.cmp.le"), Binding::Cons),
+        ">" => writes(Production("binary_expression.cmp.gt"), Binding::Cons),
+        ">=" => writes(Production("binary_expression.cmp.ge"), Binding::Cons),
+        "&&" => writes(Production("binary_expression.and"), Binding::Cons),
+        "||" => writes(Production("binary_expression.or"), Binding::Cons),
+        // The prelude's other infix spellings, should it gain one, name their
+        // rule here.
+        _ => Binding::Cons,
+    }
 }
 
 /// The bound and the rest of `node` when it is a run binding a nested call,
@@ -9334,24 +9435,26 @@ impl Walk<'_, '_>
     ///   over the eliminator's slots with the answer after the scrutinee; any
     ///   other ascription outside a typed bind pushes its body's visit alone,
     ///   noted as elided; a static application schedules its spine as
-    ///   [`Self::spine`] does and any other application its call as
-    ///   [`Self::call`] does, under `become` where it ends a loop's pass; a
-    ///   nested computation or a returned value over a bind binding no call is
-    ///   the block of its statements, `{ let x = c ; rest }`, as [`Self::form`]
-    ///   writes it; a decode, a quote, a returner where the body ends, any
-    ///   other nested computation or returned value and a reset where a body
-    ///   ends push their child's visit alone, so the child's piece is theirs,
-    ///   the reset's child inside the body it delimits; there, in a handler's
-    ///   subject, a shift over a returner where a body or a pass ends is
-    ///   `return v`, the stack's binder unwritten; the loop's own binder forced
-    ///   at the end of a pass, or applied to what the pass hands on, finishes
-    ///   as `continue`, a returner ending a pass is `break(v)` or `return v`
-    ///   and a loop ending a pass is written with its rest, as
-    ///   [`Self::pass_end`] reads them, and a computation the end of a pass
-    ///   cannot write is noted as the fixpoint's notation; a returner anywhere
-    ///   else is `pure v` and a run `run c`; a force where a type is read is
-    ///   the call of no arguments `f()` (#5213); a projection out of a forced
-    ///   variable naming a context binder is the observation `a.i`, the
+    ///   [`Self::spine`] does; a call of a constant that a comparison calls,
+    ///   saturated as [`compared`] reads it and ending no loop's pass,
+    ///   schedules its comparison as [`Self::comparison`] does; and any other
+    ///   application schedules its call as [`Self::call`] does, under `become`
+    ///   where it ends a loop's pass; a nested computation or a returned value
+    ///   over a bind binding no call is the block of its statements, `{ let x =
+    ///   c ; rest }`, as [`Self::form`] writes it; a decode, a quote, a
+    ///   returner where the body ends, any other nested computation or returned
+    ///   value and a reset where a body ends push their child's visit alone, so
+    ///   the child's piece is theirs, the reset's child inside the body it
+    ///   delimits; there, in a handler's subject, a shift over a returner where
+    ///   a body or a pass ends is `return v`, the stack's binder unwritten; the
+    ///   loop's own binder forced at the end of a pass, or applied to what the
+    ///   pass hands on, finishes as `continue`, a returner ending a pass is
+    ///   `break(v)` or `return v` and a loop ending a pass is written with its
+    ///   rest, as [`Self::pass_end`] reads them, and a computation the end of a
+    ///   pass cannot write is noted as the fixpoint's notation; a returner
+    ///   anywhere else is `pure v` and a run `run c`; a force where a type is
+    ///   read is the call of no arguments `f()` (#5213); a projection out of a
+    ///   forced variable naming a context binder is the observation `a.i`, the
     ///   binder's name its one piece; a decode of a positional projection,
     ///   which the type grammar writes no spelling of, is noted as the
     ///   printer's notation, and so is a row as a term, written as the bracket
@@ -9385,6 +9488,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
     /// - witness: `tests::goldens::a_positional_projection_the_surface_does_not_read_is_notation`
     /// - witness: `tests::goldens::a_family_argument_leaves_its_function_s_thunk_out_5408`
+    /// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -10418,6 +10522,10 @@ impl Walk<'_, '_>
                         Production("become_expression"),
                         Join::Prefix(Prefix::Become),
                     )));
+                }
+                else if let Some((spelling, operands)) = compared(source, node) {
+                    self.comparison(spelling, operands, depth, tasks);
+                    return Ok(());
                 }
                 self.call(source, function, argument, depth, tasks);
                 return writes(Production("application_expression"), Ok(()));
@@ -11490,6 +11598,59 @@ impl Walk<'_, '_>
                 depth,
             }
         });
+        if switched {
+            tasks.push(Task::Surface(Surface::Enclosed));
+        }
+    }
+
+    /// Schedules the comparison `operator` of `operands`, first to last,
+    /// that a call of a constant a comparison calls writes: `a == b` for the
+    /// prelude's `eq` on `a` and `b`. The model stays unwritten, as the source
+    /// leaves it, so the comparison reads back as the call. Where a type is
+    /// read, the operands read as expressions the type encloses, as a call's
+    /// arguments read.
+    ///
+    /// # Specification
+    /// - requires: `operator` and `operands` are as [`compared`] reads them.
+    /// - ensures: the form `a ⊙ b` pushed onto the forms, then its join and one
+    ///   visit for each operand, the first visited first; where a type is read,
+    ///   the operands' surface is the enclosed one, and the type's surface
+    ///   comes back past the join.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`compared`].
+    /// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
+    #[spec(
+        captures: [entry = tasks.len(), forms = self.forms.len()],
+        ensures: self.forms.len() == forms.saturating_add(1_usize)
+            && tasks.len() >= entry.saturating_add(3_usize),
+    )]
+    fn comparison<N>(
+        &mut self,
+        operator: InfixSpelling,
+        [first, second]: [N; 2],
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<N>>,
+    )
+    {
+        let switched = self.surface == Surface::Type;
+        if switched {
+            tasks.push(Task::Surface(self.surface));
+        }
+        let mut parts = Parts::default();
+        let binding = infix(&mut parts, operator);
+        let pieces = Arity(parts.pieces);
+        self.forms.push(parts.parts);
+        tasks.push(Task::Join(Join::Form { pieces, binding }));
+        for node in [second, first] {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::Value,
+                depth,
+            });
+        }
         if switched {
             tasks.push(Task::Surface(Surface::Enclosed));
         }
@@ -12635,26 +12796,7 @@ impl Walk<'_, '_>
                     .map(|primitive| primitive.operator());
                 match (operator, usize::from(arity)) {
                     (Some(gandr_core_term::primitive::Operator::Infix(spelling)), 2_usize) => {
-                        let _ = parts
-                            .piece(Binding::Atom)
-                            .text(format!(" {spelling} "))
-                            .piece(Binding::Atom);
-                        match spelling {
-                            "+" => writes(Production("binary_expression.add.plus"), Binding::Cons),
-                            "-" => writes(Production("binary_expression.add.minus"), Binding::Cons),
-                            "*" => writes(Production("binary_expression.mul.times"), Binding::Cons),
-                            "==" => writes(Production("binary_expression.cmp.eq"), Binding::Cons),
-                            "!=" => writes(Production("binary_expression.cmp.ne"), Binding::Cons),
-                            "<" => writes(Production("binary_expression.cmp.lt"), Binding::Cons),
-                            "<=" => writes(Production("binary_expression.cmp.le"), Binding::Cons),
-                            ">" => writes(Production("binary_expression.cmp.gt"), Binding::Cons),
-                            ">=" => writes(Production("binary_expression.cmp.ge"), Binding::Cons),
-                            "&&" => writes(Production("binary_expression.and"), Binding::Cons),
-                            "||" => writes(Production("binary_expression.or"), Binding::Cons),
-                            // The prelude's other infix spellings, should it
-                            // gain one, name their rule here.
-                            _ => Binding::Cons,
-                        }
+                        infix(&mut parts, InfixSpelling(spelling))
                     },
                     (Some(gandr_core_term::primitive::Operator::Prefix(spelling)), 1_usize) => {
                         // A literal operand is parenthesized: `-(-1)`, never

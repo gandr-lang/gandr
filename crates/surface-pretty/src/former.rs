@@ -2141,6 +2141,39 @@ pub trait Source
         let _ = head;
         &[]
     }
+
+    /// The infix operator of the comparison that calls `head`, when `head`
+    /// is a constant that a comparison calls: `==` for the prelude's `eq`,
+    /// whose model the operands' type resolves.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the operator the source records for `head`'s constant, or
+    ///   none; the default records none, so every such call is written by its
+    ///   name.
+    /// - provides: the comparison `a == b` that a printed call of the prelude's
+    ///   `eq` writes, which reads back as the call.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of the prelude's `eq` and of its `lt`, each
+    ///   with its model supplied by one path, by components of two modules and
+    ///   left out, writes the comparison; a call of a constant with no operator
+    ///   keeps its name.
+    /// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
+    #[inline]
+    fn operator(
+        &self,
+        head: Self::Node,
+    ) -> Option<gandr_core_term::primitive::Operator>
+    {
+        let _ = head;
+        None
+    }
 }
 
 /// A model implicit a function's telescope writes, `[s : Model(S) with sort

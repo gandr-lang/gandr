@@ -680,6 +680,7 @@ fn spell<'failure>(
                 .writing(&forms)
                 .naming_implicits(&implicits)
                 .flattening(&slots)
+                .operating(module.operators())
         })
         .collect();
     for (

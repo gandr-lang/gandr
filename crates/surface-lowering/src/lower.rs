@@ -5662,6 +5662,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .extend(THEORY_CONSTRUCTORS.iter().map(|&name| String::from(name)));
         }
 
+        // The prelude's declaration that each comparison calls, found by its
+        // native row's name as `through_prelude` finds it, so a printer writes
+        // a call of it as the comparison.
+        let mut operators: Vec<(ConstantIndex, gandr_core_term::primitive::Operator)> =
+            THROUGH_PRELUDE
+                .iter()
+                .filter_map(|&spelling| {
+                    let row = gandr_core_term::primitive::PRELUDE
+                        .iter()
+                        .find(|primitive| {
+                            primitive.operator()
+                                == gandr_core_term::primitive::Operator::Infix(spelling)
+                        })?;
+                    let name = SurfaceName::from(<&'static str>::from(row.name()));
+                    let (_, constant) = collected.prelude_declaration(name)?;
+                    Some((constant, row.operator()))
+                })
+                .collect();
+        operators.sort_unstable();
         let reads = collected.reads();
         // The faces each record type member of this source names: a closure's
         // members are below `own` and keep theirs.
@@ -5710,6 +5729,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_reducts(reducts)
         .with_forgets(forgets)
         .with_readers(readers)
+        .with_operators(operators)
         .with_reading(collected.unit, reads)
         .with_forgettings(forgettings)
         .with_record_faces(record_faces);

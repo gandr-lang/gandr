@@ -783,6 +783,9 @@ pub struct CoreSource<'arena>
     /// The model implicits of each function whose telescope writes one, in
     /// telescope order, ascending by the function's constant.
     slots: &'arena [(ConstantIndex, Vec<ModelSlot<'arena, CoreNode>>)],
+    /// The infix operator of the comparison that calls each constant a
+    /// comparison calls, ascending by the constant.
+    operators: &'arena [(ConstantIndex, gandr_core_term::primitive::Operator)],
     /// The name the source writes for each homed type head it does not write
     /// bare, by the head's bare spelling.
     homes: &'arena [(Name<'arena>, Name<'arena>)],
@@ -822,6 +825,7 @@ impl<'arena> CoreSource<'arena>
             implied: &[],
             telescopes: &[],
             slots: &[],
+            operators: &[],
             homes: &[],
         }
     }
@@ -1145,6 +1149,22 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { slots, ..self }
+    }
+
+    /// This source, writing a call of each constant `operators` records,
+    /// ascending by the constant, as the comparison its operator writes:
+    /// `(eq, ==)` writes the prelude's `eq` on `a` and `b` as `a == b`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operating(
+        self,
+        operators: &'arena [(ConstantIndex, gandr_core_term::primitive::Operator)],
+    ) -> Self
+    {
+        Self { operators, ..self }
     }
 
     /// This source, writing each homed type head `homes` holds by the name
@@ -3611,6 +3631,29 @@ impl Source for CoreSource<'_>
             Some(&Value::Constant(constant)) => self.slots(constant),
             Some(_) | None => &[],
         }
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn operator(
+        &self,
+        head: CoreNode,
+    ) -> Option<gandr_core_term::primitive::Operator>
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return None;
+        };
+        let Some(&Value::Constant(constant)) = self.arena.value(id)
+        else {
+            return None;
+        };
+        self.operators
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.operators.get(at))
+            .map(|&(_, operator)| operator)
     }
 }
 
