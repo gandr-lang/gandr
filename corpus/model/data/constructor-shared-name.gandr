@@ -22,7 +22,8 @@ pub data Light : Type where
   /// The amber lamp.
   | Amber : Light
 
-/// The pause that a lamp asks for. The match names each lamp through its family.
+/// The pause that a lamp asks for. The match names each lamp
+/// through its family.
 def pause(l : Light) -> Integer =
   match l where
     | Light.Red => 2

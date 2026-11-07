@@ -3,7 +3,8 @@
 //! A wildcard stands for a term that equations force. A hole is for the author
 //! to fill.
 //!
-//! The elaborator binds a most general solution. The checker writes the solution.
+//! The elaborator binds a most general solution. The checker
+//! writes the solution.
 //! The kernel readmits the declaration.
 //!
 //! - see: `corpus/pathological/holes/wildcard.gandr` — wildcard refusals.

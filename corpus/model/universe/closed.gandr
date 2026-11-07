@@ -66,7 +66,8 @@ def idAt(c : U, v : el(c)) -> -F el(c) { v }
 @[ runs("Succ Zero") ]
 def kept() -> -F Nat { idAt NatC one }
 
-/// The `succ` value is the successor at the decode of the arrow from naturals to
+/// The `succ` value is the successor at the decode of the arrow
+/// from naturals to
 /// naturals. That decode runs to `Nat => Nat`.
 @[ checks ]
 def succ : el(Arrow NatC NatC);
@@ -97,7 +98,8 @@ def atOne = thunk { fun (g) { g one } };
 @[ runs("Succ (Succ Zero)") ]
 def appliedAbove() -> -F Nat { applyAt (Arrow NatC NatC) NatC atOne succ }
 
-/// The `Coded` type packs a value with its code. The type of the second field is
+/// The `Coded` type packs a value with its code. The type of the
+/// second field is
 /// the decode of the first field.
 @[ checks ]
 data Coded : Type where

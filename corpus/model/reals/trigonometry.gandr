@@ -8,7 +8,8 @@
 // Four plans compare `10000 · cos (π · 1/4)` and `10000 · sin (π · 1/4)` with
 // `7071` and `7072`. The fifth plan's root is the angle `β₁` of the
 // decomposition for `α₁ = 1`, `α₂ = 1` and `α₃ = 1/2`. That angle is
-// `arg (cos h · cos x⁺, sin h · cos x⁻) + arg (cos h · sin x⁺, −sin h · sin x⁻)`,
+// `arg (cos h · cos x⁺, sin h · cos x⁻) + arg (cos h · sin x⁺, −sin h
+// · sin x⁻)`,
 // with `x⁺ = (α₁ + α₃)/2`, `x⁻ = x⁺ − α₃` and `h = α₂/2`.
 //
 // The host encloses each builtin by its rule at a precision that doubles, and

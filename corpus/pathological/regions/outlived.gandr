@@ -1,6 +1,7 @@
 //! `outlived` reads a thunk after its holding region ends.
 //!
-//! `pass` returns at its input region. A binding with no region cannot hold that
+//! `pass` returns at its input region. A binding with no region
+//! cannot hold that
 //! result. The checker reports `TypeMismatch`.
 //!
 //! The source defines a same-region `pass`. Rust rejects a borrow that outlives

@@ -4,7 +4,8 @@
 //!
 //! The host part has definitions for the option monad. The source also has
 //! code that is polymorphic in the carrier.
-//! The left unit is a second-order rule. The right unit abstracts a continuation
+//! The left unit is a second-order rule. The right unit
+//! abstracts a continuation
 //! variable. Associativity and both units form one theory.
 //!
 //! - see: #2115 — `MonadRightUnit`
@@ -34,7 +35,8 @@ theory MonadRightUnit where
   oper ext : (m : C, k : pi+ (x : V). C) --> C;
   rule unitR : ext m (bind x. (ret x)) <=> m;
 
-/// The associativity and unit laws form `RelativeMonad`, and each critical pair joins.
+/// The associativity and unit laws form `RelativeMonad`, and each
+/// critical pair joins.
 pub theory RelativeMonad where
   sort V : Type+;
   sort C : Type;

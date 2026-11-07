@@ -1,8 +1,10 @@
 //! `task-base` declares the shared protocols for every task source.
 //!
-//! A fork makes the parent and task peers. The task gives its result back on its end.
+//! A fork makes the parent and task peers. The task gives its result back
+//! on its end.
 //!
-//! The parent reads the end to its close and joins. No task outlives its parent or the Trio nursery that starts it.
+//! The parent reads the end to its close and joins. No task outlives its parent
+//! or the Trio nursery that starts it.
 //!
 //! - cites: [Mellies-2020-concurrent_separation_logic_meets_template_games]
 //! [Mellies-2020-concurrent_separation_logic_meets_template_games]: https://doi.org/10.1145/3373718.3394762 "Melliès and Stefanesco, Concurrent Separation Logic Meets Template Games"

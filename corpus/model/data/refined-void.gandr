@@ -1,10 +1,14 @@
-/// `absurdArm` answers an empty case on a lambda's binder whose type an enclosing case refined to `Void`.
+/// `absurdArm` answers an empty case on a lambda's binder whose type an
+/// enclosing case refined to `Void`.
 ///
-/// Under the arm `Zero`, the binder's type `isVoid(Zero)` is a call that returns `Void`, so the empty case covers it.
-/// The kernel admits the declaration as the checker does, and the fixture runs the other arm.
+/// Under the arm `Zero`, the binder's type `isVoid(Zero)` is a call that
+/// returns `Void`, so the empty case covers it.
+/// The kernel admits the declaration as the checker does, and the fixture runs
+/// the other arm.
 ///
 /// The checker unfolds the binder's type to `Void` before it reads the case.
-/// The kernel reads the decode of the returned call by its own evaluator before it reads the scrutinee's shape.
+/// The kernel reads the decode of the returned call by its own evaluator before
+/// it reads the scrutinee's shape.
 ///
 /// - see: #2830
 /// - see: `refined-binder.gandr`
@@ -18,7 +22,8 @@ pub def isVoid(n : Nat) -> Type =
     | Zero => return Void
     | Succ(_m) => return Unit
 
-/// A function from the family at `n` to the naturals, whose arm at zero cases on no value.
+/// A function from the family at `n` to the naturals, whose arm at zero cases
+/// on no value.
 pub def absurdArm(n : Nat) -> (isVoid(n)) -> Nat =
   match n where
     | Zero => return fun (u) { match u {} }

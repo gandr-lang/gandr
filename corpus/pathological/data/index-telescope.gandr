@@ -1,8 +1,11 @@
 /// This source declares families whose named index telescope is refused.
 ///
-/// It pins the refusals a named telescope adds, so a misstated index stays refused by the checker or the lowering.
+/// It pins the refusals a named telescope adds, so a misstated index stays
+/// refused by the checker or the lowering.
 ///
-/// A constructor states its indices in the order the telescope names them, each at the type its entry states. A telescope ends in `-->` and a universe, and an index takes no grade.
+/// A constructor states its indices in the order the telescope names them, each
+/// at the type its entry states. A telescope ends in `-->` and a universe, and
+/// an index takes no grade.
 ///
 /// - see: #4022
 import "../../model/data/data-base.gandr";

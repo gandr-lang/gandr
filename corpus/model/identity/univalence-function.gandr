@@ -15,7 +15,8 @@ import "./circle-base.gandr";
 // The loops at the point as the integers, `loopsAreIntegers`.
 import "./univalence.gandr";
 
-/// The transport maps a loop function to an integer function by `spin`, `f` and `wind`.
+/// The transport maps a loop function to an integer function by `spin`,
+/// `f` and `wind`.
 def funBeta(f : Path[.A = Circle](Base, Base) -> Path[.A = Circle](
   Base,
   Base

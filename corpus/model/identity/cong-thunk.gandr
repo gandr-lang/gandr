@@ -27,7 +27,8 @@ def delayed(a : Integer) -> -F Path[.A = +U (-F Integer)](
 ) =
   return Path.here (thunk { become double a })
 
-/// The `cong_delay` proof carries an integer path through the suspended doubling.
+/// The `cong_delay` proof carries an integer path through
+/// the suspended doubling.
 @[ checks ]
 def cong_delay(a : Integer, b : Integer, p : Path(a, b)) -> -F Path(
   delay a,

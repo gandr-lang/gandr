@@ -1,8 +1,13 @@
 //! `tree-state-wp` gives a state weakest-precondition observation over data.
 //!
-//! It represents increment as a tree in the state row. It folds the tree into a type. The normaliser computes a program's precondition. The kernel replays each declaration.
+//! It represents increment as a tree in the state row. It folds the tree into a
+//! type. The normaliser computes a program's precondition. The kernel
+//! replays each declaration.
 //!
-//! A Dijkstra monad pairs a program with evidence below a specification. `incrSpecified` gives evidence at `isOne`. `incrSpecifiedEverywhere` gives evidence at every postcondition. `incrSpecBare` keeps the unpaired evidence. `doneSpecified` gives return evidence at every postcondition.
+//! A Dijkstra monad pairs a program with evidence below a specification.
+//! `incrSpecified` gives evidence at `isOne`. `incrSpecifiedEverywhere` gives
+//! evidence at every postcondition. `incrSpecBare` keeps the unpaired evidence.
+//! `doneSpecified` gives return evidence at every postcondition.
 //!
 //! - see: #2773 — `incrSpecifiedEverywhere`, `incrSpecBare`
 //! - see: #2751 — `doneSpecified`
@@ -43,14 +48,16 @@ pub def incrSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{
 /// The counter ends at one.
 pub def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }
 
-/// `incrSpecified` pairs the increment with evidence below `incrSpec(isOne, s)`.
+/// `incrSpecified` pairs the increment with evidence
+/// below `incrSpec(isOne, s)`.
 /// Both sides unfold to `Path[.A = Integer](s + 1, 1)`.
 def incrSpecified : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
 } = *{incrTree, fun (s) { fun (h) { h } }};
 
-/// `incrSpecifiedEverywhere` pairs the increment with evidence at every postcondition.
+/// `incrSpecifiedEverywhere` pairs the increment with evidence
+/// at every postcondition.
 /// The fold and specification pass the successor to `post`.
 def incrSpecifiedEverywhere : *{
   m : Prog (Either StateOp Void) Unit,
@@ -69,7 +76,8 @@ def incrSpecBare(
 /// state.
 def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) s }
 
-/// `doneSpecified` pairs the stopped program with evidence at every postcondition.
+/// `doneSpecified` pairs the stopped program with evidence
+/// at every postcondition.
 /// Both sides reduce to the postcondition at the unit and initial state.
 def doneSpecified : *{
   m : Prog (Either StateOp Void) Unit,

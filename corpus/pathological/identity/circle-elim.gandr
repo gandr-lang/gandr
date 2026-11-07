@@ -54,7 +54,8 @@ data Marked : Type where
   | turn : Mark <-> Mark
 
 /// A composite whose second path starts where the first does not end: the
-/// turn ends at `Mark`, and `Path.here(Elsewhere)` starts at `Elsewhere`. `Path.step` is
+/// turn ends at `Mark`, and `Path.here(Elsewhere)` starts at
+/// `Elsewhere`. `Path.step` is
 /// the composite of the 2-chain, so its one inner wire does not fill.
 @[ refuses("ComposeDoesNotFill") ]
 def misjoined_then : Path(Mark, Elsewhere) = Path.step turn (Path.here Elsewhere);
@@ -68,7 +69,8 @@ def kept(x : Marked) -> Marked =
 
 /// Reflexivity at the looped point, wanted at a path whose endpoints compute
 /// the other point: `kept(Elsewhere)` computes `Elsewhere`, which the turn
-/// never reaches, so the path is no words and `Path.here(Mark)` does not inhabit
+/// never reaches, so the path is no words and `Path.here(Mark)`
+/// does not inhabit
 /// it.
 @[ refuses("TypeMismatch") ]
 def elsewhereComputed : Path(kept Elsewhere, kept Elsewhere) = Path.here Mark;

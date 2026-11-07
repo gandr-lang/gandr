@@ -1,8 +1,12 @@
-/// This source declares an indexed family whose data block writes a rule over its constructors.
+/// This source declares an indexed family whose data block writes a rule
+/// over its constructors.
 ///
-/// It pins the refusal of a constructor rule on an indexed family. Before the refusal, the checker faulted on such a family.
+/// It pins the refusal of a constructor rule on an indexed family. Before the
+/// refusal, the checker faulted on such a family.
 ///
-/// The lowering reads the rules of a family after the description route. A rule whose left side a constructor heads is refused as `OutOfFragment.Indexed` over its two sides.
+/// The lowering reads the rules of a family after the description route. A rule
+/// whose left side a constructor heads is refused as `OutOfFragment.Indexed`
+/// over its two sides.
 ///
 /// - see: #2865
 /// - see: #1314

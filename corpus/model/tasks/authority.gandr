@@ -1,8 +1,10 @@
 //! `reader` and `exiter` use a capability that the parent gives to the task.
 //!
-//! The host answers a held capability operation once. The task uses its parent's authority while the parent acts.
+//! The host answers a held capability operation once. The task uses its
+//! parent's authority while the parent acts.
 //!
-//! `reader` sends file text to its parent. `exiter` exits while the task end stays open.
+//! `reader` sends file text to its parent. `exiter` exits while the task
+//! end stays open.
 //!
 //! - see: #1334 — `reader`
 import "./task-base.gandr";

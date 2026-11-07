@@ -60,7 +60,8 @@ pub theory Project where
   include Toolchain;
 
 /// How a package's sources look: the `[presentation]` table of its
-/// `package.gandr.toml`. The user's configuration file writes the same table, and a
+/// `package.gandr.toml`. The user's configuration file writes the same
+/// table, and a
 /// language server reads the package's table over the user's. Each field is
 /// inert: how a source looks is not what it is.
 pub theory Presentation where {
@@ -73,7 +74,8 @@ pub theory Presentation where {
 /// A package: the project a `package.gandr` roots. The model its
 /// `module Package : Model(Gandr.Package)` declares describes it, and the
 /// checker writes the project's `package.gandr.toml` from that model. Its own
-/// fields are inert: its name, its authors, its documentation and its presentation
+/// fields are inert: its name, its authors, its documentation
+/// and its presentation
 /// leave its address alone. What it asks of the toolchain does not.
 pub theory Gandr.Package where {
   include Project;

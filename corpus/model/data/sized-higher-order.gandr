@@ -54,7 +54,8 @@ pub def predAt[i : Size](n : Nat[i]) -> Nat[i] =
     | Zero => Zero
     | Succ(p) => p
 
-/// `halvedAt` computes a ceiling half through `predAt` at the predecessor's stage.
+/// `halvedAt` computes a ceiling half through `predAt` at
+/// the predecessor's stage.
 /// `halvedAt[<]` receives that result.
 def rec halvedAt(n : Nat) -> Nat =
   match n where

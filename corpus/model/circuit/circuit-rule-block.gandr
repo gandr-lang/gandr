@@ -3,7 +3,8 @@
 //! `cong1` routes a rewrite result and one data input through two nodes.
 //! The pathological circuit sources refuse cycles and invalid rule wiring.
 //!
-//! The current lowering keeps `cong1` beside the block value because `Theory` does not encode circuit rules.
+//! The current lowering keeps `cong1` beside the block value because `Theory`
+//! does not encode circuit rules.
 //!
 //! - cites: [Lafont-1990-interaction_nets]
 //!
@@ -14,7 +15,8 @@ data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-/// `NatSum` binds `cong1`, which routes the rewrite of `x` through `add` with `y`.
+/// `NatSum` binds `cong1`, which routes the rewrite of `x` through
+/// `add` with `y`.
 theory NatSum where
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;

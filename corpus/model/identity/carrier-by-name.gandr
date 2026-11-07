@@ -43,5 +43,6 @@ def punnedFlow(A : Type, x : A) -> Flow[.A](x, x) { Flow.stay x }
 /// The unit type flows to itself, and a supply names the universe.
 def universalFlow : Flow[.A = Type](Unit, Unit) = Flow.stay Unit;
 
-/// Four flows to itself. The source omits the carrier, and the endpoints fix it.
+/// Four flows to itself. The source omits the carrier, and the
+/// endpoints fix it.
 def omittedFlow : Flow 4 4 = Flow.stay 4;

@@ -1,6 +1,7 @@
 //! This source tests recursive calls that remain open at a variable.
 //!
-//! The checker keeps a recursive call in an arm until the checker knows its argument.
+//! The checker keeps a recursive call in an arm until the checker
+//! knows its argument.
 //! The pathological twin refuses an endpoint that gives this call a value.
 //!
 //! The checker retains the open call below the arm constructor.

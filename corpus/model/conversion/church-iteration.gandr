@@ -1,6 +1,7 @@
 //! Two products of one size count the same applications of a free successor.
 //!
-//! Grégoire and Leroy normalise Church numerals, whose normal forms apply a free
+//! Grégoire and Leroy normalise Church numerals, whose normal forms
+//! apply a free
 //! successor many times. Comparing 256 times 64 with 64 times 256 needs a large
 //! readback.
 //!
@@ -24,7 +25,8 @@ def rec iterate(n : Nat, s : Nat -> Nat, z : Nat) -> Nat =
     | Zero => z
     | Succ(m) => s (iterate[<] m s z)
 
-/// Sixteen sixteens count as many applications as two products of sixteen and eight.
+/// Sixteen sixteens count as many applications as two products of
+/// sixteen and eight.
 def countsCommute(s : Nat -> Nat, z : Nat) -> Path(
   iterate (times sixteen sixteen) s z,
   iterate (plus (times sixteen eight) (times eight sixteen)) s z

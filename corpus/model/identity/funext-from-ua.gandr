@@ -160,7 +160,8 @@ def endsAgree(b : Type) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> 
     (thunk { fun (w) { target b w } })
     (Path.here (thunk { fun (v) { v } }))
 
-/// An equality between path-space functions persists after any map into that space.
+/// An equality between path-space functions persists after any map
+/// into that space.
 def whisker(
   a : Type,
   b : Type,
@@ -199,7 +200,8 @@ def funextOfSpace(
     (fun (w) { target b w })
     (endsAgree b)
 
-/// A homotopy maps each point to a path-space element with endpoints `f` and `g`.
+/// A homotopy maps each point to a path-space element with endpoints
+/// `f` and `g`.
 def funextFromUa(
   a : Type,
   b : Type,

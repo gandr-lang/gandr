@@ -1,9 +1,11 @@
 //! This source shows a judgement that waits on an owed code.
 //!
-//! A value at the decode of an owed code waits for a fill. A fill with `Integer`
+//! A value at the decode of an owed code waits for a fill. A
+//! fill with `Integer`
 //! settles the comparison. A fill with `String` refutes it.
 //!
-//! The checker records the owed hole. A fill resumes the declaration. Suspension
+//! The checker records the owed hole. A fill resumes
+//! the declaration. Suspension
 //! is not failure.
 //!
 //! - cites: [Slattery-2026-bidirectional_elaborators_carte]

@@ -1,4 +1,5 @@
-// `Path.walk` computes on every filler that resolves, and stays stuck on a carried cell.
+// `Path.walk` computes on every filler that resolves, and stays stuck on
+// a carried cell.
 //
 // Nothing about a filler is primitive. A filler comes from completion's
 // derivation, from the filler generator or from a composite of cells.
@@ -20,7 +21,8 @@ def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A](x, y)) -> Path[.A = Pa
 ) =
   thunk { fun (f) { Path.here f } }
 
-/// The generator's filler over a `Path.here` cell is `Path.here` of its side, where a
+/// The generator's filler over a `Path.here` cell is `Path.here` of its
+/// side, where a
 /// type holds it.
 def generatedIsHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, x)](
   Path.here x,
@@ -34,7 +36,8 @@ def generatedIsHere(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = Path[.A = 
 ) =
   Path.here (Path.here (Path.here (Path.here x)))
 
-/// The generator's filler: `Path.walk` over it, with a `Path.here` input, reduces
+/// The generator's filler: `Path.walk` over it, with a
+/// `Path.here` input, reduces
 /// to its base.
 def overGenerated(
   A : Type,

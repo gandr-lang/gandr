@@ -1,8 +1,12 @@
 /// An indexed family `Skip` carries an operation `skip` and a rule over it.
 ///
-/// Each node of the operation and the rule answers at its own span. The editor reads an indexed family's members as it reads an unindexed family's.
+/// Each node of the operation and the rule answers at its own span. The editor
+/// reads an indexed family's members as it reads an unindexed family's.
 ///
-/// The checker admits `Skip`, and the operation routes no function, since a route's port is a family at no index. The described reading gives each port the family at the index the port writes. The family states no expectation, since the sugared form drops an own-line attribute.
+/// The checker admits `Skip`, and the operation routes no function, since a
+/// route's port is a family at no index. The described reading gives each port
+/// the family at the index the port writes. The family states no expectation,
+/// since the sugared form drops an own-line attribute.
 ///
 /// - see: `corpus/model/data/map-laws.gandr`
 /// - see: #2940

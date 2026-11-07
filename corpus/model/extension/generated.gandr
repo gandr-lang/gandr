@@ -1,4 +1,5 @@
-//! `Generated` and `Wider` state extension signatures over finite face theories.
+//! `Generated` and `Wider` state extension signatures over
+//! finite face theories.
 //!
 //! The signatures show the behaviour of `ext` over two and three points.
 //!

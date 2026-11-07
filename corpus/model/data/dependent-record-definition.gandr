@@ -1,4 +1,5 @@
-/// This source checks a pair against a definition that returns a dependent record type.
+/// This source checks a pair against a definition that returns a
+/// dependent record type.
 ///
 /// This source makes the kernel replay a definition as it unfolds.
 ///
@@ -18,14 +19,16 @@ data T : Type where
   /// The tag over a natural.
   | Tg : (t : Nat) --> T
 
-/// What a tag owes of a heap: emptiness at zero, by a call of `emp`, and nothing else.
+/// What a tag owes of a heap: emptiness at zero, by a call of `emp`,
+/// and nothing else.
 def p(r : T, h : Heap) -> Type =
   match r where
     | Tg(t) => match t where
       | Zero => emp h
       | Succ(_s) => return Void
 
-/// The tags paired with what each owes of `h`, a dependent record named by a definition.
+/// The tags paired with what each owes of `h`, a dependent record named
+/// by a definition.
 def repr(h : Heap) -> Type =
   return type(*{r : T, ok : p(r, h)})
 

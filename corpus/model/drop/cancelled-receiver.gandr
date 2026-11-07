@@ -53,7 +53,8 @@ def late() -> Integer =
     | oper exit(code, k) => { abandon k; pure 7 }
   }
 
-/// The root abandons its continuation before it receives the worker's queued end.
+/// The root abandons its continuation before it receives the
+/// worker's queued end.
 @[ runs("7") ]
 def forwarded() -> Integer =
   handle c : std.process.Exit.Eff {

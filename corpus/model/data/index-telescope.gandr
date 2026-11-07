@@ -1,8 +1,11 @@
-/// This source declares families whose `data` header states its indices as a named telescope on the right of the colon.
+/// This source declares families whose `data` header states its indices as a
+/// named telescope on the right of the colon.
 ///
-/// The type of a later index can read an earlier one. A family of variables over a context needs those names.
+/// The type of a later index can read an earlier one. A family of variables
+/// over a context needs those names.
 ///
-/// The telescope `(x : A, y : B(x)) --> Type` names each index. The kind `A -> Type` is the same telescope with no names.
+/// The telescope `(x : A, y : B(x)) --> Type` names each index. The kind `A ->
+/// Type` is the same telescope with no names.
 ///
 /// - see: #4022
 import "./data-base.gandr";
@@ -48,7 +51,8 @@ def nextVar(g : Ctx, a : ObjTy, b : ObjTy, v : Var g a) -> Var (Extend g b) a =
   let x = There g a b v
   x
 
-/// The function this definition returns moves a variable of `d` past one more entry.
+/// The function this definition returns moves a variable of `d` past
+/// one more entry.
 def weaken(d : Ctx, b : ObjTy, a : ObjTy) -> Var(d, a) -> Var(Extend(d, b), a) =
   return fun (x) { There d a b x }
 

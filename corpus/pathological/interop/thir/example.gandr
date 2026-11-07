@@ -16,7 +16,8 @@ def exampleAtTrueZero(post : Value -> Type) -> (post(Int(0))) -> wpFn(
 ) =
   return fun (h) { h }
 
-/// At true the call of `identity` is reached, so the table decides it, and a claim past every table is refused.
+/// At true the call of `identity` is reached, so the table decides it, and a
+/// claim past every table is refused.
 @[ refuses("TypeMismatch") ]
 def exampleAtTrueAnyTable(
   spec : *{Item, Value, Value -> Type} -> Type,

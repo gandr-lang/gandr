@@ -9,7 +9,8 @@
 //
 // - see: #1078 — `counted_behind`, `counted_across`
 
-// This import provides the presentation that `generic-arity.gandr` does not import.
+// This import provides the presentation that `generic-arity.gandr`
+// does not import.
 import "../higher-cells/magma-base.gandr";
 // This import provides the generic program over presentations.
 import "./generic-arity.gandr";

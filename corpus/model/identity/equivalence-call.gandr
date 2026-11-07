@@ -13,7 +13,8 @@ import "./equivalence.gandr";
 def kept(a : Type, b : Type, i : a ≅ b) -> a ≅ b =
   i
 
-/// The `keptToEquiv` match splits the returned quasi-inverse into an equivalence.
+/// The `keptToEquiv` match splits the returned quasi-inverse
+/// into an equivalence.
 def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b =
   let j = kept a b i
   match j where

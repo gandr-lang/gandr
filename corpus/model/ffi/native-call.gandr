@@ -3,7 +3,8 @@
 //! The `testlib` alias names its adder and string-length functions.
 //! The FFI twins refuse an interior NUL and a call with too few arguments.
 //!
-//! The current lowering refuses the `extern` block and its projection expression.
+//! The current lowering refuses the `extern` block and
+//! its projection expression.
 //!
 //! - see: #327 — `gandr_test_add`, `measured`
 //! - see: #1106 — `measured`
@@ -14,7 +15,8 @@ extern "c" from "./testlib" as testlib {
   def gandr_test_strlen(s : CStr) -> u64;
 }
 
-/// `measured` names the adder at twenty-one and the string-length call through `testlib` before the current lowering reaches their projections.
+/// `measured` names the adder at twenty-one and the string-length call through
+/// `testlib` before the current lowering reaches their projections.
 @[ refuses("OutOfFragment.projection_expression") ]
 def measured() -> -F (i64 * i64) =
   let doubled = testlib.gandr_test_add 21i64 21i64

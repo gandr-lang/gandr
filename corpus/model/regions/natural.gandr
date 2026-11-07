@@ -1,7 +1,8 @@
 //! `natural` compares a region-polymorphic function across a widening.
 //!
 //! A view at an outer region stands at an inner region. The pathological twin
-//! refuses a reversed widening as `TypeMismatch`. It refuses unequal functions as
+//! refuses a reversed widening as `TypeMismatch`. It refuses
+//! unequal functions as
 //! `EndpointMismatch`.
 //!
 //! The checker verifies each square by conversion. Both examples run to `5`.

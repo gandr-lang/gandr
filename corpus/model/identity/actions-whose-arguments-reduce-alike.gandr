@@ -48,7 +48,8 @@ def actAct(
 ) -> Path[.A = C](G (F x), G (F y)) =
   actAlong B C G (F x) (F y) (actAlong A B F x y p)
 
-/// The `underAnAction` proof compares the expanded action with the `whiskerAlong` call.
+/// The `underAnAction` proof compares the expanded action with
+/// the `whiskerAlong` call.
 def underAnAction(
   A : Type,
   x : A,
@@ -89,7 +90,8 @@ def underAnAction(
     w
   )) (Path.step fm g) (Path.step fp g) (whiskerAlong A x y z fm fp fa g))
 
-/// The `underAWhisker` proof compares the expanded inner action with the `whiskerAlong` call.
+/// The `underAWhisker` proof compares the expanded inner action with
+/// the `whiskerAlong` call.
 def underAWhisker(
   A : Type,
   x : A,

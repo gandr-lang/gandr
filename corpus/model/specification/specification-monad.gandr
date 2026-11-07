@@ -1,6 +1,8 @@
 //! `SpecificationMonad` states an ordered monad as a theory.
 //!
-//! Its computations have an order. Its extension is monotone in both arguments. An operation lands in a sort. The order indexes two computations. Its evidence is a term that the operations build.
+//! Its computations have an order. Its extension is monotone in both arguments.
+//! An operation lands in a sort. The order indexes two computations. Its
+//! evidence is a term that the operations build.
 //!
 //! The twin refuses the monad laws beside the indexed sort.
 //!

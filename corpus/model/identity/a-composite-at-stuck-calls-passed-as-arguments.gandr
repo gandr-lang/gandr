@@ -1,4 +1,5 @@
-/// This source compares a stuck call with the form required by its parameter type.
+/// This source compares a stuck call with the form required by
+/// its parameter type.
 ///
 /// `composedHere` has a type over the composite of two paths.
 /// The `passed` declarations apply it to variables and stuck calls.

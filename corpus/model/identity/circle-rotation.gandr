@@ -47,11 +47,13 @@ def rotInv4(a : Circle, b : Circle) -> Path[.A = Circle](
 def atBase(f : (x : Circle) -> Path[.A = Circle](x, x)) -> Path[.A = Circle](Base, Base) =
   f Base
 
-/// The `distinct` proof turns an equality of `selfloop` and `selfrefl` into loop apart.
+/// The `distinct` proof turns an equality of `selfloop` and `selfrefl`
+/// into loop apart.
 def distinct(e : Path(selfloop, selfrefl)) -> Empty =
   loop_apart (Path.ap atBase e)
 
-/// The `toLoop` record gets a map point and loop image with the image type at that point.
+/// The `toLoop` record gets a map point and loop image with the image type
+/// at that point.
 def toLoop(f : Circle -> Int) -> *{point : Int, around : Path[.A = Int](point, point)} =
   *{f Base, Path.ap f loop}
 

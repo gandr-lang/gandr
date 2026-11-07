@@ -1,8 +1,15 @@
-/// The default build stage: a package's `package.gandr.toml` body, rendered by a gandr function from its model's fields and modules.
+/// The default build stage: a package's `package.gandr.toml` body, rendered by
+/// a gandr function from its model's fields and modules.
 ///
-/// A package's own build stage is to write its manifest, the checker's fixed rule its default. Before the checker can run a stage, this source shows the default spelled in gandr: each run is the body of a manifest the tree commits.
+/// A package's own build stage is to write its manifest, the checker's fixed
+/// rule its default. Before the checker can run a stage, this source shows the
+/// default spelled in gandr: each run is the body of a manifest
+/// the tree commits.
 ///
-/// `body` reads the name, the version and the module list, and writes the `[package]` table as the checker does. The checker keeps the header and its BLAKE3 digest, which only it computes. A name holding a quote is not escaped here: that needs the characters of a string.
+/// `body` reads the name, the version and the module list, and writes the
+/// `[package]` table as the checker does. The checker keeps the header and its
+/// BLAKE3 digest, which only it computes. A name holding a quote is not escaped
+/// here: that needs the characters of a string.
 ///
 /// - see: #2764
 /// - see: #2997
@@ -14,7 +21,8 @@
 // The lists.
 import "../data/data-base.gandr";
 
-/// Each module of a list, quoted on a line of its own, each line indented and ended by a comma.
+/// Each module of a list, quoted on a line of its own, each line indented and
+/// ended by a comma.
 def rec lines(modules : List String) -> String =
   match modules where
     | Nil => ""
@@ -23,7 +31,8 @@ def rec lines(modules : List String) -> String =
       "  \"${ path }\",\n${ more }"
     }
 
-/// The `modules` array: `[]` when the list is empty, else one line per module between the brackets.
+/// The `modules` array: `[]` when the list is empty, else one line per module
+/// between the brackets.
 def listed(modules : List String) -> String =
   match modules where
     | Nil => "[]"
@@ -32,7 +41,8 @@ def listed(modules : List String) -> String =
       "[\n${ each }]"
     }
 
-/// A manifest's body: the `[package]` table with the name, the version and the modules.
+/// A manifest's body: the `[package]` table with the name, the version
+/// and the modules.
 def body(name : String, version : String, modules : List String) -> String =
   let array = listed modules
   "\n[package]\nname = \"${ name }\"\nversion = \"${ version }\"\nmodules = ${ array }\n"

@@ -1,7 +1,8 @@
 /// This source identifies confluence certificates as paths in a presented type.
 ///
 /// The integer critical pair reaches one join by two certificates.
-/// The presented type identifies those certificates and separates unrelated ones.
+/// The presented type identifies those certificates and
+/// separates unrelated ones.
 ///
 /// Univalence equates certificate types with convertible boundaries.
 /// A certificate consumer then crosses that equality unchanged.

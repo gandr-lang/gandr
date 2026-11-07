@@ -2,9 +2,11 @@
 //!
 //! `assumption` returns the innermost binder whose type is the goal.
 //! `intro` builds a function from a tactic answer under an introduced binder.
-//! The pathological twin refuses a missing answer, a wrong goal, an untyped splice, an unknown tactic, and a computation splice.
+//! The pathological twin refuses a missing answer, a wrong goal, an untyped
+//! splice, an unknown tactic, and a computation splice.
 //!
-//! The checker runs each tactic, checks its answer against the goal, and fills the splice.
+//! The checker runs each tactic, checks its answer against the goal, and
+//! fills the splice.
 //! The kernel replays the filled declaration.
 //!
 //! - see: #2762

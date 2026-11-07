@@ -69,7 +69,8 @@ def answeredForConsole() -> Integer =
     pure 1
   } with Passing
 
-/// The stored sort two-valued: `Passing`, the one model of `State.Eff` in scope,
+/// The stored sort two-valued: `Passing`, the one model of
+/// `State.Eff` in scope,
 /// stores an integer, so no model answers the scope.
 @[ refuses("ModelUnanswered") ]
 def unansweredAtTwo() -> Integer -> Integer =
