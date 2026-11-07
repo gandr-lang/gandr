@@ -341,7 +341,7 @@ enum Swept
 /// checkers admit each one in work linear in its distinct nodes.
 ///
 /// - see: #5797 — the decoder refuses such an artifact as malformed.
-const PAST_THE_WORK_CAP: [&str; 1] = ["pathological/records/iterated-pair.gandr"];
+const PAST_THE_WORK_CAP: [&str; 1] = ["model/records/iterated-pair.gandr"];
 
 /// Every `.gandr` source under `root`, sorted, symbolic links not followed.
 ///
