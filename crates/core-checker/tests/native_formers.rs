@@ -2339,6 +2339,52 @@ fn a_patched_type_forms_over_its_base_and_types_its_free_fields()
     );
 }
 
+/// #5680: a patched type that fixes every field of its base has one element,
+/// the record of no fields. `*{}`, the unit, checks there, and the kernel
+/// admits it as that record. At a patch that leaves a field free, `*{}` is
+/// refused.
+#[test]
+fn a_patched_type_with_no_free_field_holds_the_empty_record_5680()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| FieldLabel::from(String::from(name));
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let base = arena.value_type_record(BTreeMap::from([
+        (label("port"), integer),
+        (label("tls"), integer),
+    ]));
+    let fixed = three(&mut arena);
+    let whole = arena.value_type_patched(
+        base,
+        BTreeMap::from([(label("port"), fixed), (label("tls"), fixed)]),
+    );
+    let partial = arena.value_type_patched(base, BTreeMap::from([(label("port"), fixed)]));
+    let unit = arena.value_unit();
+    let declarations = [
+        definition(ConstantIndex::from(0_usize), whole, unit),
+        definition(ConstantIndex::from(1_usize), partial, unit),
+    ];
+    let (report, crossed) = run(&mut arena, &declarations);
+    assert!(
+        matches!(report.judged()[0].verdict(), Verdict::Checked { .. }),
+        "`*{{}}` checks at a patch with no free field: {:?}",
+        report.judged()[0].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[0].outcome(), Outcome::Defined { .. }),
+        "the kernel admits `*{{}}` as the record of no fields: {:?}",
+        crossed.readmitted()[0].outcome()
+    );
+    assert!(
+        matches!(
+            report.judged()[1].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "`*{{}}` is refused at a patch that leaves a field free: {:?}",
+        report.judged()[1].verdict()
+    );
+}
+
 /// A record literal at a patched type can state a fixed field. A field at the
 /// fixed value checks, and the kernel admits the literal at the record of the
 /// free fields. A field at another value is refused at the field, least label

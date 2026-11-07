@@ -88,3 +88,28 @@ def both_port(c : Config[
 /// converts with the value that the system fixes.
 @[ runs("443") ]
 def local_both_port : Integer = both_port (local);
+
+/// A bracket that fixes every field has one element, the record of no fields:
+/// `*{}`. Its host is the name `local_host`.
+///
+/// - see: #5680
+def fixed_fields : Config[.host = local_host, .port = 443, .tls = true] = *{};
+
+/// The system that fixes every field holds `*{}` the same way.
+def fixed_faces : Config[
+  secure ↦ *{.port = 443, .tls = true},
+  addr ↦ *{.host = "localhost", .port = 443}
+] = *{};
+
+/// `fixed_faces` at `Config`. Its run builds the whole record from the values
+/// that the system fixes.
+@[ runs("*{.host = \"localhost\", .port = 443, .tls = +{.0 = *{}}}") ]
+def fixed_faces_whole : Config = fixed_faces;
+
+/// The port of `fixed_faces`, read where `both_port` takes the system.
+@[ runs("443") ]
+def fixed_faces_port : Integer = both_port (fixed_faces);
+
+/// `fixed_fields` at `Config`.
+@[ runs("*{.host = \"localhost\", .port = 443, .tls = +{.0 = *{}}}") ]
+def fixed_fields_whole : Config = fixed_fields;

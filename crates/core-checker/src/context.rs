@@ -4317,21 +4317,25 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.readings.record(refined);
     }
 
-    /// Record that the kernel reads `restated` in the place of the constructor
-    /// `at`: the constructor at its stated application, ascribed the
-    /// annotation it is written at.
+    /// Record that the kernel reads `restated` in the place of the value `at`:
+    /// a constructor at its stated application, ascribed the annotation it is
+    /// written at, or `*{}` as the record of no fields at a patched type that
+    /// fixes every field of its base.
     ///
     /// # Specification
     /// - requires: `restated` ascribes the constructor at the application it
-    ///   states to `at`'s annotation, and the two types convert.
+    ///   states to `at`'s annotation, and the two types convert; or `at` is the
+    ///   unit and `restated` the record of no fields.
     /// - ensures: `at` has `restated` as its refinement, replacing an earlier
     ///   one, until the next take.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor annotated at a call that computes its
-    ///   stated index crosses restated, and the kernel admits it.
+    ///   stated index crosses restated, and the kernel admits it; so does `*{}`
+    ///   at a patched type with no free field.
     /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
+    /// - witness: `tests::native_formers::a_patched_type_with_no_free_field_holds_the_empty_record_5680`
     #[spec(ensures: self.restating.get(&TermNode::Value(at)) == Some(&TermNode::Value(restated)))]
     pub(crate) fn record_restated(
         &mut self,
