@@ -64,6 +64,7 @@ use crate::plan::PlanError;
 use crate::plan::Real;
 use crate::schema::Membership;
 use crate::schema::Refinement;
+use crate::schema::Split;
 use crate::schema::membership;
 use crate::schema::radicand;
 use crate::validate::ValidatedPlan;
@@ -445,25 +446,33 @@ pub(crate) struct Progress
     /// The most pieces that a search of the work holds at once, or zero for
     /// work that searches no domain.
     regions: PieceCount,
+    /// The point at which the work splits an enclosure or a piece.
+    split: Split,
 }
 
 impl Progress
 {
-    /// The work on `obligation`, with no step yet.
+    /// The work on `obligation`, with no step yet, that splits as `split`
+    /// takes.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn new(obligation: Obligation) -> Self
+    pub(crate) const fn new(
+        obligation: Obligation,
+        split: Split,
+    ) -> Self
     {
         return Self {
             obligation,
             steps: Vec::new(),
             state: State::Fresh,
             regions: PieceCount::ZERO,
+            split,
         };
     }
 
-    /// The work on `obligation` that `steps` record, as a checkpoint holds it.
+    /// The work on `obligation` that `steps` record, as a checkpoint holds it,
+    /// that splits as `split` takes.
     ///
     /// # Specification
     /// - ensures: the steps replay as a prefix of a certificate, as
@@ -493,15 +502,15 @@ impl Progress
         plan: &ValidatedPlan,
         obligation: Obligation,
         steps: Vec<Step>,
-        quotas: &CheckerQuotas,
+        (quotas, split): (&CheckerQuotas, Split),
     ) -> Result<Self, ResumeError>
     {
         if steps.is_empty() {
-            return Ok(Self::new(obligation));
+            return Ok(Self::new(obligation, split));
         }
         replay_prefix(plan, &steps, quotas).map_err(ResumeError::Replay)?;
         if !chained(plan.plan(), obligation).0 {
-            return Self::rerun(plan, obligation, &steps, quotas);
+            return Self::rerun(plan, Self::new(obligation, split), &steps, quotas);
         }
         let state = rebuilt(plan.plan(), obligation, &steps)?;
         return Ok(Self {
@@ -509,11 +518,13 @@ impl Progress
             steps,
             state,
             regions: PieceCount::ZERO,
+            split,
         });
     }
 
-    /// The work on an `obligation` that no chain serves, as `steps` record it,
-    /// rebuilt by running the machine again until it writes as many steps.
+    /// The work of `fresh`, on an obligation that no chain serves, as `steps`
+    /// record it, rebuilt by running the machine again until it writes as
+    /// many steps.
     ///
     /// # Specification
     /// - ensures: the work writes `steps` and is live, so it goes on as the
@@ -537,12 +548,12 @@ impl Progress
     /// - witness: `tests::elementary::the_machine_certifies_the_builtins`
     fn rerun(
         plan: &ValidatedPlan,
-        obligation: Obligation,
+        fresh: Self,
         steps: &[Step],
         quotas: &CheckerQuotas,
     ) -> Result<Self, ResumeError>
     {
-        let mut progress = Self::new(obligation);
+        let mut progress = fresh;
         while progress.steps.len() < steps.len() && progress.settled().is_none() {
             progress.unit(plan.plan(), quotas);
         }
@@ -888,7 +899,9 @@ impl Progress
             return Err(SuspendReason::NoRule);
         };
         let step = self.next(quotas)?;
-        let split = refinement.halve(premise, quotas).map_err(suspension)?;
+        let split = refinement
+            .halve(premise, quotas, self.split)
+            .map_err(suspension)?;
         self.steps.push(split);
         return Ok(Chain::Cut { step, refinement });
     }
@@ -1108,7 +1121,7 @@ impl Progress
         quotas: &CheckerQuotas,
     ) -> (State, Unit)
     {
-        return match search.unit(plan, &mut self.steps, quotas) {
+        return match search.unit(plan, &mut self.steps, quotas, self.split) {
             Ok(Turn::Stepped) => (State::Searching(search), Unit::Stepped),
             Ok(Turn::Concluded) => (self.certified(), Unit::Concluded),
             Err(reason) => (State::Suspended(reason), Unit::Stopped),

@@ -24,8 +24,9 @@ path = "tests/lib.rs"
 # bytes and their reading back, one timing the refinement and the replay of
 # certificates, one timing a turn of the refinement machine, one timing the
 # search and the replay of bounded quantifiers, one timing the checked-result
-# cache, one timing cut elimination, and one timing the enclosure rules of the
-# builtins and their replay, each with percentiles and allocations.
+# cache, one timing cut elimination, one timing the enclosure rules of the
+# builtins and their replay, and one measuring the split points of each split
+# policy, each with percentiles and allocations.
 [[bench]]
 harness = false
 name = "arithmetic"
@@ -65,6 +66,11 @@ path = "benches/elimination.rs"
 harness = false
 name = "elementary"
 path = "benches/elementary.rs"
+
+[[bench]]
+harness = false
+name = "split"
+path = "benches/split.rs"
 
 [dependencies]
 anodized.workspace = true

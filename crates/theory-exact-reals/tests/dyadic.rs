@@ -6,6 +6,7 @@ use core::cmp::Ordering;
 use core::ops::Add as _;
 use core::ops::Neg as _;
 use core::ops::Shl as _;
+use core::ops::Shr as _;
 
 use gandr_theory_exact_reals::BitWidth;
 use gandr_theory_exact_reals::Dyadic;
@@ -16,6 +17,7 @@ use gandr_theory_exact_reals::Precision;
 use gandr_theory_exact_reals::Rounding;
 use gandr_theory_exact_reals::Sign;
 use num_bigint::BigInt;
+use proptest::prelude::*;
 
 /// The dyadic `mantissa · 2^exponent`.
 ///
@@ -64,6 +66,7 @@ fn errors_render_one_distinct_line()
         DyadicError::ExponentOutOfRange,
         DyadicError::PrecisionOutOfRange,
         DyadicError::DivisionByZero,
+        DyadicError::EmptyInterval,
     ]
     .map(|error| error.to_string());
     for (index, line) in lines.iter().enumerate() {
@@ -299,5 +302,135 @@ fn negation_keeps_the_carrier_class()
     assert_eq!(
         (&Dyadic::from(i64::MAX)).neg(),
         Dyadic::from(i64::MAX.checked_neg().unwrap())
+    );
+}
+
+/// The grids that a search of the fewest bits reads: each power `2^k` from
+/// `floor` to `ceiling`.
+#[derive(Clone, Copy, Debug)]
+struct Grids
+{
+    floor: i32,
+    ceiling: i32,
+}
+
+/// The fewest mantissa bits of a dyadic strictly between `lower` and
+/// `upper`, found on each grid of `grids` as the odd multiple nearest zero.
+///
+/// # Specification
+/// trivial.
+fn fewest_bits(
+    lower: &Dyadic,
+    upper: &Dyadic,
+    grids: Grids,
+) -> BitWidth
+{
+    if lower.sign() == Sign::Negative && upper.sign() == Sign::Positive {
+        return BitWidth::from(0_u64);
+    }
+    // An interval at or below zero mirrors one at or above it.
+    let (low, high) = if upper.sign() == Sign::Positive {
+        (lower.clone(), upper.clone())
+    }
+    else {
+        (upper.neg(), lower.neg())
+    };
+    let mut fewest: Option<BitWidth> = None;
+    for place in grids.floor ..= grids.ceiling {
+        // The least integer above `low / 2^place`.
+        let shift = i32::from(low.exponent()).checked_sub(place).unwrap();
+        let scaled = if shift >= 0_i32 {
+            low.mantissa().shl(u32::try_from(shift).unwrap())
+        }
+        else {
+            low.mantissa()
+                .shr(u32::try_from(shift.checked_neg().unwrap()).unwrap())
+        };
+        let mut multiple = scaled.add(1_u8);
+        if !multiple.bit(0_u64) {
+            multiple = multiple.add(1_u8);
+        }
+        let candidate = dyadic(multiple, Exponent::from(place));
+        if candidate < high {
+            let width = candidate.width();
+            fewest = Some(fewest.map_or(width, |held| held.min(width)));
+        }
+    }
+    return fewest.unwrap();
+}
+
+/// A dyadic end of an interval, wide in its exponent.
+///
+/// # Specification
+/// trivial.
+fn end() -> impl Strategy<Value = Dyadic>
+{
+    return (-1000_i64 .. 1000, -40_i32 .. 40)
+        .prop_map(|(mantissa, exponent)| dyadic(BigInt::from(mantissa), Exponent::from(exponent)));
+}
+
+proptest! {
+    /// The simplest point lies strictly inside its interval, and no grid
+    /// from below the finer end up past the upper end holds a dyadic of the
+    /// interval with a narrower mantissa.
+    #[test]
+    fn the_simplest_point_has_the_fewest_bits(first in end(), second in end())
+    {
+        prop_assume!(first != second);
+        let (lower, upper) = if first < second { (first, second) } else { (second, first) };
+        let point = Dyadic::simplest(&lower, &upper).unwrap();
+        prop_assert!(lower < point && point < upper, "{:?} outside ({:?}, {:?})", point, lower, upper);
+        let grids = Grids { floor: -42, ceiling: 52 };
+        prop_assert_eq!(point.width(), fewest_bits(&lower, &upper, grids));
+    }
+}
+
+#[test]
+fn the_simplest_point_of_each_boundary()
+{
+    let value =
+        |mantissa: i64, exponent: i32| dyadic(BigInt::from(mantissa), Exponent::from(exponent));
+    let simplest = |lower: Dyadic, upper: Dyadic| Dyadic::simplest(&lower, &upper);
+    // An interval across zero holds zero, which has no bits.
+    assert_eq!(
+        simplest(value(-1_i64, 0_i32), value(1_i64, 0_i32)),
+        Ok(Dyadic::ZERO)
+    );
+    // Across integers the coarsest power of two wins, not the integer nearest
+    // zero that the surreals take.
+    assert_eq!(
+        simplest(value(100_i64, 0_i32), value(130_i64, 0_i32)),
+        Ok(value(1_i64, 7_i32))
+    );
+    assert_eq!(
+        simplest(value(-130_i64, 0_i32), value(-100_i64, 0_i32)),
+        Ok(value(-1_i64, 7_i32))
+    );
+    assert_eq!(
+        simplest(value(5_i64, 0_i32), value(7_i64, 0_i32)),
+        Ok(value(3_i64, 1_i32))
+    );
+    // Adjacent ends meet at their midpoint.
+    assert_eq!(
+        simplest(value(1_i64, 0_i32), value(1_i64, 1_i32)),
+        Ok(value(3_i64, -1_i32))
+    );
+    // A lower end of zero takes the greatest power of two below the upper end.
+    assert_eq!(
+        simplest(Dyadic::ZERO, value(1_i64, 0_i32)),
+        Ok(value(1_i64, -1_i32))
+    );
+    assert_eq!(
+        simplest(Dyadic::ZERO, value(3_i64, 0_i32)),
+        Ok(value(1_i64, 1_i32))
+    );
+    // An interval that its ends close holds no dyadic.
+    assert_eq!(
+        simplest(value(1_i64, 0_i32), value(1_i64, 0_i32)),
+        Err(DyadicError::EmptyInterval)
+    );
+    assert_eq!(
+        simplest(value(1_i64, 1_i32), value(1_i64, 0_i32)),
+        Err(DyadicError::EmptyInterval)
     );
 }
