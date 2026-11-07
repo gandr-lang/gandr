@@ -73,13 +73,14 @@ crates/
 ├── theory-cell-complexes/         command patterns, matching, the reduction order, the cell alphabet and store
 ├── theory-cell-complexes-tools/   the toy alphabet and the adversary frame engine suites test against (dev only)
 ├── theory-cellular-sheaves/       cellular sheaves: gluing and cohomology
-├── theory-circuit-algebras/       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
+├── theory-circuit-algebras/       the diagram view, the spine reading, convex embedding matching and the diagram normal form
 ├── theory-coherent-resolutions/   firing, critical pairs, replayable coherence certificates, budgeted completion
-├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
+├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed
 ├── theory-decomposition-spaces/   two-mode certificate composition, bounded backward pathway queries and borrowed canonical step fields
-├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web and its linearizations, the flow projection, guarded-family prices
+├── theory-deep-inference/         shift equivalence, the causal order and web, the certificate normal form and its replay plan, guarded-family prices
 ├── theory-discrete-morse/         acyclic matchings: their check and the greedy matching
 ├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
+├── theory-e-graphs/               a proof-producing e-graph over a Lawvere theory's term table
 ├── theory-exact-reals/            canonical dyadics, outward-rounded intervals and the scoped plan DAG, outside the kernel
 ├── theory-graded-posets/          graded posets with cells as data
 ├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read

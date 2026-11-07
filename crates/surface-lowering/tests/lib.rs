@@ -6,6 +6,8 @@ extern crate alloc;
 #[cfg(test)]
 mod collapse;
 #[cfg(test)]
+mod e_graphs;
+#[cfg(test)]
 mod lawvere;
 #[cfg(test)]
 mod modules;
