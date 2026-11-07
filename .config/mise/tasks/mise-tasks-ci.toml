@@ -4160,6 +4160,9 @@ added=$(git diff --no-renames --name-only --diff-filter=A "$from" HEAD -- ':(glo
 # The lines the change adds where a defect's regression is named (#2524,
 # #3538), every file kind `opening.jq`'s `regression` reads (#4863).
 regressions=$("$claims/regressions.bash" "$from")
+# The comment lines the change removes and does not add back, per source
+# (#6004, `comments.bash`), which `opening.jq`'s `facts_kept` counts.
+comments=$("$claims/comments.bash" "$from")
 # The ceilings the change adds (#5039, `ceilings.bash`), each with the issues
 # it cites that stand open: one read per issue cited.
 ceilings=$("$claims/ceilings.bash" "$from")
@@ -4209,8 +4212,8 @@ else
 fi
 findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$issues" --argjson mentions "$mentions" \
   --argjson concerns "$concerns" --argjson added "$added" --argjson regressions "$regressions" --argjson surface "$surface" \
-  --argjson ceilings "$ceilings" --argjson budget "$budget" --slurpfile vault "$vaultdir/vault.json" \
-  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface, ceilings: $ceilings, budget: $budget, vault: $vault[0]}' \
+  --argjson ceilings "$ceilings" --argjson budget "$budget" --argjson comments "$comments" --slurpfile vault "$vaultdir/vault.json" \
+  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions, surface: $surface, ceilings: $ceilings, budget: $budget, comments: $comments, vault: $vault[0]}' \
   | jq -r -L "$claims" -f "$claims/opening.jq")
 # Each issue the body works is sectioned and signed (#3134, `signed.jq`).
 signed=$(jq -n --argjson issues "$issues" '{issues: $issues}' \
