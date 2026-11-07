@@ -222,12 +222,29 @@ fn the_decode_of_a_hole_is_unknown_and_of_a_variable_is_not()
     let marked = arena.value_type_element(marked, Level::zero());
     let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let decoded = arena.value_type_element(variable, Level::zero());
+    let applied_hole = arena.value_static_application(hole, variable);
+    let applied_hole = arena.value_static_application(applied_hole, variable);
+    let applied_hole = arena.value_type_element(applied_hole, Level::zero());
+    let applied_variable = arena.value_static_application(variable, hole);
+    let applied_variable = arena.value_type_element(applied_variable, Level::zero());
+    let forced = arena.computation_force(hole);
+    let call = arena.computation_application(forced, variable);
+    let called_hole = arena.value_returned(call);
+    let called_hole = arena.value_type_element(called_hole, Level::zero());
+    let forced = arena.computation_force(variable);
+    let call = arena.computation_application(forced, hole);
+    let called_variable = arena.value_returned(call);
+    let called_variable = arena.value_type_element(called_variable, Level::zero());
     let atom = arena.value_type_base(BaseType::Integer);
     for (subject, knowledge) in [
         (unknown, Knowledge::Unknown),
         (named, Knowledge::Unknown),
         (marked, Knowledge::Unknown),
+        (applied_hole, Knowledge::Unknown),
+        (called_hole, Knowledge::Unknown),
         (decoded, Knowledge::Known),
+        (applied_variable, Knowledge::Known),
+        (called_variable, Knowledge::Known),
         (atom, Knowledge::Known),
     ] {
         assert_eq!(value_type_knowledge(&arena, subject), knowledge);

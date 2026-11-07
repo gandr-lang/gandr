@@ -1129,8 +1129,8 @@ pub enum RefusalName
     UnknownMold,
     /// A capability form over a host table in conflict with itself.
     HostConflict,
-    /// A declaration the lowering minted neither a type nor a body for, and
-    /// refused nothing in.
+    /// A declaration the lowering minted no body for, or neither a type nor a
+    /// body, and refused nothing in.
     Unminted,
     /// A synthesised type that does not convert to the expected one.
     TypeMismatch,

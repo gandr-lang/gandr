@@ -1884,8 +1884,8 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A declaration the lowering collected and refused nothing in, whose
-    /// type and body it minted neither of: a gap in the lowering, never a
-    /// fault of the source.
+    /// written body it did not mint, or whose type and body it minted neither
+    /// of: a gap in the lowering, never a fault of the source.
     Unminted
     {
         /// The bytes of the declaration.
@@ -2546,8 +2546,8 @@ impl fmt::Display for LoweringRefusal<'_>
             ),
             Self::Unminted { name, .. } => write!(
                 f,
-                "the lowering minted neither a type nor a body for `{name}`, and refused nothing \
-                 in it"
+                "the lowering minted no body for `{name}`, or neither a type nor a body, and \
+                 refused nothing in it"
             ),
         }
     }
