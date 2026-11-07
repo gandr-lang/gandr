@@ -1,7 +1,7 @@
 //! `independent` forks two tasks whose plays do not order each other.
 //!
 //! Each task sends notes on its end. Each channel web is series-parallel
-//! without a prime node.
+//! without a prime node, whatever order the parent joins the tasks in.
 //!
 //! The parent joins the tasks in reverse fork order. The annotations state each
 //! channel's prime count.
