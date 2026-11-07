@@ -1961,6 +1961,40 @@ impl<'source> Collected<'source>
             .unwrap_or(Maybe::Absent(slot_owner::Absent::Unowned))
     }
 
+    /// The prelude's top-level declaration of `name`, by its slot and its
+    /// constant: the declaration an operator calls when its native row has
+    /// that name (`crate::prelude`).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot [`Self::by_name`] files `name` under at the
+    ///   prelude's top level, with that slot's constant; none for a unit that
+    ///   lays no prelude, and none where the prelude's top level declares no
+    ///   `name`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two integers and two strings compare and order
+    ///   through the prelude's declarations, and a unit with no prelude keeps
+    ///   the primitive.
+    /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
+    /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
+    #[spec(ensures: |ret| ret.is_none_or(|(slot, constant)| {
+        self.slots.get(usize::from(slot)).is_some_and(|entry| entry.constant == constant)
+    }))]
+    #[must_use]
+    pub(crate) fn prelude_declaration(
+        &self,
+        name: SurfaceName<'source>,
+    ) -> Option<(SlotIndex, ConstantIndex)>
+    {
+        let prelude = self.unit.prelude()?;
+        let &slot = self.by_name.get(&(Container::TopLevel(prelude), name))?;
+        let constant = self.slots.get(usize::from(slot))?.constant;
+        Some((slot, constant))
+    }
+
     /// The type members written in `container`, in source order: a module's
     /// body members, or a source's top-level ones.
     ///
@@ -12194,6 +12228,9 @@ pub struct LoweredModule<'source>
     /// The reading members of the models of the prelude's `FromNat` and
     /// `FromNeg`, each with the literal it reads.
     readers: Vec<gandr_core_term::LiteralReader>,
+    /// The prelude's declarations that a comparison calls, each with the
+    /// infix operator that calls it, ascending by the constant.
+    operators: Vec<(ConstantIndex, gandr_core_term::primitive::Operator)>,
     /// Each forgetting map the module mints as a source writes it, ascending
     /// by the map's position.
     forgettings: Vec<Forgetting>,
@@ -12261,6 +12298,7 @@ impl<'source> LoweredModule<'source>
             reducts: Vec::new(),
             forgets: Vec::new(),
             readers: Vec::new(),
+            operators: Vec::new(),
             forgettings: Vec::new(),
             record_faces: Vec::new(),
         }
@@ -12414,6 +12452,23 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.readers = readers;
+        self
+    }
+
+    /// This module, carrying `operators`: the prelude's declarations that a
+    /// comparison calls, each with the infix operator that calls it,
+    /// ascending by the constant.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_operators(
+        mut self,
+        operators: Vec<(ConstantIndex, gandr_core_term::primitive::Operator)>,
+    ) -> Self
+    {
+        self.operators = operators;
         self
     }
 
@@ -13399,6 +13454,21 @@ impl<'source> LoweredModule<'source>
     pub fn readers(&self) -> &[gandr_core_term::LiteralReader]
     {
         &self.readers
+    }
+
+    /// The prelude's declarations that a comparison calls, each with the
+    /// infix operator that calls it, ascending by the constant: `a == b`
+    /// calls the prelude's `eq`, and `a < b` its `lt`. A printer writes a
+    /// call of one of them as the comparison, so the call reads back as the
+    /// source writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn operators(&self) -> &[(ConstantIndex, gandr_core_term::primitive::Operator)]
+    {
+        &self.operators
     }
 
     /// Each forgetting map this module mints as a source writes it, ascending
