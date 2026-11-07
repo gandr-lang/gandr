@@ -37,6 +37,10 @@ path = "tests/lib.rs"
 # logic/BigInt stays disabled.
 # A `refuses` payload naming a form out of the fragment is read against the
 # grammar's named-kind inventory, so a misspelt form names no refusal.
+# A `distributes` expectation and the runs of its draws are each read into a
+# `Distribution` of `gandr-theory-probability`, whose weights are the
+# rationals of `gandr-theory-cellular-sheaves`, and compared in its canonical
+# form.
 [dependencies]
 anodized.workspace = true
 gandr-core-checker.workspace = true
@@ -45,6 +49,8 @@ gandr-kernel-term.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-syntax.workspace = true
+gandr-theory-cellular-sheaves.workspace = true
+gandr-theory-probability.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]

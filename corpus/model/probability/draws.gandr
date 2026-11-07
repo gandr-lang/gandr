@@ -8,10 +8,16 @@
 //
 // `gandr run draws.gandr` exits with the sum and prints nothing. The same
 // `summed` runs under a handler of this source, a second model of the
-// interface that answers each draw from a fixed list.
+// interface that answers each draw from a fixed list. The corpus runs
+// `summed` under a third model, the exact one. It runs once for each of the
+// 16 sequences of answers, and each path weighs `2^-4`. Its `distributes`
+// states the weight of each sum: the count of pairs that give the sum, over
+// 16.
 //
 // - see: `crates/surface-dispatcher/src/evaluate/rand.rs` — the host that
-//   serves the interface
+//   serves the interface, and the exact model's answers
+// - see: `crates/surface-corpus/src/distribution.rs` — the runs summed into
+//   one distribution
 // - see: `crates/surface-driver/tests/rand.rs` — the run and its range
 
 // The native finite lists.
@@ -19,7 +25,9 @@ import std.list (List);
 // The host interface of randomness.
 import std.rand;
 
-/// The sum of two integers, each a draw of two bits.
+/// The sum of two integers, each a draw of two bits: 0 and 6 come from one
+/// pair each, 3 from four pairs.
+@[ distributes(("1/16 0", "1/8 1", "3/16 2", "1/4 3", "3/16 4", "1/8 5", "1/16 6")) ]
 pub def summed() -> [std.rand.Eff] Integer =
   let first = std.rand.draw 2
   let second = std.rand.draw 2

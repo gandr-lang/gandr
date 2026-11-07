@@ -827,6 +827,7 @@ path = "crates/theory-cell-complexes-tools"
 # features:
 # - none: alloc-only stalks, entry maps and exact rational matrices.
 # consumers:
+# - surface-corpus
 # - theory-probability
 # - theory-shapes (dev)
 [workspace.dependencies.gandr-theory-cellular-sheaves]
@@ -1014,6 +1015,16 @@ default-features = false
 # - theory-levitation
 [workspace.dependencies.gandr-theory-path-orders]
 path = "crates/theory-path-orders"
+default-features = false
+
+# Finite distributions with exact weights: the finite Giry monad, joints and
+# their marginals, and exact inference by gluing.
+# features:
+# - none: alloc-only distributions over exact rational weights.
+# consumers:
+# - surface-corpus
+[workspace.dependencies.gandr-theory-probability]
+path = "crates/theory-probability"
 default-features = false
 
 # Finite shapes: decidable subshapes, the outer pushout, face entailment,

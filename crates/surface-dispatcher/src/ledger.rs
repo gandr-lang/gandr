@@ -1249,6 +1249,7 @@ fn attribute_json(row: &AttributeRow) -> Value
         AttributeSchema::Marker => json!({ "schema": "marker" }),
         AttributeSchema::Integer => json!({ "schema": "integer" }),
         AttributeSchema::Text => json!({ "schema": "text" }),
+        AttributeSchema::Texts => json!({ "schema": "texts" }),
         AttributeSchema::MarkerOr(option) => json!({ "schema": "marker_or", "option": option }),
         AttributeSchema::Names => json!({ "schema": "names" }),
         AttributeSchema::Interface => json!({ "schema": "interface" }),

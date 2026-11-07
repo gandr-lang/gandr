@@ -2007,8 +2007,11 @@ INSERT INTO purpose VALUES('storage-values','units::SeamDepth','struct','Names h
 INSERT INTO purpose VALUES('storage-values','units::TokenBody','struct','Holds a token body: a sequence of token records, as a chunk frames it and as the flat form carries it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-values','units::TokenBytes','struct','Holds an inline canonical byte payload.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-values','units::ValueManifestVersion','struct','Names the layout version of a value manifest.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','distribution::Bits','struct','The bits the draws of one path of runs take, and the quota a distributed run holds each path to.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','distribution::PastQuota','struct','Why a distributed run gives no distribution: a path draws past the quota, with the bits it draws.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','distribution::distributed','function','The spelling of the distribution a declaration''s runs give, each path weighed `2^-bits` and summed by outcome, in canonical form: what a `distributes` expectation compares.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','expectation::ExpectationFault','enum','Why an expectation names no verdict.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-corpus','expectation::ExpectationSchema','enum','One of the five expectation schemas.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','expectation::ExpectationSchema','enum','One of the nine expectation schemas.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','expectation::Expectations','struct','What one declared name''s expectation attributes amount to under a root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','expectation::Membership','enum','Whether a declaration is a fixture.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','expectation::NORMAL_FORM_ARROW','constant','What separates a call from its normal form in a `normalizes` line.',NULL,'fits','sound',NULL);
@@ -2574,6 +2577,7 @@ INSERT INTO purpose VALUES('surface-lowering','attribute::payload_form','functio
 INSERT INTO purpose VALUES('surface-lowering','attribute::payload_verdict','function','Names the verdict a payload''s schema returns, so a payload''s form is checked against the schema.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','attribute::registry::Absent','enum','Names why the registry holds no attribute, so an unknown name is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','attribute::suggestion::Absent','enum','Names why no suggestion exists for an unknown attribute, so the refusal names no nearest entry.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','attribute::texts','function','Reads the texts a `distributes` payload holds in written order, so the corpus reads each stated weight and outcome.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','by_form::At','struct','Names a position in a per-form store''s vector, so a stretch is built from the store''s mark.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','by_form::FormPlace','struct','Names an entry by its form and its place among the form''s entries, so an edit to another form leaves the key as it is.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','circuit::ArrowRow','enum','Names the row an arrow occupies in a ruled judgment, so a written arrow''s row is checked against the subject''s declared kind.',NULL,'fits','sound',NULL);
