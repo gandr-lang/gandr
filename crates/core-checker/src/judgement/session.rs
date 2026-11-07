@@ -3617,6 +3617,85 @@ impl Machine<'_, '_>
         }
     }
 
+    /// Give back the copy of each linear function's parameter that `value`
+    /// read, where the body reads a copy of `value` in place of its name.
+    ///
+    /// A `let` of a returned value binds a name that stands for the value
+    /// ([`crate::solution::defined_body`]): the body reads a copy of the value
+    /// at each place the name stands, and each such read draws the copy. The
+    /// read at the `let` itself then draws nothing, so `let r = n; r` reads `n`
+    /// once and `let r = n; r + r` reads it twice.
+    ///
+    /// # Specification
+    /// - requires: `value` is read under the binders open now, and it was read
+    ///   once, drawing each copy its support names.
+    /// - ensures: each parameter's copy that the support of `value` names, and
+    ///   whose shadow a read draws here, is available again; every other slot
+    ///   is unchanged.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a value the arena does not
+    ///   hold; [`CheckRefusal::MachineInvariant`] for a copy that is not spent.
+    /// - panics: none.
+    /// - executable: none — the clause reads each parameter's slot, which the
+    ///   binders hold only as a judgement drives them.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `let` of a parameter read once in its body checks,
+    ///   and one read twice is refused at the second read.
+    /// - witness: `judgement::session::tests::a_let_of_a_linear_parameter_reads_it_where_its_name_stands_5942`
+    pub(super) fn refunded(
+        &mut self,
+        value: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(top) = usize::from(self.context.depth(Zone::Intuitionistic)).checked_sub(1)
+        else {
+            return Ok(());
+        };
+        for position in 0 .. self.sessions.supplied.len() {
+            let Some(&supplied) = self.sessions.supplied.get(position)
+            else {
+                continue;
+            };
+            if self.shadow_read(supplied.lambda) == ShadowRead::Free {
+                continue;
+            }
+            let Some(index) = top
+                .checked_sub(supplied.shadow)
+                .and_then(|index| u32::try_from(index).ok())
+                .map(DeBruijnIndex::from)
+            else {
+                continue;
+            };
+            let support =
+                self.context
+                    .arena()
+                    .value_support(value)
+                    .ok_or(CheckRefusal::DanglingNode {
+                        node: CoreNode::Term(TermNode::Value(value)),
+                    })?;
+            if matches!(support.rank(Zone::Intuitionistic, index), Maybe::Absent(_)) {
+                continue;
+            }
+            let slot = self
+                .sessions
+                .opened
+                .len()
+                .checked_sub(supplied.slot)
+                .and_then(|above| above.checked_sub(1))
+                .and_then(|slot| u32::try_from(slot).ok())
+                .map(DeBruijnIndex::from)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.context
+                .binders()
+                .refund(slot)
+                .map_err(|_unspent| CheckRefusal::MachineInvariant)?;
+        }
+        Ok(())
+    }
+
     /// Refuse `term`, at `node`, naming a linear function's parameter where
     /// `by` may run a read of it other than once.
     ///
