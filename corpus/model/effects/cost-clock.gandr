@@ -1,0 +1,93 @@
+// A bound over a recursion that may not end holds at each clock.
+//
+// A run under `Partial` that does not end has no count. So a bound over a
+// partial program holds at each clock: the unfolding that stops after `n`
+// passes. That unfolding recurses on its clock, and conversion decides its
+// count. A run that ends after `k` passes is its unfolding at every clock of
+// `k` or more. So the bounds at each clock cover it too.
+//
+// Conversion never unfolds a partial fixpoint, so a partial run's count is
+// never a path endpoint. The run itself reports it.
+//
+// - see: `../../../library/std/src/cost.gandr` — `Cost.Eff`, `Counting` and
+//   the reading at each clock
+// - see: `../../ledger/features/cost-effect.gandr` — a closed bound by
+//   conversion
+// - see: `../../sketch/cost/partial.gandr` — a potential under `Partial`
+
+// The cost theory, its counting model and the count of a run.
+import std.cost (Cost, Counting, costs, counted, countOf);
+// The order on counts.
+import std.grade (Count);
+
+/// A clock: how many passes a run may take.
+data Clock : Type where
+  /// The clock has no pass left.
+  | Stop : Clock
+  /// One pass, then the rest.
+  | Tick : (rest : Clock) --> Clock
+
+/// Each pass charges one, then runs again on the rest of the clock.
+def rec passes(clock : Clock) -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
+  match clock where
+    | Stop => pure 0
+    | Tick(rest) => {
+      cost.charge (costs (1 : Nat));
+      passes[<] rest
+    }
+
+/// The passes under the counting model.
+def countedPasses(clock : Clock) -> (Nat -> Nat) -> Nat =
+  handle cost : Cost.Eff with sort N = Nat -> Nat {
+    let _answer = passes clock;
+    pure counted
+  } with Counting
+
+/// The unfolding at clock three counts three.
+def prefixThree : Path(
+  countOf (countedPasses (Tick (Tick (Tick Stop)))),
+  (3 : Nat)
+) = Path.here (3 : Nat);
+
+/// Whether the unfolding at clock three is within `n`.
+def withinThree(n : Nat) -> Bool =
+  Count.le (countOf (countedPasses (Tick (Tick (Tick Stop))))) n
+
+/// The bound three holds at clock three: conversion decides it.
+def boundThree : Path(withinThree (3 : Nat), true) = Path.here true;
+
+/// A loop that never ends charges one on each pass.
+def spin() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
+  loop {
+    cost.charge (costs (1 : Nat));
+    continue
+  }
+
+/// The loop that never ends, under the counting model. It checks, and it
+/// has no count.
+def countedSpin() -> -F [Partial] ((Nat -> Nat) -> Nat) =
+  handle cost : Cost.Eff with sort N = Nat -> Nat {
+    let _answer = spin ();
+    pure counted
+  } with Counting
+
+/// A loop that ends after one pass charges one.
+def once() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
+  loop {
+    cost.charge (costs (1 : Nat));
+    break(0)
+  }
+
+/// The loop that ends, under the counting model.
+def countedOnce() -> -F [Partial] ((Nat -> Nat) -> Nat) =
+  handle cost : Cost.Eff with sort N = Nat -> Nat {
+    let _answer = once ();
+    pure counted
+  } with Counting
+
+/// The loop that ends is within one, as its run reports it: one when the bound
+/// holds, zero when it does not.
+@[ runs("1") ]
+def onceWithin() -> [Partial] Integer =
+  let r = countedOnce ()
+  if Count.le (countOf r) (1 : Nat) { pure 1 } else { pure 0 }

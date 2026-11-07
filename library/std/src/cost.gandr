@@ -13,9 +13,30 @@
 //! when `Count.le` holds. `gandr check` decides that by conversion for a closed
 //! run, and the kernel replays the decision.
 //!
+//! A bound over a run that may not end holds at each clock. Under `Partial`, a
+//! run that does not end has no count, so no bound reads it at its fixed point.
+//! The unfolding that stops after `n` passes recurses on its clock, and
+//! conversion decides its count. A run that ends after `k` passes is its
+//! unfolding at every clock of `k` or more, so those bounds cover it too.
+//! Conversion never unfolds a partial fixpoint, so a partial run's count is
+//! never a path endpoint, and only the run reports it.
+//!
+//! A potential needs this reading. A computation type fractures into an
+//! abstraction and a potential where recursion is structural. With recursion
+//! as an effect, a computation of `A` is a lift of `C × A`, and a run that does
+//! not end carries no cost. So a potential's obligation holds one pass at a
+//! time, and its bound holds at each clock.
+//!
 //! - cites: [Grodin-2024-decalf_directed_effectful_costaware_logical_framework]
+//! - cites: [Grodin-2026-potential_functions_types] — Theorem 2.15, the
+//!   fracture of a computation type, and § 5.1, its restriction to structural
+//!   recursion
+//! - cites: [Niu-2024-costsensitive_computational_adequacy_higherorder_recursion_synthetic_domain_theory]
+//!   — § 2.1 and Fig. 2, cost and recursion as one effect on predomains
 //!
 //! [Grodin-2024-decalf_directed_effectful_costaware_logical_framework]: https://doi.org/10.1145/3632852 "Grodin, Niu, Sterling and Harper, decalf: A Directed, Effectful Cost-Aware Logical Framework"
+//! [Grodin-2026-potential_functions_types]: https://arxiv.org/abs/2607.08547 "Grodin, Chu, Li, Hoffmann and Harper, Potential Functions as Types"
+//! [Niu-2024-costsensitive_computational_adequacy_higherorder_recursion_synthetic_domain_theory]: https://doi.org/10.46298/entics.14732 "Niu, Sterling and Harper, Cost-Sensitive Computational Adequacy of Higher-Order Recursion in Synthetic Domain Theory"
 
 // `Count`, whose sum counts and whose order bounds.
 import "./grade.gandr";
