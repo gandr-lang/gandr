@@ -8,6 +8,9 @@
 # status, compared with the case's `output` and `status`.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+# shellcheck source=../mise/disabled-tools.bash
+source "$here/../mise/disabled-tools.bash"
+disabled=$(disabled_tools github:cli/cli)
 cases=$here/await.json
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-await.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -34,7 +37,7 @@ for (( i = 0; i < count; i++ )); do
   name=$(jq -r ".[$i].name" "$cases")
   status=0
   output=$(AWAIT_ISSUE=$(jq -r ".[$i].issue" "$cases") PATH="$work/bin:$PATH" XDG_STATE_HOME="$work/state" \
-    MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}github:cli/cli" \
+    MISE_DISABLE_TOOLS="$disabled" \
     mise run --quiet pr:await 7 --timeout 0 2> "$work/err") || status=$?
   if [[ $output != "$(jq -r ".[$i].output" "$cases")" || $status != "$(jq -r ".[$i].status" "$cases")" ]]; then
     printf 'pr-stack await case %s\n  expected: %s, exit %s\n  actual:   %s, exit %s\n' "$name" \

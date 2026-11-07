@@ -5,6 +5,9 @@
 # `rate_limit` gauge of `budget.bash`. Any other call is refused, so a REST
 # list read fails the case. The dry run prints the plan and sets nothing.
 set -euo pipefail
+# shellcheck source=../mise/disabled-tools.bash
+source "${BASH_SOURCE[0]%/*}/../mise/disabled-tools.bash"
+disabled=$(disabled_tools github:cli/cli)
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-epics-link.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin" "$work/pages"
@@ -54,7 +57,7 @@ chmod +x "$work/bin/gh"
 
 status=0
 output=$(STUB_PAGES=$work/pages GH_REPO=case/case GH_BUDGET_TTL=0 XDG_CACHE_HOME=$work/cache PATH="$work/bin:$PATH" \
-  MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}github:cli/cli" \
+  MISE_DISABLE_TOOLS="$disabled" \
   mise run --quiet epics:link --dry-run 2> "$work/err") || status=$?
 expected=$'#30: would add 1; 1 open of 2 blocked-by\n#20: would add 1; 1 open of 1 blocked-by\nepics:link: 2 open epic(s) read; 0 dependency(ies) refused'
 [[ $status == 0 && $output == "$expected" ]] \
