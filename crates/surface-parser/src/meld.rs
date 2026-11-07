@@ -3021,9 +3021,10 @@ impl<'pbg> MeldState<'pbg>
     /// separator reads as an operator of the sort of an expression. Its
     /// reduction against an operand of another sort, as the type that the body
     /// of that `def` reads as, costs an [`Oblig::InconMeld`]. The close charges
-    /// instead what the end of the input charges: one missing tile at the open
-    /// declaration. The separator takes the place of the ghost end that the end
-    /// of the input mints, so the separator stays in the declaration and makes
+    /// instead what the end of the input charges: the ghost end and one missing
+    /// tile at the open declaration ([`mint_ghost_end`](Self::mint_ghost_end)).
+    /// A reader of the tree, as the lowering, then sees the repair. The
+    /// separator follows the ghost as the declaration's last tile, so it makes
     /// no item of its own. The head of the next declaration closes an open
     /// declaration in the same way, in
     /// [`settle_declaration_boundary`](Self::settle_declaration_boundary).
@@ -3035,10 +3036,10 @@ impl<'pbg> MeldState<'pbg>
     /// - ensures: when no candidate continues the nearest open form, the
     ///   nearest open frontier is the nearest declaration-started one, and one
     ///   of the labels' declared molds ends a form of the declaration's rule,
-    ///   pushes `text` as that mold, closes the declaration with it, flags one
-    ///   [`Oblig::MissingTile`] at the frontier and returns true; leaves the
-    ///   state untouched and returns false otherwise, as when a bracket inside
-    ///   the declaration is still open.
+    ///   mints the ghost end and flags one [`Oblig::MissingTile`] at the
+    ///   frontier, pushes `text` as that mold, closes the declaration with it
+    ///   and returns true; leaves the state untouched and returns false
+    ///   otherwise, as when a bracket inside the declaration is still open.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3106,14 +3107,7 @@ impl<'pbg> MeldState<'pbg>
             return SeparatorTaken::from(false);
         };
         self.collapse(content_floor);
-        self.set_form_open(StackIndex::from(frontier), FormOpen::from(false));
-        self.flag(
-            Oblig::MissingTile,
-            SourceSpan::new(
-                SourceOffset::from(frontier_cell.start),
-                SourceOffset::from(frontier_cell.end),
-            ),
-        );
+        self.mint_ghost_end(frontier, frontier_cell);
         let span = self.append_source(SourceFragment::from(text));
         let emit = self.emit_token(NodeLabel::Tile(terminator), span);
         self.push_cell(Cell {
@@ -5359,6 +5353,40 @@ impl<'pbg> MeldState<'pbg>
         else {
             return;
         };
+        self.mint_ghost_end(frontier, frontier_cell);
+        if let Some(top) = self.stack.len().checked_sub(1) {
+            self.close_form(StackIndex::from(top));
+        }
+    }
+
+    /// Append the ghost end of the open form at `frontier`, whose cell is
+    /// `frontier_cell`, mark the form closed, and flag its missing tile.
+    ///
+    /// The ghost is a minted close of the frontier's closing class when the
+    /// grammar names one, and a postfix grout otherwise. The form stays on the
+    /// stack, so the caller closes it after any tile that it adds.
+    ///
+    /// # Specification
+    /// - requires: `frontier_cell` is the cell at `frontier`, and every cell
+    ///   above it is an operand.
+    /// - ensures: pushes one ghost cell over an empty span, marks the form at
+    ///   `frontier` closed, flags one [`Oblig::MissingTile`] over the frontier
+    ///   tile's span, and appends no source.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lowering reads a repair only from a ghost in the
+    ///   form. A close at a separator without the ghost lowers an unfinished
+    ///   `import` as a whole one.
+    /// - witness: `meld::tests::minted_close_round_trips_and_refuses_unknown_class`
+    /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
+    #[spec(captures: before = (self.source.len(), self.stack.len()), ensures: |_| self.source.len() == before.0 && self.stack.len() == before.1.saturating_add(1))]
+    fn mint_ghost_end(
+        &mut self,
+        frontier: FrontierIndex,
+        frontier_cell: Cell,
+    )
+    {
         let sort = frontier_cell.sort;
         let frontier_mold = match frontier_cell.role {
             Role::FormTile { mold, .. } => mold,
@@ -5423,9 +5451,6 @@ impl<'pbg> MeldState<'pbg>
                 SourceOffset::from(frontier_cell.end),
             ),
         );
-        if let Some(top) = self.stack.len().checked_sub(1) {
-            self.close_form(StackIndex::from(top));
-        }
     }
 
     /// Return whether the cell at `index` is an operand.
