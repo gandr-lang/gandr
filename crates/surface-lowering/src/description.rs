@@ -2430,19 +2430,39 @@ impl Reader<'_, '_>
                 });
                 continue;
             }
-            let mut run = Run::new(&pieces, read.span);
-            let head = run.take()?;
-            if self.text(head).0 != family.as_ref() || !run.eat(Spelling("(")).0 {
+            let mut cursor = crate::form::Cursor::new(&pieces, read.span);
+            let head = match cursor.peek() {
+                Maybe::Present(piece) => piece.placed(),
+                Maybe::Absent(_) => {
+                    return Err(DescriptionDiagnostic {
+                        span: cursor.here(),
+                        fault: DescriptionFault::Malformed,
+                    });
+                },
+            };
+            if self.text(head).0 != family.as_ref() {
                 steps.push(written::Applied::Argument(read.node));
                 continue;
             }
-            let mut args = Vec::new();
-            while !run.eat(Spelling(")")).0 {
-                args.push(run.take()?);
-                if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
-                    return Err(run.fault(DescriptionFault::TypeShape));
-                }
-            }
+            let (_head, args) = match cursor.application() {
+                Maybe::Present(application) => application,
+                Maybe::Absent(crate::form::application::Absent::Unopened) => {
+                    steps.push(written::Applied::Argument(read.node));
+                    continue;
+                },
+                Maybe::Absent(crate::form::application::Absent::Missing) => {
+                    return Err(DescriptionDiagnostic {
+                        span: cursor.here(),
+                        fault: DescriptionFault::Malformed,
+                    });
+                },
+                Maybe::Absent(crate::form::application::Absent::Unseparated) => {
+                    return Err(DescriptionDiagnostic {
+                        span: cursor.here(),
+                        fault: DescriptionFault::TypeShape,
+                    });
+                },
+            };
             pending.push(AppliedFrame::Family(ArgumentCount(args.len())));
             pending.extend(args.into_iter().rev().map(AppliedFrame::Read));
         }
@@ -2540,18 +2560,25 @@ impl Reader<'_, '_>
                     if pieces.iter().any(|piece| matches!(piece, Piece::Tile { label, .. } if label.as_ref() == "->")) {
                         return Err(DescriptionDiagnostic { span: at.span, fault: DescriptionFault::HigherOrderField });
                     }
-                    let mut run = Run::new(&pieces, at.span);
-                    let head = run.take()?;
-                    if !run.eat(Spelling("(")).0 {
-                        return Err(run.fault(DescriptionFault::TypeShape));
-                    }
-                    let mut args = Vec::new();
-                    while !run.eat(Spelling(")")).0 {
-                        args.push(run.take()?);
-                        if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
-                            return Err(run.fault(DescriptionFault::TypeShape));
-                        }
-                    }
+                    let mut cursor = crate::form::Cursor::new(&pieces, at.span);
+                    let (head, args) = match cursor.application() {
+                        Maybe::Present(application) => application,
+                        Maybe::Absent(crate::form::application::Absent::Missing) => {
+                            return Err(DescriptionDiagnostic {
+                                span: cursor.here(),
+                                fault: DescriptionFault::Malformed,
+                            });
+                        },
+                        Maybe::Absent(
+                            crate::form::application::Absent::Unopened
+                            | crate::form::application::Absent::Unseparated,
+                        ) => {
+                            return Err(DescriptionDiagnostic {
+                                span: cursor.here(),
+                                fault: DescriptionFault::TypeShape,
+                            });
+                        },
+                    };
                     written.nodes.push(written::WrittenNode {
                         span: at.span,
                         head: Maybe::Present(head.span),
