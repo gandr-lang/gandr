@@ -1,0 +1,63 @@
+data Two : Type where
+  | Left : Two
+  | Right : Two
+
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+def natOr(n : Nat) -> Type =
+  match n where
+    | Zero => return Two
+    | Succ(_m) => return Two
+
+@[ refuses("ShapeMismatch") ]
+def lambda_body() -> +U ((u : Two) -> -F Two) =
+  fun (u) {
+    return u
+  }
+
+@[ refuses("ShapeMismatch") ]
+def lambda_after_let() -> +U ((u : Two) -> -F Two) =
+  let kept = pure Left
+  fun (u) {
+    return u
+  }
+
+@[ refuses("ShapeMismatch") ]
+def lambda_block_tail() -> +U ((u : Two) -> -F Two) =
+  {
+    fun (u) {
+      return u
+    }
+  }
+
+@[ refuses("ShapeMismatch") ]
+def lambda_left_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
+  match choice where
+    | Left => fun (u) {
+      return u
+    }
+    | Right => return fun (u) {
+      return u
+    }
+
+@[ refuses("ShapeMismatch") ]
+def lambda_right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
+  match choice where
+    | Left => return fun (u) {
+      return u
+    }
+    | Right => fun (u) {
+      return u
+    }
+
+@[ refuses("ShapeMismatch") ]
+def lambda_refined_arm(n : Nat, x : natOr(n)) -> +U ((u : Nat) -> -F Nat) =
+  match n where
+    | Zero => fun (u) {
+      return u
+    }
+    | Succ(_n) => return fun (u) {
+      return u
+    }

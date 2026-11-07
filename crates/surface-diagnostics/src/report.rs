@@ -585,6 +585,40 @@ impl Report<'_>
             | Subject::Ledger { .. } => (Vec::new(), Vec::new()),
         };
         let repaired = self.repaired(span, &contexts);
+        let lambda_tail_help = 'help: {
+            let Subject::Refused {
+                refusal:
+                    Refusal::Checking(CheckRefusal::ShapeMismatch {
+                        wanted: ExpectedShape::Arrow,
+                        ..
+                    }),
+                upstream: Maybe::Absent(_),
+                ..
+            } = self.subject
+            else {
+                break 'help None;
+            };
+            let Maybe::Present(span) = span
+            else {
+                break 'help None;
+            };
+            if contexts
+                .last()
+                .is_some_and(|context| context.role == FrameRole::ApplicationHead)
+            {
+                break 'help None;
+            }
+            let Ok(written) = self.text.fragment(span)
+            else {
+                break 'help None;
+            };
+            if !written.as_ref().trim_start().starts_with("fun") {
+                break 'help None;
+            }
+            break 'help Some(String::from(
+                "write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.",
+            ));
+        };
         let expression = match span {
             Maybe::Present(span) => match self.text.fragment(span) {
                 Ok(fragment) if !fragment.as_ref().contains('\n') => {
@@ -697,48 +731,52 @@ impl Report<'_>
                 | Subject::InferredRun(_)
                 | Subject::Deprecated(_) => Maybe::Absent(report_note::Absent::Warning),
             },
-            help: match self.subject {
-                Subject::Refused {
-                    upstream: Maybe::Present(_),
-                    ..
-                } => Maybe::Absent(help::Absent::Upstream),
-                Subject::Refused {
-                    refusal: refusal @ Refusal::Checking(CheckRefusal::ImplicitUnsolved { at, .. }),
-                    origins,
-                    ..
-                } => match origins.omitted(at) {
-                    Maybe::Present(
-                        &Omitted::Implicit {
-                            ref function,
-                            ref implicit,
-                        }
-                        | &Omitted::Model {
-                            ref function,
-                            ref implicit,
-                            ..
+            help: lambda_tail_help.map_or_else(
+                || match self.subject {
+                    Subject::Refused {
+                        upstream: Maybe::Present(_),
+                        ..
+                    } => Maybe::Absent(help::Absent::Upstream),
+                    Subject::Refused {
+                        refusal:
+                            refusal @ Refusal::Checking(CheckRefusal::ImplicitUnsolved { at, .. }),
+                        origins,
+                        ..
+                    } => match origins.omitted(at) {
+                        Maybe::Present(
+                            &Omitted::Implicit {
+                                ref function,
+                                ref implicit,
+                            }
+                            | &Omitted::Model {
+                                ref function,
+                                ref implicit,
+                                ..
+                            },
+                        ) => Maybe::Present(alloc::format!(
+                            "supply the implicit `{implicit}` by name, as `{function}[.{implicit} = \
+                             …](…)"
+                        )),
+                        Maybe::Present(&Omitted::Scope { .. }) => Maybe::Present(String::from(
+                            "name the model after the scope's subject, as `} with M`",
+                        )),
+                        Maybe::Present(&Omitted::Wildcard) => {
+                            Maybe::Present(String::from("write the term in place of the `_`"))
                         },
-                    ) => Maybe::Present(alloc::format!(
-                        "supply the implicit `{implicit}` by name, as `{function}[.{implicit} = \
-                         …](…)`"
-                    )),
-                    Maybe::Present(&Omitted::Scope { .. }) => Maybe::Present(String::from(
-                        "name the model after the scope's subject, as `} with M`",
-                    )),
-                    Maybe::Present(&Omitted::Wildcard) => {
-                        Maybe::Present(String::from("write the term in place of the `_`"))
+                        Maybe::Absent(_) => advice(refusal),
                     },
-                    Maybe::Absent(_) => advice(refusal),
+                    Subject::Refused { refusal, .. } => advice(refusal),
+                    Subject::Source(refusal) => advice(Refusal::Lowering(refusal)),
+                    Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
+                        Maybe::Absent(help::Absent::Statement)
+                    },
+                    Subject::Shadowed(_)
+                    | Subject::InferredExit(_)
+                    | Subject::InferredRun(_)
+                    | Subject::Deprecated(_) => Maybe::Absent(help::Absent::Warning),
                 },
-                Subject::Refused { refusal, .. } => advice(refusal),
-                Subject::Source(refusal) => advice(Refusal::Lowering(refusal)),
-                Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
-                    Maybe::Absent(help::Absent::Statement)
-                },
-                Subject::Shadowed(_)
-                | Subject::InferredExit(_)
-                | Subject::InferredRun(_)
-                | Subject::Deprecated(_) => Maybe::Absent(help::Absent::Warning),
-            },
+                Maybe::Present,
+            ),
             expression,
             excerpt,
             fix: match self.subject {
