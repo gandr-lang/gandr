@@ -301,7 +301,7 @@ pub trait Runner
     ///   the paths and compares the canonical spellings.
     /// - witness: `distribution::tests::the_paths_sum_by_outcome_into_one_distribution`
     /// - witness: `distribution::tests::a_path_past_the_quota_gives_no_distribution`
-    /// - witness: `tests::corpus::a_declined_draw_names_its_task_or_world_5712`
+    /// - witness: `distribution::tests::a_declined_draw_names_its_task_or_world_5712`
     fn run_distributed(
         &mut self,
         constant: ConstantIndex,

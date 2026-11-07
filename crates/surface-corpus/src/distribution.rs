@@ -198,7 +198,7 @@ impl From<PastQuota> for Undistributed
 ///   draw of a task are each spelled by name; a run with no draw is one point.
 /// - witness: `distribution::tests::the_paths_sum_by_outcome_into_one_distribution`
 /// - witness: `distribution::tests::a_path_past_the_quota_gives_no_distribution`
-/// - witness: `tests::corpus::a_declined_draw_names_its_task_or_world_5712`
+/// - witness: `distribution::tests::a_declined_draw_names_its_task_or_world_5712`
 #[inline]
 #[spec(ensures: |ref ret| ["\"", "PastQuota: ", "Unanswered: ", "no distribution: ", "a path of "].iter().any(|&head| ret.as_ref().starts_with(head)))]
 pub fn distributed<Run>(
@@ -385,6 +385,7 @@ mod tests
 
     use super::Bits;
     use super::PastQuota;
+    use super::Performer;
     use super::Undistributed;
     use super::distributed;
     use super::stated;
@@ -523,6 +524,28 @@ mod tests
             distributed(&mut past, ConstantIndex::from(0_usize)).as_ref(),
             "PastQuota: a path draws 17 bits, past the quota of 16"
         );
+    }
+
+    /// A draw the exact model declines gives no distribution. The spelling
+    /// names the task or the world that performs the draw (#5712).
+    #[test]
+    fn a_declined_draw_names_its_task_or_world_5712()
+    {
+        for (performer, named) in [
+            (Performer::Task(String::from("seat")), "the task `seat`"),
+            (Performer::World(String::from("north")), "the world `north`"),
+        ] {
+            let mut declined = Paths(Err(Undistributed::Unanswered {
+                performer,
+                cause: String::from("no handler answers it"),
+            }));
+            assert_eq!(
+                distributed(&mut declined, ConstantIndex::from(0_usize)).as_ref(),
+                alloc::format!(
+                    "Unanswered: the exact model answers no draw of {named}: no handler answers it"
+                )
+            );
+        }
     }
 
     /// The `distributes` entry whose payload is `texts`, read out of
