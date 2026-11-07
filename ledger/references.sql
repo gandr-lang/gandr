@@ -34,9 +34,9 @@ INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_
 INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-driver','','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','ac8eb7332069b7a14b305c1cb8560db64e423b31');
 INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','theory-ordered-algebras','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','ccf74aa7f6e785b119964603fb397b1686980537');
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','lawvere','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Bakke-2026-synthetic_sierpinski_cone','theory-exact-reals','','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
-INSERT INTO reference VALUES('Bauer-2009-dedekind_reals_abstract_stone_duality','theory-exact-reals','','exemplar','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
-INSERT INTO reference VALUES('Bauer-efficient_computation_dedekind_reals','theory-exact-reals','','exemplar','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
+INSERT INTO reference VALUES('Bakke-2026-synthetic_sierpinski_cone','theory-exact-reals','','newest','989b519294af3f6da8a6737f6b0a5cf771c7eef3','2026-11-07','2bfba7af48a230a82d234784178acf16cdb5b352');
+INSERT INTO reference VALUES('Bauer-2009-dedekind_reals_abstract_stone_duality','theory-exact-reals','','exemplar','989b519294af3f6da8a6737f6b0a5cf771c7eef3','2026-11-07','2bfba7af48a230a82d234784178acf16cdb5b352');
+INSERT INTO reference VALUES('Bauer-efficient_computation_dedekind_reals','theory-exact-reals','','exemplar','989b519294af3f6da8a6737f6b0a5cf771c7eef3','2026-11-07','2bfba7af48a230a82d234784178acf16cdb5b352');
 INSERT INTO reference VALUES('Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces','theory-sites','wreath','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Cherubini-2024-foundation_synthetic_stone_duality','theory-cellular-sheaves','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Cherubini-2024-foundation_synthetic_stone_duality','theory-shapes','formula','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','36f894989d773771961311177868caf3f968d516');
@@ -52,7 +52,7 @@ INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-s
 INSERT INTO reference VALUES('Doré-2026-dependent_multiplicities_dependent_linear_type_theory','core-term','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','47750eeb9f84f45eb06c9c19ce35c51433f7b123');
 INSERT INTO reference VALUES('Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory','core-nbe','policy','background','7be67563d6dd190101e3b62a9c0ed843f01a4bde','2026-10-28','e12ff420f25112f1d2b8bfc68d2f94d5964d005b');
 INSERT INTO reference VALUES('Escardó-2004-synthetic_topology_data_types_classical_spaces','surface-dispatcher','evaluate::reals','exemplar','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','72a7c19772d1f62d5c9b11addb15defc204cf140');
-INSERT INTO reference VALUES('Escardó-2004-synthetic_topology_data_types_classical_spaces','theory-exact-reals','','exemplar','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
+INSERT INTO reference VALUES('Escardó-2004-synthetic_topology_data_types_classical_spaces','theory-exact-reals','','exemplar','989b519294af3f6da8a6737f6b0a5cf771c7eef3','2026-11-07','2bfba7af48a230a82d234784178acf16cdb5b352');
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells::fusion','exemplar','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
@@ -94,10 +94,10 @@ INSERT INTO reference VALUES('Sterling-2026-domains_classifying_topoi','theory-s
 INSERT INTO reference VALUES('Sterling-2026-domains_classifying_topoi','theory-stone-duality','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','24bac3438243f9d8aabb12c04fbfb26c5b8416ac');
 INSERT INTO reference VALUES('Sullivan-2023-closure_conversion_little_pieces','core-sequent','closure','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Sullivan-2023-reflections_closures','core-sequent','closure','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Tarau-2008-functional_hitchhikers_guide_hereditarily_finite_sets_ackermann_encodings_pairing_functions','theory-exact-reals','ackermann','exemplar',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_finite_datatypes','theory-exact-reals','ackermann','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Tarau-2008-functional_hitchhikers_guide_hereditarily_finite_sets_ackermann_encodings_pairing_functions','theory-exact-reals','ackermann','exemplar','989b519294af3f6da8a6737f6b0a5cf771c7eef3','2026-11-07','a385300e1ae7f75a909389337af48803be233292');
+INSERT INTO reference VALUES('Tarau-2008-ranking_catamorphisms_unranking_anamorphisms_hereditarily_finite_datatypes','theory-exact-reals','ackermann','exemplar','989b519294af3f6da8a6737f6b0a5cf771c7eef3','2026-11-07','a385300e1ae7f75a909389337af48803be233292');
 INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','surface-dispatcher','evaluate::reals','exemplar','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','72a7c19772d1f62d5c9b11addb15defc204cf140');
-INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','theory-exact-reals','','exemplar','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','4a24d75fde88c71e4ed8c7300c60b52c10af0677');
+INSERT INTO reference VALUES('Taylor-2010-lambda_calculus_real_analysis','theory-exact-reals','','exemplar','989b519294af3f6da8a6737f6b0a5cf771c7eef3','2026-11-07','2bfba7af48a230a82d234784178acf16cdb5b352');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-checker','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','9d949b38848b499a5cfd920ea5c04c5cc8630d6e');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-checker','access','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','a6d3b5e613083b88b2f9096f172eabdc6890b4b7');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-term','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','47750eeb9f84f45eb06c9c19ce35c51433f7b123');
@@ -499,7 +499,7 @@ INSERT INTO reference VALUES('vault:01a178aa-a1a9-7643-b2d9-98059c9273fb','runti
 INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-checker','solution','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb','core-term','rewrite','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-a419-7ab1-82e7-40a4f95938c6','surface-dispatcher','evaluate::reals','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-a419-7ab1-82e7-40a4f95938c6','theory-exact-reals','','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-a419-7ab1-82e7-40a4f95938c6','theory-exact-reals','','lineage','989b519294af3f6da8a6737f6b0a5cf771c7eef3','2026-11-07','2bfba7af48a230a82d234784178acf16cdb5b352');
 INSERT INTO reference VALUES('vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8','surface-lowering','module::foreign','background','6de02bb253a1b29fd88181f0a1bf888e5e741f78','2026-11-02','b87e55bc6de0e06c75d5c67fb3bb8a6331151936');
 INSERT INTO reference VALUES('vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a','surface-lowering','description','anchor','9c69093bd6aa7636622a7efb9b6e3b3ffaa60bf6','2026-11-06','e13d3fb39f8f7fe56f23ff5743148a1ee632395e');
 INSERT INTO reference VALUES('vault:01a178aa-b5ea-75c1-8677-c85c447790b4','surface-lowering','classify','anchor',NULL,NULL,NULL);
@@ -617,7 +617,7 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theor
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-shapes','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-stone-duality','','exemplar',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1b278-5641-7c20-95d3-093641459620','theory-exact-reals','ackermann','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1b278-5641-7c20-95d3-093641459620','theory-exact-reals','ackermann','exemplar','989b519294af3f6da8a6737f6b0a5cf771c7eef3','2026-11-07','a385300e1ae7f75a909389337af48803be233292');
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or
