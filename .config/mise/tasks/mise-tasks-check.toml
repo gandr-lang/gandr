@@ -2723,7 +2723,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash mutants .config/mutants/cases.json --programs .config/mutants --mode c --raw landed.jq --raw unwitnessed.jq
+.config/cases/run.bash mutants .config/mutants/cases.json --programs .config/mutants --mode c --raw landed.jq --raw unwitnessed.jq --raw campaign.jq
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
 '''
 
