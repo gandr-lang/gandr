@@ -5248,15 +5248,21 @@ exit 2
 # is paged by its name, never a block id: the page script resolves it at
 # page time (#2977). Each reading also asks the `check` command whether each
 # seat has a live block, and pages the coordinator once when one has had
-# none for two readings in a row. A lane whose seat holds no open pull
-# request and no claimed issue for `idle` minutes is paged once to its seat
-# and the coordinator, its line naming the claim to run (`seat-idle`,
-# #3822). A claim is the lane's its marker names, and a markerless one is the
-# lane's whose areas it carries (#4174). The thresholds, the page script,
-# the check and each target's arguments (the triage seat's, the
-# coordinator's, and each lane's seat's under `seats`, a lane without one
-# paging the triage seat) are
-# configuration, never the tree's (`.config/stall/stall.bash`).
+# none for two readings in a row. Each reading also asks the `activity`
+# command for each seat's activity, the seats at once: `working`, `waiting`
+# (no turn, and a background job runs) or `idle`, with the time it entered
+# that state (#5996). A read that fails keeps the seat's last activity. A
+# seat `idle` for `idle` minutes is paged once to its seat and the
+# coordinator, whatever it holds (`seat-idle`, #3822): its line names the
+# claims its lane holds and ends with the `claim` command for the lane. A
+# claim is the lane's its marker names, and a markerless one is the lane's
+# whose areas it carries (#4174). The coordinator's line carries the seat's
+# last reported line. It asks for a decision only when the `peek` command,
+# the claim's dry run, prints no work. The thresholds, the page script, the
+# check, the activity, claim and peek commands, and each target's arguments
+# (the triage seat's, the coordinator's, and each lane's seat's under
+# `seats`, a lane without one paging the triage seat) are configuration,
+# never the tree's (`.config/stall/stall.bash`).
 ["stall:check"]
 description = "Read the open pull requests once for stalls; exit 1 on a finding"
 quiet = true
@@ -5294,8 +5300,8 @@ if [[ ${usage_remove:-false} == true ]]; then stall_service remove; exit; fi
 page=$(stall_configuration | jq -c '.page // empty')
 if [[ -z "$page" ]] || ! jq -e '([.command, .triage, .coordinator] | all(type == "array" and length > 0 and all(type == "string")))
     and ((.seats // {}) | type == "object" and all(.[]; type == "array" and length > 0 and all(type == "string")))
-    and ((.check // ["-"]) | type == "array" and length > 0 and all(type == "string"))' <<< "$page" > /dev/null; then
-  echo "stall:watch pages through $stall_config's \`page\`: {\"command\": [<page script>, ...], \"triage\": [<the script's arguments before the line>, ...], \"coordinator\": [...], \"seats\": {\"<lane>\": [...], ...}, \"check\": [<the liveness command, given a seat's arguments>, ...]}" >&2
+    and ([.check, .activity, .claim, .peek] | all((. // ["-"]) | type == "array" and length > 0 and all(type == "string")))' <<< "$page" > /dev/null; then
+  echo "stall:watch pages through $stall_config's \`page\`: {\"command\": [<page script>, ...], \"triage\": [<the script's arguments before the line>, ...], \"coordinator\": [...], \"seats\": {\"<lane>\": [...], ...}, \"check\": [<the liveness command, given a seat's arguments>, ...], \"activity\": [<the activity command, given a seat's arguments>, ...], \"claim\": [<the claim command, {lane} the lane>, ...], \"peek\": [<the claim's dry run, {lane} the lane>, ...]}" >&2
   exit 2
 fi
 # The service starts only on a configuration the loop reads.
@@ -5303,6 +5309,18 @@ if [[ ${usage_install:-false} == true ]]; then stall_service install; exit; fi
 mapfile -t command < <(jq -r '.command[]' <<< "$page")
 mapfile -t coordinator < <(jq -r '.coordinator[]' <<< "$page")
 mapfile -t check < <(jq -r '(.check // [])[]' <<< "$page")
+# The work the `peek` command prints for lane `$1`, as a JSON string, or null
+# when it prints none, fails or is not configured (#5996).
+peek_work() {
+  local out
+  local -a peek
+  mapfile -t peek < <(jq -r --arg lane "$1" '(.peek // [])[] | gsub("\\{lane\\}"; $lane)' <<< "$page")
+  if (( ${#peek[@]} > 0 )) && out=$("${peek[@]}" 2> /dev/null) && [[ -n $out ]]; then
+    jq -Rc 'select(. != "")' <<< "$out" | jq -sc 'first // null'
+  else
+    echo null
+  fi
+}
 # Page lane `$1`'s seat (the triage seat for a lane without one) with the
 # finding's line `$2`, then the coordinator with `$3`, the line and the
 # decisions its kind admits (`decide.jq`, #4655). A seat that is the
@@ -5459,6 +5477,9 @@ while :; do
   paged=$(jq -c .paged <<< "$reading")
   stalled=$(jq -c .stalled <<< "$reading")
   while IFS= read -r finding; do
+    if [[ $(jq -r .kind <<< "$finding") == seat-idle ]]; then
+      finding=$(jq -c --argjson work "$(peek_work "$(jq -r .lane <<< "$finding")")" '. + {work: $work}' <<< "$finding")
+    fi
     line=$(jq -r .line <<< "$finding")
     key=$(jq -r '"\(.number // .lane):\(.kind)"' <<< "$finding")
     echo "$line"
@@ -5500,7 +5521,7 @@ while :; do
   gone=$(sweep "$(stall_memory | jq -c '.gone // {}')")
   reports
   jq -c --argjson paged "$paged" --argjson stalled "$stalled" --argjson gone "$gone" --argjson read "$(date +%s)" \
-    '{seen, paged: $paged, stalled: $stalled, gone: $gone, read: $read}' <<< "$reading" > "$stall_state.tmp"
+    '{seen, paged: $paged, stalled: $stalled, gone: $gone, activity, read: $read}' <<< "$reading" > "$stall_state.tmp"
   mv "$stall_state.tmp" "$stall_state"
   listen "$interval"
 done
