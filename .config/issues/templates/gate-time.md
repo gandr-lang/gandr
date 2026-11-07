@@ -30,6 +30,7 @@ Read the record's `time` of the gate on main (`.config/gate-scope/passed.bash`).
 | Dimension | `rewriting` | no — no rule |
 | Cost | `zero-cost` | no — a time report adds nothing at run time |
 | Names | `nominal` | no — a time report binds, allocates and releases no name |
+| Level | `general` | no — a time report states no result of the language |
 
 ## Concerns
 
