@@ -30,5 +30,35 @@
     "upper": "apart",
     "top": "behind",
     "output": "refused: top does not contain upper, the member below it; rebase it onto upper first; gh: ; link: "
+  },
+  {
+    "name": "#6159: the restack past a red bottom whose commits the upper's own file derives from, with that row's check failing, is refused with nothing moved",
+    "red": "bottom",
+    "upper": "apart",
+    "artifacts": [
+      {
+        "name": "the case artifact",
+        "paths": ["u.txt"],
+        "inputs": ["r.txt"],
+        "check": "false",
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "refused: the replay of upper leaves generated artifacts stale, as below; nothing is pushed; gh: ; link: "
+  },
+  {
+    "name": "#6159: the same restack past a red bottom with the row's check passing moves the members above it",
+    "red": "bottom",
+    "upper": "apart",
+    "artifacts": [
+      {
+        "name": "the case artifact",
+        "paths": ["u.txt"],
+        "inputs": ["r.txt"],
+        "check": "true",
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "moved: upper holds upper's own; top holds top's own, upper's own; red holds red's own; gh: stack unstack 9 | pr edit 3 -R case/case --base main; link: 3 4"
   }
 ]
