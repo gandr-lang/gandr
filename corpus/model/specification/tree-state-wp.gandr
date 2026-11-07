@@ -78,7 +78,8 @@ def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) s 
 
 /// `doneSpecified` pairs the stopped program with evidence
 /// at every postcondition.
-/// Both sides reduce to the postcondition at the unit and initial state.
+/// Both sides unfold to `post(unit, s)`, and a definition that unfolds to a
+/// variable's call converts with that call.
 def doneSpecified : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)
