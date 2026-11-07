@@ -690,7 +690,7 @@ fn ill_formed(kind: WfKind) -> String
         WfKind::DerivedBoundaryMismatch => {
             "make the declared sphere fix the boundary that the wiring derives"
         },
-        WfKind::CyclicCircuitWiring => "wire the rule so that no port reaches itself",
+        WfKind::CyclicCircuitWiring => "change the rule so that no port reaches itself",
         WfKind::UnknownRewritePort => {
             "declare the rewrite in the rule's telescope, or apply a rewrite that it declares"
         },
@@ -712,7 +712,7 @@ fn ill_formed(kind: WfKind) -> String
         WfKind::NonRepresentableBinder => "bind the variable over a declared, representable sort",
         WfKind::SplitCircuitOutputs => "read all the outputs of the many-out node together",
         WfKind::SharedCircuitPort => {
-            "let one node bind the port, and give each other node a port of its own"
+            "let one node bind the port. Give each other node its own port."
         },
         WfKind::DuplicateFaceName => "give each face of the boundary its own name",
         WfKind::FaceOutsideShape => "put in the face only names that the boundary lists",

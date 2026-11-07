@@ -81,7 +81,13 @@ pub enum SignatureFault
     /// A rewrite port's endpoint does not instantiate at this wiring.
     Instantiation(PortInstantiationError),
     /// The written wiring cannot derive a finite boundary within its ceiling.
-    Derivation(CircuitDerivationError),
+    Derivation
+    {
+        /// The rule whose wiring the boundary reader refused.
+        rule: Name,
+        /// The boundary reader's named fault.
+        error: CircuitDerivationError,
+    },
     /// The written wiring over a sort the block marks `@[ frobenius ]` has no
     /// spider canon. The seam cannot assemble it, or its tied legs need more
     /// trials than the budget holds.

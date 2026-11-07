@@ -142,6 +142,7 @@ use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::ValueTypeRef;
 use gandr_theory_levitation::ValueTypeView;
 use gandr_theory_levitation::WfDiagnostic;
+use gandr_theory_levitation::WfKind;
 use quenchant_shape::shape::Maybe;
 
 use crate::LoweringRefusal;
@@ -516,6 +517,30 @@ impl DescriptionDiagnostic
                 LoweringRefusal::BareFeedback {
                     span: self.span,
                     rule,
+                }
+            },
+            DescriptionFault::Signature(crate::circuit::SignatureFault::Derivation {
+                ref rule,
+                ref error,
+            }) => {
+                let (kind, port) = match *error {
+                    gandr_theory_levitation::CircuitDerivationError::CyclicWiring(ref port) => {
+                        (WfKind::CyclicCircuitWiring, Some(port))
+                    },
+                    gandr_theory_levitation::CircuitDerivationError::SplitOutputs(ref port) => {
+                        (WfKind::SplitCircuitOutputs, Some(port))
+                    },
+                    gandr_theory_levitation::CircuitDerivationError::SharedPort(ref port) => {
+                        (WfKind::SharedCircuitPort, Some(port))
+                    },
+                    gandr_theory_levitation::CircuitDerivationError::NodeBudget { .. } => {
+                        (WfKind::CircuitDerivationBudget, None)
+                    },
+                };
+                LoweringRefusal::IllFormedDescription {
+                    span: self.span,
+                    kind,
+                    subjects: [spelled(Some(rule), written), spelled(port, written)],
                 }
             },
             DescriptionFault::Signature(crate::circuit::SignatureFault::Diagram(ref error)) => {

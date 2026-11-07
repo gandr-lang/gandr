@@ -1,0 +1,49 @@
+/// Level 0: the pair's base.
+type T0 = Unit;
+
+/// Level 1: two fields of level 0.
+type T1 = *{l : T0, r : T0};
+
+/// Level 2: two fields of level 1.
+type T2 = *{l : T1, r : T1};
+
+/// Level 3: two fields of level 2.
+type T3 = *{l : T2, r : T2};
+
+/// Level 4: two fields of level 3.
+type T4 = *{l : T3, r : T3};
+
+/// Level 5: two fields of level 4.
+type T5 = *{l : T4, r : T4};
+
+/// Level 6: two fields of level 5.
+type T6 = *{l : T5, r : T5};
+
+/// Level 7: two fields of level 6.
+type T7 = *{l : T6, r : T6};
+
+/// Level 8: two fields of level 7.
+type T8 = *{l : T7, r : T7};
+
+/// Level 9: two fields of level 8.
+type T9 = *{l : T8, r : T8};
+
+/// The definition spine at level 0.
+def t0 : T0 = *{};
+
+/// The definition spine at level 1: both fields name level 0.
+def t1 : T1 = *{l = t0, r = t0};
+
+/// The let spine: each level is a binder that the next level reads twice.
+def pair9() -> T9 =
+  let s0 = pure *{};
+  let s1 = pure *{l = s0, r = s0};
+  let s2 = pure *{l = s1, r = s1};
+  let s3 = pure *{l = s2, r = s2};
+  let s4 = pure *{l = s3, r = s3};
+  let s5 = pure *{l = s4, r = s4};
+  let s6 = pure *{l = s5, r = s5};
+  let s7 = pure *{l = s6, r = s6};
+  let s8 = pure *{l = s7, r = s7};
+  let s9 = pure *{l = s8, r = s8};
+  s9

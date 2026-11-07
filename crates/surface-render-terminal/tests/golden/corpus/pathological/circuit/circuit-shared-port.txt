@@ -1,4 +1,4 @@
-error[MalformedForm]: a keyword or symbol of this def value is out of place
+error[MalformedForm]: this circuit rule `twice` has wiring that binds port `m` twice, but a term gives each port one producer
    ╭▸ corpus/pathological/circuit/circuit-shared-port.gandr:7:3
    │
  7 │ ┏   rule twice : (rule p : Nat ==> Nat, data x : Nat, data y : Nat) ==> (o : Nat) {
@@ -6,7 +6,7 @@ error[MalformedForm]: a keyword or symbol of this def value is out of place
  9 │ ┃     node : f(y) --> (m);
 10 │ ┃     node : g(m) --> (o);
 11 │ ┃   };
-   │ ┗━━━┛ out of place
+   │ ┗━━━┛ a circuit wiring that derives no boundary
    │
    ├ note: `Shared` is refused with MalformedForm, as its expectation states
-   ╰ help: move the keyword or symbol to its place in the def value
+   ╰ help: let one node bind the port. Give each other node its own port.

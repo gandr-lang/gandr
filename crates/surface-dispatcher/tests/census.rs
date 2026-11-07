@@ -672,14 +672,6 @@ mod sweeps
     /// 40602657172).
     const NIGHTS: Nights = Nights(7);
 
-    /// The sources whose printed types the printer spells as their unshared
-    /// trees. The printer cannot lay the deep ones out, and the read-back
-    /// lowers each printed type of a source in one text, so each probe of the
-    /// source refuses with the deep ones.
-    ///
-    /// - see: #5826 — the printer spells a shared type unshared.
-    const UNSHARED: [&str; 1] = ["pathological/records/iterated-pair.gandr"];
-
     /// The most a sampled run lets one source's read-back lower: its printed
     /// types times the bytes its check reads. Each type read back is appended
     /// to the source laid out after its import closure, and the whole is
@@ -773,7 +765,6 @@ mod sweeps
                     return ControlFlow::Continue(());
                 };
                 let Checked(checked) = checked(&grammar, path, root, (text, base));
-                let unshared = UNSHARED.iter().any(|held| path.ends_with(held));
                 let work = table.spans().count().saturating_mul(checked);
                 if sweep.coverage() == Coverage::Sampled && work > READ_BYTES {
                     over = over.saturating_add(1);
@@ -820,9 +811,6 @@ mod sweeps
                                 at, read.spelled
                             ));
                             "Different"
-                        },
-                        RoundTrip::Refused(_) | RoundTrip::Unspelled if unshared => {
-                            "Held, a shared type spelled unshared (#5826)"
                         },
                         RoundTrip::Refused(ref refusal) => {
                             unread.push(format!("{}: `{}` refuses: {refusal}", at, read.spelled));

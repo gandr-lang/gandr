@@ -131,8 +131,8 @@ def rows:
   | select(all(test("^:?-+:?$")) | not)
   | {line: $line, cells: .};
 
-# The eight reading axes (`units.md` § units-readings).
-def axes: ["univalent", "oracle", "descent", "located", "resident", "rewriting", "zero-cost", "nominal"];
+# The nine reading axes (`units.md` § units-readings).
+def axes: ["univalent", "oracle", "descent", "located", "resident", "rewriting", "zero-cost", "nominal", "general"];
 
 # The question each axis asks of a unit (`units.md` § units-readings), quoted
 # where a reading is refused so the writer has it in front of them (#2955).
@@ -144,7 +144,8 @@ def questions:
    resident: "representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides",
    rewriting: "rules and normal forms; rewrites between rewrites; which coherence tier settles them",
    "zero-cost": "what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it",
-   nominal: "what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization"};
+   nominal: "what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization",
+   general: "the level where the unit's result holds: up to homotopy with its coherences, or a shadow of it — homology or another linear form, an analytic or pointwise form, a bounded order or dimension; for a shadow, the general form, the source key that states it and the issue that owes it"};
 
 # The marks of an issue's `## Readings` table, read before its subsections:
 # per row naming an axis, {axis, mark, reason}, the mark `yes` or `no` from

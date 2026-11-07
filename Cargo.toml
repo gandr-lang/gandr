@@ -1109,11 +1109,12 @@ path = "crates/workflow-sweep"
 path = "crates/workflow-test-timing"
 
 # The operating system's entropy, read once to mint an installation's kernel
-# signing key. Already in the build beneath other crates; std's own source is
-# unstable.
+# signing key, and at each `draw` of `std.rand.Eff`. Already in the build
+# beneath other crates; std's own source is unstable.
 # features:
 # - none: `fill` needs neither `std` nor a fallback
 # consumers:
+# - surface-dispatcher
 # - surface-driver
 [workspace.dependencies.getrandom]
 version = "0.4.3"

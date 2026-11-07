@@ -12,6 +12,8 @@ mod collapse;
 #[cfg(test)]
 mod complex;
 #[cfg(test)]
+mod equivalence;
+#[cfg(test)]
 mod euler;
 #[cfg(test)]
 #[path = "../../theory-graded-posets/tests/faces.rs"]
