@@ -2065,11 +2065,13 @@ run = ".config/recovery/change-cases.bash"
 # `.config/replay/cases.bash` reads each case of `.config/replay/cases.json`
 # through `due.jq` against the committed `artifacts.json`. A case gives the
 # paths a base moved and the paths a branch's own commits change, and names
-# the rows whose checks `stale.bash` runs.
+# the rows whose checks `stale.bash` runs. `.config/replay/replays.bash`
+# runs `signed_restack` on a runner's replay over `replays.json` (#6159): a
+# due row holds the branch, and none moves it.
 ["check:replay"]
-description = "A replay onto a moved base runs the check of each generated artifact that one side wrote from inputs the other side changed"
+description = "A replay onto a moved base runs the check of each generated artifact that one side wrote from inputs the other side changed, and a runner's replay holds a branch a due row names"
 tools.jq = "1.8.1"
-run = ".config/replay/cases.bash"
+run = [".config/replay/cases.bash", ".config/replay/replays.bash"]
 
 # The nightly's container jobs (#3208): `.config/nightly/jobs.jq` refuses a
 # job that starts the CI image, restores no build state and so is a step of

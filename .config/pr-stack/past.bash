@@ -15,7 +15,9 @@
 # holds for the upper, the top and the red branch, or `refused: conflicts
 # (<files>)` for a conflict and `refused: <reason>` for any other refusal,
 # then `, moved` should the refused cut have moved a branch, then the `gh`
-# calls and the chain linked.
+# calls and the chain linked. A case's `artifacts`, when given, is the table
+# of generated artifacts the replay reads before anything moves (#6159,
+# `REPLAY_ARTIFACTS`).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/stack.bash"
@@ -74,6 +76,11 @@ for (( i = 0; i < count; i++ )); do
   stack_link() { jq -r 'map(.number) | join(" ")' <<< "$1" > "$dir/link"; }
   stack='[{"number":2,"head":"red"},{"number":3,"head":"upper"},{"number":4,"head":"top"}]'
   if [[ $red == middle ]]; then stack=$(jq -c '[{"number":1,"head":"lower"}] + .' <<< "$stack"); fi
+  unset REPLAY_ARTIFACTS
+  if [[ $(jq -r ".[$i].artifacts // empty" "$cases") ]]; then
+    jq -c ".[$i].artifacts" "$cases" > "$dir/artifacts.json"
+    export REPLAY_ARTIFACTS=$dir/artifacts.json
+  fi
   before=$(git rev-parse origin/upper origin/top origin/red)
   if restack_past "$stack" 2 > "$dir/out" 2>&1; then
     actual="moved: upper holds $(subjects upper); top holds $(subjects top); red holds $(subjects red)"
