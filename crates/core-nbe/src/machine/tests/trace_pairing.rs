@@ -196,8 +196,9 @@ proptest! {
         second in any::<bool>(),
     ) {
         let mut core = CoreArena::new();
+        // η relates `()` to every neutral, so the refuted leaf is a pair.
         let mut left = core.value_unit();
-        let mut right = core.value_constant(Name::Rigid.constant());
+        let mut right = core.value_tuple(&[left, left]);
         for before in context {
             let unit = core.value_unit();
             (left, right) = if before {

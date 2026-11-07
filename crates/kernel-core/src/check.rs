@@ -331,6 +331,7 @@ use crate::replay::read_decode;
 use crate::replay::read_endpoints;
 use crate::replay::read_identity_endpoints;
 use crate::rewrite::BinderDepth;
+use crate::rewrite::rotate_comp_type;
 use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_value;
 use crate::rewrite::shift_value_type;
@@ -2991,10 +2992,12 @@ quenchant_shape::reason_enum! {
         /// The goal is not read at each branch's injection.
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         pub enum Absent {
-            /// The scrutinee is not the innermost binder.
+            /// The scrutinee is no variable.
             Scrutinee,
             /// The goal does not read the scrutinee.
             Unread,
+            /// The goal reads a binder inside the scrutinee.
+            Inside,
         }
     }
 }
@@ -3240,48 +3243,68 @@ fn weakened(
 }
 
 /// The goal a case on `scrutinee` reads at each branch's injection: `expected`
-/// when the scrutinee is the innermost binder and `expected` reads it.
+/// with the scrutinee read as its innermost binder, when `expected` reads the
+/// scrutinee and no binder inside it.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `expected` present exactly when `scrutinee` is the variable of
-///   index zero and the support of `expected` holds index zero.
+/// - ensures: `expected` rotated so that the scrutinee's index reads as index
+///   zero ([`rotate_comp_type`]), present exactly when `scrutinee` is a
+///   variable and its index is the innermost index the support of `expected`
+///   holds; a support that names no index set reads every one.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a case on the innermost binder at a goal reading it
-///   refines; one at a closed goal, and one on another binder, do not.
+///   refines, and so does a case on an outer binder whose goal reads no binder
+///   inside it; one at a closed goal does not.
 /// - witness: `check::tests::a_case_on_the_innermost_binder_reads_its_goal_at_each_injection_5036`
+/// - witness: `check::tests::a_case_on_an_outer_binder_reads_its_goal_at_each_injection_6110`
 #[spec(ensures: |ret| match ret {
-    Maybe::Present(found) => found == expected,
+    Maybe::Present(found) => arena.comp_type(found).is_some(),
     Maybe::Absent(_) => true,
 })]
 fn refining_goal(
-    arena: &TermArena,
+    arena: &mut TermArena,
+    session: &mut SupportContext,
     scrutinee: ValueId,
     expected: CompTypeId,
 ) -> Maybe<CompTypeId, refining::Absent>
 {
-    if arena.value(scrutinee) != Some(&Value::Variable(DeBruijnIndex::from(0_u32))) {
-        return Maybe::Absent(refining::Absent::Scrutinee);
-    }
-    let reads_innermost = match arena.comp_type_support(expected).indices() {
-        Maybe::Present(mut indices) => indices.next() == Some(DeBruijnIndex::from(0_u32)),
-        Maybe::Absent(_) => true,
-    };
-    if reads_innermost {
-        Maybe::Present(expected)
-    }
+    let Some(&Value::Variable(index)) = arena.value(scrutinee)
     else {
-        Maybe::Absent(refining::Absent::Unread)
+        return Maybe::Absent(refining::Absent::Scrutinee);
+    };
+    // The widest support reads every binder, the innermost first.
+    let first = match arena.comp_type_support(expected).indices() {
+        Maybe::Present(mut indices) => indices.next(),
+        Maybe::Absent(_) => Some(DeBruijnIndex::from(0_u32)),
+    };
+    match first {
+        Some(first) if first == index => {
+            // The goal reads no binder inside the scrutinee, so the rotation
+            // moves only unread binders past it.
+            let (table, rewrites) = session.rewrite_parts();
+            Maybe::Present(rotate_comp_type(
+                arena,
+                table,
+                rewrites,
+                expected,
+                BinderDepth::from(u32::from(index)),
+            ))
+        },
+        Some(first) if first < index => Maybe::Absent(refining::Absent::Inside),
+        Some(_) | None => Maybe::Absent(refining::Absent::Unread),
     }
 }
 
-/// `outside`, written outside a case on the innermost binder `y`, read under
-/// the branch at `summand` with `y` read as that branch's injection of its
-/// binder: `outside[y := injᵢ x]`, `x` the branch's binder and `y` still bound
-/// outside it.
+/// `outside`, read as written outside a case on the innermost binder `y`, read
+/// under the branch at `summand` with `y` read as that branch's injection of
+/// its binder: `outside[y := injᵢ x]`, `x` the branch's binder and `y` still
+/// bound outside it. A case on an outer binder reads its goal through
+/// [`refining_goal`]'s rotation, so the binders between `y` and `x` stand
+/// unread, as they stand in the goal.
 ///
 /// # Specification
 /// - requires: `outside` is scoped with `y` its innermost binder.
@@ -5086,9 +5109,10 @@ where
                         scrutinee,
                         ref branches,
                     } => {
-                        let refining = refining_goal(arena, scrutinee, expected);
+                        let branches = branches.clone();
+                        let refining = refining_goal(arena, session, scrutinee, expected);
                         frames.push(Frame::CheckCaseScrutinee {
-                            branches: branches.clone(),
+                            branches,
                             expected,
                             refining,
                         });
@@ -8405,6 +8429,7 @@ mod tests
     use gandr_kernel_term::ValueType;
     use gandr_kernel_term::ValueTypeId;
 
+    use super::BinderDepth;
     use super::Goal;
     use super::Judgement;
     use super::Produced;
@@ -10368,13 +10393,18 @@ mod tests
         );
     }
 
-    /// Admit `Tag(s : Unit + Unit) : Type { Mk }`, then `thunk λy. case y {
-    /// return Mk : Tag(inj₀ x) | return Mk : Tag(inj₁ x) }` at the type `U(Π
-    /// (y : Unit + Unit). F Tag(y))`, its arms in the order `arms` gives.
+    /// Admit `Tag(s : Unit + Unit) : Type { Mk }`, then `thunk λy. λz₁ … λzₙ.
+    /// case y { return Mk : Tag(inj₀ x) | return Mk : Tag(inj₁ x) }` at the
+    /// type `U(Π (y : Unit + Unit). Π (z₁ : Unit) … Π (zₙ : Unit). F
+    /// Tag(y))`, with `unread` binders `zᵢ` that the goal does not read,
+    /// its arms in the order `arms` gives.
     ///
     /// # Specification
     /// trivial.
-    fn admit_tag_case(arms: [Summand; 2]) -> Result<(), KernelError>
+    fn admit_tag_case(
+        arms: [Summand; 2],
+        unread: BinderDepth,
+    ) -> Result<(), KernelError>
     {
         let mut environment = Environment::new();
         let zero = level(LevelConstant::from(0));
@@ -10393,10 +10423,13 @@ mod tests
             let mint = staging.arena();
             let unit = mint.value_type_unit();
             let sum = mint.value_type_sum(&[unit, unit]);
-            let y = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let y = mint.value_variable(DeBruijnIndex::from(u32::from(unread)));
             let tag_at_y = mint.value_type_data(tags, vec![y]);
-            let answers = mint.comp_type_returner(tag_at_y);
-            let family = mint.comp_type_pi(sum, answers);
+            let mut family = mint.comp_type_returner(tag_at_y);
+            for _ in 0 .. u32::from(unread) {
+                family = mint.comp_type_pi(unit, family);
+            }
+            let family = mint.comp_type_pi(sum, family);
             let declared = mint.value_type_thunk(family);
             let branches = arms.map(|summand| {
                 let own = mint.value_variable(DeBruijnIndex::from(0_u32));
@@ -10409,8 +10442,10 @@ mod tests
                 );
                 mint.computation_return(made)
             });
-            let case = mint.computation_case(y, &branches);
-            let body = mint.computation_lambda(case);
+            let mut body = mint.computation_case(y, &branches);
+            for _ in 0 ..= u32::from(unread) {
+                body = mint.computation_lambda(body);
+            }
             let body = mint.value_thunk(body);
             staging.def(LevelSignature::monomorphic(), declared, body)
         };
@@ -10426,10 +10461,30 @@ mod tests
     {
         assert_eq!(
             Ok(()),
-            admit_tag_case([0_usize, 1].map(Summand::from)),
+            admit_tag_case([0_usize, 1].map(Summand::from), BinderDepth::NONE),
             "each arm checks at the tag of its own injection"
         );
-        let refused = admit_tag_case([1_usize, 0].map(Summand::from));
+        let refused = admit_tag_case([1_usize, 0].map(Summand::from), BinderDepth::NONE);
+        assert!(
+            refused.is_err(),
+            "arms returning each other's tag are refused: {refused:?}"
+        );
+    }
+
+    /// A case on a binder with two unread binders inside it reads its goal at
+    /// each injection as a case on the innermost binder does (#6110). A goal
+    /// read in place would take the innermost unread binder for the
+    /// scrutinee, so the rotation is what separates the two.
+    #[test]
+    fn a_case_on_an_outer_binder_reads_its_goal_at_each_injection_6110()
+    {
+        let unread = BinderDepth::from(2_u32);
+        assert_eq!(
+            Ok(()),
+            admit_tag_case([0_usize, 1].map(Summand::from), unread),
+            "each arm checks at the tag of its own injection past the unread binders"
+        );
+        let refused = admit_tag_case([1_usize, 0].map(Summand::from), unread);
         assert!(
             refused.is_err(),
             "arms returning each other's tag are refused: {refused:?}"

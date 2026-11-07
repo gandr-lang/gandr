@@ -4786,7 +4786,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Goal::Computation { term, direction } => {
                 // A case on a variable whose arms or motive read a later binder
                 // at it is checked at the motive generalised over that binder.
-                let term = match crate::solution::refined_case(self.context, term)? {
+                // A case on a sum and a split hold no motive, so the goal is
+                // theirs when they are checked.
+                let term = match crate::solution::refined_case(self.context, term, direction)? {
                     Maybe::Present(refined) => {
                         self.context.record_refinement(term, &refined);
                         refined.term
@@ -11446,7 +11448,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   each typed by its component shifted past the binders before it, and
     ///   the body is the next goal, synthesised, or checked against the
     ///   expected type shifted past all of them; a split of no components
-    ///   checks its body against the expected type itself. A scrutinee whose
+    ///   checks its body against the expected type with the scrutinee read as
+    ///   the unit ([`crate::solution::unit_split_goal`]). A scrutinee whose
     ///   type a call computes and unfolds to a dependent pair opens its first
     ///   factor, then its second under the first's binder, and a split checked
     ///   against a type is restated as the dependent split at that type.
@@ -11545,10 +11548,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 if crossing == Crossing::Restated {
                     self.restate_pair(at, expected)?;
                 }
-                Direction::Check(
-                    self.context
-                        .shift_comp_type(expected, Binders::from(binders)),
-                )
+                // A split of no components reads its scrutinee as the unit,
+                // so a goal that reads the scrutinee is read at `*{}`.
+                if count == 0_usize {
+                    Direction::Check(crate::solution::unit_split_goal(
+                        self.context,
+                        scrutinee,
+                        expected,
+                    )?)
+                }
+                else {
+                    Direction::Check(
+                        self.context
+                            .shift_comp_type(expected, Binders::from(binders)),
+                    )
+                }
             },
         };
         match opened {

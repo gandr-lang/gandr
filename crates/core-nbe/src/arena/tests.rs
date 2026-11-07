@@ -258,7 +258,7 @@ fn a_neutral_is_rigid_only_without_a_body_or_a_closure()
         )
         .expect("a variable head stands rigid");
     assert!(
-        matches!(arena.neutral_guard(applied), Ok(Guard::Rigid(_))),
+        matches!(arena.neutral_guard(applied), Ok(Guard::Rigid(..))),
         "a rigid head applied to a rigid argument is rigid"
     );
 
@@ -458,5 +458,8 @@ fn a_hole_or_mark_head_is_never_rigid()
             Unfolding::Rigid,
         )
         .expect("a variable mints rigid");
-    assert!(matches!(arena.neutral_guard(variable), Ok(Guard::Rigid(_))));
+    assert!(matches!(
+        arena.neutral_guard(variable),
+        Ok(Guard::Rigid(..))
+    ));
 }
