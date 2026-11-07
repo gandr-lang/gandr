@@ -1,0 +1,27 @@
+test: acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747
+package: gandr-surface-parser
+command: mise run debug:test gandr-surface-parser acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-parser/b127858403ce5ea2/out/tests-b127858403ce5ea2"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-parser/b127858403ce5ea2/out/tests-b127858403ce5ea2' (x86_64).
+(lldb) settings set -- target.run-args  "acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-b127858403ce5ea2`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000024d96d8
+(lldb) run
+
+running 1 test
+test acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.03s
+
+Process 2234716 launched: 'target/debug-trace/debug/build/gandr-surface-parser/b127858403ce5ea2/out/tests-b127858403ce5ea2' (x86_64)
+Process 2234716 exited with status = 0 (0x00000000)
+(lldb) bt 24
+error: Command requires a process which is currently stopped.
