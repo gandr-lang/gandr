@@ -274,6 +274,8 @@ use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+#[cfg(feature = "unfolding-probe")]
+use std::sync::Mutex;
 
 use anodized::spec;
 use gandr_core_session::DialogueWeb;
@@ -504,6 +506,9 @@ pub struct LoweredChain
     identities: BTreeMap<ConstantIndex, ValueId>,
     /// The induction each fill the checker realised stands for, by node.
     fills: BTreeMap<ValueId, ComputationId>,
+    /// The optional body-read probe for this chain.
+    #[cfg(feature = "unfolding-probe")]
+    probe: UnfoldingProbeSlot,
 }
 
 impl LoweredChain
@@ -580,6 +585,8 @@ impl LoweredChain
             constructors: BTreeMap::new(),
             identities: BTreeMap::new(),
             fills: BTreeMap::new(),
+            #[cfg(feature = "unfolding-probe")]
+            probe: UnfoldingProbeSlot::default(),
         })
     }
 
@@ -773,6 +780,249 @@ impl LoweredChain
     {
         &self.bodies
     }
+
+    /// Record body reads in `probe`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub fn observe_unfoldings(
+        &mut self,
+        probe: UnfoldingProbe,
+    )
+    {
+        self.probe.probe = Some(probe);
+    }
+
+    /// Set the declaration that owns later body reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub fn unfolding_subject(
+        &self,
+        subject: ConstantIndex,
+    )
+    {
+        if let Some(probe) = self.probe.probe.as_ref() {
+            probe.subject(subject);
+        }
+    }
+
+    /// Record a body read while the chain has a probe.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub(crate) fn record(
+        &self,
+        global: ConstantIndex,
+    )
+    {
+        if let Some(probe) = self.probe.probe.as_ref() {
+            probe.record(global);
+        }
+    }
+}
+
+/// A probe-only count of global bodies the evaluator reads.
+#[cfg(feature = "unfolding-probe")]
+#[derive(Clone, Debug, Default)]
+pub struct UnfoldingProbe
+{
+    /// The state every clone shares.
+    state: Arc<Mutex<UnfoldingProbeState>>,
+}
+
+/// The observation state a chain carries outside its equality.
+#[cfg(feature = "unfolding-probe")]
+#[derive(Clone, Debug, Default)]
+struct UnfoldingProbeSlot
+{
+    /// The optional body-read probe.
+    probe: Option<UnfoldingProbe>,
+}
+
+#[cfg(feature = "unfolding-probe")]
+impl PartialEq for UnfoldingProbeSlot
+{
+    /// Compare the chain's semantic state.
+    ///
+    /// # Specification
+    /// trivial.
+    fn eq(
+        &self,
+        _other: &Self,
+    ) -> bool
+    {
+        true
+    }
+}
+
+#[cfg(feature = "unfolding-probe")]
+impl Eq for UnfoldingProbeSlot
+{
+}
+
+/// One subject and global body pair the probe observed.
+#[cfg(feature = "unfolding-probe")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct UnfoldingRecord
+{
+    /// The declaration that read the global body.
+    subject: ConstantIndex,
+    /// The global definition whose body was read.
+    global: ConstantIndex,
+    /// The events recorded for this pair.
+    events: UnfoldingCount,
+}
+
+/// The total events for one unfolding pair.
+#[cfg(feature = "unfolding-probe")]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct UnfoldingCount(usize);
+
+/// The mutable state of an unfolding probe.
+#[cfg(feature = "unfolding-probe")]
+#[derive(Debug, Default)]
+struct UnfoldingProbeState
+{
+    /// The declaration that owns later events.
+    subject: Option<ConstantIndex>,
+    /// The events for each declaration and global pair.
+    events: BTreeMap<(ConstantIndex, ConstantIndex), UnfoldingCount>,
+}
+
+#[cfg(feature = "unfolding-probe")]
+impl UnfoldingProbe
+{
+    /// Make an empty unfolding probe.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// Set the declaration that owns later events.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn subject(
+        &self,
+        subject: ConstantIndex,
+    )
+    {
+        self.state().subject = Some(subject);
+    }
+
+    /// Return the observed pairs in ascending subject and global order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn records(&self) -> Vec<UnfoldingRecord>
+    {
+        let state = self.state();
+        state
+            .events
+            .iter()
+            .map(|(&(subject, global), &events)| UnfoldingRecord {
+                subject,
+                global,
+                events,
+            })
+            .collect()
+    }
+
+    /// Record one body read for the current subject.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn record(
+        &self,
+        global: ConstantIndex,
+    )
+    {
+        let mut state = self.state();
+        if let Some(subject) = state.subject {
+            let events = state.events.entry((subject, global)).or_default();
+            events.0 = events.0.saturating_add(1_usize);
+        }
+        drop(state);
+    }
+
+    /// Lock the state, retaining it after a panic.
+    ///
+    /// # Specification
+    /// trivial.
+    fn state(&self) -> std::sync::MutexGuard<'_, UnfoldingProbeState>
+    {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+#[cfg(feature = "unfolding-probe")]
+impl UnfoldingRecord
+{
+    /// The declaration that read a global body.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn subject(&self) -> ConstantIndex
+    {
+        self.subject
+    }
+
+    /// The global definition whose body was read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn global(&self) -> ConstantIndex
+    {
+        self.global
+    }
+
+    /// The events that read this pair.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn events(&self) -> UnfoldingCount
+    {
+        self.events
+    }
+}
+
+#[cfg(feature = "unfolding-probe")]
+impl From<UnfoldingCount> for usize
+{
+    /// The event count as a machine word.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: UnfoldingCount) -> Self
+    {
+        count.0
+    }
 }
 
 /// What a run may unfold, and where it is reading from.
@@ -903,6 +1153,20 @@ impl<'run> Definitions<'run>
             recursion: Recursion::Unrolled,
             returning: &[],
         }
+    }
+
+    /// Record one global body read when the run has a probe.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub(crate) fn record(
+        &self,
+        global: ConstantIndex,
+    )
+    {
+        self.chain.record(global);
     }
 
     /// The same definitions, reading the rigid variables at `levels` as
@@ -1300,10 +1564,15 @@ impl<'run> Definitions<'run>
         constant: ConstantIndex,
     ) -> Option<ValueId>
     {
-        match self.manifest().unfolding(constant) {
+        let body = match self.manifest().unfolding(constant) {
             Unfolding::Unforced(entry) => self.bodies().get(&entry).copied(),
             Unfolding::Rigid | Unfolding::Forced(_) => None,
+        };
+        #[cfg(feature = "unfolding-probe")]
+        if body.is_some() {
+            self.record(constant);
         }
+        body
     }
 
     /// The definitional height of `constant`, or the floor when the chain
@@ -8975,7 +9244,7 @@ fn resume_returned(
         let held = domain
             .neutral(neutral)
             .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
-        let mut head = body_task(machine, held.unfolding());
+        let mut head = body_task(machine, held.head(), held.unfolding());
         if head.is_none()
             && let Some(call) = runs_on(domain, machine, held)?
         {
@@ -9023,20 +9292,24 @@ fn resume_returned(
 /// - witness: `eval::tests::a_held_endpoint_stays_at_its_definition`
 fn body_task(
     machine: &Machine<'_>,
+    head: NeutralHead,
     unfolding: Unfolding,
 ) -> Option<Task>
 {
+    #[cfg(not(feature = "unfolding-probe"))]
+    let _ = head;
     match unfolding {
         Unfolding::Forced(Glued::Value(body)) => Some(Task::Supply(body)),
         Unfolding::Unforced(entry) => {
-            machine
-                .definitions
-                .bodies()
-                .get(&entry)
-                .map(|&term| Task::Value {
-                    term,
-                    env: Machine::root_env(),
-                })
+            let term = machine.definitions.bodies().get(&entry).copied()?;
+            #[cfg(feature = "unfolding-probe")]
+            if let NeutralHead::Constant(constant) = head {
+                machine.definitions.record(constant);
+            }
+            Some(Task::Value {
+                term,
+                env: Machine::root_env(),
+            })
         },
         Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)) => None,
     }
@@ -9098,7 +9371,7 @@ fn runs_on(
     let waits = domain
         .neutral(waits)
         .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
-    Ok(body_task(machine, waits.unfolding()).map(|_body| call))
+    Ok(body_task(machine, waits.head(), waits.unfolding()).map(|_body| call))
 }
 
 /// Deliver `computation` as an endpoint, read through the first bind at or
@@ -9931,6 +10204,10 @@ fn decompose_through_head(
                 .bodies()
                 .get(&entry)
                 .ok_or(EvalFault::Decomposition)?;
+            #[cfg(feature = "unfolding-probe")]
+            if let NeutralHead::Constant(constant) = held.head() {
+                machine.definitions.record(constant);
+            }
             Task::Value {
                 term,
                 env: Machine::root_env(),

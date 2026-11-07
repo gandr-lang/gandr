@@ -83,6 +83,8 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+#[cfg(feature = "unfolding-probe")]
+use gandr_core_nbe::UnfoldingProbe;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -3178,6 +3180,34 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub const fn definitions(&self) -> &CodeDefinitions
     {
         &self.definitions
+    }
+
+    /// Record body reads in `probe`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub fn observe_unfoldings(
+        &mut self,
+        probe: UnfoldingProbe,
+    )
+    {
+        self.definitions.observe_unfoldings(probe);
+    }
+
+    /// Set the declaration that owns later body reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "unfolding-probe")]
+    #[inline]
+    pub(crate) fn unfolding_subject(
+        &self,
+        subject: ConstantIndex,
+    )
+    {
+        self.definitions.unfolding_subject(subject);
     }
 
     /// Define `constant`, accepted at `declared` with `body`: a later decode

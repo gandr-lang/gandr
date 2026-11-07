@@ -1433,6 +1433,8 @@ fn decide(
         residue: Residue::default(),
     };
     let constant = declaration.constant();
+    #[cfg(feature = "unfolding-probe")]
+    context.unfolding_subject(constant);
     // A value declaration's judgement may wait on an owed hole; a nominal
     // declaration forms rigidly.
     let collecting = match *declaration.content() {

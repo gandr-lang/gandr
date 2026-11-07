@@ -366,6 +366,8 @@
 #![no_std]
 
 extern crate alloc;
+#[cfg(feature = "unfolding-probe")]
+extern crate std;
 
 mod arena;
 mod closure;
@@ -444,6 +446,12 @@ pub use crate::eval::EvalFault;
 pub use crate::eval::Fuel;
 pub use crate::eval::LoweredChain;
 pub use crate::eval::Recursion;
+#[cfg(feature = "unfolding-probe")]
+pub use crate::eval::UnfoldingCount;
+#[cfg(feature = "unfolding-probe")]
+pub use crate::eval::UnfoldingProbe;
+#[cfg(feature = "unfolding-probe")]
+pub use crate::eval::UnfoldingRecord;
 pub use crate::eval::eval_comp_within;
 pub use crate::eval::eval_computation;
 pub use crate::eval::eval_value;
