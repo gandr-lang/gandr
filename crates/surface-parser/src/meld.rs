@@ -209,6 +209,15 @@
 //! its reduction crosses sorts, and the lookahead then takes a misreading of
 //! the body (#5747).
 //!
+//! A missing tile can also split one form in two. In `(rem = r, .quot = q)`,
+//! the missing `.` leaves the positional group `(rem` open. No open frontier
+//! takes the `=` after it, so the `=` starts a fragment of the branch with
+//! labels, and the head of that fragment is absent. Both branches of the group
+//! open with `(`, so the fragment and the open group are one form. The closer
+//! that ends the fragment also ends the open group. So the split costs only
+//! the missing tile at the head of the fragment, and the `=` of the `let` after
+//! the group continues the `let` (#5795).
+//!
 //! Known bound: a container whose own member carries the damage — `module M {
 //! def bad = ( 1 ; def good = 2; }` — force-closes the container too, so `good`
 //! becomes a sibling of `M` rather than its member. Telling a container apart
@@ -4256,7 +4265,9 @@ impl<'pbg> MeldState<'pbg>
     /// ([`Oblig::MissingTile`]) and a stray mid opens a fresh partial form;
     /// a mid that cannot begin its form flags its missing head the same way,
     /// so a token standing where its form's earlier tiles are absent is never
-    /// read as complete.
+    /// read as complete. An end tile that closes such a partial form can also
+    /// close the open form around it
+    /// ([`close_split_form`](Self::close_split_form)).
     ///
     /// # Specification
     /// - ensures: advances a matching frontier and closes an end tile; an
@@ -4309,8 +4320,9 @@ impl<'pbg> MeldState<'pbg>
             });
             if bool::from(is_end)
                 && let Some(top) = self.stack.len().checked_sub(1)
+                && let Some(opener) = self.close_form(StackIndex::from(top))
             {
-                self.close_form(StackIndex::from(top));
+                self.close_split_form(opener, head_mold);
             }
             return;
         }
@@ -4343,6 +4355,105 @@ impl<'pbg> MeldState<'pbg>
                 },
                 ..cell
             });
+        }
+    }
+
+    /// Close the open form around a fragment that a missing tile splits off
+    /// it, once the end tile of the fragment closes the fragment.
+    ///
+    /// A mid tile that no open frontier takes opens a fresh partial form,
+    /// and the tiles before it are absent
+    /// ([`continue_form`](Self::continue_form)). A rule can have two branches
+    /// that open with one tile. When the open form reads that tile as one
+    /// branch and the mid comes from the other, the fragment and the open
+    /// form are one form that the missing tile splits.
+    /// In `(rem = r, .quot = q)`, the missing `.` leaves the positional group
+    /// `(rem` open, and the `=` starts the entry with a label. The closer that
+    /// ends the fragment then ends the open form too: the form closes with no
+    /// ghost, and the tiles after it continue the form around the group. The
+    /// absent head of the fragment is the one obligation that the split
+    /// leaves.
+    ///
+    /// # Specification
+    /// - requires: `opener` opens the form that
+    ///   [`close_form`](Self::close_form) closes last, and `continued` is the
+    ///   frontier that its end tile continues.
+    /// - ensures: closes the nearest open form exactly when `opener` is a mid
+    ///   that cannot begin its form, the open form opens on another branch of
+    ///   the rule of `opener` with a start tile of the label that starts the
+    ///   branch of `opener`, and the completions of `continued` and of the open
+    ///   frontier end at one paired closer class; source is unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group whose first label has no dot leaves one
+    ///   obligation, and the `let` after the group stays whole. A close of a
+    ///   form of another rule, of a form on the branch of the fragment, or of a
+    ///   form that ends at another closer changes the tree of a corpus source
+    ///   that molds whole.
+    /// - witness: `tests::acceptance::a_split_group_closes_at_its_written_closer_5795`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
+    fn close_split_form(
+        &mut self,
+        opener: MoldId,
+        continued: MoldId,
+    )
+    {
+        if !matches!(self.classify(opener), Kind::FormMid)
+            || bool::from(FormTable::is_form_first(self.pbg, opener))
+        {
+            return;
+        }
+        let Some(frontier) = self.nearest_open_form()
+        else {
+            return;
+        };
+        let Some(Role::FormTile { mold: open, .. }) =
+            self.stack.get(usize::from(frontier)).map(|cell| cell.role)
+        else {
+            return;
+        };
+        let rule = |mold: MoldId| self.pbg.rule_of(mold).ok().map(|rule| rule.name);
+        let closer = self.pbg.closing_class(continued);
+        if rule(opener).is_none()
+            || rule(opener) != rule(open)
+            || closer.is_none()
+            || closer != self.pbg.closing_class(open)
+        {
+            return;
+        }
+        // The open form reads the shared opening tile as one branch, and the
+        // fragment comes from another branch. Molds are numbered in the order
+        // of their rule, so the branch of `opener` starts at the greatest form
+        // start of its rule at or below it.
+        let Some(around) = self
+            .form_start_index(StackIndex::from(frontier))
+            .and_then(|start| self.stack.get(usize::from(start)))
+            .and_then(|cell| match cell.role {
+                Role::FormTile { mold, .. } => Some(mold),
+                Role::Operand | Role::Operator { .. } => None,
+            })
+        else {
+            return;
+        };
+        let branch = (0 ..= u32::from(opener))
+            .rev()
+            .map(MoldId::from)
+            .take_while(|&mold| rule(mold) == rule(opener))
+            .find(|&mold| matches!(self.classify(mold), Kind::FormStart { .. }));
+        let label = |mold: MoldId| self.pbg.mold(mold).ok().map(|def| def.label);
+        if branch.is_none_or(|start| start == around || label(start) != label(around)) {
+            return;
+        }
+        let Some(content_floor) = StackIndex::from(frontier).floor_after()
+        else {
+            return;
+        };
+        self.collapse(content_floor);
+        self.set_form_open(StackIndex::from(frontier), FormOpen::from(false));
+        if let Some(top) = self.stack.len().checked_sub(1) {
+            let _opener = self.close_form(StackIndex::from(top));
         }
     }
 
@@ -4447,12 +4558,15 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// Collects the form run from its start (absorbing the preceding operand
     /// for a left-bounded start) up to and including `end_index`, reducing
-    /// any interior operators first, and wraps the run in a meld operand.
+    /// any interior operators first, and wraps the run in a meld operand. It
+    /// returns the mold of the tile that opens the form.
     ///
     /// # Specification
     /// - ensures: replaces the form span, including an absorbed left operand,
     ///   with one operand named by its opening mold, its documentation grouped
-    ///   as [`documented`](Self::documented) groups it; source is unchanged.
+    ///   as [`documented`](Self::documented) groups it, and returns that mold;
+    ///   returns `None`, the slope as it is, when no form start stands at or
+    ///   below `end_index`; source is unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4463,21 +4577,21 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
     /// - witness: `meld::tests::completable_hole_closes_without_obligation`
     /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
-    #[spec(captures: before = (self.source.len(), self.stack.len()), ensures: |_| self.source.len() == before.0 && self.stack.len() <= before.1)]
+    #[spec(captures: before = (self.source.len(), self.stack.len()), ensures: |ret| self.source.len() == before.0 && self.stack.len() <= before.1 && (ret.is_some() || self.stack.len() == before.1))]
     fn close_form(
         &mut self,
         end_index: StackIndex,
-    )
+    ) -> Option<MoldId>
     {
         let end_index = usize::from(end_index);
         let Some(start_index) = self.form_start_index(StackIndex::from(end_index))
         else {
-            return;
+            return None;
         };
         let start_index = usize::from(start_index);
         let Some(start_cell) = self.stack.get(start_index).copied()
         else {
-            return;
+            return None;
         };
         // A left-bounded start absorbs the operand immediately below it.
         let low = match start_cell.role {
@@ -4491,7 +4605,7 @@ impl<'pbg> MeldState<'pbg>
         };
         let Some(high_exclusive) = end_index.checked_add(1)
         else {
-            return;
+            return None;
         };
 
         let mut children: Vec<EmitId> = Vec::new();
@@ -4509,7 +4623,7 @@ impl<'pbg> MeldState<'pbg>
         // grammar resolves that mold to the form's rule and named kind.
         let Role::FormTile { mold, .. } = start_cell.role
         else {
-            return;
+            return None;
         };
         let span = SourceSpan::new(SourceOffset::from(span_start), SourceOffset::from(span_end));
         let (label, children) = self.documented(mold, children);
@@ -4524,6 +4638,7 @@ impl<'pbg> MeldState<'pbg>
                 role: Role::Operand,
             },
         );
+        Some(mold)
     }
 
     /// Group the documentation among a closing form's `children`, and name the
