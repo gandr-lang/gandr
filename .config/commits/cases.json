@@ -89,5 +89,32 @@
     ],
     "flag": "",
     "exit": 0
+  },
+  {
+    "name": "#5932: held commits pass a push to the trunk: the trunk holds each under another hash, as a rebase of landing gives them",
+    "push": "refs/heads/landing",
+    "held": true,
+    "commits": [
+      {
+        "message": "docs(kernel): a change the queue wrote without trailers",
+        "trailers": false,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 0
+  },
+  {
+    "name": "#5932: new trailer-less commits pushed to the trunk are still refused: the trunk lacks their patch",
+    "push": "refs/heads/landing",
+    "commits": [
+      {
+        "message": "docs(kernel): a change without its trailers",
+        "trailers": false,
+        "change": true
+      }
+    ],
+    "flag": "",
+    "exit": 1
   }
 ]
