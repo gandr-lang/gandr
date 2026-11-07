@@ -207,6 +207,11 @@ pub enum TagSite
     CoverStep,
     /// A cover split's cases, outside their alphabet.
     CoverCases,
+    /// A literal identity test's base, outside the integer and text atoms.
+    IdentityBase,
+    /// A literal identity test's polarity, outside the same and different
+    /// alphabet.
+    IdentityPolarity,
 }
 
 impl fmt::Display for TagSite
@@ -253,6 +258,8 @@ impl fmt::Display for TagSite
             Self::RuleNode => "a presented rule's node",
             Self::CoverStep => "a cover derivation's step",
             Self::CoverCases => "a cover split's cases",
+            Self::IdentityBase => "a literal identity test's base",
+            Self::IdentityPolarity => "a literal identity test's polarity",
         })
     }
 }
@@ -605,6 +612,8 @@ mod tests
             TagSite::RuleNode,
             TagSite::CoverStep,
             TagSite::CoverCases,
+            TagSite::IdentityBase,
+            TagSite::IdentityPolarity,
         ] {
             names.push(format!("{site}"));
             check_sink(&site);

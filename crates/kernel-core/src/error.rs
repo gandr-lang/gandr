@@ -860,6 +860,14 @@ pub enum KernelError
         /// The kind actually declared.
         actual: ValueTypeWitness,
     },
+    /// A literal identity test was declared at a type other than the one its
+    /// base gives, `U(B → B → F(1 + 1))`. The kernel computes the test, so a
+    /// test at any other type would answer where no boolean is owed.
+    LiteralIdentityType
+    {
+        /// The type actually declared.
+        actual: ValueTypeWitness,
+    },
     /// A sealed-atom reference named a position that is not an admitted
     /// abstract-type declaration: out of range, a forward reference, or a
     /// definition or axiom masquerading as an atom.
@@ -1131,6 +1139,9 @@ impl core::fmt::Display for KernelError
             Self::AbstractTypeKindNotUniverse { .. } => {
                 f.write_str("an abstract type's kind is not a universe")
             },
+            Self::LiteralIdentityType { .. } => f.write_str(
+                "a literal identity test is declared at a type other than its base's test type",
+            ),
             Self::NotAnAbstractType { .. } => {
                 f.write_str("a sealed-atom reference named no abstract-type declaration")
             },
@@ -1337,6 +1348,7 @@ mod tests
             KernelError::CheckerRegisterFault(RegisterFault::ExpectedValueType),
             KernelError::ArenaFault,
             KernelError::AbstractTypeKindNotUniverse { actual: unit },
+            KernelError::LiteralIdentityType { actual: unit },
             KernelError::NotAnAbstractType { index },
             KernelError::SealNotOpen { index },
             KernelError::SealingProvenanceNotProjected { atom: index },

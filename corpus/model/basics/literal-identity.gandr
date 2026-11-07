@@ -1,0 +1,69 @@
+/// This source states that a literal identity test computes while a type is
+/// checked.
+///
+/// A type that decodes a name to a code compares two texts, so the
+/// comparison of two literals must compute while the type is checked.
+///
+/// Equality of two integers or two texts, and inequality of two integers,
+/// gives the boolean that the identity of the literals gives. The checker
+/// computes each test, and the kernel computes it again by its own comparison
+/// of the literals. A test over a parameter stays a call, and every other
+/// native operation stays opaque.
+///
+/// Limits: a comparison in a stated type waits on its model of `Eq` (#6158),
+/// so `decoded_flag` reads the comparison through the body of `sameText`.
+///
+/// - see: #6142 — `texts_same`, `decoded_flag`
+
+/// Two codes.
+data Code : Type where
+  /// The first.
+  | Yes : Code
+  /// The second.
+  | No : Code
+
+/// The code of a flag.
+def ofFlag(b : Bool) -> Code =
+  match b where
+    | true => Yes
+    | false => No
+
+/// The type that a code decodes to.
+def decoded(c : Code) -> -F Type =
+  match c where
+    | Yes => return String
+    | No => return Unit
+
+/// Two equal texts compare equal in a path.
+def texts_same : Path[.A = Bool]("a" == "a", true) = Path.here true;
+
+/// Two different texts compare unequal.
+def texts_apart : Path[.A = Bool]("a" == "ab", false) = Path.here false;
+
+/// Two equal integers compare equal.
+def integers_same : Path[.A = Bool](7 == 7, true) = Path.here true;
+
+/// Two different integers are unequal.
+def integers_different : Path[.A = Bool](7 != 8, true) = Path.here true;
+
+/// Two texts compared in a body, which resolves the model of the comparison.
+def sameText(a : String, b : String) -> Bool { a == b }
+
+/// The code of a text comparison decodes in a type.
+def decoded_flag : decoded(ofFlag(sameText("a", "a"))) = "x";
+
+/// The code of an integer inequality decodes in a type.
+def decoded_unequal : decoded(ofFlag(7 != 8)) = "x";
+
+/// The wrong answer is refused.
+@[ refuses("EndpointMismatch") ]
+def texts_wrong : Path[.A = Bool]("a" == "a", false) = Path.here false;
+
+/// A test over a parameter stays a call.
+@[ refuses("EndpointMismatch") ]
+def held(s : String) -> Path[.A = Bool](s == "a", false) =
+  Path.here false
+
+/// An ordering of literals stays opaque.
+@[ refuses("EndpointMismatch") ]
+def ordered : Path[.A = Bool](1 < 2, true) = Path.here true;
