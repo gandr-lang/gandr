@@ -1,7 +1,8 @@
 //! `task-base` declares the shared protocols for every task source.
 //!
 //! A fork makes the parent and task peers. The task gives its result back
-//! on its end.
+//! on its end. A fork is the parallel product of two strategies, and an
+//! operation is a move of one of them.
 //!
 //! The parent reads the end to its close and joins. No task outlives its parent
 //! or the Trio nursery that starts it.

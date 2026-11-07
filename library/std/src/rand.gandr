@@ -68,35 +68,39 @@ pub def lcg[a : Type](w : Integer, seed : Integer, body : () -> [std.rand.Eff] a
       let modulus = span w;
       let stepped : Integer -> (Integer -> (Integer -> [std.rand.Eff] a)) = handle r : std.rand.Eff {
         let x = force body;
-        pure fun (state : Integer) { pure fun (last : Integer) { pure fun (divisor : Integer) { pure x } } }
+        pure fun (state : Integer) {
+          pure fun (last : Integer) { pure fun (divisor : Integer) { pure x } }
+        }
       } with {
         | pure(x) => pure x
-        | oper draw(n, k) => pure fun (state : Integer) { pure fun (last : Integer) { pure fun (divisor : Integer) {
-          match n == last where
-            | true => {
-              let next = int.mod (6364136223846793005 * state + 1442695040888963407) modulus;
-              let g = k (int.div next divisor);
-              let g1 = g next;
-              let g2 = g1 last;
-              g2 divisor
-            }
-            | false => match 1 <= n && n <= w where
+        | oper draw(n, k) => pure fun (state : Integer) {
+          pure fun (last : Integer) { pure fun (divisor : Integer) {
+            match n == last where
               | true => {
-                let d = span (w - n);
                 let next = int.mod (6364136223846793005 * state + 1442695040888963407) modulus;
-                let g = k (int.div next d);
+                let g = k (int.div next divisor);
                 let g1 = g next;
-                let g2 = g1 n;
-                g2 d
-              }
-              | false => {
-                let outside = std.rand.draw n;
-                let g = k outside;
-                let g1 = g state;
                 let g2 = g1 last;
                 g2 divisor
               }
-        } } }
+              | false => match 1 <= n && n <= w where
+                | true => {
+                  let d = span (w - n);
+                  let next = int.mod (6364136223846793005 * state + 1442695040888963407) modulus;
+                  let g = k (int.div next d);
+                  let g1 = g next;
+                  let g2 = g1 n;
+                  g2 d
+                }
+                | false => {
+                  let outside = std.rand.draw n;
+                  let g = k outside;
+                  let g1 = g state;
+                  let g2 = g1 last;
+                  g2 divisor
+                }
+          } }
+        }
       };
       let s1 = stepped seed;
       let s2 = s1 w;

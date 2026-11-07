@@ -104,16 +104,18 @@ proptest! {
         budget in 0_u64 .. 96,
     ) {
         let mut arena = TermArena::new();
-        let unit = arena.value_unit();
+        // A variable no side reads pads each tuple: η relates the unit to a
+        // neutral, so a unit pad would hide a separation (#6110).
+        let pad = arena.value_variable(DeBruijnIndex::from(5));
         let mut left = arena.value_variable(DeBruijnIndex::from(index));
         let mut right = arena.value_variable(DeBruijnIndex::from(if apart { 4 } else { index }));
         for branch in branches {
             if branch {
-                left = arena.value_tuple(&[left, unit]);
-                right = arena.value_tuple(&[right, unit]);
+                left = arena.value_tuple(&[left, pad]);
+                right = arena.value_tuple(&[right, pad]);
             } else {
-                left = arena.value_tuple(&[unit, left]);
-                right = arena.value_tuple(&[unit, right]);
+                left = arena.value_tuple(&[pad, left]);
+                right = arena.value_tuple(&[pad, right]);
             }
         }
         let bound = arena.value_variable(DeBruijnIndex::from(0));

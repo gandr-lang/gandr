@@ -588,19 +588,6 @@ impl From<usize> for DerivedRound
     }
 }
 
-impl From<DerivedRound> for usize
-{
-    /// The round's number.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(round: DerivedRound) -> Self
-    {
-        round.0
-    }
-}
-
 impl fmt::Display for DerivedRound
 {
     /// Writes the round's number.

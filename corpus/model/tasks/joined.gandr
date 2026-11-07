@@ -1,7 +1,8 @@
 //! `joined` closes a task end before a scope exits.
 //!
 //! A scope clause can drop or resume its remaining continuation twice. After a
-//! parent joins, the rest holds no task resource.
+//! parent joins, the rest holds no task resource. So the scope's operation
+//! checks.
 //!
 //! The handler forks, receives and closes the task. The exit operation resumes
 //! the continuation as `*{}`.

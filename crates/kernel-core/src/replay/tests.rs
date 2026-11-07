@@ -143,9 +143,10 @@ fn a_compared_pair_closes_on_alpha_equality_or_rigid_separation()
     let unit = arena.value_unit();
     let near = arena.value_variable(DeBruijnIndex::from(0));
     let far = arena.value_variable(DeBruijnIndex::from(1));
-    let left = arena.value_tuple(&[unit, near]);
-    let same = arena.value_tuple(&[unit, near]);
-    let apart = arena.value_tuple(&[unit, far]);
+    let held = arena.value_variable(DeBruijnIndex::from(2));
+    let left = arena.value_tuple(&[held, near]);
+    let same = arena.value_tuple(&[held, near]);
+    let apart = arena.value_tuple(&[held, far]);
     let pairs = |right| ReplaySides::Values(left, right);
     let mark = arena.watermark();
 
@@ -611,7 +612,8 @@ fn an_unfolding_fires_only_where_the_trace_names_its_head()
     // Past the list a constant is opaque: compared by name, never
     // unfolded, so its leaf decides before any decision is read.
     assert_eq!(unfoldings.unfolding(second), Unfoldable::Opaque);
-    let opaque_sides = ReplaySides::Values(opaque, unit);
+    let variable = arena.value_variable(DeBruijnIndex::from(0));
+    let opaque_sides = ReplaySides::Values(opaque, variable);
     assert_eq!(
         run(
             &mut arena,
@@ -805,7 +807,8 @@ fn a_refutation_follows_its_negative_subgoal()
     let none = Unfoldings::default();
     let unit = arena.value_unit();
     let bound = arena.value_variable(DeBruijnIndex::from(0));
-    let left = arena.value_tuple(&[unit, unit]);
+    let held = arena.value_variable(DeBruijnIndex::from(1));
+    let left = arena.value_tuple(&[unit, held]);
     let right = arena.value_tuple(&[unit, bound]);
     let sides = ReplaySides::Values(left, right);
     let negative = |position| {
@@ -2060,9 +2063,9 @@ fn a_projection_runs_its_side_of_a_pairing()
 {
     let mut arena = TermArena::new();
     let none = Unfoldings::default();
-    let unit = arena.value_unit();
+    let held = arena.value_variable(DeBruijnIndex::from(1));
     let free = arena.value_variable(DeBruijnIndex::from(0));
-    let left = arena.computation_return(unit);
+    let left = arena.computation_return(held);
     let right = arena.computation_return(free);
     let pairing = arena.computation_with(&[left, right]);
     let first = arena.computation_project(Component::from(0_usize), pairing);
@@ -3750,6 +3753,77 @@ fn a_tuple_meets_a_neutral_by_its_projections_715()
     }
 }
 
+/// The unit is the tuple and the record of no components, so it meets a
+/// neutral on either side with no premise and no decision (#6110). Two
+/// distinct neutrals stay apart: no former names the unit type between them,
+/// so a claim that they convert contradicts the replay.
+#[test]
+fn the_unit_meets_a_neutral_by_eta_6110()
+{
+    use alloc::collections::BTreeMap;
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let neutral = arena.value_variable(DeBruijnIndex::from(0));
+    let other = arena.value_variable(DeBruijnIndex::from(1));
+    let unit = arena.value_unit();
+    let record = arena.value_record(BTreeMap::new());
+
+    for sides in [
+        ReplaySides::Values(unit, neutral),
+        ReplaySides::Values(neutral, unit),
+        ReplaySides::Values(record, neutral),
+        ReplaySides::Values(neutral, record),
+    ] {
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::Convertible, &[]),
+            KernelVerdict::Convertible,
+            "{sides:?}"
+        );
+    }
+
+    let sides = ReplaySides::Values(neutral, other);
+    assert_eq!(
+        run(&mut arena, &none, sides, EngineClaim::NotConvertible, &[]),
+        KernelVerdict::NotConvertible,
+        "two neutrals stay apart"
+    );
+    assert_eq!(
+        run(&mut arena, &none, sides, EngineClaim::Convertible, &[]),
+        refused(ReplayRefusal::Contradicted {
+            at: TracePosition::from(0),
+        }),
+        "a claim that two neutrals convert contradicts the replay"
+    );
+
+    // The engine records the unit's η leaf as one shared comparison, which
+    // closes convertible; a unit inside a former never separates it.
+    for sides in [
+        ReplaySides::Values(unit, neutral),
+        ReplaySides::Values(neutral, record),
+    ] {
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::Convertible, &[
+                SHARED
+            ]),
+            KernelVerdict::Convertible,
+            "{sides:?}"
+        );
+    }
+    let held = arena.value_tuple(&[unit]);
+    let open = arena.value_tuple(&[neutral]);
+    assert_ne!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Values(held, open),
+            EngineClaim::NotConvertible,
+            &[SHARED]
+        ),
+        KernelVerdict::NotConvertible,
+        "a shared comparison never separates a tuple of the unit from a tuple of a neutral"
+    );
+}
+
 #[test]
 fn neutral_spines_keep_subgoal_order_and_reject_kind_mismatches()
 {
@@ -3758,7 +3832,8 @@ fn neutral_spines_keep_subgoal_order_and_reject_kind_mismatches()
     let head = arena.value_variable(DeBruijnIndex::from(0));
     let different = arena.value_variable(DeBruijnIndex::from(1));
     let unit = arena.value_unit();
-    let same_branch = arena.computation_return(unit);
+    let same = arena.value_variable(DeBruijnIndex::from(2));
+    let same_branch = arena.computation_return(same);
     let differing_branch = arena.computation_return(different);
     let left_case = arena.computation_case(head, &[same_branch, same_branch]);
     let right_case = arena.computation_case(head, &[same_branch, differing_branch]);

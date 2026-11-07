@@ -48,14 +48,14 @@ pub def word() -> [std.rand.Eff] Integer =
 /// `word` under the generator of width 8 from the seed 0.
 @[ runs("4") ]
 def replayed() -> [std.rand.Eff] Integer =
-  lcg 8 0 (thunk { word () })
+  lcg 8 0 (word ())
 
 /// The first output of the generator over a uniform seed of 8 bits: its top
 /// two bits take each value at `1/4`.
 @[ distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3")) ]
 def firstOutput() -> [std.rand.Eff] Integer =
   let seed = std.rand.draw 8
-  lcg 8 seed (thunk { std.rand.draw 2 })
+  lcg 8 seed (std.rand.draw 2)
 
 /// The entry: exit with a word from the host's entropy.
 def main() -> [std.rand.Eff] Integer =

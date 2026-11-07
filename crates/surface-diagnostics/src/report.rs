@@ -763,6 +763,11 @@ impl Report<'_>
                         Maybe::Present(&Omitted::Wildcard) => {
                             Maybe::Present(String::from("write the term in place of the `_`"))
                         },
+                        Maybe::Present(&Omitted::Classifier { ref family, .. }) => {
+                            Maybe::Present(alloc::format!(
+                                "state the constructor's type, as `(… : {family}(…))`"
+                            ))
+                        },
                         Maybe::Absent(_) => advice(refusal),
                     },
                     Subject::Refused { refusal, .. } => advice(refusal),
@@ -1425,6 +1430,22 @@ impl fmt::Display for MessageText<'_>
                         f.write_str("no equation determines the term this `_` stands for")
                     },
                 },
+                Maybe::Present(&Omitted::Classifier {
+                    ref family,
+                    ref parameter,
+                }) => match unsolved(reason) {
+                    Maybe::Present(why) => write!(
+                        f,
+                        "the solver cannot determine the argument `{parameter}` of `{family}` \
+                         that this constructor's place leaves open: {why}"
+                    ),
+                    Maybe::Absent(()) => write!(
+                        f,
+                        "the argument `{parameter}` of `{family}` that this constructor's place \
+                         leaves open is determined by neither its fields nor the type it is \
+                         checked against"
+                    ),
+                },
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
             Subject::Refused {
@@ -1494,7 +1515,9 @@ impl fmt::Display for MessageText<'_>
                          { … }`",
                     )
                 },
-                Maybe::Present(&(Omitted::Implicit { .. } | Omitted::Wildcard))
+                Maybe::Present(
+                    &(Omitted::Implicit { .. } | Omitted::Wildcard | Omitted::Classifier { .. }),
+                )
                 | Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
             Subject::Refused {
@@ -1550,7 +1573,9 @@ impl fmt::Display for MessageText<'_>
                     }
                     f.write_str("; name the one meant after its subject, `} with M`")
                 },
-                Maybe::Present(&(Omitted::Implicit { .. } | Omitted::Wildcard))
+                Maybe::Present(
+                    &(Omitted::Implicit { .. } | Omitted::Wildcard | Omitted::Classifier { .. }),
+                )
                 | Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
             Subject::Refused {

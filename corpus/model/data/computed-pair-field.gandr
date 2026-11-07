@@ -3,14 +3,16 @@
 //!
 //! The lowering reads the type of a constructor written in a field off the
 //! arguments of the type of the constructor around it. A call that computes
-//! that type gives the lowering no arguments to read. So the inner pair needs
-//! a type that the source does not state.
+//! that type gives the lowering no arguments to read. So the inner pair takes
+//! its own family over one wildcard for each parameter. The checker solves
+//! each wildcard from the call that it reduces.
 //!
-//! The lowering refuses the declaration by name at the inner pair, and it
-//! never drops it. An inner pair with its pair type written beside it checks.
-//! One pair at a computed type checks too.
+//! A nested pair at a computed type checks, in one form or as a signature and
+//! a definition. A pair at a type that a recursion computes checks two and
+//! three steps deep. An inner pair with its type written beside it checks too.
 //!
 //! - see: #5373
+//! - see: #6113
 
 /// The counts.
 data Count : Type where
@@ -36,11 +38,13 @@ def twinType(u : Count) -> Type = return (Twin Count innerTwin)
 /// A pair of a count and the unit value.
 def oneType(u : Count) -> Type = return (Twin Count unitOfCount)
 
-/// The inner pair takes its type from the outer pair's field, and the call
-/// gives the lowering no field type to read.
-@[ refuses("OutOfFragment.Unannotated") ]
+/// The inner pair takes its type from the outer pair's field, which the call
+/// computes: the checker solves the inner pair's parameters.
 def nestedTwin(k : Count) -> twinType(Z) =
   MkTwin Z (MkTwin Z *{})
+
+/// The same pair, written as a signature and a definition.
+def signedTwin : twinType(Z) = MkTwin Z (MkTwin Z *{});
 
 /// The inner pair at its written type.
 def ascribedTwin(k : Count) -> twinType(Z) =
@@ -49,3 +53,27 @@ def ascribedTwin(k : Count) -> twinType(Z) =
 /// One pair at a computed type.
 def oneTwin(k : Count) -> oneType(Z) =
   MkTwin Z *{}
+
+/// A value of each type.
+data Layer(a : Type, b : Type) : Type where
+  /// The two values.
+  | MkLayer : (x : a, y : b) --> Layer a b
+
+/// A spine of steps.
+data Spine : Type where
+  /// No more steps.
+  | Done : Spine
+  /// One more step.
+  | More : (rest : Spine) --> Spine
+
+/// One string for each step of a spine.
+def rec spineType(spine : Spine) -> Type =
+  match spine where
+    | More(rest) => return (Layer String (spineType[<] rest))
+    | Done => return Unit
+
+/// A value two steps deep.
+def spineTwo : spineType(More (More Done)) = MkLayer "x" (MkLayer "y" *{});
+
+/// A value three steps deep.
+def spineThree : spineType(More (More (More Done))) = MkLayer "x" (MkLayer "y" (MkLayer "z" *{}));

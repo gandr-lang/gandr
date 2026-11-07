@@ -2952,16 +2952,20 @@ fn codes_plan(reading: CodeReading) -> Plan
 
 /// The η decomposition of a tuple or a record against a rigid neutral: each
 /// component or field against the neutral's projection at it, in the order
-/// the tuple or the record's labels hold them.
+/// the tuple or the record's labels hold them. The unit is the tuple and the
+/// record of no components, so it meets a neutral of its type with no
+/// subgoal, as the kernel's replay reads it.
 ///
 /// # Specification
 /// - requires: `neutral` stands in value position on `side`, `former` on the
-///   other.
+///   other, and the two stand at one type, as every conversion goal does.
 /// - ensures: one [`Subgoal::Projected`] per component of a tuple, by
 ///   [`Projector::Component`], or per field of a record, by
-///   [`Projector::Field`] over the record's source labels, in order; a leaf
-///   apart for an empty tuple or record and for any other former.
-/// - provides: η for products and records.
+///   [`Projector::Field`] over the record's source labels, in order; a
+///   convertible leaf for an empty tuple or record, and a leaf apart for any
+///   other former. Two neutrals never reach here, so two neutrals of the unit
+///   type stay apart unless they are one term.
+/// - provides: η for products and records, the unit's among them.
 /// - fails: [`ConversionFault::Domain`] when the fields do not resolve.
 /// - panics: none.
 ///
@@ -2971,17 +2975,20 @@ fn codes_plan(reading: CodeReading) -> Plan
 /// # Adequacy
 /// - hypothesis: L3 — a tuple or record of a neutral's own projections converts
 ///   to it on either side, and the kernel replays the same premises; swapped
-///   components and a different neutral stay apart. A frozen constant against a
-///   former is never expanded, so a goal that unfolds back into itself declines
-///   on the cycle instead of projecting without end.
+///   components and a different neutral stay apart. The empty tuple and the
+///   empty record convert with a neutral on either side in both conversions,
+///   and two neutrals stay apart in both. A frozen constant against a former is
+///   never expanded, so a goal that unfolds back into itself declines on the
+///   cycle instead of projecting without end.
 /// - witness: `machine::tests::a_tuple_of_a_neutrals_projections_is_the_neutral_715`
+/// - witness: `machine::tests::the_unit_meets_a_neutral_by_eta_in_both_conversions_6110`
 /// - witness: `machine::tests::a_goal_resting_on_itself_declines_on_the_cycle`
 #[spec(ensures: |ret| if let DomainValue::Tuple { fields, .. } | DomainValue::Record { fields, .. } = former {
     domain.fields(fields).map_or_else(|_| ret.is_err(), |held| match ret {
         Ok(Plan::Decompose(ref subgoals)) => !held.is_empty() && subgoals.len() == held.len()
             && subgoals.iter().zip(held).all(|(subgoal, &component)| matches!(*subgoal,
                 Subgoal::Projected { side: at, neutral: projected, field, .. } if at == side && projected == neutral && field == component)),
-        Ok(Plan::Leaf(Settled::NotConvertible)) => held.is_empty(),
+        Ok(Plan::Leaf(Settled::Convertible)) => held.is_empty(),
         Ok(_) | Err(_) => false,
     })
 } else {
@@ -3004,8 +3011,9 @@ fn projected(
         return Ok(Plan::Leaf(Settled::NotConvertible));
     };
     let fields = domain.fields(fields).map_err(ConversionFault::Domain)?;
+    // No subgoal remains for the unit, which converts with the neutral.
     if fields.is_empty() {
-        return Ok(Plan::Leaf(Settled::NotConvertible));
+        return Ok(Plan::Leaf(Settled::Convertible));
     }
     Ok(Plan::Decompose(
         fields

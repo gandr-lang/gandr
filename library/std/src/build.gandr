@@ -6,8 +6,9 @@
 //
 // No theory here states a law. An operation of each is a field the manifest
 // records, and no conversion relates two of them. An operation carrying
-// `@[ inert ]` is a field that only the manifest step and another inert field
-// read. A package's address leaves such a field out. A package's name,
+// `@[ inert ]` is a field that only the manifest step and another inert
+// declaration read. A package's address leaves such a field out.
+// A package's name,
 // version, authors, licence and addresses name the package without saying
 // what it is.
 //

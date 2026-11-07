@@ -3431,14 +3431,14 @@ fn the_laws_of_bind_convert_by_their_decisions()
     // under.
     let mut core = CoreArena::new();
     let rigid = core.value_constant(Name::Rigid.constant());
-    let unit = core.value_unit();
+    let zero = core.value_constant(Name::Zero.constant());
     let bound = innermost(&mut core);
     let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let outermost = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
     let held = core.computation_force(rigid);
     let returned = core.computation_return(bound);
     let expanded = core.computation_bind(held, returned);
-    let constant = core.computation_return(unit);
+    let constant = core.computation_return(zero);
     let apart = core.computation_bind(held, constant);
     let applied = call(&mut core, rigid, &[bound]);
     let reading = call(&mut core, rigid, &[outer]);
@@ -3765,7 +3765,7 @@ fn a_returned_call_is_read_as_the_call_it_holds()
 fn stuck_fixpoints_compare_by_their_bodies()
 {
     // `(fix rec. λx. return x) R` for a rigid `R`, written twice, once
-    // with each evidence, and `(fix rec. λx. return ()) R`.
+    // with each evidence, and `(fix rec. λx. return Z) R` for a rigid `Z`.
     let mut core = CoreArena::new();
     let rigid = core.value_constant(Name::Rigid.constant());
     let stuck = |core: &mut CoreArena, returned, evidence| {
@@ -3775,7 +3775,7 @@ fn stuck_fixpoints_compare_by_their_bodies()
         core.computation_application(fixpoint, rigid)
     };
     let occurrence = innermost(&mut core);
-    let unit = core.value_unit();
+    let zero = core.value_constant(Name::Zero.constant());
     let descending = stuck(
         &mut core,
         occurrence,
@@ -3788,7 +3788,7 @@ fn stuck_fixpoints_compare_by_their_bodies()
     );
     let constant = stuck(
         &mut core,
-        unit,
+        zero,
         gandr_kernel_term::FixpointEvidence::StructuralDescent,
     );
     let world = World::new(core, &[]);
@@ -4448,8 +4448,8 @@ fn two_transports_along_a_held_call_compare_motives_written_apart_by_their_call_
     // side writes its own motive, the bind's under `q` as well, so the two
     // motives are two nodes at two closures. The sides decompose as binds
     // over `S`, and the motives compare by the call `R x` each writes, its
-    // argument read through each closure. A motive writing `R ()` instead is
-    // undecided, since a call is flexible.
+    // argument read through each closure. A motive writing `R Z` instead, for
+    // a rigid `Z`, is undecided, since a call is flexible.
     let build = || {
         let mut core = CoreArena::new();
         let stuck = stuck_call(&mut core);
@@ -4473,7 +4473,8 @@ fn two_transports_along_a_held_call_compare_motives_written_apart_by_their_call_
         let held_path = core.value_returned(stuck);
         let held = core.computation_path_transport(held_motive, held_path, unit);
         let held = core.computation_lambda(held);
-        let other_motive = motive_over(&mut core, unit);
+        let apart = core.value_constant(Name::Two.constant());
+        let other_motive = motive_over(&mut core, apart);
         let other = core.computation_path_transport(other_motive, held_path, unit);
         let other = core.computation_lambda(other);
         let converting = [
@@ -5432,7 +5433,9 @@ fn two_held_transports_convert_by_their_computations()
     let renamed = core.value_constant(Name::One.constant());
     let right = call(&mut core, renamed, &[unit, rigid]);
     let right = core.value_returned(right);
-    let moved = core.computation_path_transport(motive, rigid, rigid);
+    // η relates `()` to every neutral, so the other value is a pair.
+    let pair = core.value_tuple(&[unit, unit]);
+    let moved = core.computation_path_transport(motive, rigid, pair);
     let moved = core.value_returned(moved);
     let held = World::new(core, &[(Name::Zero, comp), (Name::One, other)]).holding();
 
@@ -7733,6 +7736,37 @@ fn a_tuple_of_a_neutrals_projections_is_the_neutral_715()
             Sides::Values(expanded, other),
             MachineVerdict::NotConvertible,
         ),
+    ] {
+        let (verdict, decisions) = world.traced(sides);
+        assert_eq!(verdict, expected, "{sides:?}");
+        assert_eq!(
+            world.replayed(sides, verdict, &decisions),
+            certified(expected),
+            "{sides:?}: {decisions:?}"
+        );
+    }
+}
+
+/// The unit is the tuple and the record of no components, so it converts
+/// with a neutral on either side, and two distinct neutrals stay apart. The
+/// machine decides each pair, and the kernel replays each verdict from the
+/// machine's trace, so the two conversions agree pair by pair (#6110).
+#[test]
+fn the_unit_meets_a_neutral_by_eta_in_both_conversions_6110()
+{
+    use alloc::collections::BTreeMap;
+    let mut core = CoreArena::new();
+    let rigid = core.value_constant(Name::Rigid.constant());
+    let other = core.value_constant(Name::Zero.constant());
+    let unit = core.value_unit();
+    let record = core.value_record(BTreeMap::new());
+    let world = World::new(core, &[]);
+    for (sides, expected) in [
+        (Sides::Values(unit, rigid), MachineVerdict::Convertible),
+        (Sides::Values(rigid, unit), MachineVerdict::Convertible),
+        (Sides::Values(record, rigid), MachineVerdict::Convertible),
+        (Sides::Values(rigid, record), MachineVerdict::Convertible),
+        (Sides::Values(rigid, other), MachineVerdict::NotConvertible),
     ] {
         let (verdict, decisions) = world.traced(sides);
         assert_eq!(verdict, expected, "{sides:?}");

@@ -8,6 +8,12 @@
 # (#4263). `check.bash` runs there, and its exit status and standard error
 # are the case's.
 set -euo pipefail
+# The scratch repository's git reads no identity from the host, as the CI
+# image has none, and guesses none: a commit that names no author fails
+# here as it fails there (#6184).
+unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true
 root=$PWD
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -58,7 +64,8 @@ while IFS= read -r case; do
   git -C "$repo" reset --quiet --hard "$base"
   closes=$(jq -r '.closes[]? | "Closes #\(.)"' <<< "$case")
   if [[ -n $closes ]]; then
-    git -C "$repo" -c commit.gpgSign=false commit --quiet --allow-empty \
+    git -C "$repo" -c user.name=ledger -c user.email=ledger@example.invalid -c commit.gpgSign=false \
+      commit --quiet --allow-empty \
       -m 'test(ledger): closing issue' -m "$closes"
   fi
   for number in $(jq -r '.answers | keys[]' <<< "$case"); do
