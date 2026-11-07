@@ -529,7 +529,10 @@ stack_link() {
 # open one below it, because that one was force-pushed since (#3115), is
 # replayed from the newest head of the lower it holds (`relink_fork`); a
 # branch holding none of them is refused. The replay is `chain_replay`'s,
-# member by member, and git signs every commit it writes (#3745). The scratch
+# member by member, and git signs every commit it writes (#3745). Before the
+# push, `replay_stale` runs the check of each generated artifact a member's
+# move makes due, and a stale one stops the restack with nothing pushed
+# (#6144). The scratch
 # is named for this process (`gandr-scratch-<pid>.`), and the caller's exit
 # trap runs `drop_scratch`, so a failure anywhere removes it; a scratch a hard
 # kill leaves, its process gone, is `wt:sweep`'s.
@@ -571,6 +574,10 @@ restack() {
     fi
     status=1
   fi
+  if (( status == 0 )) && ! replay_stale "$scratch" "$fork" "${members[@]}"; then
+    echo "the restack of ${heads[*]} onto origin/$trunk leaves the artifacts above stale; nothing is pushed" >&2
+    status=1
+  fi
   if (( status == 0 )); then
     for line in "${chain_moved[@]}"; do
       read -r head old new <<< "$line"
@@ -588,6 +595,35 @@ restack() {
   (( status == 0 )) || return "$status"
   if (( ${#moved[@]} > 0 )); then printf 'moved %s\n' "${moved[@]}"; fi
   git fetch --quiet origin "${heads[@]}"
+}
+
+# Whether the restack in the scratch `$1` leaves a generated artifact stale
+# (#6144). For each member that moved, `stale.bash` reads the base that moved
+# under its own commits, with the scratch at the member's new head. The first
+# member's old base is `$2`, the fork, and its new one `origin/$trunk`. A
+# member `<branch>:<commit>` that `relink_fork` relinked replays from that
+# commit, and any other member from the old head below it; its new base is
+# the new head below it. The checks build in the caller's target directory,
+# so a due check finds its dependencies built. Fails, naming each stale
+# artifact on stderr.
+replay_stale() {
+  local dir=$1 below=$2 base=origin/$trunk member held old new script target status=0 i=0
+  shift 2
+  script=$pr_stack_dir/../replay/stale.bash
+  target=$(git rev-parse --show-toplevel)/target
+  for member in "$@"; do
+    held=
+    [[ $member != *:* ]] || held=${member#*:}
+    read -r _ old new <<< "${chain_moved[i]}"
+    if [[ $old != "$new" ]]; then
+      git -C "$dir" switch --quiet --detach "$new"
+      (cd "$dir" && CARGO_TARGET_DIR=$target "$script" "${held:-$below}" "$base" "$new") || status=1
+    fi
+    below=$old
+    base=$new
+    i=$((i + 1))
+  done
+  return "$status"
 }
 
 # The first member of the chain `$2`… (branches, bottom to top, fetched)

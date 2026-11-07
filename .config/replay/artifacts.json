@@ -1,0 +1,53 @@
+[
+  {
+    "name": "the recovery records",
+    "paths": ["crates/surface-parser/tests/recovery/"],
+    "inputs": [
+      "corpus/",
+      "crates/surface-parser/",
+      "crates/surface-grammar/",
+      "crates/surface-syntax/"
+    ],
+    "check": "GANDR_SWEEP_BASE=\"$REPLAY_BASE\" mise run ci:recovery-change",
+    "record": "UPDATE_EXPECT=1 GANDR_RECOVERY_SOURCE=<each source the sweep names> mise run ci:recovery"
+  },
+  {
+    "name": "the highlight roles, the frozen tables and the grammar fingerprint",
+    "paths": [
+      "crates/surface-grammar/tests/highlight/",
+      "crates/surface-grammar/src/surface/frozen.rs"
+    ],
+    "inputs": ["corpus/", "crates/surface-grammar/", "crates/surface-syntax/"],
+    "check": ".config/mise/scope cargo nextest run --locked --package gandr-surface-grammar",
+    "record": "UPDATE_EXPECT=1 cargo nextest run --package gandr-surface-grammar"
+  },
+  {
+    "name": "the syntax ledger",
+    "paths": ["ledger/syntax.md", "ledger/syntax.json"],
+    "inputs": ["crates/surface-grammar/", "crates/surface-syntax/"],
+    "check": "mise run check:syntax-ledger",
+    "record": "mise run ledger:syntax"
+  },
+  {
+    "name": "the comment ledger",
+    "paths": ["corpus/uncommented.ledger"],
+    "inputs": ["corpus/", "crates/surface-corpus/tests/comments/"],
+    "check": "mise run check:corpus-comments",
+    "record": "CORPUS_COMMENTS_WRITE_LEDGER=1 mise run check:corpus-comments"
+  },
+  {
+    "name": "the input table",
+    "paths": ["contrib/gandr-vscode/src/input/table.json"],
+    "inputs": ["contrib/gandr-vscode/scripts/"],
+    "check": "mise run check:input-table",
+    "record": "node scripts/input-table.mts src/input/table.json, in contrib/gandr-vscode"
+  },
+  {
+    "each": "crate",
+    "name": "the debug traces and goldens of {crate}",
+    "paths": ["crates/{crate}/tests/debug-traces/", "crates/{crate}/tests/golden/"],
+    "inputs": ["crates/{crate}/"],
+    "check": ".config/mise/scope cargo nextest run --locked --package gandr-{crate}",
+    "record": "UPDATE_EXPECT=1 cargo nextest run --package gandr-{crate}"
+  }
+]
