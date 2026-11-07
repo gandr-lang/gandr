@@ -2023,8 +2023,10 @@ dependencies = [
 name = "gandr-theory-ordered-algebras"
 version = "0.0.0"
 dependencies = [
+ "allocation-counter",
  "gandr-theory-exact-reals",
  "num-bigint",
+ "proptest",
  "quenchant-anodized",
 ]
 

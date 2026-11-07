@@ -32,7 +32,7 @@ CREATE TABLE reference(
 ) WITHOUT ROWID;
 INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-dispatcher','cells::fusion','newest','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
 INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','surface-driver','','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','ac8eb7332069b7a14b305c1cb8560db64e423b31');
-INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','theory-ordered-algebras','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','ccf74aa7f6e785b119964603fb397b1686980537');
+INSERT INTO reference VALUES('Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems','theory-ordered-algebras','','dependency','6ac5e25f30e5d98caed7a3aa40a0e9716b3595c5','2026-11-07','f3a5c644a24d2aa271da3450ba19bc89e4317451');
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','lawvere','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-discrete-morse','equivalence','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Bakke-2026-synthetic_sierpinski_cone','theory-exact-reals','','newest','4c8eb1aafce719d82b019284db472cfe6da9f63c','2026-11-07','3262a443d8f7d07b1986da7072c8db764d8c7c47');
@@ -72,6 +72,7 @@ INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_m
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-deep-inference','shift','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','6bc30c8da526d378521d82a4fbbbe26219b64de2');
 INSERT INTO reference VALUES('Hansen-2020-laplacians_cellular_sheaves_theory_applications','theory-cellular-sheaves','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
 INSERT INTO reference VALUES('Henry-2018-nonunital_polygraphs_form_presheaf_category','theory-sites','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Jeandel-2018-complete_axiomatisation_zxcalculus_clifford+t_quantum_mechanics','theory-ordered-algebras','','dependency','6ac5e25f30e5d98caed7a3aa40a0e9716b3595c5','2026-11-07','f3a5c644a24d2aa271da3450ba19bc89e4317451');
 INSERT INTO reference VALUES('Kessler-2025-computational_aspects_rewriting_higherdimensional_diagrams','theory-graded-posets','traversal','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','db60bc4ed0a81c61929941b9f01c0256c2af1168','2026-11-02','bb7ea16a861957dfc8f4ee999b33a4d61bed1863');
 INSERT INTO reference VALUES('Leclerc-2026-cellular_type_theory','theory-sites','ascent','background',NULL,NULL,NULL);
@@ -111,7 +112,7 @@ INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-checker','access','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','a6d3b5e613083b88b2f9096f172eabdc6890b4b7');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-term','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','47750eeb9f84f45eb06c9c19ce35c51433f7b123');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','core-term','memory','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','7928901ea52703359b926253920e6bb1f55c544e');
-INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','theory-ordered-algebras','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','ccf74aa7f6e785b119964603fb397b1686980537');
+INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','theory-ordered-algebras','','dependency','6ac5e25f30e5d98caed7a3aa40a0e9716b3595c5','2026-11-07','f3a5c644a24d2aa271da3450ba19bc89e4317451');
 INSERT INTO reference VALUES('Wood-2024-framework_semiringannotated_type_systems','theory-ordered-algebras','usage','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','183e44786766ce911063ac7b29f6a0f1d2c75613');
 INSERT INTO reference VALUES('arXiv:0809.3341','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0906.4931','theory-levitation','','background',NULL,NULL,NULL);

@@ -86,7 +86,7 @@ crates/
 ├── theory-levitation/             the code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
 ├── theory-nominal-automata/       nominal word and tree automata over caller-owned names, literal word membership and name dropping
 ├── theory-order-maintenance/      order maintenance with constant-time comparison
-├── theory-ordered-algebras/       one law checker for ordered semirings, a counterexample for each broken law, and the max-plus, Lawvere and usage instances
+├── theory-ordered-algebras/       one law checker for ordered semirings and rings, a counterexample per broken law, its instances, and exact Clifford+T amplitudes
 ├── theory-path-orders/            path orders over second-order algebraic terms, the precedence as data, returning a derivation a checker replays
 ├── theory-probability/            finite distributions with exact weights
 ├── theory-shapes/                 finite shapes: decidable subshapes, inclusions, the outer pushout, and face entailment in three bands, derived or refuted
