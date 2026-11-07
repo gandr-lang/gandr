@@ -12,12 +12,16 @@
 #       line (a seat's name, which the page script resolves, #2977), `seats`
 #       each lane's seat's by the lane (#2972), `check` the command that
 #       exits 0 when a seat, its arguments appended, has a live block;
+#   $XDG_CONFIG_HOME/gandr/hold         each held lane first on its line, or
+#       `*` for every lane, then the reason: a held lane holds no seat for
+#       the reading, so it is never idle, and its pull requests are still read;
 #   $XDG_STATE_HOME/gandr/stall.json    `{seen, paged, stalled}`, `detect.jq`'s,
 #       `gone`, `stall:watch`'s count of readings each seat was found
 #       without a live block, and `read`, the time of its last reading.
 
 stall_dir="$(git rev-parse --show-toplevel)/.config/stall"
 stall_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/stall.json"
+stall_hold="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/hold"
 stall_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/stall.json"
 source "$stall_dir/../claims/deps.bash"
 source "$stall_dir/../service/service.bash"
@@ -27,6 +31,12 @@ stall_configuration() {
   if [[ -f "$stall_config" ]]; then jq -c . "$stall_config"; else echo '{}'; fi
 }
 
+# The held lanes as a JSON array, `["*"]` when every lane is held, `[]` when
+# none is.
+stall_held() {
+  if [[ -f "$stall_hold" ]]; then awk 'NF { print $1 }' "$stall_hold" | jq -R -s -c 'split("\n") | map(select(. != ""))'; else echo '[]'; fi
+}
+
 # The thresholds: the defaults, each overridden by the configuration's.
 stall_thresholds() {
   jq -c --argjson config "$(stall_configuration)" '. * ($config.thresholds // {})' "$stall_dir/defaults.json"
@@ -34,9 +44,9 @@ stall_thresholds() {
 
 # One reading of the repository `$1` (owner/name) against its trunk `$2`, with
 # the memory `$3` (`{seen, paged}`): `detect.jq`'s answer. The lanes a seat
-# holds are the configuration's `page.seats`, each lane's areas
-# `.config/issues/lanes.toml`'s (#3822). Fails, printing nothing on stdout,
-# when a read fails.
+# holds are the configuration's `page.seats` that no hold names, each lane's
+# areas `.config/issues/lanes.toml`'s (#3822). Fails, printing nothing on
+# stdout, when a read fails.
 stall_reading() {
   local repo=$1 trunk=$2 memory=$3 required raw areas
   required=$(gh api "repos/$repo/rules/branches/$trunk" \
@@ -46,8 +56,8 @@ stall_reading() {
   jq -c '.data.repository' <<< "$raw" | jq -c -L "$stall_dir/../claims" -f "$stall_dir/facts.jq" \
     | jq -c --argjson now "$(date +%s)" --arg trunk "$trunk" --argjson required "$required" \
       --argjson thresholds "$(stall_thresholds)" --argjson config "$(stall_configuration)" --argjson memory "$memory" \
-      --argjson areas "$areas" \
-      '{now: $now, trunk: $trunk, required: $required, thresholds: $thresholds, lanes: $config.lanes, prs: .prs, merged: .merged, filed: .filed, claimed: .claimed, seats: ($config.page.seats // {} | keys), areas: $areas, seen: $memory.seen, paged: $memory.paged, stalled: $memory.stalled}' \
+      --argjson areas "$areas" --argjson held "$(stall_held)" \
+      '{now: $now, trunk: $trunk, required: $required, thresholds: $thresholds, lanes: $config.lanes, prs: .prs, merged: .merged, filed: .filed, claimed: .claimed, seats: ($config.page.seats // {} | keys | if ($held | index("*")) then [] else . - $held end), areas: $areas, seen: $memory.seen, paged: $memory.paged, stalled: $memory.stalled}' \
     | jq -c -f "$stall_dir/detect.jq"
 }
 
