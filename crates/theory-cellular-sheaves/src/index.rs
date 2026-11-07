@@ -37,6 +37,12 @@ wrapper! {
     pub struct Slot(usize);
 }
 
+wrapper! {
+    /// A 128-bit integer: the numerator or the denominator of a rational.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Integer(i128);
+}
+
 /// The incidence of a face in a cell one rank above it: the sign with which
 /// the coboundary adds the face's restriction to the cell.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
