@@ -1,8 +1,8 @@
 /// `exact-distributions`: Finite distributions with exact weights.
-/// Implemented: a distribution holds exact rational weights in one canonical order. `distributes` states the exact distribution of a definition's runs over every answer of its draws.
-/// Not implemented: no run across worlds or sessions between seats states its exact distribution.
+/// Implemented: a distribution holds exact rational weights in one canonical order. `distributes` states the exact distribution of a definition's runs over every answer of its draws, also across worlds and sessions between seats.
+/// Not implemented: std carries no PRNG, universal hashing or one-time pad with its exact distribution.
 ///
-/// - owes: #5712
+/// - owes: #5713
 // One draw of one fair bit gives 0 and 1, each with weight one half. The
 // corpus runs `bit` twice, once for each answer of its draw. The model
 // source `draws.gandr` sums two draws of two bits.

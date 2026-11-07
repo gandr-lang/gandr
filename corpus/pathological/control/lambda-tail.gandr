@@ -1,37 +1,55 @@
+// A body whose tail is a lambda, with no `return` before it, is refused with
+// `ShapeMismatch`. The declared result is a thunk of a function, and a bare
+// lambda is a computation of a function type. The tail stands at the end of a
+// body, after a `let`, at the end of a block, and in one arm of a match.
+//
+// - see: #6070
+
+/// Two values.
 data Two : Type where
+  /// The left value.
   | Left : Two
+  /// The right value.
   | Right : Two
 
+/// The natural numbers.
 data Nat : Type where
+  /// Zero.
   | Zero : Nat
+  /// The successor of `n`.
   | Succ : (n : Nat) --> Nat
 
+/// The type `Two` at each natural.
 def natOr(n : Nat) -> Type =
   match n where
     | Zero => return Two
     | Succ(_m) => return Two
 
+/// The body is a lambda with no `return`.
 @[ refuses("ShapeMismatch") ]
-def lambda_body() -> +U ((u : Two) -> -F Two) =
+def lambda_body() -> Two -> Two =
   fun (u) {
-    return u
+    u
   }
 
+/// The lambda comes after a `let`.
 @[ refuses("ShapeMismatch") ]
-def lambda_after_let() -> +U ((u : Two) -> -F Two) =
+def lambda_after_let() -> Two -> Two =
   let kept = pure Left
   fun (u) {
-    return u
+    u
   }
 
+/// The lambda ends a block.
 @[ refuses("ShapeMismatch") ]
-def lambda_block_tail() -> +U ((u : Two) -> -F Two) =
+def lambda_block_tail() -> Two -> Two =
   {
     fun (u) {
-      return u
+      u
     }
   }
 
+/// The left arm ends in a lambda with no `return`.
 @[ refuses("ShapeMismatch") ]
 def lambda_left_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
   match choice where
@@ -42,6 +60,7 @@ def lambda_left_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
       return u
     }
 
+/// The right arm ends in a lambda with no `return`.
 @[ refuses("ShapeMismatch") ]
 def lambda_right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
   match choice where
@@ -52,6 +71,8 @@ def lambda_right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
       return u
     }
 
+/// The arm at `Zero` ends in a lambda with no `return`, under a refined
+/// parameter.
 @[ refuses("ShapeMismatch") ]
 def lambda_refined_arm(n : Nat, x : natOr(n)) -> +U ((u : Nat) -> -F Nat) =
   match n where

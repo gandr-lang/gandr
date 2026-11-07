@@ -1,17 +1,17 @@
 error[RuleNotPresentable]: these rules do not present the datatype
    ╭▸ corpus/pathological/desc/theory-terms.gandr:34:15
    │
-34 │ def neutral : Terms(Mon) = Mon.one;
-   │               ━━━━━━━━━━ rules that do not present the datatype
+34 │ def neutral : Terms Mon = Mon.one;
+   │               ━━━━━━━━━ rules that do not present the datatype
    │
-   ├ note: `Terms(Mon)` is refused with RuleNotPresentable, as its expectation states
+   ├ note: `Terms Mon` is refused with RuleNotPresentable, as its expectation states
    ╰ help: write each rule with a declared constructor at its head and its declared field count
 
 error[RuleNotPresentable]: these rules do not present the datatype
    ╭▸ corpus/pathological/desc/theory-terms.gandr:34:15
    │
-34 │ def neutral : Terms(Mon) = Mon.one;
-   │               ━━━━━━━━━━ rules that do not present the datatype
+34 │ def neutral : Terms Mon = Mon.one;
+   │               ━━━━━━━━━ rules that do not present the datatype
    │
    ├ note: `neutral` is refused with RuleNotPresentable, as its expectation states
    ╰ help: write each rule with a declared constructor at its head and its declared field count
@@ -19,8 +19,8 @@ error[RuleNotPresentable]: these rules do not present the datatype
 error[RuleNotPresentable]: these rules do not present the datatype
    ╭▸ corpus/pathological/desc/theory-terms.gandr:34:15
    │
-34 │ def neutral : Terms(Mon) = Mon.one;
-   │               ━━━━━━━━━━ rules that do not present the datatype
+34 │ def neutral : Terms Mon = Mon.one;
+   │               ━━━━━━━━━ rules that do not present the datatype
    │
    ├ note: `product` is refused with RuleNotPresentable, as its expectation states
    ╰ help: write each rule with a declared constructor at its head and its declared field count
@@ -28,8 +28,8 @@ error[RuleNotPresentable]: these rules do not present the datatype
 error[OutOfFragment.terms_type.sorted]: the type application is not supported yet
    ╭▸ corpus/pathological/desc/theory-terms.gandr:53:14
    │
-53 │ def paired : Terms(Pair) = Pair.origin;
-   │              ━━━━━━━━━━━ a form the fragment does not admit
+53 │ def paired : Terms Pair = Pair.origin;
+   │              ━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `paired` is refused with OutOfFragment.terms_type.sorted, as its expectation states
    ╰ note: tracked by #4150 <https://github.com/gandr-lang/gandr/issues/4150>
@@ -37,8 +37,8 @@ error[OutOfFragment.terms_type.sorted]: the type application is not supported ye
 error[OutOfFragment.terms_type.law]: the type application is not supported yet
    ╭▸ corpus/pathological/desc/theory-terms.gandr:66:15
    │
-66 │ def doubled : Terms(Idem) = Idem.twice;
-   │               ━━━━━━━━━━━ a form the fragment does not admit
+66 │ def doubled : Terms Idem = Idem.twice;
+   │               ━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `doubled` is refused with OutOfFragment.terms_type.law, as its expectation states
    ╰ note: tracked by #4105 <https://github.com/gandr-lang/gandr/issues/4105>

@@ -20,15 +20,15 @@ import std.cost (Cost, Counting, costs, counted, countOf);
 // The order on counts.
 import std.grade (Count);
 
-/// A clock: how many passes a run may take.
-data Clock : Type where
+/// A clock, as fuel: how many passes a run may take.
+data Fuel : Type where
   /// The clock has no pass left.
-  | Stop : Clock
+  | Stop : Fuel
   /// One pass, then the rest.
-  | Tick : (rest : Clock) --> Clock
+  | Tick : (rest : Fuel) --> Fuel
 
 /// Each pass charges one, then runs again on the rest of the clock.
-def rec passes(clock : Clock) -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
+def rec passes(clock : Fuel) -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
   match clock where
     | Stop => pure 0
     | Tick(rest) => {
@@ -37,7 +37,7 @@ def rec passes(clock : Clock) -> [cost : Cost.Eff with sort N = (Nat -> Nat)] In
     }
 
 /// The passes under the counting model.
-def countedPasses(clock : Clock) -> (Nat -> Nat) -> Nat =
+def countedPasses(clock : Fuel) -> (Nat -> Nat) -> Nat =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
     let _answer = passes clock;
     pure counted
@@ -65,7 +65,7 @@ def spin() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
 
 /// The loop that never ends, under the counting model. It checks, and it
 /// has no count.
-def countedSpin() -> -F [Partial] ((Nat -> Nat) -> Nat) =
+def countedSpin() -> [Partial] ((Nat -> Nat) -> Nat) =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
     let _answer = spin ();
     pure counted
@@ -79,7 +79,7 @@ def once() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
   }
 
 /// The loop that ends, under the counting model.
-def countedOnce() -> -F [Partial] ((Nat -> Nat) -> Nat) =
+def countedOnce() -> [Partial] ((Nat -> Nat) -> Nat) =
   handle cost : Cost.Eff with sort N = Nat -> Nat {
     let _answer = once ();
     pure counted

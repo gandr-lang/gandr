@@ -83,10 +83,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    ╰ help: change the term or the type it is checked against, so that the two types agree
 
 error[UnknownMember]: the module `a` has no member `Nope`
-   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:62:46
+   ╭▸ corpus/pathological/identity/model-counter-manifest.gandr:62:45
    │
-62 │ def countOfNothing(a : Model(Counter), c : a.Nope) -> -F Integer { return 0 }
-   │                                              ━━━━ no member of this name
+62 │ def countOfNothing(a : Model Counter, c : a.Nope) -> -F Integer { return 0 }
+   │                                             ━━━━ no member of this name
    │
    ├ note: `countOfNothing` is refused with UnknownMember, as its expectation states
    ╰ help: use a member that `a` declares, or add `Nope` to `a`

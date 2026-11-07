@@ -32,4 +32,4 @@ error[ImplicitUnsolved]: the implicit `A` this call to `Flow` omits is determine
    │                   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an implicit left unsolved
    │
    ├ note: `unfixedFlow` is refused with ImplicitUnsolved, as its expectation states
-   ╰ help: supply the implicit `A` by name, as `Flow[.A = …](…)`
+   ╰ help: supply the implicit `A` by name, as `Flow[.A = …](…)

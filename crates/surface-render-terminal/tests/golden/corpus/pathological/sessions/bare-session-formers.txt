@@ -1,7 +1,7 @@
 error[UnresolvedTypeHead]: no type named `Run` is written applied to one argument
    ╭▸ corpus/pathological/sessions/bare-session-formers.gandr:19:11
    │
-19 │ def ran : Run(Ask.Asking) = recorded (sent "yes") closed;
+19 │ def ran : Run (Ask.Asking) = recorded (sent "yes") closed;
    │           ━━━ no type head of this name and arity
    │
    ├ note: `ran` is refused with UnresolvedTypeHead, as its expectation states
@@ -10,7 +10,7 @@ error[UnresolvedTypeHead]: no type named `Run` is written applied to one argumen
 error[UnresolvedTypeHead]: no type named `Prefix` is written applied to one argument
    ╭▸ corpus/pathological/sessions/bare-session-formers.gandr:23:13
    │
-23 │ def begun : Prefix(Ask.Asking) = recorded (sent "yes");
+23 │ def begun : Prefix (Ask.Asking) = recorded (sent "yes");
    │             ━━━━━━ no type head of this name and arity
    │
    ├ note: `begun` is refused with UnresolvedTypeHead, as its expectation states
@@ -19,7 +19,7 @@ error[UnresolvedTypeHead]: no type named `Prefix` is written applied to one argu
 error[UnresolvedTypeHead]: no type named `Dialogue` is written applied to one argument
    ╭▸ corpus/pathological/sessions/bare-session-formers.gandr:27:14
    │
-27 │ def talked : Dialogue(Ask.Asking) = dialogue
+27 │ def talked : Dialogue (Ask.Asking) = dialogue
    │              ━━━━━━━━ no type head of this name and arity
    │
    ├ note: `talked` is refused with UnresolvedTypeHead, as its expectation states

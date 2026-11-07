@@ -82,7 +82,7 @@ error[HeldConsumed]: a method whose receiver is `consumed` takes the held value 
    │ │
 50 │ │   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
-51 │ │   let xs = match t -> -F List(Integer) where
+51 │ │   let xs = match t -> -F List Integer where
    │ │   ─── checked against `-F Integer`; while checking the body under this binding; binds xs : List Integer
 52 │ │     | Inline(bs) => s.bytes ()
 53 │ │     | Shared(n, bs) => pure bs

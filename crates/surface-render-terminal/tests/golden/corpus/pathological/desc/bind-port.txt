@@ -21,7 +21,7 @@ error[IllFormedDescription]: the port `t` abstracts an atom of the sort `Tm`, wh
 error[UnstatedComponent.Abstraction]: the model signature cannot state `nu`, which abstracts an atom over a port, whose models are nominal sets'
    ╭▸ corpus/pathological/desc/bind-port.gandr:30:30
    │
-30 │ def restrictionModel : Model(Restriction);
+30 │ def restrictionModel : Model Restriction;
    │                              ━━━━━━━━━━━ the signature this model derives
    │
    ├ note: `restrictionModel` is refused with UnstatedComponent.Abstraction, as its expectation states

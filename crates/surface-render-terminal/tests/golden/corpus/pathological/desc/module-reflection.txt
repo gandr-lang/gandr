@@ -1,7 +1,7 @@
 error[UnresolvedTypeHead]: no type named `T` is written bare
    ╭▸ corpus/pathological/desc/module-reflection.gandr:19:37
    │
-19 │ def encodeAny(T : Theory, m : Model(T)) -> String = "";
+19 │ def encodeAny(T : Theory, m : Model T) -> String = "";
    │                                     ━ no type head of this name and arity
    │
    ├ note: `encodeAny` is refused with UnresolvedTypeHead, as its expectation states

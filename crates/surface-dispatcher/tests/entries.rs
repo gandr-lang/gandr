@@ -1583,7 +1583,8 @@ mod sweeps
                     .filter(|entry| matches!(entry.1, Maybe::Present(Declared::Refused(_))))
                     .map(|(key, _)| key)
                     .collect();
-                let judged_refused: BTreeSet<usize> = match composed {
+                // Each refused judged declaration, by the bytes it covers.
+                let judged_refused: Vec<(usize, usize)> = match composed {
                     Composed::Settled { ref report, .. } => report
                         .declarations()
                         .iter()
@@ -1591,11 +1592,18 @@ mod sweeps
                             matches!(declaration.produced().refusal(), Maybe::Present(_))
                         })
                         .filter_map(|declaration| {
-                            usize::from(declaration.span().start()).checked_sub(usize::from(base))
+                            usize::from(declaration.span().start())
+                                .checked_sub(usize::from(base))
+                                .zip(
+                                    usize::from(declaration.span().end())
+                                        .checked_sub(usize::from(base)),
+                                )
                         })
                         .collect(),
-                    Composed::Refused(_) => BTreeSet::new(),
+                    Composed::Refused(_) => Vec::new(),
                 };
+                let judged_starts: BTreeSet<usize> =
+                    judged_refused.iter().map(|&(start, _)| start).collect();
                 let mut models = Models::default();
                 if let Ok(lowering) = lowering
                     && let Lowered::Module { ref module, .. } = lowering.into_lowered()
@@ -1603,7 +1611,7 @@ mod sweeps
                     for declaration in module.declarations() {
                         let written =
                             usize::from(declaration.span().start()).checked_sub(laid_base);
-                        if written.is_some_and(|at| judged_refused.contains(&at)) {
+                        if written.is_some_and(|at| judged_starts.contains(&at)) {
                             for half in [declaration.signature(), declaration.definition()] {
                                 if let Maybe::Present(key) = half {
                                     let _new = refused.insert(key.form());
@@ -1649,6 +1657,14 @@ mod sweeps
                 let mut held = Vec::new();
                 for (key, span, placed) in gated(&grammar, &tree, &refused, &models) {
                     if placed.is_some() {
+                        continue;
+                    }
+                    // A node inside a refused judged declaration that no
+                    // lowered declaration starts, as a data type's rule
+                    // (#6063), stands refused with it.
+                    if judged_refused.iter().any(|&(start, end)| {
+                        start <= usize::from(span.start()) && usize::from(span.end()) <= end
+                    }) {
                         continue;
                     }
                     nodes = nodes.saturating_add(1);

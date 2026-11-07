@@ -24,7 +24,7 @@ import std.rand;
 /// The desk's answer and the seat's answer, each true on the paths whose two
 /// bits agree. The corpus spells true as `+{.0 = *{}}`.
 @[ distributes(("1/2 *{+{.0 = *{}}, +{.0 = *{}}}", "1/2 *{+{.1 = *{}}, +{.1 = *{}}}")) ]
-pub def exchanged() -> [std.rand.Eff] *{Bool, Bool} =
+pub def exchanged() -> [std.rand.Eff] (Bool * Bool) =
   let mine = std.rand.draw 1;
   let desk = fork (seat : !Integer. ?Integer. !Bool. end) {
     let mine = std.rand.draw 1;

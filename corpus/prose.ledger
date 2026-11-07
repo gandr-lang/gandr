@@ -1274,6 +1274,7 @@ corpus/pathological/control/kept-view.gandr STE-6.3 a9c92c03970a11d6
 corpus/pathological/control/kept-view.gandr STE-6.3 f29802f7b9f073bf
 corpus/pathological/control/kept-view.gandr STE-6.4 7ffeb0f63edb2700
 corpus/pathological/control/kept-view.gandr STE-6.5 a9c92c03970a11d6
+corpus/pathological/control/lambda-tail.gandr STE-6.4 7ffeb0f63edb2700
 corpus/pathological/control/named-instances.gandr STE-3.6 24bb8ce0a381d1a5
 corpus/pathological/control/named-instances.gandr STE-3.2 40d95dd097bed694
 corpus/pathological/control/named-instances.gandr STE-3.2 dd97a2267c09c859

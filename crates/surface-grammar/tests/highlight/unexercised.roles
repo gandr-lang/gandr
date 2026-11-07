@@ -1645,7 +1645,6 @@
 2998 Other f_type = L[type_identifier] R[<type>]
 2999 Other f_type , L[<type> identifier type_identifier] R[] |]
 3000 Operator f_type | L[, <type> identifier type_identifier] R[<type>]
-3004 Type f_type type_identifier L[[] R[, . ] with |]
 3005 Other f_type . L[type_identifier] R[identifier type_identifier]
 3006 Type f_type type_identifier L[.] R[, ] with |]
 3007 Member f_type identifier L[.] R[, ] with |]
