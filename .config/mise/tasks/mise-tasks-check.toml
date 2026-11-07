@@ -2061,6 +2061,16 @@ run = ".config/build-state/restamp.bash"
 description = "A pull request's recovery sweep holds the records its change touches, and every record for the parser or a removed source"
 run = ".config/recovery/change-cases.bash"
 
+# The generated artifacts a replay can leave stale (#6144):
+# `.config/replay/cases.bash` reads each case of `.config/replay/cases.json`
+# through `due.jq` against the committed `artifacts.json`. A case gives the
+# paths a base moved and the paths a branch's own commits change, and names
+# the rows whose checks `stale.bash` runs.
+["check:replay"]
+description = "A replay onto a moved base runs the check of each generated artifact that one side wrote from inputs the other side changed"
+tools.jq = "1.8.1"
+run = ".config/replay/cases.bash"
+
 # The nightly's container jobs (#3208): `.config/nightly/jobs.jq` refuses a
 # job that starts the CI image, restores no build state and so is a step of
 # `reports`, a `reports` step a failure before it would hide, and a step after

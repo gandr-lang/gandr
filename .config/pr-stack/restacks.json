@@ -22,5 +22,35 @@
     "lower": "rewritten",
     "held": false,
     "output": "refused: upper does not contain lower, the branch below it, nor any of its earlier heads"
+  },
+  {
+    "name": "#6144: a lower force-pushed since moves the file the upper's own file derives from, and that row's check fails, so the restack is refused with the upper unmoved",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "false",
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "refused: leaves the artifacts above stale"
+  },
+  {
+    "name": "#6144: the same replay with the row's check passing moves the upper",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "true",
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "moved: upper's own, lower 3 again, lower 2, lower 1"
   }
 ]
