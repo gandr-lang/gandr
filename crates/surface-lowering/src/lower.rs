@@ -24585,7 +24585,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     definition: slot.definition.map(half_at),
                 },
                 outcome,
-                inertness: self.inert_component(slot),
+                inertness: self.inertness(SlotIndex::from(position)),
                 visibility: self.collected.slot_visibility(SlotIndex::from(position)),
             }));
         }

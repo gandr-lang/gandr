@@ -2367,6 +2367,67 @@ fn an_inert_field_is_read_only_by_another_3029()
     );
 }
 
+/// #6141: a top-level definition marked `@[ inert ]` is inert. It reads an
+/// inert field by its path and off a model binder, and another inert
+/// definition. A content definition that reads one is refused at the read,
+/// by the inert definition's name. A module's member takes no mark, and
+/// the lowering leaves the inert definitions out of the content.
+#[test]
+fn an_inert_definition_is_read_only_by_an_inert_reader_6141()
+{
+    let source = include_str!(
+        "models/fixtures/an-inert-definition-is-read-only-by-an-inert-reader-6141.gandr"
+    );
+    let lowered = lower(source);
+    let found = rows(&lowered);
+    let amounts = |path: &str| {
+        found
+            .iter()
+            .find(|&&(ref written, ..)| written == path)
+            .map(|&(_, _, amounts)| amounts)
+    };
+    for reader in ["nameOf", "helloName", "echoed", "renamed"] {
+        assert!(
+            !matches!(amounts(reader), Some(Amounts::Refused(_)) | None),
+            "the inert `{reader}` reads inert declarations: {found:?}"
+        );
+    }
+    let read = |member: &'static str, reached: &'static str, at: usize| {
+        Some(Amounts::Refused(LoweringRefusal::InertRead {
+            span: span_of(source, reached, at),
+            member: name(member),
+            reached: name(reached),
+        }))
+    };
+    assert_eq!(amounts("shown"), read("shown", "helloName", 2_usize));
+    assert_eq!(amounts("called"), read("called", "nameOf", 2_usize));
+    assert_eq!(
+        amounts("Marked.kept"),
+        Some(Amounts::Refused(LoweringRefusal::MalformedForm {
+            span: span_of(source, "inert", 5_usize),
+            form: FormName::ATTRIBUTE,
+            fault: FormFault::MisplacedTile,
+        })),
+        "a module's member takes no mark: {found:?}"
+    );
+    let inertness = |path: &str| {
+        lowered
+            .module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == path)
+            .map(gandr_surface_lowering::LoweredDeclaration::inertness)
+    };
+    assert_eq!(
+        inertness("helloName"),
+        Some(gandr_surface_lowering::Inertness::Inert)
+    );
+    assert_eq!(
+        inertness("shown"),
+        Some(gandr_surface_lowering::Inertness::Content)
+    );
+}
+
 /// A unital magma's signature, its two unit laws its rules.
 const MAG: &str = include_str!("models/fixtures/mag.gandr");
 

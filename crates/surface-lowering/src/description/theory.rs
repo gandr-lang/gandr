@@ -294,6 +294,7 @@ use super::written::WrittenWire;
 use super::written::head;
 use super::written::port_name;
 use crate::SurfaceName;
+use crate::attribute::RegisteredAttribute;
 use crate::circuit::ArrowRow;
 use crate::circuit::OutputCount;
 use crate::circuit::SignatureFault;
@@ -1060,15 +1061,18 @@ impl Reader<'_, '_>
         while reading.eat(Spelling("@[")).0 {
             loop {
                 let name = reading.take()?;
-                let mark = match self.text(name).0 {
-                    INERT => MemberMark::Inert(name.span),
-                    FROBENIUS => MemberMark::Frobenius(name.span),
-                    _ => {
-                        return Err(DescriptionDiagnostic {
-                            span: name.span,
-                            fault: DescriptionFault::Malformed,
-                        });
-                    },
+                let text = self.text(name).0;
+                let mark = if text == RegisteredAttribute::INERT.as_ref() {
+                    MemberMark::Inert(name.span)
+                }
+                else if text == FROBENIUS {
+                    MemberMark::Frobenius(name.span)
+                }
+                else {
+                    return Err(DescriptionDiagnostic {
+                        span: name.span,
+                        fault: DescriptionFault::Malformed,
+                    });
                 };
                 if marked.is_some() {
                     return Err(DescriptionDiagnostic {
@@ -3484,11 +3488,6 @@ fn undeclared_ports(
         })
         .collect()
 }
-
-/// The attribute a theory's operation takes, `@[ inert ]`: a field the
-/// manifest step reads and no other declaration does. It is no declaration's
-/// attribute, so the declaration registry does not hold it.
-const INERT: &str = "inert";
 
 /// The attribute a theory's sort takes, `@[ frobenius ]`: the sort carries a
 /// special commutative Frobenius algebra, so a circuit rule may merge and

@@ -605,7 +605,7 @@ fn lowered(
         ),
         LoweringRefusal::InertRead { member, reached, .. } => write!(
             f,
-            "`{member}` reads the inert field `{reached}`; only another inert field reads one"
+            "`{member}` reads the inert `{reached}`; only another inert declaration reads one"
         ),
         LoweringRefusal::UnknownMember { module, member, .. } => {
             write!(f, "the module `{module}` has no member `{member}`")
