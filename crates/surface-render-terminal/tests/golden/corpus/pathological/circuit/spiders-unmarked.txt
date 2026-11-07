@@ -5,7 +5,7 @@ error[MalformedForm]: the wiring of the rule `merge` binds the port `z` twice, a
  8 │ ┃     node : f(x) --> (z);
  9 │ ┃     node : g(y) --> (z);
 10 │ ┃   };
-   │ ┗━━━┛ what the description check refuses
+   │ ┗━━━┛ a circuit wiring that derives no boundary
    │
    ├ note: `Unmarked` is refused with MalformedForm, as its expectation states
-   ╰ help: let one node bind the port, and give each other node a port of its own
+   ╰ help: let one node bind the port. Give each other node its own port.

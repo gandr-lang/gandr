@@ -5,7 +5,7 @@ error[MalformedForm]: the wiring of the rule `spin` reaches the port `z` from it
  8 │ ┃     node : f(w) --> (z);
  9 │ ┃     node : g(z) --> (w);
 10 │ ┃   };
-   │ ┗━━━┛ what the description check refuses
+   │ ┗━━━┛ a circuit wiring that derives no boundary
    │
    ├ note: `Loop` is refused with MalformedForm, as its expectation states
    ╰ help: wire the rule so that no port reaches itself
