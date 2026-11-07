@@ -6,6 +6,12 @@
 //! strata crate; the memo's storage to the check-memo seam crate. What lives
 //! here is what re-derives an obligation.
 //!
+//! A patched type follows Doré's boundary problems. Each face fixes fields of
+//! a record type, and each two faces agree on their meet. The kernel replays
+//! the formation of a patched type and the agreement on each meet. That
+//! agreement is the gluing condition of a cellular sheaf, after Curry, Ghrist
+//! and Nanda.
+//!
 //! # Four decisions that interlock
 //!
 //! **The checker is a defunctionalized machine** over a goal register, a
@@ -644,6 +650,16 @@
 //! neither silent diagnostic failure nor a change to one-based numbering has a
 //! semantic justification. Revisit the boundary if content numbering stops
 //! being backed by this in-memory stream or target widths exceed 64 bits.
+//!
+//! # References
+//!
+//! - Maximilian Doré. _Computing Spaces in Type Theory_. Doctoral thesis,
+//!   University of Oxford (2023), §§ 4.1–4.3 — a boundary problem as
+//!   constraints on the faces of a cube, which agree where the faces meet.
+//! - Justin Curry, Robert Ghrist and Vidit Nanda. "Discrete Morse Theory for
+//!   Computing Cellular Sheaf Cohomology." _Foundations of Computational
+//!   Mathematics_ 16 (2016), 875–897. `arXiv:1312.6454` — a section of a
+//!   cellular sheaf, which agrees on each meet of two cells.
 //!
 //! [`Environment::add_decl`]: crate::env::Environment::add_decl
 

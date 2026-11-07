@@ -14,6 +14,10 @@
 //! halves each present or absent for a stated reason, and an opaque origin
 //! token the verdict echoes back.
 //!
+//! The bridge carries a patched type to the kernel with its formation and the
+//! agreement of its faces on each meet, after Doré's boundary problems. The
+//! kernel replays both.
+//!
 //! # The decisions that interlock
 //!
 //! **The former decides the mode.** Leaves and eliminations synthesise,
@@ -513,6 +517,10 @@
 //!   363(1835) (2005). <https://doi.org/10.1098/rsta.2005.1650> — the de Bruijn
 //!   criterion: a result is trusted when a small independent checker re-derives
 //!   it, the posture of the kernel bridge.
+//! - Maximilian Doré. _Computing Spaces in Type Theory_. Doctoral thesis,
+//!   University of Oxford (2023), §§ 4.1–4.3 — a boundary problem as
+//!   constraints on the faces of a cube, which the bridge carries to the kernel
+//!   as a patched type and its meets.
 //! - Iosif Petrakis. "Univalent Typoids." 2022. `arXiv:2205.06651` — a
 //!   univalence map as a typoid function: the two-cell obligation [`ua`] names.
 //! - Michael Shulman. "Univalence for Inverse Diagrams and Homotopy

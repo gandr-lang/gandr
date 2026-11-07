@@ -2,6 +2,19 @@
 //!
 //! Standing graphs use bounded repair; one-shot callers use the batch traversal
 //! in `gandr-theory-graphs`. Neither structure supports edge deletion.
+//!
+//! The potentials follow Ghrist and Riess. A feasible valuation is a fixed
+//! point of the Tarski Laplacian of a sheaf of max-plus lattices on the graph.
+//! Repair raises each potential along an improving path, the Tarski
+//! iteration, until the least fixed point holds. A positive cycle is the
+//! obstruction that no fixed point clears.
+//!
+//! # References
+//!
+//! - Robert Ghrist and Hans Riess. "Cellular Sheaves of Lattices and the Tarski
+//!   Laplacian." _Homology, Homotopy and Applications_ 24(1) (2022), 325–345.
+//!   `doi:10.4310/HHA.2022.v24.n1.a16` — global sections as the fixed points of
+//!   the Tarski Laplacian, which the potential repair reaches.
 
 // Module documentation that predates the shape lint: 4 headings outside the
 // vocabulary. Each allow leaves with the rewrite that clears its count.

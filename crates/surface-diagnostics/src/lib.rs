@@ -3,6 +3,13 @@
 //! ledger line — as a [`Diagnostic`] every face projects, and the builders
 //! that make it.
 //!
+//! The obstruction shape follows Ghrist and Riess. A global property holds
+//! when a section glues. A refusal names the cells of the site and a witness
+//! where no section glues. A parting critical pair is completion's
+//! obstruction, after Guiraud, Malbos and Mimram. Its cells are the two rules
+//! and their peak, and its witness is the two normal forms. Hansen's sheaf
+//! Laplacian needs a field, so the shape keeps a lattice witness in its place.
+//!
 //! # The model holds the diagnostic; a face only projects it
 //!
 //! [`diagnose`] builds a [`Diagnostic`] from what the producers recorded: the
@@ -91,6 +98,22 @@
 //! destination-failure observer. The finite witnesses include UTF-8 splits and
 //! end-of-file spans; invalid primary and context loci retain their distinct
 //! absence reasons.
+//!
+//! # References
+//!
+//! - Robert Ghrist and Hans Riess. "Cellular Sheaves of Lattices and the Tarski
+//!   Laplacian." _Homology, Homotopy and Applications_ 24(1) (2022), 325–345.
+//!   `doi:10.4310/HHA.2022.v24.n1.a16` — global sections of a lattice-valued
+//!   sheaf as fixed points, the reading of an obstruction.
+//! - Yves Guiraud, Philippe Malbos and Samuel Mimram. "A Homotopical Completion
+//!   Procedure with Applications to Coherence of Monoids." _RTA 2013_, volume
+//!   21 (2013), 223–238. `doi:10.4230/LIPIcs.RTA.2013.223` — a parting critical
+//!   pair as the obstruction to completion.
+//! - Jakob Hansen. _Laplacians of Cellular Sheaves: Theory and Applications_.
+//!   Doctoral dissertation, University of Pennsylvania (2020).
+//!   <https://repository.upenn.edu/edissertations/4156> — the sheaf Laplacian
+//!   over a field, whose kernel is the global sections. The shape reads no
+//!   Laplacian.
 //!
 //! [`Failure`]: gandr_core_checker::Failure
 

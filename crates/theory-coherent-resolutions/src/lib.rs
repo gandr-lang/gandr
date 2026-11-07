@@ -29,6 +29,16 @@
 //! `quenchant-shape`; its `hotpath` feature links `std` and the profiler, which
 //! times the overlap queries and normalization for the benchmark report.
 //!
+//! The construction takes four sources. Squier, Otto and Kobayashi read a
+//! joined critical branching as a coherence cell, so each certificate is a
+//! 3-cell. Guiraud, Hoffbeck and Malbos collapse the resolution of a
+//! convergent presentation onto its rules, critical pairs and critical
+//! triples. Brown's scheme on the bar complex is that collapse, up to the
+//! critical pairs. Malbos and Ren keep only the essential branchings. The
+//! collapse tests compare these with the certified pairs. Doré states a
+//! matching as a partial function, acyclic when each cell reaches a critical
+//! cell. The collapse tests check Brown's matching in that form.
+//!
 //! # Executable specifications
 //!
 //! The item specifications pair executable `#[spec]` predicates with local `#
@@ -76,6 +86,18 @@
 //!   `doi:10.4204/EPTCS.323.4` — tracelets as derivations recorded for
 //!   re-execution, sequential composition of rules, and the concurrency theorem
 //!   the fused-cell differential adopts as a test.
+//! - Yves Guiraud, Eric Hoffbeck and Philippe Malbos. "Convergent Presentations
+//!   and Polygraphic Resolutions of Associative Algebras." _Mathematische
+//!   Zeitschrift_ 293 (2019), pages 113–179. `doi:10.1007/s00209-018-2185-z` —
+//!   the resolution whose generating cells are the rules, the critical pairs
+//!   and the critical triples, and the collapsing scheme that reaches it.
+//! - Philippe Malbos and Isaac Ren. "Completion in Operads via Essential
+//!   Syzygies." In _Proceedings of ISSAC 2021_, ACM, 2021.
+//!   `doi:10.1145/3452143.3465552` — the essential branchings, which the
+//!   collapse tests compare with the certified pairs.
+//! - Maximilian Doré. _Computing Spaces in Type Theory_. Doctoral thesis,
+//!   University of Oxford, 2023, § 3.4 — a matching as a partial function,
+//!   acyclic when each cell reaches a critical cell.
 
 // Module documentation that predates the shape lint: 11 headings outside the
 // vocabulary, 2 decision records and 1 budget exceeded. Each allow leaves with
