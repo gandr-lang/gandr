@@ -4584,15 +4584,8 @@ impl<'pbg> MeldState<'pbg>
     ) -> Option<MoldId>
     {
         let end_index = usize::from(end_index);
-        let Some(start_index) = self.form_start_index(StackIndex::from(end_index))
-        else {
-            return None;
-        };
-        let start_index = usize::from(start_index);
-        let Some(start_cell) = self.stack.get(start_index).copied()
-        else {
-            return None;
-        };
+        let start_index = usize::from(self.form_start_index(StackIndex::from(end_index))?);
+        let start_cell = self.stack.get(start_index).copied()?;
         // A left-bounded start absorbs the operand immediately below it.
         let low = match start_cell.role {
             Role::FormTile {
@@ -4603,10 +4596,7 @@ impl<'pbg> MeldState<'pbg>
                 .unwrap_or(start_index),
             Role::Operand | Role::FormTile { .. } | Role::Operator { .. } => start_index,
         };
-        let Some(high_exclusive) = end_index.checked_add(1)
-        else {
-            return None;
-        };
+        let high_exclusive = end_index.checked_add(1)?;
 
         let mut children: Vec<EmitId> = Vec::new();
         let mut span_start = start_cell.start;
