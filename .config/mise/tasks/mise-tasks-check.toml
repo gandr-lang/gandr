@@ -119,13 +119,16 @@ exit "$status"
 # `check` does. Its name keeps it out of the `check:*` glob, so it never runs
 # itself. On main's tree its time is held to a budget (#5215): it runs
 # `report:gate-time`, which files the gate past its budget, and a report that
-# fails leaves the pass recorded.
+# fails leaves the pass recorded. `--keep-going` runs every check whatever an
+# earlier check gives, so the fixer reads every red of a tip in one pass
+# (#5440); a gate with a red still records no pass.
 ["gate:all"]
 description = "Every check over the whole workspace, about half an hour; the merge group runs it before every landing"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 usage = '''
 flag "--no-wait" help="refuse at once, naming the holders, when the lane's lock or every gate slot on the host is held"
+flag "--keep-going" help="run every check whatever an earlier check gives, so one pass names every red"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -141,7 +144,9 @@ tree=$(.config/gate-scope/passed.bash tree)
 mapfile -t checks < <(mise tasks ls --json | jq -r '.[] | .name | select(startswith("check:"))')
 mkdir -p target/gate
 SECONDS=0
-{ MISE_TASK_TIMINGS=1 mise run --output prefix 'check:*' 2>&1 1>&3 3>&- | tee target/gate/gate-all.log >&2; } 3>&1
+keep=()
+if [[ ${usage_keep_going:-false} == true ]]; then keep=(--continue-on-error); fi
+{ MISE_TASK_TIMINGS=1 mise run --output prefix "${keep[@]}" 'check:*' 2>&1 1>&3 3>&- | tee target/gate/gate-all.log >&2; } 3>&1
 .config/gate-scope/passed.bash record gate:all "$tree" target/gate/gate-all.log "$SECONDS" "${checks[@]}"
 if [[ $tree == "$(git rev-parse 'origin/main^{tree}' 2> /dev/null)" ]]; then
   REPORT_FILE=1 mise run report:gate-time || echo "gate:all: the report of main's gate time failed; the pass stays recorded" >&2
