@@ -2314,15 +2314,17 @@ impl<'pbg> Molder<'pbg>
     /// A repair, once pushed, stays: only a dry run's rollback drops one, and a
     /// dry run never reaches behind the tile it weighs. So the first push that
     /// leaves one settles whether the stream molds with none, and a caller
-    /// that wants only that answer skips molding the rest.
+    /// that wants only that answer skips molding the rest. A repair here is
+    /// one that `state` weighs ([`MeldState::weighs_repair`]): an obligation,
+    /// or an application that the `;` or the item tile ending its form ends.
     ///
     /// # Specification
-    /// - requires: as [`mold_stream`](Self::mold_stream), and `state` holds no
-    ///   obligation yet.
-    /// - ensures: [`Molding::Whole`] exactly when `state`'s obligations are
-    ///   empty, every token then molded as [`mold_stream`](Self::mold_stream)
-    ///   molds it; [`Molding::Halted`] with the stream molded up to and
-    ///   including the first tile whose push left an obligation.
+    /// - requires: as [`mold_stream`](Self::mold_stream), and `state` weighs no
+    ///   repair yet.
+    /// - ensures: [`Molding::Whole`] exactly when `state` weighs no repair,
+    ///   every token then molded as [`mold_stream`](Self::mold_stream) molds
+    ///   it; [`Molding::Halted`] with the stream molded up to and including the
+    ///   first tile whose push left a repair.
     /// - provides: the cheap test the placement in `parse::place` runs over
     ///   each copy of a form it tries.
     /// - panics: none.
@@ -2335,8 +2337,8 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `parse::place::tests::a_try_stopped_at_its_first_repair_answers_as_a_whole_parse`
     #[inline]
     #[spec(
-        requires: state.obligations().is_empty() && tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()),
-        ensures: |ret| (ret == Molding::Whole) == state.obligations().is_empty(),
+        requires: !bool::from(state.weighs_repair()) && tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()),
+        ensures: |ret| (ret == Molding::Whole) != bool::from(state.weighs_repair()),
     )]
     pub(crate) fn mold_stream_until_repair(
         &mut self,
@@ -2353,13 +2355,12 @@ impl<'pbg> Molder<'pbg>
     /// does, stopping after the first push that leaves a repair.
     ///
     /// # Specification
-    /// - requires: as [`mold_run`](Self::mold_run), and `state` holds no
-    ///   obligation yet.
-    /// - ensures: [`Molding::Whole`] exactly when `state`'s obligations are
-    ///   empty, every token of `run` then molded as
-    ///   [`mold_run`](Self::mold_run) molds it; [`Molding::Halted`] with `run`
-    ///   molded up to and including the first tile whose push left an
-    ///   obligation.
+    /// - requires: as [`mold_run`](Self::mold_run), and `state` weighs no
+    ///   repair yet.
+    /// - ensures: [`Molding::Whole`] exactly when `state` weighs no repair,
+    ///   every token of `run` then molded as [`mold_run`](Self::mold_run) molds
+    ///   it; [`Molding::Halted`] with `run` molded up to and including the
+    ///   first tile whose push left a repair.
     /// - provides: the resumed test the placement in `parse::place` runs over
     ///   the part of a copy that parts from its form.
     /// - panics: none.
@@ -2371,8 +2372,8 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `parse::place::tests::a_resumed_copy_answers_as_a_fresh_one`
     #[inline]
     #[spec(
-        requires: state.obligations().is_empty() && tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()),
-        ensures: |ret| (ret == Molding::Whole) == state.obligations().is_empty(),
+        requires: !bool::from(state.weighs_repair()) && tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()),
+        ensures: |ret| (ret == Molding::Whole) != bool::from(state.weighs_repair()),
     )]
     pub(crate) fn mold_run_until_repair(
         &mut self,
@@ -2392,8 +2393,8 @@ impl<'pbg> Molder<'pbg>
     /// - requires: as [`mold_run`](Self::mold_run).
     /// - ensures: as [`mold_run`](Self::mold_run) under [`Halt::Never`], then
     ///   [`Molding::Whole`]; under [`Halt::AtRepair`], the same tokens molded
-    ///   up to and including the first whose push left an obligation, then
-    ///   [`Molding::Halted`], or every token with none, then
+    ///   up to and including the first whose push left a repair that `state`
+    ///   weighs, then [`Molding::Halted`], or every token with none, then
     ///   [`Molding::Whole`].
     /// - panics: none.
     /// - executable: none — the clause restates the loop's exit.
@@ -2453,7 +2454,7 @@ impl<'pbg> Molder<'pbg>
                     let best = self.choose_stream(state, tokens, TokenIndex::from(index), &source);
                     Self::push_choice(state, best, text);
                 }
-                if halt == Halt::AtRepair && !state.obligations().is_empty() {
+                if halt == Halt::AtRepair && bool::from(state.weighs_repair()) {
                     return Molding::Halted;
                 }
             }

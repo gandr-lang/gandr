@@ -1955,10 +1955,15 @@ mod tests
         ] {
             for end in (0 ..= source.len()).filter(|&end| source.is_char_boundary(end)) {
                 let prefix = SourceText::from(source.get(.. end).unwrap());
-                let whole = super::molded(&pbg, prefix)
-                    .commit_with_obligations(prefix)
-                    .ok()
-                    .and_then(|(tree, obligations)| obligations.is_empty().then_some(tree));
+                let state = super::molded(&pbg, prefix);
+                let weighed = bool::from(state.weighs_repair());
+                let whole =
+                    state
+                        .commit_with_obligations(prefix)
+                        .ok()
+                        .and_then(|(tree, obligations)| {
+                            (!weighed && obligations.is_empty()).then_some(tree)
+                        });
                 assert_eq!(
                     super::unrepaired(&pbg, prefix),
                     whole,
