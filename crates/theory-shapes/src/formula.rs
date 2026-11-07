@@ -14,6 +14,9 @@
 //!   by a vertex, a homomorphism to `2`. Felix Cherubini, Thierry Coquand,
 //!   Freek Geerligs and Hugo Moeneclaey, "A Foundation for Synthetic Stone
 //!   Duality", 2024, `arXiv:2412.03203`.
+//! - `Sterling-2026-domains_classifying_topoi` — background: § 1.4 reads an
+//!   algebra as the functions on its spectrum. The suites check that reading on
+//!   the lattices that faces generate, through this module's queries.
 
 use alloc::vec;
 use alloc::vec::Vec;

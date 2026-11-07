@@ -153,9 +153,6 @@
 //!   monotone part is free, and the monotone band decides in that free part.
 //! - Justin Curry et al. "Discrete Morse Theory for Computing Cellular Sheaf
 //!   Cohomology". 2016. `arXiv:1312.6454` — the cell poset of a sheaf.
-//! - `Sterling-2026-domains_classifying_topoi` — background: § 1.4 reads an
-//!   algebra as the functions on its spectrum, which the suites check on the
-//!   lattices that faces generate.
 //!
 //! [`FaceTT`]: https://types2026.cse.chalmers.se/abstracts/42.pdf
 //! [Kaposi–Xie]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10
