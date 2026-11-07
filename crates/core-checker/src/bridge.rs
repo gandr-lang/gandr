@@ -1742,6 +1742,10 @@ impl Crossed
                 withheld: BTreeSet::new(),
                 presentations: positions.presentations.clone(),
                 formed: positions.formed.clone(),
+                // The keys name content in the table, so the two carry on
+                // together; a resumed formation's export name counts past them.
+                formations: positions.formations.clone(),
+                content: positions.content.clone(),
             },
             readmitted: readmitted.to_vec(),
             encoded: None,
@@ -2892,12 +2896,12 @@ enum Erased
 /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
 /// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
 #[spec(
-    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()), formations = positions.formed.len()],
+    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()), formations = positions.formations.len()],
     ensures: |ret| {
         let fresh = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms);
         let grew = usize::from(environment.entries().len()).checked_sub(usize::from(entries));
         let counted = |own: usize, exact: bool| grew == usize::from(positions.exports.len()).checked_sub(usize::from(exports))
-            && match (fresh, positions.formed.len().checked_sub(formations), grew) {
+            && match (fresh, positions.formations.len().checked_sub(formations), grew) {
                 | (Some(fresh), Some(0), Some(grew)) if exact => grew == fresh.saturating_add(own),
                 | (Some(fresh), Some(formed), Some(grew)) => grew >= fresh.saturating_add(formed).saturating_add(own),
                 | _ => false,
@@ -3879,12 +3883,20 @@ where
 /// at the record of the fields it keeps. The kernel's restriction rule checks
 /// each glued value at its field's type, then converts once per meet field.
 ///
+/// The fixed values and the meets of each round hold the whole formation:
+/// each record definition and each restriction follows from them. So the
+/// formation's key is the content of the record of the fixed values, then of
+/// the record of each round's meets, as the kernel would check each
+/// ([`formation_key`]). A patched type whose key an earlier formation holds
+/// crosses no witness: the kernel replayed that formation already.
+///
 /// # Specification
 /// - requires: `at` names a patched type of `arena`, whose base is a record
 ///   type that holds each fixed label.
-/// - ensures: on success `positions.formed` holds `at`, and the kernel admitted
-///   every witness; otherwise the outcome of the first witness that did not
-///   cross.
+/// - ensures: on success `positions.formed` holds `at` and
+///   `positions.formations` holds its key. The kernel admitted every witness of
+///   a key no earlier formation held, and nothing for a key one held. Otherwise
+///   the outcome of the first witness that did not cross.
 /// - fails: as above.
 /// - panics: none.
 ///
@@ -3895,8 +3907,10 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a system whose faces agree, one whose meet value differs,
 ///   and one whose glued value has another type than its field's separate the
-///   arms.
+///   arms. Two equal systems at two core nodes cross one formation, and two
+///   systems that differ in one fixed value cross two.
 /// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
+/// - witness: `module::tests::equal_patched_types_share_one_formation_5748`
 #[spec(captures: formed = positions.formed.len(), ensures: |ret| ret.is_err() || positions.formed.len() == formed.saturating_add(1))]
 fn formed<Vouch>(
     environment: &mut Environment,
@@ -3938,7 +3952,32 @@ where
             .insert(label.clone(), value);
         *round = round.saturating_add(1);
     }
-    let ordinal = crate::alloc::format!("{}", positions.formed.len());
+    let fixed_record = record_of(
+        arena,
+        &fields,
+        fixed.iter().map(|(label, &value)| (label, value)),
+    )?;
+    let mut records = Vec::with_capacity(rounds.len().saturating_add(1));
+    records.push(fixed_record.clone());
+    for round in rounds.iter().filter(|round| !round.is_empty()) {
+        records.push(record_of(
+            arena,
+            &fields,
+            round.iter().map(|(label, &value)| (label, value)),
+        )?);
+    }
+    let key = formation_key(
+        environment,
+        arena,
+        (source, &mut *positions),
+        &records,
+        vouch,
+    )?;
+    if positions.formations.contains(&key) {
+        positions.formed.insert(at);
+        return Ok(());
+    }
+    let ordinal = crate::alloc::format!("{}", positions.formations.len());
     let name = |part: &str, round: usize| {
         let round = crate::alloc::format!("{round}");
         StructuredName::from(
@@ -3949,26 +3988,26 @@ where
         )
     };
     for (index, round) in rounds.iter().enumerate() {
-        let held = |label: &gandr_core_term::FieldLabel| {
-            round
-                .get(label)
-                .copied()
-                .or_else(|| fixed.get(label).copied())
+        // Round zero is the fixed record with its meets in place; a later
+        // round is its meets' record, which the key holds already.
+        let FormationRecord {
+            declared,
+            body,
+            types,
+        } = match (index, round.is_empty()) {
+            (0, true) => fixed_record.clone(),
+            (0, false) => record_of(
+                arena,
+                &fields,
+                fixed
+                    .iter()
+                    .map(|(label, &value)| (label, round.get(label).copied().unwrap_or(value))),
+            )?,
+            _ => records
+                .get(index.saturating_add(1))
+                .cloned()
+                .ok_or_else(invariant)?,
         };
-        let labels: Vec<&gandr_core_term::FieldLabel> = if index == 0 {
-            fixed.keys().collect()
-        }
-        else {
-            round.keys().collect()
-        };
-        let mut types = BTreeMap::new();
-        let mut values = BTreeMap::new();
-        for label in labels {
-            types.insert(label.clone(), *fields.get(label).ok_or_else(invariant)?);
-            values.insert(label.clone(), held(label).ok_or_else(invariant)?);
-        }
-        let declared = arena.value_type_record(types.clone());
-        let body = arena.value_record(values);
         let record = witness(
             environment,
             arena,
@@ -4015,8 +4054,126 @@ where
             (vouch, name("meets", index)),
         )?;
     }
+    positions.formations.insert(key);
     positions.formed.insert(at);
     Ok(())
+}
+
+/// One record definition of a formation: its declared record type, its body
+/// and the type of each of its labels.
+#[derive(Clone, Debug)]
+struct FormationRecord
+{
+    /// The record type at the base record's field types.
+    declared: ValueTypeId,
+    /// The record of the values.
+    body: ValueId,
+    /// The type of each label, from the base record.
+    types: BTreeMap<gandr_core_term::FieldLabel, ValueTypeId>,
+}
+
+/// The record definition of `entries`, each at its field's type in `fields`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::MachineInvariant`] when `fields` lacks a label of `entries`.
+fn record_of<'label>(
+    arena: &mut CoreArena,
+    fields: &BTreeMap<gandr_core_term::FieldLabel, ValueTypeId>,
+    entries: impl IntoIterator<Item = (&'label gandr_core_term::FieldLabel, ValueId)>,
+) -> Result<FormationRecord, Outcome>
+{
+    let mut types = BTreeMap::new();
+    let mut values = BTreeMap::new();
+    for (label, value) in entries {
+        let field = *fields
+            .get(label)
+            .ok_or(Outcome::Refused(Refusal::MachineInvariant))?;
+        types.insert(label.clone(), field);
+        values.insert(label.clone(), value);
+    }
+    Ok(FormationRecord {
+        declared: arena.value_type_record(types.clone()),
+        body: arena.value_record(values),
+        types,
+    })
+}
+
+/// The key of a formation: the content of each of `records` as the kernel
+/// would check it, in order, named in the readmission's content table.
+///
+/// Each record is staged and then abandoned, so the kernel admits nothing.
+/// The table compares the words of each record it files, so two keys are
+/// equal exactly when the checks they name have equal content; a digest only
+/// selects where the table looks.
+///
+/// # Specification
+/// - requires: as [`stage`].
+/// - ensures: on success one content id for each record, in order; the
+///   environment's entries end as they began.
+/// - fails: the erasure's refusal of a record.
+/// - panics: none.
+///
+/// # Errors
+/// [`Outcome::Refused`] with the erasure's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`formed`].
+/// - witness: `module::tests::equal_patched_types_share_one_formation_5748`
+#[spec(captures: entries = environment.entries().len(), ensures: |ret| environment.entries().len() == entries && ret.as_ref().map_or(true, |key| key.len() == records.len()))]
+fn formation_key<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    (source, positions): (Source<'_>, &mut Positions),
+    records: &[FormationRecord],
+    vouch: &Vouch,
+) -> Result<Vec<gandr_kernel_core::ContentId>, Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let invariant = || Outcome::Refused(Refusal::MachineInvariant);
+    let mut key = Vec::with_capacity(records.len());
+    for record in records {
+        let next = ConstantIndex::from(environment.entries().len());
+        let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+        let staged = match stage(
+            environment,
+            arena,
+            (source, &*positions),
+            Offer::Definition {
+                declared: record.declared,
+                body: record.body,
+                relations: &[],
+                restated: &[],
+                laws: &[],
+                operation_rules: &[],
+                covers: &[],
+                stages: &UNQUANTIFIED,
+            },
+            vouch,
+            (&[], base),
+        ) {
+            Ok(staged) => staged,
+            Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
+            Err(Unstaged::Unseeded(_)) => return Err(invariant()),
+        };
+        let gandr_kernel_term::DeclarationContent::Def { declared, body } =
+            *staged.declaration.declaration().content()
+        else {
+            environment.abandon(staged.declaration);
+            return Err(invariant());
+        };
+        key.push(gandr_kernel_core::support_key(
+            &mut positions.content,
+            environment.arena(),
+            gandr_kernel_core::SupportGoal::CheckValue(body, declared),
+            gandr_kernel_core::encoding::Telescope::Whole(&[]),
+        ));
+        environment.abandon(staged.declaration);
+    }
+    Ok(key)
 }
 
 /// Stage and admit the definition `body : declared`, with `crossing` naming
@@ -4145,8 +4302,15 @@ struct Positions
     /// by their normal forms.
     presentations: Presentations,
     /// The patched types whose formation the kernel replayed, by core node:
-    /// each crosses its witnesses once ([`formed`]).
+    /// each crosses its witnesses once, or stands on an equal formation's
+    /// ([`formed`]).
     formed: BTreeSet<ValueTypeId>,
+    /// The key of each formation whose witnesses the kernel admitted: the
+    /// content of its records ([`formation_key`]).
+    formations: BTreeSet<Vec<gandr_kernel_core::ContentId>>,
+    /// The content of the checks the formation keys name, for the length of
+    /// one readmission.
+    content: gandr_kernel_core::ContentTable,
 }
 
 impl Positions
