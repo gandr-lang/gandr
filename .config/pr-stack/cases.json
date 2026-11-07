@@ -2687,6 +2687,91 @@
     "output": "[]"
   },
   {
+    "name": "#5776: a stranded pull request is retargeted, queued or red; a held one and a queued one on a live base are left alone",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 30,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": 9,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": [] },
+          "removed": false,
+          "stranded": true,
+          "marks": []
+        },
+        {
+          "number": 31,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": 9,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": [] },
+          "removed": false,
+          "stranded": false,
+          "marks": []
+        },
+        {
+          "number": 32,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": true,
+          "held": true,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": [] },
+          "removed": false,
+          "stranded": true,
+          "marks": []
+        },
+        {
+          "number": 33,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": ["test"], "pending": [] },
+          "removed": false,
+          "stranded": true,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":30,\"act\":\"retarget\",\"told\":false},{\"number\":33,\"act\":\"retarget\",\"told\":false}]"
+  },
+  {
+    "name": "#5776: a stranded pull request told at its head carries `told`, so a failed retarget is told once",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 40,
+          "oid": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": [] },
+          "removed": false,
+          "stranded": true,
+          "marks": ["pr-dequeued:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"]
+        }
+      ]
+    },
+    "output": "[{\"number\":40,\"act\":\"retarget\",\"told\":true}]"
+  },
+  {
     "name": "a stack's green members ask for one landing, or one telling, from its lowest member",
     "program": "landing.jq",
     "input": {
