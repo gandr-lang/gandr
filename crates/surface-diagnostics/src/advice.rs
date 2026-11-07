@@ -1366,7 +1366,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 240] = [
+    const WORDED: [&str; 244] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1607,6 +1607,10 @@ mod tests
         "BuiltinMisplaced",
         "BuiltinNotCanonical",
         "FixedFieldDiffers",
+        "LinearSlotConsumed",
+        "LinearSlotUnconsumed",
+        "ShadowCaptured",
+        "MultiplicityUnsupported",
     ];
 
     /// Every worded name has a one-line help that opens with a lowercase verb.

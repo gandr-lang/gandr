@@ -1,3 +1,7 @@
-/// `attributed_module_member`: an attributed definition inside a module body.
-module Answers where
-  @[ doc("The answer.") ] def answer = 42;
+/// `attributed_module_member`: an attributed definition inside a module body, its linear tail written with its glyph and in ASCII.
+module Kept where {
+  @[ doc("The parameter, taken once.") ] def kept(x : Integer) ⊸ Integer = x;
+}
+module KeptAscii where {
+  @[ doc("The parameter, taken once.") ] def keptAscii(x : Integer) -o Integer = x;
+}

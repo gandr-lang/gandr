@@ -1,3 +1,7 @@
-/// `module_definition_member`: a definition inside a module body.
-module Answers where
-  def answer = 42;
+/// `module_definition_member`: a definition inside a module body, its linear tail written with its glyph and in ASCII.
+module Kept where {
+  def kept(x : Integer) ⊸ Integer = x;
+}
+module KeptAscii where {
+  def keptAscii(x : Integer) -o Integer = x;
+}
