@@ -1821,7 +1821,7 @@ fn empty_input_and_report_inputs_do_not_rewrite_production_counts()
         anti_unify_tracelets(&members, &store, &mut cache).expect("the shared family pays");
     let before = cache.clone();
     assert_eq!(
-        anti_unify_tracelets::<SequentAlphabet>(&[], &store, &mut cache),
+        anti_unify_tracelets::<SequentAlphabet, Tracelet>(&[], &store, &mut cache),
         Err(TemplateRefusal::EmptyFamily)
     );
     assert_eq!(cache, before);
