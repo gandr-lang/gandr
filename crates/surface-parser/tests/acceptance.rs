@@ -1545,15 +1545,15 @@ fn a_split_group_closes_at_its_written_closer_5795() -> Result<(), Box<dyn Error
     Ok(())
 }
 
-/// A `def` that lost the `)` of its parameters keeps its reading when a
+/// A `def rec` that lost the `)` of its parameters keeps its reading when a
 /// declaration follows it: one minted `)` before its `->`, and the declaration
 /// after it whole.
 ///
-/// The frontier of the `def` stays in its parameters, a bracket of its own
-/// rule. When the close at the separator ends the `def` there, it mints the
-/// end of the `def` and one more missing tile, and the `def` falls apart into
-/// loose tiles (#5911). The separator stays in the declaration, and the repair
-/// at its end mints the `)` where the rest parses.
+/// The frontier of the `def rec` stays in its parameters, whose next tile can
+/// be their `)`. When the close at the separator ends the `def rec` there, it
+/// mints the end of the `def rec` and one more missing tile, and the `def rec`
+/// falls apart into loose tiles (#5911). The separator stays in the
+/// declaration, and the repair at its end mints the `)` where the rest parses.
 #[test]
 fn a_def_without_its_closer_keeps_its_reading_5911() -> Result<(), Box<dyn Error>>
 {
