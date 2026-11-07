@@ -1,12 +1,18 @@
 //! `niche-realizability` models a null niche as a realizability predicate.
 //!
+//! `Option<&T>` uses one word for null or a reference. Its realisers equal the
+//! tagged layout at every heap. Marshallers meet their triples. `deref_or`
+//! meets the niche. The pathological source refuses `_Nonnull`.
+//!
 //! A realiser is a predicate on a word and heap. `star` splits disjoint heaps.
 //! `pointsTo` describes a singleton. The normaliser computes assertions. The
 //! kernel replays each declaration.
 //!
-//! `Option<&T>` uses one word for null or a reference. Its realisers equal the
-//! tagged layout at every heap. Marshallers meet their triples. `deref_or`
-//! meets the niche. The pathological source refuses `_Nonnull`.
+//! Limits: the model departs from § 4.2 of the cited work. Both layouts are
+//! words by value, not objects behind a reference count, so the model has no
+//! `size` and no count. It has no later modality. A triple holds at the heap
+//! that it owns, with no frame rule. The checker does not read the C body of
+//! `deref_or`, because the lowering does not lower an `extern` declaration.
 //!
 //! - see: #2832
 //! - see: #327 — `derefOrWp`
@@ -409,8 +415,9 @@ pub def vInt(_v : Nat, h : Heap) -> Type =
 pub def keptOpt(p : Nat, _r : Nat, h : Heap) -> Type =
   vOpt vInt p h
 
-/// `deref_or` returns `d` at null and an integer at a reference.
-/// Its hand-written precondition names the passed word, answer and final heap.
+/// The hand-written precondition of `deref_or` names the passed word, answer
+/// and final heap.
+/// At null, the call returns `d` and touches no heap.
 pub def derefOrWp(w : Nat, d : Nat, q : (Nat, Nat, Heap) -> Type, h : Heap) -> Type =
   match w where
     | Zero => q w d h
