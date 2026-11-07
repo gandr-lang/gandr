@@ -9,4 +9,6 @@ mod graded;
 #[cfg(test)]
 mod subcomplexes;
 #[cfg(test)]
+mod traversal;
+#[cfg(test)]
 mod wide;

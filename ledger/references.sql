@@ -69,6 +69,7 @@ INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_m
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-deep-inference','shift','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','6bc30c8da526d378521d82a4fbbbe26219b64de2');
 INSERT INTO reference VALUES('Hansen-2020-laplacians_cellular_sheaves_theory_applications','theory-cellular-sheaves','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','407ea300683d73b3d94a9ade39f585365000707c');
 INSERT INTO reference VALUES('Henry-2018-nonunital_polygraphs_form_presheaf_category','theory-sites','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Kessler-2025-computational_aspects_rewriting_higherdimensional_diagrams','theory-graded-posets','traversal','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','db60bc4ed0a81c61929941b9f01c0256c2af1168','2026-11-02','bb7ea16a861957dfc8f4ee999b33a4d61bed1863');
 INSERT INTO reference VALUES('Leclerc-2026-cellular_type_theory','theory-sites','ascent','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ljungström-2025-computational_synthetic_cohomology_theory_homotopy_type_theory','theory-cellular-sheaves','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','407ea300683d73b3d94a9ade39f585365000707c');
