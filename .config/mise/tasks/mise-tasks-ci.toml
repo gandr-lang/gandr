@@ -251,11 +251,20 @@ run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-sp
 # The one-token-drop recovery matrix in full: some forty thousand parses
 # against the per-source records under crates/surface-parser/tests/recovery,
 # where every other profile visits the sweep's sample. UPDATE_EXPECT=1
-# re-records from the full matrix; GANDR_RECOVERY_SOURCE=<path in the corpus>
-# narrows either run to one source.
+# re-records from the full matrix; GANDR_RECOVERY_SOURCE narrows either run to
+# the sources it names, one on each line.
 ["ci:recovery"]
 description = "Every corpus source cut short and with each token dropped, against its recovery record"
 run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile sweeps -E 'test(=sweeps::dropped_tokens_recover_no_worse_than_the_record)'"
+
+# The recovery sweep over a pull request's own records (#5864): `landing`'s
+# stale records are not the pull request's, and the whole sweep failed every
+# pull request for them. `.config/recovery/change.bash` names the sources the
+# change touches to `ci:recovery`, or runs it whole for a change to the parser
+# or a removed source; `.config/recovery/change-cases.bash` holds its cases.
+["ci:recovery-change"]
+description = "The recovery sweep over the records a change touches, or every record when it reaches the parser or removes a source"
+run = ".config/recovery/change.bash"
 
 # The goldens a corpus source carries beside it — its recovery record, its
 # role golden and, for a refusing source, its rendered refusals — rewritten
@@ -1132,9 +1141,11 @@ tools.jq = "1.8.1"
 usage = '''
 flag "-p --package <crate>" help="the crate that owns an unwitnessed list"
 flag "--unwitnessed <file>" help="a static unwitnessed-mutants list"
+flag "--campaign <file>" help="a campaign's surviving-mutants list"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
+source .config/gh/budget.bash
 set -euo pipefail
 repo=${GH_REPO:?}
 file_unwitnessed() {
@@ -1170,9 +1181,47 @@ file_unwitnessed() {
     printf '%s: opened %s (%s unwitnessed mutant(s))\n' "$crate" "$url" "$count"
   fi
 }
+file_campaign() {
+  local survivors=$1 crate=$2 area scratch count title key issue url
+  local -a labels
+  [[ -n $crate ]] || { echo '--campaign needs --package' >&2; return 2; }
+  [[ -f $survivors ]] || { printf 'no campaign survivors at %s\n' "$survivors" >&2; return 2; }
+  area=${crate#gandr-}
+  area=${area%%-*}
+  case "$area" in
+    ci | core | distribution | editor | kernel | lsp | program-logic | runtime | storage | surface | theory | ux | workflow) ;;
+    *) printf 'no area for crate %s\n' "$crate" >&2; return 2 ;;
+  esac
+  scratch=$(mktemp -d)
+  trap 'rm -rf "$scratch"' EXIT
+  jq -R -s --arg crate "$crate" '{crate: $crate, mutants: [split("\n")[] | select(length > 0)]}' "$survivors" > "$scratch/input.json"
+  count=$(jq '.mutants | length' "$scratch/input.json")
+  if (( count == 0 )); then
+    printf '%s leaves no mutant alive in the campaign\n' "$crate"
+    return 0
+  fi
+  jq -r -f .config/mutants/campaign.jq "$scratch/input.json" > "$scratch/body.md"
+  title="test: $crate leaves $count mutant(s) alive (campaign)"
+  key="test: $crate leaves "
+  issue=$(gh issue list --repo "$repo" --state open --label collector --limit 100 --search "\"${key% }\" in:title" --json number,title \
+    | jq -r --arg title "$title" '[.[] | select(.title == $title)] | first | .number // empty')
+  labels=(--label kind:gap --label collector --label "area:$area" --label priority:medium --label effort:unknown)
+  if [[ -n $issue ]]; then
+    gh issue edit "$issue" --repo "$repo" --title "$title" --body-file "$scratch/body.md" "${labels[@]/#--label/--add-label}" > /dev/null
+    printf '%s: updated #%s (%s survivor(s))\n' "$crate" "$issue" "$count"
+  else
+    url=$(gh issue create --repo "$repo" --title "$title" --body-file "$scratch/body.md" "${labels[@]}")
+    printf '%s: opened %s (%s survivor(s))\n' "$crate" "$url" "$count"
+  fi
+}
 unwitnessed=${usage_unwitnessed:-}
 if [[ -n $unwitnessed ]]; then
   file_unwitnessed "$unwitnessed" "${usage_package:-}"
+  exit 0
+fi
+campaign=${usage_campaign:-}
+if [[ -n $campaign ]]; then
+  file_campaign "$campaign" "${usage_package:-}"
   exit 0
 fi
 before=${MUTANTS_PUSH_BEFORE:-}

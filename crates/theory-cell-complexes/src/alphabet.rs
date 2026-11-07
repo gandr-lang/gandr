@@ -642,6 +642,25 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn position_at_path(path: &[PositionStep]) -> Self::Pos;
 
+    /// The child-index path that `pos` addresses, read from the root outward:
+    /// the inverse of [`CellAlphabet::position_at_path`].
+    ///
+    /// A caller that places the steps of one term inside another joins two
+    /// paths through this.
+    ///
+    /// # Specification
+    /// - ensures: [`CellAlphabet::position_at_path`] of the answer is `pos`,
+    ///   and the root answers the empty path.
+    /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the root, a child and a grandchild read back the
+    ///   paths that built them. A dropped or reordered step changes the read.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
+    fn position_steps(pos: &Self::Pos) -> &[PositionStep];
+
     /// How two positions relate: whether one addresses a subtree containing
     /// the other, or the two address disjoint subtrees.
     ///
@@ -1139,6 +1158,13 @@ mod tests
         let cons = A::position_at_path(&[PositionStep::from(1_usize)]);
         let absent = A::position_at_path(&[PositionStep::from(2_usize)]);
         assert_eq!(root, A::position_at_path(&[]));
+        let grandchild = [PositionStep::from(1_usize), PositionStep::from(0_usize)];
+        assert!(A::position_steps(&root).is_empty());
+        assert_eq!([PositionStep::from(0_usize)], A::position_steps(&prod));
+        assert_eq!(
+            grandchild,
+            A::position_steps(&A::position_at_path(&grandchild))
+        );
         assert_eq!(PositionOrder::Same, A::position_order(&root, &root));
         assert_eq!(PositionOrder::Encloses, A::position_order(&root, &prod));
         assert_eq!(PositionOrder::EnclosedBy, A::position_order(&cons, &root));

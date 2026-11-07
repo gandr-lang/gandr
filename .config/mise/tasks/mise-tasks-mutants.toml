@@ -545,6 +545,7 @@ else
   fi
   printf '%s\n' "$crate" > "$state/cursor"
 fi
+printf '%s\n' "$crate" > "$state/crate"
 mise run evidence:rustdoc
 left=$((until - (SECONDS - started)))
 if (( left <= 0 )); then
@@ -565,5 +566,28 @@ out=$state/$crate
   mutants_survivors "$out" || printf '\nNo mutant the night tested survives.\n'
 } > "$state/report.md"
 cat "$state/report.md"
+if [[ ${MUTANTS_CAMPAIGN:-} == 1 ]]; then
+  mkdir -p ledger/mutants
+  cp "$out/iterate/settled.txt" "ledger/mutants/$crate.txt"
+  cat "$out/missed.txt" "$out/timeout.txt" | sort -u > "$out/survivors.txt"
+  GH_REPO="${GH_REPO:-gandr-lang/gandr}" mise run ci:mutants-landed -- --package "$crate" --campaign "$out/survivors.txt"
+fi
 {% endraw %}
+'''
+
+["mutants:campaign"]
+description = "Run one bounded mutation campaign on the dedicated host"
+usage = '''
+flag "--until <seconds>" required=#true help="the campaign's wall-time budget"
+flag "--lanes <count>" required=#true help="workspace copies that run within the host memory budget"
+flag "--timeout <seconds>" default="300" help="the longest a mutant's witnesses may run"
+flag "--package <crate>" help="mutate this crate and leave the rotation where it is"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+state=${XDG_STATE_HOME:-"$HOME/.local/state"}/gandr-mutants
+arguments=(--until "${usage_until:?}" --lanes "${usage_lanes:?}" --timeout "${usage_timeout:-300}")
+if [[ -n "${usage_package:-}" ]]; then arguments+=(--package "$usage_package"); fi
+MUTANTS_CAMPAIGN=1 MUTANTS_OUTPUT="$state" mise run mutants:nightly -- "${arguments[@]}"
 '''

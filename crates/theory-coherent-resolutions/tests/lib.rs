@@ -10,6 +10,8 @@ extern crate alloc;
 #[cfg(test)]
 mod adversarial_alphabet;
 #[cfg(test)]
+mod basis;
+#[cfg(test)]
 mod brown;
 #[cfg(test)]
 mod collapse;

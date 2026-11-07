@@ -70,10 +70,29 @@ wrapper! {
 }
 
 wrapper! {
-    /// The stable key an overlap support assigns a certificate, in insertion
-    /// order.
+    /// The place of a certificate in the list that holds it, in insertion
+    /// order: the key of an overlap support, or of a reduction.
     #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
     pub struct CertificateIndex(usize);
+}
+
+wrapper! {
+    /// The zero-based place of one critical triple in the list that a
+    /// reduction reads.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct TripleIndex(usize);
+}
+
+wrapper! {
+    /// The zero-based place of one step in a rewriting path.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct StepPlace(usize);
+}
+
+wrapper! {
+    /// The zero-based place of one move in a homotopy.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct MovePlace(usize);
 }
 
 wrapper! {
