@@ -2158,6 +2158,10 @@ where
             writer.tag(Tag(0x10));
             write_index(writer, body)?;
         },
+        ContentNode::LinearLambda(body) => {
+            writer.tag(Tag(0x91));
+            write_index(writer, body)?;
+        },
         ContentNode::Application(head, argument) => {
             writer.tag(Tag(0x11));
             write_index(writer, head)?;
@@ -2386,6 +2390,16 @@ where
         ContentNode::Pi { domain, codomain } => {
             writer.tag(Tag(0x32));
             write_index(writer, domain)?;
+            write_index(writer, codomain)?;
+        },
+        ContentNode::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        } => {
+            writer.tag(Tag(0x92));
+            write_index(writer, domain)?;
+            write_index(writer, multiplicity)?;
             write_index(writer, codomain)?;
         },
         ContentNode::ComputationElement { code, ref target } => {
@@ -3433,6 +3447,19 @@ where
             writer.tag(Tag(15));
             write_site(writer, clause)?;
         },
+        Linearity::LinearSlotConsumed { lambda } => {
+            writer.tag(Tag(16));
+            write_site(writer, lambda)?;
+        },
+        Linearity::LinearSlotUnconsumed { lambda } => {
+            writer.tag(Tag(17));
+            write_site(writer, lambda)?;
+        },
+        Linearity::ShadowCaptured { lambda, by } => {
+            writer.tag(Tag(18));
+            write_site(writer, lambda)?;
+            write_listed(writer, &CAPTURES, &by)?;
+        },
     }
     Ok(())
 }
@@ -3504,6 +3531,16 @@ fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
         },
         15 => Linearity::ContinuationAsValue {
             clause: read_site(reader)?,
+        },
+        16 => Linearity::LinearSlotConsumed {
+            lambda: read_site(reader)?,
+        },
+        17 => Linearity::LinearSlotUnconsumed {
+            lambda: read_site(reader)?,
+        },
+        18 => Linearity::ShadowCaptured {
+            lambda: read_site(reader)?,
+            by: read_listed(reader, &CAPTURES)?,
         },
         _ => return Err(CodecError::Corrupt),
     })
@@ -4234,6 +4271,7 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
                     | ContentNode::Hole(_) => tag == 0x0E,
                     | ContentNode::ValueMark { .. } => tag == 0x0F,
                     | ContentNode::Lambda(_) => tag == 0x10,
+                    | ContentNode::LinearLambda(_) => tag == 0x91,
                     | ContentNode::Application(..) => tag == 0x11,
                     | ContentNode::Return(_) => tag == 0x12,
                     | ContentNode::Bind(..) => tag == 0x13,
@@ -4279,6 +4317,7 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
                     | ContentNode::Returner { ref effects, .. } => tag == if effects.tail().is_some() { 0x88 } else if effects.purity() == gandr_core_term::effect::Purity::Pure { 0x30 } else { 0x70 },
                     | ContentNode::Arrow { .. } => tag == 0x31,
                     | ContentNode::Pi { .. } => tag == 0x32,
+                    | ContentNode::LinearArrow { .. } => tag == 0x92,
                     | ContentNode::ComputationElement { .. } => tag == 0x33,
                     | ContentNode::UnknownComputationType => tag == 0x34,
                     | ContentNode::Unresolved(_) => false,
@@ -4691,6 +4730,10 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let body = read_index(reader)?;
             ContentNode::Lambda(body)
         },
+        0x91 => {
+            let body = read_index(reader)?;
+            ContentNode::LinearLambda(body)
+        },
         0x11 => {
             let head = read_index(reader)?;
             let argument = read_index(reader)?;
@@ -4893,6 +4936,16 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let domain = read_index(reader)?;
             let codomain = read_index(reader)?;
             ContentNode::Pi { domain, codomain }
+        },
+        0x92 => {
+            let domain = read_index(reader)?;
+            let multiplicity = read_index(reader)?;
+            let codomain = read_index(reader)?;
+            ContentNode::LinearArrow {
+                domain,
+                multiplicity,
+                codomain,
+            }
         },
         0x33 => {
             let code = read_index(reader)?;
@@ -7860,7 +7913,10 @@ impl Contents for Linearity
             | Self::ContinuationUnspent { .. }
             | Self::ContinuationUsedTwice { .. }
             | Self::ContinuationCaptured { .. }
-            | Self::ContinuationAsValue { .. } => Ok(()),
+            | Self::ContinuationAsValue { .. }
+            | Self::LinearSlotConsumed { .. }
+            | Self::LinearSlotUnconsumed { .. }
+            | Self::ShadowCaptured { .. } => Ok(()),
         }
     }
 }
@@ -8256,6 +8312,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 ContentNode::Unresolved(ref found) => Some(*found),
 ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
 ContentNode::ReturnAll(_) | ContentNode::BindAll(..) | ContentNode::Returns { .. } | ContentNode::Patched { .. } |
+ContentNode::LinearLambda(_) | ContentNode::LinearArrow { .. } |
 ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,

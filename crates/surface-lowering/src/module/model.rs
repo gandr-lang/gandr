@@ -1684,6 +1684,7 @@ pub fn spine_domains<'source>(
             | Former::TypeApplication
             | Former::ThunkType
             | Former::ReturnerType
+            | Former::LinearArrowType
             | Former::ProductType
             | Former::SumType
             | Former::LazyProductType

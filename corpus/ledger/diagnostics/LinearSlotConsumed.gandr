@@ -1,0 +1,3 @@
+/// `LinearSlotConsumed`: a linear function's body reads its parameter again after it spends the one copy.
+@[ refuses("LinearSlotConsumed") ]
+def twice(x : Integer) ⊸ Integer = x + x ;

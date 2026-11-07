@@ -577,7 +577,10 @@ pub fn level_of(
                     }
                 },
                 CompTypeView::Arrow { domain, codomain }
-                | CompTypeView::Pi { domain, codomain } => {
+                | CompTypeView::Pi { domain, codomain }
+                | CompTypeView::LinearArrow {
+                    domain, codomain, ..
+                } => {
                     tasks.push(Task::Join);
                     tasks.push(Task::Enter(TypeNode::Computation(codomain)));
                     tasks.push(Task::Enter(TypeNode::Value(domain)));

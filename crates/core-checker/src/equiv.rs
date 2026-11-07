@@ -355,6 +355,7 @@ pub fn codes(
         | CompTypeView::Returns { .. }
         | CompTypeView::Arrow { .. }
         | CompTypeView::Pi { .. }
+        | CompTypeView::LinearArrow { .. }
         | CompTypeView::Element { .. }
         | CompTypeView::Codata { .. }
         | CompTypeView::Unknown => Err(unsupported),

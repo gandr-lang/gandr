@@ -251,12 +251,15 @@ run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | de
 # The features unify over the whole workspace, as `check:tests-enforcing` does:
 # a `GATE_SCOPE` that keeps no member using `anodized` otherwise builds
 # `quenchant-anodized` without its feature under the cfg, and its build stops.
+# `--units FILE` also writes the pass's units to FILE as Cargo's JSON
+# messages: `ci:prune-clippy` keeps exactly those units (#5930).
 ["check:clippy-enforcing"]
 description = "The clippy wall with specification enforcement"
+usage = 'flag "--units <file>" help="write the units of the pass to this file as Cargo JSON messages"'
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --locked --profile test --config 'resolver.feature-unification=\"workspace\"' -- --deny warnings"
+run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --locked --profile test --config 'resolver.feature-unification=\"workspace\"' {% if usage.units %}--message-format json {% endif %}-- --deny warnings{% if usage.units %} > \"{{ usage.units }}\"{% endif %}"
 
 # CI's plain Clippy pass lints only the targets that carry plain-only code,
 # `cfg(not(anodized_panic))`, as the plain test lane runs only their tests
@@ -264,9 +267,11 @@ run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | de
 # list is checked first: every file under `crates/` that names
 # `not(anodized_panic)` sits in a listed target's directory, or the task
 # fails naming it. A new such target joins this list and the plain-only test
-# filters.
+# filters. `--units FILE` writes the units of every listed target to FILE as
+# Cargo's JSON messages, for `ci:prune-clippy` (#5930).
 ["check:clippy-plain-only"]
 description = "The plain clippy wall over the targets that carry plain-only code"
+usage = 'flag "--units <file>" help="write the units of the pass to this file as Cargo JSON messages"'
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
@@ -284,10 +289,17 @@ while IFS= read -r file; do
   fi
 done < <(git grep -l 'not(anodized_panic)' -- crates)
 (( unlisted == 0 ))
+units=${usage_units:-}
+if [[ -n $units ]]; then : > "$units"; fi
 for target in "${targets[@]}"; do
   package=${target%%:*}
   test=${target#*:}
-  .config/mise/gated .config/mise/scope cargo clippy --locked --package "$package" --test "${test%%:*}" -- --deny warnings
+  if [[ -n $units ]]; then
+    .config/mise/gated .config/mise/scope cargo clippy --locked --package "$package" --test "${test%%:*}" \
+      --message-format json -- --deny warnings >> "$units"
+  else
+    .config/mise/gated .config/mise/scope cargo clippy --locked --package "$package" --test "${test%%:*}" -- --deny warnings
+  fi
 done
 {% endraw %}'''
 

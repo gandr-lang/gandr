@@ -105,6 +105,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::Listed;
 use super::Lowerer;
 use super::Parameter;
 use super::Plan;
@@ -511,6 +512,14 @@ impl<'source> Lowerer<'_, 'source>
                 frame: bound,
                 declared,
                 component: None,
+                // An explicit entry is written in the tail's own list, which
+                // the merge binds in its own order.
+                listed: if entry.plicity == Plicity::Explicit {
+                    Listed::Own
+                }
+                else {
+                    Listed::Elsewhere
+                },
             });
             frame = Frame::Inner(bound);
         }

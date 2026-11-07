@@ -79,9 +79,9 @@
 //! - `DomainArena` with `DomainValueId`, `DomainCompId`, `NeutralId`,
 //!   `ValueClosureId` and `CompClosureId`: checked constructors and lookups,
 //!   `force_neutral`, and `RunWatermark` with `DomainArena::truncate_to`.
-//! - The glued vocabulary: `DomainValue`, `DomainComp`, `Neutral`,
-//!   `NeutralHead`, `Elimination`, `Projector`, `TermFace`, `CompTermFace`,
-//!   `Reading`, `Unfolding` and `Glued`.
+//! - The glued vocabulary: `DomainValue`, `DomainComp`, `Abstraction`,
+//!   `Neutral`, `NeutralHead`, `Elimination`, `Projector`, `TermFace`,
+//!   `CompTermFace`, `Reading`, `Unfolding` and `Glued`.
 //! - `ValueClosure`, `CompClosure` and the two-zone `Environment` they close
 //!   over.
 //! - `SchedulingPolicy` with its `Share`, and `DuplicationPolicy` with
@@ -416,6 +416,7 @@ pub use crate::conv::Settlement;
 pub use crate::conv::convert_computations;
 pub use crate::conv::convert_values;
 pub use crate::derivation::DerivationCount;
+pub use crate::domain::Abstraction;
 pub use crate::domain::BinderLevel;
 pub use crate::domain::CompTermFace;
 pub use crate::domain::DomainComp;

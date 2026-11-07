@@ -357,6 +357,7 @@ digraph crates {
   "theory-discrete-morse" -> "theory-stone-duality";
   "theory-dynamic-graphs" -> "theory-graphs";
   "theory-dynamic-graphs" -> "theory-order-maintenance";
+  "theory-exact-reals" -> "theory-discrete-morse";
   "theory-graded-posets" -> "theory-stone-duality";
   "theory-graphs" -> "theory-spec-combinators";
   "theory-levitation" -> "theory-path-orders";
@@ -380,6 +381,8 @@ digraph crates {
   "workflow-test-timing" -> "workflow-github";
   "theory-cellular-sheaves" -> "theory-coherent-resolutions" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "theory-coherent-resolutions" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
+  "theory-discrete-morse" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
+  "theory-exact-reals" -> "theory-graded-posets" [style = "dashed", dir = "none", constraint = false, color = "blue", label = "collapse"];
   "core-fork" -> "runtime-emitter" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "runtime-emitter" -> "surface-dispatcher" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];
   "surface-dispatcher" -> "surface-session" [style = "dashed", dir = "none", constraint = false, color = "darkgreen", label = "fork"];

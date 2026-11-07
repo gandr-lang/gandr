@@ -1167,6 +1167,15 @@ where
                     pending.push((AnyNode::ValueType(domain), reach.domain()));
                     pending.push((AnyNode::CompType(codomain), reach.under()));
                 },
+                Some(&CompType::LinearArrow {
+                    domain,
+                    multiplicity,
+                    codomain,
+                }) => {
+                    pending.push((AnyNode::ValueType(domain), reach.domain()));
+                    pending.push((AnyNode::Value(multiplicity), reach.term()));
+                    pending.push((AnyNode::CompType(codomain), reach.under()));
+                },
                 Some(&CompType::Returner {
                     result,
                     ref effects,
@@ -1446,6 +1455,7 @@ where
                 },
                 Some(
                     &(Computation::Lambda(body)
+                    | Computation::LinearLambda(body)
                     | Computation::Fixpoint { body, .. }
                     | Computation::Mark { body, .. }
                     | Computation::Reset(body)

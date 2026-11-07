@@ -513,6 +513,7 @@ fn step(
         | Computation::Decompose(_)
         | Computation::TelescopeTransport { .. }
         | Computation::Lambda(_)
+        | Computation::LinearLambda(_)
         | Computation::Fixpoint { .. }
         | Computation::Application(..)
         | Computation::Return(_)
@@ -653,7 +654,9 @@ pub fn stated(
         let head = context.whnf_comp_type(shape)?;
         order.push((shape, head));
         match comp_type_view(context.arena(), head)? {
-            CompTypeView::Arrow { codomain, .. } | CompTypeView::Pi { codomain, .. } => {
+            CompTypeView::Arrow { codomain, .. }
+            | CompTypeView::Pi { codomain, .. }
+            | CompTypeView::LinearArrow { codomain, .. } => {
                 pending.push(codomain);
             },
             CompTypeView::With(components) => pending.extend(components.iter().copied()),
@@ -724,6 +727,15 @@ pub fn stated(
                 .get(&codomain)
                 .copied()
                 .map(|codomain| context.arena_mut().comp_type_pi(domain, codomain)),
+            CompTypeView::LinearArrow {
+                domain,
+                multiplicity,
+                codomain,
+            } => rebuilt.get(&codomain).copied().map(|codomain| {
+                context
+                    .arena_mut()
+                    .comp_type_linear_arrow(domain, multiplicity, codomain)
+            }),
             CompTypeView::With(components) => components
                 .iter()
                 .any(|part| rebuilt.contains_key(part))
@@ -789,7 +801,9 @@ pub fn calls(
     while let Some(shape) = pending.pop() {
         let head = context.whnf_comp_type(shape)?;
         match comp_type_view(context.arena(), head)? {
-            CompTypeView::Arrow { codomain, .. } | CompTypeView::Pi { codomain, .. } => {
+            CompTypeView::Arrow { codomain, .. }
+            | CompTypeView::Pi { codomain, .. }
+            | CompTypeView::LinearArrow { codomain, .. } => {
                 pending.push(codomain);
             },
             CompTypeView::With(components) => pending.extend(components.iter().copied()),

@@ -260,6 +260,7 @@ pub fn sentence(role: FrameRole) -> Sentence
         FrameRole::InjectionPayload => "checking the payload of this injection",
         FrameRole::Spliced => "checking the answer this splice's tactic gave",
         FrameRole::Quote => "forming the type this quotes",
+        FrameRole::Forming => "forming the type of this linear function before its body",
         FrameRole::FormNext => "forming the parts of this type",
         FrameRole::FormPi => "forming the domain of this function type",
         FrameRole::FormSigma => "forming the first entry of this dependent record",

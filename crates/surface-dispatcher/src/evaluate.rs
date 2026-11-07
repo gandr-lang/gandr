@@ -3592,7 +3592,9 @@ fn references(
                 }) => {
                     pending.extend([path, start, over, value].map(Node::Value));
                 },
-                Some(&Computation::Lambda(inner)) => pending.push(Node::Computation(inner)),
+                Some(&(Computation::Lambda(inner) | Computation::LinearLambda(inner))) => {
+                    pending.push(Node::Computation(inner));
+                },
                 Some(&Computation::Application(head, argument)) => {
                     pending.extend([Node::Computation(head), Node::Value(argument)]);
                 },

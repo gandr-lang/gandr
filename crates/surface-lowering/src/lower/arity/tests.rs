@@ -154,6 +154,15 @@ fn shown(
                     Root::ValueType(domain),
                     Root::CompType(codomain),
                 ]),
+                Some(&CompType::LinearArrow {
+                    domain,
+                    multiplicity,
+                    codomain,
+                }) => (String::from("-o"), vec![
+                    Root::ValueType(domain),
+                    Root::Value(multiplicity),
+                    Root::CompType(codomain),
+                ]),
                 Some(&CompType::With(ref components)) => (
                     format!("&{}", components.len()),
                     components
@@ -1938,6 +1947,62 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
         declared(&arena, &module, "ignored"),
         declared(&arena, &module, "tail"),
         "the type the function tail writing the same signature declares"
+    );
+}
+
+/// A linear arrow binds its domain once, at the multiplicity one, with its
+/// binder named or not and in either spelling; a codomain that names the
+/// binder reads that one binder (#5853).
+#[test]
+fn a_linear_arrow_binds_its_domain_once_5853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def named : +U ((x : Integer) ⊸ -F Integer) ; def nameless : +U (Integer ⊸ -F Integer) \
+         ; def ascii : +U ((x : Integer) -o -F Integer) ; def dependent : +U ((x : Integer) ⊸ -F \
+         Path(x, x)) ;",
+        &mut arena,
+    );
+    let one = gandr_kernel_term::Magnitude::from_decimal_text(String::from("1"))
+        .expect("the digits are decimal");
+    let one = format!(
+        "{:?}",
+        gandr_kernel_term::Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            one,
+        ))
+    );
+    assert_eq!(
+        declared(&arena, &module, "named"),
+        ["U", "-o", "Integer", one.as_str(), "F", "Integer"],
+        "a linear arrow holds its domain, the multiplicity one and its codomain"
+    );
+    assert_eq!(
+        declared(&arena, &module, "nameless"),
+        declared(&arena, &module, "named"),
+        "a nameless domain binds as a named one that nothing reads"
+    );
+    assert_eq!(
+        declared(&arena, &module, "ascii"),
+        declared(&arena, &module, "named"),
+        "the ASCII spelling writes the same arrow"
+    );
+    let dependent = declared(&arena, &module, "dependent");
+    assert_eq!(
+        dependent.get(.. 4_usize),
+        Some(
+            &[
+                String::from("U"),
+                String::from("-o"),
+                String::from("Integer"),
+                one
+            ][..]
+        ),
+        "a codomain that names the binder stays under the one linear arrow"
+    );
+    assert!(
+        dependent.ends_with(&[String::from("#0"), String::from("#0")]),
+        "the codomain's endpoints read the one binder the arrow opens: {dependent:?}"
     );
 }
 

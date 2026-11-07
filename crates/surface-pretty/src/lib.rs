@@ -1055,6 +1055,10 @@ quenchant_shape::reason_enum! {
             /// No names for its parameters avoid every name the definition
             /// mentions.
             Unnamed,
+            /// Its linear parameters are not exactly the ones its list writes,
+            /// or a linear arrow takes a multiplicity other than one: the
+            /// arrow before the result says one taking for the whole list.
+            Untaken,
         }
     }
 }
@@ -1176,26 +1180,29 @@ pub fn present_whole(
         else {
             return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
         };
-        if !matches!(source.read(nested), Former::Lambda(_))
-            || !matches!(
-                source.read(function),
-                Former::Arrow { .. } | Former::Pi { .. }
-            )
-        {
+        if !matches!(
+            (source.read(nested), source.read(function)),
+            (Former::Lambda(_), Former::Arrow { .. } | Former::Pi { .. })
+                | (Former::LinearLambda(_), Former::LinearArrow { .. })
+        ) {
             return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
         }
         nested
     };
     // Each parameter: its arrow, its domain, and whether the arrow binds it
-    // in what follows; then the codomain and the body under them all. The
-    // fixpoint stands after the uniform parameters, and its own abstractions
-    // follow it. A fixpoint under a suspended returner, or one with no
-    // abstraction of its own, abstracts nothing: it is the body's loop.
+    // in what follows; then the codomain and the body under them all. A
+    // linear arrow always binds its parameter's shadow, and its lambda is
+    // the linear one. The fixpoint stands after the uniform parameters, and
+    // its own abstractions follow it. A fixpoint under a suspended returner,
+    // or one with no abstraction of its own, abstracts nothing: it is the
+    // body's loop.
     let returner = matches!(
         source.read(function),
         Former::Returner(_) | Former::EffectfulReturner { .. }
     );
     let mut arrows: Vec<(CoreNode, CoreNode, bool)> = Vec::new();
+    // Which parameters the linear arrows take, one flag per arrow.
+    let mut linear: Vec<bool> = Vec::new();
     let mut fixpoint: Option<(Recursive, CoreNode)> = None;
     let (mut codomain, mut inner) = (function, suspended);
     loop {
@@ -1215,11 +1222,22 @@ pub fn present_whole(
             continue;
         }
         let former = source.read(codomain);
-        let (domain, rest, dependent) = if let Former::Arrow { domain, codomain } = former {
-            (domain, codomain, false)
+        let (domain, rest, dependent, taken) = if let Former::Arrow { domain, codomain } = former {
+            (domain, codomain, false, false)
         }
         else if let Former::Pi { domain, codomain } = former {
-            (domain, codomain, true)
+            (domain, codomain, true, false)
+        }
+        else if let Former::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        } = former
+        {
+            if walk::elided_multiplicity(source, multiplicity).is_some() {
+                return Ok(Maybe::Absent(whole::Absent::Untaken));
+            }
+            (domain, codomain, true, true)
         }
         else {
             break;
@@ -1228,11 +1246,13 @@ pub fn present_whole(
         // leaves an arrow as the header's result. The header reads no
         // computation arrow there, so the signature and the body write such a
         // definition instead (#5219).
-        let Former::Lambda(under) = source.read(inner)
+        let ((Former::Lambda(under), false) | (Former::LinearLambda(under), true)) =
+            (source.read(inner), taken)
         else {
             return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
         };
         arrows.push((codomain, domain, dependent));
+        linear.push(taken);
         (codomain, inner) = (rest, under);
     }
     // A suspended returner abstracts nothing and is written whole with no
@@ -1241,7 +1261,7 @@ pub fn present_whole(
         return Ok(Maybe::Absent(
             if matches!(
                 source.read(function),
-                Former::Arrow { .. } | Former::Pi { .. }
+                Former::Arrow { .. } | Former::Pi { .. } | Former::LinearArrow { .. }
             ) {
                 whole::Absent::NotAbstracted
             }
@@ -1492,6 +1512,30 @@ pub fn present_whole(
             header.push(Entry::Explicit(at));
         }
     }
+    // The arrow before the result takes the written list whole: `⊸` where
+    // every parameter it writes is linear and none other is, `->` where none
+    // is.
+    let taking: &str = if linear.iter().any(|&taken| taken) {
+        let taken = |at: usize| linear.get(at).copied().unwrap_or(false);
+        let written_linearly = header.iter().all(|&entry| match entry {
+            Entry::Explicit(at) => taken(at),
+            Entry::Implicit(at) | Entry::Model { at, .. } => !taken(at),
+            Entry::Region(_) => true,
+        }) && labels.iter().all(|&at| !taken(at))
+            && paths
+                .iter()
+                .enumerate()
+                .all(|(at, path)| path.is_none() || !taken(at));
+        if !written_linearly {
+            return Ok(Maybe::Absent(whole::Absent::Untaken));
+        }
+        gandr_surface_grammar::LINEAR_ARROW
+            .written(style.spelling)
+            .0
+    }
+    else {
+        "->"
+    };
     let mut text = format!("{opener} {}", name.as_ref());
     let mut written = Vec::new();
     let mut telescope = header
@@ -1554,7 +1598,9 @@ pub fn present_whole(
         text.push_str(" : ");
         appended(&mut text, &mut written, typed);
     }
-    text.push_str(") -> ");
+    text.push_str(") ");
+    text.push_str(taking);
+    text.push(' ');
     match rowed {
         Rowed::Yes => appended_unreturned(&mut text, &mut written, &returned),
         Rowed::No => appended(&mut text, &mut written, &returned),

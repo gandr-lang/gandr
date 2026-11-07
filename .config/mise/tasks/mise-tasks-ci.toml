@@ -551,13 +551,17 @@ run = [
   "target/debug/build-state prune --profile-dir target/debug target/debug/units-doctests.jsonl target/debug/units-tool.jsonl",
 ]
 
-# The Clippy lane's two passes, with the arguments ci.yml gives them, and the
-# pruning binary itself.
+# The Clippy lane's two passes, run as the lane runs them, and the pruning
+# binary itself. Each pass is its own task with `--units`, so the units the
+# prune keeps are the units the lint used. A pass spelled here apart from its
+# task drifted from it: it linted the whole plain graph and resolved other
+# features, so it pruned the units the plain pass used, and each merge group
+# checked 13 of them again (#5930).
 ["ci:prune-clippy"]
 description = "Prune the Clippy state to the units this run's passes used"
 run = [
-  ".config/mise/scope cargo clippy --workspace --all-targets --locked --message-format json -- --deny warnings > target/debug/units-clippy.jsonl",
-  "RUSTFLAGS='--cfg anodized_panic' CARGO_TARGET_DIR=target/enforcing .config/mise/scope cargo clippy --workspace --all-targets --locked --profile test --message-format json -- --deny warnings > target/enforcing/debug/units-clippy.jsonl",
+  "mise run check:clippy-plain-only --units target/debug/units-clippy.jsonl",
+  "mise run check:clippy-enforcing --units target/enforcing/debug/units-clippy.jsonl",
   ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
   "target/debug/build-state prune --profile-dir target/debug target/debug/units-clippy.jsonl target/debug/units-tool.jsonl",
   "target/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/debug/units-clippy.jsonl",

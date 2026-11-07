@@ -1382,7 +1382,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1427,6 +1427,7 @@ fn ending(former: Former) -> Ending
         | Former::ThunkType
         | Former::ReturnerType
         | Former::ArrowType
+        | Former::LinearArrowType
         | Former::ProductType
         | Former::SumType
         | Former::LazyProductType
@@ -1482,7 +1483,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::LinearArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ParenthesizedType | Former::PathType | Former::BridgeType | Former::FlowType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1576,6 +1577,7 @@ fn iterating(former: Former) -> Ending
                     | Former::ThunkType
                     | Former::ReturnerType
                     | Former::ArrowType
+                    | Former::LinearArrowType
                     | Former::ProductType
                     | Former::SumType
                     | Former::LazyProductType
@@ -1661,6 +1663,7 @@ const fn family_of(former: Former) -> Family
         | Former::ThunkType
         | Former::ReturnerType
         | Former::ArrowType
+        | Former::LinearArrowType
         | Former::ProductType
         | Former::SumType
         | Former::LazyProductType
@@ -2097,6 +2100,31 @@ struct Parameter
     /// implicit's, when it is one of a flattened model implicit's parameters
     /// ([`model::Flattened`]).
     component: Option<model::ComponentPlace>,
+    /// Whether the tail's own parameter list writes the parameter.
+    listed: Listed,
+}
+
+/// Where a function's parameter is written.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: [`Self::Own`] for a parameter the tail's own list writes, bound
+///   in written or in merged order; [`Self::Elsewhere`] for one an implicit
+///   group, a row label, a model's components, a telescope or a clause's
+///   columns bind.
+/// - executable: none — the record holds no tree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a linear tail with an implicit group takes its written
+///   parameters linearly and its implicit one intuitionistically.
+/// - witness: `lower::tests::a_linear_tail_takes_each_written_parameter_once_5853`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Listed
+{
+    /// The tail's own parameter list writes the parameter.
+    Own,
+    /// Something other than the tail's own list binds the parameter.
+    Elsewhere,
 }
 
 /// A label the source writes against an entry, kept while the lowering plans
@@ -2516,6 +2544,89 @@ struct Function
     /// The parameters at a session type its body places, in the lowerer's
     /// endpoint store.
     endpoints: FormStretch,
+    /// How the tail takes its written parameters: the arrow its result
+    /// follows.
+    taking: Taking,
+}
+
+/// How a function tail takes its written parameters, read off the arrow
+/// before its result.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a linear tail takes linearly each parameter its own list writes,
+///   in any order a merged telescope binds them; every other parameter stays
+///   intuitionistic.
+/// - executable: none — the parameter store is not retained.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tail at `⊸` mints the linear lambda and the linear
+///   arrow for each written parameter, and one at `->` the lambda and the
+///   arrow; an implicit group stays intuitionistic.
+/// - witness: `lower::tests::a_linear_tail_takes_each_written_parameter_once_5853`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Taking
+{
+    /// `->`: each parameter is intuitionistic.
+    Unrestricted,
+    /// `⊸`: each parameter the tail's own list writes is linear, at the
+    /// multiplicity one.
+    Linear,
+}
+
+impl Taking
+{
+    /// The taking of `parameter`: linear when the tail takes its own list
+    /// linearly and that list writes `parameter`, unrestricted otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(
+        self,
+        parameter: &Parameter,
+    ) -> Self
+    {
+        if self == Self::Linear && parameter.listed == Listed::Own {
+            Self::Linear
+        }
+        else {
+            Self::Unrestricted
+        }
+    }
+}
+
+/// Mint the multiplicity one a linear arrow leaves unwritten, recorded as
+/// inserted at `origin`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the non-negative integer literal `1`, the multiplicity the
+///   checker admits.
+/// - fails: never; the absence is unreachable, as `1` is decimal text.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::linear_arrow`].
+/// - witness: `lower::arity::tests::a_linear_arrow_binds_its_domain_once_5853`
+#[spec(ensures: |ret| matches!(ret, Maybe::Present(_) | Maybe::Absent(lowered::Absent::Unminted)))]
+fn multiplicity_one(
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Maybe<ValueId, lowered::Absent>
+{
+    let Some(magnitude) = Magnitude::from_decimal_text(String::from("1"))
+    else {
+        return Maybe::Absent(lowered::Absent::Unminted);
+    };
+    let id = sink
+        .arena
+        .value_literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            magnitude,
+        )));
+    sink.origins
+        .record_value(id, origin.inserted(Insertion::Multiplicity));
+    Maybe::Present(id)
 }
 
 /// A function tail's body: a block, or the decision tree its clauses compile
@@ -2749,6 +2860,10 @@ enum Plan
     /// A dependent arrow `(x : A) -> C`: its one binder, in the parameter
     /// store, and its codomain.
     DependentArrow(FormStretch, NodeIndex),
+    /// A linear arrow `(x : A) ⊸ C`: its one binder, in the parameter store,
+    /// its codomain, and whether a value type is read there, which takes the
+    /// box over it.
+    LinearArrow(FormStretch, NodeIndex, crate::form::Boxed),
     /// A function's group of outputs read as its result, `(q : A, r : B)`:
     /// the returner of the entries in the lowerer's parameter store, each
     /// standing under the ones before it.
@@ -7729,6 +7844,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::TypeApplication => self.type_application(site, cursor),
             Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
             Former::ArrowType => self.arrow(site, cursor),
+            Former::LinearArrowType => self.linear_arrow(site, cursor),
             Former::ProductType => self.chain(site, cursor, Former::ProductType),
             Former::SumType => self.chain(site, cursor, Former::SumType),
             Former::LazyProductType => self.chain(site, cursor, Former::LazyProductType),
@@ -11482,6 +11598,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     frame: bound,
                     declared,
                     component: None,
+                    listed: Listed::Own,
                 };
                 if endpoint == session::Stands::Session {
                     endpoints.push(parameter);
@@ -11537,26 +11654,48 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     recursion,
                     receiver: Maybe::Absent(method::unheld::Absent::NotWrittenThrough),
                     endpoints: FormStretch::default(),
+                    taking: Taking::Unrestricted,
                 }),
             );
             return Ok(());
         }
-        let (result, viewed) = match cursor.tile(TileName::ARROW) {
-            Maybe::Present(_) => {
+        let arrow = match cursor.tile(TileName::ARROW) {
+            Maybe::Present(_) => Some(Taking::Unrestricted),
+            Maybe::Absent(_) => match cursor.tile(TileName::LINEAR_ARROW) {
+                Maybe::Present(_) => Some(Taking::Linear),
+                Maybe::Absent(_) => None,
+            },
+        };
+        let (result, viewed, taking) = match arrow {
+            Some(taking) => {
+                // A linear parameter's shadow binds in the arrow's codomain
+                // whether or not the result names it, so every telescope
+                // counts its frame.
+                if taking == Taking::Linear {
+                    for parameter in self.parameters.read(parameters) {
+                        if parameter.listed == Listed::Own {
+                            self.scope.mention(parameter.frame);
+                        }
+                    }
+                }
                 let result = function.one(cursor.operands())?;
                 let viewed = match deduced {
                     Some(mode) => Some(self.view_result(result, mode, frame)?),
                     None => None,
                 };
                 self.read(result.node, Reading::Result(frame));
-                (Maybe::Present(result.node), viewed)
+                (Maybe::Present(result.node), viewed, taking)
             },
-            Maybe::Absent(_) if deduced.is_some() => {
+            None if deduced.is_some() => {
                 return Err(LoweringRefusal::ViewNotPlace {
                     span: function.at.span,
                 });
             },
-            Maybe::Absent(_) => (Maybe::Absent(stated::Absent::Unstated), None),
+            None => (
+                Maybe::Absent(stated::Absent::Unstated),
+                None,
+                Taking::Unrestricted,
+            ),
         };
         let (placed, endpoints) = self.place_endpoints(frame, &endpoints);
         let (body, receiver) = match receiver {
@@ -11602,6 +11741,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 recursion,
                 receiver,
                 endpoints,
+                taking,
             }),
         );
 
@@ -19641,8 +19781,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Patched { .. }
                 | Plan::Kept(..)
                 | Plan::Carrier(..)
-                | Plan::FixedCarrier(..) => Some(Produced::ValueType),
-                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::Returns(_) | Plan::With(..) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
+                | Plan::FixedCarrier(..)
+                | Plan::LinearArrow(_, _, crate::form::Boxed(true)) => Some(Produced::ValueType),
+                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::LinearArrow(_, _, crate::form::Boxed(false)) | Plan::Returns(_) | Plan::With(..) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
                 | Plan::Decode(_, _, universe) | Plan::Unquote(_, _, universe) | Plan::Reapplied(_, _, _, universe) => Some(match universe.sort {
@@ -19871,6 +20012,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Plan::DependentArrow(entries, codomain) => {
                 self.mint_dependent_arrow(entries, codomain, sink, origin)
+            },
+            Plan::LinearArrow(entries, codomain, boxed) => {
+                self.mint_linear_arrow(entries, codomain, boxed, sink, origin)
             },
             Plan::Returns(entries) => self.mint_returns(
                 entries,
@@ -21182,6 +21326,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::ValueFunction(..)
             | Plan::Telescope(..)
             | Plan::DependentArrow(..)
+            | Plan::LinearArrow(..)
             | Plan::Returns(_)
             | Plan::Former(..)
             | Plan::Transparent(_)
@@ -22320,7 +22465,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let id = sink.arena.computation_lambda(body);
+            // A linear tail's parameter is the linear lambda's: its body
+            // reads the shadow in types and draws the one copy elsewhere.
+            let id = if function.taking.of(parameter) == Taking::Linear {
+                sink.arena.computation_linear_lambda(body)
+            }
+            else {
+                sink.arena.computation_lambda(body)
+            };
             sink.origins.record_computation(id, binder);
             sink.origins.record_binder(id, binder);
             body = id;
@@ -22525,7 +22677,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let id = if bool::from(self.scope.mentioned(parameter.frame)) {
+            let id = if function.taking.of(parameter) == Taking::Linear {
+                // A linear parameter's arrow binds its shadow whatever the
+                // result names, at the multiplicity one.
+                let one = match multiplicity_one(sink, binder) {
+                    Maybe::Present(one) => one,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let id = sink.arena.comp_type_linear_arrow(domain, one, declared);
+                sink.origins.record_arrow(id, binder);
+                id
+            }
+            else if bool::from(self.scope.mentioned(parameter.frame)) {
                 let id = sink.arena.comp_type_pi(domain, declared);
                 sink.origins.record_arrow(id, binder);
                 id
@@ -25448,7 +25611,8 @@ impl Sink<'_>
                 | Insertion::Parameter
                 | Insertion::Derived
                 | Insertion::Implicit
-                | Insertion::Foreign,
+                | Insertion::Foreign
+                | Insertion::Multiplicity,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
@@ -26482,6 +26646,7 @@ pub fn parse_literal(
         | Former::ThunkType
         | Former::ReturnerType
         | Former::ArrowType
+        | Former::LinearArrowType
         | Former::ProductType
         | Former::SumType
         | Former::LazyProductType
@@ -26868,6 +27033,64 @@ mod tests
             module.origins().value_type(first),
             Maybe::Present(_)
         ));
+    }
+
+    /// A linear tail takes each parameter its own list writes once, and an
+    /// implicit parameter stays intuitionistic: the body opens a linear lambda
+    /// and the signature a linear arrow for each written parameter, where the
+    /// plain tail opens intuitionistic ones (#5853).
+    #[test]
+    fn a_linear_tail_takes_each_written_parameter_once_5853()
+    {
+        let opened = |source: &'static str| {
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(source), &mut arena);
+            let declaration = module.declarations().iter().next().unwrap();
+            let Some(&Value::Thunk(mut body)) = arena.value(body_of(declaration.outcome()))
+            else {
+                panic!("a function's body is a thunk");
+            };
+            let mut lambdas = Vec::new();
+            while let Some(&(Computation::Lambda(inner) | Computation::LinearLambda(inner))) =
+                arena.computation(body)
+            {
+                lambdas.push(matches!(
+                    arena.computation(body),
+                    Some(&Computation::LinearLambda(_))
+                ));
+                body = inner;
+            }
+            let Some(&ValueType::Thunk(mut arrow)) =
+                arena.value_type(declared_of(declaration.outcome()))
+            else {
+                panic!("a function's signature is a thunk");
+            };
+            let mut arrows = Vec::new();
+            while let Some(
+                &(CompType::Arrow { codomain, .. }
+                | CompType::Pi { codomain, .. }
+                | CompType::LinearArrow { codomain, .. }),
+            ) = arena.comp_type(arrow)
+            {
+                arrows.push(matches!(
+                    arena.comp_type(arrow),
+                    Some(&CompType::LinearArrow { .. })
+                ));
+                arrow = codomain;
+            }
+            (lambdas, arrows)
+        };
+        assert_eq!(
+            opened("def keep[a : Type](x : a, n : Integer) -> a = x ;"),
+            (vec![false, false, false], vec![false, false, false]),
+            "a plain tail opens an intuitionistic lambda and arrow for each parameter"
+        );
+        assert_eq!(
+            opened("def keep[a : Type](x : a, n : Integer) ⊸ a = x ;"),
+            (vec![false, true, true], vec![false, true, true]),
+            "a linear tail opens linear ones for its written parameters, and the implicit stays \
+             intuitionistic"
+        );
     }
 
     #[test]

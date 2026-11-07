@@ -960,6 +960,19 @@ impl From<LiftTarget> for u32
     }
 }
 
+/// The abstraction a domain lambda came from, which its readback gives back.
+///
+/// Both evaluate alike: a linear lambda's body reads its parameter through the
+/// host's shadow, and the supply is a check that evaluation erases.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Abstraction
+{
+    /// `λ. M`, over one intuitionistic binder.
+    Intuitionistic,
+    /// `λ x ˆ m. M`, over the shadow `x : A•` and its supply.
+    Linear,
+}
+
 /// A domain computation at weak head: the negative fragment, glued to its
 /// source term.
 ///
@@ -974,6 +987,8 @@ pub enum DomainComp
     {
         /// The body, closed over its environment.
         body: CompClosureId,
+        /// The abstraction the lambda came from.
+        abstraction: Abstraction,
         /// The term face.
         face: CompTermFace,
     },

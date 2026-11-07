@@ -197,8 +197,22 @@ pub const MAPS_TO: Spelled = Spelled {
     ascii: Ascii::Token(LabelText("|->")),
 };
 
+/// The linear function type, `(x : A) ⊸ C` or `(x : A) -o C`.
+pub const LINEAR_ARROW: Spelled = Spelled {
+    tile: TileLabel("⊸"),
+    ascii: Ascii::Token(LabelText("-o")),
+};
+
 /// Every glyph tile of the surface with its ASCII spelling.
-pub const SPELLED: &[Spelled] = &[EQUIVALENCE, FLOW, ISOMORPHISM, CONS, UNRESTRICTED, MAPS_TO];
+pub const SPELLED: &[Spelled] = &[
+    EQUIVALENCE,
+    FLOW,
+    ISOMORPHISM,
+    CONS,
+    UNRESTRICTED,
+    MAPS_TO,
+    LINEAR_ARROW,
+];
 
 /// The prime an identifier may carry, `x′`: Unicode with no ASCII spelling.
 pub const PRIME: LabelText<'static> = LabelText("′");

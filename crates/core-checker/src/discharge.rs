@@ -96,6 +96,7 @@ pub fn here(
                 break result;
             },
             CompTypeView::Returner { .. }
+            | CompTypeView::LinearArrow { .. }
             | CompTypeView::Returns { .. }
             | CompTypeView::With(..)
             | CompTypeView::Element { .. }

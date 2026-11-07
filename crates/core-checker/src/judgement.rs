@@ -2294,6 +2294,16 @@ enum Frame
     },
     /// A lambda waits on its body's check, then closes the binder it opened.
     LambdaBody,
+    /// A linear lambda waits on its body's check, then closes its parameter's
+    /// copy and its shadow.
+    LinearLambdaBody
+    {
+        /// The linear lambda.
+        lambda: ComputationId,
+    },
+    /// A type formed inside a linear lambda's body waits on its formation:
+    /// while it waits, a read of the lambda's shadow reads no copy.
+    Forming,
     /// A bind waits on the type its bound computation synthesises, which must
     /// be a returner; it then opens a binder of the returned type and judges
     /// its body in the bind's own direction.
@@ -2782,7 +2792,8 @@ impl Frame
             Self::ApplicationHead { .. } => FrameRole::ApplicationHead,
             Self::ApplicationArgument { .. } => FrameRole::ApplicationArgument,
             Self::FixpointArgument { .. } => FrameRole::FixpointArgument,
-            Self::LambdaBody => FrameRole::LambdaBody,
+            Self::LambdaBody | Self::LinearLambdaBody { .. } => FrameRole::LambdaBody,
+            Self::Forming => FrameRole::Forming,
             Self::BindBound { .. } | Self::BindChecked { .. } | Self::BindAllBound { .. } => {
                 FrameRole::BindBound
             },
@@ -2857,11 +2868,11 @@ impl Frame
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one for an abstraction body, a bind body, a `leta` body, a
-    ///   formation under a binder, a return clause, a capability scope's
-    ///   subject, a stack bind and a case motive; two for an operation clause
-    ///   and a list case's cell branch; the component count for a split body;
-    ///   zero otherwise.
+    /// - ensures: one for an abstraction body, a linear abstraction body, a
+    ///   bind body, a `leta` body, a formation under a binder, a return clause,
+    ///   a capability scope's subject, a stack bind and a case motive; two for
+    ///   an operation clause and a list case's cell branch; the component count
+    ///   for a split body; zero otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2873,6 +2884,7 @@ impl Frame
     {
         BinderDepth::from(match self {
             Self::LambdaBody
+            | Self::LinearLambdaBody { .. }
             | Self::BindBody { .. }
             | Self::FormBinder
             | Self::HandlerReturn { .. }
@@ -2884,6 +2896,7 @@ impl Frame
             Self::HandlerClause { .. } | Self::ListCaseCons => 2_usize,
             Self::SplitBody { arity, .. } | Self::BindAllBody { arity, .. } => usize::from(arity),
             Self::NativeNext(_)
+            | Self::Forming
             | Self::NativeYield(_)
             | Self::NativeCollect
             | Self::NativeDiscard
@@ -3183,7 +3196,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// output.
     ///
     /// # Specification
-    /// - ensures: a Pi's codomain remains under its argument binder.
+    /// - ensures: a Pi's codomain and a linear arrow's codomain remain under
+    ///   the argument's binder.
     /// - fails: a non-function is a shape mismatch at the calling term.
     ///
     /// # Adequacy
@@ -3198,6 +3212,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<(ValueTypeId, Codomain), CheckRefusal>
     {
         let head = crate::codata::read(self.context, classifier)?;
+        if let Some(&CompType::LinearArrow {
+            domain, codomain, ..
+        }) = self.context.arena().comp_type(head)
+        {
+            return Ok((domain, Codomain::Dependent(codomain)));
+        }
         match matched_function(self.context.arena_mut(), head) {
             Maybe::Present(function) => Ok((function.domain(), match function.scope() {
                 CodomainScope::Ambient => Codomain::Ambient(function.codomain()),
@@ -3444,6 +3464,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ApplicationArgument { .. }
                 | Frame::FixpointArgument { .. }
                 | Frame::LambdaBody
+                | Frame::LinearLambdaBody { .. }
+                | Frame::Forming
                 | Frame::BindBound { .. }
                 | Frame::BindChecked { .. }
                 | Frame::BindBody { .. }
@@ -3722,6 +3744,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             CompTypeView::Element { .. }
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
+            | CompTypeView::LinearArrow { .. }
             | CompTypeView::With(..)
             | CompTypeView::Codata { .. } => return Err(CheckRefusal::MachineInvariant),
         };
@@ -4022,6 +4045,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             CompTypeView::Element { .. }
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
+            | CompTypeView::LinearArrow { .. }
             | CompTypeView::With(..)
             | CompTypeView::Codata { .. } => return Err(CheckRefusal::MachineInvariant),
         };
@@ -4699,7 +4723,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the rule of the goal's direction for its term's former runs,
-    ///   or the formation rule of the type's former.
+    ///   or the formation rule of the type's former, beneath a
+    ///   [`Frame::Forming`] inside a linear lambda's body.
     /// - fails: as that rule; as [`Self::fence`] for a former that may run an
     ///   endpoint's use other than once.
     /// - panics: none.
@@ -4753,8 +4778,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     Direction::Check(expected) => self.check_comp(term, expected),
                 }
             },
-            Goal::Form(TypeNode::Value(at)) => self.form_value_type(at),
-            Goal::Form(TypeNode::Computation(at)) => self.form_comp_type(at),
+            Goal::Form(node) => {
+                self.forming_marked();
+                match node {
+                    TypeNode::Value(at) => self.form_value_type(at),
+                    TypeNode::Computation(at) => self.form_comp_type(at),
+                }
+            },
         }
     }
 
@@ -4960,6 +4990,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         shift_value_type(self.context.arena_mut(), declared, Binders::past(index));
                     self.captured(term, index, read)?;
                     self.mention(term, index)?;
+                    self.drawn(term, index)?;
                     self.footprint_mentioned(declared)?;
                     Ok(Step::Ascend(Produced::ValueType(read)))
                 },
@@ -6532,9 +6563,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            Computation::Lambda(_) => Err(CheckRefusal::NotSynthesisable {
-                form: CheckingForm::Lambda(term),
-            }),
+            Computation::Lambda(_) | Computation::LinearLambda(_) => {
+                Err(CheckRefusal::NotSynthesisable {
+                    form: CheckingForm::Lambda(term),
+                })
+            },
             Computation::Return(value) => {
                 self.wait(Frame::ReturnValue);
                 Ok(Step::Descend(Goal::Value {
@@ -6761,6 +6794,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.context.binders().open(Zone::Intuitionistic, domain);
                 self.context.open_copy(term);
                 self.wait(Frame::LambdaBody);
+                Ok(Step::Descend(Goal::Computation {
+                    term: body,
+                    direction: Direction::Check(codomain),
+                }))
+            },
+            Computation::LinearLambda(body) => {
+                let (domain, codomain) = self.linear_arrow_expected(term, expected)?;
+                self.supply(term, domain)?;
+                self.context.open_copy(term);
+                self.wait(Frame::LinearLambdaBody { lambda: term });
                 Ok(Step::Descend(Goal::Computation {
                     term: body,
                     direction: Direction::Check(codomain),
@@ -7917,7 +7960,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Ok(CompTypeView::Pi { domain: held_domain, codomain: held_codomain }) => domain == held_domain && codomain == held_codomain,
                 | Ok(CompTypeView::Arrow { domain: held, .. }) => domain == held,
                 | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. }) => true,
-                | Ok(CompTypeView::Returner { .. } | CompTypeView::Returns { .. } | CompTypeView::With(..)) | Err(_) => false,
+                | Ok(CompTypeView::Returner { .. } | CompTypeView::Returns { .. } | CompTypeView::With(..) | CompTypeView::LinearArrow { .. }) | Err(_) => false,
             },
         | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found, .. }) => named == TermNode::Computation(at)
             && wanted == ExpectedShape::Arrow && found == TypeNode::Computation(expected),
@@ -7956,6 +7999,94 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
     }
 
+    /// The domain and the codomain a linear lambda checks against: those of
+    /// the linear arrow the expected type is at its weak head, the codomain
+    /// under the parameter's shadow.
+    ///
+    /// # Specification
+    /// - requires: `expected` is formed.
+    /// - ensures: the domain and the codomain of `expected` when it is a linear
+    ///   arrow at the multiplicity `1` at its weak head.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting an arrow, for
+    ///   any other former; as [`Self::admitted_multiplicity`]; the unfolding's
+    ///   refusal.
+    /// - panics: none.
+    ///
+    /// # Judgement
+    /// - expected: `expected`
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear lambda checks against a linear arrow and is
+    ///   refused against a plain arrow.
+    /// - witness: `judgement::session::tests::a_linear_function_reads_its_parameter_once_5853`
+    #[spec(ensures: |ret| match ret {
+        | Ok((domain, codomain)) => self.context.arena().value_type(domain).is_some()
+            && self.context.arena().comp_type(codomain).is_some(),
+        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found, .. }) => named == TermNode::Computation(at)
+            && wanted == ExpectedShape::Arrow && found == TypeNode::Computation(expected),
+        | Err(_) => true,
+    })]
+    fn linear_arrow_expected(
+        &mut self,
+        at: ComputationId,
+        expected: CompTypeId,
+    ) -> Result<(ValueTypeId, CompTypeId), CheckRefusal>
+    {
+        let head = crate::codata::read(self.context, expected)?;
+        let Some(&CompType::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        }) = self.context.arena().comp_type(head)
+        else {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(at),
+                wanted: ExpectedShape::Arrow,
+                found: TypeNode::Computation(expected),
+                unfolded: TypeNode::Computation(head),
+            });
+        };
+        self.admitted_multiplicity(head, multiplicity)?;
+        Ok((domain, codomain))
+    }
+
+    /// Admit the multiplicity `multiplicity` of the linear arrow `at`: this
+    /// slice admits the literal `1` alone.
+    ///
+    /// # Specification
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::MultiplicityUnsupported`] at `at` for any
+    ///   multiplicity but the non-negative literal `1`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a linear arrow at `1` forms, and one at `2` is
+    ///   refused by name.
+    /// - witness: `judgement::session::tests::a_linear_arrow_admits_the_multiplicity_one_alone_5853`
+    #[spec(ensures: |ret| ret.is_ok() == matches!(
+        self.context.arena().value(multiplicity),
+        Some(&Value::Literal(gandr_kernel_term::Literal::Integer(ref integer)))
+            if integer.sign() == gandr_kernel_term::Sign::NonNegative && integer.magnitude().as_ref() == "1"
+    ))]
+    fn admitted_multiplicity(
+        &self,
+        at: CompTypeId,
+        multiplicity: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        if let Some(&Value::Literal(gandr_kernel_term::Literal::Integer(ref integer))) =
+            self.context.arena().value(multiplicity)
+            && integer.sign() == gandr_kernel_term::Sign::NonNegative
+            && integer.magnitude().as_ref() == "1"
+        {
+            return Ok(());
+        }
+        Err(CheckRefusal::MultiplicityUnsupported { at, multiplicity })
+    }
+
     /// The result type a return checks its value against: the one the
     /// expected type matches as a returner at its weak head.
     ///
@@ -7983,7 +8114,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             && match comp_type_view(self.context.arena(), expected) {
                 | Ok(CompTypeView::Returner { result: held, .. }) => result == held,
                 | Ok(CompTypeView::Element { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. }) => true,
-                | Ok(CompTypeView::Arrow { .. } | CompTypeView::Pi { .. } | CompTypeView::With(..) | CompTypeView::Returns { .. }) | Err(_) => false,
+                | Ok(CompTypeView::Arrow { .. } | CompTypeView::Pi { .. } | CompTypeView::LinearArrow { .. } | CompTypeView::With(..) | CompTypeView::Returns { .. }) | Err(_) => false,
             },
         | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found, .. }) => named == TermNode::Computation(at)
             && wanted == ExpectedShape::Returner && found == TypeNode::Computation(expected),
@@ -8405,13 +8536,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: nothing.
     /// - ensures: a returner forms its result; an arrow forms its domain, then
     ///   its codomain; a dependent arrow forms its domain, then its codomain
-    ///   under a binder of the domain; a decode awaits its code's synthesised
-    ///   type; a codata application checks each argument against its
-    ///   instantiated parameter; the unknown type is formed at once, a decode
-    ///   of a nominated hole once it nominates the hole.
+    ///   under a binder of the domain; a linear arrow admits its multiplicity,
+    ///   then forms as a dependent arrow does, its codomain under the
+    ///   parameter's shadow; a decode awaits its code's synthesised type; a
+    ///   codata application checks each argument against its instantiated
+    ///   parameter; the unknown type is formed at once, a decode of a nominated
+    ///   hole once it nominates the hole.
     /// - fails: the view's refusal for a dangling id; [`CheckRefusal::Codata`]
     ///   for a codata application naming the declaration being formed, no
-    ///   admitted declaration, or another number of arguments.
+    ///   admitted declaration, or another number of arguments;
+    ///   [`CheckRefusal::MultiplicityUnsupported`] for a linear arrow at a
+    ///   multiplicity other than `1`.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -8420,6 +8555,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   domain formation or missing binder frames change those observations.
     /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
     /// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
+    /// - witness: `judgement::session::tests::a_linear_arrow_admits_the_multiplicity_one_alone_5853`
     #[spec(
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err()
@@ -8468,6 +8604,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
             CompTypeView::Pi { domain, codomain } => {
+                self.wait(Frame::FormUnder {
+                    domain,
+                    under: TypeNode::Computation(codomain),
+                });
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
+            },
+            CompTypeView::LinearArrow {
+                domain,
+                multiplicity,
+                codomain,
+            } => {
+                self.admitted_multiplicity(at, multiplicity)?;
                 self.wait(Frame::FormUnder {
                     domain,
                     under: TypeNode::Computation(codomain),
@@ -8617,6 +8765,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             CompTypeView::With(..)
             | CompTypeView::Arrow { .. }
             | CompTypeView::Pi { .. }
+            | CompTypeView::LinearArrow { .. }
             | CompTypeView::Element { .. }
             | CompTypeView::Codata { .. }
             | CompTypeView::Unknown => Err(CheckRefusal::ShapeMismatch {
@@ -8876,6 +9025,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | CompTypeView::With(..)
                 | CompTypeView::Arrow { .. }
                 | CompTypeView::Pi { .. }
+                | CompTypeView::LinearArrow { .. }
                 | CompTypeView::Codata { .. }
                 | CompTypeView::Unknown => {
                     return Err(CheckRefusal::MachineInvariant);
@@ -9353,7 +9503,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Frame::Reset { .. }
                 | Frame::ReturnValue
                 | Frame::InjectionPayload
-                | Frame::RunProtocol,
+                | Frame::RunProtocol
+                | Frame::Forming,
                 Produced::Checked,
             ) => Ok(Step::Ascend(Produced::Checked)),
             // The answer checked against the goal: it fills the hole as a
@@ -9913,6 +10064,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CompTypeView::Returns { .. }
                     | CompTypeView::Arrow { .. }
                     | CompTypeView::Pi { .. }
+                    | CompTypeView::LinearArrow { .. }
                     | CompTypeView::Element { .. }
                     | CompTypeView::Codata { .. } => {
                         let Some(&(Value::Nested(nested) | Value::Run(nested))) =
@@ -10005,6 +10157,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CompTypeView::With(..)
                     | CompTypeView::Arrow { .. }
                     | CompTypeView::Pi { .. }
+                    | CompTypeView::LinearArrow { .. }
                     | CompTypeView::Element { .. }
                     | CompTypeView::Codata { .. } => {
                         Err(CheckRefusal::CompoundEndpoint { at, synthesised })
@@ -10774,6 +10927,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.close()?;
                 Ok(Step::Ascend(Produced::Checked))
             },
+            (Frame::LinearLambdaBody { lambda }, Produced::Checked) => {
+                self.supplied_ended(lambda)?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
             (
                 Frame::BindChecked {
                     at,
@@ -11135,6 +11292,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ListCaseCons
                 | Frame::ApplicationArgument { .. }
                 | Frame::LambdaBody
+                | Frame::LinearLambdaBody { .. }
+                | Frame::Forming
                 | Frame::FormBinder
                 | Frame::Quote(_)
                 | Frame::FormNext(_)

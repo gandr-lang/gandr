@@ -399,6 +399,7 @@ INSERT INTO purpose VALUES('core-nbe','conv::Settlement','enum','Which step answ
 INSERT INTO purpose VALUES('core-nbe','conv::convert_computations','function','Run steps 1 through 3 on two weak-head domain computations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','conv::convert_values','function','Run steps 1 through 3 on two domain values.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','derivation::DerivationCount','struct','How many derivations a run kept.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-nbe','domain::Abstraction','enum','The abstraction a domain lambda came from, so its readback gives a linear lambda back as linear.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','domain::BinderLevel','struct','A de Bruijn level: binders counted inward from the empty context.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','domain::CompTermFace','enum','The term face of a domain computation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-nbe','domain::DomainComp','enum','A domain computation at weak head: the negative fragment, glued to its source term.',NULL,'fits','sound',NULL);
@@ -2457,6 +2458,7 @@ INSERT INTO purpose VALUES('surface-grammar','spelling::EQUIVALENCE','constant',
 INSERT INTO purpose VALUES('surface-grammar','spelling::EditDistance','struct','Names the edit distance between two spellings, so a suggestion and a misspelt keyword are bounded.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::FLOW','constant','Names the flow glyph and its ASCII spelling, so a printer writes either.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::ISOMORPHISM','constant','Names the isomorphism glyph and its ASCII spelling as a head call, so a printer writes either.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-grammar','spelling::LINEAR_ARROW','constant','Names the linear arrow glyph and its ASCII spelling, so a printer writes either.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::PRIME','constant','Names the identifier prime, a Unicode with no ASCII spelling, so a printer asked for ASCII refuses a name holding it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::SPELLED','constant','Names every glyph tile of the surface with its ASCII spelling, so the labeler, the printer and the syntax ledger read one table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','spelling::Spelled','struct','Holds a glyph tile and its ASCII spelling, so a printer writes the spelling a reader asks for.',NULL,'fits','sound',NULL);
@@ -3880,6 +3882,11 @@ INSERT INTO purpose VALUES('theory-graded-posets','graded::GradedPoset','struct'
 INSERT INTO purpose VALUES('theory-graded-posets','graded::Rank','struct','Names the length of the longest chain of cells below a cell, so the cell''s rank is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-graded-posets','graded::ReadBack','struct','Holds the lattice of subcomplexes of a graded poset, its spectrum and the two monotone maps between the spectrum and the poset, so the round trip is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-graded-posets','rows::CellRow','struct','Holds a borrowed row of a graded poset''s order, a cell''s closure or its boundary, so membership, the cells and their count are read without a copy.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-graded-posets','traversal::Face','enum','Names the side of a cell that a face one rank below it lies on, so a caller orients a graded poset.','collapse','fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-graded-posets','traversal::Key','struct','Holds the faces of each cell of a molecule as places in traversal order, rank by rank, so two molecules are compared up to isomorphism by equality.','collapse','fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-graded-posets','traversal::Place','struct','Names a cell''s place among the cells of its rank in traversal order, so a key writes a face by its place and not by its cell.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-graded-posets','traversal::Traversal','struct','Holds the cells of a molecule in the order that Kessler''s traversal marks them, with the faces of each cell, so the key is read.','collapse','fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-graded-posets','traversal::TraversalError','enum','Names why the traversal refuses a poset, the cell where a poset that is not a molecule stops it, so the refusal names the cell.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-graphs','algorithms::Condensation','struct','A graph''s strongly connected components and the acyclic graph between them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-graphs','algorithms::CycleWitness','struct','A closed walk along graph edges: evidence that the graph has a cycle.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-graphs','algorithms::EdgeSource','trait','A directed graph over the dense nodes `0..node_count()`.',NULL,'fits','sound',NULL);

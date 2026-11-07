@@ -73,7 +73,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 
 | Topic | Module |
 | ----- | ------ |
-| Modes, static operators, the dependent arrow and the bind, splits, holes in the faces, effects and control, native universe paths, element identity | [`judgement`](src/judgement.rs) |
+| Modes, static operators, the dependent arrow and the bind, the linear function, splits, holes in the faces, effects and control, native universe paths, element identity | [`judgement`](src/judgement.rs) |
 | Function extensionality, universe equivalence, the product of universe paths, `ua_n`, composites and fillers | [`funext`](src/funext.rs), [`equiv`](src/equiv.rs), [`product`](src/product.rs), [`ua`](src/ua.rs), [`compose`](src/compose.rs), [`fill`](src/fill.rs) |
 | Total elaboration and the typed run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
 | Records | [`judgement::native`](src/judgement/native.rs) |

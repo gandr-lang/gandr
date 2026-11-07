@@ -269,6 +269,7 @@ fn shape(
             | CompType::With(..)
             | CompType::Arrow { .. }
             | CompType::Pi { .. }
+            | CompType::LinearArrow { .. }
             | CompType::Element { .. }
             | CompType::Codata { .. }
             | CompType::Unknown),
@@ -324,6 +325,7 @@ fn function_hypothesis(
             Some(&CompType::Returner { .. }) => break,
             Some(
                 &(CompType::With(..)
+                | CompType::LinearArrow { .. }
                 | CompType::Returns { .. }
                 | CompType::Element { .. }
                 | CompType::Codata { .. }

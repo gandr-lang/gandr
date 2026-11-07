@@ -530,7 +530,7 @@ fn failures_render_distinct_phrases()
 /// One step of a generated plan: a node kind and the draws that choose its
 /// children and its payload.
 #[derive(Clone, Debug)]
-enum Step
+pub enum Step
 {
     Bound(u32),
     Constant(i128, i32),
@@ -552,7 +552,7 @@ enum Step
 ///
 /// # Specification
 /// trivial.
-fn step() -> impl Strategy<Value = Step>
+pub fn step() -> impl Strategy<Value = Step>
 {
     let index = 0_usize .. 64;
     return prop_oneof![
@@ -615,7 +615,7 @@ fn step() -> impl Strategy<Value = Step>
 ///
 /// # Specification
 /// trivial.
-fn build(steps: &[Step]) -> (PlanBuilder, Root)
+pub fn build(steps: &[Step]) -> (PlanBuilder, Root)
 {
     let slot = |draw: Option<u32>| {
         draw.map_or(EvidenceSlot::Absent, |index| {

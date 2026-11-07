@@ -2683,7 +2683,7 @@ enum Agreement
                 ContentNode::Recorded(ref left) => matches!(*new, ContentNode::Recorded(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.carrying(()) == right.carrying(()))),
                 ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
                 ContentNode::ReturnAll(_) |
-                ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
+                ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::LinearLambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::LinearArrow { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
             })
 },
 )]
@@ -3555,6 +3555,7 @@ where
                 Computation::TelescopeTransport { .. } => matches!(ret, ContentNode::TelescopeTransport { .. }),
                 Computation::Ride { .. } => matches!(ret, ContentNode::Ride { .. }),
                 Computation::Lambda(..) => matches!(ret, ContentNode::Lambda(..)),
+                Computation::LinearLambda(..) => matches!(ret, ContentNode::LinearLambda(..)),
                 Computation::Application(..) => {
                     matches!(ret, ContentNode::Application(..))
                 }
@@ -3820,6 +3821,9 @@ where
             }
         },
         Some(&Computation::Lambda(body)) => ContentNode::Lambda(child(Root::Computation(body))),
+        Some(&Computation::LinearLambda(body)) => {
+            ContentNode::LinearLambda(child(Root::Computation(body)))
+        },
         Some(&Computation::Application(head, argument)) => {
             let head = child(Root::Computation(head));
             ContentNode::Application(head, child(Root::Value(argument)))
@@ -4180,6 +4184,7 @@ where
                 CompType::Returns { ref results, .. } => matches!(ret, ContentNode::Returns { results: ref read, .. } if read.len() == results.len()),
                 CompType::Arrow { .. } => matches!(ret, ContentNode::Arrow { .. }),
                 CompType::Pi { .. } => matches!(ret, ContentNode::Pi { .. }),
+                CompType::LinearArrow { .. } => matches!(ret, ContentNode::LinearArrow { .. }),
                 CompType::Element { ref target, .. } => {
                     matches!(
                         ret, ContentNode::ComputationElement { target : ref found, .. }
@@ -4241,6 +4246,19 @@ where
             let domain = child(Root::ValueType(domain));
             ContentNode::Pi {
                 domain,
+                codomain: child(Root::CompType(codomain)),
+            }
+        },
+        Some(&CompType::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        }) => {
+            let domain = child(Root::ValueType(domain));
+            let multiplicity = child(Root::Value(multiplicity));
+            ContentNode::LinearArrow {
+                domain,
+                multiplicity,
                 codomain: child(Root::CompType(codomain)),
             }
         },

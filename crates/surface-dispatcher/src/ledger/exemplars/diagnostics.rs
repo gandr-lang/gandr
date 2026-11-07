@@ -125,7 +125,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 67_usize] = [
+const OWED: [(&str, Owed); 68_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -166,6 +166,12 @@ const OWED: [(&str, Owed); 67_usize] = [
         "MachineInvariant",
         Owed::Unreachable(Reason(
             "the checking machine disagreeing with its own bookkeeping, which no source arranges",
+        )),
+    ),
+    (
+        "MultiplicityUnsupported",
+        Owed::Unreachable(Reason(
+            "the surface writes no multiplicity, and the lowering mints each linear arrow at one",
         )),
     ),
     (

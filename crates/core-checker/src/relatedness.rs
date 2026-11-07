@@ -206,7 +206,10 @@ pub fn require_unsealed(
                     pending.extend(results.iter().map(|&result| Reached::Value(result)));
                 },
                 CompTypeView::Arrow { domain, codomain }
-                | CompTypeView::Pi { domain, codomain } => {
+                | CompTypeView::Pi { domain, codomain }
+                | CompTypeView::LinearArrow {
+                    domain, codomain, ..
+                } => {
                     pending.extend([Reached::Value(domain), Reached::Computation(codomain)]);
                 },
                 CompTypeView::With(parts) => {

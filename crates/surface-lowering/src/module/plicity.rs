@@ -496,8 +496,11 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
             return Ok(none);
         }
-        if let Maybe::Present(_) = cursor.tile(TileName::ARROW)
-            && let Maybe::Present(Piece::Operand(result)) = cursor.read()
+        // A result follows `->` or, on a linear tail, `⊸`.
+        if let (Maybe::Present(_), _) | (_, Maybe::Present(_)) = (
+            cursor.tile(TileName::ARROW),
+            cursor.tile(TileName::LINEAR_ARROW),
+        ) && let Maybe::Present(Piece::Operand(result)) = cursor.read()
         {
             self.row_labels(result, staged, &mut entries, &mut scratch)?;
         }

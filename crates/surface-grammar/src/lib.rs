@@ -189,6 +189,7 @@ pub use crate::spelling::EQUIVALENCE;
 pub use crate::spelling::EditDistance;
 pub use crate::spelling::FLOW;
 pub use crate::spelling::ISOMORPHISM;
+pub use crate::spelling::LINEAR_ARROW;
 pub use crate::spelling::PRIME;
 pub use crate::spelling::SPELLED;
 pub use crate::spelling::Spelled;
