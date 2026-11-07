@@ -102,10 +102,10 @@ fn factor(
     name: &gandr_theory_cell_complexes::Sym,
 ) -> PrimCert
 {
-    PrimCert(gandr_theory_coherent_resolutions::CellApp {
-        cell: store.insert(gandr_theory_cell_complexes::frame_defining_cell(name)),
-        at: Pos::root(),
-    })
+    PrimCert(gandr_theory_coherent_resolutions::CellApp::unrecorded(
+        store.insert(gandr_theory_cell_complexes::frame_defining_cell(name)),
+        Pos::root(),
+    ))
 }
 
 #[test]

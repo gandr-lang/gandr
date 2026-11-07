@@ -155,14 +155,14 @@ impl IsoWitness
             reason = "parity: the check repeats the body's two elaborations and round trips once"
         )
     )]
-    #[spec(ensures: |out| bool::from(out) == (bool::from(round_trips_to_identity(&self.fwd.elaborate(), &self.bwd.elaborate(), cells)) && bool::from(round_trips_to_identity(&self.bwd.elaborate(), &self.fwd.elaborate(), cells))))]
+    #[spec(ensures: |out| bool::from(out) == (bool::from(round_trips_to_identity(&self.fwd.elaborate(cells), &self.bwd.elaborate(cells), cells)) && bool::from(round_trips_to_identity(&self.bwd.elaborate(cells), &self.fwd.elaborate(cells), cells))))]
     pub fn is_valid(
         &self,
         cells: &CellStore,
     ) -> IsoValidity
     {
-        let fwd = self.fwd.elaborate();
-        let bwd = self.bwd.elaborate();
+        let fwd = self.fwd.elaborate(cells);
+        let bwd = self.bwd.elaborate(cells);
         IsoValidity::from(
             bool::from(round_trips_to_identity(&fwd, &bwd, cells))
                 && bool::from(round_trips_to_identity(&bwd, &fwd, cells)),
@@ -201,7 +201,7 @@ fn round_trips_to_identity(
             if ca.joins_at != cb.overlap.peak {
                 return RoundTripIdentity::from(false);
             }
-            let composite = compose_invertible(ca, cb);
+            let composite = compose_invertible(ca, cb, cells);
             composite.overlap.peak == composite.joins_at && bool::from(composite.replay(cells))
         },
         (&Elaborated::Trivial, &Elaborated::Cert(ref c))
@@ -286,7 +286,7 @@ impl ProtypeIso
     ///   round trips must replay; the negative fixture corrupts one direction.
     /// - witness: `tests::laws::tests::an_iso_whose_one_direction_fails_replay_is_rejected`
     /// - witness: `tests::laws::tests::a_reflected_iso_resolves_only_bound_certificates`
-    #[spec(ensures: |out| bool::from(out) == match (resolve_cert(&self.fwd, derivations), resolve_cert(&self.bwd, derivations)) { (Maybe::Present(fwd), Maybe::Present(bwd)) => bool::from(round_trips_to_identity(&fwd.elaborate(), &bwd.elaborate(), cells)) && bool::from(round_trips_to_identity(&bwd.elaborate(), &fwd.elaborate(), cells)), _ => false })]
+    #[spec(ensures: |out| bool::from(out) == match (resolve_cert(&self.fwd, derivations), resolve_cert(&self.bwd, derivations)) { (Maybe::Present(fwd), Maybe::Present(bwd)) => bool::from(round_trips_to_identity(&fwd.elaborate(cells), &bwd.elaborate(cells), cells)) && bool::from(round_trips_to_identity(&bwd.elaborate(cells), &fwd.elaborate(cells), cells)), _ => false })]
     pub fn is_valid(
         &self,
         derivations: &[Derivation],
@@ -298,8 +298,8 @@ impl ProtypeIso
             resolve_cert(&self.bwd, derivations),
         ) {
             (Maybe::Present(fwd), Maybe::Present(bwd)) => {
-                let fwd = fwd.elaborate();
-                let bwd = bwd.elaborate();
+                let fwd = fwd.elaborate(cells);
+                let bwd = bwd.elaborate(cells);
                 IsoValidity::from(
                     bool::from(round_trips_to_identity(&fwd, &bwd, cells))
                         && bool::from(round_trips_to_identity(&bwd, &fwd, cells)),

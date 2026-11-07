@@ -419,8 +419,8 @@ where
             Meeting::Overlap { outer, inner, seam } => {
                 let (certificate, tracelet) = self.joining(&outer, &inner, &seam, term)?;
                 let moved = |app: &CellApp<A>| CellApp {
-                    cell: app.cell,
                     at: below::<A>(&outer.at, &app.at),
+                    ..app.clone()
                 };
                 let (Some(a_first), Some(b_first)) =
                     (tracelet.path_a.first(), tracelet.path_b.first())

@@ -37,6 +37,8 @@
 //!
 //! # References
 //!
+//! - `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the toy alphabets
+//!   read whether an image holds a hole (§ gate-substitution-read).
 //! - Franz Baader and Tobias Nipkow. _Term Rewriting and All That_. Cambridge
 //!   University Press, 1998. `doi:10.1017/CBO9781139172752` — first-order
 //!   terms, positions and their prefix order, matching and syntactic

@@ -65,6 +65,10 @@
 //!
 //! # References
 //!
+//! - `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the term alphabet
+//!   reads whether an image holds a hole, and a composite pair's witness and a
+//!   circuit's shift witness record their substitutions (§
+//!   gate-substitution-read).
 //! - Ross Street. "Limits Indexed by Category-Valued 2-Functors." _Journal of
 //!   Pure and Applied Algebra_ 8, 2 (1976), pages 149–181.
 //!   `doi:10.1016/0022-4049(76)90013-X` — computads: the generators of a

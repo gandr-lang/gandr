@@ -324,14 +324,11 @@ fn recorded_schedules_preserve_empty_paths_and_refuse_invalid_steps()
     let id = store.insert(toy(f_faces()));
     let start = cong2_peak();
     assert_eq!(start, run(&store, &start, &[]));
-    let missing = CellApp {
-        cell: gandr_theory_cell_complexes::CellId::from(usize::MAX),
-        at: ToyAlphabet::root_position(),
-    };
+    let missing = CellApp::unrecorded(
+        gandr_theory_cell_complexes::CellId::from(usize::MAX),
+        ToyAlphabet::root_position(),
+    );
     assert!(std::panic::catch_unwind(|| run(&store, &start, &[missing])).is_err());
-    let mismatch = CellApp {
-        cell: id,
-        at: ToyAlphabet::root_position(),
-    };
+    let mismatch = CellApp::unrecorded(id, ToyAlphabet::root_position());
     assert!(std::panic::catch_unwind(|| run(&store, &Toy::zero(), &[mismatch])).is_err());
 }

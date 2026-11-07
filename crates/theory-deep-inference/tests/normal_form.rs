@@ -210,10 +210,7 @@ fn spine_fixture(
     let peak = spine(count);
     let schedule = spine_positions(count)
         .into_iter()
-        .map(|position| CellApp {
-            cell: f,
-            at: position,
-        })
+        .map(|position| CellApp::unrecorded(f, position))
         .collect();
     (store, f, peak, schedule)
 }
@@ -310,14 +307,8 @@ fn overlapping_pair() -> (
     (
         store,
         peak,
-        CellApp {
-            cell: z,
-            at: at![0],
-        },
-        CellApp {
-            cell: s,
-            at: at![1],
-        },
+        CellApp::unrecorded(z, at![0]),
+        CellApp::unrecorded(s, at![1]),
     )
 }
 
@@ -512,7 +503,7 @@ fn tree_path(
             .collect();
         keyed.sort_by_key(|entry| entry.0);
         for entry in keyed {
-            recorded.push(CellApp { cell, at: entry.1 });
+            recorded.push(CellApp::unrecorded(cell, entry.1));
         }
     }
     recorded
@@ -590,13 +581,10 @@ fn three_layer_fixture() -> ThreeLayer
         cell,
         peak,
         join: Toy::zero(),
-        inner: CellApp {
-            cell,
-            at: at![0, 0],
-        },
-        middle: CellApp { cell, at: at![0] },
-        branch: CellApp { cell, at: at![1] },
-        root: CellApp { cell, at: at![] },
+        inner: CellApp::unrecorded(cell, at![0, 0]),
+        middle: CellApp::unrecorded(cell, at![0]),
+        branch: CellApp::unrecorded(cell, at![1]),
+        root: CellApp::unrecorded(cell, at![]),
     };
     fixture.join = run(&fixture.store, &fixture.peak, &fixture.recorded());
     fixture
@@ -628,8 +616,8 @@ fn an_overlapping_pair_keeps_its_recorded_order()
         forward_nf.primitives, backward_nf.primitives,
         "the factorizations agree: it is the schedule the quotient will not merge"
     );
-    let a = tracelet_over(&peak, &join, forward.clone(), forward);
-    let b = tracelet_over(&peak, &join, backward.clone(), backward);
+    let a = tracelet_over(&store, &peak, &join, forward.clone(), forward);
+    let b = tracelet_over(&store, &peak, &join, backward.clone(), backward);
     assert!(
         bool::from(replay_equivalent(&a, &b, &store)),
         "and the replay oracle identifies them all the same: normal-form-distinct means nothing"
@@ -708,8 +696,8 @@ fn a_two_member_replay_level_reaches_one_term_in_both_permitted_orders()
     );
     assert!(
         bool::from(replay_equivalent(
-            &tracelet_over(&peak, &join, forward.clone(), forward),
-            &tracelet_over(&peak, &join, backward.clone(), backward),
+            &tracelet_over(&store, &peak, &join, forward.clone(), forward),
+            &tracelet_over(&store, &peak, &join, backward.clone(), backward),
             &store,
         )),
         "the two certificates agree at replay-equivalence"
@@ -741,7 +729,7 @@ fn a_repeated_primitive_is_graded_by_multiplicity()
         Toy::zero(),
         Toy::add(Toy::zero(), Toy::add(Toy::zero(), Toy::succ(Toy::zero()))),
     );
-    let step = CellApp { cell: z, at: at![] };
+    let step = CellApp::unrecorded(z, at![]);
     let path = vec![step.clone(), step.clone(), step];
     let join = run(&store, &peak, &path);
     assert_eq!(
@@ -781,14 +769,8 @@ fn a_unit_step_is_eliminated_over_the_toy_alphabet()
     let f = store.insert(f_cell());
     let nop = store.insert(nop_cell());
     let peak = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
-    let real = CellApp {
-        cell: f,
-        at: at![0],
-    };
-    let unit = CellApp {
-        cell: nop,
-        at: at![1],
-    };
+    let real = CellApp::unrecorded(f, at![0]);
+    let unit = CellApp::unrecorded(nop, at![1]);
     let bare = vec![real.clone()];
     let padded = vec![unit.clone(), real, unit];
     let join = run(&store, &peak, &bare);
@@ -847,15 +829,9 @@ fn a_layered_derivation_keeps_its_dependent_step_last()
         Toy::add(Toy::zero(), Toy::zero()),
         Toy::add(Toy::zero(), Toy::zero()),
     );
-    let left = CellApp {
-        cell: c,
-        at: at![0],
-    };
-    let right = CellApp {
-        cell: c,
-        at: at![1],
-    };
-    let root = CellApp { cell: c, at: at![] };
+    let left = CellApp::unrecorded(c, at![0]);
+    let right = CellApp::unrecorded(c, at![1]);
+    let root = CellApp::unrecorded(c, at![]);
     let forward = vec![left.clone(), right.clone(), root.clone()];
     let backward = vec![right, left, root];
     let join = run(&store, &peak, &forward);
@@ -979,10 +955,7 @@ fn a_derivation_from_a_different_peak_is_nf_distinct()
     // would identify them, and the replay oracle would not.
     let mut store = CellStore::new();
     let dropper = store.insert(drop_cell());
-    let path = vec![CellApp {
-        cell: dropper,
-        at: at![],
-    }];
+    let path = vec![CellApp::unrecorded(dropper, at![])];
     let near = Toy::add(Toy::zero(), Toy::zero());
     let far = Toy::add(Toy::zero(), Toy::succ(Toy::zero()));
     let join = Toy::zero();
@@ -1003,8 +976,8 @@ fn a_derivation_from_a_different_peak_is_nf_distinct()
         !bool::from(nf_equal(&near_nf, &far_nf)),
         "so it is the recorded peak alone that keeps them apart"
     );
-    let near_cert = tracelet_over(&near, &join, path.clone(), path.clone());
-    let far_cert = tracelet_over(&far, &join, path.clone(), path);
+    let near_cert = tracelet_over(&store, &near, &join, path.clone(), path.clone());
+    let far_cert = tracelet_over(&store, &far, &join, path.clone(), path);
     assert!(
         !bool::from(replay_equivalent(&near_cert, &far_cert, &store)),
         "and the replay oracle keeps them apart too: a positive would be unsound"
@@ -1025,10 +998,7 @@ fn a_certificate_that_does_not_replay_is_not_certified()
     let f = store.insert(f_cell());
     let peak = Toy::succ(Toy::zero());
     let join = Toy::zero();
-    let fabricated = vec![CellApp {
-        cell: f,
-        at: at![0],
-    }];
+    let fabricated = vec![CellApp::unrecorded(f, at![0])];
     assert!(
         matches!(
             normalize(&store, &peak, &join, &fabricated),
@@ -1036,7 +1006,7 @@ fn a_certificate_that_does_not_replay_is_not_certified()
         ),
         "the recorded step names a position carrying no redex, so it has no normal form"
     );
-    let certificate = tracelet_over(&peak, &join, fabricated.clone(), fabricated);
+    let certificate = tracelet_over(&store, &peak, &join, fabricated.clone(), fabricated);
     assert!(
         !bool::from(tracelets_nf_equal(&store, &certificate, &certificate)),
         "so the fast path declines it, even against itself"
@@ -1053,8 +1023,8 @@ fn a_tracelet_pair_agreeing_only_on_its_first_leg_is_not_certified()
     let forward = vec![first.clone(), second.clone()];
     let backward = vec![second, first];
     let join = run(&store, &peak, &forward);
-    let left = tracelet_over(&peak, &join, forward.clone(), forward.clone());
-    let right = tracelet_over(&peak, &join, forward, backward);
+    let left = tracelet_over(&store, &peak, &join, forward.clone(), forward.clone());
+    let right = tracelet_over(&store, &peak, &join, forward, backward);
     assert!(
         !bool::from(tracelets_nf_equal(&store, &left, &right)),
         "one agreeing leg is not a certificate: both legs have to agree"
@@ -1083,16 +1053,10 @@ fn two_interleaved_dependence_chains_layer_by_depth_and_not_by_position()
     let cell = store.insert(c_cell());
     let branch = Toy::add(Toy::add(Toy::zero(), Toy::zero()), Toy::zero());
     let peak = Toy::add(branch.clone(), branch);
-    let left_foot = CellApp {
-        cell,
-        at: at![0, 0],
-    };
-    let left_head = CellApp { cell, at: at![0] };
-    let right_foot = CellApp {
-        cell,
-        at: at![1, 0],
-    };
-    let right_head = CellApp { cell, at: at![1] };
+    let left_foot = CellApp::unrecorded(cell, at![0, 0]);
+    let left_head = CellApp::unrecorded(cell, at![0]);
+    let right_foot = CellApp::unrecorded(cell, at![1, 0]);
+    let right_head = CellApp::unrecorded(cell, at![1]);
     assert_eq!(
         PositionOrder::EnclosedBy,
         ToyAlphabet::position_order(&left_foot.at, &left_head.at),
@@ -1170,15 +1134,9 @@ fn an_alphabet_that_calls_nesting_incomparable_trips_the_kill_signal()
         Toy::add(Toy::zero(), Toy::zero()),
         Toy::add(Toy::zero(), Toy::zero()),
     );
-    let left = CellApp {
-        cell: c,
-        at: at![0],
-    };
-    let right = CellApp {
-        cell: c,
-        at: at![1],
-    };
-    let root = CellApp { cell: c, at: at![] };
+    let left = CellApp::unrecorded(c, at![0]);
+    let right = CellApp::unrecorded(c, at![1]);
+    let root = CellApp::unrecorded(c, at![]);
     let recorded = vec![left, right, root.clone()];
     let join = run(&store, &peak, &recorded);
     assert_eq!(Toy::zero(), join, "the recorded order collapses the spine");
@@ -1206,18 +1164,9 @@ fn an_alphabet_that_calls_nesting_incomparable_trips_the_kill_signal()
     let mut honest = CellStore::new();
     let honest_c = honest.insert(c_cell());
     let honest_path = vec![
-        CellApp {
-            cell: honest_c,
-            at: at![0],
-        },
-        CellApp {
-            cell: honest_c,
-            at: at![1],
-        },
-        CellApp {
-            cell: honest_c,
-            at: at![],
-        },
+        CellApp::unrecorded(honest_c, at![0]),
+        CellApp::unrecorded(honest_c, at![1]),
+        CellApp::unrecorded(honest_c, at![]),
     ];
     assert!(
         normalize(&honest, &peak, &join, &honest_path).is_ok(),
@@ -1249,14 +1198,8 @@ fn a_non_local_term_algebra_trips_the_kill_signal_at_the_join()
         overlaps_between((c, cell), (c, cell)).is_empty(),
         "and the cell has honestly trivial overlap with itself"
     );
-    let low = CellApp {
-        cell: c,
-        at: at![0],
-    };
-    let high = CellApp {
-        cell: c,
-        at: at![1],
-    };
+    let low = CellApp::unrecorded(c, at![0]);
+    let high = CellApp::unrecorded(c, at![1]);
     // A one-layer schedule is ascending address order, so recording the
     // descending one makes the canonical schedule the transposition.
     let (first, second) = if prim_address(cell, &low.at) < prim_address(cell, &high.at) {
@@ -1298,10 +1241,7 @@ fn a_withheld_convexity_warrant_empties_the_shift_quotient()
     let peak = spine(count);
     let recorded: Vec<CellApp<Lying<WithheldConvexity>>> = spine_positions(count)
         .into_iter()
-        .map(|position| CellApp {
-            cell: f,
-            at: position,
-        })
+        .map(|position| CellApp::unrecorded(f, position))
         .collect();
     let reversed: Vec<CellApp<Lying<WithheldConvexity>>> = recorded.iter().rev().cloned().collect();
     let join = run(&store, &peak, &recorded);
@@ -1336,10 +1276,7 @@ fn a_withheld_convexity_warrant_empties_the_shift_quotient()
     let honest_f = honest.insert(f_cell());
     let honest_recorded: Vec<CellApp<ToyAlphabet>> = spine_positions(count)
         .into_iter()
-        .map(|position| CellApp {
-            cell: honest_f,
-            at: position,
-        })
+        .map(|position| CellApp::unrecorded(honest_f, position))
         .collect();
     let honest_reversed: Vec<CellApp<ToyAlphabet>> =
         honest_recorded.iter().rev().cloned().collect();
@@ -1378,14 +1315,8 @@ fn two_primitives_sharing_a_content_address_are_refused_rather_than_merged()
         given, derived,
         "the store holds the two orientations under two identifiers"
     );
-    let first = CellApp {
-        cell: given,
-        at: at![],
-    };
-    let second = CellApp {
-        cell: derived,
-        at: at![],
-    };
+    let first = CellApp::unrecorded(given, at![]);
+    let second = CellApp::unrecorded(derived, at![]);
     let peak = Toy::add(Toy::zero(), Toy::zero());
     let recorded = vec![first.clone(), second.clone()];
     let join = run(&store, &peak, &recorded);
@@ -1433,14 +1364,8 @@ fn the_metavariable_seam_is_what_keeps_a_diverging_nested_pair_dependent()
     ));
     let peel = store.insert(lying_cell(Toy::succ(Toy::var("m")), Toy::var("m")));
     let peak = Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::succ(Toy::zero())));
-    let outer = CellApp {
-        cell: swap,
-        at: at![],
-    };
-    let inner = CellApp {
-        cell: peel,
-        at: at![0],
-    };
+    let outer = CellApp::unrecorded(swap, at![]);
+    let inner = CellApp::unrecorded(peel, at![0]);
     let swap_cell = stored(&store, swap);
     let peel_cell = stored(&store, peel);
     let forward = vec![outer.clone(), inner.clone()];
@@ -1740,8 +1665,8 @@ proptest! {
         let join = run(&store, &peak, &canonical);
         let shuffled: Vec<CellApp<ToyAlphabet>> =
             order.iter().map(|index| canonical[*index].clone()).collect();
-        let left = tracelet_over(&peak, &join, canonical.clone(), canonical);
-        let right = tracelet_over(&peak, &join, shuffled.clone(), shuffled);
+        let left = tracelet_over(&store, &peak, &join, canonical.clone(), canonical);
+        let right = tracelet_over(&store, &peak, &join, shuffled.clone(), shuffled);
         prop_assert!(
             bool::from(tracelets_nf_equal(&store, &left, &right)),
             "non-vacuity: the generator produces normal-form-equal pairs"

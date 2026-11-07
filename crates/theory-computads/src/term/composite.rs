@@ -210,14 +210,17 @@ impl PairScheme<TermAlphabet> for CompositeCriterion
     /// - ensures: [`PairClass::Composite`] with the first position of
     ///   [`CellAlphabet::command_positions`](gandr_theory_cell_complexes::CellAlphabet::command_positions),
     ///   in its order, that the seam strictly encloses and at which a cell
-    ///   fires, and the first such cell in store order; its
-    ///   [`CompositePair::replay`] holds. [`PairClass::Unclassed`] when no cell
-    ///   fires at any such position, or when the seam leaves the peak.
+    ///   fires, the first such cell in store order, and the substitution of its
+    ///   match; its [`CompositePair::replay`] holds. [`PairClass::Unclassed`]
+    ///   when no cell fires at any such position, or when the seam leaves the
+    ///   peak.
     /// - panics: none.
     /// - intension: one breadth-first walk of the peak's range below the seam,
     ///   and one lockstep match of each cell at each node until the first that
     ///   holds; the tables of the walk and the match keep their capacity from
-    ///   one pair to the next, and only a witness builds a position.
+    ///   one pair to the next. Only a witness builds a position, and its cell
+    ///   matches once more to record the substitution, which the lockstep match
+    ///   does not keep.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — over each position of a nested term, and over a
@@ -265,10 +268,12 @@ impl PairScheme<TermAlphabet> for CompositeCriterion
             if cursor != 0 {
                 for (cell, rule) in store.iter() {
                     if bool::from(self.matches(rule.lhs(), peak, start)) {
-                        return PairClass::Composite(CellApp {
-                            cell,
-                            at: self.position(&overlap.seam, Count(cursor)),
-                        });
+                        let at = self.position(&overlap.seam, Count(cursor));
+                        let mut subst = TermSubst::default();
+                        if let Maybe::Present(redex) = TermAlphabet::subterm_cmd_at(peak, &at) {
+                            let _matched = TermAlphabet::match_cmd(rule.lhs(), &redex, &mut subst);
+                        }
+                        return PairClass::Composite(CellApp { cell, at, subst });
                     }
                 }
             }

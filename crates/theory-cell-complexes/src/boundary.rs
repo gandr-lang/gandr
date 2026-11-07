@@ -110,6 +110,13 @@ wrapper! {
 }
 
 wrapper! {
+    /// Whether an image holds a hole: as a metavariable of the hole, or as the
+    /// constant that skolemization writes for one.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+    pub struct HoleOccurrence(bool);
+}
+
+wrapper! {
     /// Whether a position is the root position.
     #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
     pub struct PositionRootStatus(bool);

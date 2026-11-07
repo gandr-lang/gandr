@@ -48,10 +48,7 @@ fn a_deep_derivation_is_ordered_normalized_and_dropped_on_a_small_stack()
         .into_iter()
         .cycle()
         .take(CHAIN)
-        .map(|cell| CellApp {
-            cell,
-            at: ToyAlphabet::root_position(),
-        })
+        .map(|cell| CellApp::unrecorded(cell, ToyAlphabet::root_position()))
         .collect();
     let walks = thread::Builder::new()
         .stack_size(STACK)

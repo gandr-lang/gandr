@@ -665,10 +665,7 @@ mod tests
         let events = steps
             .iter()
             .map(|step| {
-                let application = CellApp {
-                    cell: step.0,
-                    at: step.1.clone(),
-                };
+                let application = CellApp::unrecorded(step.0, step.1.clone());
                 let address = match store.get(step.0) {
                     Maybe::Present(resolved) => prim_address(resolved, &step.1),
                     Maybe::Absent(_) => prim_address(&add_s(), &step.1),
@@ -792,10 +789,7 @@ mod tests
             .into_iter()
             .next()
             .expect("the one-rule store has a self-overlap to seed from");
-        let step = CellApp {
-            cell,
-            at: Pos::root(),
-        };
+        let step = CellApp::unrecorded(cell, Pos::root());
         let provisional = Tracelet {
             overlap,
             path_a: alloc::vec![step.clone()],
@@ -805,7 +799,8 @@ mod tests
                 ProdPat::meta("m"),
                 ConsPat::meta("alpha"),
             ),
-        };
+        }
+        .recorded(store);
         let gandr_theory_coherent_resolutions::ReplayPathOutcome::Reached(reached) =
             provisional.replay_trace(store).path_a.outcome
         else {
@@ -846,10 +841,7 @@ mod tests
     {
         let (store, add) = one_rule_store();
         let cell = present(store.get(add));
-        let step: CellApp = CellApp {
-            cell: add,
-            at: Pos::root(),
-        };
+        let step: CellApp = CellApp::unrecorded(add, Pos::root());
         let cert = gandr_theory_deep_inference::PrimCert(step.clone());
         let term = cell.lhs().clone();
         // Refusals: the obstruction describes the candidate.

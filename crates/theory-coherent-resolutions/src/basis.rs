@@ -274,8 +274,8 @@ impl<A: CellAlphabet> Move<A>
             word.iter()
                 .map(|step| PathStep {
                     app: CellApp {
-                        cell: step.app.cell,
                         at: engine::below::<A>(at, &step.app.at),
+                        ..step.app.clone()
                     },
                     sense: step.sense,
                 })

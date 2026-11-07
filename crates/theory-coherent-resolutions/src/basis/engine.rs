@@ -359,8 +359,8 @@ where
                 |at| Meeting::Apart {
                     first: first.clone(),
                     second: CellApp {
-                        cell: second.cell,
                         at,
+                        ..second.clone()
                     },
                 },
             )
@@ -375,8 +375,8 @@ where
                 },
                 |at| Meeting::Apart {
                     first: CellApp {
-                        cell: first.cell,
                         at,
+                        ..first.clone()
                     },
                     second: second.clone(),
                 },
@@ -416,8 +416,8 @@ where
             let at = carried::<A>(first_cell.rhs(), first_cell.lhs(), &first.at, rest)?;
             [
                 CellApp {
-                    cell: second.cell,
                     at,
+                    ..second.clone()
                 },
                 first.clone(),
             ]
@@ -426,8 +426,8 @@ where
             let rest = A::position_steps(&first.at).strip_prefix(A::position_steps(&second.at))?;
             let at = carried::<A>(second_cell.lhs(), second_cell.rhs(), &second.at, rest)?;
             [second.clone(), CellApp {
-                cell: first.cell,
                 at,
+                ..first.clone()
             }]
         },
     };
@@ -491,8 +491,8 @@ where
                 };
                 let moved = |app: &CellApp<A>| {
                     forward(CellApp {
-                        cell: app.cell,
                         at: below::<A>(at, &app.at),
+                        ..app.clone()
                     })
                 };
                 factor.extend(from.iter().map(moved));

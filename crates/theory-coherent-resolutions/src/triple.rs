@@ -49,6 +49,7 @@ pub struct CriticalTriple<A: CellAlphabet = SequentAlphabet>
     pub peak: A::Cmd,
     /// The three steps, in the order of the peak's command positions, and in
     /// the order of their cells at one position. The first stands at the root.
+    /// Each holds the substitution that matches its cell on the peak.
     pub steps: [CellApp<A>; 3],
 }
 
@@ -110,7 +111,7 @@ where
             }
             for pair in &pairs {
                 for &third in &cells {
-                    extend(pair, third, &mut seen, &mut out);
+                    extend(store, pair, third, &mut seen, &mut out);
                 }
             }
         }
@@ -124,6 +125,7 @@ where
 /// # Specification
 /// trivial.
 fn extend<A>(
+    store: &CellStore<A>,
     pair: &Overlap<A>,
     third: (CellId, &Cell<A>),
     seen: &mut BTreeSet<TripleKey>,
@@ -133,14 +135,8 @@ fn extend<A>(
 {
     let (third_id, third_cell) = third;
     let held = [
-        CellApp {
-            cell: pair.left,
-            at: A::root_position(),
-        },
-        CellApp {
-            cell: pair.right,
-            at: pair.seam.clone(),
-        },
+        (pair.left, A::root_position()),
+        (pair.right, pair.seam.clone()),
     ];
     let (lhs, _) = A::rename_apart(
         (&pair.peak, &pair.peak),
@@ -149,7 +145,7 @@ fn extend<A>(
     for at in A::command_positions(&pair.peak) {
         if held
             .iter()
-            .any(|step| step.cell == third_id && step.at == at)
+            .any(|&(cell, ref held_at)| cell == third_id && *held_at == at)
         {
             continue;
         }
@@ -174,11 +170,23 @@ fn extend<A>(
                     .unwrap_or(positions.len()),
             )
         };
-        let [ref first, ref second] = held;
-        let mut steps = [first.clone(), second.clone(), CellApp {
-            cell: third_id,
-            at,
-        }];
+        // Each cell matches the peak at its position, so each step records
+        // the substitution of that match.
+        let recorded = |cell: CellId, at: A::Pos| {
+            let mut subst = A::Subst::default();
+            if let (Maybe::Present(found), Maybe::Present(redex)) =
+                (store.get(cell), A::subterm_cmd_at(&peak, &at))
+            {
+                let _matched = A::match_cmd(found.lhs(), &redex, &mut subst);
+            }
+            CellApp { cell, at, subst }
+        };
+        let [(first, ref first_at), (second, ref second_at)] = held;
+        let mut steps = [
+            recorded(first, first_at.clone()),
+            recorded(second, second_at.clone()),
+            recorded(third_id, at),
+        ];
         steps.sort_by_key(|step| (place(step), step.cell));
         if seen.insert(steps.each_ref().map(|step| (place(step), step.cell))) {
             out.push(CriticalTriple { peak, steps });

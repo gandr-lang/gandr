@@ -319,14 +319,8 @@ fn row(
     Row {
         store,
         peak,
-        left: CellApp {
-            cell: left,
-            at: at.0,
-        },
-        right: CellApp {
-            cell: right,
-            at: at.1,
-        },
+        left: CellApp::unrecorded(left, at.0),
+        right: CellApp::unrecorded(right, at.1),
         licensed: ruling.0,
         commutation: ruling.1,
     }
@@ -412,11 +406,8 @@ fn a_ground_redex_writes_its_whole_match_image()
     let mut store = CellStore::new();
     let f = store.insert(f_cell());
     let peak = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
-    let footprint = match_footprint(&store, &peak, &CellApp {
-        cell: f,
-        at: at![0],
-    })
-    .expect("f fires at the frame's left argument");
+    let footprint = match_footprint(&store, &peak, &CellApp::unrecorded(f, at![0]))
+        .expect("f fires at the frame's left argument");
     assert_eq!(
         vec![at![0], at![0, 0]],
         sorted(footprint.written),
@@ -442,11 +433,8 @@ fn a_preserved_root_is_read_and_its_hole_is_framed()
     let mut store = CellStore::new();
     let bump = store.insert(bump_left());
     let peak = Toy::add(Toy::zero(), Toy::succ(Toy::zero()));
-    let footprint = match_footprint(&store, &peak, &CellApp {
-        cell: bump,
-        at: at![],
-    })
-    .expect("bump-left fires at the root");
+    let footprint = match_footprint(&store, &peak, &CellApp::unrecorded(bump, at![]))
+        .expect("bump-left fires at the root");
     assert_eq!(
         vec![at![]],
         sorted(footprint.read),
@@ -474,14 +462,8 @@ fn two_root_rules_sharing_only_a_read_node_are_independent()
     let left_bump = store.insert(bump_left());
     let right_bump = store.insert(bump_right());
     let peak = Toy::add(Toy::zero(), Toy::zero());
-    let left = CellApp {
-        cell: left_bump,
-        at: at![],
-    };
-    let right = CellApp {
-        cell: right_bump,
-        at: at![],
-    };
+    let left = CellApp::unrecorded(left_bump, at![]);
+    let right = CellApp::unrecorded(right_bump, at![]);
     let first = match_footprint(&store, &peak, &left).expect("bump-left fires");
     let second = match_footprint(&store, &peak, &right).expect("bump-right fires");
     assert_eq!(
@@ -533,14 +515,8 @@ fn a_redex_inside_a_carried_frame_is_licensed()
     let bump = store.insert(bump_left());
     let f = store.insert(f_cell());
     let peak = Toy::add(Toy::zero(), Toy::succ(Toy::zero()));
-    let outer = CellApp {
-        cell: bump,
-        at: at![],
-    };
-    let inner = CellApp {
-        cell: f,
-        at: at![1],
-    };
+    let outer = CellApp::unrecorded(bump, at![]);
+    let inner = CellApp::unrecorded(f, at![1]);
     assert_eq!(
         FootprintIndependence::Independent,
         polarized(&store, &peak, &outer, &inner),
@@ -574,14 +550,8 @@ fn a_schematic_overlap_does_not_survive_as_an_instance_overlap()
         Toy::add(Toy::zero(), Toy::succ(Toy::zero())),
         Toy::add(Toy::succ(Toy::zero()), Toy::zero()),
     );
-    let left = CellApp {
-        cell: zero_rule,
-        at: at![0],
-    };
-    let right = CellApp {
-        cell: succ_rule,
-        at: at![1],
-    };
+    let left = CellApp::unrecorded(zero_rule, at![0]);
+    let right = CellApp::unrecorded(succ_rule, at![1]);
     let refusal = derive_shift_equivalence(&store, &peak, &left, &right)
         .expect_err("the cell pair overlaps, so the guard refuses");
     let ShiftObstruction::GenuineOverlap { overlap } = refusal
@@ -645,14 +615,8 @@ fn a_hole_seam_refusal_is_the_enumerator_gap_and_not_polarization()
         Toy::succ(Toy::succ(Toy::zero())),
         Toy::add(Toy::zero(), Toy::zero()),
     );
-    let left = CellApp {
-        cell: peel_rule,
-        at: at![0],
-    };
-    let right = CellApp {
-        cell: ground,
-        at: at![1],
-    };
+    let left = CellApp::unrecorded(peel_rule, at![0]);
+    let right = CellApp::unrecorded(ground, at![1]);
     assert_eq!(
         PositionOrder::Incomparable,
         ToyAlphabet::position_order(&left.at, &right.at),
@@ -708,16 +672,10 @@ fn a_rule_that_destroys_a_node_another_only_reads_is_refused()
     let bump = store.insert(bump_left());
     let zero_rule = store.insert(add_z());
     let peak = Toy::add(Toy::zero(), Toy::succ(Toy::zero()));
-    let reader = match_footprint(&store, &peak, &CellApp {
-        cell: bump,
-        at: at![],
-    })
-    .expect("bump-left fires at the root");
-    let writer = match_footprint(&store, &peak, &CellApp {
-        cell: zero_rule,
-        at: at![],
-    })
-    .expect("add-Z fires at the root");
+    let reader = match_footprint(&store, &peak, &CellApp::unrecorded(bump, at![]))
+        .expect("bump-left fires at the root");
+    let writer = match_footprint(&store, &peak, &CellApp::unrecorded(zero_rule, at![]))
+        .expect("add-Z fires at the root");
     assert_eq!(
         FootprintIndependence::ReadWrite { position: at![0] },
         footprint_independence(&reader, &writer),
@@ -737,16 +695,10 @@ fn two_rules_rewriting_one_child_collide_on_writes()
     let once = store.insert(bump_left());
     let twice = store.insert(bump_left_twice());
     let peak = Toy::add(Toy::zero(), Toy::zero());
-    let first = match_footprint(&store, &peak, &CellApp {
-        cell: once,
-        at: at![],
-    })
-    .expect("bump-left fires");
-    let second = match_footprint(&store, &peak, &CellApp {
-        cell: twice,
-        at: at![],
-    })
-    .expect("bump-left-twice fires");
+    let first =
+        match_footprint(&store, &peak, &CellApp::unrecorded(once, at![])).expect("bump-left fires");
+    let second = match_footprint(&store, &peak, &CellApp::unrecorded(twice, at![]))
+        .expect("bump-left-twice fires");
     assert_eq!(
         FootprintIndependence::WriteWrite { position: at![0] },
         footprint_independence(&first, &second),
@@ -763,10 +715,7 @@ fn a_pair_colliding_several_ways_reports_the_earliest_address_it_scans()
     let mut store = CellStore::new();
     let ground = store.insert(c_cell());
     let peak = Toy::add(Toy::zero(), Toy::zero());
-    let step = CellApp {
-        cell: ground,
-        at: at![],
-    };
+    let step = CellApp::unrecorded(ground, at![]);
     let footprint = match_footprint(&store, &peak, &step).expect("c fires at the root");
     let enumerated = ToyAlphabet::command_positions(&peak);
     assert_eq!(
@@ -861,14 +810,8 @@ fn a_relocated_frame_is_refused_because_addresses_move()
     let mover = store.insert(relocate());
     let f = store.insert(f_cell());
     let peak = Toy::add(Toy::zero(), Toy::succ(Toy::zero()));
-    let outer = CellApp {
-        cell: mover,
-        at: at![],
-    };
-    let inner = CellApp {
-        cell: f,
-        at: at![1],
-    };
+    let outer = CellApp::unrecorded(mover, at![]);
+    let inner = CellApp::unrecorded(f, at![1]);
     assert_eq!(
         FootprintIndependence::WriteWrite { position: at![1] },
         polarized(&store, &peak, &outer, &inner),
@@ -888,10 +831,7 @@ fn a_relocated_frame_is_refused_because_addresses_move()
     else {
         panic!("f then the mover fires");
     };
-    let Maybe::Present(outer_first) = fire(&store, &relocated, &CellApp {
-        cell: f,
-        at: at![0],
-    })
+    let Maybe::Present(outer_first) = fire(&store, &relocated, &CellApp::unrecorded(f, at![0]))
     else {
         panic!("f fires at its residual");
     };
@@ -913,14 +853,8 @@ fn the_cong2_pair_is_licensed_by_both_tests()
         licensed_by(
             &store,
             &peak,
-            &CellApp {
-                cell: f,
-                at: at![0]
-            },
-            &CellApp {
-                cell: g,
-                at: at![1]
-            }
+            &CellApp::unrecorded(f, at![0]),
+            &CellApp::unrecorded(g, at![1])
         ),
         "the pair the guard was built for is licensed by the polarized test too"
     );
@@ -933,14 +867,8 @@ fn the_polarized_test_refuses_a_pair_that_does_not_commute()
     let ground = store.insert(c_cell());
     let bump = store.insert(bump_left());
     let peak = Toy::add(Toy::zero(), Toy::zero());
-    let left = CellApp {
-        cell: ground,
-        at: at![],
-    };
-    let right = CellApp {
-        cell: bump,
-        at: at![],
-    };
+    let left = CellApp::unrecorded(ground, at![]);
+    let right = CellApp::unrecorded(bump, at![]);
     assert_eq!(
         LicensedBy::Neither,
         licensed_by(&store, &peak, &left, &right),

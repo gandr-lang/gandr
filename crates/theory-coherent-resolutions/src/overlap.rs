@@ -1250,10 +1250,9 @@ mod tests
             )));
         }
         let mut traced = empty;
-        traced.path_a.push(CellApp {
-            cell: id,
-            at: ToyAlphabet::root_position(),
-        });
+        traced
+            .path_a
+            .push(CellApp::unrecorded(id, ToyAlphabet::root_position()));
         assert_eq!(
             (
                 CertificateIndex::from(2_usize),

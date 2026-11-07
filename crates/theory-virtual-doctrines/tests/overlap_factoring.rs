@@ -105,7 +105,8 @@ mod tests
         /// Wears the chain's producer hole `s` at both polarities — the
         /// dinaturality shape, classified `CellVariance::Mixed`.
         Mixed,
-        /// Wears two fresh single-polarity holes and no `s`.
+        /// Names two fresh single-polarity holes and no `s`, so its producer
+        /// variable meets `s` with one polarity only.
         Split,
         /// Wears two fresh single-polarity holes and rewrites the producer
         /// position to a ground constructor, so every later recorded join in
@@ -511,34 +512,6 @@ mod tests
         FactoringVerdict::Admits
     }
 
-    /// The own-join conjunction predicted from the shape alone.
-    ///
-    /// # Specification
-    /// - ensures: `Refuses` iff two members are `Mixed` while the hole is still
-    ///   readable at the earlier one's own join.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — finite mixed, split and dropped-hole families compare
-    ///   actual cuts with independently predicted verdicts; ledger counts
-    ///   ensure every intended gate was consulted.
-    /// - witness: `tests::overlap_factoring::tests::the_acyclicity_verdict_does_not_factor_through_pairwise_overlap_data`
-    #[spec(ensures: |ret| matches!(ret, FactoringVerdict::Refuses) == shape.iter().enumerate().any(|(index, kind)| *kind == MemberKind::Mixed && bool::from(seam_hole_survives(shape, ChainIndex(index))) && shape.iter().skip(index.saturating_add(1)).any(|later| *later == MemberKind::Mixed)))]
-    fn predicted_own_join(shape: &[MemberKind]) -> FactoringVerdict
-    {
-        for earlier in 0 .. shape.len() {
-            for later in earlier.saturating_add(1) .. shape.len() {
-                if shape.get(earlier) == Some(&MemberKind::Mixed)
-                    && shape.get(later) == Some(&MemberKind::Mixed)
-                    && bool::from(seam_hole_survives(shape, ChainIndex(earlier)))
-                {
-                    return FactoringVerdict::Refuses;
-                }
-            }
-        }
-        FactoringVerdict::Admits
-    }
-
     /// The fold-seam conjunction predicted from the shape alone.
     ///
     /// # Specification
@@ -788,10 +761,14 @@ mod tests
             .into_iter()
             .find(|candidate| candidate.kind == OverlapKind::Composition)
             .expect("consecutive chain cells overlap at their shared operation");
+        // The consumer is ground, so `s` is the one seam hole of the chain. The
+        // gate reads a cell variable through its substitution, so the consumer
+        // variable of a Mixed cell would otherwise meet a consumer hole under
+        // another name.
         let mut peak = CmdPat::cut(
             Polarity::Positive,
             ProdPat::meta("s"),
-            ConsPat::op("op0", [], ConsPat::meta("t")),
+            ConsPat::op("op0", [], ConsPat::top()),
         );
         let mut members = Vec::new();
         for (position, &cell) in cells.iter().enumerate() {
@@ -821,7 +798,9 @@ mod tests
     ///
     /// The overlap is a carrier for the recorded peak: the gate and replay both
     /// read `overlap.peak`, and what these fixtures are about is the boundary a
-    /// certificate records rather than the critical pair that produced it.
+    /// certificate records rather than the critical pair that produced it. The
+    /// step's substitution is recorded where replay reads it, on the peak
+    /// skolemized.
     ///
     /// # Specification
     /// - ensures: successful one-step evidence starts at the given peak and
@@ -846,12 +825,15 @@ mod tests
         };
         let mut overlap = template.clone();
         overlap.peak = peak.clone();
-        Maybe::Present(Tracelet {
-            overlap,
-            path_a: vec![step.clone()],
-            path_b: vec![step.clone()],
-            joins_at: stepped.normal,
-        })
+        Maybe::Present(
+            Tracelet {
+                overlap,
+                path_a: vec![step.clone()],
+                path_b: vec![step.clone()],
+                joins_at: stepped.normal,
+            }
+            .recorded(store),
+        )
     }
 
     /// The distinct metavariable **names** of a command pattern — the seam
@@ -983,19 +965,17 @@ mod tests
     fn the_acyclicity_verdict_does_not_factor_through_pairwise_overlap_data()
     {
         // THE EXPERIMENT. Over every generated family, the gate's verdict on
-        // the full composite is compared against three pairwise readings. Two
-        // of them disagree with it, in OPPOSITE directions — the neighbour
-        // reading admits composites the fold refuses, and the cover reading
-        // refuses composites the fold admits. So the verdict is neither a
-        // conjunction of neighbour verdicts nor a conjunction of all-pairs
-        // verdicts, and no choice between the two rescues it.
+        // the full composite is compared against three pairwise readings. The
+        // neighbour reading disagrees with it: it admits composites the fold
+        // refuses, so the verdict is not a conjunction of neighbour verdicts.
         //
-        // The third reading is the sharpening. Give a pairwise checker the one
-        // datum a pair does not determine — which recorded join sits at the
-        // seam when the right member is grafted — and it agrees with the fold
-        // on every family. So the obstruction IS pairwise in the cells; what is
-        // not pairwise is the seam term, and that is a function of the fold's
-        // prefix.
+        // The all-pairs reading agrees with the fold on every family. A cell
+        // meets a seam hole through its recorded substitution, so a later cell
+        // meets the producer hole only while that hole survives to its own
+        // peak, which is the seam term that the fold presents. So the all-pairs
+        // reading and the fold-seam reading share one closed form. What the
+        // pair does not determine is the seam term, and the substitutions that
+        // the later cells record carry it.
         let mut families = 0_usize;
         let mut composite_refusals = 0_usize;
         let mut adjacent_misses = 0_usize;
@@ -1025,9 +1005,9 @@ mod tests
                     "the adjacent conjunction on {shape:?} matches the closed form"
                 );
                 assert_eq!(
-                    predicted_own_join(&shape),
+                    predicted_fold_seam(&shape),
                     run.own_join,
-                    "the own-join conjunction on {shape:?} matches the closed form"
+                    "the own-join conjunction on {shape:?} matches the fold-seam closed form"
                 );
                 assert_eq!(
                     predicted_fold_seam(&shape),
@@ -1122,8 +1102,8 @@ mod tests
             "the generated families include composites the gate refuses"
         );
 
-        // THE VERDICT, pinned. The two disagreement counts are the finding; the
-        // zero is the sharpening.
+        // THE VERDICT, pinned. The neighbour reading's misses are the finding;
+        // the zeros are the agreement of the other two readings.
         assert_eq!(
             SweepCount::from(23_usize),
             SweepCount::from(composite_refusals),
@@ -1146,10 +1126,10 @@ mod tests
             "the all-pairs reading never admits what the composite refuses"
         );
         assert_eq!(
-            SweepCount::from(8_usize),
+            SweepCount::from(0_usize),
             SweepCount::from(own_join_false_alarms),
-            "while it refuses {own_join_false_alarms} composites the gate admits — the cover \
-             reading is not the gate either, and it errs the other way"
+            "and it never refuses what the composite admits: a cell that acts after the hole is \
+             dropped meets no seam hole of an earlier join"
         );
         assert_eq!(
             SweepCount::from(0_usize),
@@ -1233,17 +1213,26 @@ mod tests
         // unanswerable — the two candidate readings agree everywhere — so this
         // fixture is built where they cannot.
         //
-        // The `Drop` member rewrites the producer position to a ground
-        // constructor, so the first member's recorded join still carries the
-        // hole `s` and the third member's no longer does, while BOTH members
-        // fire a cell that wears `s` at both polarities. The unordered pair is
-        // therefore one pair with two verdicts, and which one it gets is
-        // decided entirely by which certificate is on the left.
-        let shape = [MemberKind::Mixed, MemberKind::Drop, MemberKind::Mixed];
+        // The right certificate is the composite of a Mixed member and a Drop
+        // member. Its Mixed cell meets the hole `s` at its peak, and its own
+        // recorded join no longer carries `s`. The first member's join does
+        // carry it, and both supports fire a cell that wears `s` at both
+        // polarities. The unordered pair is therefore one pair with two
+        // verdicts, and which one it gets is decided entirely by which
+        // certificate is on the left.
+        let shape = [MemberKind::Mixed, MemberKind::Mixed, MemberKind::Drop];
         let family = build_family(&shape);
-        let (Some(first), Some(third)) = (family.members.first(), family.members.get(2))
+        let (Some(first), Some(second), Some(third)) = (
+            family.members.first(),
+            family.members.get(1),
+            family.members.get(2),
+        )
         else {
             panic!("the family has three members")
+        };
+        let CutOutcome::Directed(dropping) = directed_cut(second, third, &family.store)
+        else {
+            panic!("a Mixed member and a Drop member graft through the gate")
         };
 
         // The hypothesis, asserted rather than assumed: the joins disagree
@@ -1255,20 +1244,23 @@ mod tests
             "the first member's recorded join carries the seam hole `s`"
         );
         assert!(
-            !seam_hole_names(&third.joins_at)
+            !seam_hole_names(&dropping.joins_at)
                 .iter()
                 .any(|name| name.as_str() == "s"),
-            "the third member's recorded join does not, because a Drop member ran between them"
+            "the dropping composite's recorded join does not, because its Drop member ran last"
         );
-        for (label, member) in [("the first", first), ("the third", third)] {
+        for (label, member) in [
+            ("the first member", first),
+            ("the dropping composite", &dropping),
+        ] {
             assert!(
                 bool::from(support_wears_mixed(
                     member,
                     FixtureHoleName("s"),
                     &family.store
                 )),
-                "{label} member fires a cell wearing `s` at both polarities, so each side can \
-                 supply half of a flow loop"
+                "{label} fires a cell wearing `s` at both polarities, so each side can supply \
+                 half of a flow loop"
             );
         }
 
@@ -1277,7 +1269,7 @@ mod tests
         let mut ledger = GateLedger::default();
         assert!(
             matches!(
-                consult(&mut ledger, first, third, &family.store),
+                consult(&mut ledger, first, &dropping, &family.store),
                 Consultation::Declined
             ),
             "with the hole-carrying join on the left the criterion reads `s`, finds a mixed \
@@ -1285,7 +1277,7 @@ mod tests
         );
         assert!(
             matches!(
-                consult(&mut ledger, third, first, &family.store),
+                consult(&mut ledger, &dropping, first, &family.store),
                 Consultation::Admitted(_)
             ),
             "with the hole-dropping join on the left the criterion never reads `s` at all, so the \
@@ -1304,21 +1296,19 @@ mod tests
     }
 
     #[test]
-    fn a_dropped_seam_hole_admits_a_composite_the_all_pairs_reading_refuses()
+    fn a_cell_past_a_dropped_seam_hole_meets_no_seam_of_an_earlier_join()
     {
-        // THE COUNTEREXAMPLE to the cover reading, and it fails the other way.
-        //
         // The middle member rewrites the producer position to a ground
         // constructor, so from there on the chain's recorded joins no longer
         // carry the seam hole `s`. The fold reads the seam holes off the join
-        // it actually holds — the middle member's — so when the third member is
+        // it actually holds, the middle member's, so when the third member is
         // grafted the hole is not there to cycle and the composite is admitted.
-        // The all-pairs reading asks the pair (first, third) at the FIRST
-        // member's join, which still carries `s`, and refuses.
         //
-        // Neither reading is wrong about its own question. What the pair does
-        // not determine is which recorded join sits at the seam, and that is
-        // the datum the fold has.
+        // The all-pairs reading asks the pair (first, third) at the FIRST
+        // member's join, which still carries `s`. The third member's cell
+        // spells `s` at both polarities, but its recorded substitution binds
+        // the ground producer. So it meets no seam hole of that join, and the
+        // all-pairs reading admits what the fold admits.
         let shape = [MemberKind::Mixed, MemberKind::Drop, MemberKind::Mixed];
         let family = build_family(&shape);
         let mut composite_ledger = GateLedger::default();
@@ -1335,48 +1325,34 @@ mod tests
             "both grafts really were consulted"
         );
         assert_eq!(
-            FactoringVerdict::Refuses,
+            FactoringVerdict::Admits,
             own_join_verdict(&family.members, &family.store, &mut pairs_ledger),
-            "the all-pairs reading refuses a composite the gate admits"
-        );
-        assert_eq!(
-            SweepCount::from(pairs_ledger.declines),
-            SweepCount::from(pairs_ledger.acyclicity_declines),
-            "and its refusal is an acyclicity decline, not a different verdict smuggled in"
+            "the all-pairs reading admits it too"
         );
 
-        // Which pair supplies the refusal, named rather than inferred: the
-        // outer two, whose cells never meet at any seam the fold presents.
         let (Some(first), Some(third)) = (family.members.first(), family.members.get(2))
         else {
             panic!("the family has three members")
         };
+        assert!(
+            seam_hole_names(&first.joins_at)
+                .iter()
+                .any(|name| name.as_str() == "s")
+                && bool::from(support_wears_mixed(
+                    third,
+                    FixtureHoleName("s"),
+                    &family.store
+                )),
+            "the hypothesis: the first join carries `s`, and the third member's cell spells it"
+        );
         let mut outer_ledger = GateLedger::default();
         assert!(
             matches!(
                 consult(&mut outer_ledger, first, third, &family.store),
-                Consultation::Declined
-            ),
-            "the outer pair declines at the first member's own join"
-        );
-
-        // And the same two members, asked at the seam term the fold presents,
-        // agree with the fold. The cells are unchanged; only the recorded join
-        // moved.
-        let Some(middle) = family.members.get(1)
-        else {
-            panic!("the family has three members")
-        };
-        let reseated = Tracelet {
-            joins_at: middle.joins_at.clone(),
-            ..first.clone()
-        };
-        assert!(
-            matches!(
-                consult(&mut outer_ledger, &reseated, third, &family.store),
                 Consultation::Admitted(_)
             ),
-            "re-seated on the fold's own seam term, the same pair is admitted"
+            "the outer pair is admitted at the first member's own join: a cell that only spells \
+             the seam hole's name is no endpoint of it"
         );
     }
 }

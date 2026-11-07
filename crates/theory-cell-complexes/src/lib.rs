@@ -28,6 +28,9 @@
 //!
 //! # References
 //!
+//! - `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: an alphabet reads
+//!   whether an image holds a hole, as a metavariable or as its skolem constant
+//!   (§ gate-substitution-read).
 //! - Dimitri Ara, Albert Burroni, Yves Guiraud, Philippe Malbos, François
 //!   Métayer, and Samuel Mimram. _Polygraphs: From Rewriting to Higher
 //!   Categories_. London Mathematical Society Lecture Note Series 495,
@@ -123,6 +126,7 @@ pub use crate::boundary::CellLinearity;
 pub use crate::boundary::CellStoreEmptyStatus;
 pub use crate::boundary::FiringPermission;
 pub use crate::boundary::GroundPatternStatus;
+pub use crate::boundary::HoleOccurrence;
 pub use crate::boundary::Multiplicity;
 pub use crate::boundary::PatternSize;
 pub use crate::boundary::PositionRootStatus;

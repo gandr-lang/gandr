@@ -27,6 +27,7 @@ Virtual double categories, reflected judgments and directed laws over replayable
 
 ## References
 
+- `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the acyclicity page (§ gate-substitution-read) — an elaborated graft records its composite against the cell store.
 - Hayato Nasu. _Logical Aspects of Virtual Double Categories_. Preprint, January 2025. `arXiv:2501.17869` — split cartesian fibrant virtual double categories, their internal language and protype isomorphisms.
 - Nicolas Behr, Russ Harmer and Jean Krivine. “Concurrency Theorems for Non-linear Rewriting Theories.” _International Conference on Graph Transformation (ICGT 2021)_, 2021. `arXiv:2105.02842` — overlap-indexed composition and the distinction between a family of composites and a chosen composite.
 

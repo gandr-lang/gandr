@@ -4,6 +4,7 @@ Sequential certificate composition in two modes and bounded backward pathway que
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -17,12 +18,16 @@ Sequential certificate composition in two modes and bounded backward pathway que
 
 **Why.** Certificate consumers need an explicit distinction between coherence composition and a directed gate, together with a static query whose refusals are not confused with normalizer failures.
 
-**How.** Both modes concatenate the two recorded legs at a sequential boundary. The directed mode first builds a cell-and-hole flow graph at the left certificate's recorded join and refuses a cycle. The pathway query prepends transitions, certifies the recorded first leg through `gandr-theory-deep-inference`, checks the target's causal position, and retains one representative per normal form. The crate is `no_std` with `alloc`; it evaluates no program.
+**How.** Both modes concatenate the two recorded legs at a sequential boundary and record the composite on the left peak. The directed mode first builds a cell-and-hole flow graph and refuses a cycle. It reads each seam hole of the left certificate's recorded join through the substitutions that the steps record, so a cell variable that only spells a hole's name is no endpoint of it. The pathway query prepends transitions, certifies the recorded first leg through `gandr-theory-deep-inference`, checks the target's causal position, and retains one representative per normal form. The crate is `no_std` with `alloc`; it evaluates no program.
+
+## References
+
+- `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the acyclicity page (§ gate-substitution-read) — the seam gate reads each hole through the recorded substitutions, not by its name.
 
 ## Provided features
 
-- `compose_invertible`: unconditional sequential graft, retaining the left overlap and right join. Witnesses: `tests::composition::invertible_composition_of_a_ground_chain_replays` and `tests::composition::invertible_composition_is_well_defined_on_the_replay_quotient`.
-- `compose_directed` and `CompositionObstruction`: the same graft behind the seam-flow cycle gate, with a semantic cell-and-hole cycle or a typed graph/capacity failure. Witnesses: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs` and `tests::composition::the_criterion_reads_the_seam_holes_of_the_left_certificates_recorded_join`.
+- `compose_invertible`: unconditional sequential graft, retaining the left overlap and right join, recorded on the left peak. Witnesses: `tests::composition::invertible_composition_of_a_ground_chain_replays` and `tests::composition::invertible_composition_is_well_defined_on_the_replay_quotient`.
+- `compose_directed` and `CompositionObstruction`: the same graft behind the seam-flow cycle gate, with a semantic cell-and-hole cycle or a typed graph/capacity failure. Witnesses: `tests::composition::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`, `tests::composition::the_criterion_reads_the_seam_holes_of_the_left_certificates_recorded_join` and `tests::composition::an_unrelated_hole_spelled_alike_is_no_seam_endpoint`.
 - `target_occurs_only_last`: target absence, repetition, a non-predecessor, or acceptance relative to the guard. Every other event must precede the unique target. Witnesses: the four corresponding `pathway::tests` rows of the floor, [#202](https://github.com/gandr-lang/gandr/issues/202).
 - `synthesize_pathways`, `PathwayBudget`, `PathwayOutcome` and `PathwayObstruction`: breadth-first backward growth, duplicate compression, explicit length/candidate ceilings, and the stopped frontier. `certify_candidate` separates candidate-local refusals from failures that stop the query. Witnesses: `tests::pathway::a_backward_extension_is_returned_once_with_its_exact_frontier`, `tests::pathway::a_kill_signal_stops_the_query_rather_than_refusing_a_candidate`, and the pathway rows of [#202](https://github.com/gandr-lang/gandr/issues/202).
 

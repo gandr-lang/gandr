@@ -526,8 +526,8 @@ impl Derivation
     ///
     /// # Specification
     /// - ensures: identities are trivial; certificate leaves retain their
-    ///   evidence; sequential grafts compose only at an equal seam. Unsupported
-    ///   grafts and broken seams are stuck.
+    ///   evidence; sequential grafts compose only at an equal seam, recorded
+    ///   against `cells`. Unsupported grafts and broken seams are stuck.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -539,7 +539,10 @@ impl Derivation
     #[inline]
     #[must_use]
     #[spec(ensures: |ref ret| match *self.0.to_ref().head() { DerivationKind::Id(_) => matches!(*ret, Elaborated::Trivial), DerivationKind::Cert { ref cert, .. } => matches!(*ret, Elaborated::Cert(ref actual) if actual.as_ref() == cert), DerivationKind::Graft(_) => true })]
-    pub fn elaborate(&self) -> Elaborated<'_>
+    pub fn elaborate(
+        &self,
+        cells: &CellStore,
+    ) -> Elaborated<'_>
     {
         let mut frames = alloc::vec![ElaborateFrame::Enter(self.0.to_ref())];
         let mut values = Vec::new();
@@ -577,7 +580,7 @@ impl Derivation
                 ElaborateFrame::FinishSequential => {
                     let outer = values.pop().unwrap_or(Elaborated::Stuck);
                     let inner = values.pop().unwrap_or(Elaborated::Stuck);
-                    values.push(graft_sequential(inner, outer));
+                    values.push(graft_sequential(inner, outer, cells));
                 },
             }
         }
@@ -597,13 +600,13 @@ impl Derivation
     /// - witness: `tests::laws::tests::a_graft_sequences_one_inner_cell_and_sticks_on_two`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| bool::from(ret) == match self.elaborate() { Elaborated::Trivial => true, Elaborated::Cert(cert) => bool::from(cert.replay(store)), Elaborated::Stuck => false })]
+    #[spec(ensures: |ret| bool::from(ret) == match self.elaborate(store) { Elaborated::Trivial => true, Elaborated::Cert(cert) => bool::from(cert.replay(store)), Elaborated::Stuck => false })]
     pub fn replays(
         &self,
         store: &CellStore,
     ) -> DerivationReplay
     {
-        DerivationReplay::from(match self.elaborate() {
+        DerivationReplay::from(match self.elaborate(store) {
             Elaborated::Trivial => true,
             Elaborated::Cert(cert) => bool::from(cert.replay(store)),
             Elaborated::Stuck => false,
@@ -630,10 +633,10 @@ enum ElaborateFrame<'derivation>
 ///
 /// # Specification
 /// - ensures: [`Elaborated::Cert`] of
-///   [`gandr_theory_decomposition_spaces::compose_invertible`] when both are
-///   certificates sharing the seam (`inner.joins_at == outer.overlap.peak`);
-///   the non-trivial side unchanged when the other is trivial;
-///   [`Elaborated::Stuck`] on a mismatched seam or a stuck operand.
+///   [`gandr_theory_decomposition_spaces::compose_invertible`] against `cells`
+///   when both are certificates sharing the seam (`inner.joins_at ==
+///   outer.overlap.peak`); the non-trivial side unchanged when the other is
+///   trivial; [`Elaborated::Stuck`] on a mismatched seam or a stuck operand.
 /// - panics: none.
 #[inline]
 /// # Adequacy
@@ -645,13 +648,14 @@ enum ElaborateFrame<'derivation>
 fn graft_sequential<'derivation>(
     inner: Elaborated<'derivation>,
     outer: Elaborated<'derivation>,
+    cells: &CellStore,
 ) -> Elaborated<'derivation>
 {
     match (inner, outer) {
         (Elaborated::Trivial, other) | (other, Elaborated::Trivial) => other,
         (Elaborated::Cert(i), Elaborated::Cert(o)) => {
             if i.joins_at == o.overlap.peak {
-                Elaborated::Cert(Cow::Owned(Box::new(compose_invertible(&i, &o))))
+                Elaborated::Cert(Cow::Owned(Box::new(compose_invertible(&i, &o, cells))))
             }
             else {
                 Elaborated::Stuck
@@ -1208,8 +1212,8 @@ impl<G> Vdc for CellStoreVdc<'_, G>
         let equal = a.domain().eq(b.domain())
             && a.cod() == b.cod()
             && bool::from(elaborations_replay_equivalent(
-                &a.elaborate(),
-                &b.elaborate(),
+                &a.elaborate(self.cells),
+                &b.elaborate(self.cells),
                 self.cells,
             ));
         VdcCellEquality::from(equal)

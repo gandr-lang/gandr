@@ -973,7 +973,10 @@ mod tests
         let mut store = CellStore::new();
         let cell = store.insert(cell);
         let peak = Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::zero()));
-        let path = vec![CellApp { cell, at: at![0] }, CellApp { cell, at: at![1] }];
+        let path = vec![
+            CellApp::unrecorded(cell, at![0]),
+            CellApp::unrecorded(cell, at![1]),
+        ];
         event_order(&store, &peak, &path).expect("the two-event fixture replays")
     }
 
@@ -996,7 +999,7 @@ mod tests
         let mut store = CellStore::new();
         let cell = store.insert(cell);
         let peak = Toy::succ(Toy::zero());
-        let path = vec![CellApp { cell, at: at![] }];
+        let path = vec![CellApp::unrecorded(cell, at![])];
         event_order(&store, &peak, &path).expect("the one-event fixture replays")
     }
 
@@ -1023,7 +1026,10 @@ mod tests
             Toy::var("x"),
         ));
         let peak = Toy::add(Toy::zero(), Toy::add(Toy::zero(), Toy::zero()));
-        let path = vec![CellApp { cell, at: at![] }, CellApp { cell, at: at![] }];
+        let path = vec![
+            CellApp::unrecorded(cell, at![]),
+            CellApp::unrecorded(cell, at![]),
+        ];
         event_order(&store, &peak, &path).expect("the dependent two-event fixture replays")
     }
 
@@ -1366,7 +1372,7 @@ mod tests
         let mut store = CellStore::new();
         let cell = store.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
         let peak = Toy::succ(Toy::succ(Toy::succ(Toy::zero())));
-        let step = CellApp { cell, at: at![] };
+        let step = CellApp::unrecorded(cell, at![]);
         let order = event_order(&store, &peak, &[step.clone(), step.clone(), step])
             .expect("the three root reductions fire");
         let projected = DependenceBits::from_order(&order, &[
@@ -1408,15 +1414,9 @@ mod tests
         let redex = Toy::succ(Toy::zero());
         let peak = Toy::add(redex.clone(), Toy::add(redex.clone(), redex));
         let path = [
-            CellApp { cell, at: at![0] },
-            CellApp {
-                cell,
-                at: at![1, 0],
-            },
-            CellApp {
-                cell,
-                at: at![1, 1],
-            },
+            CellApp::unrecorded(cell, at![0]),
+            CellApp::unrecorded(cell, at![1, 0]),
+            CellApp::unrecorded(cell, at![1, 1]),
         ];
         let order =
             event_order(&store, &peak, &path).expect("the three independent reductions fire");

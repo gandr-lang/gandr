@@ -68,6 +68,7 @@ use gandr_theory_cell_complexes::CommandSpliceRefusal;
 use gandr_theory_cell_complexes::ConvexityDischarge;
 use gandr_theory_cell_complexes::FiringPermission;
 use gandr_theory_cell_complexes::Generalization;
+use gandr_theory_cell_complexes::HoleOccurrence;
 use gandr_theory_cell_complexes::PatternSize;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
@@ -790,6 +791,19 @@ where
     fn hole_of(var: &Self::Var) -> Self::Hole
     {
         ToyAlphabet::hole_of(var)
+    }
+
+    /// The toy alphabet's reading of a hole in an image.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn image_holds(
+        image: Self::Image<'_>,
+        hole: &Self::Hole,
+    ) -> HoleOccurrence
+    {
+        ToyAlphabet::image_holds(image, hole)
     }
 
     /// The toy alphabet's certificate reading.

@@ -46,6 +46,7 @@ use crate::alphabet::path_order;
 use crate::boundary::CellInvertibility;
 use crate::boundary::CellLinearity;
 use crate::boundary::FiringPermission;
+use crate::boundary::HoleOccurrence;
 use crate::boundary::Multiplicity;
 use crate::boundary::PatternSize;
 use crate::boundary::PositionStep;
@@ -62,7 +63,9 @@ use crate::pattern::MetaVar;
 use crate::pattern::Node;
 use crate::pattern::NodeRef;
 use crate::pattern::Pos;
+use crate::pattern::ProdHead;
 use crate::pattern::ProdPat;
+use crate::pattern::ProdRef;
 use crate::pattern::SpliceRefusal;
 use crate::pattern::Sym;
 use crate::pattern::position_read;
@@ -1338,6 +1341,53 @@ impl CellAlphabet for SequentAlphabet
     fn hole_of(var: &Self::Var) -> Self::Hole
     {
         var.hole().clone()
+    }
+
+    /// Whether `image` holds `hole`: as a metavariable of that name, or as the
+    /// `$k$` constant that [`CellAlphabet::skolemize`] writes for one, a
+    /// constructor at a producer and an operation frame at a consumer.
+    ///
+    /// # Specification
+    /// - ensures: positive exactly when a producer node, a consumer node or a
+    ///   producer argument of a consumer frame is a metavariable of `hole` or
+    ///   the constant `$k$` followed by its name.
+    /// - panics: none.
+    /// - executable: none — the clause would walk `image` a second time.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — open and skolemized sequent images hold a hole as a
+    ///   metavariable, as the constant at a producer and at a consumer, under a
+    ///   frame's argument, and not at all. A missed constant, a skipped
+    ///   argument or a hole read by another spelling changes the decision.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    #[inline]
+    fn image_holds(
+        image: Self::Image<'_>,
+        hole: &Self::Hole,
+    ) -> HoleOccurrence
+    {
+        let name: &str = hole.as_ref();
+        let constant = |sym: &Sym| {
+            let spelled: &str = sym.as_ref();
+            spelled.strip_prefix("$k$") == Some(name)
+        };
+        let in_producer = |prod: ProdRef<'_>| {
+            prod.preorder().any(|entry| match *entry.head() {
+                ProdHead::Meta(ref var) => var.hole() == hole,
+                ProdHead::Ctor(ref ctor, _) => constant(ctor),
+            })
+        };
+        HoleOccurrence::from(match image {
+            ImageRef::Producer(prod) => in_producer(prod),
+            ImageRef::Consumer(cons) => cons.preorder().any(|head| {
+                let at_head = match *head {
+                    ConsHead::Meta(ref var) => var.hole() == hole,
+                    ConsHead::Op { ref op, .. } => constant(op),
+                    ConsHead::Frame(_) | ConsHead::Top => false,
+                };
+                at_head || head.args().iter().any(|arg| in_producer(arg.to_ref()))
+            }),
+        })
     }
 
     /// Whether `provenance` marks a completion-derived certificate.
