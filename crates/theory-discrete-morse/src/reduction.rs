@@ -17,6 +17,7 @@
 //!   and § 3.6 lifts them to an equality of types, which composes. A
 //!   [`Reduction`] states those four parts and their replay.
 
+use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use crate::equivalence::Closure;
@@ -297,6 +298,41 @@ where
     })
 }
 
+/// The round trip of `reduction` at its target cell `cell`, whose composite
+/// is `own`: `φ` after `ι` gives `own` back, or the retraction closes between
+/// them. The inclusion comes back, for the section of the cell.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// - each [`Refusal`] of the maps of `reduction`.
+/// - [`Refusal::Unretracted`]: `φ ∘ ι` moves the cell.
+fn round_trip<R>(
+    reduction: &mut R,
+    cell: &R::Cell,
+    own: &R::Composite,
+) -> Answer<R, R::Composite>
+where
+    R: Reduction,
+{
+    let included = reduction.include(own)?;
+    let back = reduction.collapse(&included)?;
+    if back == *own {
+        return Ok(included);
+    }
+    let closes = match reduction.retraction(own)? {
+        Some(ref witness) => reduction.closes(witness, &back, own)? == Closure::Closes,
+        None => false,
+    };
+    if closes {
+        Ok(included)
+    }
+    else {
+        Err(Refusal::Unretracted(cell.clone()))
+    }
+}
+
 impl<First, Next> Reduction for Then<First, Next>
 where
     First: Reduction,
@@ -473,9 +509,12 @@ where
     /// Replay each reduction, then the seam and both laws of the composite.
     ///
     /// The first target must be the second source, and the second generator
-    /// of each of its cells the first collapse of the first generator. `φ`
-    /// after `ι` gives each target cell's composite back, or the retraction
-    /// closes between them. The section of each source cell closes.
+    /// of each of its cells the first collapse of the first generator. The
+    /// replay keeps that first collapse for each seam cell. `φ` after `ι`
+    /// gives each target cell's composite back, or the retraction closes
+    /// between them. The section of each source cell closes. The round trip
+    /// and the section of a source cell come together, in source order, and
+    /// share one inclusion. A target cell outside the source comes last.
     ///
     /// # Specification
     /// - ensures: `Ok` exactly when both reductions replay and each check of
@@ -486,9 +525,11 @@ where
     ///   not close as [`Refusal::Forged`].
     /// - panics: none.
     /// - executable: none — the body is the predicate.
-    /// - intension: both replays, then one generator and one collapse for each
-    ///   seam cell, and a fixed number of collapses, inclusions and sections
-    ///   for each target and each source cell.
+    /// - intension: both replays; one first generator, one first collapse and
+    ///   one second generator for each seam cell; then for each source cell one
+    ///   generator, one second collapse, one section, and one inclusion and one
+    ///   collapse if it is a target cell or its section is not an identity. The
+    ///   seam and the target are sorted once for the lookups.
     ///
     /// # Errors
     /// - each [`Refusal`] of either reduction.
@@ -507,42 +548,60 @@ where
         self.first.replay()?;
         self.next.replay()?;
         matched(self.first.target(), self.next.source())?;
-        let seam: Vec<Self::Cell> = self.next.source().to_vec();
-        for cell in &seam {
-            let generator = self.first.generator(cell)?;
+        let cells: Vec<Self::Cell> = self.next.source().to_vec();
+        let mut seam: Vec<(Self::Cell, Self::Composite)> = Vec::with_capacity(cells.len());
+        for cell in cells {
+            let generator = self.first.generator(&cell)?;
             let lowered = self.first.collapse(&generator)?;
-            if self.next.generator(cell)? != lowered {
-                return Err(Refusal::Unmatched(Some(cell.clone())));
+            if self.next.generator(&cell)? != lowered {
+                return Err(Refusal::Unmatched(Some(cell)));
             }
+            seam.push((cell, lowered));
         }
-        let target: Vec<Self::Cell> = self.next.target().to_vec();
-        for cell in &target {
-            let generator = self.generator(cell)?;
-            let own = self.collapse(&generator)?;
-            let included = self.include(&own)?;
-            let back = self.collapse(&included)?;
-            if back == own {
-                continue;
-            }
-            let closes = match self.retraction(&own)? {
-                Some(ref witness) => self.closes(witness, &back, &own)? == Closure::Closes,
-                None => false,
-            };
-            if !closes {
-                return Err(Refusal::Unretracted(cell.clone()));
-            }
-        }
-        let source: Vec<Self::Cell> = self.first.source().to_vec();
+        seam.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        let mut target: Vec<Self::Cell> = self.next.target().to_vec();
+        target.sort_unstable();
+        let mut source: Vec<Self::Cell> = self.first.source().to_vec();
         for cell in &source {
-            let generator = self.generator(cell)?;
-            let Some(witness) = self.section(&generator)?
+            let generator = self.first.generator(cell)?;
+            let kept = seam
+                .binary_search_by(|&(ref seamed, _)| seamed.cmp(cell))
+                .ok()
+                .and_then(|place| seam.get(place));
+            let lowered = match kept {
+                Some(&(_, ref lowered)) => Cow::Borrowed(lowered),
+                None => Cow::Owned(self.first.collapse(&generator)?),
+            };
+            let own = self.next.collapse(&lowered)?;
+            let included = if target.binary_search(cell).is_ok() {
+                Some(round_trip(self, cell, &own)?)
+            }
+            else {
+                None
+            };
+            let inner = self.first.section(&generator)?;
+            let outer = match self.next.section(&lowered)? {
+                Some(ref witness) => Some(self.first.include_witness(witness)?),
+                None => None,
+            };
+            let Some(witness) = chained(&mut self.first, inner, outer)?
             else {
                 continue;
             };
-            let collapsed = self.collapse(&generator)?;
-            let there = self.include(&collapsed)?;
+            let there = match included {
+                Some(there) => there,
+                None => self.include(&own)?,
+            };
             if self.closes(&witness, &generator, &there)? == Closure::Open {
                 return Err(Refusal::Forged(cell.clone()));
+            }
+        }
+        source.sort_unstable();
+        for cell in &target {
+            if source.binary_search(cell).is_err() {
+                let generator = self.generator(cell)?;
+                let own = self.collapse(&generator)?;
+                round_trip(self, cell, &own)?;
             }
         }
         Ok(())

@@ -37,7 +37,7 @@ INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-coherent-resolutions','lawvere','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Ara-2025-polygraphs_rewriting_higher_categories','theory-discrete-morse','equivalence','dependency',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Bakke-2026-synthetic_sierpinski_cone','theory-exact-reals','','newest','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
-INSERT INTO reference VALUES('Barrett-2025-proof_compression_subatomic_logic_guarded_substitutions','theory-deep-inference','reduction','exemplar','f01741441dc411ff1eb29142d99d54c48965102a','2026-11-07','abb9aefd3bf06b8310883061acfc2472f6b68e32');
+INSERT INTO reference VALUES('Barrett-2025-proof_compression_subatomic_logic_guarded_substitutions','theory-deep-inference','reduction','exemplar','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','19fddbb1df0b47b5d8f0bb3f10320fd0cc9c0d3d');
 INSERT INTO reference VALUES('Bauer-2009-dedekind_reals_abstract_stone_duality','theory-exact-reals','','exemplar','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
 INSERT INTO reference VALUES('Bauer-efficient_computation_dedekind_reals','theory-exact-reals','','exemplar','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
 INSERT INTO reference VALUES('Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces','theory-sites','wreath','lineage',NULL,NULL,NULL);
@@ -52,7 +52,7 @@ INSERT INTO reference VALUES('Curry-2015-discrete_morse_theory_computing_cellula
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-coherent-resolutions','lawvere::brown','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','','background','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','equivalence','exemplar',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','reduction','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-discrete-morse','reduction','exemplar','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','cb9576c6a446bfc12f008bd794ff4c48859e8078');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-exact-reals','graph','exemplar','6099d43c994e63da017541bf4588861828115dc1','2026-11-07','e18d0d9572b33421d9960d9d8bf1df8b5df19439');
 INSERT INTO reference VALUES('Doré-2023-computing_spaces_type_theory','theory-shapes','formula','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','36f894989d773771961311177868caf3f968d516');
 INSERT INTO reference VALUES('Doré-2026-dependent_multiplicities_dependent_linear_type_theory','core-term','','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','47750eeb9f84f45eb06c9c19ce35c51433f7b123');
@@ -424,7 +424,7 @@ INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kerne
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-core','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12317-453f-7980-9c86-68f75917f3a6','kernel-term','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4','core-checker','judgement::native','exemplar',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','reduction','anchor','f01741441dc411ff1eb29142d99d54c48965102a','2026-11-07','abb9aefd3bf06b8310883061acfc2472f6b68e32');
+INSERT INTO reference VALUES('vault:01a12723-951b-7183-87d8-4fbc83c6a779','theory-deep-inference','reduction','anchor','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','19fddbb1df0b47b5d8f0bb3f10320fd0cc9c0d3d');
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-grammar','surface::type_shell','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a14daa-a317-7d92-bd17-3f20e87634cd','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
@@ -629,7 +629,7 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theor
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere::brown','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-deep-inference','reduction','anchor','f01741441dc411ff1eb29142d99d54c48965102a','2026-11-07','abb9aefd3bf06b8310883061acfc2472f6b68e32');
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-deep-inference','reduction','anchor','2cfda0a0aea4a66803f7e35f2645f0a42afba26c','2026-11-07','19fddbb1df0b47b5d8f0bb3f10320fd0cc9c0d3d');
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','','exemplar','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','f391d073a4675f46d2dafc39233a201a3f0149fa');
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-discrete-morse','sum','anchor','b86e39667e44b2b3b2eccf368b0f4aa1db2ae3b6','2026-11-07','d0cdb8d1085104a2bb11fc971d543c12d4765c7e');
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-graded-posets','','exemplar',NULL,NULL,NULL);
