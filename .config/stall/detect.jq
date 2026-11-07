@@ -41,17 +41,19 @@
 #                  (#2885): the seat's watch that files it died with its
 #                  session. Its fix is `mise run refactor:file <n>`; a merged
 #                  pull request is never stalled, only paged.
-#   seat-idle      a lane that holds a seat, with no open pull request of its
-#                  lane (below) and no `status:claimed` issue it holds, for
-#                  `idle` minutes since the detector first saw it so (#3822):
-#                  a restored seat's watchers died with its old process, and
-#                  nothing claims for it. A lane holds the claims whose marker
-#                  names it, and a markerless claim carrying one of its areas,
-#                  as `claim:next` places a claim (#4174). Its line asks the
-#                  coordinator for the lane's next work, since the coordinator
-#                  keeps each lane's order. It has no pull request, so it is
-#                  keyed by its lane, paged once while it lasts and never
-#                  stalled or paged again.
+#   seat-idle      a lane that holds a seat whose activity is `idle` for
+#                  `idle` minutes (#3822, #5996): the seat is at its prompt with
+#                  no foreground step and no background job, whatever it holds.
+#                  The activity comes from the seat itself, never from its
+#                  claims: a fixer repairs `integration` with no claim and no
+#                  pull request, and a seat waits at its prompt with a claim. A
+#                  seat whose activity is not known has no finding. Its line
+#                  names each claim the lane holds, by the claim's marker or,
+#                  with none, by one of its areas (#4174), and then the claim
+#                  command that gives the lane its next work. It carries the
+#                  seat's last reported line as `last`. It has no pull request,
+#                  so it is keyed by its lane, paged once while it lasts and
+#                  never stalled or paged again.
 # A pull request's lane is the lane its first closing issue's claim marker
 # names (#4524): the lane that claimed the unit holds what lands it, whatever
 # the branch is called. With no claimed closing issue, it is the longest lane
@@ -87,14 +89,20 @@
 #               issues were filed from and the claimed issues' areas and
 #               lanes; absent reads as none;
 #   seats       the lanes that hold a seat; absent reads as none;
+#   activity    each seat's last known activity by its lane, `{"<lane>":
+#               {state, since, line}}`: `working`, `waiting` or `idle`, the
+#               time it entered that state in epoch seconds, and the last line
+#               the seat reported, or null; a lane it lacks is not known;
+#   claim       the claim command, its `{lane}` the lane's name; absent names
+#               no command;
 #   areas       each lane's areas, `{"<lane>": ["<area>"]}`; a seat's lane
 #               it lacks is read by no kind;
 #   hold        the stack top's hold, `{holder, head, began, deadline}`, the
 #               times in epoch seconds; absent or null reads as none;
 #   seen        when each `<number>:conflicting:<head>`,
-#               `<number>:base-blocked:<head>`,
-#               `<number>:queued-off-trunk:<queue>` and `<lane>:seat-idle` was
-#               first read so, from the last reading; absent reads as none;
+#               `<number>:base-blocked:<head>` and
+#               `<number>:queued-off-trunk:<queue>` was first read so, from the
+#               last reading; absent reads as none;
 #   paged       each `<number>:<kind>` finding's `{first, last}`, or
 #               `<lane>:<kind>` for one with no pull request: when it was
 #               first paged and when the coordinator was last paged on it; a
@@ -155,19 +163,18 @@
   # the trunk: a queue that never merges into the trunk.
   def off_trunk: . as $pr
     | $pr.queue != null and $pr.queue != $in.trunk and all($in.prs[]; .head != $pr.queue);
-  # The lanes that hold a seat and nothing in hand: no open pull request of
-  # the lane, by its closing issue's claim or its branch, and no claimed issue
-  # it holds, by the claim's marker or, with none, by one of its areas.
+  # The seats whose activity is `idle`, each with the claims its lane holds:
+  # by the claim's marker or, with none, by one of the lane's areas.
   [($in.seats // [])[] | . as $lane
     | (($in.areas // {})[$lane] // empty | map("area:" + .)) as $labels
-    | select(any($in.prs[]; lane == $lane) | not)
-    | select(any(($in.claimed // [])[];
-        if .lane != null then .lane == $lane else any(.areas[]; IN($labels[])) end) | not)
-    | $lane] as $idle
+    | (($in.activity // {})[$lane] // empty | select(.state == "idle")) as $activity
+    | {lane: $lane, since: $activity.since, last: $activity.line,
+       held: [($in.claimed // [])[]
+         | select(if .lane != null then .lane == $lane else any(.areas[]; IN($labels[])) end)
+         | .number] | sort}] as $idle
 | ([$prs[] | select(.mergeable == "CONFLICTING") | "\(.number):conflicting:\(.oid)"]
     + [$prs[] | select([blocker] != []) | "\(.number):base-blocked:\(.oid)"]
     + [$prs[] | select(off_trunk) | "\(.number):queued-off-trunk:\(.queue)"]
-    + [$idle[] | "\(.):seat-idle"]
     | map({key: ., value: ($seen[.] // $in.now)}) | from_entries) as $seen_now
 | [
     ($prs[] | select(.base == $in.trunk and (.queued | not) and .mergeable == "MERGEABLE")
@@ -211,13 +218,14 @@
       | select($in.now - .merged >= $t.unfiled * 60)
       | finding("verdict-unfiled"; .merged;
           "merged with a `\(.verdict)` refactoring verdict and no `kind:refactor` issue carries `from: #\(.number)`; run `mise run refactor:file \(.number)`")),
-    ($idle[] | . as $lane
-      | $seen_now["\($lane):seat-idle"] as $since
-      | select($in.now - $since >= $t.idle * 60)
-      | ($in.now - $since | minutes) as $age
-      | "no open pull request and no claim it holds; the coordinator queues its next work" as $what
-      | {kind: "seat-idle", number: null, lane: $lane, placed: true, age: $age,
-         line: "STALL seat-idle \($lane) \($age)m: \($what)"})
+    ($idle[]
+      | select($in.now - .since >= $t.idle * 60)
+      | ($in.now - .since | minutes) as $age
+      | .lane as $lane
+      | (if .held == [] then "it holds no claim" else "it holds \(.held | map("#\(.)") | join(", "))" end) as $holds
+      | (if $in.claim == null then "" else "; run `\($in.claim | gsub("\\{lane\\}"; $lane))` for its next work" end) as $run
+      | {kind: "seat-idle", number: null, lane: $lane, placed: true, age: $age, last: .last,
+         line: "STALL seat-idle \($lane) \($age)m: idle at its prompt with no step and no job running; \($holds)\($run)"})
   ]
 | sort_by(.number, .kind, .lane) as $findings
 | def key: "\(.number // .lane):\(.kind)";
