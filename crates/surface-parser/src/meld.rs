@@ -1111,7 +1111,7 @@ primitive_copy_wrapper!(
 );
 primitive_copy_wrapper!(
     /// Whether a separator closed the open declaration as its last tile.
-    pub(crate) struct SeparatorTaken(bool);
+    pub struct SeparatorTaken(bool);
 );
 primitive_copy_wrapper!(
     /// Whether a mold is admissible at the current frontier.
@@ -3053,7 +3053,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
     #[inline]
     #[spec(captures: before = self.source.len(), ensures: |ret| (bool::from(ret) && self.source.get(before ..) == Some(<&str>::from(text))) || (!bool::from(ret) && self.source.len() == before))]
-    pub(crate) fn close_at_separator(
+    pub fn close_at_separator(
         &mut self,
         candidates: &[MoldId],
         labels: &[LabelId],
