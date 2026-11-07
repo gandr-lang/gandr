@@ -36,7 +36,7 @@
         "record": "write u.txt again"
       }
     ],
-    "output": "refused: leaves the artifacts above stale"
+    "output": "refused: leaves generated artifacts stale"
   },
   {
     "name": "#6144: the same replay with the row's check passing moves the upper",
