@@ -1,17 +1,35 @@
 error[UnresolvedTypeHead]: no type named `T` is written bare
-   ╭▸ corpus/pathological/desc/module-reflection.gandr:19:37
+   ╭▸ corpus/pathological/desc/module-reflection.gandr:21:37
    │
-19 │ def encodeAny(T : Theory, m : Model T) -> String = "";
+21 │ def encodeAny(T : Theory, m : Model T) -> String = "";
    │                                     ━ no type head of this name and arity
    │
    ├ note: `encodeAny` is refused with UnresolvedTypeHead, as its expectation states
    ╰ help: declare a type named `T`, or import the module that exports it
 
 error[InertRead]: `manifest` reads the inert `version`; only another inert declaration reads one
-   ╭▸ corpus/pathological/desc/module-reflection.gandr:25:59
+   ╭▸ corpus/pathological/desc/module-reflection.gandr:27:59
    │
-25 │   concat (concat "name = " m.name) (concat "\nversion = " m.version)
+27 │   concat (concat "name = " m.name) (concat "\nversion = " m.version)
    │                                                           ━━━━━━━━━ an inert read
    │
    ├ note: `manifest` is refused with InertRead, as its expectation states
+   ╰ help: read an inert declaration only from a manifest step or inert declaration
+
+error[InertRead]: `leaked` reads the inert `packageEntries`; only another inert declaration reads one
+   ╭▸ corpus/pathological/desc/module-reflection.gandr:32:75
+   │
+32 │ def leaked(m : Model (Gandr.Package)) -> modelType(packagePresentation) { packageEntries m }
+   │                                                                           ━━━━━━━━━━━━━━ an inert read
+   │
+   ├ note: `leaked` is refused with InertRead, as its expectation states
+   ╰ help: read an inert declaration only from a manifest step or inert declaration
+
+error[InertRead]: `written` reads the inert `render`; only another inert declaration reads one
+   ╭▸ corpus/pathological/desc/module-reflection.gandr:36:52
+   │
+36 │ def written(m : Model (Gandr.Package)) -> String { render m }
+   │                                                    ━━━━━━ an inert read
+   │
+   ├ note: `written` is refused with InertRead, as its expectation states
    ╰ help: read an inert declaration only from a manifest step or inert declaration

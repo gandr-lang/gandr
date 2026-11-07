@@ -1,0 +1,3 @@
+codata Twisted(a : Type) : Type[-] where
+  head : a;
+  tail : Twisted (Twisted a);

@@ -3154,6 +3154,7 @@ INSERT INTO purpose VALUES('surface-parser','meld::MoldedTile','struct','A tile 
 INSERT INTO purpose VALUES('surface-parser','meld::OpenFormPresence','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::OperandContinuation','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::ParkedUnit','struct','A FormUnit set aside between revisions: its base, its melder''s checkpoint, and whether its fold touched its stand-in.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','meld::PastOperand','struct','Whether a form tile''s same-form successor continues it past the operand at the slope head.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::RepairWeighed','struct','Whether a melder weighs a repair: an obligation, or an ended application that the molder weighs as one.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::SeamBreak','enum','Why a FormUnit could not join the state before it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::SeparatorTaken','struct','Whether a separator closes the open declaration as its last tile.',NULL,'fits','sound',NULL);

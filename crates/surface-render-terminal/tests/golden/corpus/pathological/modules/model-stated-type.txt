@@ -1,0 +1,10 @@
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/modules/model-stated-type.gandr:72:42
+   │
+72 │ def twice : decoded(ofFlag(Yes == No)) = "x";
+   │             ┬─────────────────────────   ━━━ its type does not convert: expected `decoded(ofFlag(eq(Code, Yes, No)))`, found `String`
+   │             │
+   │             the type it is checked against
+   │
+   ├ note: `twice` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

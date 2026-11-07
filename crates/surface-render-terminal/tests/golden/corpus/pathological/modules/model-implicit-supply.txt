@@ -19,17 +19,17 @@ error[UnknownMember]: the module `Mute` has no member `read`
 error[ModelImplicitValue]: the model implicit `s` is its components, never a value; read them as `s.x`, and supply the slot by a module's name or a model implicit's, `f[s = M]`
    ╭▸ corpus/pathological/modules/model-implicit-supply.gandr:46:43
    │
-46 │ def packed() -> -F Integer { stepped[.s = pack Mute at Model(Stepper)] 4 }
-   │                                           ━━━━━━━━━━━━━━━━━━━━━━━━━━━ a model implicit as a value
+46 │ def packed() -> -F Integer { stepped[.s = pack Mute at Model Stepper] 4 }
+   │                                           ━━━━━━━━━━━━━━━━━━━━━━━━━━ a model implicit as a value
    │
    ├ note: `packed` is refused with ModelImplicitValue, as its expectation states
    ╰ help: select a component from the model implicit
 
 error[ModelImplicitValue]: the model implicit `s` is its components, never a value; read them as `s.x`, and supply the slot by a module's name or a model implicit's, `f[s = M]`
-   ╭▸ corpus/pathological/modules/model-implicit-supply.gandr:50:64
+   ╭▸ corpus/pathological/modules/model-implicit-supply.gandr:50:63
    │
-50 │ def alone[s : Model(Stepper)](c : s.C) -> -F Integer { observe s }
-   │                                                                ━ a model implicit as a value
+50 │ def alone[s : Model Stepper](c : s.C) -> -F Integer { observe s }
+   │                                                               ━ a model implicit as a value
    │
    ├ note: `alone` is refused with ModelImplicitValue, as its expectation states
    ╰ help: select a component from the model implicit
