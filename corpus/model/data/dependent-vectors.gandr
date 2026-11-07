@@ -1,0 +1,42 @@
+//! Vector programs whose arms read a length through injectivity.
+//!
+//! An arm of a case on a vector binds the path from the length its `VCons`
+//! states to the scrutinee's. When both lengths are `Succ`s, the checker takes
+//! that path to the path between the two predecessors. The derived path is a
+//! `cong` through the projection of the field, so no step reads K. The
+//! solution step then reads the arm's tail at the scrutinee's length.
+//!
+//! - cites: [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory] —
+//!   injectivity as a `cong` through the projection of a field, with no K
+//! - see: #3403 — the injectivity step
+//! - see: #3517 — an implicit block on `def rec`, which `zip` would take
+//!
+//! [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory]: https://doi.org/10.1017/S095679681800014X "Cockx and Devriese, Proof-relevant unification: dependent pattern matching with only the axioms of your type theory"
+
+// The naturals the lengths count in.
+import "./data-base.gandr";
+
+// The vectors and the vector two long.
+import "./vectors.gandr";
+
+/// The rest of a vector at least one long. The arm binds the path from
+/// `Succ(m)` to `Succ(n)`, and the tail stands at `m` where the result reads `n`.
+@[ checks ]
+def tail[a : Type, n : Nat](v : Vec(a, Succ(n))) -> Vec(a, n) {
+  match v {
+    VCons(m, _, t) => t
+  }
+}
+
+/// Pairs two vectors of one length. The inner arm binds the path between two
+/// `Succ`s, which injectivity takes to the path between the outer arm's
+/// length and its own.
+@[ checks ]
+def rec zip(a : Type, b : Type, n : Nat, xs : Vec(a, n), ys : Vec(b, n)) -> Vec(a * b, n) {
+  match xs {
+    VNil => match ys { VNil => VNil },
+    VCons(m, x, xt) => match ys {
+      VCons(_, y, yt) => VCons(m, (x, y), zip[<](a, b, m, xt, yt))
+    }
+  }
+}

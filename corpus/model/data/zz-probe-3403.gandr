@@ -1,0 +1,14 @@
+import "./data-base.gandr";
+import "./vectors.gandr";
+
+/// A vector one long or more, marked by its head and its tail.
+data Headed(a : Type) : (n : Nat, v : Vec(a, Succ(n))) --> Type where {
+  | Head : (n : Nat, h : a, t : Vec(a, n)) --> Headed(a, n, VCons(n, h, t))
+}
+
+@[ refuses("TypeMismatch") ]
+def restOf[a : Type, n : Nat, h : a, t : Vec(a, n)](x : Headed(a, n, VCons(n, h, t))) -> Path(Vec(a, n), t, t) {
+  match x {
+    Head(k, g, s) => Path.here(s)
+  }
+}

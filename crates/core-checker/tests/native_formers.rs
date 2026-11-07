@@ -2794,6 +2794,102 @@ fn an_arm_is_refined_by_its_index_equation_in_both_checkers_3483()
     assert!(crossed.audit().axioms().is_empty());
 }
 
+/// #3403: an arm whose field stands at `m` where its goal reads `n` checks
+/// once the equation `Succ(m) = Succ(n)` is taken to `m = n` by injectivity
+/// and then solved, in both checkers. No step deletes an equation.
+#[test]
+fn an_arm_is_refined_by_injectivity_in_both_checkers_3403()
+{
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let (naturals, marked, wrapped) = (
+        ConstantIndex::from(0_usize),
+        ConstantIndex::from(1_usize),
+        ConstantIndex::from(2_usize),
+    );
+    let succ_tag = ConstructorTag::from(1_usize);
+    let nat = arena.value_type_data(naturals, vec![]);
+    let variable = |arena: &mut CoreArena, at: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at))
+    };
+    // `Nat : Type { Zero; Succ : (p : Nat) --> Nat }`.
+    let naturals_declared = Declaration::data(
+        naturals,
+        DataSignature::new(vec![], vec![vec![], vec![nat]], kind).into(),
+        OriginToken::from(0_usize),
+    );
+    // `T : Nat -> Type { Mk : (k : Nat) --> T(k) }`.
+    let k = variable(&mut arena, 0);
+    let marked_declared = Declaration::data(
+        marked,
+        DataSignature::new(vec![], vec![vec![nat]], kind)
+            .indexed(vec![nat], vec![vec![k]])
+            .into(),
+        OriginToken::from(1_usize),
+    );
+    // `W : Nat -> Type { Wrap : (m : Nat, t : T(m)) --> W(Succ(m)) }`.
+    let m_in_field = variable(&mut arena, 0);
+    let t_field = arena.value_type_data(marked, vec![m_in_field]);
+    let m_stated = variable(&mut arena, 1);
+    let succ_m = arena.value_constructor(nat, succ_tag, vec![m_stated]);
+    let wrapped_declared = Declaration::data(
+        wrapped,
+        DataSignature::new(vec![], vec![vec![nat, t_field]], kind)
+            .indexed(vec![nat], vec![vec![succ_m]])
+            .into(),
+        OriginToken::from(2_usize),
+    );
+    // `unwrap(n : Nat, w : W(Succ(n))) -> T(n) { case w { Wrap(m, t) => t } }`:
+    // the arm binds `e : Path(Nat, Succ(m), Succ(n))`, and `t : T(m)` checks at
+    // `T(n)` only through `m = n`.
+    let n_outer = variable(&mut arena, 0);
+    let succ_n = arena.value_constructor(nat, succ_tag, vec![n_outer]);
+    let at_succ_n = arena.value_type_data(wrapped, vec![succ_n]);
+    let n_under = variable(&mut arena, 1);
+    let goal = arena.value_type_data(marked, vec![n_under]);
+    let answers = arena.comp_type_returner(goal);
+    let unwrap_type = arena.comp_type_pi(at_succ_n, answers);
+    let unwrap_type = arena.comp_type_pi(nat, unwrap_type);
+    let unwrap_type = arena.value_type_thunk(unwrap_type);
+    let t = variable(&mut arena, 1);
+    let returned = arena.computation_return(t);
+    let arm = arena.computation_lambda(returned);
+    let arm = arena.computation_lambda(arm);
+    let arm = arena.computation_lambda(arm);
+    let n_in_motive = variable(&mut arena, 2);
+    let motive = arena.value_type_data(marked, vec![n_in_motive]);
+    let motive = arena.comp_type_returner(motive);
+    let scrutinee = variable(&mut arena, 0);
+    let case = arena.computation_data_case_with_equations(
+        scrutinee,
+        motive,
+        (vec![arm], vec![gandr_kernel_term::FieldCount::from(
+            2_usize,
+        )]),
+        gandr_kernel_term::EquationCount::from(1_usize),
+    );
+    let unwrap = arena.computation_lambda(case);
+    let unwrap = arena.computation_lambda(unwrap);
+    let unwrap = arena.value_thunk(unwrap);
+    let (report, crossed) = run(&mut arena, &[
+        naturals_declared,
+        marked_declared,
+        wrapped_declared,
+        definition(ConstantIndex::from(3_usize), unwrap_type, unwrap),
+    ]);
+    assert!(
+        matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+        "the arm's field is read at the goal's index through injectivity: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[3].outcome(), Outcome::Defined { .. }),
+        "the kernel admits the arm refined by injectivity: {:?}",
+        crossed.readmitted()[3].outcome()
+    );
+    assert!(crossed.audit().axioms().is_empty());
+}
+
 #[test]
 fn a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483()
 {

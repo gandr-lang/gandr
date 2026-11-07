@@ -66,6 +66,8 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::TermId;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldCount;
+use gandr_kernel_term::FieldPosition;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
@@ -570,7 +572,8 @@ pub fn refined_arm(
             .map(BinderDepth::from)
             .collect(),
     };
-    let (mut steps, mut carried) = (Vec::new(), Vec::new());
+    let (mut steps, mut carried, mut minted) = (Vec::new(), Vec::new(), Vec::new());
+    let injections = injected(context, &mut problem, (&mut carried, &mut minted))?;
     while let Maybe::Present((solved, next)) = step(context, &problem, &mut carried)? {
         steps.push(solved);
         problem = next;
@@ -578,7 +581,7 @@ pub fn refined_arm(
     if steps.is_empty() {
         return Ok(Maybe::Absent(unrefined::Absent::Unsolved));
     }
-    let (mut refined, mut generalising, mut minted) = (problem.body, Vec::new(), Vec::new());
+    let (mut refined, mut generalising) = (problem.body, Vec::new());
     for solved in steps.iter().rev() {
         refined = wrapped(
             context.arena_mut(),
@@ -586,6 +589,9 @@ pub fn refined_arm(
             refined,
             (&mut generalising, &mut minted),
         )?;
+    }
+    for injection in injections.iter().rev() {
+        refined = bound_injection(context.arena_mut(), injection, refined, &mut minted)?;
     }
     for &lambda in written.iter().rev() {
         refined = context.arena_mut().computation_lambda(refined);
@@ -1762,6 +1768,329 @@ fn inside(
         goal,
         equations,
     })
+}
+
+/// An unsolved equation whose two sides apply one constructor, read for
+/// injectivity: each side's fields and each field's type, all read in the
+/// context before the equation.
+#[derive(Clone, Debug)]
+struct Injective
+{
+    /// The equation's carrier.
+    carrier: ValueTypeId,
+    /// The constructor both sides apply.
+    tag: gandr_kernel_term::ConstructorTag,
+    /// The left side's fields.
+    left: Vec<ValueId>,
+    /// The right side's fields.
+    right: Vec<ValueId>,
+    /// Each field's type.
+    fields: Vec<ValueTypeId>,
+}
+
+/// One equation the injectivity step derives: the path between the two sides'
+/// fields at one position (#3403).
+#[derive(Clone, Copy, Debug)]
+struct Injected
+{
+    /// The depth the derived equation is bound at.
+    depth: BinderDepth,
+    /// The place of the equation it derives from.
+    equation: BinderDepth,
+    /// The transport's motive, under one binder past `depth`: the path from
+    /// the left field to the field the projection reads off that binder.
+    motive: ValueTypeId,
+    /// The left side's field, read at `depth`.
+    left: ValueId,
+    /// The derived equation's type, read at `depth`: the path between the two
+    /// sides' fields. The bind ascribes it, so each type past the bind reads
+    /// the right field, not its projection.
+    binder: ValueTypeId,
+}
+
+/// The problem past injectivity: each unsolved equation between two
+/// applications of one constructor, taken to one equation for each field.
+///
+/// The step is the injectivity rule of the unifier. The equation of a field is
+/// `here` at the left field, carried along the written equation in the family
+/// whose right end projects that field off the moving end. The projection
+/// gives back the left field at any other constructor, so it needs no other
+/// value. The derived equations join the unsolved ones, and the solution step
+/// reads them as it reads the written ones.
+///
+/// # Specification
+/// - requires: `problem`'s binders, body and goal are scoped as its fields
+///   state.
+/// - ensures: for each unsolved equation that the body does not name, whose two
+///   sides apply one constructor of a family indexed by nothing, and whose
+///   constructor's fields each name no field before them, one binder past the
+///   problem for each field. The binder is the path between the two sides'
+///   fields at that position, the body and the goal are carried past it, and
+///   the derived equations stand unsolved in the place of the equation. The
+///   step repeats while an equation qualifies. The result holds one entry for
+///   each derived equation, in binding order. `carried` gains the nodes the
+///   carry of the body rewrites, and `minted` each node of a projection.
+/// - fails: as [`refined_arm`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an arm whose field stands at `m` where its goal reads
+///   `n`, under the equation `Succ(m) = Succ(n)`, takes one injectivity step
+///   and one solution step, and checks in both checkers.
+/// - witness: `tests::native_formers::an_arm_is_refined_by_injectivity_in_both_checkers_3403`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|injected| injected.equation < injected.depth)))]
+fn injected(
+    context: &mut CheckingContext<'_>,
+    problem: &mut Problem,
+    (carried, minted): (&mut Vec<Carried>, &mut Vec<TermNode>),
+) -> Result<Vec<Injected>, CheckRefusal>
+{
+    let mut derived = Vec::new();
+    while let Maybe::Present((position, sides)) = injective(context, problem)? {
+        let equation = problem.equations.remove(position);
+        for (field, &ty) in sides.fields.iter().enumerate() {
+            let (&left, &right) = sides
+                .left
+                .get(field)
+                .zip(sides.right.get(field))
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            let depth = BinderDepth::from(problem.binders.len());
+            let under = depth_past(depth, 1)?;
+            let projected = projection(
+                context,
+                (sides.carrier, sides.tag, field),
+                (equation, depth),
+                (ty, left),
+                minted,
+            )?;
+            let arena = context.arena_mut();
+            let read_left = carried_value(arena, left, (equation, depth), &[])?;
+            let read_right = carried_value(arena, right, (equation, depth), &[])?;
+            let read_type = carried_value_type(arena, ty, (equation, depth), &[])?;
+            let binder = arena.value_type_path(read_type, read_left, read_right);
+            problem.binders.push(binder);
+            let moving_type = carried_value_type(arena, ty, (equation, under), &[])?;
+            let moving_left = carried_value(arena, left, (equation, under), &[])?;
+            let end = arena.value_returned(projected);
+            minted.extend([TermNode::Value(moving_left), TermNode::Value(end)]);
+            let motive = arena.value_type_path(moving_type, moving_left, end);
+            problem.body = carried_computation(arena, problem.body, (depth, under), &[], carried)?;
+            problem.goal = carried_comp_type(arena, problem.goal, (depth, under), &[])?;
+            problem.equations.push(depth);
+            derived.push(Injected {
+                depth,
+                equation,
+                motive,
+                left: read_left,
+                binder,
+            });
+        }
+    }
+    Ok(derived)
+}
+
+/// The first unsolved equation of `problem` that injectivity takes apart,
+/// beside its position among the unsolved equations.
+///
+/// # Specification
+/// - requires: as [`injected`].
+/// - ensures: the first unsolved equation that the body does not name, whose
+///   two sides apply one constructor of a data family indexed by nothing, and
+///   whose constructor's fields each name no field before them, read as
+///   [`Injective`]. [`unrefined::Absent::Unsolved`] when no equation qualifies.
+/// - fails: as [`refined_arm`], and as [`crate::former::field_outside`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`injected`].
+/// - witness: `tests::native_formers::an_arm_is_refined_by_injectivity_in_both_checkers_3403`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
+    | Maybe::Present((position, ref sides)) => position < problem.equations.len() && sides.left.len() == sides.fields.len() && sides.right.len() == sides.fields.len(),
+    | Maybe::Absent(reason) => reason == unrefined::Absent::Unsolved,
+}))]
+fn injective(
+    context: &mut CheckingContext<'_>,
+    problem: &Problem,
+) -> Result<Maybe<(usize, Injective), unrefined::Absent>, CheckRefusal>
+{
+    let depth = BinderDepth::from(problem.binders.len());
+    let body = CoreNode::Term(TermNode::Computation(problem.body));
+    'equations: for (position, &equation) in problem.equations.iter().enumerate() {
+        let arena = context.arena();
+        if reads(arena, body, index_at(depth, equation)?)? == Reading::Reads {
+            continue;
+        }
+        let &ty = problem
+            .binders
+            .get(usize::from(equation))
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let Some(&ValueType::Path {
+            carrier,
+            left,
+            right,
+        }) = arena.value_type(ty)
+        else {
+            continue;
+        };
+        let (
+            Some(&Value::Constructor {
+                tag,
+                fields: ref lefts,
+                ..
+            }),
+            Some(&Value::Constructor {
+                tag: other,
+                fields: ref rights,
+                ..
+            }),
+        ) = (arena.value(left), arena.value(right))
+        else {
+            continue;
+        };
+        if tag != other
+            || lefts.len() != rights.len()
+            || !matches!(arena.value_type(carrier), Some(&ValueType::Data { .. }))
+        {
+            continue;
+        }
+        let (lefts, rights) = (lefts.clone(), rights.clone());
+        let signature = crate::former::signature(context, carrier)?;
+        if !signature.indices().is_empty() {
+            continue;
+        }
+        let Some(declared) = signature.constructors().get(usize::from(tag))
+        else {
+            continue;
+        };
+        if declared.len() != lefts.len() {
+            continue;
+        }
+        let mut fields = Vec::with_capacity(declared.len());
+        for (place, &field) in declared.iter().enumerate() {
+            match crate::former::field_outside(context, carrier, field, FieldPosition::from(place))?
+            {
+                Maybe::Present(read) => fields.push(read),
+                Maybe::Absent(_) => continue 'equations,
+            }
+        }
+        return Ok(Maybe::Present((position, Injective {
+            carrier,
+            tag,
+            left: lefts,
+            right: rights,
+            fields,
+        })));
+    }
+    Ok(Maybe::Absent(unrefined::Absent::Unsolved))
+}
+
+/// The case that projects the field at `field` off the binder past `depth`:
+/// that field at the constructor `tag`, and `left` at any other.
+///
+/// # Specification
+/// - requires: `carrier` is a data family indexed by nothing, and `ty` the type
+///   of its constructor's field at `field`; both, and `left`, read at the place
+///   `equation`, which is at or before `depth`.
+/// - ensures: a case on the binder at `depth`, read under one binder past
+///   `depth`. Its motive returns `ty`, and its arm at each constructor returns
+///   the field at `field` for `tag` and `left` for any other. `minted` gains
+///   each node it mints.
+/// - fails: as [`refined_arm`], and as [`crate::former::signature`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`injected`]: the projection at the right side's
+///   constructor computes to its field, so the derived equation's type converts
+///   with the transport's.
+/// - witness: `tests::native_formers::an_arm_is_refined_by_injectivity_in_both_checkers_3403`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&case| matches!(context.arena().computation(case), Some(&Computation::DataCase { .. }))))]
+fn projection(
+    context: &mut CheckingContext<'_>,
+    (carrier, tag, field): (ValueTypeId, gandr_kernel_term::ConstructorTag, usize),
+    (equation, depth): (BinderDepth, BinderDepth),
+    (ty, left): (ValueTypeId, ValueId),
+    minted: &mut Vec<TermNode>,
+) -> Result<ComputationId, CheckRefusal>
+{
+    let signature = crate::former::signature(context, carrier)?;
+    let arena = context.arena_mut();
+    let under = depth_past(depth, 1)?;
+    let returned = carried_value_type(arena, ty, (equation, depth_past(under, 1)?), &[])?;
+    let motive = arena.comp_type_returner(returned);
+    let constructors = signature.constructors();
+    let mut branches = Vec::with_capacity(constructors.len());
+    let mut arities = Vec::with_capacity(constructors.len());
+    for (each, declared) in constructors.iter().enumerate() {
+        let inner = depth_past(under, declared.len())?;
+        let value = if gandr_kernel_term::ConstructorTag::from(each) == tag {
+            variable_at(arena, inner, depth_past(under, field)?)?
+        }
+        else {
+            carried_value(arena, left, (equation, inner), &[])?
+        };
+        let mut branch = arena.computation_return(value);
+        minted.extend([TermNode::Value(value), TermNode::Computation(branch)]);
+        for _field in declared {
+            branch = arena.computation_lambda(branch);
+            minted.push(TermNode::Computation(branch));
+        }
+        branches.push(branch);
+        arities.push(FieldCount::from(declared.len()));
+    }
+    let scrutinee = variable_at(arena, under, depth)?;
+    let case = arena.computation_data_case(scrutinee, motive, branches, arities);
+    minted.extend([TermNode::Value(scrutinee), TermNode::Computation(case)]);
+    Ok(case)
+}
+
+/// The bind of the equation `injected` derives around `inner`: `here` at the
+/// left field, carried along the equation it derives from.
+///
+/// # Specification
+/// - requires: `inner` is read past the derived equation's binder.
+/// - ensures: a bind of the transport, read at the derived equation's depth.
+///   `minted` gains each node it mints, the bind last.
+/// - fails: as [`refined_arm`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`injected`].
+/// - witness: `tests::native_formers::an_arm_is_refined_by_injectivity_in_both_checkers_3403`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&bound| matches!(arena.computation(bound), Some(&Computation::Bind(..))) && minted.last() == Some(&TermNode::Computation(bound))))]
+fn bound_injection(
+    arena: &mut CoreArena,
+    injected: &Injected,
+    inner: ComputationId,
+    minted: &mut Vec<TermNode>,
+) -> Result<ComputationId, CheckRefusal>
+{
+    let path = variable_at(arena, injected.depth, injected.equation)?;
+    let reflexivity = arena.value_here(injected.left);
+    let transport = arena.computation_path_transport(injected.motive, path, reflexivity);
+    let returner = arena.comp_type_returner(injected.binder);
+    let ascribed = arena.computation_ascribe(transport, returner);
+    let bound = arena.computation_bind(ascribed, inner);
+    minted.extend([
+        TermNode::Value(injected.left),
+        TermNode::Value(reflexivity),
+        TermNode::Value(path),
+        TermNode::Computation(transport),
+        TermNode::Computation(ascribed),
+        TermNode::Computation(bound),
+    ]);
+    Ok(bound)
 }
 
 /// The type of the abstracted binder at `place`, read at depth `at` inside the

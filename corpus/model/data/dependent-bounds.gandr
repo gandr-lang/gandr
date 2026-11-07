@@ -1,0 +1,36 @@
+//! A bound reads into a vector through injectivity.
+//!
+//! An arm of a case on a bound binds the path from the bound its constructor
+//! states to the scrutinee's. When both bounds are `Succ`s, the checker takes
+//! that path to the path between the two predecessors. The inner case on the
+//! vector then reads its tail at the bound's own predecessor.
+//!
+//! - cites: [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory] —
+//!   injectivity as a `cong` through the projection of a field, with no K
+//! - see: #3403 — the injectivity step
+//!
+//! [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory]: https://doi.org/10.1017/S095679681800014X "Cockx and Devriese, Proof-relevant unification: dependent pattern matching with only the axioms of your type theory"
+
+// The naturals the bounds count in.
+import "./data-base.gandr";
+
+// The vectors a bound looks into.
+import "./vectors.gandr";
+
+/// The naturals below `n`.
+data Fin : Nat -> Type where {
+  /// Zero, below every successor.
+  | FZero : (n : Nat) --> Fin(Succ(n))
+  /// One past a bound, below the successor of that bound.
+  | FSucc : (n : Nat, i : Fin(n)) --> Fin(Succ(n))
+}
+
+/// The element at a bound below the vector's length. Each arm of the inner
+/// case binds the path between two `Succ`s, which injectivity takes apart.
+@[ checks ]
+def rec lookup(a : Type, n : Nat, v : Vec(a, n), i : Fin(n)) -> a {
+  match i {
+    FZero(m) => match v { VCons(_, h, _) => h },
+    FSucc(m, j) => match v { VCons(_, _, t) => lookup[<](a, m, t, j) }
+  }
+}
