@@ -364,6 +364,7 @@ digraph crates {
   "theory-levitation" -> "theory-path-orders";
   "theory-ordered-algebras" -> "theory-exact-reals";
   "theory-probability" -> "theory-cellular-sheaves";
+  "theory-probability" -> "theory-ordered-algebras";
   "theory-shapes" -> "theory-nominal-automata";
   "theory-shapes" -> "theory-stone-duality";
   "theory-sites" -> "theory-circuit-algebras";
@@ -425,4 +426,5 @@ digraph crates {
   "theory-cell-complexes" -> "theory-cellular-sheaves" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "theory-cellular-sheaves" -> "theory-deep-inference" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "theory-deep-inference" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "theory-exact-reals" -> "theory-probability" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
 }
