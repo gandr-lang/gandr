@@ -54,6 +54,15 @@
 //! endomorphism", *Theoretical Computer Science* 913 (2022), 1–7,
 //! `doi:10.1016/j.tcs.2022.01.017`; admission is its corollary 3.5 and
 //! entailment its corollary 3.4.
+//!
+//! # References
+//!
+//! - `Grodin-2026-potential_functions_types` — background: Eq. (1) bounds the
+//!   true cost of a sequence of operations by a potential function and the
+//!   amortised costs. The poset validates the model that the potential
+//!   maintenance proposes, and the maintenance states no amortised bound.
+//!   Harrison Grodin, Ethan Chu, Runming Li, Jan Hoffmann and Robert Harper,
+//!   "Potential Functions as Types", 2026, `arXiv:2607.08547`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

@@ -98,6 +98,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 
 - `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — an effect is a theory whose rules are its equations, and a program over it normalises by them before it runs.
 - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the host operations that only read, which two forked halves may share.
+- `Doré-2026-dependent_multiplicities_dependent_linear_type_theory` — background: Maximilian Doré. "Dependent Multiplicities in Dependent Linear Type Theory". 2026, [arXiv:2507.08759](https://arxiv.org/abs/2507.08759) — § 2.2's multiplicity as a term of the host theory, which can depend on other variables; the grades here are static elements of `{0, 1, ω}`.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities page (§ quant-record, § quant-counts) — each two-point grade reads as its bound in the semiring `{0, 1, ω}`, which `gandr-theory-ordered-algebras` holds.
 - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: a solved variable's types read back.

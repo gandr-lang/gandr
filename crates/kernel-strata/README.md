@@ -26,6 +26,7 @@ The certified kernel's level oracle: universe levels over zero, variables, succe
 
 - Marc Bezem and Thierry Coquand. "Loop-checking and the uniform word problem for join-semilattices with an inflationary endomorphism." _Theoretical Computer Science_ 913 (2022), pages 1–7. `doi:10.1016/j.tcs.2022.01.017` — the decision procedure, the loop-checking dichotomy (corollary 3.5, admission), entailment by minimal models (corollary 3.4), the shift-by-one device (lemma 2.1), and the worked example the admission and divergence goldens replay.
 - Per Martin-Löf. _Intuitionistic Type Theory_. Notes by Giovanni Sambin. Bibliopolis, Naples, 1984. `isbn:978-88-7088-105-9` — the universe stratification this crate is the level layer of.
+- `Grodin-2026-potential_functions_types` — background: Harrison Grodin, Ethan Chu, Runming Li, Jan Hoffmann and Robert Harper. "Potential Functions as Types". 2026, [arXiv:2607.08547](https://arxiv.org/abs/2607.08547) — Eq. (1), the true cost of a sequence of operations bounded by a potential function and the amortised costs; the poset validates the model that the potential maintenance proposes, and the maintenance states no such bound.
 
 ## Provided features
 

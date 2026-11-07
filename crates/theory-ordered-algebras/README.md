@@ -24,7 +24,8 @@ One law checker for the ordered semirings of gandr, with the max-plus semiring a
 
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — exemplar: the frame's ordered algebras, and the probe that checks their laws with one checker.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — exemplar: the grades read as counts, costs and distances, and the semiring that carries each kind.
-- `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, University of Strathclyde, 2024 — the dual-context calculus as the instance at `{0, 1, ω}`.
+- `Wood-2024-framework_semiringannotated_type_systems` — dependency: James Wood. "A Framework for Semiring-Annotated Type Systems". Doctoral thesis, University of Strathclyde, 2024 — § 4.1's posemiring laws of Definitions 4.1.1 and 4.1.2, which `Law` states, and the linearity posemiring of Example 4.1.3, which `Usage` is, in the reverse order, so a sum of uses lies at or below a bound: the dual-context calculus as the instance at `{0, 1, ω}`.
+- `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems` — dependency: Emma Ahrens, Jan-Christoph Kassing, Jürgen Giesl and Joost-Pieter Katoen. "Weighted Rewriting: Semiring Semantics for Abstract Reduction Systems". 2025, [arXiv:2505.08496](https://arxiv.org/abs/2505.08496) — § 2's semiring of Definition 5 with the monotone partial order of footnote 3, which the laws state; no law states the complete lattice of Definition 7, which an infinite reduction needs.
 
 ## Provided features
 

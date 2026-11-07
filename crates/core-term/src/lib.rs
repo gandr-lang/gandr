@@ -147,6 +147,17 @@
 //!
 //! # References
 //!
+//! - `Wood-2024-framework_semiringannotated_type_systems` — background: § 4.5,
+//!   whose Propositions 4.5.1 and 4.5.4 make the dual context of DILL the
+//!   fragment of one graded calculus at the linearity posemiring. The context
+//!   `Γ; Σ` is that fragment, with `Γ` at `ω` and `Σ` at `1`. James Wood, "A
+//!   Framework for Semiring-Annotated Type Systems", doctoral thesis,
+//!   University of Strathclyde, 2024.
+//! - `Doré-2026-dependent_multiplicities_dependent_linear_type_theory` —
+//!   background: § 2.2 makes a multiplicity a term of the host theory, so it
+//!   can depend on other variables. The grades here are static elements of `{0,
+//!   1, ω}`. Maximilian Doré, "Dependent Multiplicities in Dependent Linear
+//!   Type Theory", 2026, `arXiv:2507.08759`.
 //! - Paul Blain Levy. _Call-By-Push-Value: A Functional/Imperative Synthesis_.
 //!   Semantics Structures in Computation 2, Kluwer Academic Publishers, 2003.
 //!   `isbn:978-1-4020-1730-8`, `doi:10.1007/978-94-007-0954-6` — the polarity
