@@ -11,6 +11,7 @@
 // their names.
 //
 // - see: #4730
+// - see: #6071
 // - see: `../../pathological/desc/module-reflection.gandr` — what does not reach a module
 import std.build (Gandr);
 import std.string (concat);
@@ -42,7 +43,8 @@ def declared(presented : Theory) -> String =
     | Theory.Presents(sorts, opers, rules) => typed opers
     | _ => ""
 
-/// The members of `Gandr.Package` as its presentation gives them: eleven constants at `String`.
+/// The members of `Gandr.Package` as its presentation gives them: eleven
+/// constants at `String`.
 @[ runs("\"version : String\\ngandr : String\\nfeatures : String\\nsystems : String\\nspelling : String\\nname : String\\nauthors : String\\nlicence : String\\ndocumentation : String\\nendpoint : String\\nsources : String\\n\"") ]
 def packageMembers : () -> String;
 def packageMembers = thunk { declared Gandr.Package };
