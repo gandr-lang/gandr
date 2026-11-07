@@ -1120,6 +1120,15 @@ pub struct Logged
     timing: Timing,
     /// Whether its publication held a diagnostic back.
     holding: Holding,
+    #[cfg_attr(not(clippy), allow(unfulfilled_lint_expectations))]
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::missing_docs_in_private_items,
+            reason = "The language server owns this state."
+        )
+    )]
+    deferred: Vec<(usize, String)>,
 }
 
 impl Logged
@@ -3972,13 +3981,45 @@ impl Server
             };
             let admitted = settle(&mut locked(&document.session), finished);
             logged.timing = admitted.timing;
-            if let Maybe::Present(fault) = admitted.fault {
-                document.checked = vec![fault.clone()];
-                logged.holding = Holding(false);
+            let deferred: Vec<Diagnostic> = admitted
+                .declined
+                .iter()
+                .filter_map(|&(constant, declined)| {
+                    logged
+                        .deferred
+                        .binary_search_by_key(&constant, |candidate| candidate.0)
+                        .ok()
+                        .and_then(|index| logged.deferred.get(index))
+                        .map(|candidate| match declined.class.tracking() {
+                            Maybe::Present(issue) => Diagnostic::at_origin(format!(
+                                "{}; no kernel image: {:?} ({}, {issue})",
+                                candidate.1, declined.former, declined.class,
+                            )),
+                            Maybe::Absent(_) => Diagnostic::at_origin(format!(
+                                "{}; no kernel image: {:?} ({})",
+                                candidate.1, declined.former, declined.class,
+                            )),
+                        })
+                })
+                .collect();
+            let correction = match admitted.fault {
+                Maybe::Present(fault) => {
+                    document.checked = vec![fault];
+                    logged.holding = Holding(false);
+                    Some(document.checked.clone())
+                },
+                Maybe::Absent(_) if !deferred.is_empty() => {
+                    document.checked.extend(deferred);
+                    logged.holding = Holding(false);
+                    Some(document.checked.clone())
+                },
+                Maybe::Absent(_) => None,
+            };
+            if let Some(diagnostics) = correction {
                 let correction = publish(PublishParams {
                     uri: logged.uri.clone(),
                     version: Some(logged.version),
-                    diagnostics: vec![fault],
+                    diagnostics,
                 });
                 workspace.published_by(self.peer, &correction);
                 if let Some(pushed) = self.pushed(correction) {
@@ -9056,6 +9097,7 @@ fn publication(
             version: document.version,
             timing: rechecked.timing,
             holding,
+            deferred: rechecked.deferred,
         },
     )
 }

@@ -1661,6 +1661,7 @@ dependencies = [
  "expect-test",
  "gandr-core-incremental",
  "gandr-storage-records",
+ "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
  "gandr-surface-format",
