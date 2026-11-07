@@ -24,10 +24,10 @@ theory Toggle where
   oper read : (t : T) --> Bool;
 
 /// The plain model starts false and reads its state.
-def plainModel : Model(Toggle) = plainToggle;
+def plainModel : Model Toggle = plainToggle;
 
 /// The flipped model starts true and reads the negation of its state.
-def flippedModel : Model(Toggle) = flippedToggle;
+def flippedModel : Model Toggle = flippedToggle;
 
 /// The model path carries each carrier and operation along negation.
 def oneModel : Path(plainModel, flippedModel) = *{

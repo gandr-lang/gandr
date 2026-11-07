@@ -12,7 +12,7 @@
 import "./data-maybe.gandr";
 
 /// An optional computation's type, named once.
-def opt : Type -> Type[-] = fun (A) { -F Maybe(A) };
+def opt : Type -> Type[-] = fun (A) { -F Maybe A };
 
 /// The same type through a second name.
 def optAgain : Type -> Type[-] = fun (A) { opt A };

@@ -11,7 +11,7 @@
 import std.list (List);
 
 /// `xs` is a three-element `List(Integer)`.
-def xs = (#[1, 2, 3] : List(Integer));
+def xs = (#[1, 2, 3] : List Integer);
 
 /// `prefixed` adds zero at the front. The lowering does not yet admit `++`.
 @[ refuses("OutOfFragment.binary_expression") ]

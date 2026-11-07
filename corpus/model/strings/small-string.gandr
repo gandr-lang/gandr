@@ -23,7 +23,7 @@ pub data Place : Type where
 
 /// `store` keeps a short byte list inline.
 /// It stores a longer byte list in an unshared heap buffer.
-pub def store(bs : List(Integer)) -> Repr =
+pub def store(bs : List Integer) -> Repr =
   let n = count bs
   let fits = n <= inlineCapacity
   match fits where
@@ -31,7 +31,7 @@ pub def store(bs : List(Integer)) -> Repr =
     | false => Shared 1 bs
 
 /// This function stores code points as UTF-8 bytes with a final zero.
-pub def own(cs : List(Integer)) -> Repr =
+pub def own(cs : List Integer) -> Repr =
   store (terminated cs)
 
 /// `place` reads byte storage from a string representation.
@@ -58,27 +58,27 @@ pub def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> [Partial] 
 
 /// This test keeps `hi` inline.
 @[ runs("Inside") ]
-def hiPlace() -> Place { place (own (Cons 104 (Cons 105 Nil) : List(Integer))) }
+def hiPlace() -> Place { place (own (Cons 104 (Cons 105 Nil) : List Integer)) }
 
 /// This test keeps a twenty-three-byte string inline.
 @[ runs("Inside") ]
 def fullPlace() -> [Partial] Place =
-  let cs = repeatOnto 97 23 (Nil : List(Integer))
+  let cs = repeatOnto 97 23 (Nil : List Integer)
   place (own cs)
 
 /// This test stores a twenty-four-byte string on the heap.
 @[ runs("OnHeap") ]
 def spilledPlace() -> [Partial] Place =
-  let cs = repeatOnto 97 24 (Nil : List(Integer))
+  let cs = repeatOnto 97 24 (Nil : List Integer)
   place (own cs)
 
 /// This test reads a string as its owned bytes.
 @[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
-def hiBytes() -> List(Integer) { bytes (own (Cons 104 (Cons 105 Nil) : List(Integer))) }
+def hiBytes() -> List Integer { bytes (own (Cons 104 (Cons 105 Nil) : List Integer)) }
 
 /// This test counts a spilled string and its final zero.
 @[ runs("25") ]
 def spilledCount() -> [Partial] Integer =
-  let cs = repeatOnto 97 24 (Nil : List(Integer))
+  let cs = repeatOnto 97 24 (Nil : List Integer)
   let s = own cs
   count (bytes s)

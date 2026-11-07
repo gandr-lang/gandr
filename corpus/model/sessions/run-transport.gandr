@@ -59,10 +59,10 @@ module Ask where
   type Decoded = ?Answer. end;
 
 /// `heard` records `One` as a bit receipt.
-def heard : Run(Ask.Coded) = recorded (received One) closed;
+def heard : Run Ask.Coded = recorded (received One) closed;
 
 /// `heardDecoded` proves that the transported run receives `Yes`.
-def heardDecoded : Path[.A = Run(Ask.Decoded)](
+def heardDecoded : Path[.A = Run Ask.Decoded](
   Path.walk (fun (X) { Run (type(?X. end)) }) codes heard,
   recorded (received Yes) closed
 ) = Path.here (recorded (received Yes) closed);
@@ -75,9 +75,9 @@ def heardKept : Path(
 ) = Path.here (recorded (received No) closed);
 
 /// `heardRun` returns the transported run.
-def heardRun() -> Run(Ask.Decoded) =
+def heardRun() -> Run Ask.Decoded =
   Path.walk (fun (X) { Run (type(?X. end)) }) codes heard
 
 /// On the machine the carried run hears the yes, as it does by conversion.
 @[ runs("recorded (received Yes) (closed)") ]
-def decodedRun() -> Run(Ask.Decoded) { heardRun () }
+def decodedRun() -> Run Ask.Decoded { heardRun () }

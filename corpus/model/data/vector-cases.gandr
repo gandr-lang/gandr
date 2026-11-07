@@ -22,21 +22,21 @@ import "./data-base.gandr";
 import "./vectors.gandr";
 
 /// `vlength` returns a vector length from its `VCons` index.
-def vlength(n : Nat, v : Vec(Integer, n)) -> Nat =
+def vlength(n : Nat, v : Vec Integer n) -> Nat =
   match v where
     | VNil => Zero
     | VCons(m, h, t) => Succ m
 
 /// `oneLength` reads a vector at length one.
 /// It writes a `VNil` arm although only zero selects it.
-def oneLength(v : Vec(Integer, Succ(Zero))) -> Nat =
+def oneLength(v : Vec Integer (Succ Zero)) -> Nat =
   match v where
     | VNil => Zero
     | VCons(m, h, t) => Succ m
 
 /// The length counted by structural recursion on the tail, which stands at
 /// the length its `VCons` states, one below the vector's.
-def rec vcount(n : Nat, v : Vec(Integer, n)) -> Nat =
+def rec vcount(n : Nat, v : Vec Integer n) -> Nat =
   match v where
     | VNil => Zero
     | VCons(m, h, t) => Succ (vcount[<] m t)
@@ -51,7 +51,7 @@ def pairCount() -> Nat { vcount (Succ (Succ Zero)) (pair ()) }
 
 /// One vector after another, at the length `plus(m, n)`. Each `VCons` arm
 /// stands at `plus(m, Succ(k))`, the length its tail computes plus one.
-def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec(a, n), ys : Vec(a, m)) -> Vec(
+def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec a n, ys : Vec a m) -> Vec(
   a,
   plus(m, n)
 ) =

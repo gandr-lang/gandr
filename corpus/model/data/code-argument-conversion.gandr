@@ -26,7 +26,7 @@ def rungId(n : Rung) -> Rung = n
 /// A value of the first type with a value of the type it picks.
 data Dyad(a : Type, b : a -> Type) : Type where
   /// The two values.
-  | MkDyad : (x : a, y : b(x)) --> Dyad(a, b)
+  | MkDyad : (x : a, y : b(x)) --> Dyad a b
 
 /// A path at a computed endpoint, at each unit.
 def computedAt(z : Unit) -> Path[.A = Rung](rungId Z, Z) =
@@ -43,16 +43,12 @@ def unitOfComputed(r : Unit -> Path[.A = Rung](rungId Z, Z)) -> Type = return Un
 def unitOfClosed(r : Unit -> Path[.A = Rung](Z, Z)) -> Type = return Unit
 
 /// This pair holds the computed paths with the unit, stated as a call.
-def computedPair : Dyad(
-  Unit -> Path[.A = Rung](rungId Z, Z),
-  unitOfComputed
-) = MkDyad computedAt *{};
+def computedPair : Dyad (Unit -> Path[.A = Rung](rungId Z, Z)) unitOfComputed = MkDyad
+  computedAt
+  *{};
 
 /// This pair holds the closed paths with the unit, stated as a call.
-def closedPair : Dyad(
-  Unit -> Path[.A = Rung](Z, Z),
-  unitOfClosed
-) = MkDyad closedAt *{};
+def closedPair : Dyad (Unit -> Path[.A = Rung](Z, Z)) unitOfClosed = MkDyad closedAt *{};
 
 /// A family returns the computed pair type with spine arguments.
 def nestedComputed : Dyad(

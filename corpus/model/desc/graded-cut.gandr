@@ -16,9 +16,9 @@ theory GradedCut where
 
   oper bot : () --> Grade;
   oper top : () --> Grade;
-  oper cut : () --> M(bot());
-  oper fail : () --> M(top());
-  oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
+  oper cut : () --> M bot();
+  oper fail : () --> M top();
+  oper orBot : (x : M bot(), y : M e) --> M bot();
 
   rule cutLeft : orBot x y ==> x;
 
@@ -30,8 +30,8 @@ theory NestedCut where
 
   oper bot : () --> Grade;
   oper top : () --> Grade;
-  oper cut : () --> M(bot());
-  oper fail : () --> M(top());
-  oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
+  oper cut : () --> M bot();
+  oper fail : () --> M top();
+  oper orBot : (x : M bot(), y : M e) --> M bot();
 
   rule cutLeft : orBot x y ==> x;

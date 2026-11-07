@@ -10,16 +10,16 @@
 import "./tree.gandr";
 
 /// `constantTree` reads, stores and reads before it returns a sum.
-def constantTree : Prog(Either(StateOp, Void), Integer) = Op (Left Get) (fun (a) {
+def constantTree : Prog (Either StateOp Void) Integer = Op (Left Get) (fun (a) {
   (Op (Left (Put a)) (fun (_u) {
     (Op (Left Get) (fun (b) {
-      (Done (a + b + 1) : Prog(Either(StateOp, Void), Integer))
-    }) : Prog(Either(StateOp, Void), Integer))
-  }) : Prog(Either(StateOp, Void), Integer))
+      (Done (a + b + 1) : Prog (Either StateOp Void) Integer)
+    }) : Prog (Either StateOp Void) Integer)
+  }) : Prog (Either StateOp Void) Integer)
 });
 
 /// `answeringFour` gives four to each read.
-def rec answeringFour(p : Prog(Either(StateOp, Void), Integer)) -> Integer =
+def rec answeringFour(p : Prog (Either StateOp Void) Integer) -> Integer =
   match p where
     | Done(x) => x
     | Op(o, k) => match o where
@@ -32,16 +32,16 @@ def rec answeringFour(p : Prog(Either(StateOp, Void), Integer)) -> Integer =
 def constantByFold() -> Integer { answeringFour constantTree }
 
 /// `passingTree` stores four and reads state twice.
-def passingTree : Prog(Either(StateOp, Void), Integer) = Op (Left (Put 4)) (fun (_u) {
+def passingTree : Prog (Either StateOp Void) Integer = Op (Left (Put 4)) (fun (_u) {
   (Op (Left Get) (fun (a) {
     (Op (Left Get) (fun (b) {
-      (Done (a * 10 + b) : Prog(Either(StateOp, Void), Integer))
-    }) : Prog(Either(StateOp, Void), Integer))
-  }) : Prog(Either(StateOp, Void), Integer))
+      (Done (a * 10 + b) : Prog (Either StateOp Void) Integer)
+    }) : Prog (Either StateOp Void) Integer)
+  }) : Prog (Either StateOp Void) Integer)
 });
 
 /// `passingState` threads state through a program tree.
-def rec passingState(p : Prog(Either(StateOp, Void), Integer), s : Integer) -> Integer =
+def rec passingState(p : Prog (Either StateOp Void) Integer, s : Integer) -> Integer =
   match p where
     | Done(x) => x
     | Op(o, k) => match o where
@@ -55,19 +55,19 @@ def passingByFold() -> Integer { passingState passingTree 0 }
 
 /// `StateModel` holds a result, read or write continuation.
 data StateModel(a : Type) : Type where
-  | Answer : (x : a) --> StateModel(a)
-  | Read : (u : Unit, k : Integer -> StateModel(a)) --> StateModel(a)
-  | Write : (s : Integer, k : Unit -> StateModel(a)) --> StateModel(a)
+  | Answer : (x : a) --> StateModel a
+  | Read : (u : Unit, k : Integer -> StateModel a) --> StateModel a
+  | Write : (s : Integer, k : Unit -> StateModel a) --> StateModel a
 
 /// `constantProgram` writes `constant` as a state-model tree.
-def constantProgram : StateModel(Integer) = Read (*{}) (fun (a) {
+def constantProgram : StateModel Integer = Read (*{}) (fun (a) {
   (Write a (fun (_u) {
-    (Read (*{}) (fun (b) { (Answer (a + b + 1) : StateModel(Integer)) }) : StateModel(Integer))
-  }) : StateModel(Integer))
+    (Read (*{}) (fun (b) { (Answer (a + b + 1) : StateModel Integer) }) : StateModel Integer)
+  }) : StateModel Integer)
 });
 
 /// `constantFold` answers reads with four and writes with unit.
-def rec constantFold(p : StateModel(Integer)) -> Integer =
+def rec constantFold(p : StateModel Integer) -> Integer =
   match p where
     | Answer(x) => x
     | Read(_u, k) => constantFold[<] (k 4)

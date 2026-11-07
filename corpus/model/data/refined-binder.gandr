@@ -47,7 +47,7 @@ pub def occupied(c : UL) -> elL(c) -> Nat =
     | PiL(_a, _b) => thunk { fun (_f) { Zero } }
 
 /// The list that holds two.
-def twoAlone : List(Nat) = Cons two Nil;
+def twoAlone : List Nat = Cons two Nil;
 
 /// The list that holds two has an entry, so the count is one.
 @[ runs("Succ Zero") ]

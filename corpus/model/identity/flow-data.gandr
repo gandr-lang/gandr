@@ -63,9 +63,9 @@ pub module Shapes where {
   def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into toFigure;
   /// The flow rides a shape list through the list family.
   @[ checks ]
-  def all(shapes : List(Shape)) -> List(Figure) =
+  def all(shapes : List Shape) -> List Figure =
     Flow.ride (fun (X) { List X }) redrawn shapes
   /// The run migrates two shapes.
   @[ runs("cons (Round 1) (cons (Box 3 2) nil)") ]
-  def two : () -> List(Figure) = all (cons (Circle 1) (cons (Rect 2 3) nil));
+  def two : () -> List Figure = all (cons (Circle 1) (cons (Rect 2 3) nil));
 }

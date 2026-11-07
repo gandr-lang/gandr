@@ -45,10 +45,10 @@ pub theory RelativeMonad where
   rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
 
 /// `ret` returns a present option value.
-def ret(A : Type, a : A) -> Maybe(A) { Some a }
+def ret(A : Type, a : A) -> Maybe A { Some a }
 
 /// `ext` passes a present value to its continuation and keeps an absent value.
-def ext(A : Type, B : Type, m : () -> Maybe(A), k : A -> Maybe(B)) -> Maybe(B) =
+def ext(A : Type, B : Type, m : () -> Maybe A, k : A -> Maybe B) -> Maybe B =
   let r = force m
   match r where
     | None => None
@@ -67,4 +67,4 @@ def two() -> Integer =
     | Some(y) => y
 
 /// This function reruns a computation that is polymorphic in its carrier.
-def again(T : Type -> Type[-], m : +U T(Integer)) -> T(Integer) { force m }
+def again(T : Type -> Type[-], m : +U (T Integer)) -> T Integer { force m }

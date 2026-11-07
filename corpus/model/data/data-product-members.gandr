@@ -15,19 +15,19 @@ import "./data-maybe.gandr";
 import std.list (List);
 
 /// A present value and an absent one, annotated as their product.
-def paired = (*{Some 1, None} : Maybe(Integer) * Maybe(Integer));
+def paired = (*{Some 1, None} : Maybe Integer * Maybe Integer);
 
 /// The same pair at the type the function returns.
-def answered_pair(n : Integer) -> Maybe(Integer) * Maybe(Integer) =
+def answered_pair(n : Integer) -> Maybe Integer * Maybe Integer =
   *{None, Some n}
 
 /// Each pair in `pair_list` receives its list element type.
 /// Its members receive product component types.
-def pair_list() -> List(Maybe(Integer) * Maybe(Integer)) =
+def pair_list() -> List (Maybe Integer * Maybe Integer) =
   #[*{Some 1, None}, *{None, Some 2}]
 
 /// A pair in a pair: the inner one takes the product at its place.
 def nested_pair = (*{
   Some 1,
   *{None, Some 2}
-} : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer)));
+} : Maybe Integer * (Maybe Integer * Maybe Integer));

@@ -18,7 +18,7 @@ data Count : Type where
 /// A `Held` value has a first value and a value from its selected type.
 data Held(a : Type, b : a -> Type) : Type where
   /// The two values.
-  | MkHeld : (x : a, y : b(x)) --> Held(a, b)
+  | MkHeld : (x : a, y : b(x)) --> Held a b
 
 /// The `twofold` function doubles a count by recursion.
 def rec twofold(n : Count) -> Count =

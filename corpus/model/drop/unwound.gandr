@@ -36,13 +36,13 @@ def unwound() -> Integer =
   pure x
 
 /// The function creates a two-element list with its argument first.
-def built(a : Integer) -> List(Integer) =
+def built(a : Integer) -> List Integer =
   pure cons a (cons 2 nil)
 
 /// Cleanup reads a list before the enclosing scope reads it again.
 /// Both retain the list.
 @[ runs("cons 9 (cons 1 (cons 2 nil))") ]
-def unwound_kept() -> List(Integer) =
+def unwound_kept() -> List Integer =
   let ys = built 1
   var x = 1
   let r : Integer = handle c : std.process.Exit.Eff {

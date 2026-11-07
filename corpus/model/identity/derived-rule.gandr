@@ -75,6 +75,6 @@ def invMulParity() -> Path(One, One) =
 /// `Path.walk` over the derived filler reduces to `Path.here`.
 def overDerived(
   M : Bit -> Type,
-  v : M(One)
+  v : M One
 ) -> Path(Path.walk (fun (b) { M b }) (invMulParity ()) v, v) =
   Path.here v

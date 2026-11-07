@@ -43,14 +43,14 @@ def rec fib(n : Nat) -> Nat =
 
 /// `reverseOnto` reverses a list onto an accumulator.
 /// Its element type stays unchanged as its accumulator grows.
-def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> List(a) =
+def rec reverseOnto(a : Type, xs : List a, acc : List a) -> List a =
   match xs where
     | Nil => acc
     | Cons(x, rest) => reverseOnto[<] a rest (Cons x acc)
 
 /// `pairwise` sums two lists and skips zero in its first list.
 /// Each recursive call descends on `xs`.
-def rec pairwise(xs : List(Integer), ys : List(Integer)) -> List(Integer) =
+def rec pairwise(xs : List Integer, ys : List Integer) -> List Integer =
   match xs where
     | Nil => Nil
     | Cons(x, rest) => match x == 0 where
@@ -77,11 +77,11 @@ def fibbed : () -> Nat = fib four;
 
 /// Two and three reversed: three, then two.
 @[ runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) Nil)") ]
-def reversed : () -> List(Nat) = reverseOnto Nat (Cons two (Cons three Nil)) Nil;
+def reversed : () -> List Nat = reverseOnto Nat (Cons two (Cons three Nil)) Nil;
 
 /// One, zero and two summed with ten and twenty: the zero is skipped.
 @[ runs("Cons 11 (Cons 22 Nil)") ]
-def sumsSkippingZero : () -> List(Integer) = pairwise
+def sumsSkippingZero : () -> List Integer = pairwise
   (Cons 1 (Cons 0 (Cons 2 Nil)))
   (Cons 10 (Cons 20 Nil));
 

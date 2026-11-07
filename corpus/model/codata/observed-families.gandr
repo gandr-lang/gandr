@@ -21,7 +21,7 @@ codata Light : Type[-] where
   /// The colour the light shows.
   colour : Colour;
   /// The colours the light showed before, the latest first.
-  before : List(Colour);
+  before : List Colour;
 
 /// The function makes a light of one colour that showed no colour before.
 def rec lit(c : Colour) -> Light =

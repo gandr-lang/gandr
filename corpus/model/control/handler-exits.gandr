@@ -131,7 +131,7 @@ def answered() -> Integer =
 
 /// `Stack(C, D)` names a continuation type.
 /// It states the computation it resumes and its result.
-def dropped(k : Stack(-F Unit, -F Integer)) -> Integer =
+def dropped(k : Stack (-F Unit) (-F Integer)) -> Integer =
   9
 
 /// This clause passes its continuation to a typed function.
@@ -147,7 +147,7 @@ def handed_on() -> Integer =
   }
 
 /// A function with a continuation type resumes the continuation it receives.
-def resume_stack(j : Stack(-F Unit, -F Integer)) -> Integer =
+def resume_stack(j : Stack (-F Unit) (-F Integer)) -> Integer =
   j *{}
 
 /// This clause calls `resume_stack` with its continuation.
@@ -165,7 +165,7 @@ def resumed_on() -> Integer =
 /// A type member can name a continuation type.
 /// Its function resumes the continuation it receives.
 module Conts where
-  type K = Stack(-F Unit, -F Integer);
+  type K = Stack (-F Unit) (-F Integer);
 
   /// `resume_stack`, through the member.
   def aliased(j : K) -> Integer =

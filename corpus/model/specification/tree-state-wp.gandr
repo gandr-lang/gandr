@@ -19,10 +19,10 @@ import "../effects/tree.gandr";
 
 /// The increment as a tree: read the counter, store one more, and answer the
 /// unit.
-pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op (Left Get) (fun (n) {
+pub def incrTree : Prog (Either StateOp Void) Unit = Op (Left Get) (fun (n) {
   (Op (Left (Put (n + 1))) (fun (_u) {
-    (Done (*{}) : Prog(Either(StateOp, Void), Unit))
-  }) : Prog(Either(StateOp, Void), Unit))
+    (Done (*{}) : Prog (Either StateOp Void) Unit)
+  }) : Prog (Either StateOp Void) Unit)
 });
 
 /// The observation as a fold: a program, a postcondition on its answer and
@@ -30,7 +30,7 @@ pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op (Left Get) (fun (n) {
 /// continues at the current state, and a store continues from the stored
 /// value.
 pub def rec wp(
-  p : Prog(Either(StateOp, Void), Unit),
+  p : Prog (Either StateOp Void) Unit,
   post : (Unit, Integer) -> Type,
   s : Integer
 ) -> Type =
@@ -52,7 +52,7 @@ pub def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }
 /// specification at `isOne`: the second entry's type reads the program, and
 /// both sides unfold to `Path[.A = Integer](s + 1, 1)`.
 def incrSpecified : *{
-  m : Prog(Either(StateOp, Void), Unit),
+  m : Prog (Either StateOp Void) Unit,
   meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
 } = *{incrTree, fun (s) { fun (h) { h } }};
 
@@ -61,7 +61,7 @@ def incrSpecified : *{
 /// it calls `post`, the fold hands `post` the successor its store held, and
 /// the two read as one call.
 def incrSpecifiedEverywhere : *{
-  m : Prog(Either(StateOp, Void), Unit),
+  m : Prog (Either StateOp Void) Unit,
   meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
 } = *{incrTree, fun (post) { fun (s) { fun (h) { h } } }};
 
@@ -81,6 +81,6 @@ def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) s 
 /// sides unfold to the postcondition's call `post(unit, s)`, and a definition
 /// unfolding to a variable's call converts with it.
 def doneSpecified : *{
-  m : Prog(Either(StateOp, Void), Unit),
+  m : Prog (Either StateOp Void) Unit,
   meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)
-} = *{(Done (*{}) : Prog(Either(StateOp, Void), Unit)), fun (post) { fun (s) { fun (h) { h } } }};
+} = *{(Done (*{}) : Prog (Either StateOp Void) Unit), fun (post) { fun (s) { fun (h) { h } } }};

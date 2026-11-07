@@ -15,17 +15,17 @@ import "./data-maybe.gandr";
 import std.list (List);
 
 /// This list has a present value and an absent value.
-def around(n : Integer) -> List(Maybe(Integer)) =
+def around(n : Integer) -> List (Maybe Integer) =
   #[Some n, None]
 
 /// This thunk returns the same list.
-def suspended() -> List(Maybe(Integer)) { #[None, Some 2] }
+def suspended() -> List (Maybe Integer) { #[None, Some 2] }
 
 /// Each inner list gets the outer list's element type.
 /// Its constructors get their list's element type.
-def grouped() -> List(List(Maybe(Integer))) =
+def grouped() -> List (List (Maybe Integer)) =
   #[#[Some 3], #[], #[None]]
 
 /// The parameter `a` determines the type `Maybe(a)`.
-def wrapped(a : Type, x : a) -> List(Maybe(a)) =
+def wrapped(a : Type, x : a) -> List (Maybe a) =
   #[Some x, None]

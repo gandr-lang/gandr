@@ -17,7 +17,7 @@
 import "./model-counter.gandr";
 
 /// The `upManifest` record fixes the counter carrier and holds its operations.
-pub def upManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = *{
+pub def upManifest : Model Counter with sort C = Unit + (Unit + Unit) = *{
   .zero = Up.zero,
   .incr = Up.incr,
   .read = Up.read
@@ -29,11 +29,11 @@ def observedManifest() -> Integer { observe upManifest }
 
 /// An ascription makes the checker forget the manifest carrier.
 @[ runs("1") ]
-def observedAscribed() -> Integer { observe (upManifest : Model(Counter)) }
+def observedAscribed() -> Integer { observe (upManifest : Model Counter) }
 
 /// The manifest counter follows negation.
-pub def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = Path.walk (fun (x) {
-  type(Model(Counter) with sort C = x)
+pub def negatedManifest : Model Counter with sort C = Unit + (Unit + Unit) = Path.walk (fun (x) {
+  type(Model Counter with sort C = x)
 }) countsNegated upManifest;
 
 /// After negation, the forgetting map reads the same count.
@@ -50,7 +50,7 @@ pub theory ReadCounter where
   oper shown : (r : R) --> Integer;
 
 /// The `observeShown` consumer reads and shows one stepped counter value.
-pub def observeShown(m : Model(ReadCounter)) -> Integer =
+pub def observeShown(m : Model ReadCounter) -> Integer =
   match m where
     | *{.zero = z, .incr = i, .read = r, .shown = s} => s (r (i z))
 
@@ -58,7 +58,7 @@ pub def observeShown(m : Model(ReadCounter)) -> Integer =
 def asIs(r : Integer) -> Integer { r }
 
 /// The `upReadings` record fixes the reading sort and leaves the count sort as a field.
-pub def upReadings : Model(ReadCounter) with sort R = Integer = *{
+pub def upReadings : Model ReadCounter with sort R = Integer = *{
   type(Unit + (Unit + Unit)),
   *{Up.zero, *{Up.incr, *{Up.read, asIs}}}
 };
@@ -68,7 +68,7 @@ pub def upReadings : Model(ReadCounter) with sort R = Integer = *{
 def observedReadings() -> Integer { observeShown upReadings }
 
 /// The `upBoth` record fixes both sorts.
-pub def upBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = *{
+pub def upBoth : Model ReadCounter with sort C = Unit + (Unit + Unit) with sort R = Integer = *{
   .zero = Up.zero,
   .incr = Up.incr,
   .read = Up.read,
@@ -80,9 +80,9 @@ pub def upBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort
 def observedBoth() -> Integer { observeShown upBoth }
 
 /// The counter uses its fixed reading sort through count negation.
-def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = Path.walk
+def negatedBoth : Model ReadCounter with sort C = Unit + (Unit + Unit) with sort R = Integer = Path.walk
   (fun (x) {
-    type(Model(ReadCounter) with sort C = x with sort R = Integer)
+    type(Model ReadCounter with sort C = x with sort R = Integer)
   })
   countsNegated
   upBoth;
@@ -92,7 +92,7 @@ def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sor
 def observedNegatedBoth() -> Integer { observeShown negatedBoth }
 
 /// The `stepShared` function steps and reads a value through a counter that shares its carrier.
-def stepShared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C) -> Integer =
+def stepShared(a : Model Counter, b : Model Counter with sort C = a.C, c : a.C) -> Integer =
   match b where
     | *{.zero = z, .incr = i, .read = r} => r (i c)
 
@@ -101,7 +101,7 @@ def stepShared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C
 def sharedUp() -> Integer { stepShared upModel upManifest Up.zero }
 
 /// The checker resolves the shared carrier from `a` when `observeShared` requests a counter.
-pub def observeShared(a : Model(Counter), b : Model(Counter) with sort C = a.C) -> Integer =
+pub def observeShared(a : Model Counter, b : Model Counter with sort C = a.C) -> Integer =
   observe b
 
 /// The checker resolves `upManifest`'s carrier from the up counter.
@@ -109,7 +109,7 @@ pub def observeShared(a : Model(Counter), b : Model(Counter) with sort C = a.C) 
 def observedSharedUp() -> Integer { observeShared upModel upManifest }
 
 /// The `stepOwn` function reads a stepped value through operations of `a`.
-def stepOwn(a : Model(Counter), c : a.C) -> Integer =
+def stepOwn(a : Model Counter, c : a.C) -> Integer =
   let i = a.incr
   let r = a.read
   r (i c)
@@ -119,7 +119,7 @@ def stepOwn(a : Model(Counter), c : a.C) -> Integer =
 def ownUp() -> Integer { stepOwn upModel Up.zero }
 
 /// The `stepZero` function reads a counter after one step from zero.
-def stepZero(a : Model(Counter)) -> Integer =
+def stepZero(a : Model Counter) -> Integer =
   let z = a.zero
   let i = a.incr
   let r = a.read
@@ -130,7 +130,7 @@ def selectedAlike() -> Path(stepZero upModel, stepZero downModel) =
   Path.ap stepZero oneCounter
 
 /// The `stepManifest` function reads a manifest counter after one step from zero.
-def stepManifest(a : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Integer =
+def stepManifest(a : Model Counter with sort C = Unit + (Unit + Unit)) -> Integer =
   let z = a.zero
   let i = a.incr
   let r = a.read
@@ -141,10 +141,10 @@ def stepManifest(a : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Integ
 def manifestUp() -> Integer { stepManifest upManifest }
 
 /// A count at the integer carrier has the type `Integer`.
-def countOfIntegers(a : Model(Counter) with sort C = Integer, c : a.C) -> Integer { c }
+def countOfIntegers(a : Model Counter with sort C = Integer, c : a.C) -> Integer { c }
 
 /// A count at a bound carrier has the type of that carrier.
-def countOfAny(x : Type, a : Model(Counter) with sort C = x, n : Integer, c : a.C) -> x =
+def countOfAny(x : Type, a : Model Counter with sort C = x, n : Integer, c : a.C) -> x =
   c
 
 /// The `Pairing` theory has two carriers and a value at each carrier.
@@ -155,16 +155,16 @@ pub theory Pairing where
   oper right : B;
 
 /// The `firstManifest` record fixes the first carrier and leaves the second as a field.
-def firstManifest : Model(Pairing) with sort A = Integer = *{type(Unit), *{1, *{}}};
+def firstManifest : Model Pairing with sort A = Integer = *{type(Unit), *{1, *{}}};
 
 /// The `bothManifest` record fixes both carriers.
-def bothManifest : Model(Pairing) with sort A = Integer with sort B = Unit = *{
+def bothManifest : Model Pairing with sort A = Integer with sort B = Unit = *{
   .left = 1,
   .right = *{}
 };
 
 /// The `leftBeside` function reads a first value beside a second-carrier value.
-pub def leftBeside(m : Model(Pairing) with sort A = Integer, b : m.B) -> Integer =
+pub def leftBeside(m : Model Pairing with sort A = Integer, b : m.B) -> Integer =
   match m where
     | *{.left = l, .right = r} => l
 
@@ -174,8 +174,8 @@ def leftOfOne() -> Integer { leftBeside firstManifest (*{}) }
 
 /// The `rightBeside` function reads a shared second-carrier value.
 def rightBeside(
-  m : Model(Pairing) with sort A = Integer,
-  n : Model(Pairing) with sort A = Integer with sort B = m.B
+  m : Model Pairing with sort A = Integer,
+  n : Model Pairing with sort A = Integer with sort B = m.B
 ) -> Integer =
   match n where
     | *{.left = l, .right = r} => leftBeside m r

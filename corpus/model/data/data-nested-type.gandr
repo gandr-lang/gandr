@@ -13,7 +13,7 @@ import std.list (List);
 /// `sum_first` binds a list of optional integers and returns seven.
 /// Its list annotation gives each element type `Maybe(Integer)`.
 def sum_first() -> Integer =
-  let items = (#[Some 1, None, Some 3] : List(Maybe(Integer)))
+  let items = (#[Some 1, None, Some 3] : List (Maybe Integer))
   7
 
 /// A call of `sum_first`.

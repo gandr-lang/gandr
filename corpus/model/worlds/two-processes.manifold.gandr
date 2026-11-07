@@ -12,6 +12,6 @@ import std.list (List);
 pub module Manifold : Model(Manifold) where
   def artifact = "two-processes.gandr";
 
-pub def placements : List(Placement) = #[
+pub def placements : List Placement = #[
   At "far" far.site,
 ];

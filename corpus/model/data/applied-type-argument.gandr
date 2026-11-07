@@ -9,22 +9,22 @@
 
 /// A parcel contains one value of any type.
 data Parcel(a : Type) : Type where
-  | Enclosed : (x : a) --> Parcel(a)
+  | Enclosed : (x : a) --> Parcel a
 
 /// The value a parcel holds, at the type given first.
-def unwrap(a : Type, p : Parcel(a)) -> a =
+def unwrap(a : Type, p : Parcel a) -> a =
   match p where
     | Enclosed(x) => x
 
 /// This source opens an integer parcel at a bare type.
 @[ runs("1") ]
-def openedBare() -> Integer { unwrap Integer (Enclosed 1 : Parcel(Integer)) }
+def openedBare() -> Integer { unwrap Integer (Enclosed 1 : Parcel Integer) }
 
 /// A parcel of a parcel opened at the applied type `Parcel(Integer)`: the
 /// argument is the type, never a constructor applied to nothing.
 @[ runs("Enclosed 1") ]
-def openedApplied() -> Parcel(Integer) =
-  unwrap (Parcel Integer) (Enclosed (Enclosed 1 : Parcel(Integer)) : Parcel(Parcel(Integer)))
+def openedApplied() -> Parcel Integer =
+  unwrap (Parcel Integer) (Enclosed (Enclosed 1 : Parcel Integer) : Parcel (Parcel Integer))
 
 /// The type of parcels of integers, named.
 def integerParcels : Type = Parcel Integer;

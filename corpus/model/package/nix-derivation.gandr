@@ -17,7 +17,7 @@ import std.list (List);
 pub type Output = String * String;
 
 /// A derivation a derivation depends on: its store path, then the outputs it reads.
-pub type InputDerivation = String * List(String);
+pub type InputDerivation = String * List String;
 
 /// One variable of a builder's environment: its name, then its value.
 pub type Variable = String * String;
@@ -27,11 +27,11 @@ pub type Derivation = *{
   name : String,
   system : String,
   builder : String,
-  args : List(String),
-  env : List(Variable),
-  inputDrvs : List(InputDerivation),
-  inputSrcs : List(String),
-  outputs : List(Output),
+  args : List String,
+  env : List Variable,
+  inputDrvs : List InputDerivation,
+  inputSrcs : List String,
+  outputs : List Output,
   version : Integer
 };
 

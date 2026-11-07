@@ -30,15 +30,15 @@ import std.process;
 // The access restores the unchanged string.
 @[ runs("3") ]
 def readThrough() -> Integer =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { resume v v };
   count (bytes s)
 
 /// `writeThrough` appends `!` through a view.
 /// The access writes the changed string back.
 @[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))") ]
-def writeThrough() -> List(Integer) =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+def writeThrough() -> List Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { let w = push v 33; let t = written w; resume v t };
   bytes s
 
@@ -46,16 +46,16 @@ def writeThrough() -> List(Integer) =
 
 // The held string remains unchanged.
 @[ runs("Cons 104 (Cons 105 (Cons 0 Nil))") ]
-def abandoned() -> List(Integer) =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+def abandoned() -> List Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { abort v } unwind { pure *{} };
   bytes s
 
 /// `twiceThrough` performs two accesses in sequence.
 /// The second access reads the first write.
 @[ runs("Cons 104 (Cons 105 (Cons 33 (Cons 33 (Cons 0 Nil))))") ]
-def twiceThrough() -> List(Integer) =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+def twiceThrough() -> List Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   access s as v { let w = push v 33; let t = written w; resume v t };
   access s as v { let w = push v 33; let t = written w; resume v t };
   bytes s
@@ -64,7 +64,7 @@ def twiceThrough() -> List(Integer) =
 /// The view reads an unchanged string after its access ends.
 @[ runs("3") ]
 def keptInRegion() -> Integer =
-  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
   handle c : std.process.Exit.Eff {
     let k : (() -> Integer) at c = access shared s as w {
       pure count (bytes w)

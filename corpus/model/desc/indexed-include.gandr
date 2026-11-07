@@ -19,13 +19,13 @@ pub theory Scoped where
   /// Types in a context.
   sort Ty(g : Con) : Type;
   /// Terms of a type in a context.
-  sort Tm(g : Con, a : Ty(g)) : Type;
+  sort Tm(g : Con, a : Ty g) : Type;
   /// A context extended by a type in it.
-  oper ext : (g : Con, a : Ty(g)) --> Con;
+  oper ext : (g : Con, a : Ty g) --> Con;
   /// A type of the context, as a type in the extended context.
-  oper wk : (g : Con, a : Ty(g)) --> Ty(ext(g, a));
+  oper wk : (g : Con, a : Ty g) --> Ty ext(g, a);
   /// The newest variable, whose type is that type in the extended context.
-  oper q : (g : Con, a : Ty(g)) --> Tm(ext(g, a), wk(g, a));
+  oper q : (g : Con, a : Ty g) --> Tm ext(g, a) wk(g, a);
 
 /// The same signature through an include.
 pub theory Again where
@@ -33,4 +33,4 @@ pub theory Again where
   include Scoped;
 
 /// A model of `Scoped`, given back as it is.
-pub def keep(m : Model(Scoped)) -> Model(Scoped) { m }
+pub def keep(m : Model Scoped) -> Model Scoped { m }

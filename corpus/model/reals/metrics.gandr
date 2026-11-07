@@ -31,7 +31,7 @@ import std.list (List);
 import "./reals-base.gandr";
 
 /// Whether two lists of counters are equal, place by place.
-pub def rec equal(first : List(Integer), second : List(Integer)) -> Bool =
+pub def rec equal(first : List Integer, second : List Integer) -> Bool =
   match first where
     | #[] => match second where
       | #[] => true
@@ -60,7 +60,7 @@ pub def measured(search : String, comparison : String) -> [std.reals.Eff] Bool =
 
 /// The counters of a machine under the model of this source. The model names
 /// each machine by the quanta of its `decide`, and the restored machine by 0.
-pub def counted(machine : Integer) -> List(Integer) =
+pub def counted(machine : Integer) -> List Integer =
   let search = machine == 32
   let first = machine == 1
   match search {

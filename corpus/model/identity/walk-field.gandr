@@ -17,7 +17,7 @@
 /// A value of the first type with a value of the type it picks.
 data Picked(a : Type, b : a -> Type) : Type where
   /// The two values.
-  | MkPicked : (x : a, y : b(x)) --> Picked(a, b)
+  | MkPicked : (x : a, y : b(x)) --> Picked a b
 
 /// A walk along the path that a pair's second field holds, its type computed
 /// by the family the pair's type names.

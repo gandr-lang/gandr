@@ -19,7 +19,7 @@ import "./vectors.gandr";
 
 /// `vhead` reads a vector at least one element long.
 /// It omits `VNil` because zero is apart from `Succ(n)`.
-def vhead(n : Nat, v : Vec(Integer, Succ(n))) -> Integer =
+def vhead(n : Nat, v : Vec Integer (Succ n)) -> Integer =
   match v where
     | VCons(m, h, t) => h
 

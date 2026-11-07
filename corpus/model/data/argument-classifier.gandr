@@ -9,7 +9,7 @@
 import "./data-base.gandr";
 
 /// The length of a list of integers.
-def rec listLength(xs : List(Integer)) -> Integer =
+def rec listLength(xs : List Integer) -> Integer =
   match xs where
     | Nil => 0
     | Cons(_, rest) => {
@@ -28,10 +28,10 @@ def emptyLength() -> Integer { listLength Nil }
 
 /// This pair carries an explicit annotation.
 @[ runs("2") ]
-def annotatedLength() -> Integer { listLength (Cons 1 (Cons 2 Nil) : List(Integer)) }
+def annotatedLength() -> Integer { listLength (Cons 1 (Cons 2 Nil) : List Integer) }
 
 /// The function classifies each argument from its own parameter.
-def rec tally(c : Color, cs : List(Color)) -> Integer =
+def rec tally(c : Color, cs : List Color) -> Integer =
   match cs where
     | Nil => 0
     | Cons(_, rest) => {
@@ -44,7 +44,7 @@ def rec tally(c : Color, cs : List(Color)) -> Integer =
 def colours() -> Integer { tally Red (Cons Red (Cons Green (Cons Blue Nil))) }
 
 /// The length of a list of any type, the type given first.
-def rec anyLength(a : Type, xs : List(a)) -> Integer =
+def rec anyLength(a : Type, xs : List a) -> Integer =
   match xs where
     | Nil => 0
     | Cons(_, rest) => {

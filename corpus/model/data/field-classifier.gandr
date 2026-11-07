@@ -12,16 +12,16 @@ import "./data-base.gandr";
 
 /// A representation stores bytes in an integer list.
 data Repr : Type where
-  | Inline : (s : List(Integer)) --> Repr
+  | Inline : (s : List Integer) --> Repr
 
 /// A box over a list of its parameter.
 data Box(a : Type) : Type where
-  | Wrap : (xs : List(a)) --> Box(a)
+  | Wrap : (xs : List a) --> Box a
 
 /// A list paired with the type of its elements, written as the field before
 /// it.
 data Packed : Type[+, 1] where
-  | Pack : (a : Type, xs : List(a)) --> Packed
+  | Pack : (a : Type, xs : List a) --> Packed
 
 /// Two bytes inline: the outer list is a `List(Integer)` by its field, the
 /// inner by its own.
@@ -30,12 +30,12 @@ def short() -> Repr =
 
 /// A list in a field typed by the family's parameter, the box classified by
 /// the type the body answers.
-def boxed() -> Box(Integer) =
+def boxed() -> Box Integer =
   Wrap (Cons 1 Nil)
 
 /// The same box under an annotation.
-def annotated() -> Box(Integer) =
-  (Wrap (Cons 1 Nil) : Box(Integer))
+def annotated() -> Box Integer =
+  (Wrap (Cons 1 Nil) : Box Integer)
 
 /// A list in a field typed by the field before it.
 def packed() -> Packed =
@@ -44,5 +44,5 @@ def packed() -> Packed =
 /// A string where the field takes integers is refused by the checker, not
 /// as unannotated.
 @[ refuses("TypeMismatch") ]
-def mistyped() -> Box(Integer) =
+def mistyped() -> Box Integer =
   Wrap (Cons "no" Nil)

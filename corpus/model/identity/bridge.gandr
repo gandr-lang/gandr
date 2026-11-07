@@ -23,7 +23,7 @@ def unitString : Bridge[.A = Type](Unit, String) = thunk {
 };
 
 /// Equal integer lists have a cell-by-cell unit relation.
-def sameDigits : Bridge[.A = List(Integer)](#[1, 2], #[1, 2]) = *{*{}, *{*{}, *{}}};
+def sameDigits : Bridge[.A = List Integer](#[1, 2], #[1, 2]) = *{*{}, *{*{}, *{}}};
 
 /// Equal integers have the unit identity relation.
 def sameFour : Bridge(4, 4) = *{};

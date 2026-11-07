@@ -26,25 +26,25 @@ data Var : (gamma : Ctx, a : ObjTy) --> Type where
   /// The variable the last entry binds.
   | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
   /// A variable of `gamma`, past one more entry.
-  | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a)
+  | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var gamma a) --> Var(Extend(gamma, b), a)
 
 /// The variable of the first entry in a context of two.
-def firstVar(a : ObjTy, b : ObjTy) -> Var(Extend(Extend(Empty, a), b), a) =
+def firstVar(a : ObjTy, b : ObjTy) -> Var (Extend (Extend Empty a) b) a =
   There (Extend Empty a) a b (Here Empty a)
 
 /// The variable of the last entry, bound by a `let` at its stated type.
-def lastVar(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) =
-  let x : Var(Extend(g, a), a) = Here g a
+def lastVar(g : Ctx, a : ObjTy) -> Var (Extend g a) a =
+  let x : Var (Extend g a) a = Here g a
   x
 
 /// The variable of the last entry, bound by a `let` with no type: the
 /// constructor's result gives the type.
-def lastVarBare(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) =
+def lastVarBare(g : Ctx, a : ObjTy) -> Var (Extend g a) a =
   let x = Here g a
   x
 
 /// The variable `v` past one more entry, bound by a `let` with no type.
-def nextVar(g : Ctx, a : ObjTy, b : ObjTy, v : Var(g, a)) -> Var(Extend(g, b), a) =
+def nextVar(g : Ctx, a : ObjTy, b : ObjTy, v : Var g a) -> Var (Extend g b) a =
   let x = There g a b v
   x
 
@@ -57,14 +57,14 @@ data Fin : Nat -> Type where
   /// The first position below the successor of `n`.
   | FZ : (n : Nat) --> Fin(Succ(n))
   /// The position after `i`, below the successor of `n`.
-  | FS : (n : Nat, i : Fin(n)) --> Fin(Succ(n))
+  | FS : (n : Nat, i : Fin n) --> Fin(Succ(n))
 
 /// A value of `a` marked at the position `i` below `n`. The type of the
 /// second index reads the first, beside the parameter.
-data Pinned(a : Type) : (n : Nat, i : Fin(n)) --> Type where
+data Pinned(a : Type) : (n : Nat, i : Fin n) --> Type where
   /// The value `x` at the position `i`.
-  | Pin : (n : Nat, i : Fin(n), x : a) --> Pinned(a, n, i)
+  | Pin : (n : Nat, i : Fin n, x : a) --> Pinned a n i
 
 /// `pin` marks the integer `x` at position `i` below `n`.
-def pin(n : Nat, i : Fin(n), x : Integer) -> Pinned(Integer, n, i) =
+def pin(n : Nat, i : Fin n, x : Integer) -> Pinned Integer n i =
   Pin n i x

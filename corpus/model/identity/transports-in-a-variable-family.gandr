@@ -16,7 +16,7 @@ def passed(B : Type, b : B) -> B =
   b
 
 /// Two transports along a variable path, their values one unfolding apart.
-def stuckOnVariable(B : Type, Q : B -> Type, x : B, y : B, p : Path(x, y), v : Q(x)) -> Path(
+def stuckOnVariable(B : Type, Q : B -> Type, x : B, y : B, p : Path(x, y), v : Q x) -> Path(
   Path.walk (fun (z) { Q z }) p v,
   Path.walk (fun (z) { Q z }) p (passed (Q x) v)
 ) =
@@ -32,7 +32,7 @@ def heldInFamily(
   y : B,
   f : A -> Path(x, y),
   a : A,
-  v : Q(x)
+  v : Q x
 ) -> Path(
   Path.walk (fun (z) { Q z }) (f a) v,
   Path.walk (fun (z) { Q z }) (f a) (passed (Q x) v)
@@ -50,8 +50,8 @@ def heldUnderCall(
   y : B,
   f : A -> Path(x, y),
   a : A,
-  h : Q(y) -> C,
-  v : Q(x)
+  h : Q y -> C,
+  v : Q x
 ) -> Path(
   h (Path.walk (fun (z) { Q z }) (f a) v),
   h (Path.walk (fun (z) { Q z }) (f a) (passed (Q x) v))

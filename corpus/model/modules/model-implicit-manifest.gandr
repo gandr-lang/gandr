@@ -34,11 +34,11 @@ module Flips : Model(Dial) where
   def read(c : Bool) -> Integer { if c { 1 } else { 0 } }
 
 /// `upOnce` turns an integer dial once.
-def upOnce[s : Model(Dial) with sort C = Integer]() -> Integer =
+def upOnce[s : Model Dial with sort C = Integer]() -> Integer =
   s.read (s.incr s.zero)
 
 /// `flipOnce` turns a Boolean dial once.
-def flipOnce[s : Model(Dial) with sort C = Bool]() -> Integer =
+def flipOnce[s : Model Dial with sort C = Bool]() -> Integer =
   s.read (s.incr s.zero)
 
 /// `turnedUp` selects `Up`.

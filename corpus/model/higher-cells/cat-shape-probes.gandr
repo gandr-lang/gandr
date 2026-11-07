@@ -23,12 +23,12 @@ def path_app(n : Integer) -> Path(n + 1, n + 1) =
 
 /// `Ix` has one element at each integer index.
 data Ix(n : Integer) : Type where
-  | MkIx : Ix(n)
+  | MkIx : Ix n
 
 /// `ix_id` returns its element at every index.
-def ix_id(n : Integer, w : Ix(n)) -> Ix(n) =
+def ix_id(n : Integer, w : Ix n) -> Ix n =
   w
 
 /// `ix_ctor` returns its element at index one.
-def ix_ctor(w : Ix(1)) -> Ix(1) =
+def ix_ctor(w : Ix 1) -> Ix 1 =
   w

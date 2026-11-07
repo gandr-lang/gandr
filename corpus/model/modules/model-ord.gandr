@@ -43,7 +43,7 @@ def integerOrder() -> Bool { - 4 < 9 }
 def sameName() -> Bool { "alpha" == "alpha" }
 
 /// `least` selects the lower value through `Ord`.
-def least[o : Model(Ord)](a : o.Carrier, b : o.Carrier) -> o.Carrier =
+def least[o : Model Ord](a : o.Carrier, b : o.Carrier) -> o.Carrier =
   if o.lt b a { b } else { a }
 
 /// `leastName` selects the lower string.

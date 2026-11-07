@@ -15,69 +15,69 @@
 import "./data-base.gandr";
 
 /// This function writes its `run` at the call and returns the list length.
-pub def rec length(a : Type, xs : List(a)) -> Nat =
+pub def rec length(a : Type, xs : List a) -> Nat =
   match xs where
     | Nil => Zero
     | Cons(x, rest) => Succ (length[<] a rest)
 
 /// This version elides `return` and writes its `run` at the call.
-pub def rec length_elided(a : Type, xs : List(a)) -> Nat =
+pub def rec length_elided(a : Type, xs : List a) -> Nat =
   match xs where
     | Nil => Zero
     | Cons(x, rest) => Succ (length_elided[<] a rest)
 
 /// This version nests the recursive call in the successor.
-def rec length_nested(a : Type, xs : List(a)) -> Nat =
+def rec length_nested(a : Type, xs : List a) -> Nat =
   match xs where
     | Nil => Zero
     | Cons(x, rest) => Succ (length_nested[<] a rest)
 
 /// This version infers the element type.
 /// Its recursive call omits `a` and descends on `xs`.
-pub def rec length_implicit[a : Type](xs : List(a)) -> Nat =
+pub def rec length_implicit[a : Type](xs : List a) -> Nat =
   match xs where
     | Nil => Zero
     | Cons(x, rest) => Succ (length_implicit[<] rest)
 
 /// This function appends lists and returns its recursive result.
-def rec append(a : Type, ys : List(a), xs : List(a)) -> List(a) =
+def rec append(a : Type, ys : List a, xs : List a) -> List a =
   match xs where
     | Nil => ys
-    | Cons(x, rest) => (Cons x (append[<] a ys rest) : List(a))
+    | Cons(x, rest) => (Cons x (append[<] a ys rest) : List a)
 
 /// This version appends lists and elides `return`.
-def rec append_elided(a : Type, ys : List(a), xs : List(a)) -> List(a) =
+def rec append_elided(a : Type, ys : List a, xs : List a) -> List a =
   match xs where
     | Nil => ys
-    | Cons(x, rest) => (Cons x (append_elided[<] a ys rest) : List(a))
+    | Cons(x, rest) => (Cons x (append_elided[<] a ys rest) : List a)
 
 /// This version nests the recursive append call in the constructor.
-def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> List(a) =
+def rec append_nested(a : Type, ys : List a, xs : List a) -> List a =
   match xs where
     | Nil => ys
-    | Cons(x, rest) => (Cons x (append_nested[<] a ys rest) : List(a))
+    | Cons(x, rest) => (Cons x (append_nested[<] a ys rest) : List a)
 
 /// This version infers the element type.
 /// The recursive call keeps `a` and `ys` and descends on `xs`.
-pub def rec append_implicit[a : Type](ys : List(a), xs : List(a)) -> List(a) =
+pub def rec append_implicit[a : Type](ys : List a, xs : List a) -> List a =
   match xs where
     | Nil => ys
-    | Cons(x, rest) => (Cons x (append_implicit[<] ys rest) : List(a))
+    | Cons(x, rest) => (Cons x (append_implicit[<] ys rest) : List a)
 
 /// This function maps a list and returns each recursive result.
-pub def rec map(a : Type, b : Type, f : a -> b, xs : List(a)) -> List(b) =
+pub def rec map(a : Type, b : Type, f : a -> b, xs : List a) -> List b =
   match xs where
-    | Nil => (Nil : List(b))
-    | Cons(x, rest) => (Cons (f x) (map[<] a b f rest) : List(b))
+    | Nil => (Nil : List b)
+    | Cons(x, rest) => (Cons (f x) (map[<] a b f rest) : List b)
 
 /// This map elides `return` at each recursive call.
-def rec map_elided(a : Type, b : Type, f : a -> b, xs : List(a)) -> List(b) =
+def rec map_elided(a : Type, b : Type, f : a -> b, xs : List a) -> List b =
   match xs where
-    | Nil => (Nil : List(b))
-    | Cons(x, rest) => (Cons (f x) (map_elided[<] a b f rest) : List(b))
+    | Nil => (Nil : List b)
+    | Cons(x, rest) => (Cons (f x) (map_elided[<] a b f rest) : List b)
 
 /// Mapping over a list, both calls nested in the constructor.
-def rec map_nested(a : Type, b : Type, f : a -> b, xs : List(a)) -> List(b) =
+def rec map_nested(a : Type, b : Type, f : a -> b, xs : List a) -> List b =
   match xs where
-    | Nil => (Nil : List(b))
-    | Cons(x, rest) => (Cons (f x) (map_nested[<] a b f rest) : List(b))
+    | Nil => (Nil : List b)
+    | Cons(x, rest) => (Cons (f x) (map_nested[<] a b f rest) : List b)

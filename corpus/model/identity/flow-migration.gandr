@@ -31,12 +31,12 @@ pub module Schema where {
     Flow.ride (fun (X) { X }) upgrade old
   /// The `everyone` function rides a record list through the list family.
   @[ checks ]
-  def everyone(olds : List(Old)) -> List(New) =
+  def everyone(olds : List Old) -> List New =
     Flow.ride (fun (X) { List X }) upgrade olds
   /// The run migrates one old record.
   @[ runs("*{30, \"ada\", +{.0 = *{}}}") ]
   def one : () -> New = moved (*{"ada", 30});
   /// The run migrates two old records.
   @[ runs("cons *{30, \"ada\", +{.0 = *{}}} (cons *{41, \"grace\", +{.0 = *{}}} nil)") ]
-  def many : () -> List(New) = everyone (cons (*{"ada", 30}) (cons (*{"grace", 41}) nil));
+  def many : () -> List New = everyone (cons (*{"ada", 30}) (cons (*{"grace", 41}) nil));
 }

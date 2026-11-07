@@ -10,11 +10,11 @@
 
 /// The sum of `a` and `b`: a value of either side, tagged by its constructor.
 data Either(a : Type, b : Type) : Type where
-  | Left : (x : a) --> Either(a, b)
-  | Right : (y : b) --> Either(a, b)
+  | Left : (x : a) --> Either a b
+  | Right : (y : b) --> Either a b
 
 /// The left side of a left injection, or zero for a right one.
 def from_left() -> Integer =
-  match (Left 5 : Either(Integer, String)) where
+  match (Left 5 : Either Integer String) where
     | Left(x) => x
     | Right(y) => 0

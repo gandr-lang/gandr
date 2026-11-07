@@ -12,18 +12,18 @@
 
 /// An optional `a`: none, or some value.
 pub data Maybe(a : Type) : Type where
-  | None : Maybe(a)
-  | Some : (x : a) --> Maybe(a)
+  | None : Maybe a
+  | Some : (x : a) --> Maybe a
 
 /// The value inside a present option, or zero for an absent one.
 def unwrap_or_zero() -> Integer =
-  match (Some 3 : Maybe(Integer)) where
+  match (Some 3 : Maybe Integer) where
     | None => 0
     | Some(x) => x
 
 /// `kept` matches an optional integer to a path.
 /// Each arm returns its scrutinee.
-def kept(m : Maybe(Integer)) -> Path(m, m) =
+def kept(m : Maybe Integer) -> Path(m, m) =
   match m where
     | None => Path.here m
     | Some(x) => Path.here m
@@ -34,14 +34,14 @@ data Tally : Type where
 
 /// Two types side by side, its constructor named for its type.
 data Duo(a : Type, b : Type) : Type where
-  | Duo : (first : a, second : b) --> Duo(a, b)
+  | Duo : (first : a, second : b) --> Duo a b
 
 /// `keptTally` stores a tally in `Maybe(Tally)`.
 /// `Tally` names a type in that parameter.
-def keptTally(t : Tally) -> Maybe(Tally) =
-  (Some t : Maybe(Tally))
+def keptTally(t : Tally) -> Maybe Tally =
+  (Some t : Maybe Tally)
 
 /// `keptDuo` stores a duo in `Maybe(Duo(Tally, Tally))`.
 /// Every `Tally` there names a type.
-def keptDuo(d : Duo(Tally, Tally)) -> Maybe(Duo(Tally, Tally)) =
-  (Some d : Maybe(Duo(Tally, Tally)))
+def keptDuo(d : Duo Tally Tally) -> Maybe (Duo Tally Tally) =
+  (Some d : Maybe (Duo Tally Tally))

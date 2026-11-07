@@ -25,9 +25,9 @@ import "./seat-evolution.gandr";
 import "./seat-prefix.gandr";
 
 /// An open play ridden forward along the simulation.
-def carried(play : Prefix(Seat.SeatEnd)) -> Prefix(Evolution.SeatEnd′) =
+def carried(play : Prefix Seat.SeatEnd) -> Prefix Evolution.SeatEnd′ =
   Flow.ride (fun (X) { Prefix X }) Evolution.sub play
 
 /// `upgraded` transports the open record to the wider protocol.
 @[ runs("recorded (received \"task\") (selected report) (sent \"progress\")") ]
-def upgraded() -> Prefix(Evolution.SeatEnd′) { carried reporting }
+def upgraded() -> Prefix Evolution.SeatEnd′ { carried reporting }

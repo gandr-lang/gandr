@@ -18,7 +18,7 @@ data Grade : Type where
 
 /// `compose` returns `Unmet` when any grade is unmet. It returns `Met`
 /// otherwise.
-def rec compose(grades : List(Grade)) -> Grade =
+def rec compose(grades : List Grade) -> Grade =
   match grades where
     | #[] => Met
     | #[grade, ..rest] => match grade where
@@ -36,7 +36,7 @@ def passing() -> Grade =
   compose (#[Met, Met])
 
 /// `shortLength` reads a list shape up to length three.
-def shortLength(xs : List(Integer)) -> Integer =
+def shortLength(xs : List Integer) -> Integer =
   match xs where
     | #[] => 0
     | #[a] => 1
@@ -54,7 +54,7 @@ def many() -> Integer =
   shortLength (#[7, 8, 9, 10])
 
 /// `secondOf` reads the second element after the first.
-def secondOf(xs : List(Integer)) -> Integer =
+def secondOf(xs : List Integer) -> Integer =
   match xs where
     | #[_, b, ..rest] => b
     | _ => 0
@@ -66,7 +66,7 @@ def eight() -> Integer =
 
 /// `headed` adds a list head to its short length. Its as-pattern binds the
 /// whole matched list.
-def headed(xs : List(Integer)) -> Integer =
+def headed(xs : List Integer) -> Integer =
   match xs where
     | all @ #[a, .._] => {
       let counted = shortLength all;

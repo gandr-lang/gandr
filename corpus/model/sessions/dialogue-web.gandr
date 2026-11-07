@@ -37,7 +37,7 @@ import std.buffer (Web);
     (event right 3)
     (parallel (series (event left 3) (event left 4)) (event right 4))
 ) ]
-pub def retiring : Dialogue(Seat.SeatEnd) = dialogue
+pub def retiring : Dialogue Seat.SeatEnd = dialogue
   (right (sent Seat.task))
   (left (received Seat.task))
   (left (selected report))
@@ -52,7 +52,7 @@ pub def retiring : Dialogue(Seat.SeatEnd) = dialogue
 /// `retiringLater` records the same dialogue with the offer before the report.
 /// Its web has no prime node.
 @[ decomposes(primes = 0) ]
-def retiringLater : Dialogue(Seat.SeatEnd) = dialogue
+def retiringLater : Dialogue Seat.SeatEnd = dialogue
   (right (sent Seat.task))
   (left (received Seat.task))
   (left (selected report))
@@ -66,7 +66,7 @@ def retiringLater : Dialogue(Seat.SeatEnd) = dialogue
 
 /// `commuted` proves that both logs share their moves and receipts.
 /// Reflexivity proves the path.
-def commuted : Path[.A = Dialogue(Seat.SeatEnd)](retiring, retiringLater) = Path.here retiring;
+def commuted : Path[.A = Dialogue Seat.SeatEnd](retiring, retiringLater) = Path.here retiring;
 
 /// `sameWeb` proves that both logs decompose to one web.
 /// `decompose` reads each dialogue.
@@ -84,7 +84,7 @@ def sameWeb : Path[.A = Web](
     (event left 1)
     (prime (event left 2) (event left 3) (event right 1) (series (event right 2) (event right 3)))
 ) ]
-pub def handedOff : Dialogue(Seat.SeatEnd) = dialogue
+pub def handedOff : Dialogue Seat.SeatEnd = dialogue
   (right (sent Seat.task))
   (left (received Seat.task))
   (left (selected handoff))
