@@ -7184,7 +7184,11 @@ fn malformed_heads_and_channel_entries_are_refused()
         Err(crate::ConversionFault::Evaluation(
             crate::EvalFault::DanglingTerm
         )),
-        scheduler.body_channel(GlobalIndex::from(0_u32), super::DefinitionHeight::default())
+        scheduler.body_channel(
+            ConstantIndex::from(0_usize),
+            GlobalIndex::from(0_u32),
+            super::DefinitionHeight::default(),
+        )
     );
 }
 

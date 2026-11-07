@@ -4675,13 +4675,20 @@ fn force_body(
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
     neutral: NeutralId,
+    head: NeutralHead,
     body: GlobalIndex,
 ) -> Result<Glued, ReadbackFault>
 {
+    #[cfg(not(feature = "unfolding-probe"))]
+    let _ = head;
     let Some(lowered) = machine.definitions.bodies().get(&body).copied()
     else {
         return Err(ReadbackFault::UnloweredBody { body });
     };
+    #[cfg(feature = "unfolding-probe")]
+    if let NeutralHead::Constant(constant) = head {
+        machine.definitions.record(constant);
+    }
     let evaluated = eval_closed_value(core, domain, machine.definitions, machine.fuel, lowered);
     let (value, remaining) = evaluated.map_err(ReadbackFault::Eval)?;
     machine.fuel = remaining;
@@ -4770,7 +4777,7 @@ fn step_neutral(
         ReadbackMode::Unfolding => match unfolding {
             Unfolding::Rigid => None,
             Unfolding::Unforced(body) => {
-                let forced = force_body(core, domain, machine, neutral, body)?;
+                let forced = force_body(core, domain, machine, neutral, head, body)?;
                 Some(forced)
             },
             Unfolding::Forced(glued) => Some(glued),

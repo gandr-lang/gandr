@@ -184,6 +184,8 @@ mod stage;
 mod strata;
 mod tier;
 mod typed;
+#[cfg(feature = "unfolding-probe")]
+mod unfolding;
 mod verdicts;
 mod walk;
 mod width;
@@ -472,6 +474,16 @@ pub use crate::typed::reprinted;
 pub use crate::typed::signed;
 pub use crate::typed::typing;
 pub use crate::typed::wholly;
+#[cfg(feature = "unfolding-probe")]
+pub use crate::unfolding::UnfoldingEvents;
+#[cfg(feature = "unfolding-probe")]
+pub use crate::unfolding::UnfoldingObservation;
+#[cfg(feature = "unfolding-probe")]
+pub use crate::unfolding::UnfoldingPairs;
+#[cfg(feature = "unfolding-probe")]
+pub use crate::unfolding::UnfoldingReport;
+#[cfg(feature = "unfolding-probe")]
+pub use crate::unfolding::observe_unfoldings;
 pub use crate::verdicts::AlreadyInstalled;
 pub use crate::verdicts::VerdictCache;
 pub use crate::verdicts::VerdictTally;

@@ -47,6 +47,7 @@ proptest.workspace = true
 default = []
 # Evaluation/readback boundary diagnostics; no subscriber or std dependency.
 tracing = ["dep:tracing"]
+unfolding-probe = []
 
 [lints]
 workspace = true
