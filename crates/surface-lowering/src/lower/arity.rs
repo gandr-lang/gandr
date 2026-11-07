@@ -170,7 +170,6 @@ use quenchant_shape::shape::Maybe;
 use super::Block;
 use super::Frame;
 use super::LabelRead;
-use super::Listed;
 use super::Lowered;
 use super::Lowerer;
 use super::Parameter;
@@ -1810,13 +1809,11 @@ impl<'source> Lowerer<'_, 'source>
                     if linked {
                         self.scope.mention(extended);
                     }
-                    self.parameters.push(Parameter {
-                        binder: key.node,
-                        frame: extended,
-                        declared: Maybe::Present(declared.node),
-                        component: None,
-                        listed: Listed::Elsewhere,
-                    });
+                    self.parameters.push(Parameter::elsewhere(
+                        key.node,
+                        extended,
+                        Maybe::Present(declared.node),
+                    ));
                     inner = Frame::Inner(extended);
                 }
                 let declared = last.held.at();
@@ -3911,13 +3908,11 @@ impl<'source> Lowerer<'_, 'source>
             let extended = self
                 .scope
                 .extend_typed(inner, bound, declared.node, written);
-            self.parameters.push(Parameter {
-                binder: binder.node,
-                frame: extended,
-                declared: Maybe::Present(declared.node),
-                component: None,
-                listed: Listed::Elsewhere,
-            });
+            self.parameters.push(Parameter::elsewhere(
+                binder.node,
+                extended,
+                Maybe::Present(declared.node),
+            ));
             inner = Frame::Inner(extended);
         }
         let output = self.box_output(codomain, inner)?;
@@ -4025,13 +4020,11 @@ impl<'source> Lowerer<'_, 'source>
             let extended = self
                 .scope
                 .extend_typed(inner, bound, declared.node, written);
-            self.parameters.push(Parameter {
-                binder: binder.node,
-                frame: extended,
-                declared: Maybe::Present(declared.node),
-                component: None,
-                listed: Listed::Elsewhere,
-            });
+            self.parameters.push(Parameter::elsewhere(
+                binder.node,
+                extended,
+                Maybe::Present(declared.node),
+            ));
             inner = Frame::Inner(extended);
         }
         self.plan(site, Plan::Returns(self.parameters.since(start)));
@@ -4982,13 +4975,11 @@ impl<'source> Lowerer<'_, 'source>
             self.scope
                 .extend_typed(frame, bound, declared.node, Maybe::Present(key.span));
         let start = self.parameters.mark();
-        self.parameters.push(Parameter {
-            binder: key.node,
-            frame: extended,
-            declared: Maybe::Present(declared.node),
-            component: None,
-            listed: Listed::Elsewhere,
-        });
+        self.parameters.push(Parameter::elsewhere(
+            key.node,
+            extended,
+            Maybe::Present(declared.node),
+        ));
         self.read(codomain.node, Reading::CompType(Frame::Inner(extended)));
         self.plan(
             site,
@@ -5126,13 +5117,11 @@ impl<'source> Lowerer<'_, 'source>
         self.read(declared.node, Reading::ValueType(frame));
         self.scope.mention(extended);
         let start = self.parameters.mark();
-        self.parameters.push(Parameter {
+        self.parameters.push(Parameter::elsewhere(
             binder,
-            frame: extended,
-            declared: Maybe::Present(declared.node),
-            component: None,
-            listed: Listed::Elsewhere,
-        });
+            extended,
+            Maybe::Present(declared.node),
+        ));
         let inner = Frame::Inner(extended);
         self.read(
             codomain.node,
