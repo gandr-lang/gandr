@@ -189,6 +189,12 @@ mod walk;
 mod width;
 mod workspace;
 
+// The digest of a corpus walk the tests of one nextest run share (#5256),
+// the integration tests' own module.
+#[cfg(test)]
+#[path = "../tests/digest.rs"]
+mod digest;
+
 use std::path::PathBuf;
 
 use anodized::spec;
